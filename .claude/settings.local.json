@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls e:/Downloads/lojamoschettieri/builderpizzaapp-main/builderpizzaapp-main/.env*)"
+    ]
+  }
+}

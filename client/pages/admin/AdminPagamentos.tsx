@@ -1,0 +1,507 @@
+import { useState, useEffect } from "react";
+import { Save, Eye, EyeOff, CheckCircle, AlertCircle, Loader2, CreditCard, QrCode, Wallet, Banknote } from "lucide-react";
+import AdminSidebar from "@/components/AdminSidebar";
+import { adminApi } from "@/lib/api";
+
+const API = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+
+type Gateway = "mock" | "mercadopago" | "stripe" | "pagseguro";
+
+interface GatewayConfig {
+  id: string;
+  gateway: Gateway;
+  sandbox: boolean;
+  accept_pix: boolean;
+  accept_credit_card: boolean;
+  accept_debit_card: boolean;
+  accept_cash: boolean;
+  mp_public_key?: string;
+  mp_access_token_masked?: string;
+  stripe_publishable_key?: string;
+  stripe_secret_key_masked?: string;
+  pagseguro_email?: string;
+  pagseguro_token_masked?: string;
+  pix_key?: string;
+  pix_key_type?: string;
+  pix_beneficiary_name?: string;
+  pix_beneficiary_city?: string;
+  updated_at: string;
+}
+
+const GATEWAYS: { id: Gateway; label: string; icon: string; description: string; color: string }[] = [
+  {
+    id: "mock",
+    label: "Modo Teste (Mock)",
+    icon: "🧪",
+    description: "Simula pagamentos localmente. Nenhum dado real é processado.",
+    color: "border-slate-500 bg-slate-500/10",
+  },
+  {
+    id: "mercadopago",
+    label: "Mercado Pago",
+    icon: "💙",
+    description: "PIX, cartão de crédito/débito. Gateway mais usado no Brasil.",
+    color: "border-blue-500 bg-blue-500/10",
+  },
+  {
+    id: "stripe",
+    label: "Stripe",
+    icon: "⚡",
+    description: "Cartão de crédito internacional. Ideal para escalar globalmente.",
+    color: "border-purple-500 bg-purple-500/10",
+  },
+  {
+    id: "pagseguro",
+    label: "PagSeguro",
+    icon: "🟡",
+    description: "PIX e cartão. Solução completa da UOL para o mercado brasileiro.",
+    color: "border-yellow-500 bg-yellow-500/10",
+  },
+];
+
+const PIX_KEY_TYPES = [
+  { value: "cpf", label: "CPF" },
+  { value: "cnpj", label: "CNPJ" },
+  { value: "email", label: "E-mail" },
+  { value: "phone", label: "Telefone" },
+  { value: "random", label: "Chave Aleatória" },
+];
+
+export default function AdminPagamentos() {
+  const [config, setConfig] = useState<GatewayConfig | null>(null);
+  const [form, setForm] = useState<Record<string, string | boolean>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const token = localStorage.getItem("admin_token");
+    fetch(`${API}/admin/payment-gateway`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => r.json())
+      .then((data: GatewayConfig) => {
+        setConfig(data);
+        setForm({
+          gateway: data.gateway,
+          sandbox: data.sandbox,
+          accept_pix: data.accept_pix,
+          accept_credit_card: data.accept_credit_card,
+          accept_debit_card: data.accept_debit_card,
+          accept_cash: data.accept_cash,
+          mp_public_key: data.mp_public_key || "",
+          mp_access_token: "",
+          mp_webhook_secret: "",
+          stripe_publishable_key: data.stripe_publishable_key || "",
+          stripe_secret_key: "",
+          stripe_webhook_secret: "",
+          pagseguro_email: data.pagseguro_email || "",
+          pagseguro_token: "",
+          pix_key: data.pix_key || "",
+          pix_key_type: data.pix_key_type || "email",
+          pix_beneficiary_name: data.pix_beneficiary_name || "",
+          pix_beneficiary_city: data.pix_beneficiary_city || "",
+        });
+      })
+      .catch(() => setError("Não foi possível carregar a configuração. O backend está rodando?"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const set = (key: string, value: string | boolean) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
+
+  const toggleSecret = (key: string) =>
+    setShowSecrets((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      // Send only non-empty strings for secrets (empty = don't update)
+      const payload: Record<string, string | boolean> = {};
+      for (const [key, value] of Object.entries(form)) {
+        if (value === "" && ["mp_access_token", "mp_webhook_secret", "stripe_secret_key",
+          "stripe_webhook_secret", "pagseguro_token"].includes(key)) {
+          continue; // skip blank secret fields
+        }
+        payload[key] = value;
+      }
+
+      const token = localStorage.getItem("admin_token");
+      const res = await fetch(`${API}/admin/payment-gateway`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const updated: GatewayConfig = await res.json();
+      setConfig(updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao salvar.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectedGateway = (form.gateway as Gateway) || "mock";
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
+      <div className="flex h-screen">
+        <AdminSidebar />
+
+        <div className="flex-1 overflow-auto">
+          {/* Header */}
+          <div className="bg-slate-800 px-8 py-4 border-b border-slate-700 flex justify-between items-center sticky top-0 z-20">
+            <div>
+              <h2 className="text-2xl font-bold text-white">Gateway de Pagamento</h2>
+              <p className="text-slate-400 text-sm mt-0.5">
+                Configure o processador de pagamentos da loja
+              </p>
+            </div>
+            <button
+              onClick={handleSave}
+              disabled={saving || loading}
+              className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-bold py-2 px-5 rounded-lg transition-colors"
+            >
+              {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+              {saving ? "Salvando..." : "Salvar"}
+            </button>
+          </div>
+
+          <div className="p-8 space-y-8">
+            {/* Feedback */}
+            {error && (
+              <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/40 rounded-xl px-4 py-3 text-red-400">
+                <AlertCircle size={20} />
+                <span className="text-sm">{error}</span>
+              </div>
+            )}
+            {saved && (
+              <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/40 rounded-xl px-4 py-3 text-green-400">
+                <CheckCircle size={20} />
+                <span className="text-sm">Configuração salva com sucesso!</span>
+              </div>
+            )}
+
+            {loading ? (
+              <div className="flex items-center justify-center py-24">
+                <Loader2 size={40} className="animate-spin text-orange-500" />
+              </div>
+            ) : (
+              <>
+                {/* ── Gateway selector ───────────────────────────────────── */}
+                <section className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-700">
+                    <h3 className="text-lg font-bold text-white">Processador de Pagamento</h3>
+                    <p className="text-slate-400 text-sm">Selecione o gateway ativo para a loja</p>
+                  </div>
+                  <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {GATEWAYS.map((gw) => (
+                      <button
+                        key={gw.id}
+                        onClick={() => set("gateway", gw.id)}
+                        className={`flex items-start gap-4 p-4 rounded-xl border-2 text-left transition-all ${
+                          selectedGateway === gw.id
+                            ? gw.color + " border-opacity-100"
+                            : "border-slate-700 hover:border-slate-500"
+                        }`}
+                      >
+                        <span className="text-3xl mt-0.5">{gw.icon}</span>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-white font-bold text-sm">{gw.label}</p>
+                            {selectedGateway === gw.id && (
+                              <span className="text-xs bg-orange-500 text-white px-2 py-0.5 rounded-full">Ativo</span>
+                            )}
+                          </div>
+                          <p className="text-slate-400 text-xs mt-1 leading-relaxed">{gw.description}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                {/* ── Ambiente ──────────────────────────────────────────── */}
+                <section className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-700">
+                    <h3 className="text-lg font-bold text-white">Ambiente</h3>
+                  </div>
+                  <div className="p-6 flex gap-4">
+                    {[
+                      { value: true, label: "🧪 Sandbox (Testes)", desc: "Nenhum valor real é cobrado" },
+                      { value: false, label: "🚀 Produção", desc: "Pagamentos reais — ative com cuidado" },
+                    ].map((opt) => (
+                      <button
+                        key={String(opt.value)}
+                        onClick={() => set("sandbox", opt.value)}
+                        className={`flex-1 p-4 rounded-xl border-2 text-left transition-all ${
+                          form.sandbox === opt.value
+                            ? "border-orange-500 bg-orange-500/10"
+                            : "border-slate-700 hover:border-slate-500"
+                        }`}
+                      >
+                        <p className="text-white font-bold text-sm">{opt.label}</p>
+                        <p className="text-slate-400 text-xs mt-1">{opt.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                {/* ── Métodos aceitos ───────────────────────────────────── */}
+                <section className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-700">
+                    <h3 className="text-lg font-bold text-white">Métodos de Pagamento Aceitos</h3>
+                  </div>
+                  <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                      { key: "accept_pix", icon: QrCode, label: "PIX" },
+                      { key: "accept_credit_card", icon: CreditCard, label: "Cartão de Crédito" },
+                      { key: "accept_debit_card", icon: Wallet, label: "Cartão de Débito" },
+                      { key: "accept_cash", icon: Banknote, label: "Dinheiro" },
+                    ].map(({ key, icon: Icon, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => set(key, !form[key])}
+                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                          form[key]
+                            ? "border-orange-500 bg-orange-500/10 text-orange-400"
+                            : "border-slate-700 text-slate-500 hover:border-slate-500"
+                        }`}
+                      >
+                        <Icon size={24} />
+                        <span className="text-sm font-medium text-center">{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                {/* ── Mercado Pago credentials ──────────────────────────── */}
+                {selectedGateway === "mercadopago" && (
+                  <CredentialSection
+                    title="Credenciais — Mercado Pago"
+                    badge="mp"
+                    docUrl="https://www.mercadopago.com.br/developers/pt/docs/getting-started"
+                    fields={[
+                      { key: "mp_public_key", label: "Public Key", placeholder: "APP_USR-...", secret: false },
+                      { key: "mp_access_token", label: "Access Token", placeholder: config?.mp_access_token_masked || "Não configurado — cole o novo valor", secret: true },
+                      { key: "mp_webhook_secret", label: "Webhook Secret", placeholder: "Cole o segredo do webhook", secret: true },
+                    ]}
+                    form={form}
+                    showSecrets={showSecrets}
+                    set={set}
+                    toggleSecret={toggleSecret}
+                  />
+                )}
+
+                {/* ── Stripe credentials ─────────────────────────────────── */}
+                {selectedGateway === "stripe" && (
+                  <CredentialSection
+                    title="Credenciais — Stripe"
+                    badge="stripe"
+                    docUrl="https://stripe.com/docs/keys"
+                    fields={[
+                      { key: "stripe_publishable_key", label: "Publishable Key", placeholder: "pk_test_...", secret: false },
+                      { key: "stripe_secret_key", label: "Secret Key", placeholder: config?.stripe_secret_key_masked || "Não configurado — cole o novo valor", secret: true },
+                      { key: "stripe_webhook_secret", label: "Webhook Secret", placeholder: "whsec_...", secret: true },
+                    ]}
+                    form={form}
+                    showSecrets={showSecrets}
+                    set={set}
+                    toggleSecret={toggleSecret}
+                  />
+                )}
+
+                {/* ── PagSeguro credentials ──────────────────────────────── */}
+                {selectedGateway === "pagseguro" && (
+                  <CredentialSection
+                    title="Credenciais — PagSeguro"
+                    badge="pagseguro"
+                    docUrl="https://dev.pagseguro.uol.com.br/"
+                    fields={[
+                      { key: "pagseguro_email", label: "E-mail da conta PagSeguro", placeholder: "seu@email.com", secret: false },
+                      { key: "pagseguro_token", label: "Token de Integração", placeholder: config?.pagseguro_token_masked || "Não configurado — cole o novo valor", secret: true },
+                    ]}
+                    form={form}
+                    showSecrets={showSecrets}
+                    set={set}
+                    toggleSecret={toggleSecret}
+                  />
+                )}
+
+                {/* ── PIX avulso ────────────────────────────────────────── */}
+                {(form.accept_pix || selectedGateway === "mock") && (
+                  <section className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-slate-700">
+                      <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                        <QrCode size={20} className="text-orange-500" />
+                        Configuração PIX
+                      </h3>
+                      <p className="text-slate-400 text-sm mt-1">
+                        Dados usados para gerar o QR Code PIX
+                      </p>
+                    </div>
+                    <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-slate-300 text-sm font-medium mb-2">Tipo de Chave PIX</label>
+                        <select
+                          value={(form.pix_key_type as string) || "email"}
+                          onChange={(e) => set("pix_key_type", e.target.value)}
+                          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-orange-500"
+                        >
+                          {PIX_KEY_TYPES.map((t) => (
+                            <option key={t.value} value={t.value}>{t.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-slate-300 text-sm font-medium mb-2">Chave PIX</label>
+                        <input
+                          type="text"
+                          value={(form.pix_key as string) || ""}
+                          onChange={(e) => set("pix_key", e.target.value)}
+                          placeholder="sua@chave.pix"
+                          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-300 text-sm font-medium mb-2">Nome do Beneficiário</label>
+                        <input
+                          type="text"
+                          value={(form.pix_beneficiary_name as string) || ""}
+                          onChange={(e) => set("pix_beneficiary_name", e.target.value)}
+                          placeholder="PizzaApp Ltda"
+                          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-300 text-sm font-medium mb-2">Cidade do Beneficiário</label>
+                        <input
+                          type="text"
+                          value={(form.pix_beneficiary_city as string) || ""}
+                          onChange={(e) => set("pix_beneficiary_city", e.target.value)}
+                          placeholder="São Paulo"
+                          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                        />
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                {/* ── Status e webhook URL ──────────────────────────────── */}
+                <section className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-700">
+                    <h3 className="text-lg font-bold text-white">URL do Webhook</h3>
+                    <p className="text-slate-400 text-sm mt-1">
+                      Cadastre esta URL no painel do gateway para receber confirmações automáticas
+                    </p>
+                  </div>
+                  <div className="p-6">
+                    <div className="flex items-center gap-3 bg-slate-900 rounded-xl px-4 py-3 border border-slate-700">
+                      <code className="text-orange-400 text-sm flex-1 break-all">
+                        http://localhost:8000/payments/webhook
+                      </code>
+                      <button
+                        onClick={() => navigator.clipboard.writeText("http://localhost:8000/payments/webhook")}
+                        className="text-slate-400 hover:text-white text-xs border border-slate-600 rounded px-2 py-1 transition-colors flex-shrink-0"
+                      >
+                        Copiar
+                      </button>
+                    </div>
+                    <p className="text-slate-500 text-xs mt-2">
+                      Em produção, substitua <code className="text-slate-400">localhost:8000</code> pelo domínio do seu servidor.
+                    </p>
+
+                    {/* Last updated */}
+                    {config?.updated_at && (
+                      <p className="text-slate-600 text-xs mt-4">
+                        Última atualização:{" "}
+                        {new Date(config.updated_at).toLocaleString("pt-BR")}
+                      </p>
+                    )}
+                  </div>
+                </section>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Reusable credential section ───────────────────────────────────────────────
+
+interface CredentialField {
+  key: string;
+  label: string;
+  placeholder: string;
+  secret: boolean;
+}
+
+function CredentialSection({
+  title, badge, docUrl, fields, form, showSecrets, set, toggleSecret,
+}: {
+  title: string;
+  badge: string;
+  docUrl: string;
+  fields: CredentialField[];
+  form: Record<string, string | boolean>;
+  showSecrets: Record<string, boolean>;
+  set: (key: string, value: string | boolean) => void;
+  toggleSecret: (key: string) => void;
+}) {
+  return (
+    <section className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+      <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-white">{title}</h3>
+          <p className="text-slate-400 text-sm mt-1">
+            Chaves secretas são mascaradas após salvar. Deixe em branco para manter o valor atual.
+          </p>
+        </div>
+        <a
+          href={docUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-orange-400 border border-orange-500/40 px-3 py-1.5 rounded-lg hover:bg-orange-500/10 transition-colors flex-shrink-0"
+        >
+          Documentação ↗
+        </a>
+      </div>
+      <div className="p-6 space-y-4">
+        {fields.map(({ key, label, placeholder, secret }) => (
+          <div key={key}>
+            <label className="block text-slate-300 text-sm font-medium mb-2">{label}</label>
+            <div className="flex items-center gap-2 bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 focus-within:border-orange-500 transition-colors">
+              <input
+                type={secret && !showSecrets[key] ? "password" : "text"}
+                value={(form[key] as string) || ""}
+                onChange={(e) => set(key, e.target.value)}
+                placeholder={placeholder}
+                autoComplete="off"
+                className="flex-1 bg-transparent text-white placeholder-slate-500 outline-none text-sm font-mono"
+              />
+              {secret && (
+                <button
+                  type="button"
+                  onClick={() => toggleSecret(key)}
+                  className="text-slate-400 hover:text-white transition-colors flex-shrink-0"
+                >
+                  {showSecrets[key] ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}

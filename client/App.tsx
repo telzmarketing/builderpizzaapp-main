@@ -1,0 +1,75 @@
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AppProvider } from "./context/AppContext";
+import AdminGuard from "./components/AdminGuard";
+import Index from "./pages/Index";
+import Product from "./pages/Product";
+import Cart from "./pages/Cart";
+import Checkout from "./pages/Checkout";
+import OrderTracking from "./pages/OrderTracking";
+import AdminLogin from "./pages/admin/Login";
+import AdminDashboard from "./pages/admin/Dashboard";
+import AdminProducts from "./pages/admin/Products";
+import AdminPromotions from "./pages/admin/Promotions";
+import AdminOrders from "./pages/admin/Orders";
+import AdminCupons from "./pages/admin/AdminCupons";
+import AdminFidelidade from "./pages/admin/AdminFidelidade";
+import AdminConteudo from "./pages/admin/Conteudo";
+import AdminPagamentos from "./pages/admin/AdminPagamentos";
+import Fidelidade from "./pages/Fidelidade";
+import Cupons from "./pages/Cupons";
+import Pedidos from "./pages/Pedidos";
+import Conta from "./pages/Conta";
+import Localizacao from "./pages/Localizacao";
+import NotFound from "./pages/NotFound";
+
+const queryClient = new QueryClient();
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              {/* ── Customer routes ── */}
+              <Route path="/" element={<Index />} />
+              <Route path="/product/:id" element={<Product />} />
+              <Route path="/cart" element={<Cart />} />
+              <Route path="/checkout" element={<Checkout />} />
+              <Route path="/order-tracking" element={<OrderTracking />} />
+              <Route path="/fidelidade" element={<Fidelidade />} />
+              <Route path="/cupons" element={<Cupons />} />
+              <Route path="/pedidos" element={<Pedidos />} />
+              <Route path="/conta" element={<Conta />} />
+              <Route path="/localizacao" element={<Localizacao />} />
+
+              {/* ── Admin login (public) ── */}
+              <Route path="/painel/login" element={<AdminLogin />} />
+
+              {/* ── Admin routes (protected by JWT guard) ── */}
+              <Route element={<AdminGuard />}>
+                <Route path="/painel" element={<AdminDashboard />} />
+                <Route path="/painel/products" element={<AdminProducts />} />
+                <Route path="/painel/promotions" element={<AdminPromotions />} />
+                <Route path="/painel/orders" element={<AdminOrders />} />
+                <Route path="/painel/cupons" element={<AdminCupons />} />
+                <Route path="/painel/fidelidade" element={<AdminFidelidade />} />
+                <Route path="/painel/conteudo" element={<AdminConteudo />} />
+                <Route path="/painel/pagamentos" element={<AdminPagamentos />} />
+              </Route>
+
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </AppProvider>
+    </QueryClientProvider>
+  );
+}
