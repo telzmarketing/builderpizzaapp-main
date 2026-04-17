@@ -282,7 +282,7 @@ pnpm build
 ```bash
 cd /home/deploy/"$APP_NAME"
 
-python3.11 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r backend/requirements.txt
 deactivate
