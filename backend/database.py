@@ -30,6 +30,6 @@ def create_all_tables():
     """Create all tables and seed initial data."""
     from backend.models import (  # noqa: F401 — import triggers table registration
         product, order, customer, payment, payment_config,
-        shipping, coupon, loyalty, promotion, delivery, admin
+        shipping, shipping_v2, coupon, loyalty, promotion, delivery, admin
     )
     Base.metadata.create_all(bind=engine)

@@ -39,6 +39,7 @@ import AdminCupons from "./pages/admin/AdminCupons";
 import AdminFidelidade from "./pages/admin/AdminFidelidade";
 import AdminConteudo from "./pages/admin/Conteudo";
 import AdminPagamentos from "./pages/admin/AdminPagamentos";
+import AdminFrete from "./pages/admin/AdminFrete";
 import Fidelidade from "./pages/Fidelidade";
 import Cupons from "./pages/Cupons";
 import Pedidos from "./pages/Pedidos";
@@ -85,6 +86,7 @@ export default function App() {
                 <Route path="/painel/fidelidade" element={<AdminFidelidade />} />
                 <Route path="/painel/conteudo" element={<AdminConteudo />} />
                 <Route path="/painel/pagamentos" element={<AdminPagamentos />} />
+                <Route path="/painel/frete" element={<AdminFrete />} />
               </Route>
 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

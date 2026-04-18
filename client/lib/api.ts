@@ -237,6 +237,9 @@ export interface ApiShipping {
   shipping_type: string;
   rule_name: string;
   free: boolean;
+  estimated_time: number;
+  available: boolean;
+  message: string;
 }
 
 export interface ApiDashboard {
@@ -414,8 +417,17 @@ export const loyaltyApi = {
 // ─── Shipping ─────────────────────────────────────────────────────────────────
 
 export const shippingApi = {
-  calculate: (city: string, order_subtotal: number, neighborhood?: string) =>
-    post<ApiShipping>("/shipping/calculate", { city, order_subtotal, neighborhood }),
+  calculate: (
+    city: string,
+    order_subtotal: number,
+    neighborhood?: string,
+    zip_code?: string,
+    is_pickup?: boolean,
+    is_scheduled?: boolean,
+  ) =>
+    post<ApiShipping>("/shipping/calculate", {
+      city, order_subtotal, neighborhood, zip_code, is_pickup, is_scheduled,
+    }),
 };
 
 // ─── Customers ────────────────────────────────────────────────────────────────

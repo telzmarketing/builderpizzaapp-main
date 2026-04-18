@@ -9,6 +9,7 @@ import {
   Trophy,
   FileText,
   CreditCard,
+  Truck,
   LogOut,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
@@ -22,6 +23,7 @@ const navItems = [
   { to: "/painel/fidelidade", icon: Trophy, label: "Fidelidade" },
   { to: "/painel/conteudo", icon: FileText, label: "Conteúdo" },
   { to: "/painel/pagamentos", icon: CreditCard, label: "Pagamentos" },
+  { to: "/painel/frete", icon: Truck, label: "Entregas e Fretes" },
 ];
 
 export default function AdminSidebar() {
