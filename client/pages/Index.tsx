@@ -73,7 +73,7 @@ export default function Home() {
           <div className="absolute inset-0 bg-black/60" onClick={() => setMenuOpen(false)} />
           <div className="relative w-72 bg-brand-dark h-full flex flex-col shadow-2xl">
             <div className="flex items-center justify-between px-6 py-5 border-b border-surface-02">
-              <MoschettieriLogo className="h-7 text-cream" />
+              <MoschettieriLogo className="text-cream text-base" />
               <button onClick={() => setMenuOpen(false)} className="text-stone hover:text-cream transition-colors">
                 <X size={24} />
               </button>
@@ -106,7 +106,7 @@ export default function Home() {
         <button onClick={() => setMenuOpen(true)} className="text-parchment hover:text-cream transition-colors">
           <Menu size={24} />
         </button>
-        <MoschettieriLogo className="h-8 text-cream" />
+        <MoschettieriLogo className="text-cream text-base" />
         <button className="text-parchment hover:text-cream transition-colors">
           <Search size={24} />
         </button>
