@@ -1,164 +1,173 @@
-# Fusion Starter
+# Sistema de Agentes — Moschettieri SaaS
 
-A production-ready full-stack React application template with integrated Express server, featuring React Router 6 SPA mode, TypeScript, Vitest, Zod and modern tooling.
+## Orquestrador
 
-While the starter comes with a express server, only create endpoint when strictly neccesary, for example to encapsulate logic that must leave in the server, such as private keys handling, or certain DB operations, db...
+**Função:** Cérebro operacional. Recebe demandas, interpreta o objetivo de negócio, define qual agente atua, organiza execução e consolida respostas.
 
-## Tech Stack
+**Ativa quando:** Sempre. Toda demanda passa por aqui primeiro.
 
-- **PNPM**: Prefer pnpm
-- **Frontend**: React 18 + React Router 6 (spa) + TypeScript + Vite + TailwindCSS 3
-- **Backend**: Express server integrated with Vite dev server
-- **Testing**: Vitest
-- **UI**: Radix UI + TailwindCSS 3 + Lucide React icons
+---
 
-## Project Structure
+## Product Owner
+
+> Definição completa: [`agents/product-owner.md`](agents/product-owner.md)
+
+**Função:** Transformar ideias e demandas em requisitos claros de negócio.
+
+**Responsabilidades:**
+- Organizar funcionalidades e definir regras de negócio
+- Criar e priorizar backlog
+- Definir critérios de aceite verificáveis
+- Declarar escopo e o que está fora do escopo
+
+**Regras:** Nunca escreve código. Nunca define arquitetura. Sempre estrutura antes de executar.
+
+**Bloqueia:** Nenhuma funcionalidade nova começa sem passar pelo Product Owner.
+
+---
+
+## Arquiteto
+
+> Definição completa: [`agents/arquiteto.md`](agents/arquiteto.md)
+
+**Função:** Definir a arquitetura do sistema e garantir integridade técnica em todas as decisões estruturais.
+
+**Responsabilidades:**
+- Definir estrutura do backend, frontend e banco de dados
+- Criar e documentar padrões técnicos
+- Definir contratos de API (endpoints, payloads, códigos HTTP)
+- Garantir escalabilidade e separação de responsabilidades
+
+**Regras:** Nunca programa sem definir estrutura antes. Nunca aceita soluções improvisadas. Sempre separa responsabilidades.
+
+**Bloqueia:** Nenhuma mudança estrutural sem aprovação. Contratos de API são imutáveis após publicados.
+
+---
+
+## Backend
+
+> Definição completa: [`agents/backend.md`](agents/backend.md)
+
+**Função:** Desenvolver o backend — APIs, regras de negócio, autenticação e integração com banco de dados.
+
+**Responsabilidades:**
+- Rotas FastAPI (`/api/...`) — apenas recebem e delegam ao service
+- Services — toda regra de negócio vive aqui
+- Schemas Pydantic — validação de entrada e saída
+- Autenticação JWT (admin) e phone login (cliente)
+- Integração com gateways de pagamento
+
+**Regras:** Nunca mistura lógica com rota. Sempre valida dados. Sempre segue arquitetura definida.
+
+**Stack:** Python 3.12 + FastAPI + SQLAlchemy + PostgreSQL + uvicorn
+
+---
+
+## Frontend
+
+> Definição completa: [`agents/frontend.md`](agents/frontend.md)
+
+**Função:** Desenvolver a interface da loja e do painel administrativo.
+
+**Responsabilidades:**
+- Criar telas da loja (cliente) e painel (admin)
+- Integrar com API exclusivamente via `client/lib/api.ts`
+- Criar componentes reutilizáveis em `client/components/`
+- Garantir UX clara com feedback visual em toda ação
+
+**Regras:** Sempre trata loading e erro. Sempre pensa em mobile. Nunca cria tela sem fluxo definido. Nunca chama `fetch` diretamente.
+
+**Stack:** React 18 + TypeScript + Vite + Tailwind + shadcn/ui
+
+---
+
+## Database
+
+**Função:** Modelar, manter e garantir a integridade do banco de dados.
+
+> Definição completa: [`agents/database.md`](agents/database.md)
+
+**Responsabilidades:**
+- Modelar tabelas com SQLAlchemy em `backend/models/`
+- Definir relacionamentos, cardinalidade e foreign keys
+- Criar e revisar migrações Alembic
+- Definir índices para campos frequentemente consultados
+- Garantir consistência referencial e constraints
+
+**Regras:** Nunca cria tabela sem relação clara. Sempre pensa em performance. Nunca altera banco sem migration. Soft delete em dados de negócio críticos.
+
+**Stack:** PostgreSQL 15 + SQLAlchemy + Alembic
+
+---
+
+## QA-DevOps
+
+**Função:** Qualidade e operação em produção.
+
+**Responsabilidades:**
+- Testar fluxos completos ponta a ponta (cliente e admin)
+- Verificar logs antes de qualquer ação em produção
+- Gerenciar ciclo de deploy: build → restart → validação
+- Monitorar e diagnosticar incidentes em produção
+
+> Definição completa: [`agents/qa-devops.md`](agents/qa-devops.md)
+
+**Regras:** Nunca assume que está funcionando sem testar. Sempre valida ponta a ponta. Sempre lê logs antes de agir. Nunca faz deploy sem build.
+
+**Stack:** Ubuntu 22.04 + systemd + Nginx + PostgreSQL + pnpm + GitHub
+
+---
+
+## Fluxo Padrão de uma Funcionalidade
 
 ```
-client/                   # React SPA frontend
-├── pages/                # Route components (Index.tsx = home)
-├── components/ui/        # Pre-built UI component library
-├── App.tsx                # App entry point and with SPA routing setup
-└── global.css            # TailwindCSS 3 theming and global styles
-
-server/                   # Express API backend
-├── index.ts              # Main server setup (express config + routes)
-└── routes/               # API handlers
-
-shared/                   # Types used by both client & server
-└── api.ts                # Example of how to share api interfaces
+Demanda do usuário
+       ↓
+ Orquestrador (analisa e distribui)
+       ↓
+ Product Owner (valida valor, define aceite)
+       ↓
+ Arquiteto (define estrutura técnica)
+       ↓
+ Database (se houver mudança no banco)
+       ↓
+ Backend (implementa API)
+       ↓
+ Frontend (implementa UI)
+       ↓
+ QA-DevOps (valida e faz deploy)
+       ↓
+ Orquestrador (consolida e entrega)
 ```
 
-## Key Features
+## Fluxo de Bug em Produção
 
-## SPA Routing System
-
-The routing system is powered by React Router 6:
-
-- `client/pages/Index.tsx` represents the home page.
-- Routes are defined in `client/App.tsx` using the `react-router-dom` import
-- Route files are located in the `client/pages/` directory
-
-For example, routes can be defined with:
-
-```typescript
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-
-<Routes>
-  <Route path="/" element={<Index />} />
-  {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-  <Route path="*" element={<NotFound />} />
-</Routes>;
+```
+Bug reportado
+       ↓
+ Orquestrador (classifica: frontend / backend / infra)
+       ↓
+ QA-DevOps (verifica logs, reproduz)
+       ↓
+ Agente responsável (corrige)
+       ↓
+ QA-DevOps (valida correção)
+       ↓
+ Deploy
 ```
 
-### Styling System
+## Formato de Resposta Obrigatório
 
-- **Primary**: TailwindCSS 3 utility classes
-- **Theme and design tokens**: Configure in `client/global.css` 
-- **UI components**: Pre-built library in `client/components/ui/`
-- **Utility**: `cn()` function combines `clsx` + `tailwind-merge` for conditional classes
+Para toda demanda, o Orquestrador responde neste formato:
 
-```typescript
-// cn utility usage
-className={cn(
-  "base-classes",
-  { "conditional-class": condition },
-  props.className  // User overrides
-)}
 ```
+## Orquestrador — [Nome da Demanda]
 
-### Express Server Integration
-
-- **Development**: Single port (8080) for both frontend/backend
-- **Hot reload**: Both client and server code
-- **API endpoints**: Prefixed with `/api/`
-
-#### Example API Routes
-- `GET /api/ping` - Simple ping api
-- `GET /api/demo` - Demo endpoint  
-
-### Shared Types
-Import consistent types in both client and server:
-```typescript
-import { DemoResponse } from '@shared/api';
+### 1. Resumo Executivo
+### 2. Agente Responsável
+### 3. Agentes Envolvidos
+### 4. Plano de Execução
+### 5. Dependências
+### 6. Riscos
+### 7. Resultado Esperado
 ```
-
-Path aliases:
-- `@shared/*` - Shared folder
-- `@/*` - Client folder
-
-## Development Commands
-
-```bash
-pnpm dev        # Start dev server (client + server)
-pnpm build      # Production build
-pnpm start      # Start production server
-pnpm typecheck  # TypeScript validation
-pnpm test          # Run Vitest tests
-```
-
-## Adding Features
-
-### Add new colors to the theme
-
-Open `client/global.css` and `tailwind.config.ts` and add new tailwind colors.
-
-### New API Route
-1. **Optional**: Create a shared interface in `shared/api.ts`:
-```typescript
-export interface MyRouteResponse {
-  message: string;
-  // Add other response properties here
-}
-```
-
-2. Create a new route handler in `server/routes/my-route.ts`:
-```typescript
-import { RequestHandler } from "express";
-import { MyRouteResponse } from "@shared/api"; // Optional: for type safety
-
-export const handleMyRoute: RequestHandler = (req, res) => {
-  const response: MyRouteResponse = {
-    message: 'Hello from my endpoint!'
-  };
-  res.json(response);
-};
-```
-
-3. Register the route in `server/index.ts`:
-```typescript
-import { handleMyRoute } from "./routes/my-route";
-
-// Add to the createServer function:
-app.get("/api/my-endpoint", handleMyRoute);
-```
-
-4. Use in React components with type safety:
-```typescript
-import { MyRouteResponse } from '@shared/api'; // Optional: for type safety
-
-const response = await fetch('/api/my-endpoint');
-const data: MyRouteResponse = await response.json();
-```
-
-### New Page Route
-1. Create component in `client/pages/MyPage.tsx`
-2. Add route in `client/App.tsx`:
-```typescript
-<Route path="/my-page" element={<MyPage />} />
-```
-
-## Production Deployment
-
-- **Standard**: `pnpm build`
-- **Binary**: Self-contained executables (Linux, macOS, Windows)
-- **Cloud Deployment**: Use either Netlify or Vercel via their MCP integrations for easy deployment. Both providers work well with this starter template.
-
-## Architecture Notes
-
-- Single-port development with Vite + Express integration
-- TypeScript throughout (client, server, shared)
-- Full hot reload for rapid development
-- Production-ready with multiple deployment options
-- Comprehensive UI component library included
-- Type-safe API communication via shared interfaces

@@ -34,9 +34,20 @@ export default function Home() {
     return (carouselPosition + offset + products.length) % products.length;
   };
 
-  const prevPizza = products[getPizzaIndex(-1)];
-  const currentPizza = products[getPizzaIndex(0)];
-  const nextPizza = products[getPizzaIndex(1)];
+  const prevPizza = products.length > 0 ? products[getPizzaIndex(-1)] : undefined;
+  const currentPizza = products.length > 0 ? products[getPizzaIndex(0)] : undefined;
+  const nextPizza = products.length > 0 ? products[getPizzaIndex(1)] : undefined;
+
+  if (products.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950 flex items-center justify-center">
+        <div className="text-center text-slate-400">
+          <div className="text-4xl mb-4">🍕</div>
+          <p className="text-lg">Carregando cardápio...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
