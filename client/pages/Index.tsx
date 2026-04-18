@@ -14,7 +14,16 @@ export default function Home() {
   const [carouselPosition, setCarouselPosition] = useState(0);
   const [clickedPizza, setClickedPizza] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
+
+  const filteredProducts = searchQuery.trim()
+    ? products.filter((p) =>
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.description?.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : [];
 
   const { home, media } = siteContent;
   const activePromotion = promotions.find((p) => p.active) || promotions[0];
@@ -67,6 +76,49 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
+      {/* Search Overlay */}
+      {searchOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex flex-col">
+          <div className="bg-brand-dark px-4 py-4 flex items-center gap-3">
+            <button onClick={() => { setSearchOpen(false); setSearchQuery(""); }} className="text-stone hover:text-cream transition-colors">
+              <X size={24} />
+            </button>
+            <input
+              autoFocus
+              type="text"
+              placeholder="Buscar pizza, massa, burger..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="flex-1 bg-surface-02 text-cream placeholder-stone rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-gold"
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-4">
+            {searchQuery.trim() === "" ? (
+              <p className="text-stone text-center mt-8">Digite para buscar produtos</p>
+            ) : filteredProducts.length === 0 ? (
+              <p className="text-stone text-center mt-8">Nenhum produto encontrado</p>
+            ) : (
+              <div className="space-y-3">
+                {filteredProducts.map((product) => (
+                  <button
+                    key={product.id}
+                    onClick={() => { setSearchOpen(false); setSearchQuery(""); navigate(`/product/${product.id}`); }}
+                    className="w-full bg-surface-02 rounded-xl p-4 flex items-center gap-4 hover:bg-surface-03 transition-colors text-left"
+                  >
+                    <span className="text-4xl">{product.icon || "🍕"}</span>
+                    <div className="flex-1">
+                      <p className="text-cream font-semibold">{product.name}</p>
+                      <p className="text-stone text-sm line-clamp-1">{product.description}</p>
+                    </div>
+                    <p className="text-gold font-bold">R$ {product.price.toFixed(2)}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Drawer overlay */}
       {menuOpen && (
         <div className="fixed inset-0 z-50 flex">
@@ -107,7 +159,7 @@ export default function Home() {
           <Menu size={24} />
         </button>
         <MoschettieriLogo className="text-cream text-base" />
-        <button className="text-parchment hover:text-cream transition-colors">
+        <button onClick={() => setSearchOpen(true)} className="text-parchment hover:text-cream transition-colors">
           <Search size={24} />
         </button>
       </div>
@@ -163,38 +215,30 @@ export default function Home() {
 
         {/* Product Carousel */}
         <div
-          className="relative"
+          className="relative overflow-hidden"
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
-          <div className="flex items-center justify-center gap-4">
+          <div className="flex items-stretch justify-center gap-3 px-2">
             {/* Previous item (partially visible) */}
-            <div className="w-24 h-32 flex-shrink-0 opacity-40">
-              <div className="w-full h-full rounded-xl bg-surface-02 flex items-center justify-center p-2 text-4xl">
+            <div className="w-[22vw] max-w-[90px] flex-shrink-0 opacity-40 self-center">
+              <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center text-4xl">
                 {prevPizza?.icon || "🍕"}
               </div>
             </div>
 
             {/* Featured item (center, larger) */}
-            <div className="w-40 flex-shrink-0">
+            <div className="flex-1 min-w-0 max-w-[220px]">
               <button
                 onClick={() => handlePizzaClick(currentPizza.id)}
-                className={`w-full bg-surface-02 rounded-2xl p-4 shadow-2xl hover:shadow-gold/20 transition-all ${
-                  clickedPizza === currentPizza.id
-                    ? "scale-95 animate-spin"
-                    : "hover:scale-105"
+                className={`w-full bg-surface-02 rounded-2xl p-4 shadow-2xl hover:shadow-gold/20 transition-all active:scale-95 ${
+                  clickedPizza === currentPizza.id ? "scale-95" : ""
                 }`}
-                style={{
-                  animation:
-                    clickedPizza === currentPizza.id
-                      ? "spin 0.3s ease-in-out forwards"
-                      : "none",
-                }}
               >
-                <div className="w-32 h-32 mx-auto mb-4 rounded-full overflow-hidden bg-surface-03 flex items-center justify-center text-6xl">
+                <div className="w-[min(128px,30vw)] h-[min(128px,30vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center text-5xl">
                   {currentPizza?.icon || "🍕"}
                 </div>
-                <p className="text-cream font-bold text-center text-sm">
+                <p className="text-cream font-bold text-center text-sm leading-snug">
                   {currentPizza?.name}
                 </p>
                 <div className="flex justify-center gap-1 mt-1 mb-2">
@@ -202,33 +246,33 @@ export default function Home() {
                     <Star
                       key={i}
                       size={12}
-                      className={`${
+                      className={
                         i < Math.floor(currentPizza?.rating || 0)
                           ? "fill-yellow-400 text-yellow-400"
                           : "text-slate-600"
-                      }`}
+                      }
                     />
                   ))}
                 </div>
                 <p className="text-gold font-bold text-center">
-                  ${currentPizza?.price.toFixed(2)}
+                  R$ {currentPizza?.price.toFixed(2)}
                 </p>
-                <p className="text-xs text-stone text-center mt-2 leading-tight">
+                <p className="text-xs text-stone text-center mt-2 leading-tight line-clamp-2">
                   {currentPizza?.description}
                 </p>
               </button>
             </div>
 
             {/* Next item (partially visible) */}
-            <div className="w-24 h-32 flex-shrink-0 opacity-40">
-              <div className="w-full h-full rounded-xl bg-surface-02 flex items-center justify-center p-2 text-4xl">
+            <div className="w-[22vw] max-w-[90px] flex-shrink-0 opacity-40 self-center">
+              <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center text-4xl">
                 {nextPizza?.icon || "🍕"}
               </div>
             </div>
           </div>
 
           {/* Carousel Navigation */}
-          <div className="flex justify-center gap-2 mt-6">
+          <div className="flex justify-center gap-2 mt-5">
             <button
               onClick={handlePrev}
               className="w-8 h-8 rounded-full bg-surface-02 hover:bg-surface-03 text-stone hover:text-cream flex items-center justify-center transition-colors"
