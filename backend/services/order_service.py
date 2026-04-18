@@ -150,7 +150,12 @@ class OrderService:
             from backend.services.coupon_service import CouponService
             from backend.schemas.coupon import CouponApplyIn
             coupon_result = CouponService(self._db).apply(
-                CouponApplyIn(code=payload.coupon_code, order_subtotal=subtotal)
+                CouponApplyIn(
+                    code=payload.coupon_code,
+                    order_subtotal=subtotal,
+                    customer_id=payload.customer_id,
+                    phone=payload.delivery.phone if payload.delivery else None,
+                )
             )
             discount = coupon_result.discount_amount
             resolved_coupon_id = coupon_result.coupon_id
@@ -200,10 +205,15 @@ class OrderService:
                     position=idx,
                 ))
 
-        # 6. Mark coupon used
+        # 6. Record coupon usage
         if resolved_coupon_id:
             from backend.services.coupon_service import CouponService
-            CouponService(self._db).mark_used(resolved_coupon_id)
+            CouponService(self._db).record_usage(
+                coupon_id=resolved_coupon_id,
+                customer_id=payload.customer_id,
+                phone=payload.delivery.phone if payload.delivery else None,
+                order_id=order.id,
+            )
 
         self._db.commit()
         self._db.refresh(order)

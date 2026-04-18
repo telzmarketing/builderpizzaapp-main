@@ -6,9 +6,9 @@ from backend.database import get_db
 from backend.models.coupon import Coupon
 from backend.schemas.coupon import (
     CouponCreate, CouponUpdate, CouponOut,
-    CouponApplyIn, CouponApplyOut,
+    CouponApplyIn, CouponApplyOut, CouponUsageOut,
 )
-from backend.services.coupon_service import apply_coupon
+from backend.services.coupon_service import CouponService
 
 router = APIRouter(prefix="/coupons", tags=["coupons"])
 
@@ -18,12 +18,22 @@ def list_coupons(db: Session = Depends(get_db)):
     return db.query(Coupon).order_by(Coupon.created_at.desc()).all()
 
 
+@router.get("/usage", response_model=list[CouponUsageOut])
+def list_all_usage(db: Session = Depends(get_db)):
+    return CouponService(db).list_usage()
+
+
 @router.get("/{coupon_id}", response_model=CouponOut)
 def get_coupon(coupon_id: str, db: Session = Depends(get_db)):
     coupon = db.query(Coupon).filter(Coupon.id == coupon_id).first()
     if not coupon:
         raise HTTPException(404, "Cupom não encontrado.")
     return coupon
+
+
+@router.get("/{coupon_id}/usage", response_model=list[CouponUsageOut])
+def get_coupon_usage(coupon_id: str, db: Session = Depends(get_db)):
+    return CouponService(db).list_usage(coupon_id=coupon_id)
 
 
 @router.post("", response_model=CouponOut, status_code=201)
@@ -61,4 +71,4 @@ def delete_coupon(coupon_id: str, db: Session = Depends(get_db)):
 
 @router.post("/apply", response_model=CouponApplyOut)
 def apply(body: CouponApplyIn, db: Session = Depends(get_db)):
-    return apply_coupon(body, db)
+    return CouponService(db).apply(body)

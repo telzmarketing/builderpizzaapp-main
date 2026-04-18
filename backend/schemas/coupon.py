@@ -12,7 +12,9 @@ class CouponCreate(BaseModel):
     discount_value: float = Field(gt=0)
     min_order_value: float = 0.0
     max_uses: Optional[int] = None
+    max_uses_per_customer: Optional[int] = None
     expiry_date: Optional[datetime] = None
+    campaign_id: Optional[str] = None
     active: bool = True
 
 
@@ -22,7 +24,9 @@ class CouponUpdate(BaseModel):
     discount_value: Optional[float] = None
     min_order_value: Optional[float] = None
     max_uses: Optional[int] = None
+    max_uses_per_customer: Optional[int] = None
     expiry_date: Optional[datetime] = None
+    campaign_id: Optional[str] = None
     active: Optional[bool] = None
 
 
@@ -35,9 +39,11 @@ class CouponOut(BaseModel):
     discount_value: float
     min_order_value: float
     max_uses: Optional[int]
+    max_uses_per_customer: Optional[int]
     used_count: int
     expiry_date: Optional[datetime]
     active: bool
+    campaign_id: Optional[str]
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -46,6 +52,8 @@ class CouponOut(BaseModel):
 class CouponApplyIn(BaseModel):
     code: str
     order_subtotal: float
+    customer_id: Optional[str] = None
+    phone: Optional[str] = None
 
 
 class CouponApplyOut(BaseModel):
@@ -53,3 +61,14 @@ class CouponApplyOut(BaseModel):
     coupon_id: Optional[str] = None
     discount_amount: float = 0.0
     message: str
+
+
+class CouponUsageOut(BaseModel):
+    id: str
+    coupon_id: str
+    customer_id: Optional[str]
+    phone: Optional[str]
+    order_id: Optional[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

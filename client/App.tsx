@@ -40,6 +40,8 @@ import AdminFidelidade from "./pages/admin/AdminFidelidade";
 import AdminConteudo from "./pages/admin/Conteudo";
 import AdminPagamentos from "./pages/admin/AdminPagamentos";
 import AdminFrete from "./pages/admin/AdminFrete";
+import AdminCampanhas from "./pages/admin/AdminCampanhas";
+import Campanha from "./pages/Campanha";
 import Fidelidade from "./pages/Fidelidade";
 import Cupons from "./pages/Cupons";
 import Pedidos from "./pages/Pedidos";
@@ -72,6 +74,7 @@ export default function App() {
               <Route path="/conta" element={<Conta />} />
               <Route path="/localizacao" element={<Localizacao />} />
               <Route path="/cardapio" element={<Cardapio />} />
+              <Route path="/campanha/:slug" element={<Campanha />} />
 
               {/* ── Admin login (public) ── */}
               <Route path="/painel/login" element={<AdminLogin />} />
@@ -87,6 +90,7 @@ export default function App() {
                 <Route path="/painel/conteudo" element={<AdminConteudo />} />
                 <Route path="/painel/pagamentos" element={<AdminPagamentos />} />
                 <Route path="/painel/frete" element={<AdminFrete />} />
+                <Route path="/painel/campanhas" element={<AdminCampanhas />} />
               </Route>
 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

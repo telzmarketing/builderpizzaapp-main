@@ -108,6 +108,76 @@ export interface ApiCouponApply {
   message: string;
 }
 
+export interface ApiCouponUsage {
+  id: string;
+  coupon_id: string;
+  customer_id: string | null;
+  phone: string | null;
+  order_id: string | null;
+  created_at: string;
+}
+
+// ── Campaigns ─────────────────────────────────────────────────────────────────
+
+export type CampaignStatus = "draft" | "active" | "paused" | "ended";
+export type CampaignType = "exclusive_page" | "products_promo";
+export type CpDiscountType = "percentage" | "fixed";
+export type KitType = "kit" | "product" | "item";
+
+export interface ApiCampaign {
+  id: string;
+  name: string;
+  description: string | null;
+  status: CampaignStatus;
+  start_at: string | null;
+  end_at: string | null;
+  banner: string | null;
+  slug: string;
+  campaign_type: CampaignType;
+  display_title: string | null;
+  display_subtitle: string | null;
+  display_order: number;
+  published: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiCampaignProduct {
+  id: string;
+  campaign_id: string;
+  product_id: string | null;
+  kit_id: string | null;
+  promotional_price: number | null;
+  discount_type: CpDiscountType | null;
+  discount_value: number | null;
+  active: boolean;
+  created_at: string;
+}
+
+export interface ApiKitItem {
+  id: string;
+  kit_id: string;
+  product_id: string;
+  quantity: number;
+}
+
+export interface ApiPromotionalKit {
+  id: string;
+  name: string;
+  description: string | null;
+  icon: string;
+  kit_type: KitType;
+  price_original: number;
+  price_promotional: number;
+  discount_type: CpDiscountType | null;
+  discount_value: number | null;
+  valid_until: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  items: ApiKitItem[];
+}
+
 export interface ApiOrderItem {
   id: string;
   product_id: string;
@@ -388,8 +458,12 @@ export const couponsApi = {
 
   remove: (id: string) => del<void>(`/coupons/${id}`),
 
-  apply: (code: string, order_subtotal: number) =>
-    post<ApiCouponApply>("/coupons/apply", { code, order_subtotal }),
+  apply: (code: string, order_subtotal: number, customer_id?: string, phone?: string) =>
+    post<ApiCouponApply>("/coupons/apply", { code, order_subtotal, customer_id, phone }),
+
+  listUsage: () => get<ApiCouponUsage[]>("/coupons/usage"),
+
+  getCouponUsage: (id: string) => get<ApiCouponUsage[]>(`/coupons/${id}/usage`),
 };
 
 // ─── Loyalty ──────────────────────────────────────────────────────────────────
@@ -435,6 +509,49 @@ export const shippingApi = {
 export const customersApi = {
   list: () => get<ApiCustomer[]>("/customers"),
   get: (id: string) => get<ApiCustomer>(`/customers/${id}`),
+};
+
+// ─── Campaigns ───────────────────────────────────────────────────────────────
+
+export const campaignsApi = {
+  list: (publishedOnly = false) =>
+    get<ApiCampaign[]>(`/campaigns${publishedOnly ? "?published_only=true" : ""}`),
+
+  getBySlug: (slug: string) => get<ApiCampaign>(`/campaigns/slug/${slug}`),
+
+  get: (id: string) => get<ApiCampaign>(`/campaigns/${id}`),
+
+  create: (data: Omit<ApiCampaign, "id" | "created_at" | "updated_at">) =>
+    post<ApiCampaign>("/campaigns", data),
+
+  update: (id: string, data: Partial<ApiCampaign>) =>
+    put<ApiCampaign>(`/campaigns/${id}`, data),
+
+  remove: (id: string) => del<void>(`/campaigns/${id}`),
+
+  listProducts: (campaignId: string) =>
+    get<ApiCampaignProduct[]>(`/campaigns/${campaignId}/products`),
+
+  addProduct: (campaignId: string, data: Omit<ApiCampaignProduct, "id" | "campaign_id" | "created_at">) =>
+    post<ApiCampaignProduct>(`/campaigns/${campaignId}/products`, data),
+
+  removeProduct: (cpId: string) => del<void>(`/campaigns/products/${cpId}`),
+
+  listKits: (activeOnly = false) =>
+    get<ApiPromotionalKit[]>(`/campaigns/kits/all${activeOnly ? "?active_only=true" : ""}`),
+
+  createKit: (data: Omit<ApiPromotionalKit, "id" | "created_at" | "updated_at" | "items">) =>
+    post<ApiPromotionalKit>("/campaigns/kits", data),
+
+  updateKit: (id: string, data: Partial<ApiPromotionalKit>) =>
+    put<ApiPromotionalKit>(`/campaigns/kits/${id}`, data),
+
+  removeKit: (id: string) => del<void>(`/campaigns/kits/${id}`),
+
+  addKitItem: (kitId: string, product_id: string, quantity: number) =>
+    post<ApiKitItem>(`/campaigns/kits/${kitId}/items`, { product_id, quantity }),
+
+  removeKitItem: (itemId: string) => del<void>(`/campaigns/kits/items/${itemId}`),
 };
 
 // ─── Admin ────────────────────────────────────────────────────────────────────

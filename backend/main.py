@@ -14,8 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.config import get_settings
-from backend.database import create_all_tables, SessionLocal
-from backend.routes import products, orders, payments, shipping, coupons, loyalty, customers, promotions, admin, delivery, auth, admin_auth
+from backend.database import create_all_tables, SessionLocal, engine
+from backend.routes import products, orders, payments, shipping, coupons, loyalty, customers, promotions, admin, delivery, auth, admin_auth, campaigns
 
 settings = get_settings()
 
@@ -24,6 +24,9 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     # ── Startup ───────────────────────────────────────────────────────────────
     create_all_tables()
+
+    # Run incremental column migrations (safe to run on every start)
+    _run_migrations()
 
     # Seed initial data
     from backend.core.seed import seed_all
@@ -51,6 +54,22 @@ async def lifespan(app: FastAPI):
 
     yield
     # ── Shutdown ──────────────────────────────────────────────────────────────
+
+
+def _run_migrations():
+    """Idempotent schema migrations — runs on every startup."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        stmts = [
+            "ALTER TABLE coupons ADD COLUMN IF NOT EXISTS max_uses_per_customer INTEGER",
+            "ALTER TABLE coupons ADD COLUMN IF NOT EXISTS campaign_id VARCHAR REFERENCES campaigns(id) ON DELETE SET NULL",
+        ]
+        for stmt in stmts:
+            try:
+                conn.execute(text(stmt))
+            except Exception:
+                pass
+        conn.commit()
 
 
 app = FastAPI(
@@ -84,6 +103,7 @@ app.include_router(admin.router)
 app.include_router(delivery.router)
 app.include_router(auth.router)
 app.include_router(admin_auth.router)
+app.include_router(campaigns.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

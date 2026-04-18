@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronLeft, Plus, Minus, Trash2, UtensilsCrossed, ShoppingCart } from "lucide-react";
+import { ChevronLeft, Plus, Minus, Trash2, UtensilsCrossed, ShoppingCart, Tag, Check, X } from "lucide-react";
 import { useApp, CartItem } from "@/context/AppContext";
+import { couponsApi } from "@/lib/api";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 
@@ -59,9 +61,51 @@ const SIZE_LABEL: Record<string, string> = { P: "Pequena", M: "Média", G: "Gran
 
 export default function Cart() {
   const navigate = useNavigate();
-  const { cart, removeFromCart, updateCartItem, cartSubtotal, cartDeliveryFee, cartTotal, siteContent } = useApp();
+  const { cart, removeFromCart, updateCartItem, cartSubtotal, cartDeliveryFee, cartTotal, siteContent, customer } = useApp();
   const { pages, nav } = siteContent;
   const c = pages.cart;
+
+  const [couponCode, setCouponCode] = useState("");
+  const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponMsg, setCouponMsg] = useState("");
+  const [couponApplied, setCouponApplied] = useState(false);
+  const [couponLoading, setCouponLoading] = useState(false);
+
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) return;
+    setCouponLoading(true);
+    setCouponMsg("");
+    try {
+      const result = await couponsApi.apply(
+        couponCode.trim(),
+        cartSubtotal,
+        customer?.id,
+        customer?.phone ?? undefined,
+      );
+      if (result.valid) {
+        setCouponDiscount(result.discount_amount);
+        setCouponApplied(true);
+        setCouponMsg(result.message);
+      } else {
+        setCouponDiscount(0);
+        setCouponApplied(false);
+        setCouponMsg(result.message);
+      }
+    } catch {
+      setCouponMsg("Erro ao validar cupom.");
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setCouponCode("");
+    setCouponDiscount(0);
+    setCouponApplied(false);
+    setCouponMsg("");
+  };
+
+  const finalTotal = cartSubtotal + cartDeliveryFee - couponDiscount;
 
   if (cart.length === 0) {
     return (
@@ -130,6 +174,46 @@ export default function Cart() {
           </button>
         </div>
 
+        {/* Coupon Field */}
+        <div className="bg-surface-02 rounded-xl p-4 mt-4 border border-surface-03">
+          <p className="text-parchment text-sm font-medium mb-2 flex items-center gap-2">
+            <Tag size={14} className="text-gold" />
+            Cupom de desconto
+          </p>
+          {couponApplied ? (
+            <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">
+              <Check size={16} className="text-green-400 flex-shrink-0" />
+              <span className="text-green-400 text-sm flex-1">{couponMsg}</span>
+              <button onClick={handleRemoveCoupon} className="text-stone hover:text-red-400 transition-colors">
+                <X size={14} />
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => e.key === "Enter" && handleApplyCoupon()}
+                  placeholder="Digite o código"
+                  className="flex-1 bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream placeholder-stone text-sm focus:outline-none focus:border-gold font-mono uppercase"
+                />
+                <button
+                  onClick={handleApplyCoupon}
+                  disabled={couponLoading || !couponCode.trim()}
+                  className="bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold px-4 py-2 rounded-lg text-sm transition-colors"
+                >
+                  {couponLoading ? "..." : "Aplicar"}
+                </button>
+              </div>
+              {couponMsg && (
+                <p className="text-red-400 text-xs mt-1">{couponMsg}</p>
+              )}
+            </>
+          )}
+        </div>
+
         <div className="bg-surface-02 rounded-xl p-4 mt-4 space-y-3 border border-surface-03">
           <div className="flex justify-between text-parchment text-sm">
             <span>Subtotal dos itens:</span>
@@ -139,9 +223,15 @@ export default function Cart() {
             <span>Taxa de entrega:</span>
             <span>R$ {cartDeliveryFee.toFixed(2)}</span>
           </div>
+          {couponDiscount > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-green-400">Desconto do cupom:</span>
+              <span className="text-green-400">- R$ {couponDiscount.toFixed(2)}</span>
+            </div>
+          )}
           <div className="border-t border-surface-03 pt-3 flex justify-between">
             <span className="text-cream font-bold">Total:</span>
-            <span className="text-gold font-bold text-lg">R$ {cartTotal.toFixed(2)}</span>
+            <span className="text-gold font-bold text-lg">R$ {finalTotal.toFixed(2)}</span>
           </div>
         </div>
       </div>
@@ -153,7 +243,7 @@ export default function Cart() {
           className="w-full bg-gold hover:bg-gold/90 text-cream font-bold py-4 px-4 rounded-full text-center transition-colors text-base active:scale-95 shadow-lg shadow-gold/30 flex items-center justify-center gap-2"
         >
           <ShoppingCart size={18} />
-          Finalizar pedido · R$ {cartTotal.toFixed(2)}
+          Finalizar pedido · R$ {finalTotal.toFixed(2)}
         </button>
       </div>
       <BottomNav />

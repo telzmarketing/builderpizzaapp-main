@@ -11,6 +11,7 @@ import {
   CreditCard,
   Truck,
   LogOut,
+  Sparkles,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 
@@ -24,6 +25,7 @@ const navItems = [
   { to: "/painel/conteudo", icon: FileText, label: "Conteúdo" },
   { to: "/painel/pagamentos", icon: CreditCard, label: "Pagamentos" },
   { to: "/painel/frete", icon: Truck, label: "Entregas e Fretes" },
+  { to: "/painel/campanhas", icon: Sparkles, label: "Campanhas" },
 ];
 
 export default function AdminSidebar() {

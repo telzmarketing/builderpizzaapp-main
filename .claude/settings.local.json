@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls e:/Downloads/lojamoschettieri/builderpizzaapp-main/builderpizzaapp-main/.env*)"
+      "Bash(ls e:/Downloads/lojamoschettieri/builderpizzaapp-main/builderpizzaapp-main/.env*)",
+      "Bash(node -e ' *)",
+      "Bash(npx tsc *)"
     ]
   }
 }
