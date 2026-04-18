@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Plus, Minus, Trash2 } from "lucide-react";
 import { useApp, CartItem } from "@/context/AppContext";
+import BottomNav from "@/components/BottomNav";
 
 function divisionLabel(d: number) {
   if (d === 2) return "Meio a Meio";
@@ -129,7 +130,7 @@ export default function Cart() {
       </div>
 
       {/* Checkout Button */}
-      <div className="fixed bottom-0 left-0 right-0 bg-slate-950/95 border-t border-slate-800 px-4 py-4 backdrop-blur-sm">
+      <div className="fixed bottom-20 left-0 right-0 px-4">
         <button
           onClick={() => navigate("/checkout")}
           className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-4 px-4 rounded-full text-center transition-colors text-base active:scale-95 shadow-lg shadow-orange-500/30"
@@ -137,6 +138,7 @@ export default function Cart() {
           {c.checkoutButton} · R$ {cartTotal.toFixed(2)}
         </button>
       </div>
+      <BottomNav />
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Edit2, Check, Home, ShoppingCart, ShoppingBag, User, LogIn } from "lucide-react";
+import { ChevronLeft, ChevronRight, Edit2, Check, LogIn } from "lucide-react";
 import { useApp } from "@/context/AppContext";
+import BottomNav from "@/components/BottomNav";
 
 export default function Conta() {
   const navigate = useNavigate();
@@ -204,27 +205,7 @@ export default function Conta() {
         )}
       </div>
 
-      {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-slate-950 to-transparent pt-4">
-        <div className="mx-4 mb-4 bg-orange-500 rounded-full py-3 px-6 flex justify-around items-center shadow-lg">
-          <button onClick={() => navigate("/")} className="text-white/60 hover:text-white flex flex-col items-center gap-1 transition-colors">
-            <Home size={20} />
-            <span className="text-xs font-medium">{nav.home}</span>
-          </button>
-          <button onClick={() => navigate("/cart")} className="text-white/60 hover:text-white flex flex-col items-center gap-1 transition-colors">
-            <ShoppingCart size={20} />
-            <span className="text-xs font-medium">{nav.cart}</span>
-          </button>
-          <button onClick={() => navigate("/pedidos")} className="text-white/60 hover:text-white flex flex-col items-center gap-1 transition-colors">
-            <ShoppingBag size={20} />
-            <span className="text-xs font-medium">{nav.orders}</span>
-          </button>
-          <button className="text-white flex flex-col items-center gap-1">
-            <User size={20} />
-            <span className="text-xs font-medium">{nav.account}</span>
-          </button>
-        </div>
-      </div>
+      <BottomNav />
     </div>
   );
 }

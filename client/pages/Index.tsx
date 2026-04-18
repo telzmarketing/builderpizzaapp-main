@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Menu, Search, Star, ChevronRight, ShoppingCart, Bell, User } from "lucide-react";
+import { Menu, Search, Star, ChevronRight } from "lucide-react";
 import { useApp } from "@/context/AppContext";
+import BottomNav from "@/components/BottomNav";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -11,7 +12,7 @@ export default function Home() {
   const [carouselPosition, setCarouselPosition] = useState(0);
   const [clickedPizza, setClickedPizza] = useState<string | null>(null);
 
-  const { home, nav, media } = siteContent;
+  const { home, media } = siteContent;
   const activePromotion = promotions.find((p) => p.active) || promotions[0];
 
   const handleNext = () => {
@@ -190,36 +191,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 pb-4 px-4">
-        <div className="bg-slate-800 rounded-full py-3 px-6 flex justify-around items-center shadow-2xl border border-slate-700">
-          <button className="text-orange-500 flex flex-col items-center gap-1">
-            <span className="text-lg">🏠</span>
-            <span className="text-xs font-medium">{nav.home}</span>
-          </button>
-          <button
-            onClick={() => navigate("/cart")}
-            className="text-slate-400 hover:text-white flex flex-col items-center gap-1 transition-colors"
-          >
-            <ShoppingCart size={20} />
-            <span className="text-xs font-medium">{nav.cart}</span>
-          </button>
-          <button
-            onClick={() => navigate("/pedidos")}
-            className="text-slate-400 hover:text-white flex flex-col items-center gap-1 transition-colors"
-          >
-            <Bell size={20} />
-            <span className="text-xs font-medium">{nav.orders}</span>
-          </button>
-          <button
-            onClick={() => navigate("/conta")}
-            className="text-slate-400 hover:text-white flex flex-col items-center gap-1 transition-colors"
-          >
-            <User size={20} />
-            <span className="text-xs font-medium">{nav.account}</span>
-          </button>
-        </div>
-      </div>
+      <BottomNav />
 
       <style>{`
         @keyframes spin {
