@@ -64,10 +64,6 @@ export default function Cart() {
   if (cart.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
-        <div className="bg-slate-800 px-4 py-2 flex justify-between items-center text-xs text-slate-400">
-          <span>10:20</span>
-          <div className="flex gap-1"><span>📡</span><span>📶</span><span>🔋</span></div>
-        </div>
         <div className="bg-slate-900 px-4 py-4 flex justify-between items-center sticky top-0 z-30">
           <button onClick={() => navigate(-1)} className="text-slate-300 hover:text-white transition-colors">
             <ChevronLeft size={24} />
@@ -91,11 +87,6 @@ export default function Cart() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
-      {/* Status Bar */}
-      <div className="bg-slate-800 px-4 py-2 flex justify-between items-center text-xs text-slate-400">
-        <span>10:20</span>
-        <div className="flex gap-1"><span>📡</span><span>📶</span><span>🔋</span></div>
-      </div>
 
       {/* Header */}
       <div className="bg-slate-900 px-4 py-4 flex justify-between items-center sticky top-0 z-30">

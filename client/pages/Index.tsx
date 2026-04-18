@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Menu, Search, Star, ChevronRight, ShoppingCart, ShoppingBag, User } from "lucide-react";
+import { Menu, Search, Star, ChevronRight, ShoppingCart, Bell, User } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 
 export default function Home() {
@@ -51,16 +51,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
-      {/* Status Bar */}
-      <div className="bg-slate-800 px-4 py-2 flex justify-between items-center text-xs text-slate-400">
-        <span>10:20</span>
-        <div className="flex gap-1">
-          <span>📡</span>
-          <span>📶</span>
-          <span>🔋</span>
-        </div>
-      </div>
-
       {/* Header */}
       <div className="bg-slate-900 px-4 py-4 flex justify-between items-center sticky top-0 z-30">
         <button className="text-slate-300 hover:text-white transition-colors">
@@ -218,7 +208,7 @@ export default function Home() {
             onClick={() => navigate("/pedidos")}
             className="text-slate-400 hover:text-white flex flex-col items-center gap-1 transition-colors"
           >
-            <ShoppingBag size={20} />
+            <Bell size={20} />
             <span className="text-xs font-medium">{nav.orders}</span>
           </button>
           <button

@@ -90,11 +90,6 @@ export default function OrderTracking() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
-      {/* Status Bar */}
-      <div className="bg-slate-800 px-4 py-2 flex justify-between items-center text-xs text-slate-400">
-        <span>10:20</span>
-        <div className="flex gap-1"><span>📡</span><span>📶</span><span>🔋</span></div>
-      </div>
 
       {/* Header */}
       <div className="bg-slate-900 px-4 py-4 flex justify-between items-center sticky top-0 z-30">
