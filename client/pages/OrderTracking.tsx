@@ -107,50 +107,41 @@ export default function OrderTracking() {
 
       <div className="px-4 pt-6 pb-32">
         {/* Order Number */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-2">
           <p className="text-slate-400 text-sm">{t.orderNumberLabel}</p>
-          <p className="text-3xl font-bold text-white mt-2 font-mono">
-            {order.id.slice(0, 8).toUpperCase()}
+          <p className="text-6xl font-bold text-white mt-1">
+            {parseInt(order.id.slice(0, 8), 16) % 100}
           </p>
+          <p className="text-slate-400 text-sm mt-2">{estimatedText}</p>
         </div>
 
-        {/* Estimated Time */}
-        <div className="text-center mb-8">
-          <p className="text-slate-400 text-sm">{estimatedText}</p>
-        </div>
-
-        {/* Progress Bar — only shown when order is past "paid" state */}
-        {currentStepIndex >= -1 && !["cancelled", "refunded"].includes(order.status) && (
-          <div className="mb-8">
-            <div className="flex items-center gap-4 mb-6">
+        {/* Progress Bar */}
+        {!["cancelled", "refunded"].includes(order.status) && (
+          <div className="mb-6 mt-8">
+            <div className="flex items-center px-4">
               {PROGRESS_STEPS.map((step, index) => (
-                <div key={step} className="flex-1 flex flex-col items-center">
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 transition-colors ${
-                      index <= currentStepIndex
-                        ? "bg-orange-500 text-white font-bold"
-                        : "bg-slate-700 text-slate-400"
-                    }`}
-                  >
-                    {index < currentStepIndex ? "✓" : index + 1}
+                <div key={step} className="flex items-center flex-1 last:flex-none">
+                  <div className="flex flex-col items-center">
+                    <div
+                      className={`w-4 h-4 rounded-full border-2 transition-colors ${
+                        index <= currentStepIndex
+                          ? "bg-orange-500 border-orange-500"
+                          : "bg-slate-800 border-slate-600"
+                      }`}
+                    />
                   </div>
-                  <p className={`text-xs text-center font-medium ${index <= currentStepIndex ? "text-white" : "text-slate-400"}`}>
-                    {t.statusLabels[step] ?? step}
-                  </p>
+                  {index < PROGRESS_STEPS.length - 1 && (
+                    <div className={`flex-1 h-0.5 transition-colors ${index < currentStepIndex ? "bg-orange-500" : "bg-slate-700"}`} />
+                  )}
                 </div>
-              ))}
-            </div>
-            <div className="flex gap-4 px-4">
-              {[...Array(PROGRESS_STEPS.length - 1)].map((_, i) => (
-                <div key={i} className={`flex-1 h-1 rounded-full transition-colors ${i < currentStepIndex ? "bg-orange-500" : "bg-slate-700"}`} />
               ))}
             </div>
           </div>
         )}
 
         {/* Active Status */}
-        <div className="text-center mb-2">
-          <p className={`font-bold text-lg ${order.status === "cancelled" || order.status === "refunded" ? "text-red-400" : "text-orange-500"}`}>
+        <div className="text-center mb-6">
+          <p className={`font-bold text-xl ${order.status === "cancelled" || order.status === "refunded" ? "text-red-400" : "text-white"}`}>
             {statusLabel}
           </p>
         </div>
@@ -224,7 +215,7 @@ export default function OrderTracking() {
         <div className="flex gap-3">
           <Link
             to="/pedidos"
-            className="flex-1 border-2 border-orange-500 text-orange-500 font-bold py-3 px-4 rounded-full transition-colors hover:bg-orange-500/10 active:scale-95 text-center text-sm"
+            className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-4 rounded-full transition-colors active:scale-95 text-center text-sm"
           >
             Meus Pedidos
           </Link>

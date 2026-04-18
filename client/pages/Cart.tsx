@@ -20,52 +20,32 @@ function CartItemRow({ item, onRemove, onUpdate }: {
     : item.productData.name;
 
   return (
-    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-      <div className="flex items-start gap-3">
-        <div className="w-14 h-14 rounded-full bg-slate-700 flex-shrink-0 flex items-center justify-center text-xl leading-none">
+    <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
+      <div className="flex items-center gap-3">
+        <div className="w-16 h-16 rounded-xl bg-slate-700 flex-shrink-0 flex items-center justify-center text-2xl leading-none">
           {displayIcons || item.productData.icon}
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="text-white font-semibold text-sm leading-tight">{displayName}</h3>
           <div className="flex flex-wrap gap-1 mt-1">
-            <span className="text-xs text-slate-400 bg-slate-700/60 px-2 py-0.5 rounded-full">
+            <span className="text-xs text-slate-400">
               {SIZE_LABEL[item.selectedSize] ?? item.selectedSize}
+              {isMulti && ` · ${divisionLabel(item.flavorDivision)}`}
             </span>
-            {isMulti && (
-              <span className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/30 px-2 py-0.5 rounded-full">
-                {divisionLabel(item.flavorDivision)}
-              </span>
-            )}
           </div>
-          {isMulti && (
-            <div className="flex gap-1 mt-1.5 flex-wrap">
-              {item.flavors.map((f, i) => (
-                <span key={i} className="text-[11px] text-slate-400">
-                  {i > 0 && <span className="mx-0.5 text-slate-600">·</span>}
-                  {f.icon} {f.name}
-                </span>
-              ))}
-            </div>
-          )}
           <p className="text-orange-500 font-bold text-sm mt-1">
-            R$ {(item.finalPrice * item.quantity).toFixed(2)}
+            R$ {item.finalPrice.toFixed(2)}
           </p>
-          {item.quantity > 1 && (
-            <p className="text-slate-500 text-xs">R$ {item.finalPrice.toFixed(2)} × {item.quantity}</p>
-          )}
         </div>
-        <div className="flex flex-col items-center gap-2 flex-shrink-0">
-          <div className="flex items-center gap-1 bg-orange-500 rounded-full px-2 py-1">
-            <button onClick={() => onUpdate(Math.max(1, item.quantity - 1))} className="text-white p-1">
-              <Minus size={13} />
-            </button>
-            <span className="text-white text-sm w-5 text-center font-medium">{item.quantity}</span>
-            <button onClick={() => onUpdate(item.quantity + 1)} className="text-white p-1">
-              <Plus size={13} />
-            </button>
+        <div className="flex flex-col items-center gap-1 flex-shrink-0">
+          <button onClick={() => onUpdate(item.quantity + 1)} className="w-7 h-7 rounded-full bg-slate-700 hover:bg-slate-600 text-orange-400 flex items-center justify-center transition-colors">
+            <Plus size={14} />
+          </button>
+          <div className="w-9 h-9 rounded-full bg-orange-500 flex items-center justify-center">
+            <span className="text-white text-sm font-bold">{item.quantity}</span>
           </div>
-          <button onClick={onRemove} className="text-red-400 hover:text-red-300 transition-colors p-1">
-            <Trash2 size={15} />
+          <button onClick={() => item.quantity === 1 ? onRemove() : onUpdate(item.quantity - 1)} className="w-7 h-7 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-400 hover:text-red-400 flex items-center justify-center transition-colors">
+            <Minus size={14} />
           </button>
         </div>
       </div>

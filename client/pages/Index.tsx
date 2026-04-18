@@ -201,29 +201,29 @@ export default function Home() {
       </div>
 
       {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-slate-950 to-transparent pt-4">
-        <div className="mx-4 mb-4 bg-orange-500 rounded-full py-3 px-6 flex justify-around items-center shadow-lg">
-          <button className="text-white flex flex-col items-center gap-1">
+      <div className="fixed bottom-0 left-0 right-0 pb-4 px-4">
+        <div className="bg-slate-800 rounded-full py-3 px-6 flex justify-around items-center shadow-2xl border border-slate-700">
+          <button className="text-orange-500 flex flex-col items-center gap-1">
             <span className="text-lg">🏠</span>
             <span className="text-xs font-medium">{nav.home}</span>
           </button>
           <button
             onClick={() => navigate("/cart")}
-            className="text-white/60 hover:text-white flex flex-col items-center gap-1 transition-colors"
+            className="text-slate-400 hover:text-white flex flex-col items-center gap-1 transition-colors"
           >
             <ShoppingCart size={20} />
             <span className="text-xs font-medium">{nav.cart}</span>
           </button>
           <button
             onClick={() => navigate("/pedidos")}
-            className="text-white/60 hover:text-white flex flex-col items-center gap-1 transition-colors"
+            className="text-slate-400 hover:text-white flex flex-col items-center gap-1 transition-colors"
           >
             <ShoppingBag size={20} />
             <span className="text-xs font-medium">{nav.orders}</span>
           </button>
           <button
             onClick={() => navigate("/conta")}
-            className="text-white/60 hover:text-white flex flex-col items-center gap-1 transition-colors"
+            className="text-slate-400 hover:text-white flex flex-col items-center gap-1 transition-colors"
           >
             <User size={20} />
             <span className="text-xs font-medium">{nav.account}</span>

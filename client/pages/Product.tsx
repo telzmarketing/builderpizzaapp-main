@@ -256,14 +256,29 @@ export default function Product() {
       {/* Content */}
       <div className="px-4 pt-6 pb-36">
 
-        {/* ── Pizza Diagram ───────────────────────────────────────────────── */}
+        {/* ── Hero Product Image ───────────────────────────────────────────── */}
         <div className="flex flex-col items-center mb-6">
-          <PizzaDiagram division={division} slots={flavorSlots} />
-          {division > 1 && (
-            <p className="text-slate-500 text-xs mt-2">
-              💰 {PRICING_LABELS[multiFlavorsConfig.pricingRule]}
-            </p>
-          )}
+          <div className="w-52 h-52 rounded-full bg-slate-800 border-4 border-slate-700 flex items-center justify-center text-8xl shadow-2xl shadow-black/40">
+            {product.icon}
+          </div>
+          <h1 className="text-white text-2xl font-bold mt-4 text-center">{product.name}</h1>
+          <div className="flex gap-1 mt-2">
+            {[...Array(5)].map((_, i) => (
+              <Star key={i} size={16} className={i < Math.floor(product.rating || 4) ? "fill-yellow-400 text-yellow-400" : "text-slate-600"} />
+            ))}
+          </div>
+          <div className="flex items-start gap-4 w-full mt-4">
+            <p className="text-slate-400 text-sm leading-relaxed flex-1">{product.description}</p>
+            <div className="flex items-center gap-3 bg-slate-800 rounded-full px-4 py-2 flex-shrink-0 border border-slate-700">
+              <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="text-slate-300 hover:text-white transition-colors">
+                <Minus size={16} />
+              </button>
+              <span className="text-white font-bold w-5 text-center">{quantity}</span>
+              <button onClick={() => setQuantity(quantity + 1)} className="text-orange-500 hover:text-orange-400 transition-colors">
+                <Plus size={16} />
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* ── Division Selector ───────────────────────────────────────────── */}
@@ -456,33 +471,25 @@ export default function Product() {
                     : "bg-slate-800 border-slate-700 hover:border-slate-600"
                 }`}
               >
-                <div className="text-2xl mb-1">{addon.icon}</div>
-                <p className="text-white text-xs font-medium">{addon.name}</p>
-                <p className="text-orange-400 text-xs">+R${addon.price.toFixed(2)}</p>
+                <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-2xl mx-auto mb-2">
+                  {addon.icon}
+                </div>
+                <p className="text-white text-xs font-medium text-center">{addon.name}</p>
+                <p className="text-orange-400 text-xs text-center">+R${addon.price.toFixed(2)}</p>
               </button>
             ))}
           </div>
         </div>
 
-        {/* ── Quantity ────────────────────────────────────────────────────── */}
-        <div className="mb-6">
-          <h3 className="text-white font-bold mb-3">{p.quantityLabel}</h3>
-          <div className="flex items-center gap-4 bg-slate-800 rounded-xl p-3 border border-slate-700 w-fit">
-            <button
-              onClick={() => setQuantity(Math.max(1, quantity - 1))}
-              className="w-9 h-9 rounded-full bg-slate-700 hover:bg-slate-600 text-white flex items-center justify-center transition-colors"
-            >
-              <Minus size={16} />
-            </button>
-            <span className="text-white font-bold text-xl w-8 text-center">{quantity}</span>
-            <button
-              onClick={() => setQuantity(quantity + 1)}
-              className="w-9 h-9 rounded-full bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center transition-colors"
-            >
-              <Plus size={16} />
-            </button>
+        {/* ── Pizza Diagram ───────────────────────────────────────────────── */}
+        {division > 1 && (
+          <div className="flex flex-col items-center mb-6 p-4 bg-slate-800/50 rounded-2xl border border-slate-700">
+            <PizzaDiagram division={division} slots={flavorSlots} />
+            <p className="text-slate-500 text-xs mt-2">
+              💰 {PRICING_LABELS[multiFlavorsConfig.pricingRule]}
+            </p>
           </div>
-        </div>
+        )}
       </div>
 
       {/* ── Bottom Fixed Bar ────────────────────────────────────────────────── */}
