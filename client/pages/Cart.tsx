@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronLeft, Plus, Minus, Trash2 } from "lucide-react";
+import { ChevronLeft, Plus, Minus, Trash2, UtensilsCrossed, ShoppingCart } from "lucide-react";
 import { useApp, CartItem } from "@/context/AppContext";
 import BottomNav from "@/components/BottomNav";
 
@@ -113,7 +113,25 @@ export default function Cart() {
           ))}
         </div>
 
-        <div className="bg-surface-02 rounded-xl p-4 mt-6 space-y-3 border border-surface-03">
+        {/* Action Buttons */}
+        <div className="mt-6 space-y-3">
+          <button
+            onClick={() => navigate("/cardapio")}
+            className="w-full py-3 rounded-full border-2 border-surface-03 hover:border-gold/50 text-parchment hover:text-cream flex items-center justify-center gap-2 transition-colors text-sm font-medium"
+          >
+            <UtensilsCrossed size={16} className="text-gold" />
+            Adicionar outro item
+          </button>
+          <button
+            onClick={() => navigate("/cardapio")}
+            className="w-full py-3 rounded-full border-2 border-surface-03 hover:border-gold/50 text-parchment hover:text-cream flex items-center justify-center gap-2 transition-colors text-sm font-medium"
+          >
+            <span className="text-base">🥤</span>
+            Adicionar bebidas
+          </button>
+        </div>
+
+        <div className="bg-surface-02 rounded-xl p-4 mt-4 space-y-3 border border-surface-03">
           <div className="flex justify-between text-parchment text-sm">
             <span>Subtotal dos itens:</span>
             <span>R$ {cartSubtotal.toFixed(2)}</span>
@@ -129,13 +147,14 @@ export default function Cart() {
         </div>
       </div>
 
-      {/* Checkout Button */}
+      {/* Finalizar Pedido */}
       <div className="fixed bottom-20 left-0 right-0 px-4">
         <button
           onClick={() => navigate("/checkout")}
-          className="w-full bg-gold hover:bg-gold/90 text-cream font-bold py-4 px-4 rounded-full text-center transition-colors text-base active:scale-95 shadow-lg shadow-gold/30"
+          className="w-full bg-gold hover:bg-gold/90 text-cream font-bold py-4 px-4 rounded-full text-center transition-colors text-base active:scale-95 shadow-lg shadow-gold/30 flex items-center justify-center gap-2"
         >
-          {c.checkoutButton} · R$ {cartTotal.toFixed(2)}
+          <ShoppingCart size={18} />
+          Finalizar pedido · R$ {cartTotal.toFixed(2)}
         </button>
       </div>
       <BottomNav />

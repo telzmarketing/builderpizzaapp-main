@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Star, Plus } from "lucide-react";
+import { ChevronLeft, Search, Star, Plus, Check } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import BottomNav from "@/components/BottomNav";
+import MoschettieriLogo from "@/components/MoschettieriLogo";
 
 export default function Cardapio() {
   const navigate = useNavigate();
-  const { products, siteContent } = useApp();
+  const { products, siteContent, addToCart } = useApp();
   const { categories } = siteContent.home;
   const [activeCategory, setActiveCategory] = useState("Todos");
   const [search, setSearch] = useState("");
+  const [justAdded, setJustAdded] = useState<string | null>(null);
 
   const allCategories = ["Todos", ...categories];
 
@@ -19,11 +21,32 @@ export default function Cardapio() {
     return matchSearch && matchCat && p.active;
   });
 
+  const handleQuickAdd = (e: React.MouseEvent, product: typeof products[0]) => {
+    e.stopPropagation();
+    addToCart(
+      product,
+      1,
+      "M",
+      [],
+      [{ productId: product.id, name: product.name, price: product.price, icon: product.icon || "🍕" }],
+      1,
+      product.price
+    );
+    setJustAdded(product.id);
+    setTimeout(() => setJustAdded(null), 1500);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
       {/* Header */}
       <div className="bg-brand-dark px-4 py-4 sticky top-0 z-30 border-b border-surface-02">
-        <h1 className="text-cream font-bold text-xl text-center mb-3">Cardápio</h1>
+        <div className="flex items-center justify-between mb-3">
+          <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
+            <ChevronLeft size={24} />
+          </button>
+          <MoschettieriLogo className="text-cream text-base" />
+          <div className="w-6" />
+        </div>
         <div className="relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone/70" />
           <input
@@ -62,39 +85,59 @@ export default function Cardapio() {
         ) : (
           <div className="grid grid-cols-2 gap-3">
             {filtered.map((product) => (
-              <button
+              <div
                 key={product.id}
-                onClick={() => navigate(`/product/${product.id}`)}
-                className="bg-surface-02 rounded-2xl p-4 border border-surface-03 hover:border-gold/40 transition-all active:scale-95 text-left"
+                className="bg-surface-02 rounded-2xl p-4 border border-surface-03 hover:border-gold/40 transition-all"
               >
-                <div className="w-full aspect-square rounded-xl bg-surface-03 flex items-center justify-center text-5xl mb-3">
-                  {product.icon}
-                </div>
-                <h3 className="text-cream font-semibold text-sm leading-tight line-clamp-1">
-                  {product.name}
-                </h3>
-                <div className="flex items-center gap-1 mt-1">
-                  <Star size={10} className="fill-yellow-400 text-yellow-400" />
-                  <span className="text-stone text-xs">{product.rating?.toFixed(1) ?? "4.5"}</span>
-                </div>
-                <p className="text-stone/70 text-xs mt-1 line-clamp-2 leading-tight">
-                  {product.description}
-                </p>
+                <button
+                  onClick={() => navigate(`/product/${product.id}`)}
+                  className="w-full text-left"
+                >
+                  <div className="w-full aspect-square rounded-xl bg-surface-03 flex items-center justify-center text-5xl mb-3">
+                    {product.icon || "🍕"}
+                  </div>
+                  <h3 className="text-cream font-semibold text-sm leading-tight line-clamp-1">
+                    {product.name}
+                  </h3>
+                  <div className="flex items-center gap-1 mt-1">
+                    <Star size={10} className="fill-yellow-400 text-yellow-400" />
+                    <span className="text-stone text-xs">{product.rating?.toFixed(1) ?? "4.5"}</span>
+                  </div>
+                  <p className="text-stone/70 text-xs mt-1 line-clamp-2 leading-tight">
+                    {product.description}
+                  </p>
+                </button>
                 <div className="flex items-center justify-between mt-3">
                   <span className="text-gold font-bold text-sm">
                     R$ {product.price.toFixed(2)}
                   </span>
-                  <div className="w-7 h-7 rounded-full bg-gold flex items-center justify-center">
-                    <Plus size={14} className="text-cream" />
-                  </div>
+                  <button
+                    onClick={(e) => handleQuickAdd(e, product)}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-90 ${
+                      justAdded === product.id
+                        ? "bg-green-500 scale-110"
+                        : "bg-gold hover:bg-gold/80"
+                    }`}
+                    title="Adicionar ao carrinho"
+                  >
+                    {justAdded === product.id
+                      ? <Check size={15} className="text-cream" />
+                      : <Plus size={16} className="text-cream" />
+                    }
+                  </button>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         )}
       </div>
 
       <BottomNav />
+
+      <style>{`
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+      `}</style>
     </div>
   );
 }

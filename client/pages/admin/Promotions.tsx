@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Plus, Trash2, Edit2 } from "lucide-react";
 import { useApp, Promotion } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
+import ImageUpload from "@/components/admin/ImageUpload";
 
 export default function AdminPromotions() {
   const { promotions, addPromotion, updatePromotion, deletePromotion } = useApp();
@@ -35,76 +36,67 @@ export default function AdminPromotions() {
     setShowForm(true);
   };
 
+  const cls = "w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream placeholder-stone focus:outline-none focus:border-gold text-sm";
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-surface-00 to-surface-00">
       <div className="flex h-screen">
         <AdminSidebar />
 
         <div className="flex-1 overflow-auto">
-          <div className="bg-slate-800 px-8 py-4 border-b border-slate-700 flex justify-between items-center sticky top-0 z-20">
-            <h2 className="text-2xl font-bold text-white">Gerenciar Promoções</h2>
+          <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 flex justify-between items-center sticky top-0 z-20">
+            <h2 className="text-2xl font-bold text-cream">Campanhas e Promoções</h2>
             <button
               onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ title: "", subtitle: "", icon: "🍕", active: true }); }}
-              className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+              className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
             >
               <Plus size={20} />
-              Nova Promoção
+              Nova Campanha
             </button>
           </div>
 
           <div className="p-8">
             {showForm && (
-              <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-8">
-                <h3 className="text-xl font-bold text-white mb-4">{editingId ? "Editar Promoção" : "Nova Promoção"}</h3>
+              <div className="bg-surface-02 rounded-xl p-6 border border-surface-03 mb-8">
+                <h3 className="text-xl font-bold text-cream mb-4">{editingId ? "Editar Campanha" : "Nova Campanha"}</h3>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-slate-300 text-sm font-medium mb-2">Título *</label>
-                      <input
-                        type="text"
-                        value={formData.title || ""}
-                        onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                        className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
-                        placeholder="Ex: 20% off em"
-                      />
+                      <label className="block text-parchment text-sm font-medium mb-2">Título *</label>
+                      <input type="text" value={formData.title || ""} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className={cls} placeholder="Ex: 20% off em" />
                     </div>
                     <div>
-                      <label className="block text-slate-300 text-sm font-medium mb-2">Subtítulo *</label>
-                      <input
-                        type="text"
-                        value={formData.subtitle || ""}
-                        onChange={(e) => setFormData({ ...formData, subtitle: e.target.value })}
-                        className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
-                        placeholder="Ex: qualquer fast food"
-                      />
+                      <label className="block text-parchment text-sm font-medium mb-2">Subtítulo *</label>
+                      <input type="text" value={formData.subtitle || ""} onChange={(e) => setFormData({ ...formData, subtitle: e.target.value })} className={cls} placeholder="Ex: qualquer pizza" />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-slate-300 text-sm font-medium mb-2">Ícone / Emoji</label>
-                    <input
-                      type="text"
-                      value={formData.icon || ""}
-                      onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500 text-2xl"
-                      placeholder="🍕"
-                    />
-                    <p className="text-slate-500 text-xs mt-1">Cole um emoji ou URL de imagem</p>
-                  </div>
+
+                  {/* Icon upload */}
+                  <ImageUpload
+                    value={formData.icon || ""}
+                    onChange={(v) => setFormData({ ...formData, icon: v })}
+                    label="Ícone da campanha"
+                    sizeGuide="Tamanho recomendado: 120×120px, máx. 200KB"
+                    hint="Faça upload de uma imagem ou use um emoji 🍕"
+                    maxKB={200}
+                  />
+
                   <div className="flex items-center gap-3">
                     <input
                       type="checkbox"
                       checked={formData.active || false}
                       onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
-                      className="w-4 h-4 rounded accent-orange-500"
+                      className="w-4 h-4 rounded accent-gold"
                       id="active-check"
                     />
-                    <label htmlFor="active-check" className="text-slate-300 text-sm font-medium cursor-pointer">Ativa (visível na home)</label>
+                    <label htmlFor="active-check" className="text-parchment text-sm font-medium cursor-pointer">Ativa (visível na home)</label>
                   </div>
+
                   <div className="flex gap-3 pt-4">
-                    <button type="submit" className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">
-                      {editingId ? "Salvar Alterações" : "Criar Promoção"}
+                    <button type="submit" className="flex-1 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors">
+                      {editingId ? "Salvar Alterações" : "Criar Campanha"}
                     </button>
-                    <button type="button" onClick={() => { setShowForm(false); setEditingId(null); }} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                    <button type="button" onClick={() => { setShowForm(false); setEditingId(null); }} className="flex-1 bg-surface-03 hover:bg-brand-mid text-cream font-bold py-2 px-4 rounded-lg transition-colors">
                       Cancelar
                     </button>
                   </div>
@@ -114,12 +106,18 @@ export default function AdminPromotions() {
 
             <div className="space-y-4">
               {promotions.map((promotion) => (
-                <div key={promotion.id} className="bg-slate-800 rounded-xl p-6 border border-slate-700 flex items-center justify-between">
+                <div key={promotion.id} className="bg-surface-02 rounded-xl p-6 border border-surface-03 flex items-center justify-between">
                   <div className="flex items-center gap-6 flex-1">
-                    <div className="text-5xl">{promotion.icon}</div>
+                    <div className="w-16 h-16 rounded-xl bg-surface-03 flex items-center justify-center overflow-hidden flex-shrink-0">
+                      {promotion.icon?.startsWith("data:") || promotion.icon?.startsWith("http") ? (
+                        <img src={promotion.icon} alt={promotion.title} className="w-full h-full object-contain" />
+                      ) : (
+                        <span className="text-4xl">{promotion.icon || "🍕"}</span>
+                      )}
+                    </div>
                     <div className="flex-1">
-                      <h3 className="text-lg font-bold text-white">{promotion.title}</h3>
-                      <p className="text-slate-400 text-sm">{promotion.subtitle}</p>
+                      <h3 className="text-lg font-bold text-cream">{promotion.title}</h3>
+                      <p className="text-stone text-sm">{promotion.subtitle}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
@@ -128,9 +126,9 @@ export default function AdminPromotions() {
                         type="checkbox"
                         checked={promotion.active}
                         onChange={() => updatePromotion(promotion.id, { active: !promotion.active })}
-                        className="w-5 h-5 rounded accent-orange-500 cursor-pointer"
+                        className="w-5 h-5 rounded accent-gold cursor-pointer"
                       />
-                      <span className={`text-sm font-medium ${promotion.active ? "text-green-400" : "text-slate-400"}`}>
+                      <span className={`text-sm font-medium ${promotion.active ? "text-green-400" : "text-stone"}`}>
                         {promotion.active ? "Ativa" : "Inativa"}
                       </span>
                     </div>
@@ -147,10 +145,10 @@ export default function AdminPromotions() {
 
             {promotions.length === 0 && (
               <div className="text-center py-12">
-                <p className="text-slate-400 text-lg">Nenhuma promoção cadastrada</p>
-                <button onClick={() => setShowForm(true)} className="mt-4 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-6 rounded-lg transition-colors inline-flex items-center gap-2">
+                <p className="text-stone text-lg">Nenhuma campanha cadastrada</p>
+                <button onClick={() => setShowForm(true)} className="mt-4 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-6 rounded-lg transition-colors inline-flex items-center gap-2">
                   <Plus size={20} />
-                  Criar Primeira Promoção
+                  Criar Primeira Campanha
                 </button>
               </div>
             )}

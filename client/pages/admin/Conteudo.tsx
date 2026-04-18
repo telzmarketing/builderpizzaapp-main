@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { useApp, SiteContent, defaultSiteContent } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
+import ImageUpload from "@/components/admin/ImageUpload";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -688,65 +689,41 @@ export default function AdminConteudo() {
                     </div>
                   </div>
 
-                  {/* Logo */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 rounded-xl bg-slate-700 border border-slate-600 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                        {draft.media.logoUrl ? (
-                          <img src={draft.media.logoUrl} alt="Logo" className="w-full h-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                        ) : (
-                          <span className="text-3xl">{draft.brand.logo || "🍕"}</span>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <Field label="URL do logo" hint="PNG/SVG transparente recomendado. Exibido no cabeçalho e splash screen.">
-                          <TextInput value={draft.media.logoUrl} onChange={(v) => set(["media", "logoUrl"], v)} placeholder="https://seu-site.com/logo.png" />
-                        </Field>
-                      </div>
-                    </div>
-                  </div>
+                  {/* Logo Branco */}
+                  <ImageUpload
+                    value={draft.media.logoUrl}
+                    onChange={(v) => set(["media", "logoUrl"], v)}
+                    label="Logo Branco"
+                    sizeGuide="Tamanho recomendado: 300×120px, PNG com fundo transparente, máx. 200KB"
+                    hint="Exibido no cabeçalho da loja. Use PNG transparente para melhor resultado."
+                    maxKB={200}
+                  />
 
                   {/* Hero Banner */}
-                  <div className="space-y-2">
-                    {draft.media.heroBannerImage && (
-                      <div className="rounded-xl overflow-hidden h-32 bg-slate-700 border border-slate-600 mb-3">
-                        <img
-                          src={draft.media.heroBannerImage}
-                          alt="Banner"
-                          className="w-full h-full object-cover"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                        />
-                      </div>
-                    )}
-                    <Field label="URL da imagem do banner (Home)" hint="Imagem de fundo do banner promocional na página inicial. Dimensão recomendada: 800×300px.">
-                      <TextInput value={draft.media.heroBannerImage} onChange={(v) => set(["media", "heroBannerImage"], v)} placeholder="https://seu-site.com/banner.jpg" />
-                    </Field>
-                  </div>
+                  <ImageUpload
+                    value={draft.media.heroBannerImage}
+                    onChange={(v) => set(["media", "heroBannerImage"], v)}
+                    label="Imagem do Banner (Home)"
+                    sizeGuide="Tamanho recomendado: 800×300px, máx. 500KB"
+                    hint="Imagem de fundo do banner promocional na página inicial."
+                    maxKB={500}
+                  />
 
                   {/* Default Product */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 rounded-xl bg-slate-700 border border-slate-600 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                        {draft.media.defaultProductImage.startsWith("http") ? (
-                          <img src={draft.media.defaultProductImage} alt="Produto" className="w-full h-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                        ) : (
-                          <span className="text-3xl">{draft.media.defaultProductImage || "🍕"}</span>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <Field label="Imagem padrão de produto" hint="Emoji ou URL usada quando um produto não tem ícone definido.">
-                          <TextInput value={draft.media.defaultProductImage} onChange={(v) => set(["media", "defaultProductImage"], v)} placeholder="🍕 ou https://..." />
-                        </Field>
-                      </div>
-                    </div>
-                  </div>
+                  <ImageUpload
+                    value={draft.media.defaultProductImage}
+                    onChange={(v) => set(["media", "defaultProductImage"], v)}
+                    label="Imagem padrão de produto"
+                    sizeGuide="Tamanho recomendado: 200×200px, máx. 200KB"
+                    hint="Usada quando um produto não tem ícone/imagem definido."
+                    maxKB={200}
+                  />
                 </div>
 
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
-                  <p className="text-amber-400 text-sm font-medium mb-1">Sobre upload de imagens</p>
-                  <p className="text-amber-400/70 text-xs">
-                    Por enquanto, as imagens são referenciadas por URL. Para hospedar suas próprias imagens, utilize serviços como
-                    {" "}<strong>Cloudinary</strong>, <strong>ImgBB</strong> ou o próprio servidor do backend (quando integração de upload for implementada).
+                <div className="bg-gold/10 border border-gold/30 rounded-xl p-4">
+                  <p className="text-gold text-sm font-medium mb-1">Sobre as imagens</p>
+                  <p className="text-gold/70 text-xs">
+                    As imagens são salvas localmente na sessão. Para uso permanente em produção, utilize o upload via servidor ou serviços como <strong>Cloudinary</strong> ou <strong>ImgBB</strong>.
                   </p>
                 </div>
               </div>

@@ -4,7 +4,7 @@ import { ChevronLeft, MapPin, Phone, User, Home, Tag, Loader2, CreditCard } from
 import { useApp } from "@/context/AppContext";
 import { ordersApi, shippingApi, couponsApi, type CheckoutIn } from "@/lib/api";
 
-type PaymentMethod = "pix" | "credit_card" | "cash";
+type PaymentMethod = "pix" | "credit_card";
 
 export default function Checkout() {
   const navigate = useNavigate();
@@ -242,11 +242,10 @@ export default function Checkout() {
             <CreditCard size={20} className="text-gold" />
             Forma de pagamento
           </h2>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {([
               { value: "pix", label: "PIX", icon: "🏦" },
               { value: "credit_card", label: "Cartão", icon: "💳" },
-              { value: "cash", label: "Dinheiro", icon: "💵" },
             ] as { value: PaymentMethod; label: string; icon: string }[]).map((opt) => (
               <button
                 key={opt.value}

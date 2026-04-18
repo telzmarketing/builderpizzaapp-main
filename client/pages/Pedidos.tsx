@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft, Loader2, ShoppingBag } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { ordersApi, type ApiOrder } from "@/lib/api";
 import BottomNav from "@/components/BottomNav";

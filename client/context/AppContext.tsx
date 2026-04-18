@@ -48,6 +48,7 @@ export interface CartItem {
   flavorDivision: FlavorDivision;
   flavors: PizzaFlavor[];
   finalPrice: number;
+  notes?: string;
 }
 
 // ─── Order (frontend view) ────────────────────────────────────────────────────
@@ -227,7 +228,8 @@ interface AppContextType {
     addOns: string[],
     flavors: PizzaFlavor[],
     flavorDivision: FlavorDivision,
-    finalPrice: number
+    finalPrice: number,
+    notes?: string
   ) => void;
   updateCartItem: (cartItemId: string, quantity: number, size: string, addOns: string[]) => void;
   removeFromCart: (cartItemId: string) => void;
@@ -506,12 +508,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addOns: string[],
     flavors: PizzaFlavor[],
     flavorDivision: FlavorDivision,
-    finalPrice: number
+    finalPrice: number,
+    notes?: string
   ) => {
     const cartItemId = `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     setCart((prev) => [
       ...prev,
-      { cartItemId, productId: primaryProduct.id, quantity, selectedSize: size, selectedAddOns: addOns, productData: primaryProduct, flavorDivision, flavors, finalPrice },
+      { cartItemId, productId: primaryProduct.id, quantity, selectedSize: size, selectedAddOns: addOns, productData: primaryProduct, flavorDivision, flavors, finalPrice, notes },
     ]);
   };
 

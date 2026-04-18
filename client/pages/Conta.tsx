@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Edit2, Check, LogIn } from "lucide-react";
+import { ChevronLeft, ChevronRight, Edit2, Check, LogIn, User } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import BottomNav from "@/components/BottomNav";
 

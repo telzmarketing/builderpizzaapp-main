@@ -140,7 +140,8 @@ export default function Product() {
 
   const [quantity, setQuantity] = useState(1);
   const [selectedSize, setSelectedSize] = useState("M");
-  const [selectedAddOns, setSelectedAddOns] = useState<string[]>([]);
+  const [selectedAddOns] = useState<string[]>([]);
+  const [notes, setNotes] = useState("");
   const [division, setDivision] = useState<FlavorDivision>(1);
   // 3 slots always; only division first slots are active
   const [flavorSlots, setFlavorSlots] = useState<(Pizza | null)[]>([product ?? null, null, null]);
@@ -222,7 +223,7 @@ export default function Product() {
       price: p.price,
       icon: p.icon,
     }));
-    addToCart(flavorSlots[0]!, quantity, selectedSize, selectedAddOns, flavors, division, pricePerUnit);
+    addToCart(flavorSlots[0]!, quantity, selectedSize, selectedAddOns, flavors, division, pricePerUnit, notes || undefined);
     navigate("/cart");
   };
 
@@ -452,28 +453,18 @@ export default function Product() {
           </div>
         </div>
 
-        {/* ── Add-ons ─────────────────────────────────────────────────────── */}
+        {/* ── Observações ─────────────────────────────────────────────────── */}
         <div className="mb-6">
-          <h3 className="text-cream font-bold mb-3">{p.addOnsLabel}</h3>
-          <div className="grid grid-cols-3 gap-3">
-            {addOns.map((addon) => (
-              <button
-                key={addon.id}
-                onClick={() => toggleAddOn(addon.id)}
-                className={`p-3 rounded-xl border transition-all active:scale-95 ${
-                  selectedAddOns.includes(addon.id)
-                    ? "bg-gold/20 border-gold"
-                    : "bg-surface-02 border-surface-03 hover:border-brand-mid"
-                }`}
-              >
-                <div className="w-12 h-12 rounded-full bg-surface-03 flex items-center justify-center text-2xl mx-auto mb-2">
-                  {addon.icon}
-                </div>
-                <p className="text-cream text-xs font-medium text-center">{addon.name}</p>
-                <p className="text-gold-light text-xs text-center">+R${addon.price.toFixed(2)}</p>
-              </button>
-            ))}
-          </div>
+          <h3 className="text-cream font-bold mb-3">Observações</h3>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Ex: sem cebola, ponto da massa, alergias..."
+            rows={3}
+            className="w-full bg-surface-02 border border-surface-03 focus:border-gold rounded-xl px-4 py-3 text-cream placeholder-stone/70 outline-none text-sm resize-none transition-colors"
+            maxLength={200}
+          />
+          <p className="text-stone/60 text-xs mt-1 text-right">{notes.length}/200</p>
         </div>
 
         {/* ── Pizza Diagram ───────────────────────────────────────────────── */}
