@@ -20,7 +20,7 @@ const statusColor = (s: string) => {
   if (s === "on_the_way" || s === "ready_for_pickup") return "bg-blue-500/20 text-blue-400";
   if (s === "cancelled" || s === "refunded") return "bg-red-500/20 text-red-400";
   if (s === "paid") return "bg-cyan-500/20 text-cyan-400";
-  return "bg-orange-500/20 text-orange-400";
+  return "bg-gold/20 text-orange-400";
 };
 
 const NEXT_STATUSES: Record<OrderStatus, OrderStatus[]> = {
@@ -69,16 +69,16 @@ export default function AdminOrders() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-surface-00 to-surface-00">
       <div className="flex h-screen">
         <AdminSidebar />
 
         <div className="flex-1 overflow-auto">
-          <div className="bg-slate-800 px-8 py-4 border-b border-slate-700 flex justify-between items-center sticky top-0 z-20">
-            <h2 className="text-2xl font-bold text-white">Gerenciar Pedidos</h2>
+          <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 flex justify-between items-center sticky top-0 z-20">
+            <h2 className="text-2xl font-bold text-cream">Gerenciar Pedidos</h2>
             <div className="flex items-center gap-4">
-              <span className="text-slate-400 text-sm">{orders.length} pedido{orders.length !== 1 ? "s" : ""}</span>
-              <button onClick={fetchOrders} disabled={loading} className="text-slate-400 hover:text-white transition-colors disabled:opacity-50">
+              <span className="text-stone text-sm">{orders.length} pedido{orders.length !== 1 ? "s" : ""}</span>
+              <button onClick={fetchOrders} disabled={loading} className="text-stone hover:text-cream transition-colors disabled:opacity-50">
                 <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
               </button>
             </div>
@@ -96,34 +96,34 @@ export default function AdminOrders() {
             ) : orders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-center">
                 <span className="text-6xl mb-4">📦</span>
-                <p className="text-slate-400 text-xl">Nenhum pedido ainda</p>
-                <p className="text-slate-500 text-sm mt-2">Os pedidos dos clientes aparecerão aqui quando realizados.</p>
+                <p className="text-stone text-xl">Nenhum pedido ainda</p>
+                <p className="text-stone/70 text-sm mt-2">Os pedidos dos clientes aparecerão aqui quando realizados.</p>
               </div>
             ) : (
               <div className="space-y-6">
                 {orders.map((order) => {
                   const nextStatuses = NEXT_STATUSES[order.status] ?? [];
                   return (
-                    <div key={order.id} className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                    <div key={order.id} className="bg-surface-02 rounded-xl p-6 border border-surface-03">
                       <div className="flex justify-between items-start mb-6">
                         <div>
-                          <h3 className="text-lg font-bold text-white font-mono">
+                          <h3 className="text-lg font-bold text-cream font-mono">
                             #{order.id.slice(0, 8).toUpperCase()}
                           </h3>
-                          <p className="text-slate-400 text-sm">
+                          <p className="text-stone text-sm">
                             {new Date(order.created_at).toLocaleDateString("pt-BR")} às{" "}
                             {new Date(order.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                           </p>
-                          <p className="text-slate-400 text-sm mt-1">
-                            Cliente: <span className="text-white">{order.delivery_name}</span> · {order.delivery_phone}
+                          <p className="text-stone text-sm mt-1">
+                            Cliente: <span className="text-cream">{order.delivery_name}</span> · {order.delivery_phone}
                           </p>
-                          <p className="text-slate-500 text-xs">{order.delivery_street}, {order.delivery_city}</p>
+                          <p className="text-stone/70 text-xs">{order.delivery_street}, {order.delivery_city}</p>
                         </div>
                         <span className="text-orange-500 font-bold text-lg">R${order.total.toFixed(2)}</span>
                       </div>
 
-                      <div className="mb-6 pb-6 border-b border-slate-700">
-                        <h4 className="text-sm font-bold text-slate-300 mb-3">Itens do Pedido</h4>
+                      <div className="mb-6 pb-6 border-b border-surface-03">
+                        <h4 className="text-sm font-bold text-parchment mb-3">Itens do Pedido</h4>
                         <div className="space-y-2">
                           {order.items.map((item) => {
                             const isMulti = item.flavor_division > 1;
@@ -132,14 +132,14 @@ export default function AdminOrders() {
                               : item.product_name;
                             return (
                               <div key={item.id} className="flex justify-between text-sm">
-                                <span className="text-slate-300">{name} × {item.quantity} ({item.selected_size})</span>
-                                <span className="text-slate-400">R${(item.final_price * item.quantity).toFixed(2)}</span>
+                                <span className="text-parchment">{name} × {item.quantity} ({item.selected_size})</span>
+                                <span className="text-stone">R${(item.final_price * item.quantity).toFixed(2)}</span>
                               </div>
                             );
                           })}
-                          <div className="flex justify-between text-sm pt-2 border-t border-slate-700">
-                            <span className="text-slate-400">Taxa de entrega</span>
-                            <span className="text-slate-400">R${order.shipping_fee.toFixed(2)}</span>
+                          <div className="flex justify-between text-sm pt-2 border-t border-surface-03">
+                            <span className="text-stone">Taxa de entrega</span>
+                            <span className="text-stone">R${order.shipping_fee.toFixed(2)}</span>
                           </div>
                           {order.discount > 0 && (
                             <div className="flex justify-between text-sm text-green-400">
@@ -152,7 +152,7 @@ export default function AdminOrders() {
 
                       <div className="flex justify-between items-center flex-wrap gap-4">
                         <div>
-                          <p className="text-slate-400 text-sm mb-2">Status atual</p>
+                          <p className="text-stone text-sm mb-2">Status atual</p>
                           <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColor(order.status)}`}>
                             {STATUS_LABELS[order.status] ?? order.status}
                           </span>
@@ -163,14 +163,14 @@ export default function AdminOrders() {
                               key={status}
                               onClick={() => handleUpdateStatus(order.id, status)}
                               disabled={updating === order.id}
-                              className="px-3 py-2 rounded-lg text-sm font-medium bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:opacity-50 transition-colors flex items-center gap-1"
+                              className="px-3 py-2 rounded-lg text-sm font-medium bg-surface-03 text-parchment hover:bg-slate-600 disabled:opacity-50 transition-colors flex items-center gap-1"
                             >
                               {updating === order.id && <Loader2 size={12} className="animate-spin" />}
                               → {STATUS_LABELS[status]}
                             </button>
                           ))}
                           {nextStatuses.length === 0 && (
-                            <span className="text-slate-500 text-sm">Pedido finalizado</span>
+                            <span className="text-stone/70 text-sm">Pedido finalizado</span>
                           )}
                         </div>
                       </div>

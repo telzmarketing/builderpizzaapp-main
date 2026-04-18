@@ -260,6 +260,23 @@ export default function AdminConteudo() {
                     />
                   </Field>
 
+                  <Field label="Título da aba do navegador" hint="Texto exibido na aba do browser (ex: Moschettieri Delivery)">
+                    <TextInput
+                      value={(draft.brand as typeof draft.brand & { pageTitle?: string }).pageTitle ?? ""}
+                      onChange={(v) => set(["brand", "pageTitle"], v)}
+                      placeholder="Pizza Delivery App"
+                    />
+                  </Field>
+
+                  <ImageUpload
+                    value={(draft.brand as typeof draft.brand & { faviconUrl?: string }).faviconUrl ?? ""}
+                    onChange={(v) => set(["brand", "faviconUrl"], v)}
+                    label="Favicon (ícone da aba do navegador)"
+                    sizeGuide="Tamanho recomendado: 32×32px ou 64×64px, PNG ou ICO, máx. 50KB"
+                    hint="Ícone pequeno exibido na aba do browser e favoritos."
+                    maxKB={50}
+                  />
+
                   <Field label="Logo (emoji ou URL de imagem)" hint="Cole um emoji 🍕 ou URL https://... para uma imagem">
                     <div className="flex items-center gap-3">
                       <div className="w-14 h-14 rounded-xl bg-slate-700 border border-slate-600 flex items-center justify-center text-3xl flex-shrink-0">

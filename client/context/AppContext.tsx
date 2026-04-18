@@ -114,7 +114,7 @@ export interface EarnRule {
 // ─── CMS / Site Content ───────────────────────────────────────────────────────
 
 export interface SiteContent {
-  brand: { name: string; tagline: string; logo: string };
+  brand: { name: string; tagline: string; logo: string; pageTitle: string; faviconUrl: string };
   home: {
     sectionSubtitle: string;
     sectionTitle: string;
@@ -275,7 +275,7 @@ interface AppContextType {
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
 export const defaultSiteContent: SiteContent = {
-  brand: { name: "Builder Pizza", tagline: "A melhor pizza da cidade", logo: "🍕" },
+  brand: { name: "Builder Pizza", tagline: "A melhor pizza da cidade", logo: "🍕", pageTitle: "Pizza Delivery App", faviconUrl: "" },
   home: {
     sectionSubtitle: "O que você quer comer hoje?",
     sectionTitle: "Escolha sua Pizza Favorita",

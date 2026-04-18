@@ -1,9 +1,29 @@
+import { useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AppProvider } from "./context/AppContext";
+import { AppProvider, useApp } from "./context/AppContext";
+
+function DocumentHead() {
+  const { siteContent } = useApp();
+  const { pageTitle, faviconUrl, name } = siteContent.brand;
+  useEffect(() => {
+    document.title = pageTitle || name || "Pizza Delivery App";
+  }, [pageTitle, name]);
+  useEffect(() => {
+    if (!faviconUrl) return;
+    let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+    }
+    link.href = faviconUrl;
+  }, [faviconUrl]);
+  return null;
+}
 import AdminGuard from "./components/AdminGuard";
 import Index from "./pages/Index";
 import Product from "./pages/Product";
@@ -33,6 +53,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AppProvider>
+        <DocumentHead />
         <TooltipProvider>
           <Toaster />
           <Sonner />

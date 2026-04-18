@@ -153,23 +153,23 @@ export default function AdminPagamentos() {
   const selectedGateway = (form.gateway as Gateway) || "mock";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-surface-00 to-surface-00">
       <div className="flex h-screen">
         <AdminSidebar />
 
         <div className="flex-1 overflow-auto">
           {/* Header */}
-          <div className="bg-slate-800 px-8 py-4 border-b border-slate-700 flex justify-between items-center sticky top-0 z-20">
+          <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 flex justify-between items-center sticky top-0 z-20">
             <div>
-              <h2 className="text-2xl font-bold text-white">Gateway de Pagamento</h2>
-              <p className="text-slate-400 text-sm mt-0.5">
+              <h2 className="text-2xl font-bold text-cream">Gateway de Pagamento</h2>
+              <p className="text-stone text-sm mt-0.5">
                 Configure o processador de pagamentos da loja
               </p>
             </div>
             <button
               onClick={handleSave}
               disabled={saving || loading}
-              className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-bold py-2 px-5 rounded-lg transition-colors"
+              className="flex items-center gap-2 bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold py-2 px-5 rounded-lg transition-colors"
             >
               {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
               {saving ? "Salvando..." : "Salvar"}
@@ -198,10 +198,10 @@ export default function AdminPagamentos() {
             ) : (
               <>
                 {/* ── Gateway selector ───────────────────────────────────── */}
-                <section className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-700">
-                    <h3 className="text-lg font-bold text-white">Processador de Pagamento</h3>
-                    <p className="text-slate-400 text-sm">Selecione o gateway ativo para a loja</p>
+                <section className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-surface-03">
+                    <h3 className="text-lg font-bold text-cream">Processador de Pagamento</h3>
+                    <p className="text-stone text-sm">Selecione o gateway ativo para a loja</p>
                   </div>
                   <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                     {GATEWAYS.map((gw) => (
@@ -211,18 +211,18 @@ export default function AdminPagamentos() {
                         className={`flex items-start gap-4 p-4 rounded-xl border-2 text-left transition-all ${
                           selectedGateway === gw.id
                             ? gw.color + " border-opacity-100"
-                            : "border-slate-700 hover:border-slate-500"
+                            : "border-surface-03 hover:border-slate-500"
                         }`}
                       >
                         <span className="text-3xl mt-0.5">{gw.icon}</span>
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <p className="text-white font-bold text-sm">{gw.label}</p>
+                            <p className="text-cream font-bold text-sm">{gw.label}</p>
                             {selectedGateway === gw.id && (
-                              <span className="text-xs bg-orange-500 text-white px-2 py-0.5 rounded-full">Ativo</span>
+                              <span className="text-xs bg-gold text-cream px-2 py-0.5 rounded-full">Ativo</span>
                             )}
                           </div>
-                          <p className="text-slate-400 text-xs mt-1 leading-relaxed">{gw.description}</p>
+                          <p className="text-stone text-xs mt-1 leading-relaxed">{gw.description}</p>
                         </div>
                       </button>
                     ))}
@@ -230,9 +230,9 @@ export default function AdminPagamentos() {
                 </section>
 
                 {/* ── Ambiente ──────────────────────────────────────────── */}
-                <section className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-700">
-                    <h3 className="text-lg font-bold text-white">Ambiente</h3>
+                <section className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-surface-03">
+                    <h3 className="text-lg font-bold text-cream">Ambiente</h3>
                   </div>
                   <div className="p-6 flex gap-4">
                     {[
@@ -244,21 +244,21 @@ export default function AdminPagamentos() {
                         onClick={() => set("sandbox", opt.value)}
                         className={`flex-1 p-4 rounded-xl border-2 text-left transition-all ${
                           form.sandbox === opt.value
-                            ? "border-orange-500 bg-orange-500/10"
-                            : "border-slate-700 hover:border-slate-500"
+                            ? "border-gold bg-gold/10"
+                            : "border-surface-03 hover:border-slate-500"
                         }`}
                       >
-                        <p className="text-white font-bold text-sm">{opt.label}</p>
-                        <p className="text-slate-400 text-xs mt-1">{opt.desc}</p>
+                        <p className="text-cream font-bold text-sm">{opt.label}</p>
+                        <p className="text-stone text-xs mt-1">{opt.desc}</p>
                       </button>
                     ))}
                   </div>
                 </section>
 
                 {/* ── Métodos aceitos ───────────────────────────────────── */}
-                <section className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-700">
-                    <h3 className="text-lg font-bold text-white">Métodos de Pagamento Aceitos</h3>
+                <section className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-surface-03">
+                    <h3 className="text-lg font-bold text-cream">Métodos de Pagamento Aceitos</h3>
                   </div>
                   <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-4">
                     {[
@@ -272,8 +272,8 @@ export default function AdminPagamentos() {
                         onClick={() => set(key, !form[key])}
                         className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
                           form[key]
-                            ? "border-orange-500 bg-orange-500/10 text-orange-400"
-                            : "border-slate-700 text-slate-500 hover:border-slate-500"
+                            ? "border-gold bg-gold/10 text-orange-400"
+                            : "border-surface-03 text-stone/70 hover:border-slate-500"
                         }`}
                       >
                         <Icon size={24} />
@@ -338,23 +338,23 @@ export default function AdminPagamentos() {
 
                 {/* ── PIX avulso ────────────────────────────────────────── */}
                 {(form.accept_pix || selectedGateway === "mock") && (
-                  <section className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-                    <div className="px-6 py-4 border-b border-slate-700">
-                      <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <section className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-surface-03">
+                      <h3 className="text-lg font-bold text-cream flex items-center gap-2">
                         <QrCode size={20} className="text-orange-500" />
                         Configuração PIX
                       </h3>
-                      <p className="text-slate-400 text-sm mt-1">
+                      <p className="text-stone text-sm mt-1">
                         Dados usados para gerar o QR Code PIX
                       </p>
                     </div>
                     <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-slate-300 text-sm font-medium mb-2">Tipo de Chave PIX</label>
+                        <label className="block text-parchment text-sm font-medium mb-2">Tipo de Chave PIX</label>
                         <select
                           value={(form.pix_key_type as string) || "email"}
                           onChange={(e) => set("pix_key_type", e.target.value)}
-                          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-orange-500"
+                          className="w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream focus:outline-none focus:border-gold"
                         >
                           {PIX_KEY_TYPES.map((t) => (
                             <option key={t.value} value={t.value}>{t.label}</option>
@@ -362,33 +362,33 @@ export default function AdminPagamentos() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-slate-300 text-sm font-medium mb-2">Chave PIX</label>
+                        <label className="block text-parchment text-sm font-medium mb-2">Chave PIX</label>
                         <input
                           type="text"
                           value={(form.pix_key as string) || ""}
                           onChange={(e) => set("pix_key", e.target.value)}
                           placeholder="sua@chave.pix"
-                          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                          className="w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream placeholder-stone focus:outline-none focus:border-gold"
                         />
                       </div>
                       <div>
-                        <label className="block text-slate-300 text-sm font-medium mb-2">Nome do Beneficiário</label>
+                        <label className="block text-parchment text-sm font-medium mb-2">Nome do Beneficiário</label>
                         <input
                           type="text"
                           value={(form.pix_beneficiary_name as string) || ""}
                           onChange={(e) => set("pix_beneficiary_name", e.target.value)}
                           placeholder="PizzaApp Ltda"
-                          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                          className="w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream placeholder-stone focus:outline-none focus:border-gold"
                         />
                       </div>
                       <div>
-                        <label className="block text-slate-300 text-sm font-medium mb-2">Cidade do Beneficiário</label>
+                        <label className="block text-parchment text-sm font-medium mb-2">Cidade do Beneficiário</label>
                         <input
                           type="text"
                           value={(form.pix_beneficiary_city as string) || ""}
                           onChange={(e) => set("pix_beneficiary_city", e.target.value)}
                           placeholder="São Paulo"
-                          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                          className="w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream placeholder-stone focus:outline-none focus:border-gold"
                         />
                       </div>
                     </div>
@@ -396,27 +396,27 @@ export default function AdminPagamentos() {
                 )}
 
                 {/* ── Status e webhook URL ──────────────────────────────── */}
-                <section className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-700">
-                    <h3 className="text-lg font-bold text-white">URL do Webhook</h3>
-                    <p className="text-slate-400 text-sm mt-1">
+                <section className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-surface-03">
+                    <h3 className="text-lg font-bold text-cream">URL do Webhook</h3>
+                    <p className="text-stone text-sm mt-1">
                       Cadastre esta URL no painel do gateway para receber confirmações automáticas
                     </p>
                   </div>
                   <div className="p-6">
-                    <div className="flex items-center gap-3 bg-slate-900 rounded-xl px-4 py-3 border border-slate-700">
+                    <div className="flex items-center gap-3 bg-surface-00 rounded-xl px-4 py-3 border border-surface-03">
                       <code className="text-orange-400 text-sm flex-1 break-all">
                         http://localhost:8000/payments/webhook
                       </code>
                       <button
                         onClick={() => navigator.clipboard.writeText("http://localhost:8000/payments/webhook")}
-                        className="text-slate-400 hover:text-white text-xs border border-slate-600 rounded px-2 py-1 transition-colors flex-shrink-0"
+                        className="text-stone hover:text-cream text-xs border border-surface-03 rounded px-2 py-1 transition-colors flex-shrink-0"
                       >
                         Copiar
                       </button>
                     </div>
-                    <p className="text-slate-500 text-xs mt-2">
-                      Em produção, substitua <code className="text-slate-400">localhost:8000</code> pelo domínio do seu servidor.
+                    <p className="text-stone/70 text-xs mt-2">
+                      Em produção, substitua <code className="text-stone">localhost:8000</code> pelo domínio do seu servidor.
                     </p>
 
                     {/* Last updated */}
@@ -459,11 +459,11 @@ function CredentialSection({
   toggleSecret: (key: string) => void;
 }) {
   return (
-    <section className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
+    <section className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
+      <div className="px-6 py-4 border-b border-surface-03 flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-bold text-white">{title}</h3>
-          <p className="text-slate-400 text-sm mt-1">
+          <h3 className="text-lg font-bold text-cream">{title}</h3>
+          <p className="text-stone text-sm mt-1">
             Chaves secretas são mascaradas após salvar. Deixe em branco para manter o valor atual.
           </p>
         </div>
@@ -471,7 +471,7 @@ function CredentialSection({
           href={docUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs text-orange-400 border border-orange-500/40 px-3 py-1.5 rounded-lg hover:bg-orange-500/10 transition-colors flex-shrink-0"
+          className="text-xs text-orange-400 border border-gold/40 px-3 py-1.5 rounded-lg hover:bg-gold/10 transition-colors flex-shrink-0"
         >
           Documentação ↗
         </a>
@@ -479,21 +479,21 @@ function CredentialSection({
       <div className="p-6 space-y-4">
         {fields.map(({ key, label, placeholder, secret }) => (
           <div key={key}>
-            <label className="block text-slate-300 text-sm font-medium mb-2">{label}</label>
-            <div className="flex items-center gap-2 bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 focus-within:border-orange-500 transition-colors">
+            <label className="block text-parchment text-sm font-medium mb-2">{label}</label>
+            <div className="flex items-center gap-2 bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 focus-within:border-gold transition-colors">
               <input
                 type={secret && !showSecrets[key] ? "password" : "text"}
                 value={(form[key] as string) || ""}
                 onChange={(e) => set(key, e.target.value)}
                 placeholder={placeholder}
                 autoComplete="off"
-                className="flex-1 bg-transparent text-white placeholder-slate-500 outline-none text-sm font-mono"
+                className="flex-1 bg-transparent text-cream placeholder-slate-500 outline-none text-sm font-mono"
               />
               {secret && (
                 <button
                   type="button"
                   onClick={() => toggleSecret(key)}
-                  className="text-slate-400 hover:text-white transition-colors flex-shrink-0"
+                  className="text-stone hover:text-cream transition-colors flex-shrink-0"
                 >
                   {showSecrets[key] ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>

@@ -27,7 +27,7 @@ export default function AdminDashboard() {
     if (s === "delivered") return "bg-green-500/20 text-green-400";
     if (s === "on_the_way") return "bg-blue-500/20 text-blue-400";
     if (s === "cancelled" || s === "refunded") return "bg-red-500/20 text-red-400";
-    return "bg-orange-500/20 text-orange-400";
+    return "bg-gold/20 text-orange-400";
   };
 
   useEffect(() => {
@@ -42,14 +42,14 @@ export default function AdminDashboard() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-surface-00 to-surface-00">
       <div className="flex h-screen">
         <AdminSidebar />
 
         <div className="flex-1 overflow-auto">
-          <div className="bg-slate-800 px-8 py-4 border-b border-slate-700 flex justify-between items-center sticky top-0 z-20">
-            <h2 className="text-2xl font-bold text-white">Dashboard</h2>
-            <div className="flex gap-2 text-slate-400 text-sm">
+          <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 flex justify-between items-center sticky top-0 z-20">
+            <h2 className="text-2xl font-bold text-cream">Dashboard</h2>
+            <div className="flex gap-2 text-stone text-sm">
               <span>📡</span><span>📶</span><span>🔋</span>
             </div>
           </div>
@@ -68,41 +68,41 @@ export default function AdminDashboard() {
             ) : (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                  <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                  <div className="bg-surface-02 rounded-xl p-6 border border-surface-03">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-slate-400 text-sm">Total de Pedidos</p>
-                        <p className="text-3xl font-bold text-white mt-2">{stats?.total_orders ?? 0}</p>
+                        <p className="text-stone text-sm">Total de Pedidos</p>
+                        <p className="text-3xl font-bold text-cream mt-2">{stats?.total_orders ?? 0}</p>
                       </div>
                       <ShoppingBag size={32} className="text-orange-500" />
                     </div>
                   </div>
 
-                  <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                  <div className="bg-surface-02 rounded-xl p-6 border border-surface-03">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-slate-400 text-sm">Total de Produtos</p>
-                        <p className="text-3xl font-bold text-white mt-2">{stats?.total_products ?? 0}</p>
+                        <p className="text-stone text-sm">Total de Produtos</p>
+                        <p className="text-3xl font-bold text-cream mt-2">{stats?.total_products ?? 0}</p>
                       </div>
                       <Package size={32} className="text-blue-500" />
                     </div>
                   </div>
 
-                  <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                  <div className="bg-surface-02 rounded-xl p-6 border border-surface-03">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-slate-400 text-sm">Pedidos Pendentes</p>
-                        <p className="text-3xl font-bold text-white mt-2">{stats?.pending_orders ?? 0}</p>
+                        <p className="text-stone text-sm">Pedidos Pendentes</p>
+                        <p className="text-3xl font-bold text-cream mt-2">{stats?.pending_orders ?? 0}</p>
                       </div>
                       <Megaphone size={32} className="text-green-500" />
                     </div>
                   </div>
 
-                  <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                  <div className="bg-surface-02 rounded-xl p-6 border border-surface-03">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-slate-400 text-sm">Receita Total</p>
-                        <p className="text-3xl font-bold text-white mt-2">
+                        <p className="text-stone text-sm">Receita Total</p>
+                        <p className="text-3xl font-bold text-cream mt-2">
                           R${(stats?.total_revenue ?? 0).toFixed(2)}
                         </p>
                       </div>
@@ -112,25 +112,25 @@ export default function AdminDashboard() {
                 </div>
 
                 {recentOrders.length > 0 ? (
-                  <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-8">
-                    <h3 className="text-xl font-bold text-white mb-4">Pedidos Recentes</h3>
+                  <div className="bg-surface-02 rounded-xl p-6 border border-surface-03 mb-8">
+                    <h3 className="text-xl font-bold text-cream mb-4">Pedidos Recentes</h3>
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead>
-                          <tr className="border-b border-slate-700">
-                            <th className="text-left py-2 px-4 text-slate-400 text-sm">ID</th>
-                            <th className="text-left py-2 px-4 text-slate-400 text-sm">Cliente</th>
-                            <th className="text-left py-2 px-4 text-slate-400 text-sm">Status</th>
-                            <th className="text-left py-2 px-4 text-slate-400 text-sm">Total</th>
+                          <tr className="border-b border-surface-03">
+                            <th className="text-left py-2 px-4 text-stone text-sm">ID</th>
+                            <th className="text-left py-2 px-4 text-stone text-sm">Cliente</th>
+                            <th className="text-left py-2 px-4 text-stone text-sm">Status</th>
+                            <th className="text-left py-2 px-4 text-stone text-sm">Total</th>
                           </tr>
                         </thead>
                         <tbody>
                           {recentOrders.slice(0, 8).map((order) => (
-                            <tr key={order.id} className="border-b border-slate-700 last:border-0">
-                              <td className="py-3 px-4 text-white text-sm font-mono">
+                            <tr key={order.id} className="border-b border-surface-03 last:border-0">
+                              <td className="py-3 px-4 text-cream text-sm font-mono">
                                 {order.id.slice(0, 8).toUpperCase()}
                               </td>
-                              <td className="py-3 px-4 text-slate-300 text-sm">{order.delivery_name}</td>
+                              <td className="py-3 px-4 text-parchment text-sm">{order.delivery_name}</td>
                               <td className="py-3 px-4">
                                 <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColor(order.status)}`}>
                                   {STATUS_LABELS[order.status] ?? order.status}
@@ -146,28 +146,28 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-slate-800 rounded-xl p-12 border border-slate-700 text-center mb-8">
+                  <div className="bg-surface-02 rounded-xl p-12 border border-surface-03 text-center mb-8">
                     <ShoppingBag size={48} className="text-slate-600 mx-auto mb-4" />
-                    <p className="text-slate-400 text-lg">Nenhum pedido ainda</p>
-                    <p className="text-slate-500 text-sm mt-2">Os pedidos dos clientes aparecerão aqui.</p>
+                    <p className="text-stone text-lg">Nenhum pedido ainda</p>
+                    <p className="text-stone/70 text-sm mt-2">Os pedidos dos clientes aparecerão aqui.</p>
                   </div>
                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <Link to="/painel/products" className="bg-slate-800 rounded-xl p-6 border border-slate-700 hover:border-orange-500/50 transition-colors">
+                  <Link to="/painel/products" className="bg-surface-02 rounded-xl p-6 border border-surface-03 hover:border-gold/50 transition-colors">
                     <Package size={32} className="text-blue-500 mb-3" />
-                    <h3 className="text-white font-bold">Gerenciar Produtos</h3>
-                    <p className="text-slate-400 text-sm mt-1">Adicionar, editar ou remover produtos do cardápio</p>
+                    <h3 className="text-cream font-bold">Gerenciar Produtos</h3>
+                    <p className="text-stone text-sm mt-1">Adicionar, editar ou remover produtos do cardápio</p>
                   </Link>
-                  <Link to="/painel/orders" className="bg-slate-800 rounded-xl p-6 border border-slate-700 hover:border-orange-500/50 transition-colors">
+                  <Link to="/painel/orders" className="bg-surface-02 rounded-xl p-6 border border-surface-03 hover:border-gold/50 transition-colors">
                     <ShoppingBag size={32} className="text-orange-500 mb-3" />
-                    <h3 className="text-white font-bold">Gerenciar Pedidos</h3>
-                    <p className="text-slate-400 text-sm mt-1">Visualizar e atualizar status dos pedidos</p>
+                    <h3 className="text-cream font-bold">Gerenciar Pedidos</h3>
+                    <p className="text-stone text-sm mt-1">Visualizar e atualizar status dos pedidos</p>
                   </Link>
-                  <Link to="/painel/conteudo" className="bg-slate-800 rounded-xl p-6 border border-slate-700 hover:border-orange-500/50 transition-colors">
+                  <Link to="/painel/conteudo" className="bg-surface-02 rounded-xl p-6 border border-surface-03 hover:border-gold/50 transition-colors">
                     <BarChart3 size={32} className="text-purple-500 mb-3" />
-                    <h3 className="text-white font-bold">Editar Conteúdo</h3>
-                    <p className="text-slate-400 text-sm mt-1">Textos, ícones e categorias das páginas</p>
+                    <h3 className="text-cream font-bold">Editar Conteúdo</h3>
+                    <p className="text-stone text-sm mt-1">Textos, ícones e categorias das páginas</p>
                   </Link>
                 </div>
               </>
