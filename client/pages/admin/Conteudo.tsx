@@ -327,6 +327,23 @@ export default function AdminConteudo() {
                     />
                   </Field>
 
+                  <Field label="Tempo de rotação dos banners (segundos)" hint="Intervalo para troca automática entre banners de campanhas. Use 0 para desativar.">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number"
+                        min={0}
+                        max={60}
+                        value={draft.home.bannerRotationInterval ?? 5}
+                        onChange={(e) => set(["home", "bannerRotationInterval"], Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-24 bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500 text-sm"
+                      />
+                      <span className="text-slate-400 text-sm">segundos</span>
+                      {(draft.home.bannerRotationInterval ?? 5) === 0 && (
+                        <span className="text-amber-400 text-xs">Rotação desativada</span>
+                      )}
+                    </div>
+                  </Field>
+
                   <Field label="Categorias do cardápio" hint="Botões de filtro acima do carrossel de produtos">
                     <div className="flex flex-wrap gap-2 mb-3 min-h-[2rem]">
                       {draft.home.categories.map((cat) => (

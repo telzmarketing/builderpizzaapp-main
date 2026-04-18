@@ -119,6 +119,7 @@ export interface SiteContent {
     sectionTitle: string;
     categories: string[];
     bannerValidityText: string;
+    bannerRotationInterval: number;
   };
   nav: { home: string; cart: string; orders: string; account: string };
   pages: {
@@ -278,6 +279,7 @@ export const defaultSiteContent: SiteContent = {
     sectionTitle: "Escolha sua Pizza Favorita",
     categories: ["Todos", "Pizza", "Burger", "Massa"],
     bannerValidityText: "Válido até 30 Nov",
+    bannerRotationInterval: 5,
   },
   nav: { home: "Home", cart: "Carrinho", orders: "Pedidos", account: "Conta" },
   pages: {
