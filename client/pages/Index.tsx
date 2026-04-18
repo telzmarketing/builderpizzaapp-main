@@ -4,6 +4,7 @@ import { Menu, Search, Star, ChevronRight, X, ShoppingCart, Bell, User, Tag, Hea
 
 import { useApp } from "@/context/AppContext";
 import BottomNav from "@/components/BottomNav";
+import MoschettieriLogo from "@/components/MoschettieriLogo";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -55,8 +56,8 @@ export default function Home() {
 
   if (products.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950 flex items-center justify-center">
-        <div className="text-center text-slate-400">
+      <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 flex items-center justify-center">
+        <div className="text-center text-stone">
           <div className="text-4xl mb-4">🍕</div>
           <p className="text-lg">Carregando cardápio...</p>
         </div>
@@ -65,15 +66,15 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
       {/* Drawer overlay */}
       {menuOpen && (
         <div className="fixed inset-0 z-50 flex">
           <div className="absolute inset-0 bg-black/60" onClick={() => setMenuOpen(false)} />
-          <div className="relative w-72 bg-slate-900 h-full flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-800">
-              <span className="text-white font-bold text-lg">Menu</span>
-              <button onClick={() => setMenuOpen(false)} className="text-slate-400 hover:text-white transition-colors">
+          <div className="relative w-72 bg-brand-dark h-full flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-surface-02">
+              <MoschettieriLogo className="h-7 text-cream" />
+              <button onClick={() => setMenuOpen(false)} className="text-stone hover:text-cream transition-colors">
                 <X size={24} />
               </button>
             </div>
@@ -89,9 +90,9 @@ export default function Home() {
                 <button
                   key={path}
                   onClick={() => { setMenuOpen(false); navigate(path); }}
-                  className="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-left"
+                  className="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-parchment hover:text-cream hover:bg-surface-02 transition-colors text-left"
                 >
-                  <span className="text-orange-500">{icon}</span>
+                  <span className="text-gold">{icon}</span>
                   <span className="font-medium">{label}</span>
                 </button>
               ))}
@@ -101,11 +102,12 @@ export default function Home() {
       )}
 
       {/* Header */}
-      <div className="bg-slate-900 px-4 py-4 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => setMenuOpen(true)} className="text-slate-300 hover:text-white transition-colors">
+      <div className="bg-brand-dark px-4 py-4 flex justify-between items-center sticky top-0 z-30">
+        <button onClick={() => setMenuOpen(true)} className="text-parchment hover:text-cream transition-colors">
           <Menu size={24} />
         </button>
-        <button className="text-slate-300 hover:text-white transition-colors">
+        <MoschettieriLogo className="h-8 text-cream" />
+        <button className="text-parchment hover:text-cream transition-colors">
           <Search size={24} />
         </button>
       </div>
@@ -117,16 +119,16 @@ export default function Home() {
           style={media.heroBannerImage ? { backgroundImage: `url(${media.heroBannerImage})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
         >
           <div className="flex-1">
-            <p className="text-sm text-slate-300">{activePromotion?.title || "20% off to"}</p>
-            <p className="text-xl font-bold text-white">
+            <p className="text-sm text-parchment">{activePromotion?.title || "20% off to"}</p>
+            <p className="text-xl font-bold text-cream">
               {activePromotion?.subtitle || "any fast food"}
             </p>
-            <p className="text-xs text-slate-400 mt-1">{home.bannerValidityText}</p>
+            <p className="text-xs text-stone mt-1">{home.bannerValidityText}</p>
           </div>
           <div className="w-32 h-32 flex-shrink-0 relative -mr-8 text-5xl">
             {activePromotion?.icon || "🍕"}
           </div>
-          <button className="absolute right-4 top-4 bg-slate-700 rounded-full p-2 text-slate-300 hover:text-white transition-colors">
+          <button className="absolute right-4 top-4 bg-surface-03 rounded-full p-2 text-parchment hover:text-cream transition-colors">
             <ChevronRight size={16} />
           </button>
         </div>
@@ -136,8 +138,8 @@ export default function Home() {
       <div className="px-4 pb-32">
         {/* Section Title */}
         <div className="mt-8 mb-4">
-          <p className="text-slate-400 text-sm">{sectionSubtitle}</p>
-          <h2 className="text-2xl font-bold text-white mt-1">
+          <p className="text-stone text-sm">{sectionSubtitle}</p>
+          <h2 className="text-2xl font-bold text-cream mt-1">
             {sectionTitle}
           </h2>
         </div>
@@ -150,8 +152,8 @@ export default function Home() {
               onClick={() => setActiveCategory(category)}
               className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
                 activeCategory === category
-                  ? "bg-orange-500 text-white"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  ? "bg-gold text-cream"
+                  : "bg-surface-02 text-parchment hover:bg-surface-03"
               }`}
             >
               {category}
@@ -168,7 +170,7 @@ export default function Home() {
           <div className="flex items-center justify-center gap-4">
             {/* Previous item (partially visible) */}
             <div className="w-24 h-32 flex-shrink-0 opacity-40">
-              <div className="w-full h-full rounded-xl bg-slate-800 flex items-center justify-center p-2 text-4xl">
+              <div className="w-full h-full rounded-xl bg-surface-02 flex items-center justify-center p-2 text-4xl">
                 {prevPizza?.icon || "🍕"}
               </div>
             </div>
@@ -177,7 +179,7 @@ export default function Home() {
             <div className="w-40 flex-shrink-0">
               <button
                 onClick={() => handlePizzaClick(currentPizza.id)}
-                className={`w-full bg-slate-800 rounded-2xl p-4 shadow-2xl hover:shadow-orange-500/20 transition-all ${
+                className={`w-full bg-surface-02 rounded-2xl p-4 shadow-2xl hover:shadow-gold/20 transition-all ${
                   clickedPizza === currentPizza.id
                     ? "scale-95 animate-spin"
                     : "hover:scale-105"
@@ -189,10 +191,10 @@ export default function Home() {
                       : "none",
                 }}
               >
-                <div className="w-32 h-32 mx-auto mb-4 rounded-full overflow-hidden bg-slate-700 flex items-center justify-center text-6xl">
+                <div className="w-32 h-32 mx-auto mb-4 rounded-full overflow-hidden bg-surface-03 flex items-center justify-center text-6xl">
                   {currentPizza?.icon || "🍕"}
                 </div>
-                <p className="text-white font-bold text-center text-sm">
+                <p className="text-cream font-bold text-center text-sm">
                   {currentPizza?.name}
                 </p>
                 <div className="flex justify-center gap-1 mt-1 mb-2">
@@ -208,10 +210,10 @@ export default function Home() {
                     />
                   ))}
                 </div>
-                <p className="text-orange-500 font-bold text-center">
+                <p className="text-gold font-bold text-center">
                   ${currentPizza?.price.toFixed(2)}
                 </p>
-                <p className="text-xs text-slate-400 text-center mt-2 leading-tight">
+                <p className="text-xs text-stone text-center mt-2 leading-tight">
                   {currentPizza?.description}
                 </p>
               </button>
@@ -219,7 +221,7 @@ export default function Home() {
 
             {/* Next item (partially visible) */}
             <div className="w-24 h-32 flex-shrink-0 opacity-40">
-              <div className="w-full h-full rounded-xl bg-slate-800 flex items-center justify-center p-2 text-4xl">
+              <div className="w-full h-full rounded-xl bg-surface-02 flex items-center justify-center p-2 text-4xl">
                 {nextPizza?.icon || "🍕"}
               </div>
             </div>
@@ -229,13 +231,13 @@ export default function Home() {
           <div className="flex justify-center gap-2 mt-6">
             <button
               onClick={handlePrev}
-              className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors"
+              className="w-8 h-8 rounded-full bg-surface-02 hover:bg-surface-03 text-stone hover:text-cream flex items-center justify-center transition-colors"
             >
               ←
             </button>
             <button
               onClick={handleNext}
-              className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors"
+              className="w-8 h-8 rounded-full bg-surface-02 hover:bg-surface-03 text-stone hover:text-cream flex items-center justify-center transition-colors"
             >
               →
             </button>

@@ -81,20 +81,20 @@ export default function Localizacao() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
 
       {/* Header */}
-      <div className="bg-slate-900 px-4 py-4 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => navigate(-1)} className="text-slate-300 hover:text-white transition-colors">
+      <div className="bg-brand-dark px-4 py-4 flex justify-between items-center sticky top-0 z-30">
+        <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-white font-bold flex-1 text-center">Localização</h1>
+        <h1 className="text-cream font-bold flex-1 text-center">Localização</h1>
         <div className="w-6"></div>
       </div>
 
       <div className="px-4 pt-6 pb-32 space-y-6">
         {/* Map Placeholder */}
-        <div className="relative w-full h-48 rounded-2xl overflow-hidden bg-slate-800 border border-slate-700 flex items-center justify-center">
+        <div className="relative w-full h-48 rounded-2xl overflow-hidden bg-surface-02 border border-surface-03 flex items-center justify-center">
           <div className="absolute inset-0 opacity-20"
             style={{
               backgroundImage: `repeating-linear-gradient(0deg, transparent, transparent 30px, rgba(100,116,139,0.3) 30px, rgba(100,116,139,0.3) 31px),
@@ -102,21 +102,21 @@ export default function Localizacao() {
             }}
           />
           <div className="flex flex-col items-center gap-3 z-10">
-            <div className="w-12 h-12 rounded-full bg-orange-500 flex items-center justify-center shadow-lg shadow-orange-500/40 animate-pulse">
-              <MapPin size={24} className="text-white" />
+            <div className="w-12 h-12 rounded-full bg-gold flex items-center justify-center shadow-lg shadow-orange-500/40 animate-pulse">
+              <MapPin size={24} className="text-cream" />
             </div>
-            <p className="text-slate-300 text-sm font-medium">São Paulo, SP</p>
-            <p className="text-slate-500 text-xs">Integração com mapa disponível em breve</p>
+            <p className="text-parchment text-sm font-medium">São Paulo, SP</p>
+            <p className="text-stone/70 text-xs">Integração com mapa disponível em breve</p>
           </div>
         </div>
 
         {/* Saved Addresses */}
         <div>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-white font-bold text-lg">Endereços salvos</h2>
+            <h2 className="text-cream font-bold text-lg">Endereços salvos</h2>
             <button
               onClick={() => setShowForm((v) => !v)}
-              className="flex items-center gap-1 text-orange-400 text-sm font-medium hover:text-orange-300 transition-colors"
+              className="flex items-center gap-1 text-gold-light text-sm font-medium hover:text-orange-300 transition-colors"
             >
               <Plus size={18} />
               Adicionar
@@ -125,8 +125,8 @@ export default function Localizacao() {
 
           {/* Add Form */}
           {showForm && (
-            <div className="bg-slate-800 rounded-2xl p-4 border border-orange-500/40 mb-4 space-y-3">
-              <p className="text-white font-bold text-sm mb-2">Novo endereço</p>
+            <div className="bg-surface-02 rounded-2xl p-4 border border-gold/40 mb-4 space-y-3">
+              <p className="text-cream font-bold text-sm mb-2">Novo endereço</p>
 
               {/* Icon selector */}
               <div className="flex gap-2">
@@ -137,7 +137,7 @@ export default function Localizacao() {
                       key={ic}
                       onClick={() => setForm((p) => ({ ...p, icon: ic }))}
                       className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-xl border text-xs transition-colors ${
-                        form.icon === ic ? "bg-orange-500/20 border-orange-500 text-orange-400" : "bg-slate-700 border-slate-600 text-slate-400"
+                        form.icon === ic ? "bg-gold/20 border-gold text-gold-light" : "bg-surface-03 border-brand-mid text-stone"
                       }`}
                     >
                       <Icon size={18} />
@@ -162,7 +162,7 @@ export default function Localizacao() {
                       setForm((p) => ({ ...p, [key]: e.target.value }));
                       if (errors[key]) setErrors((p) => ({ ...p, [key]: undefined }));
                     }}
-                    className={`w-full bg-slate-700 text-white placeholder-slate-500 rounded-xl px-4 py-3 text-sm outline-none border transition-colors ${errors[key] ? "border-red-500" : "border-slate-600 focus:border-orange-500"}`}
+                    className={`w-full bg-surface-03 text-cream placeholder-stone/70 rounded-xl px-4 py-3 text-sm outline-none border transition-colors ${errors[key] ? "border-red-500" : "border-brand-mid focus:border-gold"}`}
                   />
                   {errors[key] && <p className="text-red-400 text-xs mt-1 ml-1">{errors[key]}</p>}
                 </div>
@@ -171,13 +171,13 @@ export default function Localizacao() {
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={() => { setShowForm(false); setErrors({}); }}
-                  className="flex-1 py-2.5 rounded-full border border-slate-600 text-slate-400 text-sm hover:border-slate-500 transition-colors"
+                  className="flex-1 py-2.5 rounded-full border border-brand-mid text-stone text-sm hover:border-slate-500 transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={handleAdd}
-                  className="flex-1 py-2.5 rounded-full bg-orange-500 hover:bg-orange-600 text-white font-bold text-sm transition-colors"
+                  className="flex-1 py-2.5 rounded-full bg-gold hover:bg-gold/90 text-cream font-bold text-sm transition-colors"
                 >
                   Salvar
                 </button>
@@ -192,29 +192,29 @@ export default function Localizacao() {
               return (
                 <div
                   key={addr.id}
-                  className={`bg-slate-800 rounded-2xl p-4 border transition-colors ${addr.isDefault ? "border-orange-500" : "border-slate-700"}`}
+                  className={`bg-surface-02 rounded-2xl p-4 border transition-colors ${addr.isDefault ? "border-gold" : "border-surface-03"}`}
                 >
                   <div className="flex items-start gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${addr.isDefault ? "bg-orange-500" : "bg-slate-700"}`}>
-                      <Icon size={18} className="text-white" />
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${addr.isDefault ? "bg-gold" : "bg-surface-03"}`}>
+                      <Icon size={18} className="text-cream" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
-                        <p className="text-white font-bold text-sm">{addr.label}</p>
+                        <p className="text-cream font-bold text-sm">{addr.label}</p>
                         {addr.isDefault && (
-                          <span className="text-xs bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full">Padrão</span>
+                          <span className="text-xs bg-gold/20 text-gold-light px-2 py-0.5 rounded-full">Padrão</span>
                         )}
                       </div>
-                      <p className="text-slate-300 text-sm">{addr.street}</p>
-                      {addr.complement && <p className="text-slate-400 text-xs">{addr.complement}</p>}
-                      <p className="text-slate-400 text-xs">{addr.city}</p>
+                      <p className="text-parchment text-sm">{addr.street}</p>
+                      {addr.complement && <p className="text-stone text-xs">{addr.complement}</p>}
+                      <p className="text-stone text-xs">{addr.city}</p>
                     </div>
                   </div>
-                  <div className="flex gap-2 mt-3 pt-3 border-t border-slate-700">
+                  <div className="flex gap-2 mt-3 pt-3 border-t border-surface-03">
                     {!addr.isDefault && (
                       <button
                         onClick={() => setDefault(addr.id)}
-                        className="flex-1 flex items-center justify-center gap-1 py-2 rounded-full border border-orange-500/40 text-orange-400 text-xs font-medium hover:bg-orange-500/10 transition-colors"
+                        className="flex-1 flex items-center justify-center gap-1 py-2 rounded-full border border-gold/40 text-gold-light text-xs font-medium hover:bg-gold/10 transition-colors"
                       >
                         <Check size={14} />
                         Definir padrão
@@ -236,8 +236,8 @@ export default function Localizacao() {
           {addresses.length === 0 && !showForm && (
             <div className="text-center py-12">
               <MapPin size={48} className="text-slate-600 mx-auto mb-3" />
-              <p className="text-white font-bold">Nenhum endereço salvo</p>
-              <p className="text-slate-400 text-sm mt-1">Adicione um endereço para agilizar seus pedidos.</p>
+              <p className="text-cream font-bold">Nenhum endereço salvo</p>
+              <p className="text-stone text-sm mt-1">Adicione um endereço para agilizar seus pedidos.</p>
             </div>
           )}
         </div>

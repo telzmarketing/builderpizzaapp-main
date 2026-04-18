@@ -140,83 +140,83 @@ export default function Checkout() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
 
       {/* Header */}
-      <div className="bg-slate-900 px-4 py-4 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => navigate(-1)} className="text-slate-300 hover:text-white transition-colors">
+      <div className="bg-brand-dark px-4 py-4 flex justify-between items-center sticky top-0 z-30">
+        <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-white font-bold flex-1 text-center">{c.title}</h1>
+        <h1 className="text-cream font-bold flex-1 text-center">{c.title}</h1>
         <div className="w-6" />
       </div>
 
       <div className="px-4 pt-6 pb-36 space-y-6">
         {/* Delivery Address */}
         <div>
-          <h2 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
-            <MapPin size={20} className="text-orange-500" />
+          <h2 className="text-cream font-bold text-lg mb-4 flex items-center gap-2">
+            <MapPin size={20} className="text-gold" />
             {c.deliveryTitle}
           </h2>
           <div className="space-y-3">
             {/* Name */}
             <div>
-              <div className="flex items-center gap-3 bg-slate-800 rounded-xl px-4 py-3 border border-slate-700 focus-within:border-orange-500 transition-colors">
-                <User size={18} className="text-slate-400 flex-shrink-0" />
+              <div className="flex items-center gap-3 bg-surface-02 rounded-xl px-4 py-3 border border-surface-03 focus-within:border-gold transition-colors">
+                <User size={18} className="text-stone flex-shrink-0" />
                 <input type="text" placeholder={c.fields.name} value={form.name}
                   onChange={(e) => handleChange("name", e.target.value)}
-                  className="flex-1 bg-transparent text-white placeholder-slate-500 outline-none text-sm" />
+                  className="flex-1 bg-transparent text-cream placeholder-stone/70 outline-none text-sm" />
               </div>
               {errors.name && <p className="text-red-400 text-xs mt-1 ml-1">{errors.name}</p>}
             </div>
 
             {/* Phone */}
             <div>
-              <div className="flex items-center gap-3 bg-slate-800 rounded-xl px-4 py-3 border border-slate-700 focus-within:border-orange-500 transition-colors">
-                <Phone size={18} className="text-slate-400 flex-shrink-0" />
+              <div className="flex items-center gap-3 bg-surface-02 rounded-xl px-4 py-3 border border-surface-03 focus-within:border-gold transition-colors">
+                <Phone size={18} className="text-stone flex-shrink-0" />
                 <input type="tel" placeholder={c.fields.phone} value={form.phone}
                   onChange={(e) => handleChange("phone", e.target.value)}
-                  className="flex-1 bg-transparent text-white placeholder-slate-500 outline-none text-sm" />
+                  className="flex-1 bg-transparent text-cream placeholder-stone/70 outline-none text-sm" />
               </div>
               {errors.phone && <p className="text-red-400 text-xs mt-1 ml-1">{errors.phone}</p>}
             </div>
 
             {/* Address */}
             <div>
-              <div className="flex items-center gap-3 bg-slate-800 rounded-xl px-4 py-3 border border-slate-700 focus-within:border-orange-500 transition-colors">
-                <Home size={18} className="text-slate-400 flex-shrink-0" />
+              <div className="flex items-center gap-3 bg-surface-02 rounded-xl px-4 py-3 border border-surface-03 focus-within:border-gold transition-colors">
+                <Home size={18} className="text-stone flex-shrink-0" />
                 <input type="text" placeholder={c.fields.address} value={form.address}
                   onChange={(e) => handleChange("address", e.target.value)}
-                  className="flex-1 bg-transparent text-white placeholder-slate-500 outline-none text-sm" />
+                  className="flex-1 bg-transparent text-cream placeholder-stone/70 outline-none text-sm" />
               </div>
               {errors.address && <p className="text-red-400 text-xs mt-1 ml-1">{errors.address}</p>}
             </div>
 
             {/* City */}
             <div>
-              <div className="flex items-center gap-3 bg-slate-800 rounded-xl px-4 py-3 border border-slate-700 focus-within:border-orange-500 transition-colors">
-                <MapPin size={18} className="text-slate-400 flex-shrink-0" />
+              <div className="flex items-center gap-3 bg-surface-02 rounded-xl px-4 py-3 border border-surface-03 focus-within:border-gold transition-colors">
+                <MapPin size={18} className="text-stone flex-shrink-0" />
                 <input type="text" placeholder={c.fields.city} value={form.city}
                   onChange={(e) => handleChange("city", e.target.value)}
-                  className="flex-1 bg-transparent text-white placeholder-slate-500 outline-none text-sm" />
+                  className="flex-1 bg-transparent text-cream placeholder-stone/70 outline-none text-sm" />
               </div>
               {errors.city && <p className="text-red-400 text-xs mt-1 ml-1">{errors.city}</p>}
             </div>
 
             {/* Complement */}
-            <div className="flex items-center gap-3 bg-slate-800 rounded-xl px-4 py-3 border border-slate-700 focus-within:border-orange-500 transition-colors">
-              <Home size={18} className="text-slate-400 flex-shrink-0" />
+            <div className="flex items-center gap-3 bg-surface-02 rounded-xl px-4 py-3 border border-surface-03 focus-within:border-gold transition-colors">
+              <Home size={18} className="text-stone flex-shrink-0" />
               <input type="text" placeholder={c.fields.complement} value={form.complement}
                 onChange={(e) => handleChange("complement", e.target.value)}
-                className="flex-1 bg-transparent text-white placeholder-slate-500 outline-none text-sm" />
+                className="flex-1 bg-transparent text-cream placeholder-stone/70 outline-none text-sm" />
             </div>
           </div>
         </div>
 
         {/* Coupon */}
         <div>
-          <h2 className="text-white font-bold text-lg mb-3 flex items-center gap-2">
-            <Tag size={20} className="text-orange-500" />
+          <h2 className="text-cream font-bold text-lg mb-3 flex items-center gap-2">
+            <Tag size={20} className="text-gold" />
             Cupom de desconto
           </h2>
           <div className="flex gap-2">
@@ -225,9 +225,9 @@ export default function Checkout() {
               placeholder="Código do cupom"
               value={couponCode}
               onChange={(e) => { setCouponCode(e.target.value.toUpperCase()); setCouponApplied(false); setCouponMsg(""); setCouponDiscount(0); }}
-              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 outline-none focus:border-orange-500 text-sm uppercase"
+              className="flex-1 bg-surface-02 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/70 outline-none focus:border-gold text-sm uppercase"
             />
-            <button onClick={handleApplyCoupon} className="px-4 py-3 bg-orange-500 hover:bg-orange-600 rounded-xl text-white font-bold text-sm transition-colors">
+            <button onClick={handleApplyCoupon} className="px-4 py-3 bg-gold hover:bg-gold/90 rounded-xl text-cream font-bold text-sm transition-colors">
               Aplicar
             </button>
           </div>
@@ -238,8 +238,8 @@ export default function Checkout() {
 
         {/* Payment Method */}
         <div>
-          <h2 className="text-white font-bold text-lg mb-3 flex items-center gap-2">
-            <CreditCard size={20} className="text-orange-500" />
+          <h2 className="text-cream font-bold text-lg mb-3 flex items-center gap-2">
+            <CreditCard size={20} className="text-gold" />
             Forma de pagamento
           </h2>
           <div className="grid grid-cols-3 gap-2">
@@ -251,7 +251,7 @@ export default function Checkout() {
               <button
                 key={opt.value}
                 onClick={() => setPaymentMethod(opt.value)}
-                className={`flex flex-col items-center gap-1 py-3 rounded-xl border text-sm font-medium transition-colors ${paymentMethod === opt.value ? "border-orange-500 bg-orange-500/10 text-orange-400" : "border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-600"}`}
+                className={`flex flex-col items-center gap-1 py-3 rounded-xl border text-sm font-medium transition-colors ${paymentMethod === opt.value ? "border-gold bg-gold/10 text-gold-light" : "border-surface-03 bg-surface-02 text-stone hover:border-brand-mid"}`}
               >
                 <span className="text-xl">{opt.icon}</span>
                 {opt.label}
@@ -262,7 +262,7 @@ export default function Checkout() {
 
         {/* Order Summary */}
         <div>
-          <h2 className="text-white font-bold text-lg mb-4">{c.summaryTitle}</h2>
+          <h2 className="text-cream font-bold text-lg mb-4">{c.summaryTitle}</h2>
           <div className="space-y-3">
             {cart.map((item) => {
               const isMulti = item.flavorDivision > 1;
@@ -271,30 +271,30 @@ export default function Checkout() {
                 ? item.flavors.map((f) => f.name).join(" + ")
                 : item.productData.name;
               return (
-                <div key={item.cartItemId} className="bg-slate-800 rounded-xl p-4 flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-slate-700 flex-shrink-0 flex items-center justify-center text-lg">
+                <div key={item.cartItemId} className="bg-surface-02 rounded-xl p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-surface-03 flex-shrink-0 flex items-center justify-center text-lg">
                     {displayIcons || item.productData.icon}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-white font-semibold text-sm truncate">{displayName}</p>
-                    <p className="text-slate-400 text-xs">
+                    <p className="text-cream font-semibold text-sm truncate">{displayName}</p>
+                    <p className="text-stone text-xs">
                       {item.quantity}x · {item.selectedSize}
                       {isMulti && ` · ${item.flavorDivision === 2 ? "Meio a Meio" : "3 Sabores"}`}
                     </p>
                   </div>
-                  <p className="text-orange-500 font-bold text-sm flex-shrink-0">
+                  <p className="text-gold font-bold text-sm flex-shrink-0">
                     R$ {(item.finalPrice * item.quantity).toFixed(2)}
                   </p>
                 </div>
               );
             })}
 
-            <div className="bg-slate-800 rounded-xl p-4 space-y-3 border border-slate-700">
-              <div className="flex justify-between text-slate-300 text-sm">
+            <div className="bg-surface-02 rounded-xl p-4 space-y-3 border border-surface-03">
+              <div className="flex justify-between text-parchment text-sm">
                 <span>Subtotal:</span>
                 <span>R$ {cartSubtotal.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-slate-300 text-sm">
+              <div className="flex justify-between text-parchment text-sm">
                 <span>Taxa de entrega:</span>
                 <span className={shippingFree ? "text-green-400" : ""}>
                   {shippingFree ? "Grátis" : `R$ ${deliveryFee.toFixed(2)}`}
@@ -306,9 +306,9 @@ export default function Checkout() {
                   <span>-R$ {couponDiscount.toFixed(2)}</span>
                 </div>
               )}
-              <div className="border-t border-slate-700 pt-3 flex justify-between">
-                <span className="text-white font-bold">Total:</span>
-                <span className="text-orange-500 font-bold text-lg">R$ {Math.max(0, total).toFixed(2)}</span>
+              <div className="border-t border-surface-03 pt-3 flex justify-between">
+                <span className="text-cream font-bold">Total:</span>
+                <span className="text-gold font-bold text-lg">R$ {Math.max(0, total).toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -322,11 +322,11 @@ export default function Checkout() {
       </div>
 
       {/* Confirm Button */}
-      <div className="fixed bottom-0 left-0 right-0 bg-slate-950 border-t border-slate-800 px-4 py-4">
+      <div className="fixed bottom-0 left-0 right-0 bg-surface-00 border-t border-surface-02 px-4 py-4">
         <button
           onClick={handleConfirm}
           disabled={loading}
-          className="w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white font-bold py-4 px-4 rounded-full text-center transition-colors text-lg active:scale-95 flex items-center justify-center gap-2"
+          className="w-full bg-gold hover:bg-gold/90 disabled:opacity-60 text-cream font-bold py-4 px-4 rounded-full text-center transition-colors text-lg active:scale-95 flex items-center justify-center gap-2"
         >
           {loading && <Loader2 size={20} className="animate-spin" />}
           {loading ? "Processando..." : c.confirmButton}

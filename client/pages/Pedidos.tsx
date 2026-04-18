@@ -6,15 +6,15 @@ import { ordersApi, type ApiOrder } from "@/lib/api";
 import BottomNav from "@/components/BottomNav";
 
 const statusStyle: Record<string, string> = {
-  pending: "bg-slate-500/20 text-slate-400",
+  pending: "bg-slate-500/20 text-stone",
   waiting_payment: "bg-yellow-500/20 text-yellow-400",
   paid: "bg-cyan-500/20 text-cyan-400",
-  preparing: "bg-orange-500/20 text-orange-400",
+  preparing: "bg-gold/20 text-gold-light",
   ready_for_pickup: "bg-purple-500/20 text-purple-400",
   on_the_way: "bg-blue-500/20 text-blue-400",
   delivered: "bg-green-500/20 text-green-400",
   cancelled: "bg-red-500/20 text-red-400",
-  refunded: "bg-slate-500/20 text-slate-400",
+  refunded: "bg-slate-500/20 text-stone",
 };
 
 export default function Pedidos() {
@@ -37,14 +37,14 @@ export default function Pedidos() {
   }, [customer]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
 
       {/* Header */}
-      <div className="bg-slate-900 px-4 py-4 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => navigate(-1)} className="text-slate-300 hover:text-white transition-colors">
+      <div className="bg-brand-dark px-4 py-4 flex justify-between items-center sticky top-0 z-30">
+        <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-white font-bold flex-1 text-center">{c.title}</h1>
+        <h1 className="text-cream font-bold flex-1 text-center">{c.title}</h1>
         <div className="w-6" />
       </div>
 
@@ -52,36 +52,36 @@ export default function Pedidos() {
         {!customer ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <ShoppingBag size={64} className="text-slate-600 mb-4" />
-            <h2 className="text-white font-bold text-xl mb-2">Faça login para ver seus pedidos</h2>
-            <p className="text-slate-400 text-sm mb-6">Entre na sua conta para acompanhar o histórico de pedidos.</p>
-            <button onClick={() => navigate("/conta")} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-full transition-colors">
+            <h2 className="text-cream font-bold text-xl mb-2">Faça login para ver seus pedidos</h2>
+            <p className="text-stone text-sm mb-6">Entre na sua conta para acompanhar o histórico de pedidos.</p>
+            <button onClick={() => navigate("/conta")} className="bg-gold hover:bg-gold/90 text-cream font-bold py-3 px-8 rounded-full transition-colors">
               Entrar
             </button>
           </div>
         ) : loading ? (
           <div className="flex items-center justify-center py-24">
-            <Loader2 size={40} className="animate-spin text-orange-500" />
+            <Loader2 size={40} className="animate-spin text-gold" />
           </div>
         ) : orders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <ShoppingBag size={64} className="text-slate-600 mb-4" />
-            <h2 className="text-white font-bold text-xl mb-2">{c.emptyTitle}</h2>
-            <p className="text-slate-400 text-sm mb-6">{c.emptySubtitle}</p>
-            <Link to="/" className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-full transition-colors">
+            <h2 className="text-cream font-bold text-xl mb-2">{c.emptyTitle}</h2>
+            <p className="text-stone text-sm mb-6">{c.emptySubtitle}</p>
+            <Link to="/" className="bg-gold hover:bg-gold/90 text-cream font-bold py-3 px-8 rounded-full transition-colors">
               {c.orderButton}
             </Link>
           </div>
         ) : (
           <div className="space-y-4">
             {orders.map((order) => (
-              <div key={order.id} className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
+              <div key={order.id} className="bg-surface-02 rounded-2xl border border-surface-03 overflow-hidden">
                 {/* Order Header */}
-                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-surface-03">
                   <div>
-                    <p className="text-white font-bold text-sm font-mono">
+                    <p className="text-cream font-bold text-sm font-mono">
                       #{order.id.slice(0, 8).toUpperCase()}
                     </p>
-                    <p className="text-slate-400 text-xs">
+                    <p className="text-stone text-xs">
                       {new Date(order.created_at).toLocaleDateString("pt-BR", {
                         day: "2-digit",
                         month: "short",
@@ -91,7 +91,7 @@ export default function Pedidos() {
                       })}
                     </p>
                   </div>
-                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${statusStyle[order.status] ?? "bg-slate-500/20 text-slate-400"}`}>
+                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${statusStyle[order.status] ?? "bg-slate-500/20 text-stone"}`}>
                     {statusLabels[order.status] ?? order.status}
                   </span>
                 </div>
@@ -106,17 +106,17 @@ export default function Pedidos() {
                       : item.product_name;
                     return (
                       <div key={item.id} className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-sm flex-shrink-0">
+                        <div className="w-9 h-9 rounded-full bg-surface-03 flex items-center justify-center text-sm flex-shrink-0">
                           {displayIcons || "🍕"}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-white text-sm truncate">{displayName}</p>
-                          <p className="text-slate-400 text-xs">
+                          <p className="text-cream text-sm truncate">{displayName}</p>
+                          <p className="text-stone text-xs">
                             x{item.quantity} · {item.selected_size}
                             {isMulti && ` · ${item.flavor_division === 2 ? "Meio a Meio" : "3 Sabores"}`}
                           </p>
                         </div>
-                        <p className="text-slate-300 text-sm flex-shrink-0">
+                        <p className="text-parchment text-sm flex-shrink-0">
                           R$ {(item.final_price * item.quantity).toFixed(2)}
                         </p>
                       </div>
@@ -125,14 +125,14 @@ export default function Pedidos() {
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-between px-4 py-3 bg-slate-900/50 border-t border-slate-700">
+                <div className="flex items-center justify-between px-4 py-3 bg-brand-dark/50 border-t border-surface-03">
                   <div>
-                    <p className="text-slate-400 text-xs">Total pago</p>
-                    <p className="text-orange-500 font-bold">R$ {order.total.toFixed(2)}</p>
+                    <p className="text-stone text-xs">Total pago</p>
+                    <p className="text-gold font-bold">R$ {order.total.toFixed(2)}</p>
                   </div>
                   <button
                     onClick={() => navigate(`/order-tracking?orderId=${order.id}`)}
-                    className="text-xs text-orange-400 border border-orange-500/40 px-4 py-2 rounded-full hover:bg-orange-500/10 transition-colors"
+                    className="text-xs text-gold-light border border-gold/40 px-4 py-2 rounded-full hover:bg-gold/10 transition-colors"
                   >
                     Ver detalhes
                   </button>

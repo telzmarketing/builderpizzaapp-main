@@ -54,24 +54,24 @@ export default function OrderTracking() {
 
   if (!orderId || notFound) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
-        <div className="bg-slate-800 px-4 py-2 flex justify-between items-center text-xs text-slate-400">
+      <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
+        <div className="bg-surface-02 px-4 py-2 flex justify-between items-center text-xs text-stone">
           <span>10:20</span>
           <div className="flex gap-1"><span>📡</span><span>📶</span><span>🔋</span></div>
         </div>
-        <div className="bg-slate-900 px-4 py-4 flex justify-between items-center sticky top-0 z-30">
-          <button onClick={() => navigate(-1)} className="text-slate-300 hover:text-white transition-colors">
+        <div className="bg-brand-dark px-4 py-4 flex justify-between items-center sticky top-0 z-30">
+          <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
             <ChevronLeft size={24} />
           </button>
-          <h1 className="text-white font-bold flex-1 text-center">{t.pageTitle}</h1>
+          <h1 className="text-cream font-bold flex-1 text-center">{t.pageTitle}</h1>
           <div className="w-6" />
         </div>
         <div className="flex-1 flex items-center justify-center px-4 py-16">
           <div className="text-center">
             <div className="text-6xl mb-4">📦</div>
-            <h2 className="text-2xl font-bold text-white mb-2">Pedido não encontrado</h2>
-            <p className="text-slate-400 mb-6">{loadError || "Faça um pedido para acompanhar aqui."}</p>
-            <Link to="/" className="inline-block bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-6 rounded-full transition-colors">
+            <h2 className="text-2xl font-bold text-cream mb-2">Pedido não encontrado</h2>
+            <p className="text-stone mb-6">{loadError || "Faça um pedido para acompanhar aqui."}</p>
+            <Link to="/" className="inline-block bg-gold hover:bg-gold/90 text-cream font-bold py-3 px-6 rounded-full transition-colors">
               Ir para o início
             </Link>
           </div>
@@ -82,32 +82,32 @@ export default function OrderTracking() {
 
   if (!order) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950 flex items-center justify-center">
-        <Loader2 size={40} className="animate-spin text-orange-500" />
+      <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 flex items-center justify-center">
+        <Loader2 size={40} className="animate-spin text-gold" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
 
       {/* Header */}
-      <div className="bg-slate-900 px-4 py-4 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => navigate(-1)} className="text-slate-300 hover:text-white transition-colors">
+      <div className="bg-brand-dark px-4 py-4 flex justify-between items-center sticky top-0 z-30">
+        <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-white font-bold flex-1 text-center">{t.pageTitle}</h1>
+        <h1 className="text-cream font-bold flex-1 text-center">{t.pageTitle}</h1>
         <div className="w-6" />
       </div>
 
       <div className="px-4 pt-6 pb-32">
         {/* Order Number */}
         <div className="text-center mb-2">
-          <p className="text-slate-400 text-sm">{t.orderNumberLabel}</p>
-          <p className="text-6xl font-bold text-white mt-1">
+          <p className="text-stone text-sm">{t.orderNumberLabel}</p>
+          <p className="text-6xl font-bold text-cream mt-1">
             {parseInt(order.id.slice(0, 8), 16) % 100}
           </p>
-          <p className="text-slate-400 text-sm mt-2">{estimatedText}</p>
+          <p className="text-stone text-sm mt-2">{estimatedText}</p>
         </div>
 
         {/* Progress Bar */}
@@ -120,13 +120,13 @@ export default function OrderTracking() {
                     <div
                       className={`w-4 h-4 rounded-full border-2 transition-colors ${
                         index <= currentStepIndex
-                          ? "bg-orange-500 border-orange-500"
-                          : "bg-slate-800 border-slate-600"
+                          ? "bg-gold border-gold"
+                          : "bg-surface-02 border-brand-mid"
                       }`}
                     />
                   </div>
                   {index < PROGRESS_STEPS.length - 1 && (
-                    <div className={`flex-1 h-0.5 transition-colors ${index < currentStepIndex ? "bg-orange-500" : "bg-slate-700"}`} />
+                    <div className={`flex-1 h-0.5 transition-colors ${index < currentStepIndex ? "bg-gold" : "bg-surface-03"}`} />
                   )}
                 </div>
               ))}
@@ -136,19 +136,19 @@ export default function OrderTracking() {
 
         {/* Active Status */}
         <div className="text-center mb-6">
-          <p className={`font-bold text-xl ${order.status === "cancelled" || order.status === "refunded" ? "text-red-400" : "text-white"}`}>
+          <p className={`font-bold text-xl ${order.status === "cancelled" || order.status === "refunded" ? "text-red-400" : "text-cream"}`}>
             {statusLabel}
           </p>
         </div>
         {statusDescription && (
           <div className="text-center mb-8">
-            <p className="text-slate-400 text-sm">{statusDescription}</p>
+            <p className="text-stone text-sm">{statusDescription}</p>
           </div>
         )}
 
         {/* Items Ordered */}
         <div className="mb-6">
-          <h3 className="text-white font-bold mb-4 text-lg">Itens do Pedido</h3>
+          <h3 className="text-cream font-bold mb-4 text-lg">Itens do Pedido</h3>
           <div className="space-y-3">
             {order.items.map((item) => {
               const isMulti = item.flavor_division > 1;
@@ -163,17 +163,17 @@ export default function OrderTracking() {
                   ? "3 Sabores"
                   : "Inteira";
               return (
-                <div key={item.id} className="bg-slate-800 rounded-xl p-4 flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-full bg-slate-700 flex-shrink-0 flex items-center justify-center text-lg">
+                <div key={item.id} className="bg-surface-02 rounded-xl p-4 flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-full bg-surface-03 flex-shrink-0 flex items-center justify-center text-lg">
                     {displayIcons || "🍕"}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-white font-semibold text-sm leading-tight">{displayName}</h4>
-                    <p className="text-slate-400 text-xs mt-0.5">
+                    <h4 className="text-cream font-semibold text-sm leading-tight">{displayName}</h4>
+                    <p className="text-stone text-xs mt-0.5">
                       {item.quantity}x · {item.selected_size} · {divLabel}
                     </p>
                   </div>
-                  <p className="text-orange-500 font-bold text-sm flex-shrink-0">
+                  <p className="text-gold font-bold text-sm flex-shrink-0">
                     R$ {(item.final_price * item.quantity).toFixed(2)}
                   </p>
                 </div>
@@ -182,12 +182,12 @@ export default function OrderTracking() {
           </div>
 
           {/* Order Summary */}
-          <div className="bg-slate-800 rounded-xl p-4 mt-6 space-y-3 border border-slate-700">
-            <div className="flex justify-between text-slate-300 text-sm">
+          <div className="bg-surface-02 rounded-xl p-4 mt-6 space-y-3 border border-surface-03">
+            <div className="flex justify-between text-parchment text-sm">
               <span>Subtotal:</span>
               <span>R$ {order.subtotal.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between text-slate-300 text-sm">
+            <div className="flex justify-between text-parchment text-sm">
               <span>Taxa de entrega:</span>
               <span>R$ {order.shipping_fee.toFixed(2)}</span>
             </div>
@@ -197,26 +197,26 @@ export default function OrderTracking() {
                 <span>-R$ {order.discount.toFixed(2)}</span>
               </div>
             )}
-            <div className="border-t border-slate-700 pt-3 flex justify-between">
-              <span className="text-white font-bold">Total:</span>
-              <span className="text-orange-500 font-bold text-lg">R$ {order.total.toFixed(2)}</span>
+            <div className="border-t border-surface-03 pt-3 flex justify-between">
+              <span className="text-cream font-bold">Total:</span>
+              <span className="text-gold font-bold text-lg">R$ {order.total.toFixed(2)}</span>
             </div>
           </div>
         </div>
       </div>
 
       {/* Bottom Buttons */}
-      <div className="fixed bottom-0 left-0 right-0 bg-slate-950 border-t border-slate-800 px-4 py-4">
+      <div className="fixed bottom-0 left-0 right-0 bg-surface-00 border-t border-surface-02 px-4 py-4">
         <div className="flex gap-3">
           <Link
             to="/pedidos"
-            className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-4 rounded-full transition-colors active:scale-95 text-center text-sm"
+            className="flex-1 bg-gold hover:bg-gold/90 text-cream font-bold py-3 px-4 rounded-full transition-colors active:scale-95 text-center text-sm"
           >
             Meus Pedidos
           </Link>
           <Link
             to="/"
-            className="flex-1 border-2 border-slate-600 text-slate-300 font-bold py-3 px-4 rounded-full transition-colors hover:border-slate-500 active:scale-95 text-center text-sm"
+            className="flex-1 border-2 border-brand-mid text-parchment font-bold py-3 px-4 rounded-full transition-colors hover:border-slate-500 active:scale-95 text-center text-sm"
           >
             Cardápio
           </Link>

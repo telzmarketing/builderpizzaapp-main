@@ -20,17 +20,17 @@ export default function Cardapio() {
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
       {/* Header */}
-      <div className="bg-slate-900 px-4 py-4 sticky top-0 z-30 border-b border-slate-800">
-        <h1 className="text-white font-bold text-xl text-center mb-3">Cardápio</h1>
+      <div className="bg-brand-dark px-4 py-4 sticky top-0 z-30 border-b border-surface-02">
+        <h1 className="text-cream font-bold text-xl text-center mb-3">Cardápio</h1>
         <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone/70" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar produtos..."
-            className="w-full bg-slate-800 text-white placeholder-slate-500 rounded-full py-2.5 pl-9 pr-4 text-sm border border-slate-700 focus:outline-none focus:border-orange-500 transition-colors"
+            className="w-full bg-surface-02 text-cream placeholder-stone/70 rounded-full py-2.5 pl-9 pr-4 text-sm border border-surface-03 focus:outline-none focus:border-gold transition-colors"
           />
         </div>
       </div>
@@ -43,8 +43,8 @@ export default function Cardapio() {
             onClick={() => setActiveCategory(cat)}
             className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
               activeCategory === cat
-                ? "bg-orange-500 text-white shadow-lg shadow-orange-500/30"
-                : "bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700"
+                ? "bg-gold text-cream shadow-lg shadow-gold/30"
+                : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
             }`}
           >
             {cat}
@@ -57,7 +57,7 @@ export default function Cardapio() {
         {filtered.length === 0 ? (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">🍕</div>
-            <p className="text-slate-400">Nenhum produto encontrado</p>
+            <p className="text-stone">Nenhum produto encontrado</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
@@ -65,27 +65,27 @@ export default function Cardapio() {
               <button
                 key={product.id}
                 onClick={() => navigate(`/product/${product.id}`)}
-                className="bg-slate-800 rounded-2xl p-4 border border-slate-700 hover:border-orange-500/40 transition-all active:scale-95 text-left"
+                className="bg-surface-02 rounded-2xl p-4 border border-surface-03 hover:border-gold/40 transition-all active:scale-95 text-left"
               >
-                <div className="w-full aspect-square rounded-xl bg-slate-700 flex items-center justify-center text-5xl mb-3">
+                <div className="w-full aspect-square rounded-xl bg-surface-03 flex items-center justify-center text-5xl mb-3">
                   {product.icon}
                 </div>
-                <h3 className="text-white font-semibold text-sm leading-tight line-clamp-1">
+                <h3 className="text-cream font-semibold text-sm leading-tight line-clamp-1">
                   {product.name}
                 </h3>
                 <div className="flex items-center gap-1 mt-1">
                   <Star size={10} className="fill-yellow-400 text-yellow-400" />
-                  <span className="text-slate-400 text-xs">{product.rating?.toFixed(1) ?? "4.5"}</span>
+                  <span className="text-stone text-xs">{product.rating?.toFixed(1) ?? "4.5"}</span>
                 </div>
-                <p className="text-slate-500 text-xs mt-1 line-clamp-2 leading-tight">
+                <p className="text-stone/70 text-xs mt-1 line-clamp-2 leading-tight">
                   {product.description}
                 </p>
                 <div className="flex items-center justify-between mt-3">
-                  <span className="text-orange-500 font-bold text-sm">
+                  <span className="text-gold font-bold text-sm">
                     R$ {product.price.toFixed(2)}
                   </span>
-                  <div className="w-7 h-7 rounded-full bg-orange-500 flex items-center justify-center">
-                    <Plus size={14} className="text-white" />
+                  <div className="w-7 h-7 rounded-full bg-gold flex items-center justify-center">
+                    <Plus size={14} className="text-cream" />
                   </div>
                 </div>
               </button>

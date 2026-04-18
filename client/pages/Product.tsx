@@ -149,10 +149,10 @@ export default function Product() {
 
   if (!product) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-white text-xl">Produto não encontrado</p>
-          <Link to="/" className="text-orange-500 hover:text-orange-400 mt-4 block">Voltar ao início</Link>
+          <p className="text-cream text-xl">Produto não encontrado</p>
+          <Link to="/" className="text-gold hover:text-gold-light mt-4 block">Voltar ao início</Link>
         </div>
       </div>
     );
@@ -237,14 +237,14 @@ export default function Product() {
     products.filter((p) => !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id));
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
 
       {/* Header */}
-      <div className="bg-slate-900 px-4 py-4 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => navigate(-1)} className="text-slate-300 hover:text-white transition-colors">
+      <div className="bg-brand-dark px-4 py-4 flex justify-between items-center sticky top-0 z-30">
+        <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-white font-bold flex-1 text-center text-sm">{p.pageTitle}</h1>
+        <h1 className="text-cream font-bold flex-1 text-center text-sm">{p.pageTitle}</h1>
         <div className="w-6"></div>
       </div>
 
@@ -253,23 +253,23 @@ export default function Product() {
 
         {/* ── Hero Product Image ───────────────────────────────────────────── */}
         <div className="flex flex-col items-center mb-6">
-          <div className="w-52 h-52 rounded-full bg-slate-800 border-4 border-slate-700 flex items-center justify-center text-8xl shadow-2xl shadow-black/40">
+          <div className="w-52 h-52 rounded-full bg-surface-02 border-4 border-surface-03 flex items-center justify-center text-8xl shadow-2xl shadow-black/40">
             {product.icon}
           </div>
-          <h1 className="text-white text-2xl font-bold mt-4 text-center">{product.name}</h1>
+          <h1 className="text-cream text-2xl font-bold mt-4 text-center">{product.name}</h1>
           <div className="flex gap-1 mt-2">
             {[...Array(5)].map((_, i) => (
               <Star key={i} size={16} className={i < Math.floor(product.rating || 4) ? "fill-yellow-400 text-yellow-400" : "text-slate-600"} />
             ))}
           </div>
           <div className="flex items-start gap-4 w-full mt-4">
-            <p className="text-slate-400 text-sm leading-relaxed flex-1">{product.description}</p>
-            <div className="flex items-center gap-3 bg-slate-800 rounded-full px-4 py-2 flex-shrink-0 border border-slate-700">
-              <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="text-slate-300 hover:text-white transition-colors">
+            <p className="text-stone text-sm leading-relaxed flex-1">{product.description}</p>
+            <div className="flex items-center gap-3 bg-surface-02 rounded-full px-4 py-2 flex-shrink-0 border border-surface-03">
+              <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="text-parchment hover:text-cream transition-colors">
                 <Minus size={16} />
               </button>
-              <span className="text-white font-bold w-5 text-center">{quantity}</span>
-              <button onClick={() => setQuantity(quantity + 1)} className="text-orange-500 hover:text-orange-400 transition-colors">
+              <span className="text-cream font-bold w-5 text-center">{quantity}</span>
+              <button onClick={() => setQuantity(quantity + 1)} className="text-gold hover:text-gold-light transition-colors">
                 <Plus size={16} />
               </button>
             </div>
@@ -278,7 +278,7 @@ export default function Product() {
 
         {/* ── Division Selector ───────────────────────────────────────────── */}
         <div className="mb-6">
-          <h3 className="text-white font-bold mb-3">{p.divisionLabel}</h3>
+          <h3 className="text-cream font-bold mb-3">{p.divisionLabel}</h3>
           <div className="flex gap-2">
             {divisionOptions.map(({ value, label, emoji }) => (
               <button
@@ -286,8 +286,8 @@ export default function Product() {
                 onClick={() => handleDivisionChange(value)}
                 className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${
                   division === value
-                    ? "bg-orange-500 text-white shadow-lg shadow-orange-500/30"
-                    : "bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700"
+                    ? "bg-gold text-cream shadow-lg shadow-gold/30"
+                    : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
                 }`}
               >
                 <span className="block text-base mb-0.5">{emoji}</span>
@@ -300,7 +300,7 @@ export default function Product() {
         {/* ── Flavor Slots ────────────────────────────────────────────────── */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-white font-bold">
+            <h3 className="text-cream font-bold">
               {division === 1 ? "Sabor da Pizza" : `Escolha os ${division} Sabores`}
             </h3>
             {cartError && (
@@ -324,27 +324,27 @@ export default function Product() {
                     onClick={() => handleSlotToggle(i)}
                     className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${
                       isOpen
-                        ? "bg-slate-800 border-orange-500"
+                        ? "bg-surface-02 border-gold"
                         : flavor
-                        ? "bg-slate-800 border-green-500/40"
+                        ? "bg-surface-02 border-green-500/40"
                         : cartError
-                        ? "bg-slate-800 border-red-500/60"
-                        : "bg-slate-800 border-slate-700 hover:border-slate-600"
+                        ? "bg-surface-02 border-red-500/60"
+                        : "bg-surface-02 border-surface-03 hover:border-brand-mid"
                     }`}
                   >
                     {/* Icon */}
-                    <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-2xl flex-shrink-0">
+                    <div className="w-12 h-12 rounded-full bg-surface-03 flex items-center justify-center text-2xl flex-shrink-0">
                       {flavor?.icon ?? "?"}
                     </div>
 
                     {/* Info */}
                     <div className="flex-1 text-left">
-                      <p className="text-slate-400 text-xs">{slotLabel}</p>
-                      <p className={`text-sm font-semibold ${flavor ? "text-white" : "text-slate-500"}`}>
+                      <p className="text-stone text-xs">{slotLabel}</p>
+                      <p className={`text-sm font-semibold ${flavor ? "text-cream" : "text-stone/70"}`}>
                         {flavor?.name ?? "Toque para escolher o sabor"}
                       </p>
                       {flavor && (
-                        <p className="text-orange-400 text-xs">R$ {flavor.price.toFixed(2)}</p>
+                        <p className="text-gold-light text-xs">R$ {flavor.price.toFixed(2)}</p>
                       )}
                     </div>
 
@@ -356,7 +356,7 @@ export default function Product() {
                           {isOpen ? "Trocar" : "Ok"}
                         </span>
                       ) : (
-                        <span className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/30 px-2 py-1 rounded-full">
+                        <span className="text-xs text-gold-light bg-gold/10 border border-gold/30 px-2 py-1 rounded-full">
                           Escolher
                         </span>
                       )}
@@ -365,8 +365,8 @@ export default function Product() {
 
                   {/* Inline flavor picker */}
                   {isOpen && (
-                    <div className="mt-2 bg-slate-900 rounded-xl p-3 border border-orange-500/30 animate-in slide-in-from-top-1">
-                      <p className="text-slate-400 text-xs mb-3">Selecione o sabor {i + 1}:</p>
+                    <div className="mt-2 bg-brand-dark rounded-xl p-3 border border-gold/30 animate-in slide-in-from-top-1">
+                      <p className="text-stone text-xs mb-3">Selecione o sabor {i + 1}:</p>
                       <div className="grid grid-cols-3 gap-2">
                         {availableForSlot(i).map((p) => {
                           const isSelected = flavorSlots[i]?.id === p.id;
@@ -376,15 +376,15 @@ export default function Product() {
                               onClick={() => handleSelectFlavor(i, p)}
                               className={`p-2.5 rounded-xl border text-center transition-all active:scale-95 ${
                                 isSelected
-                                  ? "bg-orange-500/20 border-orange-500 shadow-sm"
-                                  : "bg-slate-800 border-slate-700 hover:border-orange-500/40"
+                                  ? "bg-gold/20 border-gold shadow-sm"
+                                  : "bg-surface-02 border-surface-03 hover:border-gold/40"
                               }`}
                             >
                               <div className="text-2xl mb-1">{p.icon}</div>
-                              <p className="text-white text-xs font-medium leading-tight line-clamp-1">{p.name}</p>
-                              <p className="text-orange-400 text-xs mt-0.5">R${p.price.toFixed(2)}</p>
+                              <p className="text-cream text-xs font-medium leading-tight line-clamp-1">{p.name}</p>
+                              <p className="text-gold-light text-xs mt-0.5">R${p.price.toFixed(2)}</p>
                               {isSelected && (
-                                <span className="inline-block mt-1 text-[10px] bg-orange-500 text-white px-1.5 py-0.5 rounded-full">
+                                <span className="inline-block mt-1 text-[10px] bg-gold text-cream px-1.5 py-0.5 rounded-full">
                                   ✓ Selecionado
                                 </span>
                               )}
@@ -401,14 +401,14 @@ export default function Product() {
 
           {/* Price preview when multiple flavors */}
           {division > 1 && activeFlavors.some((f) => f !== null) && (
-            <div className="mt-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700">
+            <div className="mt-3 p-3 rounded-xl bg-surface-02/60 border border-surface-03">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">
+                <span className="text-stone">
                   {allFilled
                     ? `${division === 2 ? "Meio a Meio" : "3 Sabores"} — sabor mais caro`
                     : "Preço parcial (preencha todos os sabores)"}
                 </span>
-                <span className="text-orange-400 font-bold">
+                <span className="text-gold-light font-bold">
                   R$ {flavorPrice.toFixed(2)}
                 </span>
               </div>
@@ -416,11 +416,11 @@ export default function Product() {
                 <div className="flex gap-1 mt-2 flex-wrap">
                   {activeFlavors.map((f, i) =>
                     f ? (
-                      <span key={i} className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full">
+                      <span key={i} className="text-xs bg-surface-03 text-parchment px-2 py-0.5 rounded-full">
                         {f.icon} {f.name} — R${f.price.toFixed(2)}
                       </span>
                     ) : (
-                      <span key={i} className="text-xs bg-slate-700/50 text-slate-500 px-2 py-0.5 rounded-full border border-dashed border-slate-600">
+                      <span key={i} className="text-xs bg-surface-03/50 text-stone/70 px-2 py-0.5 rounded-full border border-dashed border-brand-mid">
                         Sabor {i + 1} — ?
                       </span>
                     )
@@ -433,7 +433,7 @@ export default function Product() {
 
         {/* ── Size Selector ───────────────────────────────────────────────── */}
         <div className="mb-6">
-          <h3 className="text-white font-bold mb-3">{p.sizeLabel}</h3>
+          <h3 className="text-cream font-bold mb-3">{p.sizeLabel}</h3>
           <div className="flex gap-2">
             {SIZES.map((size) => (
               <button
@@ -441,8 +441,8 @@ export default function Product() {
                 onClick={() => setSelectedSize(size)}
                 className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${
                   selectedSize === size
-                    ? "bg-orange-500 text-white shadow-lg shadow-orange-500/30"
-                    : "bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700"
+                    ? "bg-gold text-cream shadow-lg shadow-gold/30"
+                    : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
                 }`}
               >
                 <span className="block font-black">{size}</span>
@@ -454,7 +454,7 @@ export default function Product() {
 
         {/* ── Add-ons ─────────────────────────────────────────────────────── */}
         <div className="mb-6">
-          <h3 className="text-white font-bold mb-3">{p.addOnsLabel}</h3>
+          <h3 className="text-cream font-bold mb-3">{p.addOnsLabel}</h3>
           <div className="grid grid-cols-3 gap-3">
             {addOns.map((addon) => (
               <button
@@ -462,15 +462,15 @@ export default function Product() {
                 onClick={() => toggleAddOn(addon.id)}
                 className={`p-3 rounded-xl border transition-all active:scale-95 ${
                   selectedAddOns.includes(addon.id)
-                    ? "bg-orange-500/20 border-orange-500"
-                    : "bg-slate-800 border-slate-700 hover:border-slate-600"
+                    ? "bg-gold/20 border-gold"
+                    : "bg-surface-02 border-surface-03 hover:border-brand-mid"
                 }`}
               >
-                <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-2xl mx-auto mb-2">
+                <div className="w-12 h-12 rounded-full bg-surface-03 flex items-center justify-center text-2xl mx-auto mb-2">
                   {addon.icon}
                 </div>
-                <p className="text-white text-xs font-medium text-center">{addon.name}</p>
-                <p className="text-orange-400 text-xs text-center">+R${addon.price.toFixed(2)}</p>
+                <p className="text-cream text-xs font-medium text-center">{addon.name}</p>
+                <p className="text-gold-light text-xs text-center">+R${addon.price.toFixed(2)}</p>
               </button>
             ))}
           </div>
@@ -478,9 +478,9 @@ export default function Product() {
 
         {/* ── Pizza Diagram ───────────────────────────────────────────────── */}
         {division > 1 && (
-          <div className="flex flex-col items-center mb-6 p-4 bg-slate-800/50 rounded-2xl border border-slate-700">
+          <div className="flex flex-col items-center mb-6 p-4 bg-surface-02/50 rounded-2xl border border-surface-03">
             <PizzaDiagram division={division} slots={flavorSlots} />
-            <p className="text-slate-500 text-xs mt-2">
+            <p className="text-stone/70 text-xs mt-2">
               💰 {PRICING_LABELS[multiFlavorsConfig.pricingRule]}
             </p>
           </div>
@@ -488,18 +488,18 @@ export default function Product() {
       </div>
 
       {/* ── Bottom Fixed Bar ────────────────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 bg-slate-950/95 border-t border-slate-800 px-4 py-4 backdrop-blur-sm">
+      <div className="fixed bottom-0 left-0 right-0 bg-surface-00/95 border-t border-surface-02 px-4 py-4 backdrop-blur-sm">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <p className="text-slate-400 text-xs">Total ({quantity}x)</p>
-            <p className="text-orange-500 text-2xl font-bold">R$ {totalPrice.toFixed(2)}</p>
+            <p className="text-stone text-xs">Total ({quantity}x)</p>
+            <p className="text-gold text-2xl font-bold">R$ {totalPrice.toFixed(2)}</p>
           </div>
           {division > 1 && allFilled && (
             <div className="text-right">
-              <p className="text-slate-400 text-xs">
+              <p className="text-stone text-xs">
                 {division === 2 ? "Meio a Meio" : "3 Sabores"} · {selectedSize}
               </p>
-              <p className="text-slate-400 text-xs">
+              <p className="text-stone text-xs">
                 {(activeFlavors as Pizza[]).map((f) => f.name).join(" + ")}
               </p>
             </div>
@@ -510,8 +510,8 @@ export default function Product() {
           disabled={!allFilled}
           className={`w-full font-bold py-3.5 px-4 rounded-full text-center transition-all text-base active:scale-95 ${
             allFilled
-              ? "bg-orange-500 hover:bg-orange-600 text-white shadow-lg shadow-orange-500/30"
-              : "bg-slate-700 text-slate-500 cursor-not-allowed"
+              ? "bg-gold hover:bg-gold/90 text-cream shadow-lg shadow-gold/30"
+              : "bg-surface-03 text-stone/70 cursor-not-allowed"
           }`}
         >
           {allFilled
