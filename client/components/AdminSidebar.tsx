@@ -42,7 +42,7 @@ export default function AdminSidebar() {
   };
 
   return (
-    <div className="w-64 bg-slate-800 border-r border-slate-700 p-6 flex flex-col flex-shrink-0">
+    <div className="w-64 bg-surface-02 border-r border-surface-03 p-6 flex flex-col flex-shrink-0">
       <div className="mb-8 flex items-center gap-3">
         <span className="text-2xl flex-shrink-0">
           {brand.logo.startsWith("http") ? (
@@ -52,8 +52,8 @@ export default function AdminSidebar() {
           )}
         </span>
         <div className="min-w-0">
-          <h1 className="text-lg font-bold text-orange-500 truncate">{brand.name}</h1>
-          <p className="text-slate-400 text-xs truncate">{brand.tagline}</p>
+          <h1 className="text-lg font-bold text-gold truncate">{brand.name}</h1>
+          <p className="text-stone text-xs truncate">{brand.tagline}</p>
         </div>
       </div>
 
@@ -64,8 +64,8 @@ export default function AdminSidebar() {
             to={to}
             className={`flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors ${
               isActive(to)
-                ? "bg-orange-500 text-white"
-                : "text-slate-300 hover:bg-slate-700"
+                ? "bg-gold text-cream"
+                : "text-parchment hover:bg-surface-03"
             }`}
           >
             <Icon size={20} />
@@ -77,7 +77,7 @@ export default function AdminSidebar() {
       <div className="space-y-1">
         <Link
           to="/"
-          className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-700 transition-colors"
+          className="flex items-center gap-3 px-4 py-3 rounded-lg text-parchment hover:bg-surface-03 transition-colors"
         >
           <ArrowLeft size={20} />
           Voltar ao App
