@@ -14,25 +14,25 @@ export default {
     },
     extend: {
       colors: {
-        /* ── Moschettieri Brand Palette ── */
+        /* ── Original Brand Palette (Navy + Orange) ── */
         brand: {
-          deep:  "#343f22",
-          dark:  "#252e18",
-          mid:   "#4a5930",
+          deep:  "#0c1220",
+          dark:  "#111827",
+          mid:   "#2d3d56",
         },
         gold: {
-          DEFAULT: "#c9953a",
-          light:   "#e8b86d",
-          muted:   "#7a5a22",
+          DEFAULT: "#f97316",
+          light:   "#fb923c",
+          muted:   "#7c2d12",
         },
-        cream:     "#f5f0e8",
-        parchment: "#e8dfc8",
-        stone:     "#c4b99a",
+        cream:     "#f8fafc",
+        parchment: "#e2e8f0",
+        stone:     "#94a3b8",
         surface: {
-          "00": "#1a2010",
-          "01": "#252e18",
-          "02": "#2e3a1e",
-          "03": "#3d4f28",
+          "00": "#0c1220",
+          "01": "#111827",
+          "02": "#1e2a3b",
+          "03": "#2d3d56",
         },
         /* ── shadcn tokens ── */
         border: "hsl(var(--border))",
