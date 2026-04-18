@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, MapPin, Plus, Trash2, Check, Home as HomeIcon, Building2, Briefcase } from "lucide-react";
+import MoschettieriLogo from "@/components/MoschettieriLogo";
 
 interface Address {
   id: string;
@@ -88,7 +89,7 @@ export default function Localizacao() {
         <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-cream font-bold flex-1 text-center">Localização</h1>
+        <MoschettieriLogo className="text-cream text-base" />
         <div className="w-6"></div>
       </div>
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, MapPin, Phone, User, Home, Tag, Loader2, CreditCard } from "lucide-react";
+import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
 import { ordersApi, shippingApi, couponsApi, type CheckoutIn } from "@/lib/api";
 
@@ -147,7 +148,7 @@ export default function Checkout() {
         <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-cream font-bold flex-1 text-center">{c.title}</h1>
+        <MoschettieriLogo className="text-cream text-base" />
         <div className="w-6" />
       </div>
 

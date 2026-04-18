@@ -1,5 +1,6 @@
 import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Loader2 } from "lucide-react";
+import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
 import { useEffect, useState, useCallback } from "react";
 import { ordersApi, type ApiOrder, type OrderStatus } from "@/lib/api";
@@ -63,7 +64,7 @@ export default function OrderTracking() {
           <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
             <ChevronLeft size={24} />
           </button>
-          <h1 className="text-cream font-bold flex-1 text-center">{t.pageTitle}</h1>
+          <MoschettieriLogo className="text-cream text-base" />
           <div className="w-6" />
         </div>
         <div className="flex-1 flex items-center justify-center px-4 py-16">

@@ -4,6 +4,7 @@ import { ChevronLeft, Loader2, ShoppingBag } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { ordersApi, type ApiOrder } from "@/lib/api";
 import BottomNav from "@/components/BottomNav";
+import MoschettieriLogo from "@/components/MoschettieriLogo";
 
 const statusStyle: Record<string, string> = {
   pending: "bg-slate-500/20 text-stone",
@@ -44,7 +45,7 @@ export default function Pedidos() {
         <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-cream font-bold flex-1 text-center">{c.title}</h1>
+        <MoschettieriLogo className="text-cream text-base" />
         <div className="w-6" />
       </div>
 

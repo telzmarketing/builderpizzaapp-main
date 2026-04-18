@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check } from "lucide-react";
+import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule } from "@/context/AppContext";
 
 // ─── Add-ons ──────────────────────────────────────────────────────────────────
@@ -245,7 +246,7 @@ export default function Product() {
         <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-cream font-bold flex-1 text-center text-sm">{p.pageTitle}</h1>
+        <MoschettieriLogo className="text-cream text-base" />
         <div className="w-6"></div>
       </div>
 

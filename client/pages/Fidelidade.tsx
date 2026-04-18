@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, Star, Gift, Zap, Trophy } from "lucide-react";
+import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
 
 // All color classes must appear literally here so Tailwind JIT includes them
@@ -36,7 +37,7 @@ export default function Fidelidade() {
         <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-cream font-bold flex-1 text-center">Programa de Fidelidade</h1>
+        <MoschettieriLogo className="text-cream text-base" />
         <div className="w-6"></div>
       </div>
 

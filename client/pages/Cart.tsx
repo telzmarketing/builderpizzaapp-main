@@ -2,6 +2,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Plus, Minus, Trash2, UtensilsCrossed, ShoppingCart } from "lucide-react";
 import { useApp, CartItem } from "@/context/AppContext";
 import BottomNav from "@/components/BottomNav";
+import MoschettieriLogo from "@/components/MoschettieriLogo";
 
 function divisionLabel(d: number) {
   if (d === 2) return "Meio a Meio";
@@ -69,7 +70,7 @@ export default function Cart() {
           <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
             <ChevronLeft size={24} />
           </button>
-          <h1 className="text-cream font-bold flex-1 text-center">{c.title}</h1>
+          <MoschettieriLogo className="text-cream text-base" />
           <div className="w-6"></div>
         </div>
         <div className="flex-1 flex items-center justify-center px-4 py-16">
@@ -94,9 +95,7 @@ export default function Cart() {
         <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-cream font-bold flex-1 text-center">
-          {c.title} <span className="text-gold text-sm font-normal">({cart.length} {cart.length === 1 ? "item" : "itens"})</span>
-        </h1>
+        <MoschettieriLogo className="text-cream text-base" />
         <div className="w-6"></div>
       </div>
 

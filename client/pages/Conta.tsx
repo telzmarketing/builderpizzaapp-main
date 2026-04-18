@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Edit2, Check, LogIn, User } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import BottomNav from "@/components/BottomNav";
+import MoschettieriLogo from "@/components/MoschettieriLogo";
 
 export default function Conta() {
   const navigate = useNavigate();
@@ -60,7 +61,7 @@ export default function Conta() {
         <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-cream font-bold flex-1 text-center">{c.title}</h1>
+        <MoschettieriLogo className="text-cream text-base" />
         {customer && (
           <button
             onClick={() => (editMode ? handleSave() : setEditMode(true))}
