@@ -6,7 +6,7 @@ import { useApp } from "@/context/AppContext";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 
-const PIZZA_IMAGES = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🫑", "🍖", "🥩", "🍄", "🫒", "🌿", "🔥"];
+const PIZZA_FALLBACKS = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🍖", "🍄", "🫒", "🔥", "🥩", "🌿", "🫑"];
 
 export default function Home() {
   const navigate = useNavigate();
@@ -15,15 +15,18 @@ export default function Home() {
   const rotationInterval = (bannerRotationInterval ?? 5) * 1000;
 
   const [activeCategory, setActiveCategory] = useState(categories[1] ?? categories[0]);
+  const [carouselPosition, setCarouselPosition] = useState(0);
   const [clickedPizza, setClickedPizza] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
   const activePromotions = promotions.filter((p) => p.active);
   const displayBanner = activePromotions.length > 0 ? activePromotions[activeBannerIndex] : promotions[0];
 
+  // Banner auto-rotation
   useEffect(() => {
     if (activePromotions.length <= 1 || rotationInterval <= 0) return;
     const timer = setInterval(() => {
@@ -32,14 +35,7 @@ export default function Home() {
     return () => clearInterval(timer);
   }, [activePromotions.length, rotationInterval]);
 
-  const filteredProducts = activeCategory === categories[0]
-    ? products
-    : products.filter((p) =>
-        p.name.toLowerCase().includes(activeCategory.toLowerCase()) ||
-        p.description?.toLowerCase().includes(activeCategory.toLowerCase())
-      );
-
-  const searchResults = searchQuery.trim()
+  const filteredProducts = searchQuery.trim()
     ? products.filter((p) =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.description?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -48,16 +44,53 @@ export default function Home() {
 
   const { home, media } = siteContent;
 
+  const handleNext = () => {
+    setCarouselPosition((prev) => (prev + 1) % products.length);
+  };
+
+  const handlePrev = () => {
+    setCarouselPosition((prev) => (prev - 1 + products.length) % products.length);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null) return;
+    const diff = touchStartX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 40) diff > 0 ? handleNext() : handlePrev();
+    setTouchStartX(null);
+  };
+
   const handlePizzaClick = (productId: string) => {
     setClickedPizza(productId);
     setTimeout(() => {
       navigate(`/product/${productId}`);
-    }, 350);
+    }, 300);
   };
 
-  const getPizzaEmoji = (icon: string | undefined, index: number) => {
-    return icon || PIZZA_IMAGES[index % PIZZA_IMAGES.length];
+  const getPizzaIndex = (offset: number) => {
+    return (carouselPosition + offset + products.length) % products.length;
   };
+
+  const getIcon = (icon: string | undefined, index: number) =>
+    icon || PIZZA_FALLBACKS[index % PIZZA_FALLBACKS.length];
+
+  const prevPizza = products.length > 0 ? products[getPizzaIndex(-1)] : undefined;
+  const currentPizza = products.length > 0 ? products[getPizzaIndex(0)] : undefined;
+  const nextPizza = products.length > 0 ? products[getPizzaIndex(1)] : undefined;
+
+  if (products.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 flex items-center justify-center">
+        <div className="text-center text-stone">
+          <div className="text-4xl mb-4">🍕</div>
+          <p className="text-lg">Carregando cardápio...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
@@ -80,11 +113,11 @@ export default function Home() {
           <div className="flex-1 overflow-y-auto px-4 py-4">
             {searchQuery.trim() === "" ? (
               <p className="text-stone text-center mt-8">Digite para buscar produtos</p>
-            ) : searchResults.length === 0 ? (
+            ) : filteredProducts.length === 0 ? (
               <p className="text-stone text-center mt-8">Nenhum produto encontrado</p>
             ) : (
               <div className="space-y-3">
-                {searchResults.map((product) => (
+                {filteredProducts.map((product) => (
                   <button
                     key={product.id}
                     onClick={() => { setSearchOpen(false); setSearchQuery(""); navigate(`/product/${product.id}`); }}
@@ -150,40 +183,40 @@ export default function Home() {
       </div>
 
       {/* Promo Banner with auto-rotation */}
-      <div className="px-4 pt-4 pb-2">
+      <div className="px-4 py-4">
         <div
-          className="relative bg-gradient-to-r from-slate-800 to-slate-700 rounded-2xl p-4 flex items-center justify-between overflow-hidden"
+          className="bg-gradient-to-r from-slate-800 to-slate-700 rounded-2xl p-4 flex items-center justify-between overflow-hidden relative"
           style={media.heroBannerImage ? { backgroundImage: `url(${media.heroBannerImage})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
         >
-          <div className="flex-1 pr-2">
+          <div className="flex-1">
             <p className="text-sm text-parchment">{displayBanner?.title || "20% off"}</p>
-            <p className="text-xl font-bold text-cream leading-tight">
+            <p className="text-xl font-bold text-cream">
               {displayBanner?.subtitle || "Em qualquer pizza"}
             </p>
             <p className="text-xs text-stone mt-1">{home.bannerValidityText}</p>
           </div>
-          <div className="w-16 h-16 flex-shrink-0 flex items-center justify-center text-5xl">
+          <div className="w-32 h-32 flex-shrink-0 relative -mr-8 text-5xl flex items-center justify-center">
             {displayBanner?.icon || "🍕"}
           </div>
-          <button className="absolute right-3 top-3 bg-surface-03/80 rounded-full p-1.5 text-parchment hover:text-cream transition-colors">
-            <ChevronRight size={14} />
+          <button className="absolute right-4 top-4 bg-surface-03 rounded-full p-2 text-parchment hover:text-cream transition-colors">
+            <ChevronRight size={16} />
           </button>
 
           {/* Banner dots */}
           {activePromotions.length > 1 && (
-            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+            <div className="absolute bottom-2 left-4 flex gap-1.5">
               {activePromotions.map((_, i) => (
                 <button
                   key={i}
                   onClick={() => setActiveBannerIndex(i)}
-                  className={`w-1.5 h-1.5 rounded-full transition-all ${i === activeBannerIndex ? "bg-gold w-4" : "bg-stone/50"}`}
+                  className={`h-1.5 rounded-full transition-all ${i === activeBannerIndex ? "bg-gold w-4" : "bg-stone/50 w-1.5"}`}
                 />
               ))}
             </div>
           )}
         </div>
 
-        {/* Banner navigation arrows */}
+        {/* Banner nav arrows — only when multiple banners */}
         {activePromotions.length > 1 && (
           <div className="flex justify-center gap-2 mt-2">
             <button
@@ -203,20 +236,22 @@ export default function Home() {
       </div>
 
       {/* Content */}
-      <div className="px-4 pb-28">
+      <div className="px-4 pb-32">
         {/* Section Title */}
-        <div className="mt-5 mb-3">
+        <div className="mt-4 mb-4">
           <p className="text-stone text-sm">{sectionSubtitle}</p>
-          <h2 className="text-xl font-bold text-cream mt-0.5">{sectionTitle}</h2>
+          <h2 className="text-2xl font-bold text-cream mt-1">
+            {sectionTitle}
+          </h2>
         </div>
 
         {/* Category Pills */}
-        <div className="flex gap-2 mb-4 overflow-x-auto pb-1 scrollbar-hide">
+        <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
           {categories.map((category) => (
             <button
               key={category}
               onClick={() => setActiveCategory(category)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+              className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                 activeCategory === category
                   ? "bg-gold text-cream"
                   : "bg-surface-02 text-parchment hover:bg-surface-03"
@@ -227,60 +262,88 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Product Grid */}
-        {filteredProducts.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-5xl mb-3">🍕</p>
-            <p className="text-stone">Nenhum produto nesta categoria</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            {filteredProducts.map((product, index) => (
+        {/* Product Carousel — layout original */}
+        <div
+          className="relative overflow-hidden"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div className="flex items-stretch justify-center gap-3 px-2">
+            {/* Previous item (partially visible) */}
+            <div className="w-[22vw] max-w-[90px] flex-shrink-0 opacity-40 self-center">
+              <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
+                <span className="text-4xl pizza-spin">
+                  {getIcon(prevPizza?.icon, getPizzaIndex(-1))}
+                </span>
+              </div>
+            </div>
+
+            {/* Featured item (center, larger) */}
+            <div className="flex-1 min-w-0 max-w-[220px]">
               <button
-                key={product.id}
-                onClick={() => handlePizzaClick(product.id)}
-                className={`bg-surface-02 rounded-2xl p-3 border border-surface-03 text-left transition-all duration-300 ${
-                  clickedPizza === product.id
-                    ? "scale-105 border-gold/60 shadow-lg shadow-gold/20"
-                    : "hover:border-gold/40 hover:scale-[1.02] active:scale-95"
+                onClick={() => handlePizzaClick(currentPizza.id)}
+                className={`w-full bg-surface-02 rounded-2xl p-4 shadow-2xl transition-all duration-300 ${
+                  clickedPizza === currentPizza.id
+                    ? "scale-110 shadow-gold/30"
+                    : "hover:shadow-gold/20 active:scale-95"
                 }`}
               >
-                {/* Pizza image with slow spin */}
-                <div className="w-full aspect-square rounded-xl bg-surface-03 flex items-center justify-center mb-2 overflow-hidden">
+                <div className="w-[min(128px,30vw)] h-[min(128px,30vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
                   <span className="text-5xl pizza-spin">
-                    {getPizzaEmoji(product.icon, index)}
+                    {getIcon(currentPizza?.icon, carouselPosition)}
                   </span>
                 </div>
-
-                <p className="text-cream font-semibold text-sm leading-snug line-clamp-1">
-                  {product.name}
+                <p className="text-cream font-bold text-center text-sm leading-snug">
+                  {currentPizza?.name}
                 </p>
-
-                <div className="flex gap-0.5 mt-1 mb-1">
+                <div className="flex justify-center gap-1 mt-1 mb-2">
                   {[...Array(5)].map((_, i) => (
                     <Star
                       key={i}
-                      size={10}
+                      size={12}
                       className={
-                        i < Math.floor(product.rating || 0)
+                        i < Math.floor(currentPizza?.rating || 0)
                           ? "fill-yellow-400 text-yellow-400"
                           : "text-slate-600"
                       }
                     />
                   ))}
                 </div>
-
-                <p className="text-gold font-bold text-sm">
-                  R$ {product.price.toFixed(2)}
+                <p className="text-gold font-bold text-center">
+                  R$ {currentPizza?.price.toFixed(2)}
                 </p>
-
-                <p className="text-xs text-stone mt-1 leading-tight line-clamp-2">
-                  {product.description}
+                <p className="text-xs text-stone text-center mt-2 leading-tight line-clamp-2">
+                  {currentPizza?.description}
                 </p>
               </button>
-            ))}
+            </div>
+
+            {/* Next item (partially visible) */}
+            <div className="w-[22vw] max-w-[90px] flex-shrink-0 opacity-40 self-center">
+              <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
+                <span className="text-4xl pizza-spin">
+                  {getIcon(nextPizza?.icon, getPizzaIndex(1))}
+                </span>
+              </div>
+            </div>
           </div>
-        )}
+
+          {/* Carousel Navigation */}
+          <div className="flex justify-center gap-2 mt-5">
+            <button
+              onClick={handlePrev}
+              className="w-8 h-8 rounded-full bg-surface-02 hover:bg-surface-03 text-stone hover:text-cream flex items-center justify-center transition-colors"
+            >
+              ←
+            </button>
+            <button
+              onClick={handleNext}
+              className="w-8 h-8 rounded-full bg-surface-02 hover:bg-surface-03 text-stone hover:text-cream flex items-center justify-center transition-colors"
+            >
+              →
+            </button>
+          </div>
+        </div>
       </div>
 
       <BottomNav />
@@ -293,7 +356,6 @@ export default function Home() {
         .pizza-spin {
           display: inline-block;
           animation: pizzaSpin 20s linear infinite;
-          transform-origin: center;
         }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
