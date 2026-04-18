@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Menu, Search, Star, ChevronRight } from "lucide-react";
+import { Menu, Search, Star, ChevronRight, X, ShoppingCart, Bell, User, Tag, Heart } from "lucide-react";
+
 import { useApp } from "@/context/AppContext";
 import BottomNav from "@/components/BottomNav";
 
@@ -11,6 +12,7 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState(categories[1] ?? categories[0]);
   const [carouselPosition, setCarouselPosition] = useState(0);
   const [clickedPizza, setClickedPizza] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const { home, media } = siteContent;
   const activePromotion = promotions.find((p) => p.active) || promotions[0];
@@ -52,9 +54,42 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
+      {/* Drawer overlay */}
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setMenuOpen(false)} />
+          <div className="relative w-72 bg-slate-900 h-full flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-800">
+              <span className="text-white font-bold text-lg">Menu</span>
+              <button onClick={() => setMenuOpen(false)} className="text-slate-400 hover:text-white transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+            <nav className="flex-1 px-4 py-6 space-y-1">
+              {[
+                { icon: <ShoppingCart size={20} />, label: "Carrinho", path: "/cart" },
+                { icon: <Bell size={20} />, label: "Meus Pedidos", path: "/pedidos" },
+                { icon: <Tag size={20} />, label: "Cupons", path: "/cupons" },
+                { icon: <Heart size={20} />, label: "Fidelidade", path: "/fidelidade" },
+                { icon: <User size={20} />, label: "Minha Conta", path: "/conta" },
+              ].map(({ icon, label, path }) => (
+                <button
+                  key={path}
+                  onClick={() => { setMenuOpen(false); navigate(path); }}
+                  className="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-left"
+                >
+                  <span className="text-orange-500">{icon}</span>
+                  <span className="font-medium">{label}</span>
+                </button>
+              ))}
+            </nav>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-slate-900 px-4 py-4 flex justify-between items-center sticky top-0 z-30">
-        <button className="text-slate-300 hover:text-white transition-colors">
+        <button onClick={() => setMenuOpen(true)} className="text-slate-300 hover:text-white transition-colors">
           <Menu size={24} />
         </button>
         <button className="text-slate-300 hover:text-white transition-colors">
