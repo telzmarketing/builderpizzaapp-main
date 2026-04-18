@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Menu, Search, Star, ChevronRight, X, ShoppingCart, Bell, User, Tag, Heart } from "lucide-react";
+import { Menu, Search, Star, ChevronRight, X, ShoppingCart, Bell, User, Tag, Heart, UtensilsCrossed } from "lucide-react";
 
 import { useApp } from "@/context/AppContext";
 import BottomNav from "@/components/BottomNav";
@@ -13,6 +13,7 @@ export default function Home() {
   const [carouselPosition, setCarouselPosition] = useState(0);
   const [clickedPizza, setClickedPizza] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
   const { home, media } = siteContent;
   const activePromotion = promotions.find((p) => p.active) || promotions[0];
@@ -23,6 +24,17 @@ export default function Home() {
 
   const handlePrev = () => {
     setCarouselPosition((prev) => (prev - 1 + products.length) % products.length);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null) return;
+    const diff = touchStartX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 40) diff > 0 ? handleNext() : handlePrev();
+    setTouchStartX(null);
   };
 
   const handlePizzaClick = (productId: string) => {
@@ -67,6 +79,7 @@ export default function Home() {
             </div>
             <nav className="flex-1 px-4 py-6 space-y-1">
               {[
+                { icon: <UtensilsCrossed size={20} />, label: "Cardápio", path: "/cardapio" },
                 { icon: <ShoppingCart size={20} />, label: "Carrinho", path: "/cart" },
                 { icon: <Bell size={20} />, label: "Meus Pedidos", path: "/pedidos" },
                 { icon: <Tag size={20} />, label: "Cupons", path: "/cupons" },
@@ -147,7 +160,11 @@ export default function Home() {
         </div>
 
         {/* Product Carousel */}
-        <div className="relative">
+        <div
+          className="relative"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
           <div className="flex items-center justify-center gap-4">
             {/* Previous item (partially visible) */}
             <div className="w-24 h-32 flex-shrink-0 opacity-40">

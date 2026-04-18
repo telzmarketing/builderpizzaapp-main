@@ -24,6 +24,7 @@ import Cupons from "./pages/Cupons";
 import Pedidos from "./pages/Pedidos";
 import Conta from "./pages/Conta";
 import Localizacao from "./pages/Localizacao";
+import Cardapio from "./pages/Cardapio";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +49,7 @@ export default function App() {
               <Route path="/pedidos" element={<Pedidos />} />
               <Route path="/conta" element={<Conta />} />
               <Route path="/localizacao" element={<Localizacao />} />
+              <Route path="/cardapio" element={<Cardapio />} />
 
               {/* ── Admin login (public) ── */}
               <Route path="/painel/login" element={<AdminLogin />} />
