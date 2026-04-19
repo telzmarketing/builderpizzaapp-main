@@ -15,6 +15,31 @@
   :root {
     color-scheme: dark;
 
+    /* ── Semantic hex vars (overridden dynamically by ThemeInjector) ── */
+    --color-primary:        #f97316;
+    --color-secondary:      #2d3d56;
+    --bg-main:              #0c1220;
+    --bg-alt:               #111827;
+    --bg-card:              #1e2a3b;
+    --text-primary:         #f8fafc;
+    --text-secondary:       #e2e8f0;
+    --text-muted:           #94a3b8;
+    --status-success:       #22c55e;
+    --status-error:         #ef4444;
+    --status-warning:       #f59e0b;
+    --status-info:          #3b82f6;
+    --border-color:         #2d3d56;
+    --interaction-hover:    #fb923c;
+    --interaction-active:   #ea6f10;
+    --interaction-focus:    #f97316;
+    --navbar-bg:            #111827;
+    --footer-bg:            #0c1220;
+    --sidebar-bg:           #111827;
+    --modal-bg:             #1e2a3b;
+    --overlay-bg:           #000000;
+    --badge-bg:             #f97316;
+    --tag-bg:               #2d3d56;
+
     /* Dark theme as default */
     --background: 217 32% 10%;
     --foreground: 210 40% 98%;

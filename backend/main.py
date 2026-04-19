@@ -20,6 +20,7 @@ from backend.database import create_all_tables, SessionLocal, engine
 from backend.routes import products, orders, payments, shipping, coupons, loyalty, customers, promotions, admin, delivery, auth, admin_auth, campaigns
 from backend.routes import chatbot as chatbot_routes, admin_chatbot as admin_chatbot_routes
 from backend.routes import upload as upload_routes
+from backend.routes import theme as theme_routes
 
 settings = get_settings()
 
@@ -87,6 +88,9 @@ def _run_migrations():
             "CREATE TABLE IF NOT EXISTS chatbot_automations (id VARCHAR PRIMARY KEY, nome VARCHAR(200) NOT NULL, gatilho VARCHAR(50) NOT NULL, condicao_json TEXT, mensagem TEXT NOT NULL, ativo BOOLEAN DEFAULT TRUE, delay_segundos INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW())",
             # ── GIN index for FAQ full-text search (optional, best-effort) ────
             "CREATE INDEX IF NOT EXISTS ix_chatbot_faq_busca_vetor ON chatbot_faq USING gin (busca_vetor) WHERE busca_vetor IS NOT NULL",
+            # ── Theme settings ────────────────────────────────────────────────
+            "CREATE TABLE IF NOT EXISTS theme_settings (id VARCHAR PRIMARY KEY DEFAULT 'default', primary VARCHAR(20) NOT NULL DEFAULT '#f97316', secondary VARCHAR(20) NOT NULL DEFAULT '#2d3d56', background_main VARCHAR(20) NOT NULL DEFAULT '#0c1220', background_alt VARCHAR(20) NOT NULL DEFAULT '#111827', background_card VARCHAR(20) NOT NULL DEFAULT '#1e2a3b', text_primary VARCHAR(20) NOT NULL DEFAULT '#f8fafc', text_secondary VARCHAR(20) NOT NULL DEFAULT '#e2e8f0', text_muted VARCHAR(20) NOT NULL DEFAULT '#94a3b8', status_success VARCHAR(20) NOT NULL DEFAULT '#22c55e', status_error VARCHAR(20) NOT NULL DEFAULT '#ef4444', status_warning VARCHAR(20) NOT NULL DEFAULT '#f59e0b', status_info VARCHAR(20) NOT NULL DEFAULT '#3b82f6', border VARCHAR(20) NOT NULL DEFAULT '#2d3d56', interaction_hover VARCHAR(20) NOT NULL DEFAULT '#fb923c', interaction_active VARCHAR(20) NOT NULL DEFAULT '#ea6f10', interaction_focus VARCHAR(20) NOT NULL DEFAULT '#f97316', navbar VARCHAR(20) NOT NULL DEFAULT '#111827', footer VARCHAR(20) NOT NULL DEFAULT '#0c1220', sidebar VARCHAR(20) NOT NULL DEFAULT '#111827', modal VARCHAR(20) NOT NULL DEFAULT '#1e2a3b', overlay VARCHAR(20) NOT NULL DEFAULT '#000000', badge VARCHAR(20) NOT NULL DEFAULT '#f97316', tag VARCHAR(20) NOT NULL DEFAULT '#2d3d56', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "INSERT INTO theme_settings (id) VALUES ('default') ON CONFLICT DO NOTHING",
         ]
         for stmt in stmts:
             try:
@@ -131,6 +135,7 @@ app.include_router(campaigns.router)
 app.include_router(chatbot_routes.router)
 app.include_router(admin_chatbot_routes.router)
 app.include_router(upload_routes.router)
+app.include_router(theme_routes.router)
 
 # ── Static files (uploaded images) ───────────────────────────────────────────
 # Must be mounted AFTER all route registrations.

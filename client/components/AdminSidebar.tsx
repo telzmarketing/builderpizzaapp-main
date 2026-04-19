@@ -11,6 +11,7 @@ import {
   LogOut,
   Sparkles,
   MessageCircle,
+  Palette,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
@@ -24,7 +25,8 @@ const navItems = [
   { to: "/painel/conteudo", icon: FileText, label: "Conteúdo" },
   { to: "/painel/pagamentos", icon: CreditCard, label: "Pagamentos" },
   { to: "/painel/frete", icon: Truck, label: "Entregas e Fretes" },
-  { to: "/painel/chatbot", icon: MessageCircle, label: "Chatbot" },
+  { to: "/painel/chatbot",    icon: MessageCircle, label: "Chatbot" },
+  { to: "/painel/aparencia",  icon: Palette,       label: "Aparência" },
 ];
 
 export default function AdminSidebar() {

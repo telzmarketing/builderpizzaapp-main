@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
+import { themeApi, applyTheme, DEFAULT_THEME } from "./lib/themeApi";
 
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
 
@@ -18,38 +19,15 @@ function StoreWidget() {
   );
 }
 
-function hexToHsl(hex: string): string {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  let h = 0, s = 0;
-  const l = (max + min) / 2;
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    switch (max) {
-      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
-      case g: h = ((b - r) / d + 2) / 6; break;
-      case b: h = ((r - g) / d + 4) / 6; break;
-    }
-  }
-  return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
-}
-
 function ThemeInjector() {
-  const { siteContent } = useApp();
-  const color = siteContent.theme?.primaryColor ?? "#f97316";
   useEffect(() => {
-    const hsl = hexToHsl(color);
-    let style = document.getElementById("theme-override") as HTMLStyleElement | null;
-    if (!style) {
-      style = document.createElement("style");
-      style.id = "theme-override";
-      document.head.appendChild(style);
-    }
-    style.textContent = `:root { --primary: ${hsl}; --ring: ${hsl}; }`;
-  }, [color]);
+    applyTheme(DEFAULT_THEME);
+    themeApi.get().then(applyTheme).catch(() => {});
+
+    const handler = () => themeApi.get().then(applyTheme).catch(() => {});
+    window.addEventListener("theme-updated", handler);
+    return () => window.removeEventListener("theme-updated", handler);
+  }, []);
   return null;
 }
 
@@ -87,6 +65,7 @@ import AdminPagamentos from "./pages/admin/AdminPagamentos";
 import AdminFrete from "./pages/admin/AdminFrete";
 import AdminCampanhas from "./pages/admin/AdminCampanhas";
 import AdminChatbot from "./pages/admin/AdminChatbot";
+import AdminAparencia from "./pages/admin/Aparencia";
 import Campanha from "./pages/Campanha";
 import Fidelidade from "./pages/Fidelidade";
 import Cupons from "./pages/Cupons";
@@ -137,7 +116,8 @@ export default function App() {
                 <Route path="/painel/pagamentos" element={<AdminPagamentos />} />
                 <Route path="/painel/frete" element={<AdminFrete />} />
                 <Route path="/painel/campanhas" element={<AdminCampanhas />} />
-                <Route path="/painel/chatbot"   element={<AdminChatbot />} />
+                <Route path="/painel/chatbot"    element={<AdminChatbot />} />
+                <Route path="/painel/aparencia" element={<AdminAparencia />} />
               </Route>
 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
