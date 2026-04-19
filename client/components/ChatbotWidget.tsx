@@ -218,8 +218,8 @@ export default function ChatbotWidget() {
 
       {/* ── Chat window ── */}
       {open && (
-        <div className="w-[340px] sm:w-[380px] bg-[#1a1a1a] rounded-2xl shadow-2xl border border-white/10 overflow-hidden flex flex-col"
-          style={{ maxHeight: "calc(100vh - 100px)" }}>
+        <div className="w-[290px] sm:w-[360px] bg-[#1a1a1a] rounded-2xl shadow-2xl border border-white/10 overflow-hidden flex flex-col"
+          style={{ maxHeight: "calc(100vh - 160px)" }}>
 
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 flex-shrink-0"
@@ -241,7 +241,7 @@ export default function ChatbotWidget() {
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#121212]"
-            style={{ minHeight: 200, maxHeight: 400 }}>
+            style={{ minHeight: 140, maxHeight: 280 }}>
             {msgs.length === 0 && (
               <p className="text-[#555] text-xs text-center pt-6">Iniciando conversa...</p>
             )}
