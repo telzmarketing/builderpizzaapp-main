@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     POINTS_PER_REAL: float = 1.0           # pontos por R$ gasto
     DELIVERY_POINTS: int = 10              # bônus por pedido entregue
 
+    # Chatbot — AI providers (nunca expostos ao frontend)
+    ANTHROPIC_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

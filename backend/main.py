@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from backend.config import get_settings
 from backend.database import create_all_tables, SessionLocal, engine
 from backend.routes import products, orders, payments, shipping, coupons, loyalty, customers, promotions, admin, delivery, auth, admin_auth, campaigns
+from backend.routes import chatbot as chatbot_routes, admin_chatbot as admin_chatbot_routes
 
 settings = get_settings()
 
@@ -108,6 +109,8 @@ app.include_router(delivery.router)
 app.include_router(auth.router)
 app.include_router(admin_auth.router)
 app.include_router(campaigns.router)
+app.include_router(chatbot_routes.router)
+app.include_router(admin_chatbot_routes.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
