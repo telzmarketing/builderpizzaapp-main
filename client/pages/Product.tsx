@@ -41,6 +41,14 @@ function computeFlavorPrice(slots: (Pizza | null)[], division: number, rule: Pri
 
 // ─── SVG Pizza Diagram ────────────────────────────────────────────────────────
 
+function SvgIcon({ icon, x, y, size }: { icon: string | undefined; x: number; y: number; size: number }) {
+  if (!icon) return <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize={size}>?</text>;
+  if (icon.startsWith("data:") || icon.startsWith("http")) {
+    return <image href={icon} x={x - size / 2} y={y - size / 2} width={size} height={size} />;
+  }
+  return <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize={size}>{icon}</text>;
+}
+
 function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (Pizza | null)[] }) {
   const S = 176;
   const cx = S / 2, cy = S / 2, r = S / 2 - 6;
@@ -53,9 +61,7 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
       <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`}>
         <circle cx={cx} cy={cy} r={r} fill={slots[0] ? filled[0] : empty[0]} />
         <circle cx={cx} cy={cy} r={r} fill="none" stroke={borderColor} strokeWidth="4" />
-        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="60">
-          {slots[0]?.icon ?? "?"}
-        </text>
+        <SvgIcon icon={slots[0]?.icon} x={cx} y={cy} size={60} />
       </svg>
     );
   }
@@ -71,12 +77,8 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
         <circle cx={cx} cy={cy} r={r} fill={slots[1] ? filled[1] : empty[1]} clipPath="url(#right-half)" />
         <line x1={cx} y1={cy - r} x2={cx} y2={cy + r} stroke={borderColor} strokeWidth="4" />
         <circle cx={cx} cy={cy} r={r} fill="none" stroke={borderColor} strokeWidth="4" />
-        <text x={cx / 2} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="38">
-          {slots[0]?.icon ?? "?"}
-        </text>
-        <text x={cx + cx / 2} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="38">
-          {slots[1]?.icon ?? "?"}
-        </text>
+        <SvgIcon icon={slots[0]?.icon} x={cx / 2} y={cy} size={38} />
+        <SvgIcon icon={slots[1]?.icon} x={cx + cx / 2} y={cy} size={38} />
       </svg>
     );
   }
@@ -119,11 +121,7 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
       {sectors.map((s, i) => {
         const mid = (s.start + s.end) / 2;
         const pos = iconAt(mid);
-        return (
-          <text key={i} x={pos.x.toFixed(2)} y={pos.y.toFixed(2)} textAnchor="middle" dominantBaseline="middle" fontSize="30">
-            {slots[i]?.icon ?? "?"}
-          </text>
-        );
+        return <SvgIcon key={i} icon={slots[i]?.icon} x={parseFloat(pos.x.toFixed(2))} y={parseFloat(pos.y.toFixed(2))} size={30} />;
       })}
     </svg>
   );
@@ -255,8 +253,10 @@ export default function Product() {
 
         {/* ── Hero Product Image ───────────────────────────────────────────── */}
         <div className="flex flex-col items-center mb-6">
-          <div className="w-52 h-52 rounded-full bg-surface-02 border-4 border-surface-03 flex items-center justify-center text-8xl shadow-2xl shadow-black/40">
-            {product.icon}
+          <div className="w-52 h-52 rounded-full bg-surface-02 border-4 border-surface-03 flex items-center justify-center text-8xl shadow-2xl shadow-black/40 overflow-hidden">
+            {product.icon && (product.icon.startsWith("data:") || product.icon.startsWith("http"))
+              ? <img src={product.icon} alt={product.name} className="w-full h-full object-cover" />
+              : <span>{product.icon || "🍕"}</span>}
           </div>
           <h1 className="text-cream text-2xl font-bold mt-4 text-center">{product.name}</h1>
           <div className="flex gap-1 mt-2">
@@ -335,8 +335,10 @@ export default function Product() {
                     }`}
                   >
                     {/* Icon */}
-                    <div className="w-12 h-12 rounded-full bg-surface-03 flex items-center justify-center text-2xl flex-shrink-0">
-                      {flavor?.icon ?? "?"}
+                    <div className="w-12 h-12 rounded-full bg-surface-03 flex items-center justify-center text-2xl flex-shrink-0 overflow-hidden">
+                      {flavor?.icon && (flavor.icon.startsWith("data:") || flavor.icon.startsWith("http"))
+                        ? <img src={flavor.icon} alt="" className="w-full h-full object-cover" />
+                        : <span>{flavor?.icon ?? "?"}</span>}
                     </div>
 
                     {/* Info */}
@@ -382,7 +384,11 @@ export default function Product() {
                                   : "bg-surface-02 border-surface-03 hover:border-gold/40"
                               }`}
                             >
-                              <div className="text-2xl mb-1">{p.icon}</div>
+                              <div className="w-10 h-10 mx-auto mb-1 flex items-center justify-center text-2xl overflow-hidden rounded-lg">
+                                {p.icon && (p.icon.startsWith("data:") || p.icon.startsWith("http"))
+                                  ? <img src={p.icon} alt="" className="w-full h-full object-cover" />
+                                  : <span>{p.icon || "🍕"}</span>}
+                              </div>
                               <p className="text-cream text-xs font-medium leading-tight line-clamp-1">{p.name}</p>
                               <p className="text-gold-light text-xs mt-0.5">R${p.price.toFixed(2)}</p>
                               {isSelected && (

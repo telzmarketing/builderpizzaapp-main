@@ -65,7 +65,10 @@ export default function Home() {
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (touchStartX === null) return;
     const diff = touchStartX - e.changedTouches[0].clientX;
-    if (Math.abs(diff) > 40) diff > 0 ? handleNext() : handlePrev();
+    if (Math.abs(diff) > 40) {
+      e.preventDefault();
+      diff > 0 ? handleNext() : handlePrev();
+    }
     setTouchStartX(null);
   };
 
@@ -89,7 +92,7 @@ export default function Home() {
     const isImage = resolved.startsWith("data:") || resolved.startsWith("http");
     const textCls = size === "lg" ? "text-5xl pizza-spin" : "text-4xl pizza-spin";
     return isImage
-      ? <img src={resolved} alt="" className="w-full h-full object-contain" />
+      ? <img src={resolved} alt="" className="w-full h-full object-contain pizza-spin" />
       : <span className={textCls}>{resolved}</span>;
   };
 
@@ -309,6 +312,8 @@ export default function Home() {
             {/* Featured item (center, larger) */}
             <div className="flex-1 min-w-0 max-w-[220px]">
               <button
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
                 onClick={() => handlePizzaClick(currentPizza.id)}
                 className={`w-full bg-surface-02 rounded-2xl p-4 shadow-2xl transition-all duration-300 ${
                   clickedPizza === currentPizza.id
