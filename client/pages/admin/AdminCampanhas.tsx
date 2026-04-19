@@ -69,7 +69,7 @@ const STATUS_COLOR: Record<CampaignStatus, string> = {
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 
-type Tab = "promocoes" | "cupons" | "campanhas" | "kits" | "uso_cupons";
+type Tab = "cupons" | "campanhas" | "kits" | "uso_cupons";
 
 // ── Forms ──────────────────────────────────────────────────────────────────────
 
@@ -123,7 +123,7 @@ const emptyKitForm: KitForm = {
 };
 
 export default function AdminCampanhas() {
-  const [activeTab, setActiveTab] = useState<Tab>("promocoes");
+  const [activeTab, setActiveTab] = useState<Tab>("campanhas");
 
   // ── Data ───────────────────────────────────────────────────────────────────
   const [promotionsList, setPromotionsList] = useState<ApiPromotion[]>([]);
@@ -503,9 +503,8 @@ export default function AdminCampanhas() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const tabs: { key: Tab; icon: React.ReactNode; label: string }[] = [
-    { key: "promocoes", icon: <Star size={14} />, label: "Promoções" },
-    { key: "cupons", icon: <Tag size={14} />, label: "Cupons" },
     { key: "campanhas", icon: <Sparkles size={14} />, label: "Campanhas" },
+    { key: "cupons", icon: <Tag size={14} />, label: "Cupons" },
     { key: "kits", icon: <Package size={14} />, label: "Kits Promocionais" },
     { key: "uso_cupons", icon: <BarChart2 size={14} />, label: "Uso de Cupons" },
   ];
@@ -524,8 +523,8 @@ export default function AdminCampanhas() {
         <div className="flex-1 overflow-auto">
           {/* Header */}
           <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 sticky top-0 z-20">
-            <h2 className="text-2xl font-bold text-cream">Promoções & Campanhas</h2>
-            <p className="text-stone text-sm">{promotionsList.length} promoções · {couponsList.length} cupons · {campaigns.length} campanhas · {kits.length} kits</p>
+            <h2 className="text-2xl font-bold text-cream">Campanhas</h2>
+            <p className="text-stone text-sm">{campaigns.length} campanhas · {promotionsList.length} banners · {couponsList.length} cupons · {kits.length} kits</p>
           </div>
 
           {/* Tabs */}
@@ -547,73 +546,6 @@ export default function AdminCampanhas() {
               <div className="text-center py-16 text-stone">Carregando...</div>
             ) : (
               <>
-                {/* ── TAB: PROMOÇÕES ─────────────────────────────────────────── */}
-                {activeTab === "promocoes" && (
-                  <>
-                    <div className="flex justify-end mb-6">
-                      <button
-                        onClick={openCreatePromo}
-                        className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors text-sm"
-                      >
-                        <Plus size={16} />
-                        Nova Promoção
-                      </button>
-                    </div>
-
-                    <div className="space-y-4">
-                      {promotionsList.map((p) => (
-                        <div key={p.id} className={`bg-surface-02 rounded-xl border border-surface-03 overflow-hidden ${!p.active ? "opacity-60" : ""}`}>
-                          <div className="flex items-center gap-4 p-4">
-                            <div className="w-14 h-14 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center overflow-hidden">
-                              {p.icon && (p.icon.startsWith("data:") || p.icon.startsWith("http")) ? (
-                                <img src={p.icon} className="w-full h-full object-cover" alt={p.title} />
-                              ) : (
-                                <span className="text-2xl">{p.icon || "⭐"}</span>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h3 className="text-cream font-bold text-sm">{p.title}</h3>
-                                <span className={`text-xs px-2 py-0.5 rounded-full border ${p.active ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-stone/20 text-stone border-stone/30"}`}>
-                                  {p.active ? "Ativa" : "Inativa"}
-                                </span>
-                              </div>
-                              {p.subtitle && <p className="text-stone text-xs mt-0.5">{p.subtitle}</p>}
-                              {p.validity_text && (
-                                <p className="text-gold/70 text-xs mt-0.5">📅 {p.validity_text}</p>
-                              )}
-                            </div>
-                            <div className="flex gap-2 flex-shrink-0">
-                              <button
-                                onClick={() => openEditPromo(p)}
-                                className="p-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-colors"
-                              >
-                                <Edit2 size={14} />
-                              </button>
-                              <button
-                                onClick={() => deletePromo(p.id)}
-                                className="p-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {promotionsList.length === 0 && (
-                      <div className="text-center py-16">
-                        <Star size={48} className="text-slate-600 mx-auto mb-4" />
-                        <p className="text-stone text-lg">Nenhuma promoção criada</p>
-                        <button onClick={openCreatePromo} className="mt-4 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-6 rounded-lg text-sm transition-colors inline-flex items-center gap-2">
-                          <Plus size={16} /> Criar Primeira Promoção
-                        </button>
-                      </div>
-                    )}
-                  </>
-                )}
-
                 {/* ── TAB: CUPONS ────────────────────────────────────────────── */}
                 {activeTab === "cupons" && (
                   <>
@@ -775,6 +707,78 @@ export default function AdminCampanhas() {
                         </button>
                       </div>
                     )}
+
+                    {/* ── Banners da Home (ex-Promoções) ── */}
+                    <div className="mt-10 pt-8 border-t border-surface-03">
+                      <div className="flex items-center justify-between mb-6">
+                        <div>
+                          <h3 className="text-cream font-bold text-lg flex items-center gap-2">
+                            <Star size={18} className="text-gold" />
+                            Banners da Home
+                          </h3>
+                          <p className="text-stone text-xs mt-1">Banners rotativos exibidos na página inicial da loja</p>
+                        </div>
+                        <button
+                          onClick={openCreatePromo}
+                          className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors text-sm"
+                        >
+                          <Plus size={16} />
+                          Novo Banner
+                        </button>
+                      </div>
+
+                      <div className="space-y-4">
+                        {promotionsList.map((p) => (
+                          <div key={p.id} className={`bg-surface-02 rounded-xl border border-surface-03 overflow-hidden ${!p.active ? "opacity-60" : ""}`}>
+                            <div className="flex items-center gap-4 p-4">
+                              <div className="w-14 h-14 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                                {p.icon && (p.icon.startsWith("data:") || p.icon.startsWith("http")) ? (
+                                  <img src={p.icon} className="w-full h-full object-cover" alt={p.title} />
+                                ) : (
+                                  <span className="text-2xl">{p.icon || "⭐"}</span>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h3 className="text-cream font-bold text-sm">{p.title}</h3>
+                                  <span className={`text-xs px-2 py-0.5 rounded-full border ${p.active ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-stone/20 text-stone border-stone/30"}`}>
+                                    {p.active ? "Ativo" : "Inativo"}
+                                  </span>
+                                </div>
+                                {p.subtitle && <p className="text-stone text-xs mt-0.5">{p.subtitle}</p>}
+                                {p.validity_text && (
+                                  <p className="text-gold/70 text-xs mt-0.5">📅 {p.validity_text}</p>
+                                )}
+                              </div>
+                              <div className="flex gap-2 flex-shrink-0">
+                                <button
+                                  onClick={() => openEditPromo(p)}
+                                  className="p-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-colors"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+                                <button
+                                  onClick={() => deletePromo(p.id)}
+                                  className="p-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {promotionsList.length === 0 && (
+                        <div className="text-center py-8 bg-surface-02 rounded-xl border border-surface-03 border-dashed">
+                          <Star size={32} className="text-stone mx-auto mb-3" />
+                          <p className="text-stone text-sm">Nenhum banner criado</p>
+                          <button onClick={openCreatePromo} className="mt-3 bg-gold hover:bg-gold/90 text-cream font-bold py-1.5 px-4 rounded-lg text-sm transition-colors inline-flex items-center gap-2">
+                            <Plus size={14} /> Criar Banner
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </>
                 )}
 

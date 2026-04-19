@@ -14,7 +14,7 @@ export default function Home() {
   const { categories, sectionSubtitle, sectionTitle, bannerRotationInterval } = siteContent.home;
   const rotationInterval = (bannerRotationInterval ?? 5) * 1000;
 
-  const [activeCategory, setActiveCategory] = useState(categories[1] ?? categories[0]);
+  const [activeCategory, setActiveCategory] = useState(categories[0] ?? "Todos");
   const [carouselPosition, setCarouselPosition] = useState(0);
   const [clickedPizza, setClickedPizza] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -42,7 +42,18 @@ export default function Home() {
       )
     : [];
 
-  const ALL_LABEL = categories[0] ?? "Todas";
+  const ALL_LABEL = categories[0] ?? "Todos";
+
+  // Merge siteContent categories with categories derived from backend products,
+  // so newly assigned product categories always appear even on fresh devices.
+  const productCats = [...new Set(
+    products.filter(p => (p as any).category).map(p => (p as any).category as string)
+  )];
+  const effectiveCategories = [
+    ...categories,
+    ...productCats.filter(c => !categories.map(x => x.toLowerCase()).includes(c.toLowerCase())),
+  ];
+
   const categoryProducts =
     activeCategory === ALL_LABEL || !activeCategory
       ? products
@@ -272,7 +283,7 @@ export default function Home() {
 
         {/* Category Pills */}
         <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
-          {categories.map((category) => (
+          {effectiveCategories.map((category) => (
             <button
               key={category}
               onClick={() => setActiveCategory(category)}

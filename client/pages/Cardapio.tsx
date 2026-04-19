@@ -14,6 +14,15 @@ export default function Cardapio() {
   const [search, setSearch] = useState("");
   const [justAdded, setJustAdded] = useState<string | null>(null);
 
+  // Merge siteContent categories with categories derived from backend products
+  const productCats = [...new Set(
+    products.filter(p => (p as any).category).map(p => (p as any).category as string)
+  )];
+  const effectiveCategories = [
+    ...categories,
+    ...productCats.filter(c => !categories.map(x => x.toLowerCase()).includes(c.toLowerCase())),
+  ];
+
   const filtered = products.filter((p) => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.description.toLowerCase().includes(search.toLowerCase());
@@ -61,7 +70,7 @@ export default function Cardapio() {
 
       {/* Category Pills */}
       <div className="flex gap-2 px-4 py-4 overflow-x-auto scrollbar-hide">
-        {categories.map((cat) => (
+        {effectiveCategories.map((cat) => (
           <button
             key={cat}
             onClick={() => setActiveCategory(cat)}

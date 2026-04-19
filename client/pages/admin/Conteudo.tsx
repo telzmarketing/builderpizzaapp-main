@@ -307,30 +307,6 @@ export default function AdminConteudo() {
                     maxKB={200}
                   />
 
-                  <ImageUpload
-                    value={draft.media.heroBannerImage}
-                    onChange={(v) => set(["media", "heroBannerImage"], v)}
-                    label="Imagem do Banner (Home)"
-                    sizeGuide="Tamanho recomendado: 800×300px, máx. 500KB"
-                    hint="Imagem de fundo do banner promocional na página inicial."
-                    maxKB={500}
-                  />
-
-                  <ImageUpload
-                    value={draft.media.defaultProductImage}
-                    onChange={(v) => set(["media", "defaultProductImage"], v)}
-                    label="Imagem padrão de produto"
-                    sizeGuide="Tamanho recomendado: 200×200px, máx. 200KB"
-                    hint="Usada quando um produto não tem ícone/imagem definido."
-                    maxKB={200}
-                  />
-                </div>
-
-                <div className="bg-gold/10 border border-gold/30 rounded-xl p-4">
-                  <p className="text-gold text-sm font-medium mb-1">Sobre as imagens</p>
-                  <p className="text-gold/70 text-xs">
-                    As imagens são salvas localmente na sessão. Para uso permanente em produção, utilize o upload via servidor ou serviços como <strong>Cloudinary</strong> ou <strong>ImgBB</strong>.
-                  </p>
                 </div>
               </div>
             )}
