@@ -9,16 +9,15 @@ export default function Cardapio() {
   const navigate = useNavigate();
   const { products, siteContent, addToCart } = useApp();
   const { categories } = siteContent.home;
-  const [activeCategory, setActiveCategory] = useState("Todos");
+  const allLabel = categories[0] ?? "Todos";
+  const [activeCategory, setActiveCategory] = useState(allLabel);
   const [search, setSearch] = useState("");
   const [justAdded, setJustAdded] = useState<string | null>(null);
-
-  const allCategories = ["Todos", ...categories];
 
   const filtered = products.filter((p) => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.description.toLowerCase().includes(search.toLowerCase());
-    const matchCat = activeCategory === "Todos" ||
+    const matchCat = activeCategory === allLabel ||
       (p.category ?? "").toLowerCase() === activeCategory.toLowerCase();
     return matchSearch && matchCat && p.active;
   });
@@ -62,7 +61,7 @@ export default function Cardapio() {
 
       {/* Category Pills */}
       <div className="flex gap-2 px-4 py-4 overflow-x-auto scrollbar-hide">
-        {allCategories.map((cat) => (
+        {categories.map((cat) => (
           <button
             key={cat}
             onClick={() => setActiveCategory(cat)}

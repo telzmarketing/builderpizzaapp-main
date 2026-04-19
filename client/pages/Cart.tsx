@@ -109,7 +109,7 @@ export default function Cart() {
 
   if (cart.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
+      <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 flex flex-col">
         <div className="bg-brand-dark px-4 py-4 flex justify-between items-center sticky top-0 z-30">
           <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
             <ChevronLeft size={24} />
@@ -117,7 +117,7 @@ export default function Cart() {
           <MoschettieriLogo className="text-cream text-base" />
           <div className="w-6"></div>
         </div>
-        <div className="flex-1 flex items-center justify-center px-4 py-16">
+        <div className="flex-1 flex items-center justify-center px-4 py-16 pb-32">
           <div className="text-center">
             <div className="text-6xl mb-4">🛒</div>
             <h2 className="text-2xl font-bold text-cream mb-2">{c.emptyTitle}</h2>
@@ -127,6 +127,7 @@ export default function Cart() {
             </Link>
           </div>
         </div>
+        <BottomNav />
       </div>
     );
   }
