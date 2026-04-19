@@ -97,9 +97,9 @@ export default function AdminProducts() {
                       value={formData.icon || ""}
                       onChange={(v) => setFormData({ ...formData, icon: v })}
                       label="Ícone / Imagem do produto"
-                      sizeGuide="Tamanho recomendado: 200×200px, máx. 200KB"
+                      sizeGuide="Tamanho recomendado: 200×200px, máx. 512KB"
                       hint="Faça upload de uma imagem ou use um emoji 🍕"
-                      maxKB={200}
+                      maxKB={512}
                     />
                     <div>
                       <label className="block text-parchment text-sm font-medium mb-2">Avaliação (1–5)</label>
