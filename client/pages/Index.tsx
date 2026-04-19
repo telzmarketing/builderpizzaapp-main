@@ -43,14 +43,11 @@ export default function Home() {
       )
     : [];
 
-  // Categories derived from backend products + any custom ones added via Products admin
+  // Categories derived from backend products (source of truth)
   const productCats = [...new Set(
-    products.filter(p => p.active && (p as any).category).map(p => (p as any).category as string)
+    products.filter(p => p.active && p.category).map(p => p.category as string)
   )].sort();
-  const customCats = (siteContent.home.categories ?? []).filter(
-    c => c !== ALL_LABEL && !productCats.map(x => x.toLowerCase()).includes(c.toLowerCase())
-  );
-  const effectiveCategories = [ALL_LABEL, ...productCats, ...customCats];
+  const effectiveCategories = [ALL_LABEL, ...productCats];
 
   const categoryProducts =
     activeCategory === ALL_LABEL || !activeCategory

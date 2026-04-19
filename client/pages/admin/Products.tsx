@@ -14,24 +14,14 @@ const PRICING_OPTIONS: { value: PricingRule; label: string; description: string 
 type PTab = "produtos" | "categorias" | "config";
 
 export default function AdminProducts() {
-  const { products, addProduct, updateProduct, deleteProduct, multiFlavorsConfig, updateMultiFlavorsConfig, siteContent, updateSiteContent } = useApp();
+  const { products, addProduct, updateProduct, deleteProduct, multiFlavorsConfig, updateMultiFlavorsConfig } = useApp();
   const [activeTab, setActiveTab] = useState<PTab>("produtos");
   const [configSaved, setConfigSaved] = useState(false);
 
-  // ── Categories ──────────────────────────────────────────────────────────────
-  const categories = siteContent.home.categories;
-  const [newCategory, setNewCategory] = useState("");
-
-  const addCategory = () => {
-    const t = newCategory.trim();
-    if (!t || categories.includes(t)) return;
-    updateSiteContent({ home: { ...siteContent.home, categories: [...categories, t] } } as any);
-    setNewCategory("");
-  };
-
-  const removeCategory = (cat: string) => {
-    updateSiteContent({ home: { ...siteContent.home, categories: categories.filter((c) => c !== cat) } } as any);
-  };
+  // Categories derived from backend products (source of truth)
+  const existingCategories = [...new Set(
+    products.filter(p => p.category).map(p => p.category as string)
+  )].sort();
 
   // ── Products CRUD ───────────────────────────────────────────────────────────
   const [showForm, setShowForm] = useState(false);
@@ -168,7 +158,7 @@ export default function AdminProducts() {
           <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 flex justify-between items-center sticky top-0 z-20">
             <div>
               <h2 className="text-2xl font-bold text-cream">Produtos</h2>
-              <p className="text-stone text-sm">{products.length} produtos · {categories.length} categorias</p>
+              <p className="text-stone text-sm">{products.length} produtos · {existingCategories.length} categorias</p>
             </div>
             {activeTab === "produtos" && (
               <button
@@ -221,16 +211,19 @@ export default function AdminProducts() {
                       </div>
                       <div>
                         <label className="block text-parchment text-sm font-medium mb-2">Categoria</label>
-                        <select
+                        <input
+                          list="category-suggestions"
+                          type="text"
                           value={(formData as any).category || ""}
                           onChange={(e) => setFormData({ ...formData, category: e.target.value } as any)}
                           className={cls}
-                        >
-                          <option value="">Sem categoria</option>
-                          {categories.slice(1).map((cat) => (
-                            <option key={cat} value={cat}>{cat}</option>
+                          placeholder="Ex: Pizzas, Bebidas, Sobremesas..."
+                        />
+                        <datalist id="category-suggestions">
+                          {existingCategories.map((cat) => (
+                            <option key={cat} value={cat} />
                           ))}
-                        </select>
+                        </datalist>
                       </div>
                       <div className="grid grid-cols-2 gap-4 items-start">
                         <ImageUpload
@@ -313,47 +306,34 @@ export default function AdminProducts() {
 
             {/* ── TAB: CATEGORIAS ── */}
             {activeTab === "categorias" && (
-              <div className="max-w-xl">
+              <div className="max-w-xl space-y-4">
                 <div className="bg-surface-02 rounded-xl p-6 border border-surface-03 space-y-4">
                   <div className="flex items-center gap-3 pb-3 border-b border-surface-03">
                     <Tag size={18} className="text-gold" />
                     <div>
                       <h3 className="text-cream font-bold">Categorias do Cardápio</h3>
-                      <p className="text-stone text-sm">Filtros exibidos na home. A primeira categoria é o "Ver todos".</p>
+                      <p className="text-stone text-sm">Derivadas automaticamente dos produtos cadastrados.</p>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2 min-h-[2rem]">
-                    {categories.map((cat, i) => (
-                      <div key={cat} className="flex items-center gap-1.5 bg-surface-03 rounded-full px-3 py-1.5">
-                        <span className="text-cream text-sm">{cat}</span>
-                        {i === 0 && <span className="text-xs text-stone">(padrão)</span>}
-                        {i > 0 && (
-                          <button onClick={() => removeCategory(cat)} className="text-stone hover:text-red-400 transition-colors ml-1">
-                            <Trash2 size={11} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  {existingCategories.length === 0 ? (
+                    <p className="text-stone text-sm text-center py-4">
+                      Nenhuma categoria ainda. Edite um produto e preencha o campo "Categoria".
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {existingCategories.map((cat) => (
+                        <div key={cat} className="flex items-center gap-1.5 bg-gold/10 border border-gold/30 rounded-full px-3 py-1.5">
+                          <Tag size={12} className="text-gold" />
+                          <span className="text-gold text-sm font-medium">{cat}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={newCategory}
-                      onChange={(e) => setNewCategory(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && addCategory()}
-                      className={cls}
-                      placeholder="Nova categoria (ex: Pizzas, Bebidas...)"
-                    />
-                    <button onClick={addCategory} className="flex items-center gap-1.5 px-4 py-2 bg-gold hover:bg-gold/90 text-cream rounded-lg transition-colors text-sm font-medium flex-shrink-0">
-                      <Plus size={15} /> Adicionar
-                    </button>
+                  <div className="bg-surface-03 rounded-lg p-3 text-stone text-xs leading-relaxed">
+                    Para criar uma nova categoria, vá em <strong className="text-parchment">Produtos</strong> → crie ou edite um produto → preencha o campo <strong className="text-parchment">Categoria</strong>. As categorias aparecem automaticamente como filtros na loja.
                   </div>
-
-                  <p className="text-stone text-xs mt-2">
-                    Após criar categorias, edite cada produto para associá-lo a uma categoria.
-                  </p>
                 </div>
               </div>
             )}

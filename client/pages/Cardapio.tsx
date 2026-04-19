@@ -7,20 +7,17 @@ import MoschettieriLogo from "@/components/MoschettieriLogo";
 
 export default function Cardapio() {
   const navigate = useNavigate();
-  const { products, siteContent, addToCart } = useApp();
+  const { products, addToCart } = useApp();
   const ALL_LABEL = "Todos";
   const [activeCategory, setActiveCategory] = useState(ALL_LABEL);
   const [search, setSearch] = useState("");
   const [justAdded, setJustAdded] = useState<string | null>(null);
 
-  // Categories derived from backend products + any custom ones added via Products admin
+  // Categories derived from backend products (source of truth)
   const productCats = [...new Set(
-    products.filter(p => p.active && (p as any).category).map(p => (p as any).category as string)
+    products.filter(p => p.active && p.category).map(p => p.category as string)
   )].sort();
-  const customCats = (siteContent.home.categories ?? []).filter(
-    c => c !== ALL_LABEL && !productCats.map(x => x.toLowerCase()).includes(c.toLowerCase())
-  );
-  const effectiveCategories = [ALL_LABEL, ...productCats, ...customCats];
+  const effectiveCategories = [ALL_LABEL, ...productCats];
 
   const filtered = products.filter((p) => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
