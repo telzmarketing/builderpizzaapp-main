@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from backend.core.auth import get_current_admin
+from backend.routes.admin_auth import get_current_admin
 from backend.core.response import ok
 from backend.database import get_db
 from backend.models.theme import ThemeSettings

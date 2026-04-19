@@ -81,7 +81,7 @@ function Section({
 
 // ─── Tab definition ───────────────────────────────────────────────────────────
 
-type Tab = "marca_midia" | "home" | "nav" | "paginas" | "rastreamento" | "tema";
+type Tab = "marca_midia" | "home" | "nav" | "paginas" | "rastreamento";
 
 const TABS: { id: Tab; icon: React.ReactNode; label: string }[] = [
   { id: "marca_midia", icon: <Palette size={16} />, label: "Marca & Mídia" },
@@ -89,7 +89,6 @@ const TABS: { id: Tab; icon: React.ReactNode; label: string }[] = [
   { id: "nav", icon: <Navigation size={16} />, label: "Navegação" },
   { id: "paginas", icon: <FileText size={16} />, label: "Páginas" },
   { id: "rastreamento", icon: <Activity size={16} />, label: "Rastreamento" },
-  { id: "tema", icon: <Palette size={16} />, label: "Tema" },
 ];
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -690,115 +689,6 @@ export default function AdminConteudo() {
             )}
 
             {/* ═══════════════════ TEMA ═══════════════════ */}
-            {activeTab === "tema" && (
-              <div className="max-w-2xl space-y-6">
-                <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 space-y-5">
-                  <div className="flex items-center gap-3 pb-3 border-b border-slate-700">
-                    <Palette size={20} className="text-orange-500" />
-                    <div>
-                      <h3 className="text-white font-bold">Cores do Tema</h3>
-                      <p className="text-slate-400 text-sm">Escolha a cor principal do aplicativo</p>
-                    </div>
-                  </div>
-
-                  {(() => {
-                    const presets = [
-                      { name: "Laranja (padrão)", color: "#f97316", preset: "orange" },
-                      { name: "Vermelho", color: "#ef4444", preset: "red" },
-                      { name: "Verde", color: "#22c55e", preset: "green" },
-                      { name: "Roxo", color: "#a855f7", preset: "purple" },
-                      { name: "Amarelo", color: "#eab308", preset: "yellow" },
-                      { name: "Azul", color: "#3b82f6", preset: "blue" },
-                    ];
-                    const currentPreset = draft.theme?.preset ?? "orange";
-                    const currentColor = draft.theme?.primaryColor ?? "#f97316";
-                    return (
-                      <>
-                        <div className="grid grid-cols-2 gap-3">
-                          {presets.map(({ name, color, preset }) => {
-                            const isSelected = currentPreset === preset;
-                            return (
-                              <button
-                                key={preset}
-                                onClick={() => {
-                                  set(["theme", "primaryColor"], color);
-                                  set(["theme", "preset"], preset);
-                                }}
-                                className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${
-                                  isSelected
-                                    ? "border-white/60 bg-slate-700"
-                                    : "border-slate-600 hover:border-slate-500 bg-slate-700/50"
-                                }`}
-                              >
-                                <span
-                                  className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
-                                  style={{ backgroundColor: color }}
-                                >
-                                  {isSelected && (
-                                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                                      <path d="M2 7L5.5 10.5L12 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                    </svg>
-                                  )}
-                                </span>
-                                <span className="text-white text-sm font-medium">{name}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        <div className="pt-2 border-t border-slate-700 space-y-3">
-                          <Field label="Cor personalizada" hint="Escolha qualquer cor HEX para o tema">
-                            <div className="flex items-center gap-3">
-                              <input
-                                type="color"
-                                value={currentColor}
-                                onChange={(e) => {
-                                  set(["theme", "primaryColor"], e.target.value);
-                                  set(["theme", "preset"], "custom");
-                                }}
-                                className="w-12 h-10 rounded-lg border border-slate-600 bg-slate-700 cursor-pointer p-0.5"
-                              />
-                              <span className="text-white font-mono text-sm">{currentColor}</span>
-                              <span
-                                className="w-8 h-8 rounded-full border border-slate-600"
-                                style={{ backgroundColor: currentColor }}
-                              />
-                            </div>
-                          </Field>
-                        </div>
-
-                        <div className="pt-2 border-t border-slate-700">
-                          <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-3">Pré-visualização</p>
-                          <div className="flex items-center gap-4">
-                            <div
-                              className="w-12 h-12 rounded-full border-2 border-white/20"
-                              style={{ backgroundColor: currentColor }}
-                            />
-                            <div
-                              className="flex-1 h-10 rounded-lg flex items-center justify-center text-white text-sm font-bold"
-                              style={{ backgroundColor: currentColor }}
-                            >
-                              Botão de exemplo
-                            </div>
-                            <div
-                              className="px-4 py-2 rounded-full text-white text-xs font-medium"
-                              style={{ backgroundColor: currentColor }}
-                            >
-                              Tag
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-
-                <div className="bg-slate-700/40 border border-slate-600 rounded-xl p-4">
-                  <p className="text-slate-300 text-sm font-medium mb-1">As mudanças são aplicadas em tempo real</p>
-                  <p className="text-slate-500 text-xs">Ao salvar, a cor será persistida e aplicada globalmente.</p>
-                </div>
-              </div>
-            )}
 
           </div>
         </div>
