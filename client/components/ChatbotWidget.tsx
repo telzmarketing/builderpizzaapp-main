@@ -213,7 +213,7 @@ export default function ChatbotWidget() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className={`fixed bottom-5 ${posClass} z-[9999] flex flex-col ${alignClass} gap-3`}
+    <div className={`fixed bottom-[80px] ${posClass} z-[9999] flex flex-col ${alignClass} gap-3`}
       style={{ fontFamily: "inherit" }}>
 
       {/* ── Chat window ── */}
