@@ -7,7 +7,7 @@ import MoschettieriLogo from "@/components/MoschettieriLogo";
 
 export default function Conta() {
   const navigate = useNavigate();
-  const { orders, siteContent, customer, customerLogin, customerLogout } = useApp();
+  const { orders, siteContent, customer, customerLogin, customerLogout, updateCustomer } = useApp();
   const { pages, nav } = siteContent;
   const c = pages.conta;
 
@@ -19,6 +19,7 @@ export default function Conta() {
 
   // Profile edit state
   const [editMode, setEditMode] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [draft, setDraft] = useState({
     name: customer?.name ?? "",
     phone: customer?.phone ?? "",
@@ -38,7 +39,17 @@ export default function Conta() {
     }
   };
 
-  const handleSave = () => setEditMode(false);
+  const handleSave = async () => {
+    setSavingProfile(true);
+    try {
+      await updateCustomer({ name: draft.name, phone: draft.phone });
+      setEditMode(false);
+    } catch {
+      // keep editing mode open on error
+    } finally {
+      setSavingProfile(false);
+    }
+  };
   const handleCancel = () => {
     setDraft({ name: customer?.name ?? "", phone: customer?.phone ?? "", email: customer?.email ?? "" });
     setEditMode(false);
@@ -65,9 +76,10 @@ export default function Conta() {
         {customer && (
           <button
             onClick={() => (editMode ? handleSave() : setEditMode(true))}
-            className="text-gold-light hover:text-orange-300 transition-colors"
+            disabled={savingProfile}
+            className="text-gold-light hover:text-orange-300 transition-colors disabled:opacity-50"
           >
-            {editMode ? <Check size={22} /> : <Edit2 size={20} />}
+            {savingProfile ? <span className="text-xs text-gold">...</span> : editMode ? <Check size={22} /> : <Edit2 size={20} />}
           </button>
         )}
         {!customer && <div className="w-6" />}

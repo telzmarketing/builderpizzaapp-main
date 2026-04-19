@@ -1,7 +1,9 @@
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, Star, Gift, Zap, Trophy } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
+import { loyaltyApi } from "@/lib/api";
 
 // All color classes must appear literally here so Tailwind JIT includes them
 const colorPalette: Record<string, { color: string; bg: string; border: string }> = {
@@ -15,12 +17,21 @@ const colorPalette: Record<string, { color: string; bg: string; border: string }
 
 export default function Fidelidade() {
   const navigate = useNavigate();
-  const { orders, fidelidadeLevels, fidelidadeRewards, earnRules } = useApp();
+  const { orders, fidelidadeLevels, fidelidadeRewards, earnRules, customer } = useApp();
+  const [loyaltyPoints, setLoyaltyPoints] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!customer?.id) return;
+    loyaltyApi.account(customer.id)
+      .then((acc) => setLoyaltyPoints(acc.total_points))
+      .catch(() => { /* fallback to calculated value */ });
+  }, [customer?.id]);
 
   const sortedLevels = [...fidelidadeLevels].sort((a, b) => a.minPoints - b.minPoints);
   const sortedRewards = [...fidelidadeRewards].sort((a, b) => a.points - b.points);
 
-  const totalPoints = Math.floor(orders.reduce((sum, order) => sum + order.total * 10, 0));
+  const calculatedPoints = Math.floor(orders.reduce((sum, order) => sum + order.total * 10, 0));
+  const totalPoints = loyaltyPoints ?? calculatedPoints;
   const currentLevel = [...sortedLevels].reverse().find((l) => totalPoints >= l.minPoints) || sortedLevels[0];
   const nextLevel = sortedLevels.find((l) => l.minPoints > totalPoints);
   const progressToNext = nextLevel && currentLevel

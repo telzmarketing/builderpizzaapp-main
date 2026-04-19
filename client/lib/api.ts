@@ -511,6 +511,8 @@ export const shippingApi = {
 export const customersApi = {
   list: () => get<ApiCustomer[]>("/customers"),
   get: (id: string) => get<ApiCustomer>(`/customers/${id}`),
+  update: (id: string, data: { name?: string; phone?: string }) =>
+    put<ApiCustomer>(`/customers/${id}`, data),
 };
 
 // ─── Campaigns ───────────────────────────────────────────────────────────────

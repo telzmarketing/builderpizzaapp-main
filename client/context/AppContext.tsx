@@ -5,6 +5,7 @@ import {
   couponsApi,
   loyaltyApi,
   authApi,
+  customersApi,
   type ApiProduct,
   type ApiPromotion,
   type ApiCoupon,
@@ -212,6 +213,7 @@ interface AppContextType {
   customer: ApiCustomer | null;
   customerLogin: (phone: string, name?: string) => Promise<void>;
   customerLogout: () => void;
+  updateCustomer: (data: { name?: string; phone?: string }) => Promise<void>;
 
   // Products
   products: Pizza[];
@@ -488,6 +490,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("customer");
   };
 
+  const updateCustomer = async (data: { name?: string; phone?: string }) => {
+    if (!customer) return;
+    const updated = await customersApi.update(customer.id, data);
+    setCustomer(updated);
+    localStorage.setItem("customer", JSON.stringify(updated));
+  };
+
   // ── Products ──────────────────────────────────────────────────────────────
 
   const addProduct = async (data: Omit<Pizza, "id" | "created_at" | "updated_at">) => {
@@ -637,7 +646,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value: AppContextType = {
     loading,
-    customer, customerLogin, customerLogout,
+    customer, customerLogin, customerLogout, updateCustomer,
     products, addProduct, updateProduct, deleteProduct,
     cart, addToCart, updateCartItem, removeFromCart, clearCart,
     cartSubtotal, cartDeliveryFee, cartTotal,

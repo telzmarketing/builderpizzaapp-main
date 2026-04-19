@@ -16,8 +16,10 @@ export default function Cardapio() {
   const allCategories = ["Todos", ...categories];
 
   const filtered = products.filter((p) => {
-    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
-    const matchCat = activeCategory === "Todos" || true;
+    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
+      p.description.toLowerCase().includes(search.toLowerCase());
+    const matchCat = activeCategory === "Todos" ||
+      (p.category ?? "").toLowerCase() === activeCategory.toLowerCase();
     return matchSearch && matchCat && p.active;
   });
 
@@ -93,8 +95,12 @@ export default function Cardapio() {
                   onClick={() => navigate(`/product/${product.id}`)}
                   className="w-full text-left"
                 >
-                  <div className="w-full aspect-square rounded-xl bg-surface-03 flex items-center justify-center text-5xl mb-3">
-                    {product.icon || "🍕"}
+                  <div className="w-full aspect-square rounded-xl bg-surface-03 flex items-center justify-center overflow-hidden mb-3">
+                    {product.icon && (product.icon.startsWith("data:") || product.icon.startsWith("http")) ? (
+                      <img src={product.icon} alt={product.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-5xl">{product.icon || "🍕"}</span>
+                    )}
                   </div>
                   <h3 className="text-cream font-semibold text-sm leading-tight line-clamp-1">
                     {product.name}
