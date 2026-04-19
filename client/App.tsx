@@ -1,10 +1,22 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
+
+const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
+
+function StoreWidget() {
+  const { pathname } = useLocation();
+  if (pathname.startsWith("/painel")) return null;
+  return (
+    <Suspense fallback={null}>
+      <ChatbotWidget />
+    </Suspense>
+  );
+}
 
 function DocumentHead() {
   const { siteContent } = useApp();
@@ -60,6 +72,7 @@ export default function App() {
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <StoreWidget />
             <Routes>
               {/* ── Customer routes ── */}
               <Route path="/" element={<Index />} />
