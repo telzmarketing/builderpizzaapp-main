@@ -11,6 +11,7 @@ from backend.models.coupon import Coupon, CouponType
 from backend.models.promotion import Promotion
 from backend.models.shipping import ShippingRule, ShippingRuleType
 from backend.models.admin import AdminUser
+from backend.models.chatbot import ChatbotSettings
 
 
 def seed_all(db: Session) -> None:
@@ -21,6 +22,7 @@ def seed_all(db: Session) -> None:
     _seed_coupons(db)
     _seed_shipping(db)
     _seed_admin(db)
+    _seed_chatbot_settings(db)
     db.commit()
 
 
@@ -136,6 +138,19 @@ def _seed_coupons(db: Session) -> None:
         coupon_type=CouponType.fixed,
         discount_value=10.0,
         min_order_value=0.0,
+    ))
+
+
+def _seed_chatbot_settings(db: Session) -> None:
+    if db.query(ChatbotSettings).filter(ChatbotSettings.id == "default").first():
+        return
+    db.add(ChatbotSettings(
+        id="default",
+        prompt_base=(
+            "Você é um assistente virtual de uma pizzaria. "
+            "Responda em português, seja simpático e objetivo. "
+            "Ajude o cliente com dúvidas sobre cardápio, pedidos, entrega e pagamento."
+        ),
     ))
 
 
