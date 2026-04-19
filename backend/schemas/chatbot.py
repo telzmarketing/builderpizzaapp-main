@@ -212,6 +212,7 @@ class ChatbotConversationDetailOut(ChatbotConversationOut):
 # ── Widget public API ─────────────────────────────────────────────────────────
 
 class StartSessionIn(BaseModel):
+    session_id:          Optional[str] = None   # se None, backend gera novo UUID
     visitor_fingerprint: Optional[str] = None
     pagina_origem:       Optional[str] = None
     user_agent:          Optional[str] = None
