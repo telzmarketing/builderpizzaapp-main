@@ -216,6 +216,7 @@ class StartSessionIn(BaseModel):
     visitor_fingerprint: Optional[str] = None
     pagina_origem:       Optional[str] = None
     user_agent:          Optional[str] = None
+    referrer:            Optional[str] = None
 
 
 class StartSessionOut(BaseModel):

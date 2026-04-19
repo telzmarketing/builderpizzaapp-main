@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.response import ok, err_msg
 from backend.database import get_db
-from backend.models.chatbot import ChatbotMessage, MessageSender
+from backend.models.chatbot import ChatbotAutomation, ChatbotMessage, MessageSender
 from backend.schemas.chatbot import (
     SendMessageIn, SendMessageOut, StartSessionIn, StartSessionOut,
     ChatbotMessageOut, ChatbotPublicConfigOut,
@@ -97,6 +97,29 @@ def get_history(session_id: str, db: Session = Depends(get_db)):
         "status": conv.status.value,
         "messages": [m.model_dump() for m in out],
     })
+
+
+# ── Automações públicas (avaliadas pelo widget) ───────────────────────────────
+
+@router.get("/automations", response_model=None)
+def get_public_automations(db: Session = Depends(get_db)):
+    """Retorna regras de automação ativas para avaliação client-side no widget."""
+    items = (
+        db.query(ChatbotAutomation)
+        .filter(ChatbotAutomation.ativo == True)
+        .order_by(ChatbotAutomation.prioridade.desc())
+        .all()
+    )
+    result = [
+        {
+            "gatilho":   item.gatilho.value,
+            "condicao":  item.condicao,
+            "mensagem":  item.mensagem,
+            "prioridade": item.prioridade,
+        }
+        for item in items
+    ]
+    return ok(result)
 
 
 # ── Encerrar conversa ─────────────────────────────────────────────────────────

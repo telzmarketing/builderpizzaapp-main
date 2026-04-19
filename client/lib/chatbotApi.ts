@@ -179,11 +179,19 @@ export const chatbotAdminApi = {
   analytics:        ()                       => get<ChatbotAnalytics>("/admin/chatbot/analytics"),
 };
 
+export interface PublicAutomation {
+  gatilho:   "tempo_na_pagina" | "pagina_especifica" | "carrinho_abandonado" | "produto_visualizado";
+  condicao:  string;
+  mensagem:  string;
+  prioridade: number;
+}
+
 // Widget public API (used by ChatbotWidget)
 export const chatbotPublicApi = {
-  config:   ()                               => get<ChatbotSettings>("/chatbot/config"),
-  session:  (body: Record<string, unknown>)  => post<{ session_id: string; config: ChatbotSettings }>("/chatbot/session", body),
-  message:  (body: Record<string, unknown>)  => post<{ session_id: string; resposta: string; awaiting_human: boolean; fora_do_horario: boolean }>("/chatbot/message", body),
-  history:  (sessionId: string)              => get<{ session_id: string; status: string; messages: ChatbotMessage[] }>(`/chatbot/history/${sessionId}`),
-  close:    (sessionId: string)              => post<void>("/chatbot/close", { session_id: sessionId }),
+  config:      ()                               => get<ChatbotSettings>("/chatbot/config"),
+  automations: ()                               => get<PublicAutomation[]>("/chatbot/automations"),
+  session:     (body: Record<string, unknown>)  => post<{ session_id: string; config: ChatbotSettings }>("/chatbot/session", body),
+  message:     (body: Record<string, unknown>)  => post<{ session_id: string; resposta: string; awaiting_human: boolean; fora_do_horario: boolean }>("/chatbot/message", body),
+  history:     (sessionId: string)              => get<{ session_id: string; status: string; messages: ChatbotMessage[] }>(`/chatbot/history/${sessionId}`),
+  close:       (sessionId: string)              => post<void>("/chatbot/close", { session_id: sessionId }),
 };
