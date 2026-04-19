@@ -57,6 +57,18 @@ const del = <T>(path: string) => request<T>("DELETE", path);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export interface ApiProductSize {
+  id: string;
+  product_id: string;
+  label: string;
+  description: string | null;
+  price: number;
+  is_default: boolean;
+  sort_order: number;
+  active: boolean;
+  created_at: string;
+}
+
 export interface ApiProduct {
   id: string;
   name: string;
@@ -68,6 +80,7 @@ export interface ApiProduct {
   active: boolean;
   created_at: string;
   updated_at: string;
+  sizes?: ApiProductSize[];
 }
 
 export interface ApiPromotion {
@@ -402,6 +415,22 @@ export const productsApi = {
     patch<ApiMultiFlavorsConfig>("/products/config/multi-flavors", data),
 };
 
+// ─── Product Sizes ────────────────────────────────────────────────────────────
+
+export const sizesApi = {
+  list: (productId: string) =>
+    get<ApiProductSize[]>(`/products/${productId}/sizes`),
+
+  create: (productId: string, data: Omit<ApiProductSize, "id" | "product_id" | "created_at">) =>
+    post<ApiProductSize>(`/products/${productId}/sizes`, data),
+
+  update: (productId: string, sizeId: string, data: Partial<Omit<ApiProductSize, "id" | "product_id" | "created_at">>) =>
+    put<ApiProductSize>(`/products/${productId}/sizes/${sizeId}`, data),
+
+  remove: (productId: string, sizeId: string) =>
+    del<void>(`/products/${productId}/sizes/${sizeId}`),
+};
+
 // ─── Promotions ───────────────────────────────────────────────────────────────
 
 export const promotionsApi = {
@@ -567,4 +596,22 @@ export const adminApi = {
 
   updatePaymentGateway: (data: Partial<ApiPaymentGatewayConfig>) =>
     put<ApiPaymentGatewayConfig>("/admin/payment-gateway", data),
+};
+
+// ─── Upload ───────────────────────────────────────────────────────────────────
+
+export const uploadApi = {
+  upload: async (file: File): Promise<string> => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE}/admin/upload`, {
+      method: "POST",
+      headers: { ...authHeaders() },
+      body: form,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const data = "data" in json ? json.data : json;
+    return data.url as string;
+  },
 };

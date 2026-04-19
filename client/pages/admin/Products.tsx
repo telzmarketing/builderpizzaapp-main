@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { Plus, Trash2, Edit2, Settings2, Tag } from "lucide-react";
+import { useState, useCallback } from "react";
+import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2 } from "lucide-react";
 import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import ImageUpload from "@/components/admin/ImageUpload";
+import { sizesApi, ApiProductSize } from "@/lib/api";
 
 const PRICING_OPTIONS: { value: PricingRule; label: string; description: string }[] = [
   { value: "most_expensive", label: "Mais Caro", description: "Cliente paga pelo sabor mais caro (padrão iFood)" },
@@ -77,6 +78,83 @@ export default function AdminProducts() {
       alert(err instanceof Error ? err.message : "Erro ao salvar configuração.");
     }
   };
+
+  // ── Sizes modal ──────────────────────────────────────────────────────────────
+  const [sizesModalProduct, setSizesModalProduct] = useState<Pizza | null>(null);
+  const [productSizes, setProductSizes] = useState<ApiProductSize[]>([]);
+  const [sizesLoading, setSizesLoading] = useState(false);
+  const [sizeForm, setSizeForm] = useState({ label: "", description: "", price: "", is_default: false });
+  const [savingSizeId, setSavingSizeId] = useState<string | null>(null);
+
+  const openSizesModal = useCallback(async (product: Pizza) => {
+    setSizesModalProduct(product);
+    setSizesLoading(true);
+    try {
+      const sizes = await sizesApi.list(product.id);
+      setProductSizes(sizes);
+    } catch {
+      setProductSizes([]);
+    } finally {
+      setSizesLoading(false);
+    }
+  }, []);
+
+  const closeSizesModal = () => {
+    setSizesModalProduct(null);
+    setProductSizes([]);
+    setSizeForm({ label: "", description: "", price: "", is_default: false });
+  };
+
+  const handleAddSize = async () => {
+    if (!sizesModalProduct || !sizeForm.label.trim() || !sizeForm.price) return;
+    const price = parseFloat(sizeForm.price);
+    if (isNaN(price) || price <= 0) { alert("Preço inválido."); return; }
+    try {
+      const created = await sizesApi.create(sizesModalProduct.id, {
+        label: sizeForm.label.trim(),
+        description: sizeForm.description.trim() || null,
+        price,
+        is_default: sizeForm.is_default,
+        sort_order: productSizes.length,
+        active: true,
+      } as any);
+      setProductSizes((prev) => [...prev, created]);
+      setSizeForm({ label: "", description: "", price: "", is_default: false });
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao adicionar tamanho.");
+    }
+  };
+
+  const handleToggleSizeField = async (size: ApiProductSize, field: "is_default" | "active") => {
+    if (!sizesModalProduct) return;
+    setSavingSizeId(size.id);
+    try {
+      const updated = await sizesApi.update(sizesModalProduct.id, size.id, { [field]: !size[field] });
+      setProductSizes((prev) => prev.map((s) => (s.id === size.id ? updated : s)));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao atualizar tamanho.");
+    } finally {
+      setSavingSizeId(null);
+    }
+  };
+
+  const handleDeleteSize = async (sizeId: string) => {
+    if (!sizesModalProduct) return;
+    if (!confirm("Remover este tamanho?")) return;
+    try {
+      await sizesApi.remove(sizesModalProduct.id, sizeId);
+      setProductSizes((prev) => prev.filter((s) => s.id !== sizeId));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao remover tamanho.");
+    }
+  };
+
+  const SIZE_PRESETS = [
+    { label: "P", description: "Pequena" },
+    { label: "M", description: "Média" },
+    { label: "G", description: "Grande" },
+    { label: "GG", description: "Gigante" },
+  ];
 
   const cls = "w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream placeholder-stone focus:outline-none focus:border-gold text-sm";
 
@@ -184,7 +262,7 @@ export default function AdminProducts() {
                   {products.map((product) => (
                     <div key={product.id} className="bg-surface-02 rounded-xl p-6 border border-surface-03">
                       <div className="w-16 h-16 rounded-xl bg-surface-03 flex items-center justify-center mb-4 overflow-hidden">
-                        {product.icon?.startsWith("data:") || product.icon?.startsWith("http") ? (
+                        {product.icon?.startsWith("data:") || product.icon?.startsWith("http") || product.icon?.startsWith("/") ? (
                           <img src={product.icon} alt={product.name} className="w-full h-full object-contain" />
                         ) : (
                           <span className="text-4xl">{product.icon || "🍕"}</span>
@@ -202,7 +280,7 @@ export default function AdminProducts() {
                         <span className="text-gold font-bold">R$ {product.price.toFixed(2)}</span>
                         <span className="text-stone text-sm">⭐ {product.rating}</span>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 mb-2">
                         <button onClick={() => handleEdit(product)} className="flex-1 flex items-center justify-center gap-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 font-medium py-2 px-3 rounded-lg transition-colors">
                           <Edit2 size={16} />
                           Editar
@@ -211,6 +289,13 @@ export default function AdminProducts() {
                           <Trash2 size={16} />
                         </button>
                       </div>
+                      <button onClick={() => openSizesModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-gold/10 hover:border-gold/40 text-parchment hover:text-gold font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm">
+                        <Ruler size={15} />
+                        Gerenciar Tamanhos
+                        {(product as any).sizes && (product as any).sizes.length > 0 && (
+                          <span className="ml-auto text-xs bg-gold/20 text-gold px-1.5 py-0.5 rounded-full">{(product as any).sizes.length}</span>
+                        )}
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -329,6 +414,163 @@ export default function AdminProducts() {
           </div>
         </div>
       </div>
+
+      {/* ── Sizes Modal ───────────────────────────────────────────────────────── */}
+      {sizesModalProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+
+            <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03 sticky top-0 bg-surface-02 z-10">
+              <div className="flex items-center gap-3">
+                <Ruler size={18} className="text-gold" />
+                <div>
+                  <h3 className="text-cream font-bold">Tamanhos</h3>
+                  <p className="text-stone text-xs">{sizesModalProduct.name}</p>
+                </div>
+              </div>
+              <button onClick={closeSizesModal} className="text-stone hover:text-cream transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+
+              <div>
+                <h4 className="text-parchment text-sm font-semibold mb-3">Tamanhos cadastrados</h4>
+                {sizesLoading ? (
+                  <div className="flex items-center justify-center py-6 text-stone gap-2">
+                    <Loader2 size={16} className="animate-spin" />
+                    <span className="text-sm">Carregando...</span>
+                  </div>
+                ) : productSizes.length === 0 ? (
+                  <p className="text-stone text-sm text-center py-4">Nenhum tamanho cadastrado. Este produto usará os tamanhos padrão.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {productSizes.map((size) => (
+                      <div key={size.id} className="flex items-center gap-3 bg-surface-03 rounded-xl px-4 py-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-cream font-bold text-sm">{size.label}</span>
+                            {size.is_default && (
+                              <span className="text-[10px] bg-gold/20 text-gold border border-gold/30 px-1.5 py-0.5 rounded-full">padrão</span>
+                            )}
+                            {!size.active && (
+                              <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-full">inativo</span>
+                            )}
+                          </div>
+                          {size.description && (
+                            <p className="text-stone text-xs mt-0.5">{size.description}</p>
+                          )}
+                        </div>
+                        <span className="text-gold font-bold text-sm flex-shrink-0">R$ {size.price.toFixed(2)}</span>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            onClick={() => handleToggleSizeField(size, "is_default")}
+                            disabled={savingSizeId === size.id}
+                            title={size.is_default ? "Remover como padrão" : "Marcar como padrão"}
+                            className={`p-1.5 rounded-lg transition-colors ${size.is_default ? "bg-gold/20 text-gold" : "text-stone hover:text-gold"}`}
+                          >
+                            {savingSizeId === size.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                          </button>
+                          <button
+                            onClick={() => handleToggleSizeField(size, "active")}
+                            disabled={savingSizeId === size.id}
+                            title={size.active ? "Desativar" : "Ativar"}
+                            className={`p-1.5 rounded-lg transition-colors ${size.active ? "text-green-400 hover:text-red-400" : "text-red-400 hover:text-green-400"}`}
+                          >
+                            <Settings2 size={13} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSize(size.id)}
+                            className="p-1.5 rounded-lg text-stone hover:text-red-400 transition-colors"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-surface-03 pt-5">
+                <h4 className="text-parchment text-sm font-semibold mb-3">Adicionar Tamanho</h4>
+
+                <div className="mb-3">
+                  <p className="text-stone text-xs mb-2">Atalhos rápidos:</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {SIZE_PRESETS.map((preset) => (
+                      <button
+                        key={preset.label}
+                        onClick={() => setSizeForm((f) => ({ ...f, label: preset.label, description: preset.description }))}
+                        className="text-xs bg-surface-03 hover:bg-gold/10 hover:text-gold text-parchment border border-surface-03 hover:border-gold/30 px-3 py-1.5 rounded-full transition-colors"
+                      >
+                        {preset.label} / {preset.description}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-parchment text-xs font-medium mb-1">Rótulo *</label>
+                      <input
+                        type="text"
+                        value={sizeForm.label}
+                        onChange={(e) => setSizeForm((f) => ({ ...f, label: e.target.value }))}
+                        className={cls}
+                        placeholder='Ex: "G" ou "Broto"'
+                        maxLength={50}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-parchment text-xs font-medium mb-1">Preço (R$) *</label>
+                      <input
+                        type="number"
+                        value={sizeForm.price}
+                        onChange={(e) => setSizeForm((f) => ({ ...f, price: e.target.value }))}
+                        className={cls}
+                        placeholder="29.90"
+                        step="0.01"
+                        min="0.01"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-parchment text-xs font-medium mb-1">Descrição (opcional)</label>
+                    <input
+                      type="text"
+                      value={sizeForm.description}
+                      onChange={(e) => setSizeForm((f) => ({ ...f, description: e.target.value }))}
+                      className={cls}
+                      placeholder='Ex: "Serve 2 pessoas"'
+                      maxLength={100}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="size-default"
+                      checked={sizeForm.is_default}
+                      onChange={(e) => setSizeForm((f) => ({ ...f, is_default: e.target.checked }))}
+                      className="accent-gold"
+                    />
+                    <label htmlFor="size-default" className="text-parchment text-xs cursor-pointer">Marcar como tamanho padrão</label>
+                  </div>
+                  <button
+                    onClick={handleAddSize}
+                    className="w-full flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2.5 rounded-xl transition-colors text-sm"
+                  >
+                    <Plus size={15} /> Adicionar Tamanho
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

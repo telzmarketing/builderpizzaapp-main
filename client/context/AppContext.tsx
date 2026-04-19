@@ -183,6 +183,10 @@ export interface SiteContent {
     };
   };
   media: { logoUrl: string; heroBannerImage: string; defaultProductImage: string };
+  theme: {
+    primaryColor: string;
+    preset: string;
+  };
 }
 
 type DeepPartial<T> = { [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P] };
@@ -365,6 +369,7 @@ export const defaultSiteContent: SiteContent = {
     },
   },
   media: { logoUrl: "", heroBannerImage: "", defaultProductImage: "🍕" },
+  theme: { primaryColor: "#f97316", preset: "orange" },
 };
 
 // ─── Converters (API shape → frontend shape) ──────────────────────────────────
@@ -477,6 +482,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     bootstrap();
   }, []);
 
+  // ── Store data polling (silent refresh every 30s for store pages) ─────────
+  useEffect(() => {
+    async function refreshStoreData() {
+      if (window.location.pathname.startsWith("/painel")) return;
+      try {
+        const [prods, promos] = await Promise.allSettled([
+          productsApi.list(true),
+          promotionsApi.list(true),
+        ]);
+        if (prods.status === "fulfilled") setProducts(prods.value);
+        if (promos.status === "fulfilled")
+          setPromotions(promos.value.map(apiPromotionToPromotion));
+      } catch {
+        // silent
+      }
+    }
+    const intervalId = setInterval(refreshStoreData, 30_000);
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") refreshStoreData();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
   // ── Customer auth ─────────────────────────────────────────────────────────
 
   const customerLogin = async (phone: string, name?: string) => {
@@ -559,6 +591,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subtitle: data.subtitle,
       description: null,
       icon: data.icon,
+      validity_text: null,
       active: data.active,
       valid_from: null,
       valid_until: null,

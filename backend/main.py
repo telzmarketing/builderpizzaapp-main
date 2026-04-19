@@ -7,16 +7,19 @@ Start with:
 Or directly:
     python -m backend.main
 """
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.config import get_settings
 from backend.database import create_all_tables, SessionLocal, engine
 from backend.routes import products, orders, payments, shipping, coupons, loyalty, customers, promotions, admin, delivery, auth, admin_auth, campaigns
 from backend.routes import chatbot as chatbot_routes, admin_chatbot as admin_chatbot_routes
+from backend.routes import upload as upload_routes
 
 settings = get_settings()
 
@@ -59,6 +62,8 @@ async def lifespan(app: FastAPI):
 
 def _run_migrations():
     """Idempotent schema migrations — runs on every startup."""
+    os.makedirs("uploads", exist_ok=True)
+
     from sqlalchemy import text
     with engine.connect() as conn:
         stmts = [
@@ -111,7 +116,12 @@ app.include_router(admin_auth.router)
 app.include_router(campaigns.router)
 app.include_router(chatbot_routes.router)
 app.include_router(admin_chatbot_routes.router)
+app.include_router(upload_routes.router)
 
+# ── Static files (uploaded images) ───────────────────────────────────────────
+# Must be mounted AFTER all route registrations.
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads", html=False), name="uploads")
 
 # ── Health check ──────────────────────────────────────────────────────────────
 @app.get("/health", tags=["system"])

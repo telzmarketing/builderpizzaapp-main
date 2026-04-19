@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Upload, X } from "lucide-react";
+import { uploadApi } from "@/lib/api";
 
 interface Props {
   value: string;
@@ -12,22 +14,34 @@ interface Props {
 
 export default function ImageUpload({ value, onChange, label, hint, sizeGuide, maxKB = 500, previewRounded = false }: Props) {
   const id = `upload-${label.replace(/\W/g, "-").toLowerCase()}-${Math.random().toString(36).slice(2, 6)}`;
+  const [uploading, setUploading] = useState(false);
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     if (file.size > maxKB * 1024) {
       alert(`Arquivo muito grande. Máximo permitido: ${maxKB}KB`);
       e.target.value = "";
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => onChange(reader.result as string);
-    reader.readAsDataURL(file);
-    e.target.value = "";
+
+    setUploading(true);
+    try {
+      const url = await uploadApi.upload(file);
+      onChange(url);
+    } catch (err) {
+      alert(`Erro ao enviar imagem: ${err instanceof Error ? err.message : "Tente novamente."}`);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
   };
 
-  const isImage = value?.startsWith("data:") || value?.startsWith("http");
+  const isImage =
+    value?.startsWith("data:") ||
+    value?.startsWith("http") ||
+    value?.startsWith("/");
 
   return (
     <div>
@@ -42,17 +56,20 @@ export default function ImageUpload({ value, onChange, label, hint, sizeGuide, m
         </div>
         <div className="flex-1 space-y-2">
           <div className="flex items-center gap-2">
-            <label htmlFor={id} className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-surface-03 hover:bg-brand-mid text-parchment rounded-lg text-sm font-medium transition-colors border border-surface-03">
+            <label
+              htmlFor={uploading ? undefined : id}
+              className={`cursor-pointer flex items-center gap-2 px-4 py-2 bg-surface-03 hover:bg-brand-mid text-parchment rounded-lg text-sm font-medium transition-colors border border-surface-03 ${uploading ? "opacity-60 cursor-not-allowed" : ""}`}
+            >
               <Upload size={14} />
-              Fazer upload
+              {uploading ? "Enviando..." : "Fazer upload"}
             </label>
-            {value && (
+            {value && !uploading && (
               <button type="button" onClick={() => onChange("")} className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors" title="Remover imagem">
                 <X size={14} />
               </button>
             )}
           </div>
-          <input id={id} type="file" accept="image/*" onChange={handleFile} className="hidden" />
+          <input id={id} type="file" accept="image/*" onChange={handleFile} className="hidden" disabled={uploading} />
           {sizeGuide && <p className="text-gold/80 text-xs font-medium">📐 {sizeGuide}</p>}
           {hint && <p className="text-stone/70 text-xs">{hint}</p>}
         </div>

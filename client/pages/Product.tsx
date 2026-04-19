@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule } from "@/context/AppContext";
+import { sizesApi, ApiProductSize } from "@/lib/api";
 
 // ─── Add-ons ──────────────────────────────────────────────────────────────────
 
@@ -15,8 +16,8 @@ const addOns: AddOn[] = [
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const SIZES = ["P", "M", "G", "GG"];
-const SIZE_LABELS: Record<string, string> = { P: "Pequena", M: "Média", G: "Grande", GG: "Gigante" };
+const FALLBACK_SIZES = ["P", "M", "G", "GG"];
+const FALLBACK_SIZE_LABELS: Record<string, string> = { P: "Pequena", M: "Média", G: "Grande", GG: "Gigante" };
 
 const DIVISION_OPTIONS: { value: FlavorDivision; label: string; emoji: string }[] = [
   { value: 1, label: "Inteira", emoji: "🍕" },
@@ -138,14 +139,34 @@ export default function Product() {
   const product = products.find((p) => p.id === id);
 
   const [quantity, setQuantity] = useState(1);
-  const [selectedSize, setSelectedSize] = useState("M");
-  const [selectedAddOns] = useState<string[]>([]);
+  const [selectedAddOns, setSelectedAddOns] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [division, setDivision] = useState<FlavorDivision>(1);
   // 3 slots always; only division first slots are active
   const [flavorSlots, setFlavorSlots] = useState<(Pizza | null)[]>([product ?? null, null, null]);
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const [cartError, setCartError] = useState(false);
+
+  // Dynamic sizes from backend
+  const [productSizes, setProductSizes] = useState<ApiProductSize[]>([]);
+  const [selectedSizeObj, setSelectedSizeObj] = useState<ApiProductSize | null>(null);
+  const [selectedSizeFallback, setSelectedSizeFallback] = useState("M");
+
+  useEffect(() => {
+    if (!product) return;
+    sizesApi.list(product.id).then((sizes) => {
+      const activeSizes = sizes.filter((s) => s.active);
+      setProductSizes(activeSizes);
+      if (activeSizes.length > 0) {
+        const def = activeSizes.find((s) => s.is_default) ?? activeSizes[0];
+        setSelectedSizeObj(def);
+      }
+    }).catch(() => {
+      setProductSizes([]);
+    });
+  }, [product?.id]);
+
+  const selectedSize = selectedSizeObj ? selectedSizeObj.label : selectedSizeFallback;
 
   if (!product) {
     return (
@@ -168,10 +189,15 @@ export default function Product() {
     [selectedAddOns]
   );
 
-  const flavorPrice = useMemo(
-    () => computeFlavorPrice(activeFlavors, division, multiFlavorsConfig.pricingRule),
-    [activeFlavors, division, multiFlavorsConfig.pricingRule]
-  );
+  const flavorPrice = useMemo(() => {
+    if (productSizes.length > 0 && selectedSizeObj) {
+      const slotsWithSizePrice = activeFlavors.map((f) =>
+        f ? { ...f, price: selectedSizeObj.price } : null
+      );
+      return computeFlavorPrice(slotsWithSizePrice as (Pizza | null)[], division, multiFlavorsConfig.pricingRule);
+    }
+    return computeFlavorPrice(activeFlavors, division, multiFlavorsConfig.pricingRule);
+  }, [activeFlavors, division, multiFlavorsConfig.pricingRule, productSizes, selectedSizeObj]);
 
   const pricePerUnit = flavorPrice + addOnPrice;
   const totalPrice = pricePerUnit * quantity;
@@ -442,21 +468,41 @@ export default function Product() {
         {/* ── Size Selector ───────────────────────────────────────────────── */}
         <div className="mb-6">
           <h3 className="text-cream font-bold mb-3">{p.sizeLabel}</h3>
-          <div className="flex gap-2">
-            {SIZES.map((size) => (
-              <button
-                key={size}
-                onClick={() => setSelectedSize(size)}
-                className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${
-                  selectedSize === size
-                    ? "bg-gold text-cream shadow-lg shadow-gold/30"
-                    : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
-                }`}
-              >
-                <span className="block font-black">{size}</span>
-                <span className="block text-[10px] opacity-70 font-normal">{SIZE_LABELS[size]}</span>
-              </button>
-            ))}
+          <div className="flex gap-2 flex-wrap">
+            {productSizes.length > 0 ? (
+              productSizes.map((size) => (
+                <button
+                  key={size.id}
+                  onClick={() => setSelectedSizeObj(size)}
+                  className={`flex-1 min-w-[60px] py-3 rounded-xl text-sm font-bold transition-all ${
+                    selectedSizeObj?.id === size.id
+                      ? "bg-gold text-cream shadow-lg shadow-gold/30"
+                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                  }`}
+                >
+                  <span className="block font-black">{size.label}</span>
+                  {size.description && (
+                    <span className="block text-[10px] opacity-70 font-normal">{size.description}</span>
+                  )}
+                  <span className="block text-[10px] text-gold-light mt-0.5">R${size.price.toFixed(2)}</span>
+                </button>
+              ))
+            ) : (
+              FALLBACK_SIZES.map((size) => (
+                <button
+                  key={size}
+                  onClick={() => setSelectedSizeFallback(size)}
+                  className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${
+                    selectedSizeFallback === size
+                      ? "bg-gold text-cream shadow-lg shadow-gold/30"
+                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                  }`}
+                >
+                  <span className="block font-black">{size}</span>
+                  <span className="block text-[10px] opacity-70 font-normal">{FALLBACK_SIZE_LABELS[size]}</span>
+                </button>
+              ))
+            )}
           </div>
         </div>
 
