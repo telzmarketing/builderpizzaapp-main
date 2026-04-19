@@ -35,6 +35,8 @@ function CartItemRow({ item, onRemove, onUpdate }: {
             <span className="text-xs text-stone">
               {SIZE_LABEL[item.selectedSize] ?? item.selectedSize}
               {isMulti && ` · ${divisionLabel(item.flavorDivision)}`}
+              {item.selectedCrustType && ` · ${item.selectedCrustType.name}`}
+              {item.selectedDrinkVariant && ` · ${item.selectedDrinkVariant.name}`}
             </span>
           </div>
           <p className="text-gold font-bold text-sm mt-1">

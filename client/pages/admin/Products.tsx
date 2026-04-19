@@ -1,14 +1,20 @@
 import { useState, useCallback } from "react";
-import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2 } from "lucide-react";
+import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat, Droplets } from "lucide-react";
 import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import ImageUpload from "@/components/admin/ImageUpload";
-import { sizesApi, ApiProductSize } from "@/lib/api";
+import { sizesApi, crustApi, drinkVariantApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant } from "@/lib/api";
 
 const PRICING_OPTIONS: { value: PricingRule; label: string; description: string }[] = [
   { value: "most_expensive", label: "Mais Caro", description: "Cliente paga pelo sabor mais caro (padrão iFood)" },
   { value: "average", label: "Média", description: "Preço é a média aritmética dos sabores" },
   { value: "proportional", label: "Proporcional", description: "Cada parte paga sua fração do sabor" },
+];
+
+const PRODUCT_TYPE_OPTIONS = [
+  { value: "pizza", label: "🍕 Pizza" },
+  { value: "drink", label: "🥤 Bebida" },
+  { value: "other", label: "🍔 Outros" },
 ];
 
 type PTab = "produtos" | "categorias" | "config";
@@ -18,15 +24,16 @@ export default function AdminProducts() {
   const [activeTab, setActiveTab] = useState<PTab>("produtos");
   const [configSaved, setConfigSaved] = useState(false);
 
-  // Categories derived from backend products (source of truth)
   const existingCategories = [...new Set(
     products.filter(p => p.category).map(p => p.category as string)
   )].sort();
 
-  // ── Products CRUD ───────────────────────────────────────────────────────────
+  // ── Products CRUD ────────────────────────────────────────────────────────────
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<Partial<Pizza>>({ name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5 });
+  const [formData, setFormData] = useState<Partial<Pizza> & { product_type?: string }>({
+    name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5, product_type: "pizza",
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,10 +50,11 @@ export default function AdminProducts() {
           name: formData.name!, description: formData.description!,
           price: formData.price!, icon: formData.icon || "🍕",
           category: formData.category || null,
+          product_type: formData.product_type || "pizza",
           rating: formData.rating || 4.5, active: true,
         } as any);
       }
-      setFormData({ name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5 });
+      setFormData({ name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5, product_type: "pizza" });
       setShowForm(false);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao salvar produto.");
@@ -54,7 +62,11 @@ export default function AdminProducts() {
   };
 
   const handleEdit = (product: Pizza) => {
-    setFormData({ ...product, category: (product as any).category ?? "" });
+    setFormData({
+      ...product,
+      category: (product as any).category ?? "",
+      product_type: (product as any).product_type ?? "pizza",
+    });
     setEditingId(product.id);
     setShowForm(true);
   };
@@ -139,6 +151,141 @@ export default function AdminProducts() {
     }
   };
 
+  // ── Crust modal (pizza) ───────────────────────────────────────────────────────
+  const [crustModalProduct, setCrustModalProduct] = useState<Pizza | null>(null);
+  const [productCrusts, setProductCrusts] = useState<ApiProductCrustType[]>([]);
+  const [crustsLoading, setCrustsLoading] = useState(false);
+  const [crustForm, setCrustForm] = useState({ name: "", price_addition: "" });
+  const [savingCrustId, setSavingCrustId] = useState<string | null>(null);
+
+  const openCrustModal = useCallback(async (product: Pizza) => {
+    setCrustModalProduct(product);
+    setCrustsLoading(true);
+    try {
+      const crusts = await crustApi.list(product.id);
+      setProductCrusts(crusts);
+    } catch {
+      setProductCrusts([]);
+    } finally {
+      setCrustsLoading(false);
+    }
+  }, []);
+
+  const closeCrustModal = () => {
+    setCrustModalProduct(null);
+    setProductCrusts([]);
+    setCrustForm({ name: "", price_addition: "" });
+  };
+
+  const handleAddCrust = async () => {
+    if (!crustModalProduct || !crustForm.name.trim()) return;
+    const priceAdd = parseFloat(crustForm.price_addition || "0");
+    try {
+      const created = await crustApi.create(crustModalProduct.id, {
+        name: crustForm.name.trim(),
+        price_addition: isNaN(priceAdd) ? 0 : priceAdd,
+        active: true,
+        sort_order: productCrusts.length,
+      } as any);
+      setProductCrusts((prev) => [...prev, created]);
+      setCrustForm({ name: "", price_addition: "" });
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao adicionar tipo de massa.");
+    }
+  };
+
+  const handleToggleCrustActive = async (crust: ApiProductCrustType) => {
+    if (!crustModalProduct) return;
+    setSavingCrustId(crust.id);
+    try {
+      const updated = await crustApi.update(crustModalProduct.id, crust.id, { active: !crust.active });
+      setProductCrusts((prev) => prev.map((c) => (c.id === crust.id ? updated : c)));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao atualizar massa.");
+    } finally {
+      setSavingCrustId(null);
+    }
+  };
+
+  const handleDeleteCrust = async (crustId: string) => {
+    if (!crustModalProduct) return;
+    if (!confirm("Remover este tipo de massa?")) return;
+    try {
+      await crustApi.remove(crustModalProduct.id, crustId);
+      setProductCrusts((prev) => prev.filter((c) => c.id !== crustId));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao remover massa.");
+    }
+  };
+
+  // ── Drink variants modal ──────────────────────────────────────────────────────
+  const [drinkModalProduct, setDrinkModalProduct] = useState<Pizza | null>(null);
+  const [productDrinkVariants, setProductDrinkVariants] = useState<ApiProductDrinkVariant[]>([]);
+  const [drinkLoading, setDrinkLoading] = useState(false);
+  const [drinkForm, setDrinkForm] = useState({ name: "", price_addition: "" });
+  const [savingDrinkId, setSavingDrinkId] = useState<string | null>(null);
+
+  const openDrinkModal = useCallback(async (product: Pizza) => {
+    setDrinkModalProduct(product);
+    setDrinkLoading(true);
+    try {
+      const variants = await drinkVariantApi.list(product.id);
+      setProductDrinkVariants(variants);
+    } catch {
+      setProductDrinkVariants([]);
+    } finally {
+      setDrinkLoading(false);
+    }
+  }, []);
+
+  const closeDrinkModal = () => {
+    setDrinkModalProduct(null);
+    setProductDrinkVariants([]);
+    setDrinkForm({ name: "", price_addition: "" });
+  };
+
+  const handleAddDrinkVariant = async () => {
+    if (!drinkModalProduct || !drinkForm.name.trim()) return;
+    const priceAdd = parseFloat(drinkForm.price_addition || "0");
+    try {
+      const created = await drinkVariantApi.create(drinkModalProduct.id, {
+        name: drinkForm.name.trim(),
+        price_addition: isNaN(priceAdd) ? 0 : priceAdd,
+        active: true,
+        sort_order: productDrinkVariants.length,
+      } as any);
+      setProductDrinkVariants((prev) => [...prev, created]);
+      setDrinkForm({ name: "", price_addition: "" });
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao adicionar variante.");
+    }
+  };
+
+  const handleToggleDrinkActive = async (variant: ApiProductDrinkVariant) => {
+    if (!drinkModalProduct) return;
+    setSavingDrinkId(variant.id);
+    try {
+      const updated = await drinkVariantApi.update(drinkModalProduct.id, variant.id, { active: !variant.active });
+      setProductDrinkVariants((prev) => prev.map((v) => (v.id === variant.id ? updated : v)));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao atualizar variante.");
+    } finally {
+      setSavingDrinkId(null);
+    }
+  };
+
+  const handleDeleteDrinkVariant = async (variantId: string) => {
+    if (!drinkModalProduct) return;
+    if (!confirm("Remover esta variante?")) return;
+    try {
+      await drinkVariantApi.remove(drinkModalProduct.id, variantId);
+      setProductDrinkVariants((prev) => prev.filter((v) => v.id !== variantId));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao remover variante.");
+    }
+  };
+
+  // ── Presets ───────────────────────────────────────────────────────────────────
   const SIZE_PRESETS = [
     { label: "P", description: "Pequena" },
     { label: "M", description: "Média" },
@@ -146,7 +293,33 @@ export default function AdminProducts() {
     { label: "GG", description: "Gigante" },
   ];
 
+  const CRUST_PRESETS = [
+    { name: "Tradicional", price_addition: "0" },
+    { name: "Fina", price_addition: "0" },
+    { name: "Grossa", price_addition: "0" },
+    { name: "Borda Recheada", price_addition: "5" },
+  ];
+
+  const DRINK_SIZE_PRESETS = [
+    { label: "Lata", description: "350ml" },
+    { label: "600ml", description: "" },
+    { label: "1 Litro", description: "" },
+    { label: "2 Litros", description: "" },
+  ];
+
+  const DRINK_VARIANT_PRESETS = [
+    { name: "Normal", price_addition: "0" },
+    { name: "Zero", price_addition: "0" },
+    { name: "Sem Açúcar", price_addition: "0" },
+  ];
+
   const cls = "w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream placeholder-stone focus:outline-none focus:border-gold text-sm";
+
+  const getTypeIcon = (type: string | null | undefined) => {
+    if (type === "drink") return "🥤";
+    if (type === "other") return "🍔";
+    return "🍕";
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-00 to-surface-00">
@@ -162,7 +335,7 @@ export default function AdminProducts() {
             </div>
             {activeTab === "produtos" && (
               <button
-                onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5 }); }}
+                onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5, product_type: "pizza" }); }}
                 className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
               >
                 <Plus size={20} />
@@ -205,6 +378,28 @@ export default function AdminProducts() {
                           <input type="number" value={formData.price || ""} onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) })} className={cls} placeholder="12.99" step="0.01" />
                         </div>
                       </div>
+
+                      {/* Tipo de Produto */}
+                      <div>
+                        <label className="block text-parchment text-sm font-medium mb-2">Tipo de Produto</label>
+                        <div className="flex gap-3">
+                          {PRODUCT_TYPE_OPTIONS.map((opt) => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => setFormData({ ...formData, product_type: opt.value })}
+                              className={`flex-1 py-2.5 rounded-xl border-2 text-sm font-bold transition-all ${
+                                (formData.product_type || "pizza") === opt.value
+                                  ? "border-gold bg-gold/10 text-gold"
+                                  : "border-surface-03 text-stone hover:border-gold/50"
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
                       <div>
                         <label className="block text-parchment text-sm font-medium mb-2">Descrição *</label>
                         <textarea value={formData.description || ""} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className={`${cls} resize-none`} placeholder="Descreva o produto..." rows={3} />
@@ -239,6 +434,22 @@ export default function AdminProducts() {
                           <input type="number" value={formData.rating || ""} onChange={(e) => setFormData({ ...formData, rating: parseFloat(e.target.value) })} className={cls} placeholder="4.5" min="1" max="5" step="0.1" />
                         </div>
                       </div>
+
+                      {/* Dica de próximos passos */}
+                      {!editingId && (
+                        <div className="bg-surface-03/60 rounded-lg p-3 text-stone text-xs">
+                          {(formData.product_type || "pizza") === "pizza" && (
+                            <span>💡 Após criar a pizza, use <strong className="text-parchment">Gerenciar Tamanhos</strong> e <strong className="text-parchment">Gerenciar Massas</strong> no card do produto.</span>
+                          )}
+                          {formData.product_type === "drink" && (
+                            <span>💡 Após criar a bebida, use <strong className="text-parchment">Gerenciar Tamanhos</strong> e <strong className="text-parchment">Gerenciar Variantes</strong> no card do produto.</span>
+                          )}
+                          {formData.product_type === "other" && (
+                            <span>💡 Após criar o produto, use <strong className="text-parchment">Gerenciar Tamanhos</strong> para configurar variações de tamanho e preço.</span>
+                          )}
+                        </div>
+                      )}
+
                       <div className="flex gap-3 pt-4">
                         <button type="submit" className="flex-1 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors">
                           {editingId ? "Salvar Alterações" : "Adicionar Produto"}
@@ -252,45 +463,82 @@ export default function AdminProducts() {
                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {products.map((product) => (
-                    <div key={product.id} className="bg-surface-02 rounded-xl p-6 border border-surface-03">
-                      <div className="w-16 h-16 rounded-xl bg-surface-03 flex items-center justify-center mb-4 overflow-hidden">
-                        {product.icon?.startsWith("data:") || product.icon?.startsWith("http") || product.icon?.startsWith("/") ? (
-                          <img src={product.icon} alt={product.name} className="w-full h-full object-contain" />
-                        ) : (
-                          <span className="text-4xl">{product.icon || "🍕"}</span>
+                  {products.map((product) => {
+                    const pType = (product as any).product_type as string | null | undefined;
+                    const isPizza = !pType || pType === "pizza";
+                    const isDrink = pType === "drink";
+                    return (
+                      <div key={product.id} className="bg-surface-02 rounded-xl p-6 border border-surface-03">
+                        <div className="flex items-start gap-3 mb-3">
+                          <div className="w-14 h-14 rounded-xl bg-surface-03 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                            {product.icon?.startsWith("data:") || product.icon?.startsWith("http") || product.icon?.startsWith("/") ? (
+                              <img src={product.icon} alt={product.name} className="w-full h-full object-contain" />
+                            ) : (
+                              <span className="text-3xl">{product.icon || getTypeIcon(pType)}</span>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-lg font-bold text-cream leading-tight">{product.name}</h3>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {(product as any).category && (
+                                <span className="inline-flex items-center gap-1 text-xs bg-gold/20 text-gold border border-gold/30 px-2 py-0.5 rounded-full">
+                                  <Tag size={10} />
+                                  {(product as any).category}
+                                </span>
+                              )}
+                              <span className="inline-flex items-center gap-1 text-xs bg-surface-03 text-stone border border-surface-03 px-2 py-0.5 rounded-full">
+                                {getTypeIcon(pType)} {pType === "drink" ? "Bebida" : pType === "other" ? "Outros" : "Pizza"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <p className="text-stone text-sm mb-3 line-clamp-2">{product.description}</p>
+                        <div className="flex justify-between items-center mb-4">
+                          <span className="text-gold font-bold">R$ {product.price.toFixed(2)}</span>
+                          <span className="text-stone text-sm">⭐ {product.rating}</span>
+                        </div>
+
+                        <div className="flex gap-2 mb-2">
+                          <button onClick={() => handleEdit(product)} className="flex-1 flex items-center justify-center gap-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 font-medium py-2 px-3 rounded-lg transition-colors">
+                            <Edit2 size={16} />
+                            Editar
+                          </button>
+                          <button onClick={() => deleteProduct(product.id)} className="flex items-center justify-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 font-medium py-2 px-3 rounded-lg transition-colors">
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+
+                        <button onClick={() => openSizesModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-gold/10 hover:border-gold/40 text-parchment hover:text-gold font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
+                          <Ruler size={15} />
+                          Gerenciar Tamanhos
+                          {(product as any).sizes && (product as any).sizes.length > 0 && (
+                            <span className="ml-auto text-xs bg-gold/20 text-gold px-1.5 py-0.5 rounded-full">{(product as any).sizes.length}</span>
+                          )}
+                        </button>
+
+                        {isPizza && (
+                          <button onClick={() => openCrustModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-amber-500/10 hover:border-amber-500/40 text-parchment hover:text-amber-400 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
+                            <ChefHat size={15} />
+                            Gerenciar Massas
+                            {(product as any).crust_types && (product as any).crust_types.length > 0 && (
+                              <span className="ml-auto text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full">{(product as any).crust_types.length}</span>
+                            )}
+                          </button>
+                        )}
+
+                        {isDrink && (
+                          <button onClick={() => openDrinkModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-blue-500/10 hover:border-blue-500/40 text-parchment hover:text-blue-400 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm">
+                            <Droplets size={15} />
+                            Gerenciar Variantes (Normal/Zero)
+                            {(product as any).drink_variants && (product as any).drink_variants.length > 0 && (
+                              <span className="ml-auto text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded-full">{(product as any).drink_variants.length}</span>
+                            )}
+                          </button>
                         )}
                       </div>
-                      <h3 className="text-lg font-bold text-cream mb-1">{product.name}</h3>
-                      {(product as any).category && (
-                        <span className="inline-flex items-center gap-1 text-xs bg-gold/20 text-gold border border-gold/30 px-2 py-0.5 rounded-full mb-2">
-                          <Tag size={10} />
-                          {(product as any).category}
-                        </span>
-                      )}
-                      <p className="text-stone text-sm mb-3 line-clamp-2">{product.description}</p>
-                      <div className="flex justify-between items-center mb-4">
-                        <span className="text-gold font-bold">R$ {product.price.toFixed(2)}</span>
-                        <span className="text-stone text-sm">⭐ {product.rating}</span>
-                      </div>
-                      <div className="flex gap-2 mb-2">
-                        <button onClick={() => handleEdit(product)} className="flex-1 flex items-center justify-center gap-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 font-medium py-2 px-3 rounded-lg transition-colors">
-                          <Edit2 size={16} />
-                          Editar
-                        </button>
-                        <button onClick={() => deleteProduct(product.id)} className="flex items-center justify-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 font-medium py-2 px-3 rounded-lg transition-colors">
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                      <button onClick={() => openSizesModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-gold/10 hover:border-gold/40 text-parchment hover:text-gold font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm">
-                        <Ruler size={15} />
-                        Gerenciar Tamanhos
-                        {(product as any).sizes && (product as any).sizes.length > 0 && (
-                          <span className="ml-auto text-xs bg-gold/20 text-gold px-1.5 py-0.5 rounded-full">{(product as any).sizes.length}</span>
-                        )}
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {products.length === 0 && (
@@ -359,7 +607,7 @@ export default function AdminProducts() {
                           onClick={() => updateMultiFlavorsConfig({ ...multiFlavorsConfig, maxFlavors: n as 2 | 3 })}
                           className={`flex-1 py-3 rounded-xl border-2 font-bold transition-all ${multiFlavorsConfig.maxFlavors === n ? "border-gold bg-gold/10 text-gold" : "border-surface-03 text-stone hover:border-gold/50"}`}
                         >
-                          {n} {n === 2 ? "sabores" : "sabores"}
+                          {n} sabores
                         </button>
                       ))}
                     </div>
@@ -399,7 +647,6 @@ export default function AdminProducts() {
       {sizesModalProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
-
             <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03 sticky top-0 bg-surface-02 z-10">
               <div className="flex items-center gap-3">
                 <Ruler size={18} className="text-gold" />
@@ -414,7 +661,6 @@ export default function AdminProducts() {
             </div>
 
             <div className="p-6 space-y-6">
-
               <div>
                 <h4 className="text-parchment text-sm font-semibold mb-3">Tamanhos cadastrados</h4>
                 {sizesLoading ? (
@@ -431,39 +677,20 @@ export default function AdminProducts() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-cream font-bold text-sm">{size.label}</span>
-                            {size.is_default && (
-                              <span className="text-[10px] bg-gold/20 text-gold border border-gold/30 px-1.5 py-0.5 rounded-full">padrão</span>
-                            )}
-                            {!size.active && (
-                              <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-full">inativo</span>
-                            )}
+                            {size.is_default && <span className="text-[10px] bg-gold/20 text-gold border border-gold/30 px-1.5 py-0.5 rounded-full">padrão</span>}
+                            {!size.active && <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-full">inativo</span>}
                           </div>
-                          {size.description && (
-                            <p className="text-stone text-xs mt-0.5">{size.description}</p>
-                          )}
+                          {size.description && <p className="text-stone text-xs mt-0.5">{size.description}</p>}
                         </div>
                         <span className="text-gold font-bold text-sm flex-shrink-0">R$ {size.price.toFixed(2)}</span>
                         <div className="flex items-center gap-1 flex-shrink-0">
-                          <button
-                            onClick={() => handleToggleSizeField(size, "is_default")}
-                            disabled={savingSizeId === size.id}
-                            title={size.is_default ? "Remover como padrão" : "Marcar como padrão"}
-                            className={`p-1.5 rounded-lg transition-colors ${size.is_default ? "bg-gold/20 text-gold" : "text-stone hover:text-gold"}`}
-                          >
+                          <button onClick={() => handleToggleSizeField(size, "is_default")} disabled={savingSizeId === size.id} title={size.is_default ? "Remover como padrão" : "Marcar como padrão"} className={`p-1.5 rounded-lg transition-colors ${size.is_default ? "bg-gold/20 text-gold" : "text-stone hover:text-gold"}`}>
                             {savingSizeId === size.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
                           </button>
-                          <button
-                            onClick={() => handleToggleSizeField(size, "active")}
-                            disabled={savingSizeId === size.id}
-                            title={size.active ? "Desativar" : "Ativar"}
-                            className={`p-1.5 rounded-lg transition-colors ${size.active ? "text-green-400 hover:text-red-400" : "text-red-400 hover:text-green-400"}`}
-                          >
+                          <button onClick={() => handleToggleSizeField(size, "active")} disabled={savingSizeId === size.id} title={size.active ? "Desativar" : "Ativar"} className={`p-1.5 rounded-lg transition-colors ${size.active ? "text-green-400 hover:text-red-400" : "text-red-400 hover:text-green-400"}`}>
                             <Settings2 size={13} />
                           </button>
-                          <button
-                            onClick={() => handleDeleteSize(size.id)}
-                            className="p-1.5 rounded-lg text-stone hover:text-red-400 transition-colors"
-                          >
+                          <button onClick={() => handleDeleteSize(size.id)} className="p-1.5 rounded-lg text-stone hover:text-red-400 transition-colors">
                             <Trash2 size={13} />
                           </button>
                         </div>
@@ -475,78 +702,214 @@ export default function AdminProducts() {
 
               <div className="border-t border-surface-03 pt-5">
                 <h4 className="text-parchment text-sm font-semibold mb-3">Adicionar Tamanho</h4>
-
                 <div className="mb-3">
                   <p className="text-stone text-xs mb-2">Atalhos rápidos:</p>
                   <div className="flex gap-2 flex-wrap">
-                    {SIZE_PRESETS.map((preset) => (
-                      <button
-                        key={preset.label}
-                        onClick={() => setSizeForm((f) => ({ ...f, label: preset.label, description: preset.description }))}
-                        className="text-xs bg-surface-03 hover:bg-gold/10 hover:text-gold text-parchment border border-surface-03 hover:border-gold/30 px-3 py-1.5 rounded-full transition-colors"
-                      >
-                        {preset.label} / {preset.description}
+                    {((sizesModalProduct as any).product_type === "drink" ? DRINK_SIZE_PRESETS : SIZE_PRESETS).map((preset) => (
+                      <button key={preset.label} onClick={() => setSizeForm((f) => ({ ...f, label: preset.label, description: preset.description }))} className="text-xs bg-surface-03 hover:bg-gold/10 hover:text-gold text-parchment border border-surface-03 hover:border-gold/30 px-3 py-1.5 rounded-full transition-colors">
+                        {preset.label}{preset.description ? ` / ${preset.description}` : ""}
                       </button>
                     ))}
                   </div>
                 </div>
-
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-parchment text-xs font-medium mb-1">Rótulo *</label>
-                      <input
-                        type="text"
-                        value={sizeForm.label}
-                        onChange={(e) => setSizeForm((f) => ({ ...f, label: e.target.value }))}
-                        className={cls}
-                        placeholder='Ex: "G" ou "Broto"'
-                        maxLength={50}
-                      />
+                      <input type="text" value={sizeForm.label} onChange={(e) => setSizeForm((f) => ({ ...f, label: e.target.value }))} className={cls} placeholder='Ex: "G" ou "600ml"' maxLength={50} />
                     </div>
                     <div>
                       <label className="block text-parchment text-xs font-medium mb-1">Preço (R$) *</label>
-                      <input
-                        type="number"
-                        value={sizeForm.price}
-                        onChange={(e) => setSizeForm((f) => ({ ...f, price: e.target.value }))}
-                        className={cls}
-                        placeholder="29.90"
-                        step="0.01"
-                        min="0.01"
-                      />
+                      <input type="number" value={sizeForm.price} onChange={(e) => setSizeForm((f) => ({ ...f, price: e.target.value }))} className={cls} placeholder="29.90" step="0.01" min="0.01" />
                     </div>
                   </div>
                   <div>
                     <label className="block text-parchment text-xs font-medium mb-1">Descrição (opcional)</label>
-                    <input
-                      type="text"
-                      value={sizeForm.description}
-                      onChange={(e) => setSizeForm((f) => ({ ...f, description: e.target.value }))}
-                      className={cls}
-                      placeholder='Ex: "Serve 2 pessoas"'
-                      maxLength={100}
-                    />
+                    <input type="text" value={sizeForm.description} onChange={(e) => setSizeForm((f) => ({ ...f, description: e.target.value }))} className={cls} placeholder='Ex: "Serve 2 pessoas"' maxLength={100} />
                   </div>
                   <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="size-default"
-                      checked={sizeForm.is_default}
-                      onChange={(e) => setSizeForm((f) => ({ ...f, is_default: e.target.checked }))}
-                      className="accent-gold"
-                    />
+                    <input type="checkbox" id="size-default" checked={sizeForm.is_default} onChange={(e) => setSizeForm((f) => ({ ...f, is_default: e.target.checked }))} className="accent-gold" />
                     <label htmlFor="size-default" className="text-parchment text-xs cursor-pointer">Marcar como tamanho padrão</label>
                   </div>
-                  <button
-                    onClick={handleAddSize}
-                    className="w-full flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2.5 rounded-xl transition-colors text-sm"
-                  >
+                  <button onClick={handleAddSize} className="w-full flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2.5 rounded-xl transition-colors text-sm">
                     <Plus size={15} /> Adicionar Tamanho
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
 
+      {/* ── Crust Modal (Pizza) ──────────────────────────────────────────────── */}
+      {crustModalProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03 sticky top-0 bg-surface-02 z-10">
+              <div className="flex items-center gap-3">
+                <ChefHat size={18} className="text-amber-400" />
+                <div>
+                  <h3 className="text-cream font-bold">Tipos de Massa</h3>
+                  <p className="text-stone text-xs">{crustModalProduct.name}</p>
+                </div>
+              </div>
+              <button onClick={closeCrustModal} className="text-stone hover:text-cream transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div>
+                <h4 className="text-parchment text-sm font-semibold mb-3">Massas cadastradas</h4>
+                {crustsLoading ? (
+                  <div className="flex items-center justify-center py-6 text-stone gap-2">
+                    <Loader2 size={16} className="animate-spin" />
+                    <span className="text-sm">Carregando...</span>
+                  </div>
+                ) : productCrusts.length === 0 ? (
+                  <p className="text-stone text-sm text-center py-4">Nenhum tipo de massa cadastrado. O cliente não verá opção de massa.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {productCrusts.map((crust) => (
+                      <div key={crust.id} className="flex items-center gap-3 bg-surface-03 rounded-xl px-4 py-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-cream font-bold text-sm">{crust.name}</span>
+                            {!crust.active && <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-full">inativo</span>}
+                          </div>
+                        </div>
+                        <span className={`text-sm font-bold flex-shrink-0 ${crust.price_addition > 0 ? "text-amber-400" : "text-stone"}`}>
+                          {crust.price_addition > 0 ? `+R$ ${crust.price_addition.toFixed(2)}` : "Sem acréscimo"}
+                        </span>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button onClick={() => handleToggleCrustActive(crust)} disabled={savingCrustId === crust.id} title={crust.active ? "Desativar" : "Ativar"} className={`p-1.5 rounded-lg transition-colors ${crust.active ? "text-green-400 hover:text-red-400" : "text-red-400 hover:text-green-400"}`}>
+                            {savingCrustId === crust.id ? <Loader2 size={13} className="animate-spin" /> : <Settings2 size={13} />}
+                          </button>
+                          <button onClick={() => handleDeleteCrust(crust.id)} className="p-1.5 rounded-lg text-stone hover:text-red-400 transition-colors">
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-surface-03 pt-5">
+                <h4 className="text-parchment text-sm font-semibold mb-3">Adicionar Tipo de Massa</h4>
+                <div className="mb-3">
+                  <p className="text-stone text-xs mb-2">Atalhos rápidos:</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {CRUST_PRESETS.map((preset) => (
+                      <button key={preset.name} onClick={() => setCrustForm({ name: preset.name, price_addition: preset.price_addition })} className="text-xs bg-surface-03 hover:bg-amber-500/10 hover:text-amber-400 text-parchment border border-surface-03 hover:border-amber-500/30 px-3 py-1.5 rounded-full transition-colors">
+                        {preset.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-parchment text-xs font-medium mb-1">Nome *</label>
+                      <input type="text" value={crustForm.name} onChange={(e) => setCrustForm((f) => ({ ...f, name: e.target.value }))} className={cls} placeholder='Ex: "Tradicional"' maxLength={100} />
+                    </div>
+                    <div>
+                      <label className="block text-parchment text-xs font-medium mb-1">Preço da massa (R$)</label>
+                      <input type="number" value={crustForm.price_addition} onChange={(e) => setCrustForm((f) => ({ ...f, price_addition: e.target.value }))} className={cls} placeholder="0.00" step="0.01" min="0" />
+                    </div>
+                  </div>
+                  <button onClick={handleAddCrust} className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-500/90 text-white font-bold py-2.5 rounded-xl transition-colors text-sm">
+                    <Plus size={15} /> Adicionar Massa
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Drink Variants Modal ─────────────────────────────────────────────── */}
+      {drinkModalProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03 sticky top-0 bg-surface-02 z-10">
+              <div className="flex items-center gap-3">
+                <Droplets size={18} className="text-blue-400" />
+                <div>
+                  <h3 className="text-cream font-bold">Variantes da Bebida</h3>
+                  <p className="text-stone text-xs">{drinkModalProduct.name}</p>
+                </div>
+              </div>
+              <button onClick={closeDrinkModal} className="text-stone hover:text-cream transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div>
+                <h4 className="text-parchment text-sm font-semibold mb-3">Variantes cadastradas</h4>
+                {drinkLoading ? (
+                  <div className="flex items-center justify-center py-6 text-stone gap-2">
+                    <Loader2 size={16} className="animate-spin" />
+                    <span className="text-sm">Carregando...</span>
+                  </div>
+                ) : productDrinkVariants.length === 0 ? (
+                  <p className="text-stone text-sm text-center py-4">Nenhuma variante cadastrada. O cliente verá apenas o produto sem opções de tipo.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {productDrinkVariants.map((variant) => (
+                      <div key={variant.id} className="flex items-center gap-3 bg-surface-03 rounded-xl px-4 py-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-cream font-bold text-sm">{variant.name}</span>
+                            {!variant.active && <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-full">inativo</span>}
+                          </div>
+                        </div>
+                        <span className={`text-sm font-bold flex-shrink-0 ${variant.price_addition > 0 ? "text-blue-400" : "text-stone"}`}>
+                          {variant.price_addition > 0 ? `+R$ ${variant.price_addition.toFixed(2)}` : "Mesmo preço"}
+                        </span>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button onClick={() => handleToggleDrinkActive(variant)} disabled={savingDrinkId === variant.id} title={variant.active ? "Desativar" : "Ativar"} className={`p-1.5 rounded-lg transition-colors ${variant.active ? "text-green-400 hover:text-red-400" : "text-red-400 hover:text-green-400"}`}>
+                            {savingDrinkId === variant.id ? <Loader2 size={13} className="animate-spin" /> : <Settings2 size={13} />}
+                          </button>
+                          <button onClick={() => handleDeleteDrinkVariant(variant.id)} className="p-1.5 rounded-lg text-stone hover:text-red-400 transition-colors">
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-surface-03 pt-5">
+                <h4 className="text-parchment text-sm font-semibold mb-3">Adicionar Variante</h4>
+                <div className="mb-3">
+                  <p className="text-stone text-xs mb-2">Atalhos rápidos:</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {DRINK_VARIANT_PRESETS.map((preset) => (
+                      <button key={preset.name} onClick={() => setDrinkForm({ name: preset.name, price_addition: preset.price_addition })} className="text-xs bg-surface-03 hover:bg-blue-500/10 hover:text-blue-400 text-parchment border border-surface-03 hover:border-blue-500/30 px-3 py-1.5 rounded-full transition-colors">
+                        {preset.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-parchment text-xs font-medium mb-1">Nome *</label>
+                      <input type="text" value={drinkForm.name} onChange={(e) => setDrinkForm((f) => ({ ...f, name: e.target.value }))} className={cls} placeholder='Ex: "Normal" ou "Zero"' maxLength={100} />
+                    </div>
+                    <div>
+                      <label className="block text-parchment text-xs font-medium mb-1">Acréscimo (R$)</label>
+                      <input type="number" value={drinkForm.price_addition} onChange={(e) => setDrinkForm((f) => ({ ...f, price_addition: e.target.value }))} className={cls} placeholder="0.00" step="0.01" min="0" />
+                    </div>
+                  </div>
+                  <button onClick={handleAddDrinkVariant} className="w-full flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-500/90 text-white font-bold py-2.5 rounded-xl transition-colors text-sm">
+                    <Plus size={15} /> Adicionar Variante
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

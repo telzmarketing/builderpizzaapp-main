@@ -21,6 +21,7 @@ from backend.routes import products, orders, payments, shipping, coupons, loyalt
 from backend.routes import chatbot as chatbot_routes, admin_chatbot as admin_chatbot_routes
 from backend.routes import upload as upload_routes
 from backend.routes import theme as theme_routes
+from backend.routes import home_config as home_config_routes
 
 settings = get_settings()
 
@@ -91,6 +92,17 @@ def _run_migrations():
             # ── Theme settings ────────────────────────────────────────────────
             'CREATE TABLE IF NOT EXISTS theme_settings (id VARCHAR PRIMARY KEY DEFAULT \'default\', "primary" VARCHAR(20) NOT NULL DEFAULT \'#f97316\', secondary VARCHAR(20) NOT NULL DEFAULT \'#2d3d56\', background_main VARCHAR(20) NOT NULL DEFAULT \'#0c1220\', background_alt VARCHAR(20) NOT NULL DEFAULT \'#111827\', background_card VARCHAR(20) NOT NULL DEFAULT \'#1e2a3b\', text_primary VARCHAR(20) NOT NULL DEFAULT \'#f8fafc\', text_secondary VARCHAR(20) NOT NULL DEFAULT \'#e2e8f0\', text_muted VARCHAR(20) NOT NULL DEFAULT \'#94a3b8\', status_success VARCHAR(20) NOT NULL DEFAULT \'#22c55e\', status_error VARCHAR(20) NOT NULL DEFAULT \'#ef4444\', status_warning VARCHAR(20) NOT NULL DEFAULT \'#f59e0b\', status_info VARCHAR(20) NOT NULL DEFAULT \'#3b82f6\', border VARCHAR(20) NOT NULL DEFAULT \'#2d3d56\', interaction_hover VARCHAR(20) NOT NULL DEFAULT \'#fb923c\', interaction_active VARCHAR(20) NOT NULL DEFAULT \'#ea6f10\', interaction_focus VARCHAR(20) NOT NULL DEFAULT \'#f97316\', navbar VARCHAR(20) NOT NULL DEFAULT \'#111827\', footer VARCHAR(20) NOT NULL DEFAULT \'#0c1220\', sidebar VARCHAR(20) NOT NULL DEFAULT \'#111827\', modal VARCHAR(20) NOT NULL DEFAULT \'#1e2a3b\', overlay VARCHAR(20) NOT NULL DEFAULT \'#000000\', badge VARCHAR(20) NOT NULL DEFAULT \'#f97316\', tag VARCHAR(20) NOT NULL DEFAULT \'#2d3d56\', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())',
             "INSERT INTO theme_settings (id) VALUES ('default') ON CONFLICT DO NOTHING",
+            # ── Product type + crust/drink variant tables ─────────────────────
+            "ALTER TABLE products ADD COLUMN IF NOT EXISTS product_type VARCHAR(20)",
+            "CREATE TABLE IF NOT EXISTS product_crust_types (id VARCHAR PRIMARY KEY, product_id VARCHAR NOT NULL REFERENCES products(id) ON DELETE CASCADE, name VARCHAR(100) NOT NULL, price_addition FLOAT DEFAULT 0.0, active BOOLEAN DEFAULT TRUE, sort_order INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS product_drink_variants (id VARCHAR PRIMARY KEY, product_id VARCHAR NOT NULL REFERENCES products(id) ON DELETE CASCADE, name VARCHAR(100) NOT NULL, price_addition FLOAT DEFAULT 0.0, active BOOLEAN DEFAULT TRUE, sort_order INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW())",
+            # ── Order item variation columns ──────────────────────────────────
+            "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS selected_crust_type VARCHAR(100)",
+            "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS selected_drink_variant VARCHAR(100)",
+            "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS notes TEXT",
+            # ── Home catalog config ───────────────────────────────────────────
+            "CREATE TABLE IF NOT EXISTS home_catalog_config (id VARCHAR PRIMARY KEY DEFAULT 'default', mode VARCHAR(20) NOT NULL DEFAULT 'all', selected_categories TEXT DEFAULT '[]', selected_product_ids TEXT DEFAULT '[]', show_promotions BOOLEAN DEFAULT TRUE, updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "INSERT INTO home_catalog_config (id) VALUES ('default') ON CONFLICT DO NOTHING",
         ]
         for stmt in stmts:
             try:
@@ -136,6 +148,7 @@ app.include_router(chatbot_routes.router)
 app.include_router(admin_chatbot_routes.router)
 app.include_router(upload_routes.router)
 app.include_router(theme_routes.router)
+app.include_router(home_config_routes.router)
 
 # ── Static files (uploaded images) ───────────────────────────────────────────
 # Must be mounted AFTER all route registrations.

@@ -2,8 +2,8 @@ import { useState, useMemo, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
-import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule } from "@/context/AppContext";
-import { sizesApi, ApiProductSize } from "@/lib/api";
+import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation } from "@/context/AppContext";
+import { sizesApi, crustApi, drinkVariantApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant } from "@/lib/api";
 
 // ─── Add-ons ──────────────────────────────────────────────────────────────────
 
@@ -36,7 +36,6 @@ function computeFlavorPrice(slots: (Pizza | null)[], division: number, rule: Pri
   if (filled.length === 0) return 0;
   if (rule === "most_expensive") return Math.max(...filled.map((f) => f.price));
   if (rule === "average") return filled.reduce((s, f) => s + f.price, 0) / filled.length;
-  // proportional
   return filled.reduce((s, f) => s + f.price / division, 0);
 }
 
@@ -84,7 +83,6 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
     );
   }
 
-  // 3 sectors — 120° each, starting at top (-90°)
   const toRad = (d: number) => (d * Math.PI) / 180;
   const sectorPath = (start: number, end: number) => {
     const x1 = cx + r * Math.cos(toRad(start));
@@ -93,11 +91,7 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
     const y2 = cy + r * Math.sin(toRad(end));
     return `M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 0 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z`;
   };
-  const sectors = [
-    { start: -90, end: 30 },
-    { start: 30, end: 150 },
-    { start: 150, end: 270 },
-  ];
+  const sectors = [{ start: -90, end: 30 }, { start: 30, end: 150 }, { start: 150, end: 270 }];
   const divLines = [-90, 30, 150];
   const iconAt = (midDeg: number, dist = r * 0.58) => ({
     x: cx + dist * Math.cos(toRad(midDeg)),
@@ -110,13 +104,7 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
         <path key={i} d={sectorPath(s.start, s.end)} fill={slots[i] ? filled[i] : empty[i]} />
       ))}
       {divLines.map((deg, i) => (
-        <line
-          key={i}
-          x1={cx} y1={cy}
-          x2={cx + r * Math.cos(toRad(deg))}
-          y2={cy + r * Math.sin(toRad(deg))}
-          stroke={borderColor} strokeWidth="4"
-        />
+        <line key={i} x1={cx} y1={cy} x2={cx + r * Math.cos(toRad(deg))} y2={cy + r * Math.sin(toRad(deg))} stroke={borderColor} strokeWidth="4" />
       ))}
       <circle cx={cx} cy={cy} r={r} fill="none" stroke={borderColor} strokeWidth="4" />
       {sectors.map((s, i) => {
@@ -138,11 +126,15 @@ export default function Product() {
 
   const product = products.find((p) => p.id === id);
 
+  // Product type flags
+  const productType = (product as any)?.product_type as string | null | undefined;
+  const isPizza = !productType || productType === "pizza";
+  const isDrink = productType === "drink";
+
   const [quantity, setQuantity] = useState(1);
   const [selectedAddOns, setSelectedAddOns] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [division, setDivision] = useState<FlavorDivision>(1);
-  // 3 slots always; only division first slots are active
   const [flavorSlots, setFlavorSlots] = useState<(Pizza | null)[]>([product ?? null, null, null]);
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const [cartError, setCartError] = useState(false);
@@ -152,8 +144,18 @@ export default function Product() {
   const [selectedSizeObj, setSelectedSizeObj] = useState<ApiProductSize | null>(null);
   const [selectedSizeFallback, setSelectedSizeFallback] = useState("M");
 
+  // Crust types (pizza only)
+  const [productCrusts, setProductCrusts] = useState<ApiProductCrustType[]>([]);
+  const [selectedCrust, setSelectedCrust] = useState<ApiProductCrustType | null>(null);
+
+  // Drink variants (drink only)
+  const [productDrinkVariants, setProductDrinkVariants] = useState<ApiProductDrinkVariant[]>([]);
+  const [selectedDrinkVariant, setSelectedDrinkVariant] = useState<ApiProductDrinkVariant | null>(null);
+
   useEffect(() => {
     if (!product) return;
+
+    // Load sizes for all product types
     sizesApi.list(product.id).then((sizes) => {
       const activeSizes = sizes.filter((s) => s.active);
       setProductSizes(activeSizes);
@@ -161,10 +163,28 @@ export default function Product() {
         const def = activeSizes.find((s) => s.is_default) ?? activeSizes[0];
         setSelectedSizeObj(def);
       }
-    }).catch(() => {
-      setProductSizes([]);
-    });
-  }, [product?.id]);
+    }).catch(() => setProductSizes([]));
+
+    // Load crust types for pizza
+    if (isPizza) {
+      crustApi.list(product.id).then((crusts) => {
+        const activeCrusts = crusts.filter((c) => c.active);
+        setProductCrusts(activeCrusts);
+        // Don't auto-select — make it an explicit choice
+      }).catch(() => setProductCrusts([]));
+    }
+
+    // Load drink variants for drinks
+    if (isDrink) {
+      drinkVariantApi.list(product.id).then((variants) => {
+        const activeVariants = variants.filter((v) => v.active);
+        setProductDrinkVariants(activeVariants);
+        if (activeVariants.length > 0) {
+          setSelectedDrinkVariant(activeVariants[0]);
+        }
+      }).catch(() => setProductDrinkVariants([]));
+    }
+  }, [product?.id, isPizza, isDrink]);
 
   const selectedSize = selectedSizeObj ? selectedSizeObj.label : selectedSizeFallback;
 
@@ -190,6 +210,10 @@ export default function Product() {
   );
 
   const flavorPrice = useMemo(() => {
+    if (isDrink) {
+      // For drinks: price is the size price or product base price
+      return selectedSizeObj?.price ?? product.price;
+    }
     if (productSizes.length > 0 && selectedSizeObj) {
       const slotsWithSizePrice = activeFlavors.map((f) =>
         f ? { ...f, price: selectedSizeObj.price } : null
@@ -197,9 +221,15 @@ export default function Product() {
       return computeFlavorPrice(slotsWithSizePrice as (Pizza | null)[], division, multiFlavorsConfig.pricingRule);
     }
     return computeFlavorPrice(activeFlavors, division, multiFlavorsConfig.pricingRule);
-  }, [activeFlavors, division, multiFlavorsConfig.pricingRule, productSizes, selectedSizeObj]);
+  }, [activeFlavors, division, multiFlavorsConfig.pricingRule, productSizes, selectedSizeObj, isDrink, product.price]);
 
-  const pricePerUnit = flavorPrice + addOnPrice;
+  const variantPriceAddition = useMemo(() => {
+    if (isPizza && selectedCrust) return selectedCrust.price_addition;
+    if (isDrink && selectedDrinkVariant) return selectedDrinkVariant.price_addition;
+    return 0;
+  }, [isPizza, isDrink, selectedCrust, selectedDrinkVariant]);
+
+  const pricePerUnit = flavorPrice + addOnPrice + variantPriceAddition;
   const totalPrice = pricePerUnit * quantity;
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -208,7 +238,6 @@ export default function Product() {
     setDivision(d);
     setActiveSlot(null);
     setCartError(false);
-    // Preserve slot 0 (base product), reset rest if going down
     setFlavorSlots((prev) => {
       const next = [...prev];
       if (d === 1) { next[1] = null; next[2] = null; }
@@ -238,17 +267,47 @@ export default function Product() {
     );
 
   const handleAddToCart = () => {
-    if (!allFilled) {
+    if (isPizza && !allFilled) {
       setCartError(true);
       return;
     }
-    const flavors: PizzaFlavor[] = (activeFlavors as Pizza[]).map((p) => ({
-      productId: p.id,
-      name: p.name,
-      price: p.price,
-      icon: p.icon,
-    }));
-    addToCart(flavorSlots[0]!, quantity, selectedSize, selectedAddOns, flavors, division, pricePerUnit, notes || undefined);
+
+    let flavors: PizzaFlavor[];
+    if (isDrink) {
+      // For drinks, the "flavor" is just the product itself at the computed price
+      flavors = [{ productId: product.id, name: product.name, price: flavorPrice, icon: product.icon }];
+    } else {
+      // Use the size-adjusted price so backend validation passes with size-based pricing
+      const priceForFlavor = selectedSizeObj?.price ?? product.price;
+      flavors = (activeFlavors as Pizza[]).map((p) => ({
+        productId: p.id,
+        name: p.name,
+        price: priceForFlavor,
+        icon: p.icon,
+      }));
+    }
+
+    const crustVariation: CartItemVariation | null = selectedCrust
+      ? { id: selectedCrust.id, name: selectedCrust.name, priceAddition: selectedCrust.price_addition }
+      : null;
+
+    const drinkVariation: CartItemVariation | null = selectedDrinkVariant
+      ? { id: selectedDrinkVariant.id, name: selectedDrinkVariant.name, priceAddition: selectedDrinkVariant.price_addition }
+      : null;
+
+    addToCart(
+      flavorSlots[0]!,
+      quantity,
+      selectedSize,
+      selectedAddOns,
+      flavors,
+      isDrink ? 1 : division,
+      pricePerUnit,
+      notes || undefined,
+      crustVariation,
+      drinkVariation,
+      selectedSizeObj?.id,
+    );
     navigate("/cart");
   };
 
@@ -258,9 +317,10 @@ export default function Product() {
     (opt) => opt.value <= multiFlavorsConfig.maxFlavors || opt.value === 1
   );
 
-  // Products available for a given slot (no duplicates across other slots)
   const availableForSlot = (slotIndex: number) =>
     products.filter((p) => !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id));
+
+  const canAddToCart = isDrink ? true : allFilled;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
@@ -304,149 +364,129 @@ export default function Product() {
           </div>
         </div>
 
-        {/* ── Division Selector ───────────────────────────────────────────── */}
-        <div className="mb-6">
-          <h3 className="text-cream font-bold mb-3">{p.divisionLabel}</h3>
-          <div className="flex gap-2">
-            {divisionOptions.map(({ value, label, emoji }) => (
-              <button
-                key={value}
-                onClick={() => handleDivisionChange(value)}
-                className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${
-                  division === value
-                    ? "bg-gold text-cream shadow-lg shadow-gold/30"
-                    : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
-                }`}
-              >
-                <span className="block text-base mb-0.5">{emoji}</span>
-                {label}
-              </button>
-            ))}
+        {/* ── Pizza: Division Selector ─────────────────────────────────────── */}
+        {isPizza && (
+          <div className="mb-6">
+            <h3 className="text-cream font-bold mb-3">{p.divisionLabel}</h3>
+            <div className="flex gap-2">
+              {divisionOptions.map(({ value, label, emoji }) => (
+                <button
+                  key={value}
+                  onClick={() => handleDivisionChange(value)}
+                  className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${
+                    division === value
+                      ? "bg-gold text-cream shadow-lg shadow-gold/30"
+                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                  }`}
+                >
+                  <span className="block text-base mb-0.5">{emoji}</span>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* ── Flavor Slots ────────────────────────────────────────────────── */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-cream font-bold">
-              {division === 1 ? "Sabor da Pizza" : `Escolha os ${division} Sabores`}
-            </h3>
-            {cartError && (
-              <span className="flex items-center gap-1 text-red-400 text-xs">
-                <AlertCircle size={12} />
-                Preencha todos os sabores
-              </span>
-            )}
-          </div>
+        {/* ── Pizza: Flavor Slots ──────────────────────────────────────────── */}
+        {isPizza && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-cream font-bold">
+                {division === 1 ? "Sabor da Pizza" : `Escolha os ${division} Sabores`}
+              </h3>
+              {cartError && (
+                <span className="flex items-center gap-1 text-red-400 text-xs">
+                  <AlertCircle size={12} />
+                  Preencha todos os sabores
+                </span>
+              )}
+            </div>
 
-          <div className="space-y-3">
-            {Array.from({ length: division }, (_, i) => {
-              const flavor = flavorSlots[i];
-              const isOpen = activeSlot === i;
-              const slotLabel = division === 1 ? "Sabor único" : `Sabor ${i + 1} de ${division}`;
+            <div className="space-y-3">
+              {Array.from({ length: division }, (_, i) => {
+                const flavor = flavorSlots[i];
+                const isOpen = activeSlot === i;
+                const slotLabel = division === 1 ? "Sabor único" : `Sabor ${i + 1} de ${division}`;
 
-              return (
-                <div key={i}>
-                  {/* Slot card */}
-                  <button
-                    onClick={() => handleSlotToggle(i)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                      isOpen
-                        ? "bg-surface-02 border-gold"
-                        : flavor
-                        ? "bg-surface-02 border-green-500/40"
-                        : cartError
-                        ? "bg-surface-02 border-red-500/60"
-                        : "bg-surface-02 border-surface-03 hover:border-brand-mid"
-                    }`}
-                  >
-                    {/* Icon */}
-                    <div className="w-12 h-12 rounded-full bg-surface-03 flex items-center justify-center text-2xl flex-shrink-0 overflow-hidden">
-                      {flavor?.icon && (flavor.icon.startsWith("data:") || flavor.icon.startsWith("http"))
-                        ? <img src={flavor.icon} alt="" className="w-full h-full object-cover" />
-                        : <span>{flavor?.icon ?? "?"}</span>}
-                    </div>
-
-                    {/* Info */}
-                    <div className="flex-1 text-left">
-                      <p className="text-stone text-xs">{slotLabel}</p>
-                      <p className={`text-sm font-semibold ${flavor ? "text-cream" : "text-stone/70"}`}>
-                        {flavor?.name ?? "Toque para escolher o sabor"}
-                      </p>
-                      {flavor && (
-                        <p className="text-gold-light text-xs">R$ {flavor.price.toFixed(2)}</p>
-                      )}
-                    </div>
-
-                    {/* Status indicator */}
-                    <div className="flex-shrink-0">
-                      {flavor ? (
-                        <span className="flex items-center gap-1 text-xs text-green-400 bg-green-500/10 border border-green-500/30 px-2 py-1 rounded-full">
-                          <Check size={11} />
-                          {isOpen ? "Trocar" : "Ok"}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gold-light bg-gold/10 border border-gold/30 px-2 py-1 rounded-full">
-                          Escolher
-                        </span>
-                      )}
-                    </div>
-                  </button>
-
-                  {/* Inline flavor picker */}
-                  {isOpen && (
-                    <div className="mt-2 bg-brand-dark rounded-xl p-3 border border-gold/30 animate-in slide-in-from-top-1">
-                      <p className="text-stone text-xs mb-3">Selecione o sabor {i + 1}:</p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {availableForSlot(i).map((p) => {
-                          const isSelected = flavorSlots[i]?.id === p.id;
-                          return (
-                            <button
-                              key={p.id}
-                              onClick={() => handleSelectFlavor(i, p)}
-                              className={`p-2.5 rounded-xl border text-center transition-all active:scale-95 ${
-                                isSelected
-                                  ? "bg-gold/20 border-gold shadow-sm"
-                                  : "bg-surface-02 border-surface-03 hover:border-gold/40"
-                              }`}
-                            >
-                              <div className="w-10 h-10 mx-auto mb-1 flex items-center justify-center text-2xl overflow-hidden rounded-lg">
-                                {p.icon && (p.icon.startsWith("data:") || p.icon.startsWith("http"))
-                                  ? <img src={p.icon} alt="" className="w-full h-full object-cover" />
-                                  : <span>{p.icon || "🍕"}</span>}
-                              </div>
-                              <p className="text-cream text-xs font-medium leading-tight line-clamp-1">{p.name}</p>
-                              <p className="text-gold-light text-xs mt-0.5">R${p.price.toFixed(2)}</p>
-                              {isSelected && (
-                                <span className="inline-block mt-1 text-[10px] bg-gold text-cream px-1.5 py-0.5 rounded-full">
-                                  ✓ Selecionado
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
+                return (
+                  <div key={i}>
+                    <button
+                      onClick={() => handleSlotToggle(i)}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                        isOpen
+                          ? "bg-surface-02 border-gold"
+                          : flavor
+                          ? "bg-surface-02 border-green-500/40"
+                          : cartError
+                          ? "bg-surface-02 border-red-500/60"
+                          : "bg-surface-02 border-surface-03 hover:border-brand-mid"
+                      }`}
+                    >
+                      <div className="w-12 h-12 rounded-full bg-surface-03 flex items-center justify-center text-2xl flex-shrink-0 overflow-hidden">
+                        {flavor?.icon && (flavor.icon.startsWith("data:") || flavor.icon.startsWith("http"))
+                          ? <img src={flavor.icon} alt="" className="w-full h-full object-cover" />
+                          : <span>{flavor?.icon ?? "?"}</span>}
                       </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                      <div className="flex-1 text-left">
+                        <p className="text-stone text-xs">{slotLabel}</p>
+                        <p className={`text-sm font-semibold ${flavor ? "text-cream" : "text-stone/70"}`}>
+                          {flavor?.name ?? "Toque para escolher o sabor"}
+                        </p>
+                        {flavor && <p className="text-gold-light text-xs">R$ {flavor.price.toFixed(2)}</p>}
+                      </div>
+                      <div className="flex-shrink-0">
+                        {flavor ? (
+                          <span className="flex items-center gap-1 text-xs text-green-400 bg-green-500/10 border border-green-500/30 px-2 py-1 rounded-full">
+                            <Check size={11} />
+                            {isOpen ? "Trocar" : "Ok"}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gold-light bg-gold/10 border border-gold/30 px-2 py-1 rounded-full">Escolher</span>
+                        )}
+                      </div>
+                    </button>
 
-          {/* Price preview when multiple flavors */}
-          {division > 1 && activeFlavors.some((f) => f !== null) && (
-            <div className="mt-3 p-3 rounded-xl bg-surface-02/60 border border-surface-03">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-stone">
-                  {allFilled
-                    ? `${division === 2 ? "Meio a Meio" : "3 Sabores"} — sabor mais caro`
-                    : "Preço parcial (preencha todos os sabores)"}
-                </span>
-                <span className="text-gold-light font-bold">
-                  R$ {flavorPrice.toFixed(2)}
-                </span>
-              </div>
-              {activeFlavors.filter(Boolean).length > 0 && (
+                    {isOpen && (
+                      <div className="mt-2 bg-brand-dark rounded-xl p-3 border border-gold/30 animate-in slide-in-from-top-1">
+                        <p className="text-stone text-xs mb-3">Selecione o sabor {i + 1}:</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {availableForSlot(i).map((p) => {
+                            const isSelected = flavorSlots[i]?.id === p.id;
+                            return (
+                              <button
+                                key={p.id}
+                                onClick={() => handleSelectFlavor(i, p)}
+                                className={`p-2.5 rounded-xl border text-center transition-all active:scale-95 ${
+                                  isSelected ? "bg-gold/20 border-gold shadow-sm" : "bg-surface-02 border-surface-03 hover:border-gold/40"
+                                }`}
+                              >
+                                <div className="w-10 h-10 mx-auto mb-1 flex items-center justify-center text-2xl overflow-hidden rounded-lg">
+                                  {p.icon && (p.icon.startsWith("data:") || p.icon.startsWith("http"))
+                                    ? <img src={p.icon} alt="" className="w-full h-full object-cover" />
+                                    : <span>{p.icon || "🍕"}</span>}
+                                </div>
+                                <p className="text-cream text-xs font-medium leading-tight line-clamp-1">{p.name}</p>
+                                <p className="text-gold-light text-xs mt-0.5">R${p.price.toFixed(2)}</p>
+                                {isSelected && <span className="inline-block mt-1 text-[10px] bg-gold text-cream px-1.5 py-0.5 rounded-full">✓ Selecionado</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {division > 1 && activeFlavors.some((f) => f !== null) && (
+              <div className="mt-3 p-3 rounded-xl bg-surface-02/60 border border-surface-03">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-stone">
+                    {allFilled ? `${division === 2 ? "Meio a Meio" : "3 Sabores"}` : "Preço parcial"}
+                  </span>
+                  <span className="text-gold-light font-bold">R$ {flavorPrice.toFixed(2)}</span>
+                </div>
                 <div className="flex gap-1 mt-2 flex-wrap">
                   {activeFlavors.map((f, i) =>
                     f ? (
@@ -463,14 +503,16 @@ export default function Product() {
                     )
                   )}
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Size Selector ───────────────────────────────────────────────── */}
         <div className="mb-6">
-          <h3 className="text-cream font-bold mb-3">{p.sizeLabel}</h3>
+          <h3 className="text-cream font-bold mb-3">
+            {isDrink ? "Tamanho da Bebida" : p.sizeLabel}
+          </h3>
           <div className="flex gap-2 flex-wrap">
             {productSizes.length > 0 ? (
               productSizes.map((size) => (
@@ -484,13 +526,11 @@ export default function Product() {
                   }`}
                 >
                   <span className="block font-black">{size.label}</span>
-                  {size.description && (
-                    <span className="block text-[10px] opacity-70 font-normal">{size.description}</span>
-                  )}
+                  {size.description && <span className="block text-[10px] opacity-70 font-normal">{size.description}</span>}
                   <span className="block text-[10px] text-gold-light mt-0.5">R${size.price.toFixed(2)}</span>
                 </button>
               ))
-            ) : (
+            ) : !isDrink ? (
               FALLBACK_SIZES.map((size) => (
                 <button
                   key={size}
@@ -505,9 +545,96 @@ export default function Product() {
                   <span className="block text-[10px] opacity-70 font-normal">{FALLBACK_SIZE_LABELS[size]}</span>
                 </button>
               ))
+            ) : (
+              <p className="text-stone text-sm py-2">Nenhum tamanho configurado.</p>
             )}
           </div>
         </div>
+
+        {/* ── Pizza: Tipo de Massa ─────────────────────────────────────────── */}
+        {isPizza && productCrusts.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-cream font-bold mb-3">Tipo de Massa</h3>
+            <div className="flex gap-2 flex-wrap">
+              {productCrusts.map((crust) => (
+                <button
+                  key={crust.id}
+                  onClick={() => setSelectedCrust(prev => prev?.id === crust.id ? null : crust)}
+                  className={`flex-1 min-w-[80px] py-3 px-2 rounded-xl text-sm font-bold transition-all ${
+                    selectedCrust?.id === crust.id
+                      ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
+                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                  }`}
+                >
+                  <span className="block font-black text-xs">{crust.name}</span>
+                  <span className={`block text-[10px] mt-0.5 ${selectedCrust?.id === crust.id ? "text-white/80" : crust.price_addition > 0 ? "text-amber-400" : "opacity-60"}`}>
+                    R$ {crust.price_addition.toFixed(2)}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {selectedCrust && (
+              <p className="text-amber-400 text-xs mt-2">✓ Massa {selectedCrust.name} selecionada · R$ {selectedCrust.price_addition.toFixed(2)}</p>
+            )}
+          </div>
+        )}
+
+        {/* ── Drink: Tipo da Bebida ────────────────────────────────────────── */}
+        {isDrink && productDrinkVariants.length > 1 && (
+          <div className="mb-6">
+            <h3 className="text-cream font-bold mb-3">Tipo da Bebida</h3>
+            <div className="flex gap-2 flex-wrap">
+              {productDrinkVariants.map((variant) => (
+                <button
+                  key={variant.id}
+                  onClick={() => setSelectedDrinkVariant(variant)}
+                  className={`flex-1 min-w-[80px] py-3 px-2 rounded-xl text-sm font-bold transition-all ${
+                    selectedDrinkVariant?.id === variant.id
+                      ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
+                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                  }`}
+                >
+                  <span className="block font-black text-xs">{variant.name}</span>
+                  {variant.price_addition > 0 ? (
+                    <span className={`block text-[10px] mt-0.5 ${selectedDrinkVariant?.id === variant.id ? "text-white/80" : "text-blue-400"}`}>
+                      +R${variant.price_addition.toFixed(2)}
+                    </span>
+                  ) : (
+                    <span className="block text-[10px] mt-0.5 opacity-60">Mesmo preço</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Add-ons (pizza only) ─────────────────────────────────────────── */}
+        {isPizza && (
+          <div className="mb-6">
+            <h3 className="text-cream font-bold mb-3">{p.addOnsLabel}</h3>
+            <div className="flex gap-2 flex-wrap">
+              {addOns.map((addOn) => {
+                const selected = selectedAddOns.includes(addOn.id);
+                return (
+                  <button
+                    key={addOn.id}
+                    onClick={() => toggleAddOn(addOn.id)}
+                    className={`flex items-center gap-2 py-2 px-3 rounded-xl text-sm font-medium transition-all border ${
+                      selected
+                        ? "bg-gold/20 border-gold text-gold"
+                        : "bg-surface-02 border-surface-03 text-parchment hover:border-brand-mid"
+                    }`}
+                  >
+                    <span>{addOn.icon}</span>
+                    {addOn.name}
+                    <span className={`text-xs ${selected ? "text-gold-light" : "text-stone"}`}>+R${addOn.price.toFixed(2)}</span>
+                    {selected && <Check size={12} className="text-gold" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ── Observações ─────────────────────────────────────────────────── */}
         <div className="mb-6">
@@ -515,7 +642,7 @@ export default function Product() {
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Ex: sem cebola, ponto da massa, alergias..."
+            placeholder={isDrink ? "Ex: gelada, sem gelo..." : "Ex: sem cebola, ponto da massa, alergias..."}
             rows={3}
             className="w-full bg-surface-02 border border-surface-03 focus:border-gold rounded-xl px-4 py-3 text-cream placeholder-stone/70 outline-none text-sm resize-none transition-colors"
             maxLength={200}
@@ -524,7 +651,7 @@ export default function Product() {
         </div>
 
         {/* ── Pizza Diagram ───────────────────────────────────────────────── */}
-        {division > 1 && (
+        {isPizza && division > 1 && (
           <div className="flex flex-col items-center mb-6 p-4 bg-surface-02/50 rounded-2xl border border-surface-03">
             <PizzaDiagram division={division} slots={flavorSlots} />
             <p className="text-stone/70 text-xs mt-2">
@@ -541,27 +668,30 @@ export default function Product() {
             <p className="text-stone text-xs">Total ({quantity}x)</p>
             <p className="text-gold text-2xl font-bold">R$ {totalPrice.toFixed(2)}</p>
           </div>
-          {division > 1 && allFilled && (
-            <div className="text-right">
+          <div className="text-right">
+            {isPizza && division > 1 && allFilled && (
               <p className="text-stone text-xs">
                 {division === 2 ? "Meio a Meio" : "3 Sabores"} · {selectedSize}
               </p>
-              <p className="text-stone text-xs">
-                {(activeFlavors as Pizza[]).map((f) => f.name).join(" + ")}
-              </p>
-            </div>
-          )}
+            )}
+            {selectedCrust && (
+              <p className="text-stone text-xs">Massa: {selectedCrust.name}</p>
+            )}
+            {selectedDrinkVariant && productDrinkVariants.length > 1 && (
+              <p className="text-stone text-xs">Tipo: {selectedDrinkVariant.name}</p>
+            )}
+          </div>
         </div>
         <button
           onClick={handleAddToCart}
-          disabled={!allFilled}
+          disabled={!canAddToCart}
           className={`w-full font-bold py-3.5 px-4 rounded-full text-center transition-all text-base active:scale-95 ${
-            allFilled
+            canAddToCart
               ? "bg-gold hover:bg-gold/90 text-cream shadow-lg shadow-gold/30"
               : "bg-surface-03 text-stone/70 cursor-not-allowed"
           }`}
         >
-          {allFilled
+          {canAddToCart
             ? `${p.addToCartButton} · R$ ${totalPrice.toFixed(2)}`
             : `Escolha ${activeFlavors.filter((f) => !f).length} sabor(es) restante(s)`}
         </button>

@@ -12,6 +12,7 @@ import {
   Sparkles,
   MessageCircle,
   Palette,
+  LayoutDashboard,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
@@ -19,6 +20,7 @@ import { useApp } from "@/context/AppContext";
 const navItems = [
   { to: "/painel", icon: BarChart3, label: "Dashboard" },
   { to: "/painel/products", icon: Package, label: "Produtos" },
+  { to: "/painel/home-config", icon: LayoutDashboard, label: "Catálogo da Home" },
   { to: "/painel/orders", icon: ShoppingBag, label: "Pedidos" },
   { to: "/painel/campanhas", icon: Sparkles, label: "Promoções & Campanhas" },
   { to: "/painel/fidelidade", icon: Trophy, label: "Fidelidade" },

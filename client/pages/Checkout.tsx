@@ -141,6 +141,7 @@ export default function Checkout() {
         product_id: item.productId,
         quantity: item.quantity,
         selected_size: item.selectedSize,
+        selected_size_id: item.selectedSizeId ?? null,
         flavor_division: item.flavorDivision,
         flavors: item.flavors.map((f) => ({
           product_id: f.productId,
@@ -150,6 +151,11 @@ export default function Checkout() {
         })),
         final_price: item.finalPrice,
         add_ons: item.selectedAddOns,
+        selected_crust_type_id: item.selectedCrustType?.id ?? null,
+        selected_crust_type_name: item.selectedCrustType?.name ?? null,
+        selected_drink_variant_id: item.selectedDrinkVariant?.id ?? null,
+        selected_drink_variant_name: item.selectedDrinkVariant?.name ?? null,
+        notes: item.notes ?? null,
       })),
       delivery: {
         name: form.name,

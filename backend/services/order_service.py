@@ -87,6 +87,9 @@ class OrderService:
         """
         Returns (server_unit_price, [Product per flavor]).
         Raises domain exceptions on any inconsistency.
+
+        Pricing: size_price (authoritative from DB) + crust/drink variant additions.
+        Falls back to product.price when no size is configured for this product.
         """
         if len(item.flavors) != item.flavor_division:
             raise FlavorDivisionMismatch(item.product_id, item.flavor_division, len(item.flavors))
@@ -94,7 +97,21 @@ class OrderService:
         if item.flavor_division > config.max_flavors:
             raise MaxFlavorsExceeded(item.flavor_division, config.max_flavors)
 
+        # Fetch size price server-side (authoritative — client-submitted prices are ignored when size found)
+        size_base_price: float | None = None
+        if item.selected_size_id:
+            from backend.models.product import ProductSize
+            size = (
+                self._db.query(ProductSize)
+                .filter(ProductSize.id == item.selected_size_id, ProductSize.active == True)  # noqa: E712
+                .first()
+            )
+            if size:
+                size_base_price = size.price
+
         flavor_products: list[Product] = []
+        slot_prices: list[float] = []
+
         for f in item.flavors:
             product = (
                 self._db.query(Product)
@@ -103,13 +120,55 @@ class OrderService:
             )
             if not product:
                 raise ProductNotFound(f.product_id)
-            if abs(product.price - f.price) > 0.01:
-                raise PriceConflict(product.name, f.price, product.price)
+
+            if size_base_price is not None:
+                # Size-based: server price is authoritative, ignore client f.price
+                slot_prices.append(size_base_price)
+            else:
+                # No size configured: validate submitted price against product base price
+                if abs(product.price - f.price) > 0.01:
+                    raise PriceConflict(product.name, f.price, product.price)
+                slot_prices.append(product.price)
+
             flavor_products.append(product)
 
-        server_price = round(
-            _compute_flavor_price(item.flavors, item.flavor_division, config.pricing_rule), 2
-        )
+        # Apply pricing rule across slots
+        division = item.flavor_division
+        rule = config.pricing_rule
+        if not slot_prices:
+            server_price = 0.0
+        elif rule == PricingRule.most_expensive:
+            server_price = max(slot_prices)
+        elif rule == PricingRule.average:
+            server_price = sum(slot_prices) / len(slot_prices)
+        else:  # proportional
+            server_price = sum(p / division for p in slot_prices)
+        server_price = round(server_price, 2)
+
+        # Add crust type price addition if provided
+        if item.selected_crust_type_id:
+            from backend.models.product import ProductCrustType
+            crust = (
+                self._db.query(ProductCrustType)
+                .filter(ProductCrustType.id == item.selected_crust_type_id,
+                        ProductCrustType.active == True)  # noqa: E712
+                .first()
+            )
+            if crust and crust.price_addition > 0:
+                server_price = round(server_price + crust.price_addition, 2)
+
+        # Add drink variant price addition if provided
+        if item.selected_drink_variant_id:
+            from backend.models.product import ProductDrinkVariant
+            variant = (
+                self._db.query(ProductDrinkVariant)
+                .filter(ProductDrinkVariant.id == item.selected_drink_variant_id,
+                        ProductDrinkVariant.active == True)  # noqa: E712
+                .first()
+            )
+            if variant and variant.price_addition > 0:
+                server_price = round(server_price + variant.price_addition, 2)
+
         return server_price, flavor_products
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -190,6 +249,9 @@ class OrderService:
                 quantity=item.quantity,
                 selected_size=item.selected_size,
                 flavor_division=item.flavor_division,
+                selected_crust_type=item.selected_crust_type_name,
+                selected_drink_variant=item.selected_drink_variant_name,
+                notes=item.notes,
                 unit_price=unit_price,
                 total_price=round(unit_price * item.quantity, 2),
             )

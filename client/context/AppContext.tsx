@@ -39,17 +39,26 @@ export interface MultiFlavorsConfig {
 
 // ─── Cart ─────────────────────────────────────────────────────────────────────
 
+export interface CartItemVariation {
+  id: string;
+  name: string;
+  priceAddition: number;
+}
+
 export interface CartItem {
   cartItemId: string;
   productId: string;
   quantity: number;
   selectedSize: string;
+  selectedSizeId?: string;
   selectedAddOns: string[];
   productData: Pizza;
   flavorDivision: FlavorDivision;
   flavors: PizzaFlavor[];
   finalPrice: number;
   notes?: string;
+  selectedCrustType?: CartItemVariation | null;
+  selectedDrinkVariant?: CartItemVariation | null;
 }
 
 // ─── Order (frontend view) ────────────────────────────────────────────────────
@@ -235,7 +244,10 @@ interface AppContextType {
     flavors: PizzaFlavor[],
     flavorDivision: FlavorDivision,
     finalPrice: number,
-    notes?: string
+    notes?: string,
+    crustType?: CartItemVariation | null,
+    drinkVariant?: CartItemVariation | null,
+    sizeId?: string
   ) => void;
   updateCartItem: (cartItemId: string, quantity: number, size: string, addOns: string[]) => void;
   removeFromCart: (cartItemId: string) => void;
@@ -556,12 +568,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     flavors: PizzaFlavor[],
     flavorDivision: FlavorDivision,
     finalPrice: number,
-    notes?: string
+    notes?: string,
+    crustType?: CartItemVariation | null,
+    drinkVariant?: CartItemVariation | null,
+    sizeId?: string
   ) => {
     const cartItemId = `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     setCart((prev) => [
       ...prev,
-      { cartItemId, productId: primaryProduct.id, quantity, selectedSize: size, selectedAddOns: addOns, productData: primaryProduct, flavorDivision, flavors, finalPrice, notes },
+      {
+        cartItemId,
+        productId: primaryProduct.id,
+        quantity,
+        selectedSize: size,
+        selectedSizeId: sizeId,
+        selectedAddOns: addOns,
+        productData: primaryProduct,
+        flavorDivision,
+        flavors,
+        finalPrice,
+        notes,
+        selectedCrustType: crustType ?? null,
+        selectedDrinkVariant: drinkVariant ?? null,
+      },
     ]);
   };
 

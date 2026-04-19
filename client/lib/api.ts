@@ -69,6 +69,35 @@ export interface ApiProductSize {
   created_at: string;
 }
 
+export interface ApiProductCrustType {
+  id: string;
+  product_id: string;
+  name: string;
+  price_addition: number;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface ApiProductDrinkVariant {
+  id: string;
+  product_id: string;
+  name: string;
+  price_addition: number;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface ApiHomeCatalogConfig {
+  id: string;
+  mode: "all" | "categories" | "products";
+  selected_categories: string;  // JSON string
+  selected_product_ids: string; // JSON string
+  show_promotions: boolean;
+  updated_at: string;
+}
+
 export interface ApiProduct {
   id: string;
   name: string;
@@ -76,11 +105,14 @@ export interface ApiProduct {
   price: number;
   icon: string;
   category: string | null;
+  product_type: string | null;  // "pizza" | "drink" | "other"
   rating: number;
   active: boolean;
   created_at: string;
   updated_at: string;
   sizes?: ApiProductSize[];
+  crust_types?: ApiProductCrustType[];
+  drink_variants?: ApiProductDrinkVariant[];
 }
 
 export interface ApiPromotion {
@@ -200,6 +232,9 @@ export interface ApiOrderItem {
   quantity: number;
   selected_size: string;
   flavor_division: number;
+  selected_crust_type: string | null;
+  selected_drink_variant: string | null;
+  notes: string | null;
   flavors: { product_id: string; name: string; price: number; icon: string }[];
   add_ons: string[];
   unit_price: number;
@@ -242,10 +277,16 @@ export interface CheckoutItemIn {
   product_id: string;
   quantity: number;
   selected_size: string;
+  selected_size_id?: string | null;
   flavor_division: number;
   flavors: { product_id: string; name: string; price: number; icon: string }[];
   final_price: number;
   add_ons: string[];
+  selected_crust_type_id?: string | null;
+  selected_crust_type_name?: string | null;
+  selected_drink_variant_id?: string | null;
+  selected_drink_variant_name?: string | null;
+  notes?: string | null;
 }
 
 export interface CheckoutIn {
@@ -429,6 +470,51 @@ export const sizesApi = {
 
   remove: (productId: string, sizeId: string) =>
     del<void>(`/products/${productId}/sizes/${sizeId}`),
+};
+
+// ─── Crust Types ──────────────────────────────────────────────────────────────
+
+export const crustApi = {
+  list: (productId: string) =>
+    get<ApiProductCrustType[]>(`/products/${productId}/crusts`),
+
+  create: (productId: string, data: Omit<ApiProductCrustType, "id" | "product_id" | "created_at">) =>
+    post<ApiProductCrustType>(`/products/${productId}/crusts`, data),
+
+  update: (productId: string, crustId: string, data: Partial<Omit<ApiProductCrustType, "id" | "product_id" | "created_at">>) =>
+    put<ApiProductCrustType>(`/products/${productId}/crusts/${crustId}`, data),
+
+  remove: (productId: string, crustId: string) =>
+    del<void>(`/products/${productId}/crusts/${crustId}`),
+};
+
+// ─── Drink Variants ───────────────────────────────────────────────────────────
+
+export const drinkVariantApi = {
+  list: (productId: string) =>
+    get<ApiProductDrinkVariant[]>(`/products/${productId}/drink-variants`),
+
+  create: (productId: string, data: Omit<ApiProductDrinkVariant, "id" | "product_id" | "created_at">) =>
+    post<ApiProductDrinkVariant>(`/products/${productId}/drink-variants`, data),
+
+  update: (productId: string, variantId: string, data: Partial<Omit<ApiProductDrinkVariant, "id" | "product_id" | "created_at">>) =>
+    put<ApiProductDrinkVariant>(`/products/${productId}/drink-variants/${variantId}`, data),
+
+  remove: (productId: string, variantId: string) =>
+    del<void>(`/products/${productId}/drink-variants/${variantId}`),
+};
+
+// ─── Home Catalog Config ──────────────────────────────────────────────────────
+
+export const homeCatalogApi = {
+  get: () => get<ApiHomeCatalogConfig>("/home-config"),
+
+  update: (data: {
+    mode?: string;
+    selected_categories?: string[];
+    selected_product_ids?: string[];
+    show_promotions?: boolean;
+  }) => put<ApiHomeCatalogConfig>("/home-config", data),
 };
 
 // ─── Promotions ───────────────────────────────────────────────────────────────

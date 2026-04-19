@@ -64,9 +64,12 @@ class OrderItem(Base):
 
     quantity = Column(Integer, default=1)
     selected_size = Column(String(50))
-    flavor_division = Column(Integer, default=1)   # 1 | 2 | 3
-    unit_price = Column(Float, nullable=False)      # finalPrice per unit
-    total_price = Column(Float, nullable=False)     # unit_price * quantity
+    flavor_division = Column(Integer, default=1)
+    selected_crust_type = Column(String(100), nullable=True)
+    selected_drink_variant = Column(String(100), nullable=True)
+    notes = Column(Text, nullable=True)
+    unit_price = Column(Float, nullable=False)
+    total_price = Column(Float, nullable=False)
 
     order = relationship("Order", back_populates="items")
     flavors = relationship("OrderItemFlavor", back_populates="order_item", cascade="all, delete-orphan")

@@ -4,7 +4,6 @@ from datetime import datetime
 from backend.models.order import OrderStatus
 
 
-# ── Flavor slot (mirrors front-end PizzaFlavor) ──────────────────────────────
 class FlavorIn(BaseModel):
     product_id: str
     name: str
@@ -12,18 +11,24 @@ class FlavorIn(BaseModel):
     icon: str
 
 
-# ── Cart item sent from the front-end ────────────────────────────────────────
 class CartItemIn(BaseModel):
     product_id: str
     quantity: int = Field(ge=1)
     selected_size: str
+    selected_size_id: Optional[str] = None  # ID of the ProductSize row for server-side price validation
     flavor_division: int = Field(ge=1, le=3, default=1)
-    flavors: list[FlavorIn]          # len must match flavor_division
-    final_price: float               # pre-computed by front-end (validated server-side)
+    flavors: list[FlavorIn]
+    final_price: float
     add_ons: list[str] = []
+    # Pizza crust selection
+    selected_crust_type_id: Optional[str] = None
+    selected_crust_type_name: Optional[str] = None
+    # Drink variant selection
+    selected_drink_variant_id: Optional[str] = None
+    selected_drink_variant_name: Optional[str] = None
+    notes: Optional[str] = None
 
 
-# ── Guest delivery address (no customer account required) ────────────────────
 class DeliveryAddressIn(BaseModel):
     name: str
     phone: str
@@ -32,16 +37,14 @@ class DeliveryAddressIn(BaseModel):
     complement: Optional[str] = None
 
 
-# ── Checkout payload ─────────────────────────────────────────────────────────
 class CheckoutIn(BaseModel):
     items: list[CartItemIn]
     delivery: DeliveryAddressIn
     coupon_code: Optional[str] = None
-    customer_id: Optional[str] = None    # if logged in
-    payment_method: str = "pix"          # pix | credit_card | cash
+    customer_id: Optional[str] = None
+    payment_method: str = "pix"
 
 
-# ── Read schemas ─────────────────────────────────────────────────────────────
 class OrderItemFlavorOut(BaseModel):
     id: str
     product_id: str
@@ -58,6 +61,9 @@ class OrderItemOut(BaseModel):
     quantity: int
     selected_size: str
     flavor_division: int
+    selected_crust_type: Optional[str] = None
+    selected_drink_variant: Optional[str] = None
+    notes: Optional[str] = None
     unit_price: float
     total_price: float
     flavors: list[OrderItemFlavorOut] = []

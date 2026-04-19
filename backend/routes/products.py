@@ -3,11 +3,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models.product import Product, MultiFlavorsConfig, ProductSize
+from backend.models.product import Product, MultiFlavorsConfig, ProductSize, ProductCrustType, ProductDrinkVariant
 from backend.schemas.product import (
     ProductCreate, ProductUpdate, ProductOut,
     MultiFlavorsConfigUpdate, MultiFlavorsConfigOut,
     ProductSizeCreate, ProductSizeUpdate, ProductSizeOut,
+    ProductCrustTypeCreate, ProductCrustTypeUpdate, ProductCrustTypeOut,
+    ProductDrinkVariantCreate, ProductDrinkVariantUpdate, ProductDrinkVariantOut,
 )
 from backend.routes.admin_auth import get_current_admin
 
@@ -100,6 +102,102 @@ def delete_size(product_id: str, size_id: str, db: Session = Depends(get_db), _=
     if not size:
         raise HTTPException(404, "Tamanho não encontrado.")
     db.delete(size)
+    db.commit()
+
+
+# ── Pizza Crust Types ─────────────────────────────────────────────────────────
+
+@router.get("/{product_id}/crusts", response_model=list[ProductCrustTypeOut])
+def list_crusts(product_id: str, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(404, "Produto não encontrado.")
+    return (
+        db.query(ProductCrustType)
+        .filter(ProductCrustType.product_id == product_id)
+        .order_by(ProductCrustType.sort_order)
+        .all()
+    )
+
+
+@router.post("/{product_id}/crusts", response_model=ProductCrustTypeOut, status_code=201)
+def create_crust(product_id: str, body: ProductCrustTypeCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(404, "Produto não encontrado.")
+    crust = ProductCrustType(id=f"crust-{uuid.uuid4().hex[:8]}", product_id=product_id, **body.model_dump())
+    db.add(crust)
+    db.commit()
+    db.refresh(crust)
+    return crust
+
+
+@router.put("/{product_id}/crusts/{crust_id}", response_model=ProductCrustTypeOut)
+def update_crust(product_id: str, crust_id: str, body: ProductCrustTypeUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    crust = db.query(ProductCrustType).filter(ProductCrustType.id == crust_id, ProductCrustType.product_id == product_id).first()
+    if not crust:
+        raise HTTPException(404, "Tipo de massa não encontrado.")
+    for key, value in body.model_dump(exclude_none=True).items():
+        setattr(crust, key, value)
+    db.commit()
+    db.refresh(crust)
+    return crust
+
+
+@router.delete("/{product_id}/crusts/{crust_id}", status_code=204)
+def delete_crust(product_id: str, crust_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    crust = db.query(ProductCrustType).filter(ProductCrustType.id == crust_id, ProductCrustType.product_id == product_id).first()
+    if not crust:
+        raise HTTPException(404, "Tipo de massa não encontrado.")
+    db.delete(crust)
+    db.commit()
+
+
+# ── Drink Variants ────────────────────────────────────────────────────────────
+
+@router.get("/{product_id}/drink-variants", response_model=list[ProductDrinkVariantOut])
+def list_drink_variants(product_id: str, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(404, "Produto não encontrado.")
+    return (
+        db.query(ProductDrinkVariant)
+        .filter(ProductDrinkVariant.product_id == product_id)
+        .order_by(ProductDrinkVariant.sort_order)
+        .all()
+    )
+
+
+@router.post("/{product_id}/drink-variants", response_model=ProductDrinkVariantOut, status_code=201)
+def create_drink_variant(product_id: str, body: ProductDrinkVariantCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(404, "Produto não encontrado.")
+    variant = ProductDrinkVariant(id=f"dvar-{uuid.uuid4().hex[:8]}", product_id=product_id, **body.model_dump())
+    db.add(variant)
+    db.commit()
+    db.refresh(variant)
+    return variant
+
+
+@router.put("/{product_id}/drink-variants/{variant_id}", response_model=ProductDrinkVariantOut)
+def update_drink_variant(product_id: str, variant_id: str, body: ProductDrinkVariantUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    variant = db.query(ProductDrinkVariant).filter(ProductDrinkVariant.id == variant_id, ProductDrinkVariant.product_id == product_id).first()
+    if not variant:
+        raise HTTPException(404, "Variante não encontrada.")
+    for key, value in body.model_dump(exclude_none=True).items():
+        setattr(variant, key, value)
+    db.commit()
+    db.refresh(variant)
+    return variant
+
+
+@router.delete("/{product_id}/drink-variants/{variant_id}", status_code=204)
+def delete_drink_variant(product_id: str, variant_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    variant = db.query(ProductDrinkVariant).filter(ProductDrinkVariant.id == variant_id, ProductDrinkVariant.product_id == product_id).first()
+    if not variant:
+        raise HTTPException(404, "Variante não encontrada.")
+    db.delete(variant)
     db.commit()
 
 

@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Menu, Search, Star, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, Tag, Heart, UtensilsCrossed } from "lucide-react";
 
 import { useApp } from "@/context/AppContext";
+import { homeCatalogApi } from "@/lib/api";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 
@@ -24,6 +25,27 @@ export default function Home() {
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
+  // Home catalog config
+  const [homeConfig, setHomeConfig] = useState<{
+    mode: string;
+    selectedCategories: string[];
+    selectedProductIds: string[];
+    showPromotions: boolean;
+  }>({ mode: "all", selectedCategories: [], selectedProductIds: [], showPromotions: true });
+
+  useEffect(() => {
+    homeCatalogApi.get().then((config) => {
+      try {
+        setHomeConfig({
+          mode: config.mode,
+          selectedCategories: JSON.parse(config.selected_categories || "[]"),
+          selectedProductIds: JSON.parse(config.selected_product_ids || "[]"),
+          showPromotions: config.show_promotions,
+        });
+      } catch { /* use defaults on parse error */ }
+    }).catch(() => { /* use defaults if backend unavailable */ });
+  }, []);
+
   const activePromotions = promotions.filter((p) => p.active);
   const displayBanner = activePromotions.length > 0 ? activePromotions[activeBannerIndex] : promotions[0];
 
@@ -42,17 +64,29 @@ export default function Home() {
         p.description?.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : [];
+  // (search always spans full product list, not filtered by homeConfig — intentional)
 
-  // Categories derived from backend products (source of truth)
+  // Apply home catalog config filter on top of all active products
+  const catalogProducts = useMemo(() => {
+    if (homeConfig.mode === "categories" && homeConfig.selectedCategories.length > 0) {
+      return products.filter(p => homeConfig.selectedCategories.includes(p.category ?? ""));
+    }
+    if (homeConfig.mode === "products" && homeConfig.selectedProductIds.length > 0) {
+      return products.filter(p => homeConfig.selectedProductIds.includes(p.id));
+    }
+    return products;
+  }, [products, homeConfig]);
+
+  // Categories derived from catalogProducts (respect home config)
   const productCats = [...new Set(
-    products.filter(p => p.active && p.category).map(p => p.category as string)
+    catalogProducts.filter(p => p.active && p.category).map(p => p.category as string)
   )].sort();
   const effectiveCategories = [ALL_LABEL, ...productCats];
 
   const categoryProducts =
     activeCategory === ALL_LABEL || !activeCategory
-      ? products
-      : products.filter((p) => (p.category ?? "").toLowerCase() === activeCategory.toLowerCase());
+      ? catalogProducts
+      : catalogProducts.filter((p) => (p.category ?? "").toLowerCase() === activeCategory.toLowerCase());
 
   const { home, media } = siteContent;
 
@@ -211,8 +245,8 @@ export default function Home() {
         </button>
       </div>
 
-      {/* ── Promo Banner ── */}
-      <div className="px-4 pt-3 pb-2">
+      {/* ── Promo Banner (only if homeConfig.showPromotions) ── */}
+      {homeConfig.showPromotions && <div className="px-4 pt-3 pb-2">
         <div className="max-w-sm mx-auto">
           <div
             className="bg-gradient-to-r from-slate-800 to-slate-700 rounded-2xl px-4 py-3 flex items-center gap-3 overflow-hidden relative"
@@ -264,7 +298,7 @@ export default function Home() {
             )}
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* ── Content ── */}
       <div className="px-4 pb-32 max-w-lg mx-auto w-full">
