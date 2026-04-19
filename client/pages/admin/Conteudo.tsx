@@ -98,8 +98,6 @@ export default function AdminConteudo() {
   const [draft, setDraft] = useState<SiteContent>(JSON.parse(JSON.stringify(siteContent)));
   const [activeTab, setActiveTab] = useState<Tab>("marca_midia");
   const [saved, setSaved] = useState(false);
-  const [newCategory, setNewCategory] = useState("");
-
   const set = (path: string[], value: unknown) => {
     setDraft((prev) => {
       const next = JSON.parse(JSON.stringify(prev)) as Record<string, unknown>;
@@ -144,17 +142,6 @@ export default function AdminConteudo() {
     if (confirm("Redefinir todo o conteúdo para os valores padrão?")) {
       setDraft(JSON.parse(JSON.stringify(defaultSiteContent)));
     }
-  };
-
-  const addCategory = () => {
-    const trimmed = newCategory.trim();
-    if (!trimmed || draft.home.categories.includes(trimmed)) return;
-    set(["home", "categories"], [...draft.home.categories, trimmed]);
-    setNewCategory("");
-  };
-
-  const removeCategory = (cat: string) => {
-    set(["home", "categories"], draft.home.categories.filter((c) => c !== cat));
   };
 
   // ── Status keys for tracking tab ─────────────────────────────────────────────
@@ -356,38 +343,7 @@ export default function AdminConteudo() {
                     </div>
                   </Field>
 
-                  <Field label="Categorias do cardápio" hint="Botões de filtro acima do carrossel de produtos">
-                    <div className="flex flex-wrap gap-2 mb-3 min-h-[2rem]">
-                      {draft.home.categories.map((cat) => (
-                        <div key={cat} className="flex items-center gap-1.5 bg-slate-700 rounded-full px-3 py-1.5">
-                          <span className="text-white text-sm">{cat}</span>
-                          <button
-                            onClick={() => removeCategory(cat)}
-                            className="text-slate-400 hover:text-red-400 transition-colors"
-                          >
-                            <Trash2 size={11} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newCategory}
-                        onChange={(e) => setNewCategory(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && addCategory()}
-                        className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500 text-sm"
-                        placeholder="Nova categoria (Enter para adicionar)"
-                      />
-                      <button
-                        onClick={addCategory}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors text-sm font-medium"
-                      >
-                        <Plus size={15} />
-                        Adicionar
-                      </button>
-                    </div>
-                  </Field>
+
                 </div>
 
                 <div className="bg-slate-800/60 rounded-xl border border-slate-700 p-4">
@@ -395,11 +351,6 @@ export default function AdminConteudo() {
                   <div className="space-y-1">
                     <p className="text-slate-400 text-sm">{draft.home.sectionSubtitle}</p>
                     <p className="text-white font-bold text-xl">{draft.home.sectionTitle}</p>
-                    <div className="flex gap-2 mt-3 flex-wrap">
-                      {draft.home.categories.map((c, i) => (
-                        <span key={c} className={`px-3 py-1 rounded-full text-xs font-medium ${i === 0 ? "bg-orange-500 text-white" : "bg-slate-700 text-slate-300"}`}>{c}</span>
-                      ))}
-                    </div>
                   </div>
                 </div>
               </div>

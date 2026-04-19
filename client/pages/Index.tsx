@@ -11,10 +11,11 @@ const PIZZA_FALLBACKS = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🍖", "�
 export default function Home() {
   const navigate = useNavigate();
   const { products, promotions, siteContent } = useApp();
-  const { categories, sectionSubtitle, sectionTitle, bannerRotationInterval } = siteContent.home;
+  const { sectionSubtitle, sectionTitle, bannerRotationInterval } = siteContent.home;
   const rotationInterval = (bannerRotationInterval ?? 5) * 1000;
+  const ALL_LABEL = "Todos";
 
-  const [activeCategory, setActiveCategory] = useState(categories[0] ?? "Todos");
+  const [activeCategory, setActiveCategory] = useState(ALL_LABEL);
   const [carouselPosition, setCarouselPosition] = useState(0);
   const [clickedPizza, setClickedPizza] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -42,17 +43,14 @@ export default function Home() {
       )
     : [];
 
-  const ALL_LABEL = categories[0] ?? "Todos";
-
-  // Merge siteContent categories with categories derived from backend products,
-  // so newly assigned product categories always appear even on fresh devices.
+  // Categories derived from backend products + any custom ones added via Products admin
   const productCats = [...new Set(
-    products.filter(p => (p as any).category).map(p => (p as any).category as string)
-  )];
-  const effectiveCategories = [
-    ...categories,
-    ...productCats.filter(c => !categories.map(x => x.toLowerCase()).includes(c.toLowerCase())),
-  ];
+    products.filter(p => p.active && (p as any).category).map(p => (p as any).category as string)
+  )].sort();
+  const customCats = (siteContent.home.categories ?? []).filter(
+    c => c !== ALL_LABEL && !productCats.map(x => x.toLowerCase()).includes(c.toLowerCase())
+  );
+  const effectiveCategories = [ALL_LABEL, ...productCats, ...customCats];
 
   const categoryProducts =
     activeCategory === ALL_LABEL || !activeCategory
@@ -216,81 +214,79 @@ export default function Home() {
         </button>
       </div>
 
-      {/* Promo Banner with auto-rotation */}
-      <div className="px-4 py-4">
-        <div
-          className="bg-gradient-to-r from-slate-800 to-slate-700 rounded-2xl p-4 flex items-center justify-between overflow-hidden relative"
-          style={media.heroBannerImage ? { backgroundImage: `url(${media.heroBannerImage})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
-        >
-          <div className="flex-1">
-            <p className="text-sm text-parchment">{displayBanner?.title || "20% off"}</p>
-            <p className="text-xl font-bold text-cream">
-              {displayBanner?.subtitle || "Em qualquer pizza"}
-            </p>
-            {(displayBanner as any)?.validity_text || home.bannerValidityText ? (
-              <p className="text-xs text-stone mt-1">{(displayBanner as any)?.validity_text || home.bannerValidityText}</p>
-            ) : null}
-          </div>
-          <div className="w-32 h-32 flex-shrink-0 relative -mr-8 flex items-center justify-center overflow-hidden">
-            {renderIcon(displayBanner?.icon, 0, "lg")}
-          </div>
-          <button className="absolute right-4 top-4 bg-surface-03 rounded-full p-2 text-parchment hover:text-cream transition-colors">
-            <ChevronRight size={16} />
-          </button>
-
-          {/* Banner dots */}
-          {activePromotions.length > 1 && (
-            <div className="absolute bottom-2 left-4 flex gap-1.5">
-              {activePromotions.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setActiveBannerIndex(i)}
-                  className={`h-1.5 rounded-full transition-all ${i === activeBannerIndex ? "bg-gold w-4" : "bg-stone/50 w-1.5"}`}
-                />
-              ))}
+      {/* ── Promo Banner ── */}
+      <div className="px-4 pt-3 pb-2">
+        <div className="max-w-sm mx-auto">
+          <div
+            className="bg-gradient-to-r from-slate-800 to-slate-700 rounded-2xl px-4 py-3 flex items-center gap-3 overflow-hidden relative"
+            style={media.heroBannerImage ? { backgroundImage: `url(${media.heroBannerImage})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
+          >
+            {/* Icon */}
+            <div className="w-16 h-16 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-xl bg-white/5">
+              {renderIcon(displayBanner?.icon, 0, "md")}
             </div>
-          )}
-        </div>
 
-        {/* Banner nav arrows — only when multiple banners */}
-        {activePromotions.length > 1 && (
-          <div className="flex justify-center gap-2 mt-2">
-            <button
-              onClick={() => setActiveBannerIndex((prev) => (prev - 1 + activePromotions.length) % activePromotions.length)}
-              className="w-7 h-7 rounded-full bg-surface-02 hover:bg-surface-03 text-stone hover:text-cream flex items-center justify-center transition-colors"
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <button
-              onClick={() => setActiveBannerIndex((prev) => (prev + 1) % activePromotions.length)}
-              className="w-7 h-7 rounded-full bg-surface-02 hover:bg-surface-03 text-stone hover:text-cream flex items-center justify-center transition-colors"
-            >
-              <ChevronRight size={14} />
-            </button>
+            {/* Text */}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-parchment/80 truncate">{displayBanner?.title || "Promoção"}</p>
+              <p className="text-base font-bold text-cream leading-tight line-clamp-2">
+                {displayBanner?.subtitle || "Em qualquer pizza"}
+              </p>
+              {((displayBanner as any)?.validity_text || home.bannerValidityText) && (
+                <p className="text-[10px] text-stone mt-0.5 truncate">
+                  {(displayBanner as any)?.validity_text || home.bannerValidityText}
+                </p>
+              )}
+            </div>
+
+            {/* Dots + arrows when multiple */}
+            {activePromotions.length > 1 && (
+              <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
+                <button
+                  onClick={() => setActiveBannerIndex((prev) => (prev - 1 + activePromotions.length) % activePromotions.length)}
+                  className="w-6 h-6 rounded-full bg-surface-03/80 text-stone hover:text-cream flex items-center justify-center"
+                >
+                  <ChevronLeft size={13} />
+                </button>
+                <div className="flex gap-1">
+                  {activePromotions.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setActiveBannerIndex(i)}
+                      className={`h-1 rounded-full transition-all ${i === activeBannerIndex ? "bg-gold w-3" : "bg-stone/50 w-1"}`}
+                    />
+                  ))}
+                </div>
+                <button
+                  onClick={() => setActiveBannerIndex((prev) => (prev + 1) % activePromotions.length)}
+                  className="w-6 h-6 rounded-full bg-surface-03/80 text-stone hover:text-cream flex items-center justify-center"
+                >
+                  <ChevronRight size={13} />
+                </button>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="px-4 pb-32">
+      {/* ── Content ── */}
+      <div className="px-4 pb-32 max-w-lg mx-auto w-full">
         {/* Section Title */}
-        <div className="mt-4 mb-4">
-          <p className="text-stone text-sm">{sectionSubtitle}</p>
-          <h2 className="text-2xl font-bold text-cream mt-1">
-            {sectionTitle}
-          </h2>
+        <div className="mt-4 mb-3">
+          <p className="text-stone text-xs">{sectionSubtitle}</p>
+          <h2 className="text-xl font-bold text-cream mt-0.5">{sectionTitle}</h2>
         </div>
 
         {/* Category Pills */}
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
+        <div className="flex gap-2 mb-5 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4">
           {effectiveCategories.map((category) => (
             <button
               key={category}
               onClick={() => setActiveCategory(category)}
-              className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+              className={`px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                 activeCategory === category
-                  ? "bg-gold text-cream"
-                  : "bg-surface-02 text-parchment hover:bg-surface-03"
+                  ? "bg-gold text-cream shadow-lg shadow-gold/20"
+                  : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
               }`}
             >
               {category}
@@ -298,92 +294,90 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Empty state for filtered category */}
+        {/* Empty state */}
         {categoryProducts.length === 0 && (
           <div className="text-center py-10">
+            <p className="text-4xl mb-3">🍕</p>
             <p className="text-stone text-sm">Nenhum produto nesta categoria.</p>
           </div>
         )}
 
-        {/* Product Carousel — layout original */}
+        {/* Product Carousel */}
         {categoryProducts.length > 0 && (
-        <div
-          className="relative overflow-hidden"
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
-        >
-          <div className="flex items-stretch justify-center gap-3 px-2">
-            {/* Previous item (partially visible) */}
-            <div className="w-[22vw] max-w-[90px] flex-shrink-0 opacity-40 self-center">
-              <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
-                {renderIcon(prevPizza?.icon, getPizzaIndex(-1), "sm")}
+          <div
+            className="relative overflow-hidden select-none"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
+            <div className="flex items-center justify-center gap-2">
+              {/* Previous (partially visible) */}
+              <div className="w-[18vw] max-w-[72px] flex-shrink-0 opacity-35 pointer-events-none">
+                <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
+                  {renderIcon(prevPizza?.icon, getPizzaIndex(-1), "sm")}
+                </div>
+              </div>
+
+              {/* Featured center card */}
+              <div className="flex-1 min-w-0" style={{ maxWidth: "min(240px, 56vw)" }}>
+                <button
+                  onTouchStart={handleTouchStart}
+                  onTouchEnd={handleTouchEnd}
+                  onClick={() => handlePizzaClick(currentPizza.id)}
+                  className={`w-full bg-surface-02 rounded-2xl p-4 shadow-2xl transition-all duration-300 ${
+                    clickedPizza === currentPizza.id ? "scale-105 shadow-gold/30" : "active:scale-95"
+                  }`}
+                >
+                  <div className="w-[min(120px,28vw)] h-[min(120px,28vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
+                    {renderIcon(currentPizza?.icon, carouselPosition, "lg")}
+                  </div>
+                  <p className="text-cream font-bold text-center text-sm leading-snug line-clamp-1">
+                    {currentPizza?.name}
+                  </p>
+                  <div className="flex justify-center gap-0.5 mt-1 mb-1.5">
+                    {[...Array(5)].map((_, i) => (
+                      <Star
+                        key={i}
+                        size={11}
+                        className={i < Math.floor(currentPizza?.rating || 0) ? "fill-yellow-400 text-yellow-400" : "text-slate-600"}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-gold font-bold text-center text-sm">
+                    R$ {currentPizza?.price.toFixed(2)}
+                  </p>
+                  <p className="text-[11px] text-stone text-center mt-1 leading-tight line-clamp-2">
+                    {currentPizza?.description}
+                  </p>
+                </button>
+              </div>
+
+              {/* Next (partially visible) */}
+              <div className="w-[18vw] max-w-[72px] flex-shrink-0 opacity-35 pointer-events-none">
+                <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
+                  {renderIcon(nextPizza?.icon, getPizzaIndex(1), "sm")}
+                </div>
               </div>
             </div>
 
-            {/* Featured item (center, larger) */}
-            <div className="flex-1 min-w-0 max-w-[220px]">
+            {/* Navigation */}
+            <div className="flex items-center justify-center gap-3 mt-4">
               <button
-                onTouchStart={handleTouchStart}
-                onTouchEnd={handleTouchEnd}
-                onClick={() => handlePizzaClick(currentPizza.id)}
-                className={`w-full bg-surface-02 rounded-2xl p-4 shadow-2xl transition-all duration-300 ${
-                  clickedPizza === currentPizza.id
-                    ? "scale-110 shadow-gold/30"
-                    : "hover:shadow-gold/20 active:scale-95"
-                }`}
+                onClick={handlePrev}
+                className="w-9 h-9 rounded-full bg-surface-02 hover:bg-surface-03 text-stone hover:text-cream flex items-center justify-center transition-colors active:scale-90"
               >
-                <div className="w-[min(128px,30vw)] h-[min(128px,30vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
-                  {renderIcon(currentPizza?.icon, carouselPosition, "lg")}
-                </div>
-                <p className="text-cream font-bold text-center text-sm leading-snug">
-                  {currentPizza?.name}
-                </p>
-                <div className="flex justify-center gap-1 mt-1 mb-2">
-                  {[...Array(5)].map((_, i) => (
-                    <Star
-                      key={i}
-                      size={12}
-                      className={
-                        i < Math.floor(currentPizza?.rating || 0)
-                          ? "fill-yellow-400 text-yellow-400"
-                          : "text-slate-600"
-                      }
-                    />
-                  ))}
-                </div>
-                <p className="text-gold font-bold text-center">
-                  R$ {currentPizza?.price.toFixed(2)}
-                </p>
-                <p className="text-xs text-stone text-center mt-2 leading-tight line-clamp-2">
-                  {currentPizza?.description}
-                </p>
+                <ChevronLeft size={18} />
+              </button>
+              <span className="text-stone text-xs">
+                {(carouselPosition % categoryProducts.length) + 1} / {categoryProducts.length}
+              </span>
+              <button
+                onClick={handleNext}
+                className="w-9 h-9 rounded-full bg-surface-02 hover:bg-surface-03 text-stone hover:text-cream flex items-center justify-center transition-colors active:scale-90"
+              >
+                <ChevronRight size={18} />
               </button>
             </div>
-
-            {/* Next item (partially visible) */}
-            <div className="w-[22vw] max-w-[90px] flex-shrink-0 opacity-40 self-center">
-              <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
-                {renderIcon(nextPizza?.icon, getPizzaIndex(1), "sm")}
-              </div>
-            </div>
           </div>
-
-          {/* Carousel Navigation */}
-          <div className="flex justify-center gap-2 mt-5">
-            <button
-              onClick={handlePrev}
-              className="w-8 h-8 rounded-full bg-surface-02 hover:bg-surface-03 text-stone hover:text-cream flex items-center justify-center transition-colors"
-            >
-              ←
-            </button>
-            <button
-              onClick={handleNext}
-              className="w-8 h-8 rounded-full bg-surface-02 hover:bg-surface-03 text-stone hover:text-cream flex items-center justify-center transition-colors"
-            >
-              →
-            </button>
-          </div>
-        </div>
         )}
       </div>
 

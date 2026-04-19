@@ -8,25 +8,24 @@ import MoschettieriLogo from "@/components/MoschettieriLogo";
 export default function Cardapio() {
   const navigate = useNavigate();
   const { products, siteContent, addToCart } = useApp();
-  const { categories } = siteContent.home;
-  const allLabel = categories[0] ?? "Todos";
-  const [activeCategory, setActiveCategory] = useState(allLabel);
+  const ALL_LABEL = "Todos";
+  const [activeCategory, setActiveCategory] = useState(ALL_LABEL);
   const [search, setSearch] = useState("");
   const [justAdded, setJustAdded] = useState<string | null>(null);
 
-  // Merge siteContent categories with categories derived from backend products
+  // Categories derived from backend products + any custom ones added via Products admin
   const productCats = [...new Set(
-    products.filter(p => (p as any).category).map(p => (p as any).category as string)
-  )];
-  const effectiveCategories = [
-    ...categories,
-    ...productCats.filter(c => !categories.map(x => x.toLowerCase()).includes(c.toLowerCase())),
-  ];
+    products.filter(p => p.active && (p as any).category).map(p => (p as any).category as string)
+  )].sort();
+  const customCats = (siteContent.home.categories ?? []).filter(
+    c => c !== ALL_LABEL && !productCats.map(x => x.toLowerCase()).includes(c.toLowerCase())
+  );
+  const effectiveCategories = [ALL_LABEL, ...productCats, ...customCats];
 
   const filtered = products.filter((p) => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.description.toLowerCase().includes(search.toLowerCase());
-    const matchCat = activeCategory === allLabel ||
+    const matchCat = activeCategory === ALL_LABEL ||
       (p.category ?? "").toLowerCase() === activeCategory.toLowerCase();
     return matchSearch && matchCat && p.active;
   });
@@ -69,7 +68,7 @@ export default function Cardapio() {
       </div>
 
       {/* Category Pills */}
-      <div className="flex gap-2 px-4 py-4 overflow-x-auto scrollbar-hide">
+      <div className="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-hide max-w-2xl mx-auto">
         {effectiveCategories.map((cat) => (
           <button
             key={cat}
@@ -86,14 +85,14 @@ export default function Cardapio() {
       </div>
 
       {/* Products Grid */}
-      <div className="px-4 pb-32">
+      <div className="px-4 pb-32 max-w-2xl mx-auto w-full">
         {filtered.length === 0 ? (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">🍕</div>
             <p className="text-stone">Nenhum produto encontrado</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {filtered.map((product) => (
               <div
                 key={product.id}
