@@ -426,7 +426,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [fidelidadeLevels, setFidelidadeLevels] = useState<FidelidadeLevel[]>([]);
   const [fidelidadeRewards, setFidelidadeRewards] = useState<FidelidadeReward[]>([]);
   const [earnRules, setEarnRules] = useState<EarnRule[]>([]);
-  const [siteContent, setSiteContent] = useState<SiteContent>(defaultSiteContent);
+  const [siteContent, setSiteContent] = useState<SiteContent>(() => {
+    try {
+      const stored = localStorage.getItem("siteContent");
+      if (stored) return deepMerge(defaultSiteContent, JSON.parse(stored)) as SiteContent;
+    } catch { /* ignore corrupt data */ }
+    return defaultSiteContent;
+  });
   const [multiFlavorsConfig, setMultiFlavorsConfig] = useState<MultiFlavorsConfig>({
     maxFlavors: 3,
     pricingRule: "most_expensive",
@@ -621,7 +627,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ── Site Content (CMS — local por enquanto) ───────────────────────────────
 
   const updateSiteContent = (update: DeepPartial<SiteContent>) =>
-    setSiteContent((prev) => deepMerge(prev, update));
+    setSiteContent((prev) => {
+      const next = deepMerge(prev, update);
+      try { localStorage.setItem("siteContent", JSON.stringify(next)); } catch { /* storage full */ }
+      return next as SiteContent;
+    });
 
   // ── Context value ─────────────────────────────────────────────────────────
 

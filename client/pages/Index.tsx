@@ -84,6 +84,15 @@ export default function Home() {
   const getIcon = (icon: string | undefined, index: number) =>
     icon || PIZZA_FALLBACKS[index % PIZZA_FALLBACKS.length];
 
+  const renderIcon = (icon: string | undefined, index: number, size: "sm" | "md" | "lg" = "md") => {
+    const resolved = getIcon(icon, index);
+    const isImage = resolved.startsWith("data:") || resolved.startsWith("http");
+    const textCls = size === "lg" ? "text-5xl pizza-spin" : "text-4xl pizza-spin";
+    return isImage
+      ? <img src={resolved} alt="" className="w-full h-full object-contain" />
+      : <span className={textCls}>{resolved}</span>;
+  };
+
   const prevPizza = categoryProducts.length > 0 ? categoryProducts[getPizzaIndex(-1)] : undefined;
   const currentPizza = categoryProducts.length > 0 ? categoryProducts[getPizzaIndex(0)] : undefined;
   const nextPizza = categoryProducts.length > 0 ? categoryProducts[getPizzaIndex(1)] : undefined;
@@ -132,7 +141,9 @@ export default function Home() {
                     onClick={() => { setSearchOpen(false); setSearchQuery(""); navigate(`/product/${product.id}`); }}
                     className="w-full bg-surface-02 rounded-xl p-4 flex items-center gap-4 hover:bg-surface-03 transition-colors text-left"
                   >
-                    <span className="text-4xl">{product.icon || "🍕"}</span>
+                    <div className="w-12 h-12 rounded-xl bg-surface-03 flex items-center justify-center overflow-hidden flex-shrink-0">
+                      {renderIcon(product.icon, 0, "sm")}
+                    </div>
                     <div className="flex-1">
                       <p className="text-cream font-semibold">{product.name}</p>
                       <p className="text-stone text-sm line-clamp-1">{product.description}</p>
@@ -206,8 +217,8 @@ export default function Home() {
               <p className="text-xs text-stone mt-1">{(displayBanner as any)?.validity_text || home.bannerValidityText}</p>
             ) : null}
           </div>
-          <div className="w-32 h-32 flex-shrink-0 relative -mr-8 text-5xl flex items-center justify-center">
-            {displayBanner?.icon || "🍕"}
+          <div className="w-32 h-32 flex-shrink-0 relative -mr-8 flex items-center justify-center overflow-hidden">
+            {renderIcon(displayBanner?.icon, 0, "lg")}
           </div>
           <button className="absolute right-4 top-4 bg-surface-03 rounded-full p-2 text-parchment hover:text-cream transition-colors">
             <ChevronRight size={16} />
@@ -291,9 +302,7 @@ export default function Home() {
             {/* Previous item (partially visible) */}
             <div className="w-[22vw] max-w-[90px] flex-shrink-0 opacity-40 self-center">
               <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
-                <span className="text-4xl pizza-spin">
-                  {getIcon(prevPizza?.icon, getPizzaIndex(-1))}
-                </span>
+                {renderIcon(prevPizza?.icon, getPizzaIndex(-1), "sm")}
               </div>
             </div>
 
@@ -308,9 +317,7 @@ export default function Home() {
                 }`}
               >
                 <div className="w-[min(128px,30vw)] h-[min(128px,30vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
-                  <span className="text-5xl pizza-spin">
-                    {getIcon(currentPizza?.icon, carouselPosition)}
-                  </span>
+                  {renderIcon(currentPizza?.icon, carouselPosition, "lg")}
                 </div>
                 <p className="text-cream font-bold text-center text-sm leading-snug">
                   {currentPizza?.name}
@@ -340,9 +347,7 @@ export default function Home() {
             {/* Next item (partially visible) */}
             <div className="w-[22vw] max-w-[90px] flex-shrink-0 opacity-40 self-center">
               <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
-                <span className="text-4xl pizza-spin">
-                  {getIcon(nextPizza?.icon, getPizzaIndex(1))}
-                </span>
+                {renderIcon(nextPizza?.icon, getPizzaIndex(1), "sm")}
               </div>
             </div>
           </div>
