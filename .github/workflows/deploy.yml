@@ -1,0 +1,47 @@
+name: Deploy — Produção
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # permite acionar manualmente pelo GitHub UI
+
+jobs:
+  deploy:
+    name: Deploy para VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -e
+            cd ~/moschettieri
+
+            echo "━━━ [1/5] Puxando código ━━━"
+            git pull origin main
+
+            echo "━━━ [2/5] Dependências Python ━━━"
+            source .venv/bin/activate
+            pip install -r backend/requirements.txt --quiet
+
+            echo "━━━ [3/5] Build do frontend ━━━"
+            pnpm install --frozen-lockfile --silent
+            pnpm build
+
+            echo "━━━ [4/5] Reiniciando serviços ━━━"
+            sudo systemctl restart moschettieri-api
+            sudo systemctl restart moschettieri-web
+
+            echo "━━━ [5/5] Health check ━━━"
+            sleep 4
+            curl -sf http://localhost:8000/health \
+              && echo "✅ Backend OK" \
+              || (echo "❌ Backend falhou" && sudo journalctl -u moschettieri-api -n 20 --no-pager && exit 1)
+
+            echo "🚀 Deploy concluído com sucesso!"
