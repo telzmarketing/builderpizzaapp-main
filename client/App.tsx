@@ -39,6 +39,7 @@ import AdminConteudo from "./pages/admin/Conteudo";
 import AdminPagamentos from "./pages/admin/AdminPagamentos";
 import AdminFrete from "./pages/admin/AdminFrete";
 import AdminCampanhas from "./pages/admin/AdminCampanhas";
+import AdminChatbot from "./pages/admin/AdminChatbot";
 import Campanha from "./pages/Campanha";
 import Fidelidade from "./pages/Fidelidade";
 import Cupons from "./pages/Cupons";
@@ -87,6 +88,7 @@ export default function App() {
                 <Route path="/painel/pagamentos" element={<AdminPagamentos />} />
                 <Route path="/painel/frete" element={<AdminFrete />} />
                 <Route path="/painel/campanhas" element={<AdminCampanhas />} />
+                <Route path="/painel/chatbot"   element={<AdminChatbot />} />
               </Route>
 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
