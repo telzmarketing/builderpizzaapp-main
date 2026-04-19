@@ -450,8 +450,11 @@ export default function Product() {
                 <div className="flex gap-1 mt-2 flex-wrap">
                   {activeFlavors.map((f, i) =>
                     f ? (
-                      <span key={i} className="text-xs bg-surface-03 text-parchment px-2 py-0.5 rounded-full">
-                        {f.icon} {f.name} — R${f.price.toFixed(2)}
+                      <span key={i} className="inline-flex items-center gap-1 text-xs bg-surface-03 text-parchment px-2 py-0.5 rounded-full">
+                        {f.icon && (f.icon.startsWith("data:") || f.icon.startsWith("http") || f.icon.startsWith("/"))
+                          ? <img src={f.icon} alt="" className="w-4 h-4 rounded-full object-cover flex-shrink-0" />
+                          : <span>{f.icon}</span>}
+                        {f.name} — R${f.price.toFixed(2)}
                       </span>
                     ) : (
                       <span key={i} className="text-xs bg-surface-03/50 text-stone/70 px-2 py-0.5 rounded-full border border-dashed border-brand-mid">
