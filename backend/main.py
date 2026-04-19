@@ -67,12 +67,26 @@ def _run_migrations():
     from sqlalchemy import text
     with engine.connect() as conn:
         stmts = [
+            # ── Existing migrations ───────────────────────────────────────────
             "ALTER TABLE coupons ADD COLUMN IF NOT EXISTS max_uses_per_customer INTEGER",
             "ALTER TABLE coupons ADD COLUMN IF NOT EXISTS campaign_id VARCHAR REFERENCES campaigns(id) ON DELETE SET NULL",
             "ALTER TABLE products ALTER COLUMN icon TYPE TEXT",
             "ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100)",
             "ALTER TABLE promotions ALTER COLUMN icon TYPE TEXT",
             "ALTER TABLE promotions ADD COLUMN IF NOT EXISTS validity_text VARCHAR(200)",
+            # ── Product sizes ─────────────────────────────────────────────────
+            "CREATE TABLE IF NOT EXISTS product_sizes (id VARCHAR PRIMARY KEY, product_id VARCHAR NOT NULL REFERENCES products(id) ON DELETE CASCADE, label VARCHAR(50) NOT NULL, description VARCHAR(200), price FLOAT NOT NULL, is_default BOOLEAN DEFAULT FALSE, sort_order INTEGER DEFAULT 0, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW())",
+            # ── Chatbot tables (fallback if create_all_tables fails) ──────────
+            "CREATE TABLE IF NOT EXISTS chatbot_settings (id VARCHAR PRIMARY KEY DEFAULT 'default', ativo BOOLEAN DEFAULT TRUE, nome_bot VARCHAR(100) DEFAULT 'Assistente', mensagem_inicial TEXT DEFAULT 'Olá! Como posso ajudar?', cor_primaria VARCHAR(20) DEFAULT '#f97316', posicao_widget VARCHAR(20) DEFAULT 'bottom-right', horario_funcionamento TEXT, mensagem_fora_horario TEXT DEFAULT 'Estamos fora do horário de atendimento.', tempo_disparo_auto INTEGER DEFAULT 0, fallback_humano_ativo BOOLEAN DEFAULT TRUE, provedor_ia VARCHAR(20) DEFAULT 'claude', modelo_ia VARCHAR(100) DEFAULT 'claude-sonnet-4-6', temperatura FLOAT DEFAULT 0.7, max_tokens INTEGER DEFAULT 1024, prompt_base TEXT DEFAULT '', regras_fixas TEXT DEFAULT '', tom_de_voz TEXT DEFAULT '', objetivo TEXT DEFAULT '', instrucoes_transferencia TEXT DEFAULT '', limitacoes_proibicoes TEXT DEFAULT '', updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS chatbot_faq (id VARCHAR PRIMARY KEY, pergunta TEXT NOT NULL, resposta TEXT NOT NULL, categoria VARCHAR(100) DEFAULT 'geral', prioridade INTEGER DEFAULT 0, ativo BOOLEAN DEFAULT TRUE, vinculo_produto_id VARCHAR REFERENCES products(id) ON DELETE SET NULL, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "ALTER TABLE chatbot_faq ADD COLUMN IF NOT EXISTS busca_vetor TSVECTOR",
+            "CREATE TABLE IF NOT EXISTS chatbot_conversations (id VARCHAR PRIMARY KEY, session_id VARCHAR UNIQUE NOT NULL, cliente_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, visitor_fingerprint VARCHAR(100), pagina_origem VARCHAR(500), user_agent TEXT, ip_hash VARCHAR(64), status VARCHAR(20) DEFAULT 'aberta', tags TEXT, iniciada_em TIMESTAMPTZ DEFAULT NOW(), encerrada_em TIMESTAMPTZ, assumida_por_user_id VARCHAR REFERENCES admin_users(id) ON DELETE SET NULL, intencao_detectada VARCHAR(200), resumo_conversa TEXT)",
+            "CREATE TABLE IF NOT EXISTS chatbot_messages (id VARCHAR PRIMARY KEY, conversation_id VARCHAR NOT NULL REFERENCES chatbot_conversations(id) ON DELETE CASCADE, sender VARCHAR(20) NOT NULL, mensagem TEXT NOT NULL, tipo VARCHAR(20) DEFAULT 'text', tokens_consumidos INTEGER, provedor_usado VARCHAR(50), latencia_ms INTEGER, timestamp TIMESTAMPTZ DEFAULT NOW(), metadata_json TEXT)",
+            "CREATE TABLE IF NOT EXISTS chatbot_handoffs (id VARCHAR PRIMARY KEY, conversation_id VARCHAR NOT NULL REFERENCES chatbot_conversations(id) ON DELETE CASCADE, admin_user_id VARCHAR REFERENCES admin_users(id) ON DELETE SET NULL, motivo TEXT, assumido_em TIMESTAMPTZ DEFAULT NOW(), encerrado_em TIMESTAMPTZ)",
+            "CREATE TABLE IF NOT EXISTS chatbot_knowledge_docs (id VARCHAR PRIMARY KEY, titulo VARCHAR(200) NOT NULL, conteudo TEXT NOT NULL, categoria VARCHAR(100) DEFAULT 'geral', ativo BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS chatbot_automations (id VARCHAR PRIMARY KEY, nome VARCHAR(200) NOT NULL, gatilho VARCHAR(50) NOT NULL, condicao_json TEXT, mensagem TEXT NOT NULL, ativo BOOLEAN DEFAULT TRUE, delay_segundos INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW())",
+            # ── GIN index for FAQ full-text search (optional, best-effort) ────
+            "CREATE INDEX IF NOT EXISTS ix_chatbot_faq_busca_vetor ON chatbot_faq USING gin (busca_vetor) WHERE busca_vetor IS NOT NULL",
         ]
         for stmt in stmts:
             try:
