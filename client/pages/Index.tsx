@@ -42,14 +42,20 @@ export default function Home() {
       )
     : [];
 
+  const ALL_LABEL = categories[0] ?? "Todas";
+  const categoryProducts =
+    activeCategory === ALL_LABEL || !activeCategory
+      ? products
+      : products.filter((p) => (p.category ?? "").toLowerCase() === activeCategory.toLowerCase());
+
   const { home, media } = siteContent;
 
   const handleNext = () => {
-    setCarouselPosition((prev) => (prev + 1) % products.length);
+    setCarouselPosition((prev) => (prev + 1) % Math.max(1, categoryProducts.length));
   };
 
   const handlePrev = () => {
-    setCarouselPosition((prev) => (prev - 1 + products.length) % products.length);
+    setCarouselPosition((prev) => (prev - 1 + Math.max(1, categoryProducts.length)) % Math.max(1, categoryProducts.length));
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -71,15 +77,18 @@ export default function Home() {
   };
 
   const getPizzaIndex = (offset: number) => {
-    return (carouselPosition + offset + products.length) % products.length;
+    const len = Math.max(1, categoryProducts.length);
+    return (carouselPosition + offset + len) % len;
   };
 
   const getIcon = (icon: string | undefined, index: number) =>
     icon || PIZZA_FALLBACKS[index % PIZZA_FALLBACKS.length];
 
-  const prevPizza = products.length > 0 ? products[getPizzaIndex(-1)] : undefined;
-  const currentPizza = products.length > 0 ? products[getPizzaIndex(0)] : undefined;
-  const nextPizza = products.length > 0 ? products[getPizzaIndex(1)] : undefined;
+  const prevPizza = categoryProducts.length > 0 ? categoryProducts[getPizzaIndex(-1)] : undefined;
+  const currentPizza = categoryProducts.length > 0 ? categoryProducts[getPizzaIndex(0)] : undefined;
+  const nextPizza = categoryProducts.length > 0 ? categoryProducts[getPizzaIndex(1)] : undefined;
+
+  useEffect(() => { setCarouselPosition(0); }, [activeCategory]);
 
   if (products.length === 0) {
     return (
@@ -193,7 +202,9 @@ export default function Home() {
             <p className="text-xl font-bold text-cream">
               {displayBanner?.subtitle || "Em qualquer pizza"}
             </p>
-            <p className="text-xs text-stone mt-1">{home.bannerValidityText}</p>
+            {(displayBanner as any)?.validity_text || home.bannerValidityText ? (
+              <p className="text-xs text-stone mt-1">{(displayBanner as any)?.validity_text || home.bannerValidityText}</p>
+            ) : null}
           </div>
           <div className="w-32 h-32 flex-shrink-0 relative -mr-8 text-5xl flex items-center justify-center">
             {displayBanner?.icon || "🍕"}
@@ -262,7 +273,15 @@ export default function Home() {
           ))}
         </div>
 
+        {/* Empty state for filtered category */}
+        {categoryProducts.length === 0 && (
+          <div className="text-center py-10">
+            <p className="text-stone text-sm">Nenhum produto nesta categoria.</p>
+          </div>
+        )}
+
         {/* Product Carousel — layout original */}
+        {categoryProducts.length > 0 && (
         <div
           className="relative overflow-hidden"
           onTouchStart={handleTouchStart}
@@ -344,6 +363,7 @@ export default function Home() {
             </button>
           </div>
         </div>
+        )}
       </div>
 
       <BottomNav />

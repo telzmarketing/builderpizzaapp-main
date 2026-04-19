@@ -2,10 +2,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3,
   Package,
-  Megaphone,
   ShoppingBag,
   ArrowLeft,
-  Tag,
   Trophy,
   FileText,
   CreditCard,
@@ -13,19 +11,18 @@ import {
   LogOut,
   Sparkles,
 } from "lucide-react";
+import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
 
 const navItems = [
   { to: "/painel", icon: BarChart3, label: "Dashboard" },
   { to: "/painel/products", icon: Package, label: "Produtos" },
-  { to: "/painel/promotions", icon: Megaphone, label: "Promoções" },
   { to: "/painel/orders", icon: ShoppingBag, label: "Pedidos" },
-  { to: "/painel/cupons", icon: Tag, label: "Cupons" },
+  { to: "/painel/campanhas", icon: Sparkles, label: "Promoções & Campanhas" },
   { to: "/painel/fidelidade", icon: Trophy, label: "Fidelidade" },
   { to: "/painel/conteudo", icon: FileText, label: "Conteúdo" },
   { to: "/painel/pagamentos", icon: CreditCard, label: "Pagamentos" },
   { to: "/painel/frete", icon: Truck, label: "Entregas e Fretes" },
-  { to: "/painel/campanhas", icon: Sparkles, label: "Campanhas" },
 ];
 
 export default function AdminSidebar() {
@@ -48,15 +45,13 @@ export default function AdminSidebar() {
   return (
     <div className="w-64 bg-surface-02 border-r border-surface-03 p-6 flex flex-col flex-shrink-0">
       <div className="mb-8 flex items-center gap-3">
-        <span className="text-2xl flex-shrink-0">
-          {brand.logo.startsWith("http") ? (
-            <img src={brand.logo} alt="logo" className="w-8 h-8 object-contain rounded" />
-          ) : (
-            brand.logo || "🍕"
-          )}
-        </span>
+        {brand.logo && (brand.logo.startsWith("http") || brand.logo.startsWith("data:")) ? (
+          <img src={brand.logo} alt="logo" className="w-8 h-8 object-contain rounded flex-shrink-0" />
+        ) : brand.logo ? (
+          <span className="text-2xl flex-shrink-0">{brand.logo}</span>
+        ) : null}
         <div className="min-w-0">
-          <h1 className="text-lg font-bold text-gold truncate">{brand.name}</h1>
+          <MoschettieriLogo className="text-gold text-lg" />
           <p className="text-stone text-xs truncate">{brand.tagline}</p>
         </div>
       </div>

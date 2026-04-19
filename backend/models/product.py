@@ -19,6 +19,7 @@ class Product(Base):
     description = Column(Text, nullable=False)
     price = Column(Float, nullable=False)
     icon = Column(Text, default="🍕")
+    category = Column(String(100), nullable=True)
     rating = Column(Float, default=4.5)
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

@@ -9,6 +9,7 @@ class ProductBase(BaseModel):
     description: str
     price: float = Field(gt=0)
     icon: str = "🍕"
+    category: Optional[str] = None
     rating: float = Field(default=4.5, ge=1.0, le=5.0)
     active: bool = True
 
@@ -22,6 +23,7 @@ class ProductUpdate(BaseModel):
     description: Optional[str] = None
     price: Optional[float] = Field(default=None, gt=0)
     icon: Optional[str] = None
+    category: Optional[str] = None
     rating: Optional[float] = Field(default=None, ge=1.0, le=5.0)
     active: Optional[bool] = None
 

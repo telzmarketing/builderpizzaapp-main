@@ -81,15 +81,14 @@ function Section({
 
 // ─── Tab definition ───────────────────────────────────────────────────────────
 
-type Tab = "marca" | "home" | "nav" | "paginas" | "rastreamento" | "midia";
+type Tab = "marca_midia" | "home" | "nav" | "paginas" | "rastreamento";
 
 const TABS: { id: Tab; icon: React.ReactNode; label: string }[] = [
-  { id: "marca", icon: <Palette size={16} />, label: "Marca" },
+  { id: "marca_midia", icon: <Palette size={16} />, label: "Marca & Mídia" },
   { id: "home", icon: <Home size={16} />, label: "Home" },
   { id: "nav", icon: <Navigation size={16} />, label: "Navegação" },
   { id: "paginas", icon: <FileText size={16} />, label: "Páginas" },
   { id: "rastreamento", icon: <Activity size={16} />, label: "Rastreamento" },
-  { id: "midia", icon: <Image size={16} />, label: "Mídia" },
 ];
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -97,7 +96,7 @@ const TABS: { id: Tab; icon: React.ReactNode; label: string }[] = [
 export default function AdminConteudo() {
   const { siteContent, updateSiteContent } = useApp();
   const [draft, setDraft] = useState<SiteContent>(JSON.parse(JSON.stringify(siteContent)));
-  const [activeTab, setActiveTab] = useState<Tab>("marca");
+  const [activeTab, setActiveTab] = useState<Tab>("marca_midia");
   const [saved, setSaved] = useState(false);
   const [newCategory, setNewCategory] = useState("");
 
@@ -232,9 +231,10 @@ export default function AdminConteudo() {
           {/* ── Content area ── */}
           <div className="flex-1 overflow-auto p-8">
 
-            {/* ═══════════════════ MARCA ═══════════════════ */}
-            {activeTab === "marca" && (
+            {/* ═══════════════════ MARCA & MÍDIA ═══════════════════ */}
+            {activeTab === "marca_midia" && (
               <div className="max-w-2xl space-y-6">
+                {/* Identidade da Marca */}
                 <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 space-y-5">
                   <div className="flex items-center gap-3 pb-3 border-b border-slate-700">
                     <Palette size={20} className="text-orange-500" />
@@ -277,34 +277,60 @@ export default function AdminConteudo() {
                     maxKB={50}
                   />
 
-                  <Field label="Logo (emoji ou URL de imagem)" hint="Cole um emoji 🍕 ou URL https://... para uma imagem">
-                    <div className="flex items-center gap-3">
-                      <div className="w-14 h-14 rounded-xl bg-slate-700 border border-slate-600 flex items-center justify-center text-3xl flex-shrink-0">
-                        {draft.brand.logo.startsWith("http") ? (
-                          <img src={draft.brand.logo} alt="logo" className="w-10 h-10 object-contain rounded" />
-                        ) : (
-                          draft.brand.logo || "🍕"
-                        )}
-                      </div>
-                      <TextInput
-                        value={draft.brand.logo}
-                        onChange={(v) => set(["brand", "logo"], v)}
-                        placeholder="🍕 ou https://..."
-                      />
-                    </div>
-                  </Field>
+                  <ImageUpload
+                    value={draft.brand.logo}
+                    onChange={(v) => set(["brand", "logo"], v)}
+                    label="Logo da marca"
+                    sizeGuide="Recomendado: 200×200px, PNG com fundo transparente, máx. 200KB"
+                    hint="Exibido no painel admin e no cabeçalho da loja."
+                    maxKB={200}
+                    previewRounded
+                  />
                 </div>
 
-                {/* Live preview */}
-                <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-                  <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-4">Pré-visualização no painel</p>
-                  <div className="flex items-center gap-3 p-4 bg-slate-700 rounded-lg">
-                    <span className="text-3xl">{draft.brand.logo || "🍕"}</span>
+                {/* Imagens do Aplicativo */}
+                <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 space-y-6">
+                  <div className="flex items-center gap-3 pb-3 border-b border-slate-700">
+                    <Image size={20} className="text-orange-500" />
                     <div>
-                      <p className="text-orange-500 font-bold text-lg">{draft.brand.name || "Builder Pizza"}</p>
-                      <p className="text-slate-400 text-xs">{draft.brand.tagline || "A melhor pizza da cidade"}</p>
+                      <h3 className="text-white font-bold">Imagens do Aplicativo</h3>
+                      <p className="text-slate-400 text-sm">Imagens usadas no frontend. Deixe em branco para usar o padrão.</p>
                     </div>
                   </div>
+
+                  <ImageUpload
+                    value={draft.media.logoUrl}
+                    onChange={(v) => set(["media", "logoUrl"], v)}
+                    label="Logo Branco"
+                    sizeGuide="Tamanho recomendado: 300×120px, PNG com fundo transparente, máx. 200KB"
+                    hint="Exibido no cabeçalho da loja. Use PNG transparente para melhor resultado."
+                    maxKB={200}
+                  />
+
+                  <ImageUpload
+                    value={draft.media.heroBannerImage}
+                    onChange={(v) => set(["media", "heroBannerImage"], v)}
+                    label="Imagem do Banner (Home)"
+                    sizeGuide="Tamanho recomendado: 800×300px, máx. 500KB"
+                    hint="Imagem de fundo do banner promocional na página inicial."
+                    maxKB={500}
+                  />
+
+                  <ImageUpload
+                    value={draft.media.defaultProductImage}
+                    onChange={(v) => set(["media", "defaultProductImage"], v)}
+                    label="Imagem padrão de produto"
+                    sizeGuide="Tamanho recomendado: 200×200px, máx. 200KB"
+                    hint="Usada quando um produto não tem ícone/imagem definido."
+                    maxKB={200}
+                  />
+                </div>
+
+                <div className="bg-gold/10 border border-gold/30 rounded-xl p-4">
+                  <p className="text-gold text-sm font-medium mb-1">Sobre as imagens</p>
+                  <p className="text-gold/70 text-xs">
+                    As imagens são salvas localmente na sessão. Para uso permanente em produção, utilize o upload via servidor ou serviços como <strong>Cloudinary</strong> ou <strong>ImgBB</strong>.
+                  </p>
                 </div>
               </div>
             )}
@@ -334,14 +360,6 @@ export default function AdminConteudo() {
                       value={draft.home.sectionTitle}
                       onChange={(v) => set(["home", "sectionTitle"], v)}
                       placeholder="Escolha sua Pizza Favorita"
-                    />
-                  </Field>
-
-                  <Field label="Texto de validade do banner" hint="Exibido no canto do banner de promoção">
-                    <TextInput
-                      value={draft.home.bannerValidityText}
-                      onChange={(v) => set(["home", "bannerValidityText"], v)}
-                      placeholder="Válido até 30 Nov"
                     />
                   </Field>
 
@@ -694,57 +712,6 @@ export default function AdminConteudo() {
               </div>
             )}
 
-            {/* ═══════════════════ MÍDIA ═══════════════════ */}
-            {activeTab === "midia" && (
-              <div className="max-w-2xl space-y-6">
-                <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 space-y-6">
-                  <div className="flex items-center gap-3 pb-3 border-b border-slate-700">
-                    <Image size={20} className="text-orange-500" />
-                    <div>
-                      <h3 className="text-white font-bold">Imagens do Aplicativo</h3>
-                      <p className="text-slate-400 text-sm">URLs de imagens usadas no frontend. Deixe em branco para usar o padrão (emoji).</p>
-                    </div>
-                  </div>
-
-                  {/* Logo Branco */}
-                  <ImageUpload
-                    value={draft.media.logoUrl}
-                    onChange={(v) => set(["media", "logoUrl"], v)}
-                    label="Logo Branco"
-                    sizeGuide="Tamanho recomendado: 300×120px, PNG com fundo transparente, máx. 200KB"
-                    hint="Exibido no cabeçalho da loja. Use PNG transparente para melhor resultado."
-                    maxKB={200}
-                  />
-
-                  {/* Hero Banner */}
-                  <ImageUpload
-                    value={draft.media.heroBannerImage}
-                    onChange={(v) => set(["media", "heroBannerImage"], v)}
-                    label="Imagem do Banner (Home)"
-                    sizeGuide="Tamanho recomendado: 800×300px, máx. 500KB"
-                    hint="Imagem de fundo do banner promocional na página inicial."
-                    maxKB={500}
-                  />
-
-                  {/* Default Product */}
-                  <ImageUpload
-                    value={draft.media.defaultProductImage}
-                    onChange={(v) => set(["media", "defaultProductImage"], v)}
-                    label="Imagem padrão de produto"
-                    sizeGuide="Tamanho recomendado: 200×200px, máx. 200KB"
-                    hint="Usada quando um produto não tem ícone/imagem definido."
-                    maxKB={200}
-                  />
-                </div>
-
-                <div className="bg-gold/10 border border-gold/30 rounded-xl p-4">
-                  <p className="text-gold text-sm font-medium mb-1">Sobre as imagens</p>
-                  <p className="text-gold/70 text-xs">
-                    As imagens são salvas localmente na sessão. Para uso permanente em produção, utilize o upload via servidor ou serviços como <strong>Cloudinary</strong> ou <strong>ImgBB</strong>.
-                  </p>
-                </div>
-              </div>
-            )}
 
           </div>
         </div>

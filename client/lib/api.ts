@@ -63,6 +63,7 @@ export interface ApiProduct {
   description: string;
   price: number;
   icon: string;
+  category: string | null;
   rating: number;
   active: boolean;
   created_at: string;
@@ -75,6 +76,7 @@ export interface ApiPromotion {
   subtitle: string | null;
   description: string | null;
   icon: string;
+  validity_text: string | null;
   active: boolean;
   valid_from: string | null;
   valid_until: string | null;

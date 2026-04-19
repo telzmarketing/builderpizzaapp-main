@@ -64,6 +64,9 @@ def _run_migrations():
             "ALTER TABLE coupons ADD COLUMN IF NOT EXISTS max_uses_per_customer INTEGER",
             "ALTER TABLE coupons ADD COLUMN IF NOT EXISTS campaign_id VARCHAR REFERENCES campaigns(id) ON DELETE SET NULL",
             "ALTER TABLE products ALTER COLUMN icon TYPE TEXT",
+            "ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100)",
+            "ALTER TABLE promotions ALTER COLUMN icon TYPE TEXT",
+            "ALTER TABLE promotions ADD COLUMN IF NOT EXISTS validity_text VARCHAR(200)",
         ]
         for stmt in stmts:
             try:
