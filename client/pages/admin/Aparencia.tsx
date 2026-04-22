@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Palette, Save, RotateCcw, Check } from "lucide-react";
+import { useEffect, useRef, useState, type ElementType } from "react";
+import { Palette, Save, RotateCcw, Check, ShoppingBag, Megaphone, LayoutDashboard } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import { themeApi, applyTheme, DEFAULT_THEME, type ThemeSettings } from "@/lib/themeApi";
 
@@ -7,61 +7,58 @@ type Field = keyof Omit<ThemeSettings, "id" | "updated_at">;
 
 interface ColorGroup {
   label: string;
+  description: string;
+  icon: ElementType;
+  accent: string;
   fields: { key: Field; label: string }[];
 }
 
 const GROUPS: ColorGroup[] = [
   {
-    label: "Identidade Visual",
+    label: "Cores da Loja",
+    description: "Aparência visual para o cliente final",
+    icon: ShoppingBag,
+    accent: "text-orange-400",
     fields: [
-      { key: "primary",   label: "Cor Principal" },
-      { key: "secondary", label: "Cor Secundária" },
-      { key: "badge",     label: "Badge" },
-      { key: "tag",       label: "Tag" },
-    ],
-  },
-  {
-    label: "Fundos",
-    fields: [
-      { key: "background_main", label: "Fundo Principal" },
+      { key: "primary",         label: "Cor Principal / Botões" },
+      { key: "secondary",       label: "Cor Secundária" },
+      { key: "navbar",          label: "Barra de Navegação" },
+      { key: "footer",          label: "Rodapé" },
+      { key: "background_main", label: "Fundo da Página" },
       { key: "background_alt",  label: "Fundo Alternativo" },
-      { key: "background_card", label: "Cards / Painéis" },
-      { key: "overlay",         label: "Overlay / Sombra" },
+      { key: "background_card", label: "Cartões de Produto" },
+      { key: "text_primary",    label: "Texto Principal" },
+      { key: "text_secondary",  label: "Texto Secundário" },
+      { key: "text_muted",      label: "Texto Suave" },
+      { key: "border",          label: "Bordas" },
+      { key: "badge",           label: "Badge de Produto" },
+      { key: "tag",             label: "Tag de Categoria" },
     ],
   },
   {
-    label: "Textos",
+    label: "Cores do Banner de Campanha",
+    description: "Banners e destaques promocionais exibidos na loja",
+    icon: Megaphone,
+    accent: "text-yellow-400",
     fields: [
-      { key: "text_primary",   label: "Texto Principal" },
-      { key: "text_secondary", label: "Texto Secundário" },
-      { key: "text_muted",     label: "Texto Suave" },
-    ],
-  },
-  {
-    label: "Status",
-    fields: [
-      { key: "status_success", label: "Sucesso" },
-      { key: "status_error",   label: "Erro" },
-      { key: "status_warning", label: "Aviso" },
+      { key: "status_success", label: "Promoção / Sucesso" },
+      { key: "status_warning", label: "Destaque / Aviso" },
       { key: "status_info",    label: "Informação" },
+      { key: "status_error",   label: "Alerta / Urgência" },
+      { key: "overlay",        label: "Sobreposição do Banner" },
     ],
   },
   {
-    label: "Interação",
+    label: "Cores do Painel",
+    description: "Interface de administração — visível apenas ao gestor",
+    icon: LayoutDashboard,
+    accent: "text-blue-400",
     fields: [
-      { key: "border",             label: "Borda" },
-      { key: "interaction_hover",  label: "Hover" },
-      { key: "interaction_active", label: "Ativo / Clicado" },
-      { key: "interaction_focus",  label: "Foco" },
-    ],
-  },
-  {
-    label: "Estrutura",
-    fields: [
-      { key: "navbar",  label: "Navbar" },
-      { key: "footer",  label: "Footer" },
-      { key: "sidebar", label: "Sidebar" },
-      { key: "modal",   label: "Modal" },
+      { key: "sidebar",             label: "Sidebar" },
+      { key: "modal",               label: "Modal / Popup" },
+      { key: "interaction_hover",   label: "Hover" },
+      { key: "interaction_active",  label: "Ativo / Clicado" },
+      { key: "interaction_focus",   label: "Foco" },
     ],
   },
 ];
@@ -156,36 +153,43 @@ export default function AdminAparencia() {
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto p-8">
+          <div className="flex-1 overflow-y-auto p-6">
             {loading ? (
               <div className="flex items-center justify-center h-40 text-stone text-sm">
                 Carregando tema...
               </div>
             ) : (
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 max-w-6xl">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full max-w-7xl">
 
                 {/* Color editor */}
-                <div className="xl:col-span-2 space-y-6">
-                  {GROUPS.map((group) => (
-                    <div key={group.label} className="bg-surface-02 rounded-2xl border border-surface-03 p-6">
-                      <h3 className="text-cream font-semibold text-sm mb-4">{group.label}</h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {group.fields.map(({ key, label }) => (
-                          <ColorRow
-                            key={key}
-                            label={label}
-                            value={theme[key as keyof ThemeSettings] as string}
-                            onChange={(v) => handleChange(key, v)}
-                          />
-                        ))}
+                <div className="lg:col-span-2 space-y-5">
+                  {GROUPS.map((group) => {
+                    const Icon = group.icon;
+                    return (
+                      <div key={group.label} className="bg-surface-02 rounded-2xl border border-surface-03 p-6">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Icon size={16} className={group.accent} />
+                          <h3 className="text-cream font-semibold text-sm">{group.label}</h3>
+                        </div>
+                        <p className="text-stone text-xs mb-4">{group.description}</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {group.fields.map(({ key, label }) => (
+                            <ColorRow
+                              key={key}
+                              label={label}
+                              value={theme[key as keyof ThemeSettings] as string}
+                              onChange={(v) => handleChange(key, v)}
+                            />
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {/* Live preview */}
                 <div className="space-y-4">
-                  <div className="bg-surface-02 rounded-2xl border border-surface-03 p-5 sticky top-0">
+                  <div className="bg-surface-02 rounded-2xl border border-surface-03 p-5 lg:sticky lg:top-6">
                     <h3 className="text-cream font-semibold text-sm mb-4">Preview ao vivo</h3>
                     <LivePreview theme={theme} />
                   </div>
