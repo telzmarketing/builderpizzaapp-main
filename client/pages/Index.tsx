@@ -246,25 +246,25 @@ export default function Home() {
       </div>
 
       {/* ── Promo Banner (only if homeConfig.showPromotions) ── */}
-      {homeConfig.showPromotions && <div className="px-4 pt-3 pb-2">
-        <div className="max-w-sm mx-auto">
+      {homeConfig.showPromotions && <div className="px-4 lg:px-8 pt-4 pb-3">
+        <div className="max-w-sm lg:max-w-4xl mx-auto">
           <div
-            className="bg-gradient-to-r from-slate-800 to-slate-700 rounded-2xl px-4 py-3 flex items-center gap-3 overflow-hidden relative"
+            className="bg-gradient-to-r from-slate-800 to-slate-700 rounded-2xl px-4 py-3 lg:px-10 lg:py-6 flex items-center gap-3 lg:gap-8 overflow-hidden relative"
             style={media.heroBannerImage ? { backgroundImage: `url(${media.heroBannerImage})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
           >
             {/* Icon */}
-            <div className="w-16 h-16 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-xl bg-white/5">
+            <div className="w-16 h-16 lg:w-28 lg:h-28 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-xl bg-white/5">
               {renderIcon(displayBanner?.icon, 0, "md")}
             </div>
 
             {/* Text */}
             <div className="flex-1 min-w-0">
-              <p className="text-xs text-parchment/80 truncate">{displayBanner?.title || "Promoção"}</p>
-              <p className="text-base font-bold text-cream leading-tight line-clamp-2">
+              <p className="text-xs lg:text-sm text-parchment/80 truncate">{displayBanner?.title || "Promoção"}</p>
+              <p className="text-base lg:text-3xl font-bold text-cream leading-tight line-clamp-2">
                 {displayBanner?.subtitle || "Em qualquer pizza"}
               </p>
               {((displayBanner as any)?.validity_text || home.bannerValidityText) && (
-                <p className="text-[10px] text-stone mt-0.5 truncate">
+                <p className="text-[10px] lg:text-sm text-stone mt-0.5 lg:mt-1.5 truncate">
                   {(displayBanner as any)?.validity_text || home.bannerValidityText}
                 </p>
               )}
@@ -275,7 +275,7 @@ export default function Home() {
               <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
                 <button
                   onClick={() => setActiveBannerIndex((prev) => (prev - 1 + activePromotions.length) % activePromotions.length)}
-                  className="w-6 h-6 rounded-full bg-surface-03/80 text-stone hover:text-cream flex items-center justify-center"
+                  className="w-6 h-6 lg:w-8 lg:h-8 rounded-full bg-surface-03/80 text-stone hover:text-cream flex items-center justify-center"
                 >
                   <ChevronLeft size={13} />
                 </button>
@@ -290,7 +290,7 @@ export default function Home() {
                 </div>
                 <button
                   onClick={() => setActiveBannerIndex((prev) => (prev + 1) % activePromotions.length)}
-                  className="w-6 h-6 rounded-full bg-surface-03/80 text-stone hover:text-cream flex items-center justify-center"
+                  className="w-6 h-6 lg:w-8 lg:h-8 rounded-full bg-surface-03/80 text-stone hover:text-cream flex items-center justify-center"
                 >
                   <ChevronRight size={13} />
                 </button>
@@ -301,20 +301,20 @@ export default function Home() {
       </div>}
 
       {/* ── Content ── */}
-      <div className="px-4 pb-32 max-w-lg mx-auto w-full">
+      <div className="px-4 lg:px-8 pb-32 max-w-lg lg:max-w-5xl mx-auto w-full">
         {/* Section Title */}
         <div className="mt-4 mb-3">
-          <p className="text-stone text-xs">{sectionSubtitle}</p>
-          <h2 className="text-xl font-bold text-cream mt-0.5">{sectionTitle}</h2>
+          <p className="text-stone text-xs lg:text-sm">{sectionSubtitle}</p>
+          <h2 className="text-xl lg:text-3xl font-bold text-cream mt-0.5">{sectionTitle}</h2>
         </div>
 
         {/* Category Pills */}
-        <div className="flex gap-2 mb-5 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4">
+        <div className="flex gap-2 mb-5 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4 lg:mx-0 lg:px-0 lg:flex-wrap">
           {effectiveCategories.map((category) => (
             <button
               key={category}
               onClick={() => setActiveCategory(category)}
-              className={`px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+              className={`px-3.5 py-1.5 lg:px-5 lg:py-2 rounded-full text-sm lg:text-base font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                 activeCategory === category
                   ? "bg-gold text-cream shadow-lg shadow-gold/20"
                   : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
@@ -333,10 +333,47 @@ export default function Home() {
           </div>
         )}
 
-        {/* Product Carousel */}
+        {/* ── Desktop Grid (lg+) ── */}
+        {categoryProducts.length > 0 && (
+          <div className="hidden lg:grid lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {categoryProducts.map((product, index) => (
+              <button
+                key={product.id}
+                onClick={() => handlePizzaClick(product.id)}
+                className={`w-full bg-surface-02 rounded-2xl p-5 shadow-lg hover:shadow-xl border border-surface-03 hover:border-gold/30 transition-all duration-300 text-left ${
+                  clickedPizza === product.id ? "scale-105 shadow-gold/30" : "hover:scale-[1.02]"
+                }`}
+              >
+                <div className="w-28 h-28 mx-auto mb-4 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
+                  {renderIcon(product.icon, index, "lg")}
+                </div>
+                <p className="text-cream font-bold text-center text-base leading-snug line-clamp-1">
+                  {product.name}
+                </p>
+                <div className="flex justify-center gap-0.5 mt-1.5 mb-2">
+                  {[...Array(5)].map((_, i) => (
+                    <Star
+                      key={i}
+                      size={13}
+                      className={i < Math.floor(product.rating || 0) ? "fill-yellow-400 text-yellow-400" : "text-slate-600"}
+                    />
+                  ))}
+                </div>
+                <p className="text-gold font-bold text-center text-base">
+                  R$ {product.price.toFixed(2)}
+                </p>
+                <p className="text-xs text-stone text-center mt-1 leading-tight line-clamp-2">
+                  {product.description}
+                </p>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── Mobile Carousel (hidden on lg+) ── */}
         {categoryProducts.length > 0 && (
           <div
-            className="relative overflow-hidden select-none"
+            className="relative overflow-hidden select-none lg:hidden"
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
