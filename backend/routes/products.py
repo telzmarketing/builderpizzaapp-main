@@ -16,6 +16,31 @@ from backend.routes.admin_auth import get_current_admin
 router = APIRouter(prefix="/products", tags=["products"])
 
 
+@router.get("/config/multi-flavors", response_model=MultiFlavorsConfigOut)
+def get_multi_flavors_config(db: Session = Depends(get_db)):
+    config = db.query(MultiFlavorsConfig).filter(MultiFlavorsConfig.id == "default").first()
+    if not config:
+        config = MultiFlavorsConfig(id="default")
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+    return config
+
+
+@router.patch("/config/multi-flavors", response_model=MultiFlavorsConfigOut)
+def update_multi_flavors_config(body: MultiFlavorsConfigUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    config = db.query(MultiFlavorsConfig).filter(MultiFlavorsConfig.id == "default").first()
+    if not config:
+        config = MultiFlavorsConfig(id="default")
+        db.add(config)
+        db.flush()
+    for key, value in body.model_dump(exclude_none=True).items():
+        setattr(config, key, value)
+    db.commit()
+    db.refresh(config)
+    return config
+
+
 @router.get("", response_model=list[ProductOut])
 def list_products(active_only: bool = True, db: Session = Depends(get_db)):
     q = db.query(Product)
@@ -62,8 +87,6 @@ def delete_product(product_id: str, db: Session = Depends(get_db), _=Depends(get
     db.commit()
 
 
-# ── Product Sizes ─────────────────────────────────────────────────────────────
-
 @router.get("/{product_id}/sizes", response_model=list[ProductSizeOut])
 def list_sizes(product_id: str, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -104,8 +127,6 @@ def delete_size(product_id: str, size_id: str, db: Session = Depends(get_db), _=
     db.delete(size)
     db.commit()
 
-
-# ── Pizza Crust Types ─────────────────────────────────────────────────────────
 
 @router.get("/{product_id}/crusts", response_model=list[ProductCrustTypeOut])
 def list_crusts(product_id: str, db: Session = Depends(get_db)):
@@ -153,8 +174,6 @@ def delete_crust(product_id: str, crust_id: str, db: Session = Depends(get_db), 
     db.commit()
 
 
-# ── Drink Variants ────────────────────────────────────────────────────────────
-
 @router.get("/{product_id}/drink-variants", response_model=list[ProductDrinkVariantOut])
 def list_drink_variants(product_id: str, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -199,30 +218,3 @@ def delete_drink_variant(product_id: str, variant_id: str, db: Session = Depends
         raise HTTPException(404, "Variante não encontrada.")
     db.delete(variant)
     db.commit()
-
-
-# ── Multi-flavor config ───────────────────────────────────────────────────────
-
-@router.get("/config/multi-flavors", response_model=MultiFlavorsConfigOut)
-def get_multi_flavors_config(db: Session = Depends(get_db)):
-    config = db.query(MultiFlavorsConfig).filter(MultiFlavorsConfig.id == "default").first()
-    if not config:
-        config = MultiFlavorsConfig(id="default")
-        db.add(config)
-        db.commit()
-        db.refresh(config)
-    return config
-
-
-@router.patch("/config/multi-flavors", response_model=MultiFlavorsConfigOut)
-def update_multi_flavors_config(body: MultiFlavorsConfigUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    config = db.query(MultiFlavorsConfig).filter(MultiFlavorsConfig.id == "default").first()
-    if not config:
-        config = MultiFlavorsConfig(id="default")
-        db.add(config)
-        db.flush()
-    for key, value in body.model_dump(exclude_none=True).items():
-        setattr(config, key, value)
-    db.commit()
-    db.refresh(config)
-    return config
