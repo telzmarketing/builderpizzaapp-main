@@ -14,9 +14,9 @@ function Field({
 }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-slate-300 text-sm font-medium mb-1.5">{label}</label>
+      <label className="block text-parchment text-sm font-medium mb-1.5">{label}</label>
       {children}
-      {hint && <p className="text-slate-500 text-xs mt-1">{hint}</p>}
+      {hint && <p className="text-stone text-xs mt-1">{hint}</p>}
     </div>
   );
 }
@@ -24,7 +24,7 @@ function Field({
 function TextInput({
   value, onChange, placeholder, multiline = false,
 }: { value: string; onChange: (v: string) => void; placeholder?: string; multiline?: boolean }) {
-  const cls = "w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500 text-sm";
+  const cls = "w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream placeholder-stone focus:outline-none focus:border-gold text-sm";
   if (multiline) {
     return (
       <textarea
@@ -58,23 +58,23 @@ function Section({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+    <div className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full px-6 py-4 flex items-center gap-4 hover:bg-slate-750 transition-colors text-left"
+        className="w-full px-6 py-4 flex items-center gap-4 hover:bg-surface-03 transition-colors text-left"
       >
-        <span className="text-orange-500 flex-shrink-0">{icon}</span>
+        <span className="text-gold flex-shrink-0">{icon}</span>
         <div className="flex-1 min-w-0">
-          <h3 className="text-white font-bold text-base">{title}</h3>
-          <p className="text-slate-400 text-sm">{subtitle}</p>
+          <h3 className="text-cream font-bold text-base">{title}</h3>
+          <p className="text-stone text-sm">{subtitle}</p>
         </div>
         {open ? (
-          <ChevronDown size={18} className="text-slate-400 flex-shrink-0" />
+          <ChevronDown size={18} className="text-stone flex-shrink-0" />
         ) : (
-          <ChevronRight size={18} className="text-slate-400 flex-shrink-0" />
+          <ChevronRight size={18} className="text-stone flex-shrink-0" />
         )}
       </button>
-      {open && <div className="px-6 pb-6 pt-2 border-t border-slate-700 space-y-4">{children}</div>}
+      {open && <div className="px-6 pb-6 pt-2 border-t border-surface-03 space-y-4">{children}</div>}
     </div>
   );
 }
@@ -158,35 +158,35 @@ export default function AdminConteudo() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
       <div className="flex h-screen">
         <AdminSidebar />
 
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* ── Top bar ── */}
-          <div className="bg-slate-800 px-8 py-4 border-b border-slate-700 flex items-center justify-between flex-shrink-0">
+          <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 flex items-center justify-between flex-shrink-0">
             <div>
-              <h2 className="text-2xl font-bold text-white">Conteúdo do Site</h2>
-              <p className="text-slate-400 text-sm">Gerencie todos os textos e imagens exibidos no app</p>
+              <h2 className="text-2xl font-bold text-cream">Conteúdo do Site</h2>
+              <p className="text-stone text-sm">Gerencie todos os textos e imagens exibidos no app</p>
             </div>
             <div className="flex items-center gap-3">
               <button
                 onClick={handleResetToDefaults}
-                className="px-3 py-2 rounded-lg border border-slate-600 text-slate-400 hover:border-slate-500 text-sm transition-colors"
+                className="px-3 py-2 rounded-lg border border-surface-03 text-stone hover:border-surface-02 text-sm transition-colors"
                 title="Redefinir para padrões"
               >
                 <RefreshCw size={15} />
               </button>
               <button
                 onClick={handleReset}
-                className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 text-sm transition-colors"
+                className="px-4 py-2 rounded-lg border border-surface-03 text-parchment hover:border-surface-02 text-sm transition-colors"
               >
                 Descartar
               </button>
               <button
                 onClick={handleSave}
                 className={`flex items-center gap-2 px-5 py-2 rounded-lg font-bold text-sm transition-colors ${
-                  saved ? "bg-green-500 text-white" : "bg-orange-500 hover:bg-orange-600 text-white"
+                  saved ? "bg-green-500 text-cream" : "bg-gold hover:bg-gold/90 text-cream"
                 }`}
               >
                 <Save size={16} />
@@ -196,7 +196,7 @@ export default function AdminConteudo() {
           </div>
 
           {/* ── Tab bar ── */}
-          <div className="bg-slate-800/50 border-b border-slate-700 px-8 flex-shrink-0">
+          <div className="bg-surface-02/50 border-b border-surface-03 px-8 flex-shrink-0">
             <div className="flex gap-1">
               {TABS.map((tab) => (
                 <button
@@ -204,8 +204,8 @@ export default function AdminConteudo() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === tab.id
-                      ? "border-orange-500 text-orange-400"
-                      : "border-transparent text-slate-400 hover:text-slate-300"
+                      ? "border-gold text-gold"
+                      : "border-transparent text-stone hover:text-parchment"
                   }`}
                 >
                   {tab.icon}
@@ -222,12 +222,12 @@ export default function AdminConteudo() {
             {activeTab === "marca_midia" && (
               <div className="max-w-2xl space-y-6">
                 {/* Identidade da Marca */}
-                <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 space-y-5">
-                  <div className="flex items-center gap-3 pb-3 border-b border-slate-700">
-                    <Palette size={20} className="text-orange-500" />
+                <div className="bg-surface-02 rounded-xl border border-surface-03 p-6 space-y-5">
+                  <div className="flex items-center gap-3 pb-3 border-b border-surface-03">
+                    <Palette size={20} className="text-gold" />
                     <div>
-                      <h3 className="text-white font-bold">Identidade da Marca</h3>
-                      <p className="text-slate-400 text-sm">Nome, slogan e logo exibidos em todo o app</p>
+                      <h3 className="text-cream font-bold">Identidade da Marca</h3>
+                      <p className="text-stone text-sm">Nome, slogan e logo exibidos em todo o app</p>
                     </div>
                   </div>
 
@@ -276,12 +276,12 @@ export default function AdminConteudo() {
                 </div>
 
                 {/* Imagens do Aplicativo */}
-                <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 space-y-6">
-                  <div className="flex items-center gap-3 pb-3 border-b border-slate-700">
-                    <Image size={20} className="text-orange-500" />
+                <div className="bg-surface-02 rounded-xl border border-surface-03 p-6 space-y-6">
+                  <div className="flex items-center gap-3 pb-3 border-b border-surface-03">
+                    <Image size={20} className="text-gold" />
                     <div>
-                      <h3 className="text-white font-bold">Imagens do Aplicativo</h3>
-                      <p className="text-slate-400 text-sm">Imagens usadas no frontend. Deixe em branco para usar o padrão.</p>
+                      <h3 className="text-cream font-bold">Imagens do Aplicativo</h3>
+                      <p className="text-stone text-sm">Imagens usadas no frontend. Deixe em branco para usar o padrão.</p>
                     </div>
                   </div>
 
@@ -301,12 +301,12 @@ export default function AdminConteudo() {
             {/* ═══════════════════ HOME ═══════════════════ */}
             {activeTab === "home" && (
               <div className="max-w-2xl space-y-6">
-                <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 space-y-5">
-                  <div className="flex items-center gap-3 pb-3 border-b border-slate-700">
-                    <Home size={20} className="text-orange-500" />
+                <div className="bg-surface-02 rounded-xl border border-surface-03 p-6 space-y-5">
+                  <div className="flex items-center gap-3 pb-3 border-b border-surface-03">
+                    <Home size={20} className="text-gold" />
                     <div>
-                      <h3 className="text-white font-bold">Página Inicial</h3>
-                      <p className="text-slate-400 text-sm">Textos da seção de produtos e banner promocional</p>
+                      <h3 className="text-cream font-bold">Página Inicial</h3>
+                      <p className="text-stone text-sm">Textos da seção de produtos e banner promocional</p>
                     </div>
                   </div>
 
@@ -334,9 +334,9 @@ export default function AdminConteudo() {
                         max={60}
                         value={draft.home.bannerRotationInterval ?? 5}
                         onChange={(e) => set(["home", "bannerRotationInterval"], Math.max(0, parseInt(e.target.value) || 0))}
-                        className="w-24 bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500 text-sm"
+                        className="w-24 bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream placeholder-stone focus:outline-none focus:border-gold text-sm"
                       />
-                      <span className="text-slate-400 text-sm">segundos</span>
+                      <span className="text-stone text-sm">segundos</span>
                       {(draft.home.bannerRotationInterval ?? 5) === 0 && (
                         <span className="text-amber-400 text-xs">Rotação desativada</span>
                       )}
@@ -346,11 +346,11 @@ export default function AdminConteudo() {
 
                 </div>
 
-                <div className="bg-slate-800/60 rounded-xl border border-slate-700 p-4">
-                  <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-3">Pré-visualização</p>
+                <div className="bg-surface-02/60 rounded-xl border border-surface-03 p-4">
+                  <p className="text-stone text-xs font-bold uppercase tracking-wider mb-3">Pré-visualização</p>
                   <div className="space-y-1">
-                    <p className="text-slate-400 text-sm">{draft.home.sectionSubtitle}</p>
-                    <p className="text-white font-bold text-xl">{draft.home.sectionTitle}</p>
+                    <p className="text-stone text-sm">{draft.home.sectionSubtitle}</p>
+                    <p className="text-cream font-bold text-xl">{draft.home.sectionTitle}</p>
                   </div>
                 </div>
               </div>
@@ -359,12 +359,12 @@ export default function AdminConteudo() {
             {/* ═══════════════════ NAVEGAÇÃO ═══════════════════ */}
             {activeTab === "nav" && (
               <div className="max-w-2xl space-y-6">
-                <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 space-y-5">
-                  <div className="flex items-center gap-3 pb-3 border-b border-slate-700">
-                    <Navigation size={20} className="text-orange-500" />
+                <div className="bg-surface-02 rounded-xl border border-surface-03 p-6 space-y-5">
+                  <div className="flex items-center gap-3 pb-3 border-b border-surface-03">
+                    <Navigation size={20} className="text-gold" />
                     <div>
-                      <h3 className="text-white font-bold">Barra de Navegação</h3>
-                      <p className="text-slate-400 text-sm">Rótulos dos botões do menu inferior</p>
+                      <h3 className="text-cream font-bold">Barra de Navegação</h3>
+                      <p className="text-stone text-sm">Rótulos dos botões do menu inferior</p>
                     </div>
                   </div>
 
@@ -384,13 +384,13 @@ export default function AdminConteudo() {
                 </div>
 
                 {/* Preview */}
-                <div className="bg-slate-800/60 rounded-xl border border-slate-700 p-4">
-                  <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-3">Pré-visualização da barra</p>
-                  <div className="bg-orange-500 rounded-full py-3 px-6 flex justify-around items-center">
+                <div className="bg-surface-02/60 rounded-xl border border-surface-03 p-4">
+                  <p className="text-stone text-xs font-bold uppercase tracking-wider mb-3">Pré-visualização da barra</p>
+                  <div className="bg-gold rounded-full py-3 px-6 flex justify-around items-center">
                     {(["home", "cart", "orders", "account"] as const).map((key, i) => {
                       const icons: Record<string, string> = { home: "🏠", cart: "🛒", orders: "📦", account: "👤" };
                       return (
-                        <div key={key} className={`flex flex-col items-center gap-0.5 ${i === 0 ? "text-white" : "text-white/60"}`}>
+                        <div key={key} className={`flex flex-col items-center gap-0.5 ${i === 0 ? "text-cream" : "text-cream/60"}`}>
                           <span className="text-lg">{icons[key]}</span>
                           <span className="text-xs font-medium">{draft.nav[key]}</span>
                         </div>
@@ -444,8 +444,8 @@ export default function AdminConteudo() {
                       <TextInput value={draft.pages.checkout.summaryTitle} onChange={(v) => set(["pages", "checkout", "summaryTitle"], v)} placeholder="Resumo do Pedido" />
                     </Field>
                   </div>
-                  <div className="border-t border-slate-700 pt-4">
-                    <p className="text-slate-300 text-xs font-bold uppercase tracking-wider mb-3">Placeholders dos campos</p>
+                  <div className="border-t border-surface-03 pt-4">
+                    <p className="text-parchment text-xs font-bold uppercase tracking-wider mb-3">Placeholders dos campos</p>
                     <div className="space-y-3">
                       {(["name", "phone", "address", "city", "complement"] as const).map((f) => {
                         const labels: Record<string, string> = { name: "Nome", phone: "Telefone", address: "Endereço", city: "Cidade", complement: "Complemento" };
@@ -579,12 +579,12 @@ export default function AdminConteudo() {
             {/* ═══════════════════ RASTREAMENTO ═══════════════════ */}
             {activeTab === "rastreamento" && (
               <div className="max-w-3xl space-y-6">
-                <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 space-y-4">
-                  <div className="flex items-center gap-3 pb-3 border-b border-slate-700">
-                    <Activity size={20} className="text-orange-500" />
+                <div className="bg-surface-02 rounded-xl border border-surface-03 p-6 space-y-4">
+                  <div className="flex items-center gap-3 pb-3 border-b border-surface-03">
+                    <Activity size={20} className="text-gold" />
                     <div>
-                      <h3 className="text-white font-bold">Textos Gerais</h3>
-                      <p className="text-slate-400 text-sm">Cabeçalhos da página de acompanhamento de pedido</p>
+                      <h3 className="text-cream font-bold">Textos Gerais</h3>
+                      <p className="text-stone text-sm">Cabeçalhos da página de acompanhamento de pedido</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -600,20 +600,20 @@ export default function AdminConteudo() {
                   </Field>
                 </div>
 
-                <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-700 flex items-center gap-3">
-                    <Activity size={18} className="text-orange-500" />
+                <div className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-surface-03 flex items-center gap-3">
+                    <Activity size={18} className="text-gold" />
                     <div>
-                      <h3 className="text-white font-bold">Rótulos e Descrições por Status</h3>
-                      <p className="text-slate-400 text-sm">Texto exibido em cada etapa do ciclo de vida do pedido</p>
+                      <h3 className="text-cream font-bold">Rótulos e Descrições por Status</h3>
+                      <p className="text-stone text-sm">Texto exibido em cada etapa do ciclo de vida do pedido</p>
                     </div>
                   </div>
                   <div className="divide-y divide-slate-700">
                     {trackingStatuses.map(({ key, ptLabel }) => (
                       <div key={key} className="px-6 py-4 grid grid-cols-2 gap-4 items-start">
                         <div>
-                          <p className="text-slate-400 text-xs font-mono mb-1.5">
-                            <span className="bg-slate-700 px-1.5 py-0.5 rounded text-orange-400">{key}</span>
+                          <p className="text-stone text-xs font-mono mb-1.5">
+                            <span className="bg-surface-03 px-1.5 py-0.5 rounded text-gold">{key}</span>
                             {" "}· {ptLabel}
                           </p>
                           <Field label="Rótulo do status">

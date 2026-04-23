@@ -95,6 +95,15 @@ def _run_migrations():
         # ── Theme settings ────────────────────────────────────────────────
         'CREATE TABLE IF NOT EXISTS theme_settings (id VARCHAR PRIMARY KEY DEFAULT \'default\', "primary" VARCHAR(20) NOT NULL DEFAULT \'#f97316\', secondary VARCHAR(20) NOT NULL DEFAULT \'#2d3d56\', background_main VARCHAR(20) NOT NULL DEFAULT \'#0c1220\', background_alt VARCHAR(20) NOT NULL DEFAULT \'#111827\', background_card VARCHAR(20) NOT NULL DEFAULT \'#1e2a3b\', text_primary VARCHAR(20) NOT NULL DEFAULT \'#f8fafc\', text_secondary VARCHAR(20) NOT NULL DEFAULT \'#e2e8f0\', text_muted VARCHAR(20) NOT NULL DEFAULT \'#94a3b8\', status_success VARCHAR(20) NOT NULL DEFAULT \'#22c55e\', status_error VARCHAR(20) NOT NULL DEFAULT \'#ef4444\', status_warning VARCHAR(20) NOT NULL DEFAULT \'#f59e0b\', status_info VARCHAR(20) NOT NULL DEFAULT \'#3b82f6\', border VARCHAR(20) NOT NULL DEFAULT \'#2d3d56\', interaction_hover VARCHAR(20) NOT NULL DEFAULT \'#fb923c\', interaction_active VARCHAR(20) NOT NULL DEFAULT \'#ea6f10\', interaction_focus VARCHAR(20) NOT NULL DEFAULT \'#f97316\', navbar VARCHAR(20) NOT NULL DEFAULT \'#111827\', footer VARCHAR(20) NOT NULL DEFAULT \'#0c1220\', sidebar VARCHAR(20) NOT NULL DEFAULT \'#111827\', modal VARCHAR(20) NOT NULL DEFAULT \'#1e2a3b\', overlay VARCHAR(20) NOT NULL DEFAULT \'#000000\', badge VARCHAR(20) NOT NULL DEFAULT \'#f97316\', tag VARCHAR(20) NOT NULL DEFAULT \'#2d3d56\', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())',
         "INSERT INTO theme_settings (id) VALUES ('default') ON CONFLICT DO NOTHING",
+        # ── Chatbot automations: corrige mismatch de colunas da migration original ─
+        # A migration criou condicao_json/delay_segundos; o modelo usa condicao/prioridade/updated_at
+        "ALTER TABLE chatbot_automations ADD COLUMN IF NOT EXISTS condicao TEXT DEFAULT '{}'",
+        "ALTER TABLE chatbot_automations ADD COLUMN IF NOT EXISTS prioridade INTEGER DEFAULT 0",
+        "ALTER TABLE chatbot_automations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
+        # Chatbot handoffs: migration usou admin_user_id, modelo usa operador_id
+        "ALTER TABLE chatbot_handoffs ADD COLUMN IF NOT EXISTS operador_id VARCHAR REFERENCES admin_users(id) ON DELETE SET NULL",
+        # Chatbot knowledge docs: migration não incluiu busca_vetor
+        "ALTER TABLE chatbot_knowledge_docs ADD COLUMN IF NOT EXISTS busca_vetor TSVECTOR",
         # ── Product type + crust/drink variant tables ─────────────────────
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS product_type VARCHAR(20)",
         "CREATE TABLE IF NOT EXISTS product_crust_types (id VARCHAR PRIMARY KEY, product_id VARCHAR NOT NULL REFERENCES products(id) ON DELETE CASCADE, name VARCHAR(100) NOT NULL, price_addition FLOAT DEFAULT 0.0, active BOOLEAN DEFAULT TRUE, sort_order INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW())",
