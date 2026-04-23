@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Home, Save, Loader2, Check, List, Tag, Package, Eye, EyeOff } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
-import { homeCatalogApi } from "@/lib/api";
+import { homeCatalogApi, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { useApp } from "@/context/AppContext";
 
 type CatalogMode = "all" | "categories" | "products";
@@ -291,8 +291,8 @@ export default function AdminHomeConfig() {
                                 }`}
                               >
                                 <div className="w-11 h-11 rounded-xl bg-surface-03 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                  {p.icon?.startsWith("data:") || p.icon?.startsWith("http")
-                                    ? <img src={p.icon} alt="" className="w-full h-full object-contain" />
+                                  {isAssetUrl(p.icon)
+                                    ? <img src={resolveAssetUrl(p.icon)} alt="" className="w-full h-full object-contain" />
                                     : <span className="text-xl">{p.icon || "🍕"}</span>}
                                 </div>
                                 <div className="flex-1 min-w-0">

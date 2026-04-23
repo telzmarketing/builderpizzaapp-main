@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Menu, Search, Star, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, Tag, Heart, UtensilsCrossed } from "lucide-react";
 
 import { useApp } from "@/context/AppContext";
-import { homeCatalogApi } from "@/lib/api";
+import { homeCatalogApi, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 
@@ -129,10 +129,10 @@ export default function Home() {
 
   const renderIcon = (icon: string | undefined, index: number, size: "sm" | "md" | "lg" = "md") => {
     const resolved = getIcon(icon, index);
-    const isImage = resolved.startsWith("data:") || resolved.startsWith("http");
+    const isImage = isAssetUrl(resolved);
     const textCls = size === "lg" ? "text-5xl pizza-spin" : "text-4xl pizza-spin";
     return isImage
-      ? <img src={resolved} alt="" className="w-full h-full object-contain pizza-spin" />
+      ? <img src={resolveAssetUrl(resolved)} alt="" className="w-full h-full object-contain pizza-spin" />
       : <span className={textCls}>{resolved}</span>;
   };
 
@@ -249,8 +249,10 @@ export default function Home() {
       {homeConfig.showPromotions && <div className="px-4 lg:px-8 pt-4 pb-3">
         <div className="max-w-sm lg:max-w-4xl mx-auto">
           <div
-            className="bg-gradient-to-r from-slate-800 to-slate-700 rounded-2xl px-4 py-3 lg:px-10 lg:py-6 flex items-center gap-3 lg:gap-8 overflow-hidden relative"
-            style={media.heroBannerImage ? { backgroundImage: `url(${media.heroBannerImage})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
+            className="rounded-2xl px-4 py-3 lg:px-10 lg:py-6 flex items-center gap-3 lg:gap-8 overflow-hidden relative"
+            style={media.heroBannerImage
+              ? { backgroundImage: `url(${resolveAssetUrl(media.heroBannerImage)})`, backgroundSize: "cover", backgroundPosition: "center" }
+              : { background: "var(--home-banner-bg)" }}
           >
             {/* Icon */}
             <div className="w-16 h-16 lg:w-28 lg:h-28 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-xl bg-white/5">

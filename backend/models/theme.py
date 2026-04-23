@@ -46,6 +46,7 @@ class ThemeSettings(Base):
     overlay             = Column(String(20), nullable=False, default="#000000")
     badge               = Column(String(20), nullable=False, default="#f97316")
     tag                 = Column(String(20), nullable=False, default="#2d3d56")
+    home_banner_background = Column(String(20), nullable=False, default="#1f2937")
 
     created_at          = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at          = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),

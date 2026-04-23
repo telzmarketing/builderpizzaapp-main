@@ -3,7 +3,9 @@
     "allow": [
       "Bash(ls e:/Downloads/lojamoschettieri/builderpizzaapp-main/builderpizzaapp-main/.env*)",
       "Bash(node -e ' *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('deps:', list\\(d.get\\('dependencies',{}\\).keys\\(\\)\\)[:20]\\)\")",
+      "Bash(git push *)"
     ]
   }
 }

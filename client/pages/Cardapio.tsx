@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, Search, Star, Plus, Check } from "lucide-react";
 import { useApp } from "@/context/AppContext";
+import { isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 
@@ -100,8 +101,8 @@ export default function Cardapio() {
                   className="w-full text-left"
                 >
                   <div className="w-full aspect-square rounded-xl bg-surface-03 flex items-center justify-center overflow-hidden mb-3">
-                    {product.icon && (product.icon.startsWith("data:") || product.icon.startsWith("http")) ? (
-                      <img src={product.icon} alt={product.name} className="w-full h-full object-cover" />
+                    {isAssetUrl(product.icon) ? (
+                      <img src={resolveAssetUrl(product.icon)} alt={product.name} className="w-full h-full object-cover" />
                     ) : (
                       <span className="text-5xl">{product.icon || "🍕"}</span>
                     )}

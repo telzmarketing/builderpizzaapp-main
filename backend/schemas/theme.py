@@ -37,6 +37,7 @@ class ThemeSettingsOut(BaseModel):
     overlay: str
     badge: str
     tag: str
+    home_banner_background: str
     updated_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
@@ -66,6 +67,7 @@ class ThemeSettingsUpdate(BaseModel):
     overlay: Optional[str] = None
     badge: Optional[str] = None
     tag: Optional[str] = None
+    home_banner_background: Optional[str] = None
 
     @field_validator(
         "primary", "secondary",
@@ -74,7 +76,7 @@ class ThemeSettingsUpdate(BaseModel):
         "status_success", "status_error", "status_warning", "status_info",
         "border",
         "interaction_hover", "interaction_active", "interaction_focus",
-        "navbar", "footer", "sidebar", "modal", "overlay", "badge", "tag",
+        "navbar", "footer", "sidebar", "modal", "overlay", "badge", "tag", "home_banner_background",
         mode="before",
     )
     @classmethod

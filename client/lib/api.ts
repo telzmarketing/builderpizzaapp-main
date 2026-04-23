@@ -7,6 +7,21 @@
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
+export function isAssetUrl(value?: string | null): boolean {
+  return !!value && (
+    value.startsWith("data:") ||
+    value.startsWith("http") ||
+    value.startsWith("/")
+  );
+}
+
+export function resolveAssetUrl(value?: string | null): string {
+  if (!value) return "";
+  if (value.startsWith("http") || value.startsWith("data:")) return value;
+  if (value.startsWith("/")) return `${BASE}${value}`;
+  return value;
+}
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 function authHeaders(): HeadersInit {

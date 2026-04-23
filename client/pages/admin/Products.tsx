@@ -3,7 +3,7 @@ import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat,
 import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import ImageUpload from "@/components/admin/ImageUpload";
-import { sizesApi, crustApi, drinkVariantApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant } from "@/lib/api";
+import { sizesApi, crustApi, drinkVariantApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 
 const PRICING_OPTIONS: { value: PricingRule; label: string; description: string }[] = [
   { value: "most_expensive", label: "Mais Caro", description: "Cliente paga pelo sabor mais caro (padrão iFood)" },
@@ -471,8 +471,8 @@ export default function AdminProducts() {
                       <div key={product.id} className="bg-surface-02 rounded-xl p-6 border border-surface-03">
                         <div className="flex items-start gap-3 mb-3">
                           <div className="w-14 h-14 rounded-xl bg-surface-03 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                            {product.icon?.startsWith("data:") || product.icon?.startsWith("http") || product.icon?.startsWith("/") ? (
-                              <img src={product.icon} alt={product.name} className="w-full h-full object-contain" />
+                            {isAssetUrl(product.icon) ? (
+                              <img src={resolveAssetUrl(product.icon)} alt={product.name} className="w-full h-full object-contain" />
                             ) : (
                               <span className="text-3xl">{product.icon || getTypeIcon(pType)}</span>
                             )}

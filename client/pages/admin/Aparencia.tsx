@@ -63,6 +63,8 @@ const GROUPS: ColorGroup[] = [
   },
 ];
 
+GROUPS[1]?.fields.push({ key: "home_banner_background", label: "Fundo do Banner Home" });
+
 export default function AdminAparencia() {
   const [theme, setTheme]       = useState<ThemeSettings>(DEFAULT_THEME);
   const [saved, setSaved]       = useState<ThemeSettings>(DEFAULT_THEME);
@@ -262,6 +264,11 @@ function LivePreview({ theme }: { theme: ThemeSettings }) {
             Adicionar
           </button>
         </div>
+      </div>
+
+      <div className="rounded-xl p-3 border border-white/10" style={{ background: theme.home_banner_background }}>
+        <p style={{ color: theme.text_secondary }} className="text-[10px] uppercase tracking-wide">Banner Home</p>
+        <p style={{ color: theme.text_primary }} className="font-semibold mt-1">Cor aplicada no topo da home</p>
       </div>
 
       {/* Status badges */}

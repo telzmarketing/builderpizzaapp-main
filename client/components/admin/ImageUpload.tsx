@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Upload, X } from "lucide-react";
-import { uploadApi } from "@/lib/api";
+import { uploadApi, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 
 interface Props {
   value: string;
@@ -38,10 +38,7 @@ export default function ImageUpload({ value, onChange, label, hint, sizeGuide, m
     }
   };
 
-  const isImage =
-    value?.startsWith("data:") ||
-    value?.startsWith("http") ||
-    value?.startsWith("/");
+  const isImage = isAssetUrl(value);
 
   return (
     <div>
@@ -49,7 +46,7 @@ export default function ImageUpload({ value, onChange, label, hint, sizeGuide, m
       <div className="flex items-center gap-4">
         <div className={`w-16 h-16 bg-surface-03 border border-surface-03 flex items-center justify-center flex-shrink-0 overflow-hidden ${previewRounded ? "rounded-full" : "rounded-xl"}`}>
           {isImage ? (
-            <img src={value} alt="preview" className="w-full h-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            <img src={resolveAssetUrl(value)} alt="preview" className="w-full h-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
           ) : (
             <span className="text-3xl">{value || "?"}</span>
           )}

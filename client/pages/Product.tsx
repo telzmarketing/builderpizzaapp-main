@@ -3,7 +3,7 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation } from "@/context/AppContext";
-import { sizesApi, crustApi, drinkVariantApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant } from "@/lib/api";
+import { sizesApi, crustApi, drinkVariantApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 
 // ─── Add-ons ──────────────────────────────────────────────────────────────────
 
@@ -43,8 +43,8 @@ function computeFlavorPrice(slots: (Pizza | null)[], division: number, rule: Pri
 
 function SvgIcon({ icon, x, y, size }: { icon: string | undefined; x: number; y: number; size: number }) {
   if (!icon) return <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize={size}>?</text>;
-  if (icon.startsWith("data:") || icon.startsWith("http")) {
-    return <image href={icon} x={x - size / 2} y={y - size / 2} width={size} height={size} />;
+  if (isAssetUrl(icon)) {
+    return <image href={resolveAssetUrl(icon)} x={x - size / 2} y={y - size / 2} width={size} height={size} />;
   }
   return <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize={size}>{icon}</text>;
 }
@@ -132,7 +132,6 @@ export default function Product() {
   const isDrink = productType === "drink";
 
   const [quantity, setQuantity] = useState(1);
-  const [selectedAddOns, setSelectedAddOns] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [division, setDivision] = useState<FlavorDivision>(1);
   const [flavorSlots, setFlavorSlots] = useState<(Pizza | null)[]>([product ?? null, null, null]);
@@ -151,6 +150,7 @@ export default function Product() {
   // Drink variants (drink only)
   const [productDrinkVariants, setProductDrinkVariants] = useState<ApiProductDrinkVariant[]>([]);
   const [selectedDrinkVariant, setSelectedDrinkVariant] = useState<ApiProductDrinkVariant | null>(null);
+  const selectedAddOns: string[] = [];
 
   useEffect(() => {
     if (!product) return;
@@ -204,11 +204,6 @@ export default function Product() {
   const activeFlavors = flavorSlots.slice(0, division);
   const allFilled = activeFlavors.every((f) => f !== null);
 
-  const addOnPrice = useMemo(
-    () => addOns.filter((a) => selectedAddOns.includes(a.id)).reduce((s, a) => s + a.price, 0),
-    [selectedAddOns]
-  );
-
   const flavorPrice = useMemo(() => {
     if (isDrink) {
       // For drinks: price is the size price or product base price
@@ -229,7 +224,7 @@ export default function Product() {
     return 0;
   }, [isPizza, isDrink, selectedCrust, selectedDrinkVariant]);
 
-  const pricePerUnit = flavorPrice + addOnPrice + variantPriceAddition;
+  const pricePerUnit = flavorPrice + variantPriceAddition;
   const totalPrice = pricePerUnit * quantity;
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -261,10 +256,7 @@ export default function Product() {
     setCartError(false);
   };
 
-  const toggleAddOn = (addOnId: string) =>
-    setSelectedAddOns((prev) =>
-      prev.includes(addOnId) ? prev.filter((x) => x !== addOnId) : [...prev, addOnId]
-    );
+  const toggleAddOn = (_addOnId?: string) => {};
 
   const handleAddToCart = () => {
     if (isPizza && !allFilled) {
@@ -299,7 +291,7 @@ export default function Product() {
       flavorSlots[0]!,
       quantity,
       selectedSize,
-      selectedAddOns,
+      [],
       flavors,
       isDrink ? 1 : division,
       pricePerUnit,
@@ -340,8 +332,8 @@ export default function Product() {
         {/* ── Hero Product Image ───────────────────────────────────────────── */}
         <div className="flex flex-col items-center mb-6">
           <div className="w-52 h-52 rounded-full bg-surface-02 border-4 border-surface-03 flex items-center justify-center text-8xl shadow-2xl shadow-black/40 overflow-hidden">
-            {product.icon && (product.icon.startsWith("data:") || product.icon.startsWith("http"))
-              ? <img src={product.icon} alt={product.name} className="w-full h-full object-cover" />
+            {isAssetUrl(product.icon)
+              ? <img src={resolveAssetUrl(product.icon)} alt={product.name} className="w-full h-full object-cover" />
               : <span>{product.icon || "🍕"}</span>}
           </div>
           <h1 className="text-cream text-2xl font-bold mt-4 text-center">{product.name}</h1>
@@ -365,8 +357,8 @@ export default function Product() {
         </div>
 
         {/* ── Pizza: Division Selector ─────────────────────────────────────── */}
-        {isPizza && (
-          <div className="mb-6">
+        {false && isPizza && (
+          <div className="hidden">
             <h3 className="text-cream font-bold mb-3">{p.divisionLabel}</h3>
             <div className="flex gap-2">
               {divisionOptions.map(({ value, label, emoji }) => (
@@ -388,7 +380,7 @@ export default function Product() {
         )}
 
         {/* ── Pizza: Flavor Slots ──────────────────────────────────────────── */}
-        {isPizza && (
+        {false && isPizza && (
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-cream font-bold">
@@ -423,8 +415,8 @@ export default function Product() {
                       }`}
                     >
                       <div className="w-12 h-12 rounded-full bg-surface-03 flex items-center justify-center text-2xl flex-shrink-0 overflow-hidden">
-                        {flavor?.icon && (flavor.icon.startsWith("data:") || flavor.icon.startsWith("http"))
-                          ? <img src={flavor.icon} alt="" className="w-full h-full object-cover" />
+                        {isAssetUrl(flavor?.icon)
+                          ? <img src={resolveAssetUrl(flavor?.icon)} alt="" className="w-full h-full object-cover" />
                           : <span>{flavor?.icon ?? "?"}</span>}
                       </div>
                       <div className="flex-1 text-left">
@@ -461,8 +453,8 @@ export default function Product() {
                                 }`}
                               >
                                 <div className="w-10 h-10 mx-auto mb-1 flex items-center justify-center text-2xl overflow-hidden rounded-lg">
-                                  {p.icon && (p.icon.startsWith("data:") || p.icon.startsWith("http"))
-                                    ? <img src={p.icon} alt="" className="w-full h-full object-cover" />
+                                  {isAssetUrl(p.icon)
+                                    ? <img src={resolveAssetUrl(p.icon)} alt="" className="w-full h-full object-cover" />
                                     : <span>{p.icon || "🍕"}</span>}
                                 </div>
                                 <p className="text-cream text-xs font-medium leading-tight line-clamp-1">{p.name}</p>
@@ -491,8 +483,8 @@ export default function Product() {
                   {activeFlavors.map((f, i) =>
                     f ? (
                       <span key={i} className="inline-flex items-center gap-1 text-xs bg-surface-03 text-parchment px-2 py-0.5 rounded-full">
-                        {f.icon && (f.icon.startsWith("data:") || f.icon.startsWith("http") || f.icon.startsWith("/"))
-                          ? <img src={f.icon} alt="" className="w-4 h-4 rounded-full object-cover flex-shrink-0" />
+                        {isAssetUrl(f.icon)
+                          ? <img src={resolveAssetUrl(f.icon)} alt="" className="w-4 h-4 rounded-full object-cover flex-shrink-0" />
                           : <span>{f.icon}</span>}
                         {f.name} — R${f.price.toFixed(2)}
                       </span>

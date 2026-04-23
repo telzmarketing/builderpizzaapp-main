@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
+import { isAssetUrl, resolveAssetUrl } from "@/lib/api";
 
 const navItems = [
   { to: "/painel", icon: BarChart3, label: "Dashboard" },
@@ -51,8 +52,8 @@ export default function AdminSidebar() {
   return (
     <div className="w-64 bg-surface-02 border-r border-surface-03 p-6 flex flex-col flex-shrink-0">
       <div className="mb-8 flex items-center gap-3">
-        {brand.logo && (brand.logo.startsWith("http") || brand.logo.startsWith("data:")) ? (
-          <img src={brand.logo} alt="logo" className="w-8 h-8 object-contain rounded flex-shrink-0" />
+        {isAssetUrl(brand.logo) ? (
+          <img src={resolveAssetUrl(brand.logo)} alt="logo" className="w-8 h-8 object-contain rounded flex-shrink-0" />
         ) : brand.logo ? (
           <span className="text-2xl flex-shrink-0">{brand.logo}</span>
         ) : null}

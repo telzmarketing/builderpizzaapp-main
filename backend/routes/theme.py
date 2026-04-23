@@ -34,6 +34,7 @@ _DEFAULTS = {
     "overlay": "#000000",
     "badge": "#f97316",
     "tag": "#2d3d56",
+    "home_banner_background": "#1f2937",
 }
 
 

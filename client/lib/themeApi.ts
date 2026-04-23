@@ -25,6 +25,7 @@ export interface ThemeSettings {
   overlay: string;
   badge: string;
   tag: string;
+  home_banner_background: string;
   updated_at?: string;
 }
 
@@ -53,6 +54,7 @@ export const DEFAULT_THEME: ThemeSettings = {
   overlay:            "#000000",
   badge:              "#f97316",
   tag:                "#2d3d56",
+  home_banner_background: "#1f2937",
 };
 
 export const themeApi = {
@@ -123,6 +125,7 @@ export function applyTheme(t: ThemeSettings): void {
     "--overlay-bg":           t.overlay,
     "--badge-bg":             t.badge,
     "--tag-bg":               t.tag,
+    "--home-banner-bg":       t.home_banner_background,
     /* ── shadcn HSL vars (used by Tailwind tokens) ── */
     "--primary":              hexToHsl(t.primary),
     "--ring":                 hexToHsl(t.primary),
