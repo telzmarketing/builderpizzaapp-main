@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.models.coupon import Coupon
+from backend.routes.admin_auth import get_current_admin
 from backend.schemas.coupon import (
     CouponCreate, CouponUpdate, CouponOut,
     CouponApplyIn, CouponApplyOut, CouponUsageOut,
@@ -19,7 +20,7 @@ def list_coupons(db: Session = Depends(get_db)):
 
 
 @router.get("/usage", response_model=list[CouponUsageOut])
-def list_all_usage(db: Session = Depends(get_db)):
+def list_all_usage(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     return CouponService(db).list_usage()
 
 
@@ -32,12 +33,12 @@ def get_coupon(coupon_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{coupon_id}/usage", response_model=list[CouponUsageOut])
-def get_coupon_usage(coupon_id: str, db: Session = Depends(get_db)):
+def get_coupon_usage(coupon_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     return CouponService(db).list_usage(coupon_id=coupon_id)
 
 
 @router.post("", response_model=CouponOut, status_code=201)
-def create_coupon(body: CouponCreate, db: Session = Depends(get_db)):
+def create_coupon(body: CouponCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     existing = db.query(Coupon).filter(Coupon.code == body.code.upper()).first()
     if existing:
         raise HTTPException(400, f"Código '{body.code}' já existe.")
@@ -49,7 +50,7 @@ def create_coupon(body: CouponCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{coupon_id}", response_model=CouponOut)
-def update_coupon(coupon_id: str, body: CouponUpdate, db: Session = Depends(get_db)):
+def update_coupon(coupon_id: str, body: CouponUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     coupon = db.query(Coupon).filter(Coupon.id == coupon_id).first()
     if not coupon:
         raise HTTPException(404, "Cupom não encontrado.")
@@ -61,7 +62,7 @@ def update_coupon(coupon_id: str, body: CouponUpdate, db: Session = Depends(get_
 
 
 @router.delete("/{coupon_id}", status_code=204)
-def delete_coupon(coupon_id: str, db: Session = Depends(get_db)):
+def delete_coupon(coupon_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     coupon = db.query(Coupon).filter(Coupon.id == coupon_id).first()
     if not coupon:
         raise HTTPException(404, "Cupom não encontrado.")

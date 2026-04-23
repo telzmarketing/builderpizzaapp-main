@@ -49,6 +49,15 @@ async function request<T>(
   return ("data" in json ? json.data : json) as T;
 }
 
+export function apiRequest<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  extraHeaders?: HeadersInit
+): Promise<T> {
+  return request<T>(method, path, body, extraHeaders);
+}
+
 const get = <T>(path: string) => request<T>("GET", path);
 const post = <T>(path: string, body: unknown) => request<T>("POST", path, body);
 const put = <T>(path: string, body: unknown) => request<T>("PUT", path, body);
@@ -378,17 +387,45 @@ export interface ApiDashboard {
 }
 
 export interface ApiPaymentGatewayConfig {
-  id: number;
+  id: string;
   gateway: string;
   sandbox: boolean;
   accept_pix: boolean;
   accept_credit_card: boolean;
+  accept_debit_card: boolean;
   accept_cash: boolean;
   pix_key: string | null;
+  pix_key_type: string | null;
+  pix_beneficiary_name: string | null;
+  pix_beneficiary_city: string | null;
   mp_public_key: string | null;
-  mp_access_token: string | null;
+  mp_access_token_masked: string | null;
   stripe_publishable_key: string | null;
-  stripe_secret_key: string | null;
+  stripe_secret_key_masked: string | null;
+  pagseguro_email: string | null;
+  pagseguro_token_masked: string | null;
+  updated_at: string;
+}
+
+export interface ApiPaymentGatewayConfigUpdate {
+  gateway?: string;
+  sandbox?: boolean;
+  accept_pix?: boolean;
+  accept_credit_card?: boolean;
+  accept_debit_card?: boolean;
+  accept_cash?: boolean;
+  pix_key?: string | null;
+  pix_key_type?: string | null;
+  pix_beneficiary_name?: string | null;
+  pix_beneficiary_city?: string | null;
+  mp_public_key?: string | null;
+  mp_access_token?: string | null;
+  mp_webhook_secret?: string | null;
+  stripe_publishable_key?: string | null;
+  stripe_secret_key?: string | null;
+  stripe_webhook_secret?: string | null;
+  pagseguro_email?: string | null;
+  pagseguro_token?: string | null;
 }
 
 export interface ApiAdmin {
@@ -680,7 +717,7 @@ export const adminApi = {
 
   getPaymentGateway: () => get<ApiPaymentGatewayConfig>("/admin/payment-gateway"),
 
-  updatePaymentGateway: (data: Partial<ApiPaymentGatewayConfig>) =>
+  updatePaymentGateway: (data: ApiPaymentGatewayConfigUpdate) =>
     put<ApiPaymentGatewayConfig>("/admin/payment-gateway", data),
 };
 

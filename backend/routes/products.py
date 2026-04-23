@@ -33,7 +33,7 @@ def get_product(product_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=ProductOut, status_code=201)
-def create_product(body: ProductCreate, db: Session = Depends(get_db)):
+def create_product(body: ProductCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     product = Product(id=f"prod-{uuid.uuid4().hex[:8]}", **body.model_dump())
     db.add(product)
     db.commit()
@@ -42,7 +42,7 @@ def create_product(body: ProductCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{product_id}", response_model=ProductOut)
-def update_product(product_id: str, body: ProductUpdate, db: Session = Depends(get_db)):
+def update_product(product_id: str, body: ProductUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
@@ -54,7 +54,7 @@ def update_product(product_id: str, body: ProductUpdate, db: Session = Depends(g
 
 
 @router.delete("/{product_id}", status_code=204)
-def delete_product(product_id: str, db: Session = Depends(get_db)):
+def delete_product(product_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
@@ -215,7 +215,7 @@ def get_multi_flavors_config(db: Session = Depends(get_db)):
 
 
 @router.patch("/config/multi-flavors", response_model=MultiFlavorsConfigOut)
-def update_multi_flavors_config(body: MultiFlavorsConfigUpdate, db: Session = Depends(get_db)):
+def update_multi_flavors_config(body: MultiFlavorsConfigUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     config = db.query(MultiFlavorsConfig).filter(MultiFlavorsConfig.id == "default").first()
     if not config:
         config = MultiFlavorsConfig(id="default")

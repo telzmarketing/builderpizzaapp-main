@@ -1,32 +1,15 @@
 import { useState, useEffect } from "react";
 import { Save, Eye, EyeOff, CheckCircle, AlertCircle, Loader2, CreditCard, QrCode, Wallet, Banknote } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
-import { adminApi } from "@/lib/api";
-
-const API = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+import {
+  adminApi,
+  type ApiPaymentGatewayConfig,
+  type ApiPaymentGatewayConfigUpdate,
+} from "@/lib/api";
 
 type Gateway = "mock" | "mercadopago" | "stripe" | "pagseguro";
 
-interface GatewayConfig {
-  id: string;
-  gateway: Gateway;
-  sandbox: boolean;
-  accept_pix: boolean;
-  accept_credit_card: boolean;
-  accept_debit_card: boolean;
-  accept_cash: boolean;
-  mp_public_key?: string;
-  mp_access_token_masked?: string;
-  stripe_publishable_key?: string;
-  stripe_secret_key_masked?: string;
-  pagseguro_email?: string;
-  pagseguro_token_masked?: string;
-  pix_key?: string;
-  pix_key_type?: string;
-  pix_beneficiary_name?: string;
-  pix_beneficiary_city?: string;
-  updated_at: string;
-}
+type GatewayConfig = ApiPaymentGatewayConfig & { gateway: Gateway };
 
 const GATEWAYS: { id: Gateway; label: string; icon: string; description: string; color: string }[] = [
   {
@@ -77,32 +60,29 @@ export default function AdminPagamentos() {
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    const token = localStorage.getItem("admin_token");
-    fetch(`${API}/admin/payment-gateway`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then((r) => r.json())
-      .then((data: GatewayConfig) => {
-        setConfig(data);
+    adminApi.getPaymentGateway()
+      .then((data) => {
+        const gatewayData = data as GatewayConfig;
+        setConfig(gatewayData);
         setForm({
-          gateway: data.gateway,
-          sandbox: data.sandbox,
-          accept_pix: data.accept_pix,
-          accept_credit_card: data.accept_credit_card,
-          accept_debit_card: data.accept_debit_card,
-          accept_cash: data.accept_cash,
-          mp_public_key: data.mp_public_key || "",
+          gateway: gatewayData.gateway,
+          sandbox: gatewayData.sandbox,
+          accept_pix: gatewayData.accept_pix,
+          accept_credit_card: gatewayData.accept_credit_card,
+          accept_debit_card: gatewayData.accept_debit_card,
+          accept_cash: gatewayData.accept_cash,
+          mp_public_key: gatewayData.mp_public_key || "",
           mp_access_token: "",
           mp_webhook_secret: "",
-          stripe_publishable_key: data.stripe_publishable_key || "",
+          stripe_publishable_key: gatewayData.stripe_publishable_key || "",
           stripe_secret_key: "",
           stripe_webhook_secret: "",
-          pagseguro_email: data.pagseguro_email || "",
+          pagseguro_email: gatewayData.pagseguro_email || "",
           pagseguro_token: "",
-          pix_key: data.pix_key || "",
-          pix_key_type: data.pix_key_type || "email",
-          pix_beneficiary_name: data.pix_beneficiary_name || "",
-          pix_beneficiary_city: data.pix_beneficiary_city || "",
+          pix_key: gatewayData.pix_key || "",
+          pix_key_type: gatewayData.pix_key_type || "email",
+          pix_beneficiary_name: gatewayData.pix_beneficiary_name || "",
+          pix_beneficiary_city: gatewayData.pix_beneficiary_city || "",
         });
       })
       .catch(() => setError("Não foi possível carregar a configuração. O backend está rodando?"))
@@ -120,7 +100,7 @@ export default function AdminPagamentos() {
     setError(null);
     try {
       // Send only non-empty strings for secrets (empty = don't update)
-      const payload: Record<string, string | boolean> = {};
+      const payload: Record<string, string | boolean | null> = {};
       for (const [key, value] of Object.entries(form)) {
         if (value === "" && ["mp_access_token", "mp_webhook_secret", "stripe_secret_key",
           "stripe_webhook_secret", "pagseguro_token"].includes(key)) {
@@ -129,17 +109,7 @@ export default function AdminPagamentos() {
         payload[key] = value;
       }
 
-      const token = localStorage.getItem("admin_token");
-      const res = await fetch(`${API}/admin/payment-gateway`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const updated: GatewayConfig = await res.json();
+      const updated = await adminApi.updatePaymentGateway(payload as ApiPaymentGatewayConfigUpdate) as GatewayConfig;
       setConfig(updated);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);

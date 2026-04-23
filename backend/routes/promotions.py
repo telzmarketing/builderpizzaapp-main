@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from backend.core.response import ok, created, no_content, err_msg
 from backend.database import get_db
 from backend.models.promotion import Promotion
+from backend.routes.admin_auth import get_current_admin
 from backend.schemas.promotion import PromotionCreate, PromotionUpdate, PromotionOut
 
 router = APIRouter(prefix="/promotions", tags=["promotions"])
@@ -45,7 +46,7 @@ def get_promotion(promo_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("", status_code=201)
-def create_promotion(body: PromotionCreate, db: Session = Depends(get_db)):
+def create_promotion(body: PromotionCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     promo = Promotion(id=str(uuid.uuid4()), **body.model_dump())
     db.add(promo)
     db.commit()
@@ -54,7 +55,7 @@ def create_promotion(body: PromotionCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{promo_id}")
-def update_promotion(promo_id: str, body: PromotionUpdate, db: Session = Depends(get_db)):
+def update_promotion(promo_id: str, body: PromotionUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     promo = db.query(Promotion).filter(Promotion.id == promo_id).first()
     if not promo:
         return err_msg(f"Promoção '{promo_id}' não encontrada.", code="PromotionNotFound", status_code=404)
@@ -66,7 +67,7 @@ def update_promotion(promo_id: str, body: PromotionUpdate, db: Session = Depends
 
 
 @router.delete("/{promo_id}", status_code=204)
-def delete_promotion(promo_id: str, db: Session = Depends(get_db)):
+def delete_promotion(promo_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     promo = db.query(Promotion).filter(Promotion.id == promo_id).first()
     if not promo:
         return err_msg(f"Promoção '{promo_id}' não encontrada.", code="PromotionNotFound", status_code=404)

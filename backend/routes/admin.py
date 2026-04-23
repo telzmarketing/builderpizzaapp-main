@@ -11,6 +11,7 @@ from backend.models.product import Product
 from backend.models.customer import Customer
 from backend.models.payment import Payment, PaymentStatus
 from backend.models.payment_config import PaymentGatewayConfig
+from backend.routes.admin_auth import get_current_admin
 from backend.schemas.payment_config import (
     PaymentGatewayConfigOut, PaymentGatewayConfigUpdate, _mask
 )
@@ -19,7 +20,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 @router.get("/dashboard")
-def dashboard_stats(db: Session = Depends(get_db)):
+def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     total_orders = db.query(func.count(Order.id)).scalar() or 0
     total_revenue = (
         db.query(func.sum(Order.total))
@@ -101,13 +102,17 @@ def _to_out(config: PaymentGatewayConfig) -> PaymentGatewayConfigOut:
 
 
 @router.get("/payment-gateway", response_model=PaymentGatewayConfigOut)
-def get_payment_gateway_config(db: Session = Depends(get_db)):
+def get_payment_gateway_config(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     """Returns current gateway config (secret keys are masked)."""
     return _to_out(_get_or_create_config(db))
 
 
 @router.put("/payment-gateway", response_model=PaymentGatewayConfigOut)
-def update_payment_gateway_config(body: PaymentGatewayConfigUpdate, db: Session = Depends(get_db)):
+def update_payment_gateway_config(
+    body: PaymentGatewayConfigUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
     """
     Updates gateway config. Only non-null fields are written.
     To clear a key, send an empty string "".

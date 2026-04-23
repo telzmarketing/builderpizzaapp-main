@@ -1,29 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import AdminSidebar from "@/components/AdminSidebar";
+import { apiRequest } from "@/lib/api";
 import {
   Truck, Settings, MapPin, Hash, Ruler, DollarSign, Sparkles, Zap,
   Plus, Pencil, Trash2, Check, X, ToggleLeft, ToggleRight, AlertCircle,
   Package, Clock, ChevronDown, ChevronUp,
 } from "lucide-react";
-
-const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
-
-function authH(): HeadersInit {
-  const t = localStorage.getItem("admin_token");
-  return t ? { Authorization: `Bearer ${t}` } : {};
-}
-
-async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: { "Content-Type": "application/json", ...authH() },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
-  if (res.status === 204) return undefined as unknown as T;
-  const json = await res.json();
-  if (!res.ok) throw new Error(json?.error?.message ?? json?.detail ?? `HTTP ${res.status}`);
-  return ("data" in json ? json.data : json) as T;
-}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,6 +57,8 @@ interface ExtraRule {
   condition: string; message: string; active: boolean; priority: number;
   time_start: string | null; time_end: string | null;
 }
+
+const api = apiRequest;
 
 // ─── Helper components ────────────────────────────────────────────────────────
 

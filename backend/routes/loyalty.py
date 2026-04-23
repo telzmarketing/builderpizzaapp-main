@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.models.loyalty import LoyaltyLevel, LoyaltyReward, LoyaltyRule, CustomerLoyalty
+from backend.routes.admin_auth import get_current_admin
 from backend.schemas.loyalty import (
     LoyaltyLevelCreate, LoyaltyLevelOut,
     LoyaltyRewardCreate, LoyaltyRewardOut,
@@ -23,7 +24,7 @@ def list_levels(db: Session = Depends(get_db)):
 
 
 @router.post("/levels", response_model=LoyaltyLevelOut, status_code=201)
-def create_level(body: LoyaltyLevelCreate, db: Session = Depends(get_db)):
+def create_level(body: LoyaltyLevelCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     level = LoyaltyLevel(id=str(uuid.uuid4()), **body.model_dump())
     db.add(level)
     db.commit()
@@ -32,7 +33,7 @@ def create_level(body: LoyaltyLevelCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/levels/{level_id}", response_model=LoyaltyLevelOut)
-def update_level(level_id: str, body: LoyaltyLevelCreate, db: Session = Depends(get_db)):
+def update_level(level_id: str, body: LoyaltyLevelCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     level = db.query(LoyaltyLevel).filter(LoyaltyLevel.id == level_id).first()
     if not level:
         raise HTTPException(404, "Nível não encontrado.")
@@ -44,7 +45,7 @@ def update_level(level_id: str, body: LoyaltyLevelCreate, db: Session = Depends(
 
 
 @router.delete("/levels/{level_id}", status_code=204)
-def delete_level(level_id: str, db: Session = Depends(get_db)):
+def delete_level(level_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     level = db.query(LoyaltyLevel).filter(LoyaltyLevel.id == level_id).first()
     if not level:
         raise HTTPException(404, "Nível não encontrado.")
@@ -60,7 +61,7 @@ def list_rewards(db: Session = Depends(get_db)):
 
 
 @router.post("/rewards", response_model=LoyaltyRewardOut, status_code=201)
-def create_reward(body: LoyaltyRewardCreate, db: Session = Depends(get_db)):
+def create_reward(body: LoyaltyRewardCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     reward = LoyaltyReward(id=str(uuid.uuid4()), **body.model_dump())
     db.add(reward)
     db.commit()
@@ -69,7 +70,7 @@ def create_reward(body: LoyaltyRewardCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/rewards/{reward_id}", response_model=LoyaltyRewardOut)
-def update_reward(reward_id: str, body: LoyaltyRewardCreate, db: Session = Depends(get_db)):
+def update_reward(reward_id: str, body: LoyaltyRewardCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     reward = db.query(LoyaltyReward).filter(LoyaltyReward.id == reward_id).first()
     if not reward:
         raise HTTPException(404, "Recompensa não encontrada.")
@@ -81,7 +82,7 @@ def update_reward(reward_id: str, body: LoyaltyRewardCreate, db: Session = Depen
 
 
 @router.delete("/rewards/{reward_id}", status_code=204)
-def delete_reward(reward_id: str, db: Session = Depends(get_db)):
+def delete_reward(reward_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     reward = db.query(LoyaltyReward).filter(LoyaltyReward.id == reward_id).first()
     if not reward:
         raise HTTPException(404, "Recompensa não encontrada.")
@@ -97,7 +98,7 @@ def list_rules(db: Session = Depends(get_db)):
 
 
 @router.post("/rules", response_model=LoyaltyRuleOut, status_code=201)
-def create_rule(body: LoyaltyRuleCreate, db: Session = Depends(get_db)):
+def create_rule(body: LoyaltyRuleCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     rule = LoyaltyRule(id=str(uuid.uuid4()), **body.model_dump())
     db.add(rule)
     db.commit()
@@ -106,7 +107,7 @@ def create_rule(body: LoyaltyRuleCreate, db: Session = Depends(get_db)):
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
-def delete_rule(rule_id: str, db: Session = Depends(get_db)):
+def delete_rule(rule_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     rule = db.query(LoyaltyRule).filter(LoyaltyRule.id == rule_id).first()
     if not rule:
         raise HTTPException(404, "Regra não encontrada.")
