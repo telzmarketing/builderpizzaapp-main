@@ -59,7 +59,7 @@ class OrderService:
     def _get_order(self, order_id: str) -> Order:
         order = (
             self._db.query(Order)
-            .options(joinedload(Order.items).joinedload("flavors"))
+            .options(joinedload(Order.items).joinedload(OrderItem.flavors))
             .filter(Order.id == order_id)
             .first()
         )
@@ -352,7 +352,7 @@ class OrderService:
         customer_id: str | None = None,
         limit: int = 50,
     ) -> list[Order]:
-        q = self._db.query(Order)
+        q = self._db.query(Order).options(joinedload(Order.items).joinedload(OrderItem.flavors))
         if status:
             q = q.filter(Order.status == OrderStatus(status))
         if customer_id:

@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
-import { ordersApi, shippingApi, couponsApi, type CheckoutIn, type ApiShipping } from "@/lib/api";
+import { ordersApi, paymentsApi, shippingApi, couponsApi, type CheckoutIn, type ApiShipping } from "@/lib/api";
 
 type PaymentMethod = "pix" | "credit_card";
 type DeliveryMode = "delivery" | "pickup";
@@ -171,6 +171,19 @@ export default function Checkout() {
 
     try {
       const order = await ordersApi.checkout(payload);
+      try {
+        await paymentsApi.create(order.id, order.total, paymentMethod);
+      } catch (paymentErr: unknown) {
+        clearCart();
+        navigate(`/order-tracking?orderId=${order.id}`, {
+          state: {
+            paymentError: paymentErr instanceof Error
+              ? paymentErr.message
+              : "Pedido criado, mas não foi possível iniciar o pagamento.",
+          },
+        });
+        return;
+      }
       clearCart();
       navigate(`/order-tracking?orderId=${order.id}`);
     } catch (err: unknown) {

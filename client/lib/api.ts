@@ -316,7 +316,7 @@ export interface ApiPayment {
   id: string;
   order_id: string;
   method: "pix" | "credit_card" | "cash";
-  status: "pending" | "approved" | "failed" | "refunded";
+  status: "pending" | "paid" | "failed" | "refunded";
   amount: number;
   transaction_id: string | null;
   qr_code: string | null;

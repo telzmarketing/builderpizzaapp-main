@@ -1,11 +1,10 @@
-import { useSearchParams, Link, useNavigate } from "react-router-dom";
+import { useSearchParams, Link, useNavigate, useLocation } from "react-router-dom";
 import { ChevronLeft, Loader2 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
 import { useEffect, useState, useCallback } from "react";
-import { ordersApi, type ApiOrder, type OrderStatus } from "@/lib/api";
+import { ordersApi, paymentsApi, type ApiOrder, type ApiPayment, type OrderStatus } from "@/lib/api";
 
-// Steps shown in the progress bar (subset of all statuses)
 const PROGRESS_STEPS: OrderStatus[] = ["preparing", "on_the_way", "delivered"];
 
 function stepIndex(status: OrderStatus): number {
@@ -15,30 +14,37 @@ function stepIndex(status: OrderStatus): number {
 
 export default function OrderTracking() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { siteContent } = useApp();
   const orderId = searchParams.get("orderId");
   const t = siteContent.pages.tracking;
 
   const [order, setOrder] = useState<ApiOrder | null>(null);
+  const [payment, setPayment] = useState<ApiPayment | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [paymentError] = useState<string>(
+    (location.state as { paymentError?: string } | null)?.paymentError ?? ""
+  );
 
   const fetchOrder = useCallback(async () => {
     if (!orderId) return;
     try {
-      const data = await ordersApi.get(orderId);
-      setOrder(data);
+      const [orderData, paymentData] = await Promise.all([
+        ordersApi.get(orderId),
+        paymentsApi.getByOrder(orderId).catch(() => null),
+      ]);
+      setOrder(orderData);
+      setPayment(paymentData);
     } catch {
       setNotFound(true);
       setLoadError("Pedido não encontrado.");
     }
   }, [orderId]);
 
-  // Initial fetch
   useEffect(() => { fetchOrder(); }, [fetchOrder]);
 
-  // Poll every 15 seconds while order is not in a terminal state
   useEffect(() => {
     const terminal: OrderStatus[] = ["delivered", "cancelled", "refunded"];
     if (!order || terminal.includes(order.status)) return;
@@ -52,6 +58,7 @@ export default function OrderTracking() {
   const estimatedText = order
     ? t.estimatedTimeText.replace("{time}", String(order.estimated_time))
     : "";
+  const canShowPayment = !!payment && !!order && ["pending", "waiting_payment"].includes(order.status);
 
   if (!orderId || notFound) {
     return (
@@ -91,8 +98,6 @@ export default function OrderTracking() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
-
-      {/* Header */}
       <div className="bg-brand-dark px-4 py-4 flex justify-between items-center sticky top-0 z-30">
         <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
@@ -102,7 +107,6 @@ export default function OrderTracking() {
       </div>
 
       <div className="px-4 pt-6 pb-32">
-        {/* Order Number */}
         <div className="text-center mb-2">
           <p className="text-stone text-sm">{t.orderNumberLabel}</p>
           <p className="text-6xl font-bold text-cream mt-1">
@@ -111,7 +115,6 @@ export default function OrderTracking() {
           <p className="text-stone text-sm mt-2">{estimatedText}</p>
         </div>
 
-        {/* Progress Bar */}
         {!["cancelled", "refunded"].includes(order.status) && (
           <div className="mb-6 mt-8">
             <div className="flex items-center px-4">
@@ -135,7 +138,6 @@ export default function OrderTracking() {
           </div>
         )}
 
-        {/* Active Status */}
         <div className="text-center mb-6">
           <p className={`font-bold text-xl ${order.status === "cancelled" || order.status === "refunded" ? "text-red-400" : "text-cream"}`}>
             {statusLabel}
@@ -147,7 +149,65 @@ export default function OrderTracking() {
           </div>
         )}
 
-        {/* Items Ordered */}
+        {paymentError && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-6">
+            <p className="text-red-400 text-sm text-center">{paymentError}</p>
+          </div>
+        )}
+
+        {canShowPayment && (
+          <div className="bg-surface-02 rounded-xl p-4 mb-6 border border-surface-03">
+            <h3 className="text-cream font-bold mb-3">Pagamento</h3>
+            {payment?.method === "pix" && (
+              <div className="space-y-3">
+                {payment.qr_code && payment.qr_code.startsWith("data:") && (
+                  <div className="bg-white rounded-xl p-4 flex justify-center">
+                    <img src={payment.qr_code} alt="QR Code PIX" className="w-48 h-48 object-contain" />
+                  </div>
+                )}
+                {payment.qr_code_text && (
+                  <>
+                    <div className="bg-surface-03 rounded-xl px-3 py-3">
+                      <p className="text-stone text-xs mb-1">PIX copia e cola</p>
+                      <p className="text-parchment text-xs break-all">{payment.qr_code_text}</p>
+                    </div>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(payment.qr_code_text || "")}
+                      className="w-full bg-gold hover:bg-gold/90 text-cream font-bold py-3 px-4 rounded-full transition-colors text-sm"
+                    >
+                      Copiar código PIX
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {payment?.method === "credit_card" && payment.payment_url && (
+              <div className="space-y-3">
+                <p className="text-stone text-sm">
+                  Seu pagamento está aguardando confirmação. Abra o checkout do gateway para concluir.
+                </p>
+                <a
+                  href={payment.payment_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full bg-gold hover:bg-gold/90 text-cream font-bold py-3 px-4 rounded-full transition-colors text-sm text-center"
+                >
+                  Abrir pagamento
+                </a>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!payment && ["pending", "waiting_payment"].includes(order.status) && (
+          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl px-4 py-3 mb-6">
+            <p className="text-yellow-400 text-sm text-center">
+              O pagamento ainda não foi iniciado para este pedido.
+            </p>
+          </div>
+        )}
+
         <div className="mb-6">
           <h3 className="text-cream font-bold mb-4 text-lg">Itens do Pedido</h3>
           <div className="space-y-3">
@@ -182,7 +242,6 @@ export default function OrderTracking() {
             })}
           </div>
 
-          {/* Order Summary */}
           <div className="bg-surface-02 rounded-xl p-4 mt-6 space-y-3 border border-surface-03">
             <div className="flex justify-between text-parchment text-sm">
               <span>Subtotal:</span>
@@ -206,7 +265,6 @@ export default function OrderTracking() {
         </div>
       </div>
 
-      {/* Bottom Buttons */}
       <div className="fixed bottom-0 left-0 right-0 bg-surface-00 border-t border-surface-02 px-4 py-4">
         <div className="flex gap-3">
           <Link
