@@ -6,7 +6,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from backend.models.product import Product, MultiFlavorsConfig, PricingRule
-from backend.models.loyalty import LoyaltyLevel, LoyaltyReward, LoyaltyRule
+from backend.models.loyalty import LoyaltyLevel, LoyaltyReward, LoyaltyRule, LoyaltyBenefit, BenefitType
 from backend.models.coupon import Coupon, CouponType
 from backend.models.promotion import Promotion
 from backend.models.shipping import ShippingRule, ShippingRuleType
@@ -91,14 +91,54 @@ def _seed_promotions(db: Session) -> None:
 def _seed_loyalty(db: Session) -> None:
     if db.query(LoyaltyLevel).first():
         return
-    levels = [
-        ("Bronze",   0,    500,  "🥉", "orange"),
-        ("Prata",    501,  1500, "🥈", "gray"),
-        ("Ouro",     1501, 3000, "🥇", "yellow"),
-        ("Diamante", 3001, None, "💎", "blue"),
+
+    # Tiers: Bronze 150pts, Prata 300pts, Ouro 500pts, Diamante 1000pts
+    level_data = [
+        ("bronze",   "Bronze",   150,  300,  "🥉", "orange"),
+        ("prata",    "Prata",    300,  500,  "🥈", "gray"),
+        ("ouro",     "Ouro",     500,  1000, "🥇", "yellow"),
+        ("diamante", "Diamante", 1000, None, "💎", "blue"),
     ]
-    for name, mn, mx, icon, color in levels:
-        db.add(LoyaltyLevel(id=str(uuid.uuid4()), name=name, min_points=mn, max_points=mx, icon=icon, color=color))
+    level_ids = {}
+    for lid, name, mn, mx, icon, color in level_data:
+        level_ids[lid] = lid
+        db.add(LoyaltyLevel(id=lid, name=name, min_points=mn, max_points=mx, icon=icon, color=color))
+
+    db.flush()
+
+    # Benefits per level
+    benefits = [
+        # Bronze
+        (level_ids["bronze"], BenefitType.discount,     "5% de desconto",          "5% em qualquer pedido",                5.0,  0.0,  None, 1, False),
+        (level_ids["bronze"], BenefitType.frete_gratis, "Entrega grátis",           "Frete grátis 1x por ciclo",            0.0,  40.0, None, 1, False),
+        # Prata
+        (level_ids["prata"],  BenefitType.discount,     "10% de desconto",         "10% em pedidos acima de R$30",         10.0, 30.0, None, 2, False),
+        (level_ids["prata"],  BenefitType.frete_gratis, "Entrega grátis",           "Frete grátis 2x por ciclo",            0.0,  0.0,  None, 2, False),
+        (level_ids["prata"],  BenefitType.product,      "Bebida grátis",            "Refrigerante 600ml grátis",            8.0,  50.0, None, 1, False),
+        # Ouro
+        (level_ids["ouro"],   BenefitType.discount,     "15% de desconto",         "15% em qualquer pedido",               15.0, 0.0,  None, 3, False),
+        (level_ids["ouro"],   BenefitType.frete_gratis, "Entrega grátis ilimitada","Frete grátis em todos os pedidos",      0.0,  0.0,  None, 99, True),
+        (level_ids["ouro"],   BenefitType.product,      "Sobremesa grátis",        "Brownie ou petit gateau por ciclo",    12.0, 60.0, None, 1, False),
+        # Diamante
+        (level_ids["diamante"], BenefitType.discount,   "20% de desconto VIP",    "20% em qualquer pedido",               20.0, 0.0,  None, 5, False),
+        (level_ids["diamante"], BenefitType.frete_gratis,"Frete grátis VIP",       "Frete grátis ilimitado",               0.0,  0.0,  None, 99, True),
+        (level_ids["diamante"], BenefitType.product,    "Pizza grátis",            "Pizza média grátis 1x por ciclo",      45.0, 80.0, None, 1, False),
+        (level_ids["diamante"], BenefitType.experience, "Visita à cozinha",        "Experiência exclusiva na cozinha",      0.0,  0.0,  None, 1, False),
+    ]
+    for level_id, btype, label, desc, value, min_order, expires, usage_limit, stackable in benefits:
+        db.add(LoyaltyBenefit(
+            id=str(uuid.uuid4()),
+            level_id=level_id,
+            benefit_type=btype,
+            label=label,
+            description=desc,
+            value=value,
+            min_order_value=min_order,
+            expires_in_days=expires,
+            usage_limit=usage_limit,
+            stackable=stackable,
+            active=True,
+        ))
 
     rewards = [
         ("Pizza Grátis",       500,  "🍕"),

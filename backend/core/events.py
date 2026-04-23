@@ -122,6 +122,64 @@ class DeliveryCompleted(DomainEvent):
     duration_minutes: int
 
 
+# ── Loyalty events ───────────────────────────────────────────────────────────
+
+@dataclass
+class LoyaltyPointsEarned(DomainEvent):
+    customer_id: str
+    points: int
+    reason: str
+    total_points: int
+
+
+@dataclass
+class LoyaltyLevelUp(DomainEvent):
+    customer_id: str
+    from_level: str
+    to_level: str
+    total_points: int
+
+
+@dataclass
+class LoyaltyBenefitUnlocked(DomainEvent):
+    customer_id: str
+    benefit_id: str
+    benefit_label: str
+    level_name: str
+
+
+@dataclass
+class LoyaltyBenefitUsed(DomainEvent):
+    customer_id: str
+    benefit_id: str
+    benefit_label: str
+    order_id: str | None
+
+
+@dataclass
+class LoyaltyCycleStarted(DomainEvent):
+    customer_id: str
+    cycle_id: str
+    start_date: str
+    end_date: str
+
+
+@dataclass
+class LoyaltyCycleClosed(DomainEvent):
+    customer_id: str
+    cycle_id: str
+    points_earned: int
+    points_rolled_over: int
+    points_expired: int
+
+
+@dataclass
+class PointsExpiringSoon(DomainEvent):
+    customer_id: str
+    points: int
+    expires_at: str
+
+
 # ── Shipping events ───────────────────────────────────────────────────────────
 
 @dataclass

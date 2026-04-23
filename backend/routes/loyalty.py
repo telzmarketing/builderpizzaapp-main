@@ -1,24 +1,35 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models.loyalty import LoyaltyLevel, LoyaltyReward, LoyaltyRule, CustomerLoyalty
+from backend.models.loyalty import (
+    LoyaltyLevel, LoyaltyReward, LoyaltyRule, CustomerLoyalty,
+    LoyaltyBenefit, LoyaltyCycle, Referral,
+)
 from backend.routes.admin_auth import get_current_admin
 from backend.schemas.loyalty import (
     LoyaltyLevelCreate, LoyaltyLevelOut,
     LoyaltyRewardCreate, LoyaltyRewardOut,
     LoyaltyRuleCreate, LoyaltyRuleOut,
+    LoyaltyBenefitCreate, LoyaltyBenefitOut,
+    LoyaltyCycleOut, ReferralOut,
     CustomerLoyaltyOut, RedeemRewardIn,
+    RedeemBenefitIn, ManualPointsIn,
 )
-from backend.services.loyalty_service import redeem_reward
+from backend.services.loyalty_service import (
+    redeem_reward, redeem_benefit, get_customer_account,
+    get_available_benefits, award_manual_points, admin_close_cycle,
+    get_or_create_referral_code, complete_referral,
+)
 
 router = APIRouter(prefix="/loyalty", tags=["loyalty"])
 
 
 # ── Levels ────────────────────────────────────────────────────────────────────
 
-@router.get("/levels", response_model=list[LoyaltyLevelOut])
+@router.get("/levels", response_model=List[LoyaltyLevelOut])
 def list_levels(db: Session = Depends(get_db)):
     return db.query(LoyaltyLevel).order_by(LoyaltyLevel.min_points).all()
 
@@ -53,9 +64,57 @@ def delete_level(level_id: str, db: Session = Depends(get_db), _=Depends(get_cur
     db.commit()
 
 
+# ── Benefits ──────────────────────────────────────────────────────────────────
+
+@router.get("/benefits", response_model=List[LoyaltyBenefitOut])
+def list_benefits(level_id: Optional[str] = Query(None), db: Session = Depends(get_db)):
+    q = db.query(LoyaltyBenefit)
+    if level_id:
+        q = q.filter(LoyaltyBenefit.level_id == level_id)
+    return q.order_by(LoyaltyBenefit.level_id).all()
+
+
+@router.post("/benefits", response_model=LoyaltyBenefitOut, status_code=201)
+def create_benefit(body: LoyaltyBenefitCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    benefit = LoyaltyBenefit(id=str(uuid.uuid4()), **body.model_dump())
+    db.add(benefit)
+    db.commit()
+    db.refresh(benefit)
+    return benefit
+
+
+@router.put("/benefits/{benefit_id}", response_model=LoyaltyBenefitOut)
+def update_benefit(benefit_id: str, body: LoyaltyBenefitCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    benefit = db.query(LoyaltyBenefit).filter(LoyaltyBenefit.id == benefit_id).first()
+    if not benefit:
+        raise HTTPException(404, "Benefício não encontrado.")
+    for key, value in body.model_dump().items():
+        setattr(benefit, key, value)
+    db.commit()
+    db.refresh(benefit)
+    return benefit
+
+
+@router.delete("/benefits/{benefit_id}", status_code=204)
+def delete_benefit(benefit_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    benefit = db.query(LoyaltyBenefit).filter(LoyaltyBenefit.id == benefit_id).first()
+    if not benefit:
+        raise HTTPException(404, "Benefício não encontrado.")
+    db.delete(benefit)
+    db.commit()
+
+
+@router.post("/benefits/redeem")
+def use_benefit(body: RedeemBenefitIn, db: Session = Depends(get_db)):
+    result = redeem_benefit(body.customer_id, body.benefit_id, body.order_id, db)
+    if not result["success"]:
+        raise HTTPException(400, result["message"])
+    return result
+
+
 # ── Rewards ───────────────────────────────────────────────────────────────────
 
-@router.get("/rewards", response_model=list[LoyaltyRewardOut])
+@router.get("/rewards", response_model=List[LoyaltyRewardOut])
 def list_rewards(db: Session = Depends(get_db)):
     return db.query(LoyaltyReward).order_by(LoyaltyReward.points_required).all()
 
@@ -92,7 +151,7 @@ def delete_reward(reward_id: str, db: Session = Depends(get_db), _=Depends(get_c
 
 # ── Earn Rules ────────────────────────────────────────────────────────────────
 
-@router.get("/rules", response_model=list[LoyaltyRuleOut])
+@router.get("/rules", response_model=List[LoyaltyRuleOut])
 def list_rules(db: Session = Depends(get_db)):
     return db.query(LoyaltyRule).all()
 
@@ -119,17 +178,87 @@ def delete_rule(rule_id: str, db: Session = Depends(get_db), _=Depends(get_curre
 
 @router.get("/account/{customer_id}", response_model=CustomerLoyaltyOut)
 def get_account(customer_id: str, db: Session = Depends(get_db)):
-    account = db.query(CustomerLoyalty).filter(
-        CustomerLoyalty.customer_id == customer_id
-    ).first()
+    account = get_customer_account(customer_id, db)
     if not account:
         raise HTTPException(404, "Conta de fidelidade não encontrada.")
+    # Attach available benefits and cycles for full response
+    account.benefits = get_available_benefits(customer_id, db)
+    account.cycles = (
+        db.query(LoyaltyCycle)
+        .filter(LoyaltyCycle.customer_id == customer_id)
+        .order_by(LoyaltyCycle.start_date.desc())
+        .limit(12)
+        .all()
+    )
     return account
 
 
 @router.post("/redeem", status_code=200)
 def redeem(body: RedeemRewardIn, db: Session = Depends(get_db)):
     result = redeem_reward(body.customer_id, body.reward_id, db)
+    if not result["success"]:
+        raise HTTPException(400, result["message"])
+    return result
+
+
+# ── Admin controls ────────────────────────────────────────────────────────────
+
+@router.get("/admin/customers", response_model=List[CustomerLoyaltyOut])
+def list_loyalty_customers(
+    level_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    q = db.query(CustomerLoyalty)
+    if level_id:
+        q = q.filter(CustomerLoyalty.level_id == level_id)
+    return q.order_by(CustomerLoyalty.total_points.desc()).limit(200).all()
+
+
+@router.post("/admin/points")
+def admin_points(body: ManualPointsIn, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    result = award_manual_points(body.customer_id, body.points, body.description, db)
+    if not result["success"]:
+        raise HTTPException(400, result["message"])
+    return result
+
+
+@router.post("/admin/close-cycle")
+def admin_cycle(body: dict, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    customer_id = body.get("customer_id")
+    if not customer_id:
+        raise HTTPException(422, "customer_id obrigatório.")
+    result = admin_close_cycle(customer_id, db)
+    if not result["success"]:
+        raise HTTPException(400, result["message"])
+    return result
+
+
+@router.get("/admin/cycles/{customer_id}", response_model=List[LoyaltyCycleOut])
+def list_cycles(customer_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    return (
+        db.query(LoyaltyCycle)
+        .filter(LoyaltyCycle.customer_id == customer_id)
+        .order_by(LoyaltyCycle.start_date.desc())
+        .all()
+    )
+
+
+# ── Referrals ─────────────────────────────────────────────────────────────────
+
+@router.get("/referral/{customer_id}", response_model=ReferralOut)
+def get_referral(customer_id: str, db: Session = Depends(get_db)):
+    ref = get_or_create_referral_code(customer_id, db)
+    return ref
+
+
+@router.post("/referral/complete")
+def complete_ref(body: dict, db: Session = Depends(get_db)):
+    code = body.get("referral_code")
+    referred_id = body.get("customer_id")
+    if not code or not referred_id:
+        raise HTTPException(422, "referral_code e customer_id obrigatórios.")
+    result = complete_referral(code, referred_id, db)
     if not result["success"]:
         raise HTTPException(400, result["message"])
     return result

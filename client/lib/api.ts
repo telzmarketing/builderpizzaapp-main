@@ -352,11 +352,70 @@ export interface ApiLoyaltyRule {
   active: boolean;
 }
 
+export interface ApiLoyaltyBenefit {
+  id: string;
+  level_id: string;
+  benefit_type: "product" | "discount" | "frete_gratis" | "experience";
+  label: string;
+  description: string | null;
+  value: number;
+  min_order_value: number;
+  expires_in_days: number | null;
+  usage_limit: number;
+  stackable: boolean;
+  active: boolean;
+  created_at: string;
+}
+
+export interface ApiLoyaltyCycle {
+  id: string;
+  customer_id: string;
+  start_date: string;
+  end_date: string;
+  points_earned: number;
+  points_used: number;
+  points_expired: number;
+  points_rolled_over: number;
+  level_reached: string | null;
+  status: "active" | "closed";
+  created_at: string;
+  closed_at: string | null;
+}
+
+export interface ApiReferral {
+  id: string;
+  referrer_id: string;
+  referred_id: string | null;
+  referral_code: string;
+  status: "pending" | "completed" | "cancelled";
+  reward_points: number;
+  created_at: string;
+  completed_at: string | null;
+}
+
 export interface ApiCustomerLoyalty {
   id: string;
   customer_id: string;
   total_points: number;
+  rollover_points: number;
+  lifetime_points: number;
+  cycle_start_date: string | null;
+  cycle_end_date: string | null;
+  benefit_expiration_date: string | null;
+  last_activity_at: string | null;
   level: ApiLoyaltyLevel | null;
+  transactions: ApiLoyaltyTransaction[];
+  benefits: ApiLoyaltyBenefit[];
+  cycles: ApiLoyaltyCycle[];
+}
+
+export interface ApiLoyaltyTransaction {
+  id: string;
+  order_id: string | null;
+  points: number;
+  transaction_type: string;
+  description: string | null;
+  created_at: string;
 }
 
 export interface ApiCustomer {
@@ -626,20 +685,51 @@ export const loyaltyApi = {
   levels: () => get<ApiLoyaltyLevel[]>("/loyalty/levels"),
   createLevel: (data: Omit<ApiLoyaltyLevel, "id">) =>
     post<ApiLoyaltyLevel>("/loyalty/levels", data),
+  updateLevel: (id: string, data: Omit<ApiLoyaltyLevel, "id">) =>
+    put<ApiLoyaltyLevel>(`/loyalty/levels/${id}`, data),
+  deleteLevel: (id: string) => del<void>(`/loyalty/levels/${id}`),
 
   rewards: () => get<ApiLoyaltyReward[]>("/loyalty/rewards"),
   createReward: (data: Omit<ApiLoyaltyReward, "id">) =>
     post<ApiLoyaltyReward>("/loyalty/rewards", data),
+  deleteReward: (id: string) => del<void>(`/loyalty/rewards/${id}`),
 
   rules: () => get<ApiLoyaltyRule[]>("/loyalty/rules"),
   createRule: (data: Omit<ApiLoyaltyRule, "id">) =>
     post<ApiLoyaltyRule>("/loyalty/rules", data),
+  deleteRule: (id: string) => del<void>(`/loyalty/rules/${id}`),
+
+  benefits: (levelId?: string) =>
+    get<ApiLoyaltyBenefit[]>(`/loyalty/benefits${levelId ? `?level_id=${levelId}` : ""}`),
+  createBenefit: (data: Omit<ApiLoyaltyBenefit, "id" | "created_at">) =>
+    post<ApiLoyaltyBenefit>("/loyalty/benefits", data),
+  updateBenefit: (id: string, data: Omit<ApiLoyaltyBenefit, "id" | "created_at">) =>
+    put<ApiLoyaltyBenefit>(`/loyalty/benefits/${id}`, data),
+  deleteBenefit: (id: string) => del<void>(`/loyalty/benefits/${id}`),
+  redeemBenefit: (customer_id: string, benefit_id: string, order_id?: string) =>
+    post<{ message: string }>("/loyalty/benefits/redeem", { customer_id, benefit_id, order_id }),
 
   account: (customer_id: string) =>
     get<ApiCustomerLoyalty>(`/loyalty/account/${customer_id}`),
 
   redeem: (customer_id: string, reward_id: string) =>
     post<{ message: string }>("/loyalty/redeem", { customer_id, reward_id }),
+
+  // Admin
+  adminCustomers: (level_id?: string) =>
+    get<ApiCustomerLoyalty[]>(`/loyalty/admin/customers${level_id ? `?level_id=${level_id}` : ""}`),
+  adminAdjustPoints: (customer_id: string, points: number, description: string) =>
+    post<{ total_points: number }>("/loyalty/admin/points", { customer_id, points, description }),
+  adminCloseCycle: (customer_id: string) =>
+    post<{ message: string }>("/loyalty/admin/close-cycle", { customer_id }),
+  adminCycles: (customer_id: string) =>
+    get<ApiLoyaltyCycle[]>(`/loyalty/admin/cycles/${customer_id}`),
+
+  // Referrals
+  getReferral: (customer_id: string) =>
+    get<ApiReferral>(`/loyalty/referral/${customer_id}`),
+  completeReferral: (referral_code: string, customer_id: string) =>
+    post<{ message: string }>("/loyalty/referral/complete", { referral_code, customer_id }),
 };
 
 // ─── Shipping ─────────────────────────────────────────────────────────────────

@@ -115,6 +115,20 @@ def _run_migrations():
         # ── Home catalog config ───────────────────────────────────────────
         "CREATE TABLE IF NOT EXISTS home_catalog_config (id VARCHAR PRIMARY KEY DEFAULT 'default', mode VARCHAR(20) NOT NULL DEFAULT 'all', selected_categories TEXT DEFAULT '[]', selected_product_ids TEXT DEFAULT '[]', show_promotions BOOLEAN DEFAULT TRUE, updated_at TIMESTAMPTZ DEFAULT NOW())",
         "INSERT INTO home_catalog_config (id) VALUES ('default') ON CONFLICT DO NOTHING",
+        # ── Loyalty Engine Pro — new tables ──────────────────────────────
+        "CREATE TABLE IF NOT EXISTS loyalty_benefits (id VARCHAR PRIMARY KEY, level_id VARCHAR NOT NULL REFERENCES loyalty_levels(id) ON DELETE CASCADE, benefit_type VARCHAR(30) NOT NULL, label VARCHAR(200) NOT NULL, description TEXT, value FLOAT DEFAULT 0.0, min_order_value FLOAT DEFAULT 0.0, expires_in_days INTEGER, usage_limit INTEGER DEFAULT 1, stackable BOOLEAN DEFAULT FALSE, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS loyalty_benefit_usage (id VARCHAR PRIMARY KEY, customer_id VARCHAR NOT NULL REFERENCES customers(id) ON DELETE CASCADE, benefit_id VARCHAR NOT NULL REFERENCES loyalty_benefits(id) ON DELETE CASCADE, order_id VARCHAR REFERENCES orders(id) ON DELETE SET NULL, used_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS loyalty_cycles (id VARCHAR PRIMARY KEY, customer_id VARCHAR NOT NULL REFERENCES customers(id) ON DELETE CASCADE, start_date TIMESTAMPTZ NOT NULL, end_date TIMESTAMPTZ NOT NULL, points_earned INTEGER DEFAULT 0, points_used INTEGER DEFAULT 0, points_expired INTEGER DEFAULT 0, points_rolled_over INTEGER DEFAULT 0, level_reached VARCHAR REFERENCES loyalty_levels(id) ON DELETE SET NULL, status VARCHAR(20) DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW(), closed_at TIMESTAMPTZ)",
+        "CREATE TABLE IF NOT EXISTS referrals (id VARCHAR PRIMARY KEY, referrer_id VARCHAR NOT NULL REFERENCES customers(id) ON DELETE CASCADE, referred_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, referral_code VARCHAR(20) UNIQUE NOT NULL, status VARCHAR(20) DEFAULT 'pending', reward_points INTEGER DEFAULT 10, created_at TIMESTAMPTZ DEFAULT NOW(), completed_at TIMESTAMPTZ)",
+        # ── Loyalty Engine Pro — extend customer_loyalty ─────────────────
+        "ALTER TABLE customer_loyalty ADD COLUMN IF NOT EXISTS cycle_start_date TIMESTAMPTZ",
+        "ALTER TABLE customer_loyalty ADD COLUMN IF NOT EXISTS cycle_end_date TIMESTAMPTZ",
+        "ALTER TABLE customer_loyalty ADD COLUMN IF NOT EXISTS rollover_points INTEGER DEFAULT 0",
+        "ALTER TABLE customer_loyalty ADD COLUMN IF NOT EXISTS lifetime_points INTEGER DEFAULT 0",
+        "ALTER TABLE customer_loyalty ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ",
+        "ALTER TABLE customer_loyalty ADD COLUMN IF NOT EXISTS benefit_expiration_date TIMESTAMPTZ",
+        # ── Loyalty transactions — new types ─────────────────────────────
+        "ALTER TABLE loyalty_transactions ADD COLUMN IF NOT EXISTS description VARCHAR(300)",
     ]
     for stmt in stmts:
         try:
