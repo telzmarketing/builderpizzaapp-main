@@ -154,7 +154,64 @@
   }
 }
 
+@layer components {
+  .admin-shell {
+    min-height: 100dvh;
+    background:
+      radial-gradient(circle at 18% 10%, color-mix(in srgb, var(--color-primary) 14%, transparent), transparent 28rem),
+      linear-gradient(135deg, color-mix(in srgb, var(--bg-main) 92%, #000 8%), color-mix(in srgb, var(--bg-alt) 88%, #000 12%));
+  }
+
+  .admin-shell .flex.h-screen {
+    height: 100dvh;
+    min-height: 100dvh;
+    padding: 1rem;
+  }
+
+  .admin-shell .admin-sidebar {
+    border-radius: 1.25rem 0 0 1.25rem;
+    box-shadow: 0 24px 70px rgb(0 0 0 / 0.28);
+    overflow: hidden;
+  }
+
+  .admin-shell .admin-sidebar + .flex-1 {
+    min-width: 0;
+    margin-left: 0;
+    border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+    border-left: 0;
+    border-radius: 0 1.25rem 1.25rem 0;
+    background: color-mix(in srgb, var(--bg-alt) 82%, var(--bg-card) 18%);
+    box-shadow: 0 24px 70px rgb(0 0 0 / 0.22);
+  }
+
+  .admin-shell .admin-sidebar + .flex-1 > .bg-surface-02:first-child {
+    background: color-mix(in srgb, var(--bg-card) 78%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--border-color) 72%, transparent);
+    backdrop-filter: blur(12px);
+  }
+
+  .admin-shell :where(.bg-surface-02.rounded-xl, .bg-surface-02.rounded-2xl) {
+    border-color: color-mix(in srgb, var(--border-color) 72%, transparent);
+    box-shadow: 0 14px 38px rgb(0 0 0 / 0.16);
+  }
+}
+
 @media (max-width: 900px) {
+  .admin-shell .flex.h-screen {
+    padding: 0;
+  }
+
+  .admin-shell .admin-sidebar {
+    border-radius: 0;
+  }
+
+  .admin-shell .admin-sidebar + .flex-1 {
+    border-radius: 0;
+    border-top: 0;
+    border-right: 0;
+    border-bottom: 0;
+  }
+
   .admin-shell .flex.h-screen {
     min-height: 100dvh;
   }
