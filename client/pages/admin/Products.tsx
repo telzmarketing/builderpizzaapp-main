@@ -28,10 +28,17 @@ export default function AdminProducts() {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [categorySaving, setCategorySaving] = useState(false);
 
-  const existingCategories = [...new Set([
-    ...catalogCategories.map((cat) => cat.name),
-    ...products.filter(p => p.category).map(p => p.category as string),
-  ])].sort();
+  const sortedCatalogCategories = [...catalogCategories].sort((a, b) => {
+    if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+    return a.name.localeCompare(b.name);
+  });
+  const activeCatalogCategories = sortedCatalogCategories.filter((cat) => cat.active);
+  const catalogCategoryNames = sortedCatalogCategories.map((cat) => cat.name);
+  const legacyProductCategories = [...new Set(
+    products
+      .map((p) => (p.category || "").trim())
+      .filter((cat) => cat && !catalogCategoryNames.includes(cat))
+  )].sort();
 
   useEffect(() => {
     categoriesApi.list().then(setCatalogCategories).catch(() => setCatalogCategories([]));
@@ -79,15 +86,20 @@ export default function AdminProducts() {
       alert("Preencha todos os campos obrigatórios");
       return;
     }
+    const category = ((formData as any).category || "").trim();
+    if (category && !catalogCategoryNames.includes(category)) {
+      alert("Selecione uma categoria cadastrada na aba Categorias.");
+      return;
+    }
     try {
       if (editingId) {
-        await updateProduct(editingId, formData);
+        await updateProduct(editingId, { ...formData, category: category || null } as any);
         setEditingId(null);
       } else {
         await addProduct({
           name: formData.name!, description: formData.description!,
           price: formData.price!, icon: formData.icon || "🍕",
-          category: formData.category || null,
+          category: category || null,
           product_type: formData.product_type || "pizza",
           rating: formData.rating || 4.5, active: true,
         } as any);
@@ -403,7 +415,7 @@ export default function AdminProducts() {
           <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 flex justify-between items-center sticky top-0 z-20">
             <div>
               <h2 className="text-2xl font-bold text-cream">Produtos</h2>
-              <p className="text-stone text-sm">{products.length} produtos · {existingCategories.length} categorias</p>
+              <p className="text-stone text-sm">{products.length} produtos · {sortedCatalogCategories.length} categorias cadastradas</p>
             </div>
             {activeTab === "produtos" && (
               <button
@@ -477,20 +489,37 @@ export default function AdminProducts() {
                         <textarea value={formData.description || ""} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className={`${cls} resize-none`} placeholder="Descreva o produto..." rows={3} />
                       </div>
                       <div>
-                        <label className="block text-parchment text-sm font-medium mb-2">Categoria</label>
-                        <input
-                          list="category-suggestions"
-                          type="text"
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <label className="block text-parchment text-sm font-medium">Categoria</label>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab("categorias")}
+                            className="text-xs text-gold hover:text-gold-light font-semibold"
+                          >
+                            Gerenciar categorias
+                          </button>
+                        </div>
+                        <select
                           value={(formData as any).category || ""}
                           onChange={(e) => setFormData({ ...formData, category: e.target.value } as any)}
                           className={cls}
-                          placeholder="Ex: Pizzas, Bebidas, Sobremesas..."
-                        />
-                        <datalist id="category-suggestions">
-                          {existingCategories.map((cat) => (
-                            <option key={cat} value={cat} />
+                          disabled={activeCatalogCategories.length === 0}
+                        >
+                          <option value="">
+                            {activeCatalogCategories.length === 0 ? "Cadastre uma categoria na aba Categorias" : "Selecione uma categoria"}
+                          </option>
+                          {activeCatalogCategories.map((cat) => (
+                            <option key={cat.id} value={cat.name}>{cat.name}</option>
                           ))}
-                        </datalist>
+                          {(formData as any).category && !catalogCategoryNames.includes((formData as any).category) && (
+                            <option value={(formData as any).category}>Categoria atual nao cadastrada: {(formData as any).category}</option>
+                          )}
+                        </select>
+                        {(formData as any).category && !catalogCategoryNames.includes((formData as any).category) && (
+                          <p className="text-amber-400 text-xs mt-2">
+                            Esta categoria veio de um produto antigo. Crie ela na aba Categorias ou selecione uma categoria cadastrada.
+                          </p>
+                        )}
                       </div>
                       <div className="grid grid-cols-2 gap-4 items-start">
                         <ImageUpload
@@ -657,31 +686,37 @@ export default function AdminProducts() {
                     </button>
                   </div>
 
-                  {existingCategories.length === 0 ? (
+                  {sortedCatalogCategories.length === 0 ? (
                     <p className="text-stone text-sm text-center py-4">
                       Nenhuma categoria cadastrada.
                     </p>
                   ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {existingCategories.map((cat) => (
-                        <div key={cat} className="flex items-center gap-1.5 bg-gold/10 border border-gold/30 rounded-full px-3 py-1.5">
-                          <Tag size={12} className="text-gold" />
-                          <span className="text-gold text-sm font-medium">{cat}</span>
-                          {catalogCategories.some((item) => item.name === cat) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const category = catalogCategories.find((item) => item.name === cat);
-                                if (category) handleDeleteCategory(category);
-                              }}
-                              className="text-gold/70 hover:text-red-400 transition-colors"
-                              title="Remover categoria"
-                            >
-                              <X size={12} />
-                            </button>
-                          )}
+                    <div className="space-y-2">
+                      {sortedCatalogCategories.map((category) => (
+                        <div key={category.id} className="flex items-center gap-3 bg-surface-03 rounded-xl px-4 py-3">
+                          <Tag size={14} className="text-gold flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-cream text-sm font-bold">{category.name}</p>
+                            <p className="text-stone text-xs">
+                              {category.active ? "Ativa para seleção no produto" : "Inativa"}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCategory(category)}
+                            className="text-stone hover:text-red-400 transition-colors p-1.5"
+                            title="Remover categoria"
+                          >
+                            <X size={14} />
+                          </button>
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {legacyProductCategories.length > 0 && (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-amber-300 text-xs leading-relaxed">
+                      Categorias antigas encontradas em produtos: {legacyProductCategories.join(", ")}. Para usar no cadastro, crie essas categorias aqui na aba Categorias.
                     </div>
                   )}
 
