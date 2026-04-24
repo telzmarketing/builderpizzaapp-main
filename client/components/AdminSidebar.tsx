@@ -52,7 +52,7 @@ export default function AdminSidebar() {
     <div className="w-64 bg-surface-02 border-r border-surface-03 p-6 flex flex-col flex-shrink-0">
       <div className="mb-8 flex items-center">
         <div className="min-w-0">
-          <MoschettieriLogo className="h-9" />
+          <MoschettieriLogo className="text-[22px]" />
           <p className="text-stone text-xs truncate">{brand.tagline}</p>
         </div>
       </div>
