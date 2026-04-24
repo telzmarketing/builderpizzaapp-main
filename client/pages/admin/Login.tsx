@@ -32,8 +32,8 @@ export default function AdminLogin() {
     <div className="min-h-screen bg-gradient-to-br from-surface-00 via-brand-dark to-surface-00 flex items-center justify-center px-4">
       <div className="w-full max-w-[380px]">
         <div className="text-center mb-7">
-          <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 shadow-2xl shadow-black/30">
-            <MoschettieriLogo className="text-[24px] scale-[1.08] origin-center" />
+          <div className="mx-auto mb-5 flex w-48 items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 px-6 py-4 shadow-2xl shadow-black/30">
+            <MoschettieriLogo className="text-[24px] scale-[1.08] origin-center whitespace-nowrap" />
           </div>
           <p className="text-gold text-xs font-bold uppercase tracking-[0.24em]">Painel Administrativo</p>
           <h1 className="text-cream font-bold text-2xl mt-2">Bem-vindo de volta</h1>
