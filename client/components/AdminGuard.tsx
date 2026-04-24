@@ -7,5 +7,9 @@ import { Navigate, Outlet } from "react-router-dom";
 export default function AdminGuard() {
   const token = localStorage.getItem("admin_token");
   if (!token) return <Navigate to="/painel/login" replace />;
-  return <Outlet />;
+  return (
+    <div className="admin-shell">
+      <Outlet />
+    </div>
+  );
 }

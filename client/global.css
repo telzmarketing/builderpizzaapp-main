@@ -134,12 +134,53 @@
 
   :where(p, span, li, h1, h2, h3, h4, h5, h6, a, button, label, td, th) {
     overflow-wrap: anywhere;
-    word-break: break-word;
+    word-break: normal;
+  }
+
+  :where(button, a, [role="button"]) {
+    min-width: 0;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :where(button, a, [role="button"]) svg {
+    flex-shrink: 0;
   }
 
   pre,
   code {
     overflow-x: auto;
     white-space: pre;
+  }
+}
+
+@media (max-width: 900px) {
+  .admin-shell .flex.h-screen {
+    min-height: 100dvh;
+  }
+
+  .admin-shell .flex.h-screen > .flex-1 {
+    min-width: 0;
+  }
+
+  .admin-shell .px-8 {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  .admin-shell .p-8 {
+    padding: 1rem !important;
+  }
+
+  .admin-shell .grid.grid-cols-2,
+  .admin-shell .grid.grid-cols-3,
+  .admin-shell .grid.grid-cols-4 {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .fixed.bottom-0 {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
   }
 }

@@ -71,25 +71,28 @@ export default function AdminSidebar() {
     }`;
 
   return (
-    <aside className="w-[280px] bg-surface-02/95 border-r border-surface-03 flex flex-col flex-shrink-0">
-      <div className="px-5 pt-5 pb-4 border-b border-surface-03/80">
-        <div className="flex items-center justify-center rounded-xl bg-surface-03/45 border border-surface-03 px-4 py-4">
+    <aside className="w-[74px] lg:w-[280px] bg-surface-02/95 border-r border-surface-03 flex flex-col flex-shrink-0">
+      <div className="px-3 lg:px-5 pt-4 lg:pt-5 pb-4 border-b border-surface-03/80">
+        <div className="hidden lg:flex items-center justify-center rounded-xl bg-surface-03/45 border border-surface-03 px-4 py-4">
           <MoschettieriLogo className="text-[24px] scale-[1.08] origin-center" />
         </div>
-        <p className="mt-3 text-center text-stone text-xs truncate">{brand.tagline}</p>
+        <div className="lg:hidden flex h-11 w-11 items-center justify-center rounded-xl bg-surface-03/70 border border-surface-03 mx-auto">
+          <span className="font-serif text-xl font-bold text-gold leading-none">M</span>
+        </div>
+        <p className="hidden lg:block mt-3 text-center text-stone text-xs truncate">{brand.tagline}</p>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-4 py-5 space-y-5">
+      <nav className="flex-1 overflow-y-auto px-2 lg:px-4 py-4 lg:py-5 space-y-4 lg:space-y-5">
         {navSections.map((section) => (
           <div key={section.label}>
-            <p className="px-3 pb-2 text-[11px] font-bold uppercase tracking-[0.16em] text-stone/80">
+            <p className="hidden lg:block px-3 pb-2 text-[11px] font-bold uppercase tracking-[0.16em] text-stone/80">
               {section.label}
             </p>
             <div className="space-y-1.5">
               {section.items.map(({ to, icon: Icon, label }) => {
                 const active = isActive(to);
                 return (
-                  <Link key={to} to={to} className={navClass(active)}>
+                  <Link key={to} to={to} title={label} className={`${navClass(active)} justify-center lg:justify-start`}>
                     {active && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-gold" />}
                     <span
                       className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
@@ -98,7 +101,7 @@ export default function AdminSidebar() {
                     >
                       <Icon size={17} />
                     </span>
-                    <span className="min-w-0 truncate">{label}</span>
+                    <span className="hidden lg:block min-w-0 truncate">{label}</span>
                   </Link>
                 );
               })}
@@ -107,20 +110,22 @@ export default function AdminSidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-surface-03/80 p-4 space-y-2">
+      <div className="border-t border-surface-03/80 p-2 lg:p-4 space-y-2">
         <Link
           to="/"
-          className="flex items-center gap-3 rounded-xl border border-surface-03 bg-surface-03/45 px-3 py-2.5 text-sm font-semibold text-parchment hover:text-cream hover:border-gold/30 transition-colors"
+          title="Voltar ao App"
+          className="flex items-center justify-center lg:justify-start gap-3 rounded-xl border border-surface-03 bg-surface-03/45 px-3 py-2.5 text-sm font-semibold text-parchment hover:text-cream hover:border-gold/30 transition-colors"
         >
           <ArrowLeft size={17} className="text-gold" />
-          Voltar ao App
+          <span className="hidden lg:block">Voltar ao App</span>
         </Link>
         <button
           onClick={handleLogout}
-          className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-red-400 hover:bg-red-500/10 transition-colors"
+          title="Sair"
+          className="w-full flex items-center justify-center lg:justify-start gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-red-400 hover:bg-red-500/10 transition-colors"
         >
           <LogOut size={17} />
-          Sair
+          <span className="hidden lg:block">Sair</span>
         </button>
       </div>
     </aside>
