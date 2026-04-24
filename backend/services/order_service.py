@@ -23,7 +23,7 @@ from backend.core.events import (
 )
 from backend.models.order import Order, OrderItem, OrderItemFlavor, OrderStatus
 from backend.models.payment import Payment, PaymentMethod, PaymentStatus
-from backend.models.product import Product, MultiFlavorsConfig, PricingRule
+from backend.models.product import Product, MultiFlavorsConfig, PricingRule, ProductCrustType, ProductDrinkVariant, ProductSize
 from backend.schemas.order import CheckoutIn, CartItemIn, FlavorIn, OrderStatusUpdate
 
 
@@ -43,6 +43,15 @@ def _compute_flavor_price(
         return sum(prices) / len(prices)
     # proportional: each slot pays its fraction
     return sum(p / division for p in prices)
+
+
+def _normalize_crust_price_addition(price_addition: float | None, product_base_price: float | None) -> float:
+    addition = float(price_addition or 0)
+    if addition <= 0:
+        return 0.0
+    if product_base_price and product_base_price > 0 and abs(addition - product_base_price) <= 0.01:
+        return 0.0
+    return round(addition, 2)
 
 
 class OrderService:
@@ -102,10 +111,11 @@ class OrderService:
         # Fetch size price server-side (authoritative — client-submitted prices are ignored when size found)
         size_base_price: float | None = None
         if item.selected_size_id:
-            from backend.models.product import ProductSize
             size = (
                 self._db.query(ProductSize)
-                .filter(ProductSize.id == item.selected_size_id, ProductSize.active == True)  # noqa: E712
+                .filter(ProductSize.id == item.selected_size_id,
+                        ProductSize.product_id == item.product_id,
+                        ProductSize.active == True)  # noqa: E712
                 .first()
             )
             if size:
@@ -149,22 +159,28 @@ class OrderService:
 
         # Add crust type price addition if provided
         if item.selected_crust_type_id:
-            from backend.models.product import ProductCrustType
             crust = (
                 self._db.query(ProductCrustType)
                 .filter(ProductCrustType.id == item.selected_crust_type_id,
+                        ProductCrustType.product_id == item.product_id,
                         ProductCrustType.active == True)  # noqa: E712
                 .first()
             )
-            if crust and crust.price_addition > 0:
-                server_price = round(server_price + crust.price_addition, 2)
+            if crust:
+                primary_product = next((p for p in flavor_products if p.id == item.product_id), flavor_products[0] if flavor_products else None)
+                crust_addition = _normalize_crust_price_addition(
+                    crust.price_addition,
+                    primary_product.price if primary_product else None,
+                )
+                if crust_addition > 0:
+                    server_price = round(server_price + crust_addition, 2)
 
         # Add drink variant price addition if provided
         if item.selected_drink_variant_id:
-            from backend.models.product import ProductDrinkVariant
             variant = (
                 self._db.query(ProductDrinkVariant)
                 .filter(ProductDrinkVariant.id == item.selected_drink_variant_id,
+                        ProductDrinkVariant.product_id == item.product_id,
                         ProductDrinkVariant.active == True)  # noqa: E712
                 .first()
             )

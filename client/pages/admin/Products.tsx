@@ -4,6 +4,7 @@ import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import ImageUpload from "@/components/admin/ImageUpload";
 import { sizesApi, crustApi, drinkVariantApi, categoriesApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { normalizeCrustPriceAddition } from "@/lib/pricing";
 
 const PRICING_OPTIONS: { value: PricingRule; label: string; description: string }[] = [
   { value: "most_expensive", label: "Mais Caro", description: "Cliente paga pelo sabor mais caro (padrão iFood)" },
@@ -276,7 +277,7 @@ export default function AdminProducts() {
       const updated = await crustApi.update(crustModalProduct.id, crust.id, { price_addition: priceAddition });
       setProductCrusts((prev) => prev.map((c) => (c.id === crust.id ? updated : c)));
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Erro ao atualizar preco da massa.");
+      alert(err instanceof Error ? err.message : "Erro ao atualizar adicional da massa.");
     } finally {
       setSavingCrustId(null);
     }
@@ -884,23 +885,29 @@ export default function AdminProducts() {
                   <p className="text-stone text-sm text-center py-4">Nenhum tipo de massa cadastrado. O cliente não verá opção de massa.</p>
                 ) : (
                   <div className="space-y-2">
-                    {productCrusts.map((crust) => (
+                    {productCrusts.map((crust) => {
+                      const effectiveAddition = normalizeCrustPriceAddition(crust.price_addition, crustModalProduct.price);
+                      const isLegacyDuplicate = crust.price_addition > 0 && effectiveAddition === 0;
+                      return (
                       <div key={crust.id} className="flex items-center gap-3 bg-surface-03 rounded-xl px-4 py-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-cream font-bold text-sm">{crust.name}</span>
                             {!crust.active && <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-full">inativo</span>}
                           </div>
+                          {isLegacyDuplicate && (
+                            <p className="text-amber-400 text-[11px] mt-1">Valor antigo igual ao preco da pizza: tratado como sem adicional.</p>
+                          )}
                         </div>
                         <input
                           type="number"
-                          defaultValue={crust.price_addition.toFixed(2)}
+                          defaultValue={effectiveAddition.toFixed(2)}
                           onBlur={(e) => handleUpdateCrustPrice(crust, e.target.value)}
                           disabled={savingCrustId === crust.id}
                           className="w-24 bg-surface-02 border border-surface-03 rounded-lg px-2 py-1 text-amber-400 font-bold text-sm outline-none focus:border-amber-400"
                           step="0.01"
                           min="0"
-                          title="Preco da massa"
+                          title="Adicional da massa"
                         />
                         <div className="flex items-center gap-1 flex-shrink-0">
                           <button onClick={() => handleToggleCrustActive(crust)} disabled={savingCrustId === crust.id} title={crust.active ? "Desativar" : "Ativar"} className={`p-1.5 rounded-lg transition-colors ${crust.active ? "text-green-400 hover:text-red-400" : "text-red-400 hover:text-green-400"}`}>
@@ -911,7 +918,8 @@ export default function AdminProducts() {
                           </button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -935,7 +943,7 @@ export default function AdminProducts() {
                       <input type="text" value={crustForm.name} onChange={(e) => setCrustForm((f) => ({ ...f, name: e.target.value }))} className={cls} placeholder='Ex: "Tradicional"' maxLength={100} />
                     </div>
                     <div>
-                      <label className="block text-parchment text-xs font-medium mb-1">Preço da massa (R$)</label>
+                      <label className="block text-parchment text-xs font-medium mb-1">Adicional da massa (R$)</label>
                       <input type="number" value={crustForm.price_addition} onChange={(e) => setCrustForm((f) => ({ ...f, price_addition: e.target.value }))} className={cls} placeholder="0.00" step="0.01" min="0" />
                     </div>
                   </div>

@@ -314,7 +314,7 @@ export default function AdminConteudo() {
                     <TextInput
                       value={draft.home.sectionSubtitle}
                       onChange={(v) => set(["home", "sectionSubtitle"], v)}
-                      placeholder="O que você quer comer hoje?"
+                      placeholder="Subtítulo da seção"
                     />
                   </Field>
 
@@ -322,7 +322,7 @@ export default function AdminConteudo() {
                     <TextInput
                       value={draft.home.sectionTitle}
                       onChange={(v) => set(["home", "sectionTitle"], v)}
-                      placeholder="Escolha sua Pizza Favorita"
+                      placeholder="Título principal da seção"
                     />
                   </Field>
 
@@ -344,14 +344,6 @@ export default function AdminConteudo() {
                   </Field>
 
 
-                </div>
-
-                <div className="bg-surface-02/60 rounded-xl border border-surface-03 p-4">
-                  <p className="text-stone text-xs font-bold uppercase tracking-wider mb-3">Pré-visualização</p>
-                  <div className="space-y-1">
-                    <p className="text-stone text-sm">{draft.home.sectionSubtitle}</p>
-                    <p className="text-cream font-bold text-xl">{draft.home.sectionTitle}</p>
-                  </div>
                 </div>
               </div>
             )}

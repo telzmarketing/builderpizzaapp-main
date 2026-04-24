@@ -1,6 +1,6 @@
 # Base de Conhecimento — PizzaApp
 > Documento técnico completo: telas, funcionalidades, banco de dados, endpoints e integrações.
-> Gerado em: 2026-04-13 | **Atualizado em: 2026-04-23** | Versão: 2.2.0
+> Gerado em: 2026-04-13 | **Atualizado em: 2026-04-24** | Versao: 2.6.0
 
 ---
 
@@ -34,6 +34,7 @@
 12. [Regras de Negócio Críticas](#12-regras-de-negócio-críticas)
 13. [Fluxo Completo de um Pedido](#13-fluxo-completo-de-um-pedido)
 14. [Atualizacao 2026-04-23 - Mercado Pago Payment Brick](#14-atualizacao-2026-04-23---mercado-pago-payment-brick)
+15. [Atualizacao 2026-04-24 - Estado Atual Consolidado](#15-atualizacao-2026-04-24---estado-atual-consolidado)
 
 ---
 
@@ -1534,3 +1535,219 @@ Commit enviado para `origin/main`:
 ```txt
 b5e33c3 Implement Mercado Pago Payment Brick flow
 ```
+
+---
+
+## 15. Atualizacao 2026-04-24 - Estado Atual Consolidado
+
+Esta secao consolida a leitura atual do codigo em 2026-04-24 e deve prevalecer sobre trechos legados deste documento ate que a base seja reescrita por completo. Ela foi criada para reduzir divergencias entre documentacao antiga e o sistema Moschettieri em producao/desenvolvimento.
+
+### 15.1 Regra de precedencia da base
+
+- Se uma secao antiga citar Checkout Pro como fluxo principal, considerar desatualizado: o fluxo atual e Mercado Pago Payment Brick.
+- Se uma secao antiga citar adicionais/extras no produto, considerar desatualizado: adicionais foram removidos da experiencia atual.
+- Se uma secao antiga citar tamanhos P, M, G ou GG para pizza, considerar desatualizado: a pizza usa apenas Brotinho e Pizza Grande.
+- Se uma secao antiga citar pagamento aprovado pela resposta do frontend, considerar desatualizado: pagamento aprovado so vem de webhook validado no backend com consulta a API do Mercado Pago.
+- Se houver conflito entre este item 15 e secoes anteriores, o item 15 e a referencia operacional mais atual.
+
+### 15.2 Rotas principais atuais
+
+Loja:
+- `/` home da loja.
+- `/product/:id` detalhe do produto.
+- `/cart` carrinho.
+- `/checkout` checkout com Payment Brick.
+- `/order-tracking` rastreio/status do pedido.
+- `/fidelidade`, `/cupons`, `/pedidos`, `/conta`, `/localizacao`, `/cardapio`.
+- `/campanha/:slug` campanhas publicas.
+
+Painel:
+- `/painel` dashboard.
+- `/painel/products` produtos, categorias, tamanhos, massas e variantes.
+- `/painel/orders` pedidos.
+- `/painel/fidelidade` fidelidade.
+- `/painel/conteudo` conteudo textual/visual da loja.
+- `/painel/pagamentos` credenciais e webhook.
+- `/painel/frete` frete.
+- `/painel/campanhas` campanhas.
+- `/painel/chatbot` configuracao, FAQ, conversas, automacoes, IA e relatorios.
+- `/painel/aparencia` tema visual.
+- `/painel/home-config` controle do catalogo exibido na home.
+
+### 15.3 Checkout e pagamento atual
+
+O fluxo oficial de pagamento e Mercado Pago Payment Brick:
+
+1. Cliente finaliza o pedido no checkout.
+2. Backend cria pedido com `pedido_status=aguardando_pagamento` e `payment_status=pending`.
+3. Frontend renderiza o Payment Brick com a Public Key.
+4. Cliente paga com Pix ou cartao.
+5. Frontend envia os dados do Brick para `/payments/create` via `client/lib/api.ts`.
+6. Backend cria/processa o pagamento no Mercado Pago.
+7. Mercado Pago notifica o backend em `/webhooks/mercadopago`.
+8. Backend valida o evento consultando a API do Mercado Pago.
+9. Apenas apos status real aprovado, backend atualiza `payment_status=approved`, `pedido_status=pago` e chama `sendOrderToSaipos(orderId)`.
+
+Endpoints relevantes:
+- `POST /orders` e `POST /orders/checkout`: criacao de pedido.
+- `POST /payments/create`: processamento do Payment Brick.
+- `GET /payments/public-key`: chave publica usada pelo frontend.
+- `GET /orders/{id}/payment-status`: polling do checkout.
+- `POST /webhooks/mercadopago`: webhook atual recomendado.
+- `POST /payments/webhook`: webhook legado mantido por compatibilidade.
+
+Variaveis esperadas:
+
+```env
+PAYMENT_PROVIDER=mercado_pago
+MERCADO_PAGO_ACCESS_TOKEN=
+MERCADO_PAGO_PUBLIC_KEY=
+MERCADO_PAGO_WEBHOOK_SECRET=
+VITE_MERCADO_PAGO_PUBLIC_KEY=
+```
+
+Regras criticas:
+- Nao considerar pedido pago pela resposta do frontend.
+- Usar `external_reference` para vincular pagamento e pedido interno.
+- Salvar `mercado_pago_payment_id`.
+- Registrar eventos em `payment_events`.
+- Webhook deve ser idempotente.
+- Pedido aprovado nao pode ser duplicado.
+- Saipos so pode ser chamado quando o pagamento for aprovado pelo webhook validado.
+
+### 15.4 Produto, pizzas e categorias
+
+Produto:
+- Modelo principal: `backend/models/product.py`.
+- Rotas: `backend/routes/products.py`.
+- API frontend: `client/lib/api.ts`.
+- Tela admin: `client/pages/admin/Products.tsx`.
+- Tela loja: `client/pages/Product.tsx`.
+
+Categorias:
+- Existe tabela `product_categories`.
+- Migration: `backend/migrations/versions/20260424_product_categories.py`.
+- Service: `backend/services/product_category_service.py`.
+- Endpoints:
+  - `GET /products/categories`
+  - `POST /products/categories`
+  - `PUT /products/categories/{category_id}`
+  - `DELETE /products/categories/{category_id}`
+- No painel, a aba Categorias permite criar, listar, ordenar, ativar/desativar e remover categorias.
+
+Pizzas:
+- Tamanhos permitidos na loja: `Brotinho` e `Pizza Grande`.
+- O painel permite cadastrar o valor de cada tamanho por produto em `product_sizes`.
+- Tipos de massa atuais: `Napolitana` e `Tradicional`, cadastrados por produto em `product_crust_types`.
+- Cada massa pode ter `price_addition`.
+- Adicionais como bacon, cebola ou camarao nao fazem parte da experiencia atual.
+
+Bebidas/outros:
+- Bebidas podem usar `product_drink_variants`.
+- Produtos continuam com `product_type`: `pizza`, `drink` ou `other`.
+
+Multi-sabor:
+- A infraestrutura `multi_flavors_config` e os campos de sabores em pedido ainda existem.
+- O fluxo atual deve preservar compatibilidade, sem reintroduzir adicionais ou tamanhos antigos.
+
+### 15.5 Conteudo, home e logo
+
+Logo:
+- O logo atual e textual via `client/components/MoschettieriLogo.tsx`.
+- A loja e o painel devem usar o mesmo componente textual, nao imagem.
+- A barra superior da loja foi reduzida sem aumentar a largura do header.
+
+Home da loja:
+- Conteudo base vem de `siteContent.home` e da configuracao em `/home-config`.
+- A home pode filtrar catalogo por todos os produtos, categorias selecionadas ou produtos selecionados.
+
+Painel Conteudo:
+- No submodulo Home, a pre-visualizacao com os textos "O que voce quer comer hoje?" e "Escolha sua Pizza Favorita" foi removida.
+- Os placeholders dos campos foram deixados genericos para evitar acoplar a edicao ao texto antigo.
+
+### 15.6 Painel administrativo e responsividade
+
+Sidebar:
+- Componente: `client/components/AdminSidebar.tsx`.
+- Layout atual: sidebar compacta em telas menores e expandida no desktop.
+- Icones simulados de status foram removidos do dashboard/painel.
+
+Responsividade:
+- Regras globais em `client/global.css` reduzem padding, ajustam grids e evitam estouro de botoes/textos.
+- O admin usa `client/components/AdminGuard.tsx` como shell protegido.
+- Ajustes visuais devem preservar os fluxos funcionais de carrinho, produtos, frete, cliente e pagamento.
+
+Login:
+- Tela: `client/pages/admin/Login.tsx`.
+- Deve manter paleta coerente com o restante do sistema e o mesmo logo textual Moschettieri.
+
+### 15.7 Chatbot e base de conhecimento do atendimento
+
+Backend:
+- Rotas publicas: `backend/routes/chatbot.py`.
+- Rotas admin: `backend/routes/admin_chatbot.py`.
+- Modelos: `backend/models/chatbot.py`.
+- Service principal: `backend/services/chatbot_service.py`.
+- Montagem de contexto: `backend/services/context_builder.py`.
+
+Fontes de contexto:
+- `chatbot_settings`
+- `chatbot_faq`
+- `chatbot_knowledge_docs`
+- produtos, promocoes e regras de negocio consultadas pelo `ContextBuilder`
+
+API admin existente:
+- `/admin/chatbot/settings`
+- `/admin/chatbot/faq`
+- `/admin/chatbot/knowledge`
+- `/admin/chatbot/automations`
+- `/admin/chatbot/conversations`
+- `/admin/chatbot/analytics`
+
+Observacao operacional:
+- Existem endpoints e modelos para documentos de conhecimento do chatbot.
+- A UI atual do painel expõe FAQ e demais abas do chatbot; a API de knowledge ja existe em `client/lib/chatbotApi.ts`.
+
+### 15.8 Banco de dados e migrations atuais relevantes
+
+Migrations recentes:
+- `backend/migrations/versions/20260423_payment_brick.py`
+- `backend/migrations/versions/20260424_product_categories.py`
+
+Tabelas/campos relevantes do estado atual:
+- `orders`: status de pedido/pagamento, `external_reference`.
+- `payments`: provider, `mercado_pago_payment_id`, `external_reference`, status e resposta bruta.
+- `payment_events`: eventos recebidos do gateway.
+- `product_categories`: categorias de catalogo.
+- `product_sizes`: tamanhos por produto.
+- `product_crust_types`: massas por produto.
+- `product_drink_variants`: variantes de bebidas.
+- `home_catalog_config`: configuracao do catalogo da home.
+- `chatbot_knowledge_docs`: documentos de conhecimento do chatbot.
+
+Regra de banco:
+- Toda mudanca persistida deve ter migration Alembic correspondente.
+- O startup em `backend/main.py` ainda contem fallbacks idempotentes para compatibilidade, mas migration continua sendo a fonte correta para evolucao controlada.
+
+### 15.9 Deploy e operacao
+
+Comando padrao apos push:
+
+```bash
+cd /home/deploy/moschettieri && git pull origin main && pnpm install && pnpm run build && sudo systemctl restart moschettieri-web moschettieri-api
+```
+
+Cuidados:
+- `.env` em producao nao deve ser sobrescrito pelo pull.
+- Se houver conflito em `.env`, resolver ou preservar o arquivo local antes de continuar.
+- Em incidente real, verificar logs antes de reiniciar servicos.
+
+### 15.10 Validacao local conhecida
+
+Validoes recentes ja executadas neste ciclo:
+- `npm.cmd run build` passou apos os ajustes de frontend.
+- O ambiente local Windows apresentou historico de indisponibilidade do Python no PATH em alguns momentos; quando validar backend, preferir o Python embarcado do projeto se estiver disponivel.
+
+Pendencias controladas:
+- A integracao Saipos real ainda e stub em `backend/services/saipos_service.py`.
+- Documentacao antiga acima desta secao ainda pode conter referencias legadas; esta secao 15 e a referencia consolidada mais atual ate a limpeza completa linha a linha.

@@ -4,6 +4,7 @@ import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check } from "lucide-react
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation } from "@/context/AppContext";
 import { sizesApi, crustApi, drinkVariantApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { formatCrustAddition, normalizeCrustPriceAddition } from "@/lib/pricing";
 
 // ─── Add-ons ──────────────────────────────────────────────────────────────────
 
@@ -220,10 +221,10 @@ export default function Product() {
   }, [activeFlavors, division, multiFlavorsConfig.pricingRule, productSizes, selectedSizeObj, isDrink, product.price]);
 
   const variantPriceAddition = useMemo(() => {
-    if (isPizza && selectedCrust) return selectedCrust.price_addition;
+    if (isPizza && selectedCrust) return normalizeCrustPriceAddition(selectedCrust.price_addition, product.price);
     if (isDrink && selectedDrinkVariant) return selectedDrinkVariant.price_addition;
     return 0;
-  }, [isPizza, isDrink, selectedCrust, selectedDrinkVariant]);
+  }, [isPizza, isDrink, selectedCrust, selectedDrinkVariant, product.price]);
 
   const pricePerUnit = flavorPrice + variantPriceAddition;
   const totalPrice = pricePerUnit * quantity;
@@ -279,7 +280,7 @@ export default function Product() {
     }
 
     const crustVariation: CartItemVariation | null = selectedCrust
-      ? { id: selectedCrust.id, name: selectedCrust.name, priceAddition: selectedCrust.price_addition }
+      ? { id: selectedCrust.id, name: selectedCrust.name, priceAddition: normalizeCrustPriceAddition(selectedCrust.price_addition, product.price) }
       : null;
 
     const drinkVariation: CartItemVariation | null = selectedDrinkVariant
@@ -547,7 +548,9 @@ export default function Product() {
           <div className="mb-6">
             <h3 className="text-cream font-bold mb-3">Tipo de Massa</h3>
             <div className="flex gap-2 flex-wrap">
-              {productCrusts.map((crust) => (
+              {productCrusts.map((crust) => {
+                const effectiveAddition = normalizeCrustPriceAddition(crust.price_addition, product.price);
+                return (
                 <button
                   key={crust.id}
                   onClick={() => setSelectedCrust(prev => prev?.id === crust.id ? null : crust)}
@@ -558,14 +561,15 @@ export default function Product() {
                   }`}
                 >
                   <span className="block font-black text-xs">{crust.name}</span>
-                  <span className={`block text-[10px] mt-0.5 ${selectedCrust?.id === crust.id ? "text-white/80" : crust.price_addition > 0 ? "text-amber-400" : "opacity-60"}`}>
-                    R$ {crust.price_addition.toFixed(2)}
+                  <span className={`block text-[10px] mt-0.5 ${selectedCrust?.id === crust.id ? "text-white/80" : effectiveAddition > 0 ? "text-amber-400" : "opacity-70"}`}>
+                    {formatCrustAddition(effectiveAddition)}
                   </span>
                 </button>
-              ))}
+                );
+              })}
             </div>
             {selectedCrust && (
-              <p className="text-amber-400 text-xs mt-2">✓ Massa {selectedCrust.name} selecionada · R$ {selectedCrust.price_addition.toFixed(2)}</p>
+              <p className="text-amber-400 text-xs mt-2">Massa {selectedCrust.name} selecionada - {formatCrustAddition(variantPriceAddition)}</p>
             )}
           </div>
         )}
