@@ -49,9 +49,6 @@ export default function AdminDashboard() {
         <div className="flex-1 overflow-auto">
           <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 flex justify-between items-center sticky top-0 z-20">
             <h2 className="text-2xl font-bold text-cream">Dashboard</h2>
-            <div className="flex gap-2 text-stone text-sm">
-              <span>📡</span><span>📶</span><span>🔋</span>
-            </div>
           </div>
 
           <div className="p-8">
