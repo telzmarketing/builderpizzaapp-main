@@ -321,7 +321,7 @@ export default function Product() {
         <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <MoschettieriLogo className="text-cream text-base" />
+        <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />
         <div className="w-6"></div>
       </div>
 
