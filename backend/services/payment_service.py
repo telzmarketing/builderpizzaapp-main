@@ -292,6 +292,28 @@ class PaymentService:
         self._db.commit()
 
         if status == PaymentStatus.approved and previous != PaymentStatus.approved:
+            if order and order.session_id:
+                try:
+                    from backend.schemas.paid_traffic import TrackingEventIn
+                    from backend.services.paid_traffic_service import PaidTrafficService
+
+                    PaidTrafficService(self._db).record_event(TrackingEventIn(
+                        session_id=order.session_id,
+                        campaign_id=order.campaign_id,
+                        event_type="order_paid",
+                        value=order.total,
+                        path=order.landing_page,
+                        landing_page=order.landing_page,
+                        referrer=order.referrer,
+                        utm_source=order.utm_source,
+                        utm_medium=order.utm_medium,
+                        utm_campaign=order.utm_campaign,
+                        utm_content=order.utm_content,
+                        utm_term=order.utm_term,
+                        metadata={"order_id": order.id, "payment_id": payment.id},
+                    ))
+                except Exception:
+                    pass
             sendOrderToSaipos(payment.order_id)
             bus.publish(PaymentConfirmed(payment_id=payment.id, order_id=payment.order_id, amount=payment.amount, gateway=payment.gateway, transaction_id=payment.transaction_id or ""))
         elif status in {PaymentStatus.rejected, PaymentStatus.cancelled, PaymentStatus.expired}:

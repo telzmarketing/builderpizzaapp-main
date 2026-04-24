@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ChevronLeft, Search, Star, Plus, Check } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { trackEvent } from "@/lib/tracking";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 
@@ -39,6 +40,7 @@ export default function Cardapio() {
       1,
       product.price
     );
+    trackEvent("add_to_cart", product.price, { product_id: product.id, source: "cardapio" });
     setJustAdded(product.id);
     setTimeout(() => setJustAdded(null), 1500);
   };

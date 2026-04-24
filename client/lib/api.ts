@@ -214,6 +214,78 @@ export interface ApiCouponUsage {
   created_at: string;
 }
 
+export interface TrafficCampaign {
+  id: string;
+  name: string;
+  platform: "meta" | "google" | "tiktok" | "manual" | string;
+  status: "draft" | "active" | "paused" | "ended" | string;
+  daily_budget: number | null;
+  total_budget: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  product_id: string | null;
+  coupon_id: string | null;
+  destination_url: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CampaignLink {
+  id: string;
+  campaign_id: string;
+  name: string | null;
+  destination_url: string;
+  final_url: string;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  utm_content: string | null;
+  utm_term: string | null;
+  active: boolean;
+  created_at: string;
+}
+
+export interface PaidTrafficDashboard {
+  spend: number;
+  revenue: number;
+  estimated_profit: number;
+  roas: number;
+  roi: number;
+  cpa: number;
+  average_ticket: number;
+  conversion_rate: number;
+  orders: number;
+  paid_orders: number;
+  visitors: number;
+  carts: number;
+  abandoned_carts: number;
+  by_campaign: Array<Record<string, any>>;
+  by_platform: Array<Record<string, any>>;
+  by_day: Array<Record<string, any>>;
+}
+
+export interface AdIntegration {
+  id: string;
+  platform: string;
+  status: string;
+  account_name: string | null;
+  last_sync_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CampaignSettings {
+  id: string;
+  attribution_window_days: number;
+  attribution_model: string;
+  default_margin: number;
+  target_roas: number;
+  tracking_enabled: boolean;
+  updated_at: string;
+}
+
 // ── Campaigns ─────────────────────────────────────────────────────────────────
 
 export type CampaignStatus = "draft" | "active" | "paused" | "ended";
@@ -362,6 +434,15 @@ export interface CheckoutIn {
   coupon_code?: string;
   customer_id?: string;
   payment_method: "pix" | "credit_card" | "cash";
+  campaign_id?: string | null;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_content?: string | null;
+  utm_term?: string | null;
+  session_id?: string | null;
+  landing_page?: string | null;
+  referrer?: string | null;
 }
 
 export interface ApiPayment {
@@ -882,6 +963,27 @@ export const campaignsApi = {
     post<ApiKitItem>(`/campaigns/kits/${kitId}/items`, { product_id, quantity }),
 
   removeKitItem: (itemId: string) => del<void>(`/campaigns/kits/items/${itemId}`),
+};
+
+export const paidTrafficApi = {
+  dashboard: () => get<PaidTrafficDashboard>("/paid-traffic/dashboard"),
+  campaigns: () => get<TrafficCampaign[]>("/paid-traffic/campaigns"),
+  createCampaign: (data: Partial<TrafficCampaign>) => post<TrafficCampaign>("/paid-traffic/campaigns", data),
+  updateCampaign: (id: string, data: Partial<TrafficCampaign>) => put<TrafficCampaign>(`/paid-traffic/campaigns/${id}`, data),
+  removeCampaign: (id: string) => del<void>(`/paid-traffic/campaigns/${id}`),
+  links: (campaignId?: string) => get<CampaignLink[]>(`/paid-traffic/links${campaignId ? `?campaign_id=${campaignId}` : ""}`),
+  createLink: (data: Partial<CampaignLink> & { campaign_id: string }) => post<CampaignLink>("/paid-traffic/links", data),
+  integrations: () => get<AdIntegration[]>("/paid-traffic/integrations"),
+  saveIntegration: (data: { platform: string; access_token?: string; refresh_token?: string; account_name?: string }) =>
+    post<AdIntegration>("/paid-traffic/integrations", data),
+  disconnectIntegration: (platform: string) => post<AdIntegration>(`/paid-traffic/integrations/${platform}/disconnect`, {}),
+  syncIntegration: (platform: string) => post<{ status: string; message: string }>(`/paid-traffic/integrations/${platform}/sync`, {}),
+  settings: () => get<CampaignSettings>("/paid-traffic/settings"),
+  updateSettings: (data: Partial<CampaignSettings>) => put<CampaignSettings>("/paid-traffic/settings", data),
+};
+
+export const trackingApi = {
+  event: (data: Record<string, unknown>) => post<{ id: string }>("/tracking/event", data),
 };
 
 // ─── Admin ────────────────────────────────────────────────────────────────────

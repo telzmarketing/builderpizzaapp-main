@@ -261,6 +261,15 @@ class OrderService:
             delivery_complement=payload.delivery.complement,
             status=OrderStatus.aguardando_pagamento,
             coupon_id=resolved_coupon_id,
+            campaign_id=payload.campaign_id,
+            utm_source=payload.utm_source,
+            utm_medium=payload.utm_medium,
+            utm_campaign=payload.utm_campaign,
+            utm_content=payload.utm_content,
+            utm_term=payload.utm_term,
+            session_id=payload.session_id,
+            landing_page=payload.landing_page,
+            referrer=payload.referrer,
             subtotal=subtotal,
             shipping_fee=shipping_fee,
             discount=discount,
@@ -322,6 +331,29 @@ class OrderService:
 
         self._db.commit()
         self._db.refresh(order)
+
+        if payload.session_id:
+            try:
+                from backend.schemas.paid_traffic import TrackingEventIn
+                from backend.services.paid_traffic_service import PaidTrafficService
+
+                PaidTrafficService(self._db).record_event(TrackingEventIn(
+                    session_id=payload.session_id,
+                    campaign_id=payload.campaign_id,
+                    event_type="order_created",
+                    value=order.total,
+                    path=payload.landing_page,
+                    landing_page=payload.landing_page,
+                    referrer=payload.referrer,
+                    utm_source=payload.utm_source,
+                    utm_medium=payload.utm_medium,
+                    utm_campaign=payload.utm_campaign,
+                    utm_content=payload.utm_content,
+                    utm_term=payload.utm_term,
+                    metadata={"order_id": order.id},
+                ))
+            except Exception:
+                pass
 
         # 7. Publish event (after commit — DB is consistent)
         bus.publish(OrderCreated(

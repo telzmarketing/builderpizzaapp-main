@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { themeApi, applyTheme, DEFAULT_THEME } from "./lib/themeApi";
+import { captureTrackingFromUrl, trackEvent } from "./lib/tracking";
 
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
 
@@ -28,6 +29,16 @@ function ThemeInjector() {
     window.addEventListener("theme-updated", handler);
     return () => window.removeEventListener("theme-updated", handler);
   }, []);
+  return null;
+}
+
+function TrackingInjector() {
+  const { pathname, search } = useLocation();
+  useEffect(() => {
+    if (pathname.startsWith("/painel")) return;
+    captureTrackingFromUrl();
+    trackEvent("page_view");
+  }, [pathname, search]);
   return null;
 }
 
@@ -89,6 +100,7 @@ export default function App() {
           <Sonner />
           <BrowserRouter>
             <StoreWidget />
+            <TrackingInjector />
             <Routes>
               {/* ── Customer routes ── */}
               <Route path="/" element={<Index />} />

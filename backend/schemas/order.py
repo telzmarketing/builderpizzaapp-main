@@ -47,6 +47,15 @@ class CheckoutIn(BaseModel):
     coupon_code: Optional[str] = None
     customer_id: Optional[str] = None
     payment_method: str = "pix"
+    campaign_id: Optional[str] = None
+    utm_source: Optional[str] = None
+    utm_medium: Optional[str] = None
+    utm_campaign: Optional[str] = None
+    utm_content: Optional[str] = None
+    utm_term: Optional[str] = None
+    session_id: Optional[str] = None
+    landing_page: Optional[str] = None
+    referrer: Optional[str] = None
 
 
 class OrderItemFlavorOut(BaseModel):
@@ -91,6 +100,15 @@ class OrderOut(BaseModel):
     estimated_time: int
     loyalty_points_earned: int
     coupon_id: Optional[str]
+    campaign_id: Optional[str] = None
+    utm_source: Optional[str] = None
+    utm_medium: Optional[str] = None
+    utm_campaign: Optional[str] = None
+    utm_content: Optional[str] = None
+    utm_term: Optional[str] = None
+    session_id: Optional[str] = None
+    landing_page: Optional[str] = None
+    referrer: Optional[str] = None
     items: list[OrderItemOut] = []
     created_at: datetime
     updated_at: datetime

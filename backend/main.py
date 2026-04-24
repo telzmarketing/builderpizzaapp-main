@@ -22,6 +22,7 @@ from backend.routes import chatbot as chatbot_routes, admin_chatbot as admin_cha
 from backend.routes import upload as upload_routes
 from backend.routes import theme as theme_routes
 from backend.routes import home_config as home_config_routes
+from backend.routes import paid_traffic as paid_traffic_routes
 
 settings = get_settings()
 
@@ -151,6 +152,20 @@ def _run_migrations():
         "ALTER TABLE payments ADD COLUMN IF NOT EXISTS raw_response TEXT",
         "ALTER TABLE payments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
         "CREATE TABLE IF NOT EXISTS payment_events (id VARCHAR PRIMARY KEY, provider VARCHAR(50) NOT NULL DEFAULT 'mercado_pago', event_type VARCHAR(100), mercado_pago_payment_id VARCHAR(100), external_reference VARCHAR(120), raw_payload TEXT NOT NULL, processed_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())",
+        # Paid traffic attribution
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS campaign_id VARCHAR REFERENCES traffic_campaigns(id) ON DELETE SET NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_source VARCHAR(100)",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_medium VARCHAR(100)",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_campaign VARCHAR(200)",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_content VARCHAR(200)",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_term VARCHAR(200)",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS session_id VARCHAR(120)",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS landing_page TEXT",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS referrer TEXT",
+        "CREATE INDEX IF NOT EXISTS ix_orders_campaign_id ON orders(campaign_id)",
+        "CREATE INDEX IF NOT EXISTS ix_orders_session_id ON orders(session_id)",
+        "CREATE INDEX IF NOT EXISTS ix_orders_utm_campaign ON orders(utm_campaign)",
+        "INSERT INTO campaign_settings (id) VALUES ('default') ON CONFLICT DO NOTHING",
     ]
     for stmt in stmts:
         try:
@@ -199,6 +214,8 @@ app.include_router(upload_routes.router)
 app.include_router(theme_routes.router)
 app.include_router(home_config_routes.router)
 app.include_router(webhooks.router)
+app.include_router(paid_traffic_routes.router)
+app.include_router(paid_traffic_routes.admin_router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")
@@ -220,6 +237,8 @@ app.include_router(upload_routes.router, prefix="/api")
 app.include_router(theme_routes.router, prefix="/api")
 app.include_router(home_config_routes.router, prefix="/api")
 app.include_router(webhooks.router, prefix="/api")
+app.include_router(paid_traffic_routes.router, prefix="/api")
+app.include_router(paid_traffic_routes.admin_router, prefix="/api")
 
 # ── Static files (uploaded images) ───────────────────────────────────────────
 # Must be mounted AFTER all route registrations.

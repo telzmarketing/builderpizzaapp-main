@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, ShoppingCart, Clock, Tag } from "lucide-react";
 import { campaignsApi, type ApiCampaign, type ApiCampaignProduct, productsApi, type ApiProduct } from "@/lib/api";
 import { useApp } from "@/context/AppContext";
+import { trackEvent } from "@/lib/tracking";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 
@@ -61,6 +62,7 @@ export default function Campanha() {
       1,
       price,
     );
+    trackEvent("add_to_cart", price, { product_id: product.id, campaign_page: slug });
     navigate("/cart");
   };
 

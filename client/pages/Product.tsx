@@ -5,6 +5,7 @@ import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation } from "@/context/AppContext";
 import { sizesApi, crustApi, drinkVariantApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { formatCrustAddition, normalizeCrustPriceAddition } from "@/lib/pricing";
+import { trackEvent } from "@/lib/tracking";
 
 // ─── Add-ons ──────────────────────────────────────────────────────────────────
 
@@ -300,6 +301,7 @@ export default function Product() {
       drinkVariation,
       selectedSizeObj?.id,
     );
+    trackEvent("add_to_cart", totalPrice, { product_id: product.id, quantity, selected_size: selectedSize });
     navigate("/cart");
   };
 

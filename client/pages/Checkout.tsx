@@ -17,6 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
+import { checkoutTrackingPayload, trackEvent } from "@/lib/tracking";
 import { useApp } from "@/context/AppContext";
 import {
   couponsApi,
@@ -219,6 +220,7 @@ export default function Checkout() {
         if (status.payment_status === "approved" || status.pedido_status === "pago") {
           setPaymentState("approved");
           setPaymentMessage("Pagamento aprovado! Pedido enviado para preparo.");
+          trackEvent("order_paid", createdOrder.total, { order_id: createdOrder.id });
           clearCart();
           clearInterval(id);
           setTimeout(() => navigate(`/order-tracking?orderId=${createdOrder.id}`), 1200);
@@ -293,6 +295,8 @@ export default function Checkout() {
 
     setLoading(true);
     setApiError("");
+    trackEvent("checkout_start", cartSubtotal);
+    const tracking = checkoutTrackingPayload();
     const payload: CheckoutIn = {
       items: cart.map((item) => ({
         product_id: item.productId,
@@ -326,12 +330,14 @@ export default function Checkout() {
         is_scheduled: false,
       },
       payment_method: "pix",
+      ...tracking,
       ...(couponApplied && couponCode ? { coupon_code: couponCode } : {}),
       ...(customer ? { customer_id: customer.id } : {}),
     };
 
     try {
       const order = await ordersApi.checkout(payload);
+      trackEvent("order_created", order.total, { order_id: order.id });
       setCreatedOrder(order);
       setPaymentState("pending");
       setPaymentMessage("Pedido criado. Conclua o pagamento abaixo.");
