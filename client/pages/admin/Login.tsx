@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Lock, Mail, Loader2 } from "lucide-react";
 import { adminAuthApi } from "@/lib/api";
+import MoschettieriLogo from "@/components/MoschettieriLogo";
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -28,41 +29,44 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950 flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="text-5xl mb-4">🍕</div>
-          <h1 className="text-white font-bold text-2xl">Painel Admin</h1>
-          <p className="text-slate-400 text-sm mt-1">Entre com suas credenciais</p>
+    <div className="min-h-screen bg-gradient-to-br from-surface-00 via-brand-dark to-surface-00 flex items-center justify-center px-4">
+      <div className="w-full max-w-[380px]">
+        <div className="text-center mb-7">
+          <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 shadow-2xl shadow-black/30">
+            <MoschettieriLogo className="text-[24px] scale-[1.08] origin-center" />
+          </div>
+          <p className="text-gold text-xs font-bold uppercase tracking-[0.24em]">Painel Administrativo</p>
+          <h1 className="text-cream font-bold text-2xl mt-2">Bem-vindo de volta</h1>
+          <p className="text-stone text-sm mt-1">Entre para gerenciar a loja.</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-slate-800 rounded-2xl p-6 border border-slate-700 space-y-4">
+        <form onSubmit={handleSubmit} className="bg-surface-02 rounded-2xl p-6 border border-surface-03 space-y-4 shadow-2xl shadow-black/30">
           <div>
-            <label className="text-slate-400 text-xs mb-1 block ml-1">E-mail</label>
-            <div className="flex items-center gap-3 bg-slate-700 rounded-xl px-4 py-3 border border-slate-600 focus-within:border-orange-500 transition-colors">
-              <Mail size={18} className="text-slate-400 flex-shrink-0" />
+            <label className="text-stone text-xs mb-1.5 block ml-1 font-medium">E-mail</label>
+            <div className="flex items-center gap-3 bg-surface-03/70 rounded-xl px-4 py-3 border border-surface-03 focus-within:border-gold/70 transition-colors">
+              <Mail size={18} className="text-stone flex-shrink-0" />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@exemplo.com"
                 required
-                className="flex-1 bg-transparent text-white placeholder-slate-500 outline-none text-sm"
+                className="flex-1 bg-transparent text-cream placeholder-stone/60 outline-none text-sm"
               />
             </div>
           </div>
 
           <div>
-            <label className="text-slate-400 text-xs mb-1 block ml-1">Senha</label>
-            <div className="flex items-center gap-3 bg-slate-700 rounded-xl px-4 py-3 border border-slate-600 focus-within:border-orange-500 transition-colors">
-              <Lock size={18} className="text-slate-400 flex-shrink-0" />
+            <label className="text-stone text-xs mb-1.5 block ml-1 font-medium">Senha</label>
+            <div className="flex items-center gap-3 bg-surface-03/70 rounded-xl px-4 py-3 border border-surface-03 focus-within:border-gold/70 transition-colors">
+              <Lock size={18} className="text-stone flex-shrink-0" />
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="Digite sua senha"
                 required
-                className="flex-1 bg-transparent text-white placeholder-slate-500 outline-none text-sm"
+                className="flex-1 bg-transparent text-cream placeholder-stone/60 outline-none text-sm"
               />
             </div>
           </div>
@@ -74,7 +78,7 @@ export default function AdminLogin() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 rounded-full bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white font-bold flex items-center justify-center gap-2 transition-colors"
+            className="w-full py-3 rounded-xl bg-gold hover:bg-gold/90 disabled:opacity-60 text-cream font-bold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gold/10"
           >
             {loading && <Loader2 size={18} className="animate-spin" />}
             {loading ? "Entrando..." : "Entrar"}
