@@ -46,7 +46,7 @@ export default function Cardapio() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
       {/* Header */}
-      <div className="bg-brand-dark px-4 py-4 sticky top-0 z-30 border-b border-surface-02">
+      <div className="bg-brand-dark px-4 py-3 sticky top-0 z-30 border-b border-surface-02">
         <div className="flex items-center justify-between mb-3">
           <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
             <ChevronLeft size={24} />

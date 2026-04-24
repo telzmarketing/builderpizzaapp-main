@@ -158,7 +158,7 @@ export default function Home() {
       {/* Search Overlay */}
       {searchOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 flex flex-col">
-          <div className="bg-brand-dark px-4 py-4 flex items-center gap-3">
+          <div className="bg-brand-dark px-4 py-3 flex items-center gap-3">
             <button onClick={() => { setSearchOpen(false); setSearchQuery(""); }} className="text-stone hover:text-cream transition-colors">
               <X size={24} />
             </button>
@@ -235,7 +235,7 @@ export default function Home() {
       )}
 
       {/* Header */}
-      <div className="bg-brand-dark px-4 py-4 flex justify-between items-center sticky top-0 z-30">
+      <div className="bg-brand-dark px-4 py-3 flex justify-between items-center sticky top-0 z-30">
         <button onClick={() => setMenuOpen(true)} className="text-parchment hover:text-cream transition-colors">
           <Menu size={24} />
         </button>

@@ -90,7 +90,7 @@ export default function Campanha() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 pb-24">
       {/* Header */}
-      <div className="bg-brand-dark px-4 py-4 flex justify-between items-center sticky top-0 z-30">
+      <div className="bg-brand-dark px-4 py-3 flex justify-between items-center sticky top-0 z-30">
         <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
