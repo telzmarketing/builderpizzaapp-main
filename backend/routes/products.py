@@ -7,11 +7,13 @@ from backend.models.product import Product, MultiFlavorsConfig, ProductSize, Pro
 from backend.schemas.product import (
     ProductCreate, ProductUpdate, ProductOut,
     MultiFlavorsConfigUpdate, MultiFlavorsConfigOut,
+    ProductCategoryCreate, ProductCategoryUpdate, ProductCategoryOut,
     ProductSizeCreate, ProductSizeUpdate, ProductSizeOut,
     ProductCrustTypeCreate, ProductCrustTypeUpdate, ProductCrustTypeOut,
     ProductDrinkVariantCreate, ProductDrinkVariantUpdate, ProductDrinkVariantOut,
 )
 from backend.routes.admin_auth import get_current_admin
+from backend.services import product_category_service
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -39,6 +41,26 @@ def update_multi_flavors_config(body: MultiFlavorsConfigUpdate, db: Session = De
     db.commit()
     db.refresh(config)
     return config
+
+
+@router.get("/categories", response_model=list[ProductCategoryOut])
+def list_categories(active_only: bool = False, db: Session = Depends(get_db)):
+    return product_category_service.list_categories(db, active_only=active_only)
+
+
+@router.post("/categories", response_model=ProductCategoryOut, status_code=201)
+def create_category(body: ProductCategoryCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    return product_category_service.create_category(db, body)
+
+
+@router.put("/categories/{category_id}", response_model=ProductCategoryOut)
+def update_category(category_id: str, body: ProductCategoryUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    return product_category_service.update_category(db, category_id, body)
+
+
+@router.delete("/categories/{category_id}", status_code=204)
+def delete_category(category_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    product_category_service.delete_category(db, category_id)
 
 
 @router.get("", response_model=list[ProductOut])

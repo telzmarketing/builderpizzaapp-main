@@ -113,6 +113,15 @@ export interface ApiProductDrinkVariant {
   created_at: string;
 }
 
+export interface ApiProductCategory {
+  id: string;
+  name: string;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ApiHomeCatalogConfig {
   id: string;
   mode: "all" | "categories" | "products";
@@ -604,6 +613,19 @@ export const productsApi = {
 
   updateMultiFlavorsConfig: (data: Partial<Pick<ApiMultiFlavorsConfig, "max_flavors" | "pricing_rule">>) =>
     patch<ApiMultiFlavorsConfig>("/products/config/multi-flavors", data),
+};
+
+export const categoriesApi = {
+  list: (activeOnly = false) =>
+    get<ApiProductCategory[]>(`/products/categories${activeOnly ? "?active_only=true" : ""}`),
+
+  create: (data: Omit<ApiProductCategory, "id" | "created_at" | "updated_at">) =>
+    post<ApiProductCategory>("/products/categories", data),
+
+  update: (id: string, data: Partial<Omit<ApiProductCategory, "id" | "created_at" | "updated_at">>) =>
+    put<ApiProductCategory>(`/products/categories/${id}`, data),
+
+  remove: (id: string) => del<void>(`/products/categories/${id}`),
 };
 
 // ─── Product Sizes ────────────────────────────────────────────────────────────

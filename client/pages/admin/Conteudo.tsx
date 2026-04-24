@@ -484,9 +484,6 @@ export default function AdminConteudo() {
                     </Field>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <Field label="Rótulo seção adicionais">
-                      <TextInput value={draft.pages.product.addOnsLabel} onChange={(v) => set(["pages", "product", "addOnsLabel"], v)} placeholder="Adicionais (opcional)" />
-                    </Field>
                     <Field label="Rótulo seção quantidade">
                       <TextInput value={draft.pages.product.quantityLabel} onChange={(v) => set(["pages", "product", "quantityLabel"], v)} placeholder="Quantidade" />
                     </Field>

@@ -7,17 +7,12 @@ import { sizesApi, crustApi, drinkVariantApi, ApiProductSize, ApiProductCrustTyp
 
 // ─── Add-ons ──────────────────────────────────────────────────────────────────
 
-interface AddOn { id: string; name: string; price: number; icon: string; }
-const addOns: AddOn[] = [
-  { id: "1", name: "Pimenta", price: 0.5, icon: "🌶️" },
-  { id: "2", name: "Cogumelo", price: 1.0, icon: "🍄" },
-  { id: "3", name: "Abacaxi", price: 1.5, icon: "🍍" },
-];
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const FALLBACK_SIZES = ["P", "M", "G", "GG"];
-const FALLBACK_SIZE_LABELS: Record<string, string> = { P: "Pequena", M: "Média", G: "Grande", GG: "Gigante" };
+const PIZZA_SIZE_LABELS = ["Brotinho", "Pizza Grande"];
+const FALLBACK_SIZE_LABELS: Record<string, string> = { Brotinho: "Individual", "Pizza Grande": "Grande" };
+const isAllowedPizzaSize = (label: string) =>
+  PIZZA_SIZE_LABELS.some((allowed) => allowed.toLowerCase() === label.trim().toLowerCase());
 
 const DIVISION_OPTIONS: { value: FlavorDivision; label: string; emoji: string }[] = [
   { value: 1, label: "Inteira", emoji: "🍕" },
@@ -141,7 +136,7 @@ export default function Product() {
   // Dynamic sizes from backend
   const [productSizes, setProductSizes] = useState<ApiProductSize[]>([]);
   const [selectedSizeObj, setSelectedSizeObj] = useState<ApiProductSize | null>(null);
-  const [selectedSizeFallback, setSelectedSizeFallback] = useState("M");
+  const [selectedSizeFallback, setSelectedSizeFallback] = useState("Pizza Grande");
 
   // Crust types (pizza only)
   const [productCrusts, setProductCrusts] = useState<ApiProductCrustType[]>([]);
@@ -150,20 +145,26 @@ export default function Product() {
   // Drink variants (drink only)
   const [productDrinkVariants, setProductDrinkVariants] = useState<ApiProductDrinkVariant[]>([]);
   const [selectedDrinkVariant, setSelectedDrinkVariant] = useState<ApiProductDrinkVariant | null>(null);
-  const selectedAddOns: string[] = [];
 
   useEffect(() => {
     if (!product) return;
 
     // Load sizes for all product types
     sizesApi.list(product.id).then((sizes) => {
-      const activeSizes = sizes.filter((s) => s.active);
+      const activeSizes = sizes.filter((s) => s.active && (!isPizza || isAllowedPizzaSize(s.label)));
       setProductSizes(activeSizes);
       if (activeSizes.length > 0) {
         const def = activeSizes.find((s) => s.is_default) ?? activeSizes[0];
         setSelectedSizeObj(def);
+      } else {
+        setSelectedSizeObj(null);
+        setSelectedSizeFallback(isPizza ? "Pizza Grande" : "");
       }
-    }).catch(() => setProductSizes([]));
+    }).catch(() => {
+      setProductSizes([]);
+      setSelectedSizeObj(null);
+      setSelectedSizeFallback(isPizza ? "Pizza Grande" : "");
+    });
 
     // Load crust types for pizza
     if (isPizza) {
@@ -255,8 +256,6 @@ export default function Product() {
     setActiveSlot((prev) => (prev === i ? null : i));
     setCartError(false);
   };
-
-  const toggleAddOn = (_addOnId?: string) => {};
 
   const handleAddToCart = () => {
     if (isPizza && !allFilled) {
@@ -523,7 +522,7 @@ export default function Product() {
                 </button>
               ))
             ) : !isDrink ? (
-              FALLBACK_SIZES.map((size) => (
+              PIZZA_SIZE_LABELS.map((size) => (
                 <button
                   key={size}
                   onClick={() => setSelectedSizeFallback(size)}
@@ -596,34 +595,6 @@ export default function Product() {
                   )}
                 </button>
               ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Add-ons (pizza only) ─────────────────────────────────────────── */}
-        {isPizza && (
-          <div className="mb-6">
-            <h3 className="text-cream font-bold mb-3">{p.addOnsLabel}</h3>
-            <div className="flex gap-2 flex-wrap">
-              {addOns.map((addOn) => {
-                const selected = selectedAddOns.includes(addOn.id);
-                return (
-                  <button
-                    key={addOn.id}
-                    onClick={() => toggleAddOn(addOn.id)}
-                    className={`flex items-center gap-2 py-2 px-3 rounded-xl text-sm font-medium transition-all border ${
-                      selected
-                        ? "bg-gold/20 border-gold text-gold"
-                        : "bg-surface-02 border-surface-03 text-parchment hover:border-brand-mid"
-                    }`}
-                  >
-                    <span>{addOn.icon}</span>
-                    {addOn.name}
-                    <span className={`text-xs ${selected ? "text-gold-light" : "text-stone"}`}>+R${addOn.price.toFixed(2)}</span>
-                    {selected && <Check size={12} className="text-gold" />}
-                  </button>
-                );
-              })}
             </div>
           </div>
         )}

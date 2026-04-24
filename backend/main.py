@@ -107,6 +107,7 @@ def _run_migrations():
         "ALTER TABLE chatbot_knowledge_docs ADD COLUMN IF NOT EXISTS busca_vetor TSVECTOR",
         # ── Product type + crust/drink variant tables ─────────────────────
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS product_type VARCHAR(20)",
+        "CREATE TABLE IF NOT EXISTS product_categories (id VARCHAR PRIMARY KEY, name VARCHAR(100) NOT NULL UNIQUE, active BOOLEAN DEFAULT TRUE, sort_order INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE TABLE IF NOT EXISTS product_crust_types (id VARCHAR PRIMARY KEY, product_id VARCHAR NOT NULL REFERENCES products(id) ON DELETE CASCADE, name VARCHAR(100) NOT NULL, price_addition FLOAT DEFAULT 0.0, active BOOLEAN DEFAULT TRUE, sort_order INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE TABLE IF NOT EXISTS product_drink_variants (id VARCHAR PRIMARY KEY, product_id VARCHAR NOT NULL REFERENCES products(id) ON DELETE CASCADE, name VARCHAR(100) NOT NULL, price_addition FLOAT DEFAULT 0.0, active BOOLEAN DEFAULT TRUE, sort_order INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW())",
         # ── Order item variation columns ──────────────────────────────────

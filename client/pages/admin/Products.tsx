@@ -1,9 +1,9 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat, Droplets } from "lucide-react";
 import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import ImageUpload from "@/components/admin/ImageUpload";
-import { sizesApi, crustApi, drinkVariantApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { sizesApi, crustApi, drinkVariantApi, categoriesApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 
 const PRICING_OPTIONS: { value: PricingRule; label: string; description: string }[] = [
   { value: "most_expensive", label: "Mais Caro", description: "Cliente paga pelo sabor mais caro (padrão iFood)" },
@@ -23,10 +23,47 @@ export default function AdminProducts() {
   const { products, addProduct, updateProduct, deleteProduct, multiFlavorsConfig, updateMultiFlavorsConfig } = useApp();
   const [activeTab, setActiveTab] = useState<PTab>("produtos");
   const [configSaved, setConfigSaved] = useState(false);
+  const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [categorySaving, setCategorySaving] = useState(false);
 
-  const existingCategories = [...new Set(
-    products.filter(p => p.category).map(p => p.category as string)
-  )].sort();
+  const existingCategories = [...new Set([
+    ...catalogCategories.map((cat) => cat.name),
+    ...products.filter(p => p.category).map(p => p.category as string),
+  ])].sort();
+
+  useEffect(() => {
+    categoriesApi.list().then(setCatalogCategories).catch(() => setCatalogCategories([]));
+  }, []);
+
+  const handleAddCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) return;
+    setCategorySaving(true);
+    try {
+      const created = await categoriesApi.create({
+        name,
+        active: true,
+        sort_order: catalogCategories.length,
+      });
+      setCatalogCategories((prev) => [...prev, created]);
+      setNewCategoryName("");
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao criar categoria.");
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+
+  const handleDeleteCategory = async (category: ApiProductCategory) => {
+    if (!confirm(`Remover a categoria "${category.name}"?`)) return;
+    try {
+      await categoriesApi.remove(category.id);
+      setCatalogCategories((prev) => prev.filter((cat) => cat.id !== category.id));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao remover categoria.");
+    }
+  };
 
   // ── Products CRUD ────────────────────────────────────────────────────────────
   const [showForm, setShowForm] = useState(false);
@@ -140,6 +177,25 @@ export default function AdminProducts() {
     }
   };
 
+  const handleUpdateSizePrice = async (size: ApiProductSize, value: string) => {
+    if (!sizesModalProduct) return;
+    const price = parseFloat(value);
+    if (isNaN(price) || price <= 0) {
+      alert("Preco invalido.");
+      return;
+    }
+    if (Math.abs(price - size.price) < 0.001) return;
+    setSavingSizeId(size.id);
+    try {
+      const updated = await sizesApi.update(sizesModalProduct.id, size.id, { price });
+      setProductSizes((prev) => prev.map((s) => (s.id === size.id ? updated : s)));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao atualizar preco.");
+    } finally {
+      setSavingSizeId(null);
+    }
+  };
+
   const handleDeleteSize = async (sizeId: string) => {
     if (!sizesModalProduct) return;
     if (!confirm("Remover este tamanho?")) return;
@@ -202,6 +258,25 @@ export default function AdminProducts() {
       setProductCrusts((prev) => prev.map((c) => (c.id === crust.id ? updated : c)));
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao atualizar massa.");
+    } finally {
+      setSavingCrustId(null);
+    }
+  };
+
+  const handleUpdateCrustPrice = async (crust: ApiProductCrustType, value: string) => {
+    if (!crustModalProduct) return;
+    const priceAddition = parseFloat(value || "0");
+    if (isNaN(priceAddition) || priceAddition < 0) {
+      alert("Preco invalido.");
+      return;
+    }
+    if (Math.abs(priceAddition - crust.price_addition) < 0.001) return;
+    setSavingCrustId(crust.id);
+    try {
+      const updated = await crustApi.update(crustModalProduct.id, crust.id, { price_addition: priceAddition });
+      setProductCrusts((prev) => prev.map((c) => (c.id === crust.id ? updated : c)));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao atualizar preco da massa.");
     } finally {
       setSavingCrustId(null);
     }
@@ -287,17 +362,13 @@ export default function AdminProducts() {
 
   // ── Presets ───────────────────────────────────────────────────────────────────
   const SIZE_PRESETS = [
-    { label: "P", description: "Pequena" },
-    { label: "M", description: "Média" },
-    { label: "G", description: "Grande" },
-    { label: "GG", description: "Gigante" },
+    { label: "Brotinho", description: "Individual" },
+    { label: "Pizza Grande", description: "Grande" },
   ];
 
   const CRUST_PRESETS = [
+    { name: "Napolitana", price_addition: "0" },
     { name: "Tradicional", price_addition: "0" },
-    { name: "Fina", price_addition: "0" },
-    { name: "Grossa", price_addition: "0" },
-    { name: "Borda Recheada", price_addition: "5" },
   ];
 
   const DRINK_SIZE_PRESETS = [
@@ -559,14 +630,35 @@ export default function AdminProducts() {
                   <div className="flex items-center gap-3 pb-3 border-b border-surface-03">
                     <Tag size={18} className="text-gold" />
                     <div>
-                      <h3 className="text-cream font-bold">Categorias do Cardápio</h3>
-                      <p className="text-stone text-sm">Derivadas automaticamente dos produtos cadastrados.</p>
+                      <h3 className="text-cream font-bold">Categorias do Cardapio</h3>
+                      <p className="text-stone text-sm">Crie categorias para usar no cadastro dos produtos.</p>
                     </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddCategory(); } }}
+                      className={cls}
+                      placeholder="Ex: Pizzas, Bebidas, Sobremesas..."
+                      maxLength={100}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCategory}
+                      disabled={categorySaving || !newCategoryName.trim()}
+                      className="flex items-center gap-2 bg-gold hover:bg-gold/90 disabled:opacity-50 disabled:cursor-not-allowed text-cream font-bold py-2 px-4 rounded-lg transition-colors"
+                    >
+                      {categorySaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                      Criar
+                    </button>
                   </div>
 
                   {existingCategories.length === 0 ? (
                     <p className="text-stone text-sm text-center py-4">
-                      Nenhuma categoria ainda. Edite um produto e preencha o campo "Categoria".
+                      Nenhuma categoria cadastrada.
                     </p>
                   ) : (
                     <div className="flex flex-wrap gap-2">
@@ -574,13 +666,26 @@ export default function AdminProducts() {
                         <div key={cat} className="flex items-center gap-1.5 bg-gold/10 border border-gold/30 rounded-full px-3 py-1.5">
                           <Tag size={12} className="text-gold" />
                           <span className="text-gold text-sm font-medium">{cat}</span>
+                          {catalogCategories.some((item) => item.name === cat) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const category = catalogCategories.find((item) => item.name === cat);
+                                if (category) handleDeleteCategory(category);
+                              }}
+                              className="text-gold/70 hover:text-red-400 transition-colors"
+                              title="Remover categoria"
+                            >
+                              <X size={12} />
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
                   )}
 
                   <div className="bg-surface-03 rounded-lg p-3 text-stone text-xs leading-relaxed">
-                    Para criar uma nova categoria, vá em <strong className="text-parchment">Produtos</strong> → crie ou edite um produto → preencha o campo <strong className="text-parchment">Categoria</strong>. As categorias aparecem automaticamente como filtros na loja.
+                    Depois de criar a categoria, selecione ela no campo <strong className="text-parchment">Categoria</strong> do produto. Categorias sem produto ficam disponiveis no painel, mas so aparecem na loja quando houver produto ativo vinculado.
                   </div>
                 </div>
               </div>
@@ -682,7 +787,16 @@ export default function AdminProducts() {
                           </div>
                           {size.description && <p className="text-stone text-xs mt-0.5">{size.description}</p>}
                         </div>
-                        <span className="text-gold font-bold text-sm flex-shrink-0">R$ {size.price.toFixed(2)}</span>
+                        <input
+                          type="number"
+                          defaultValue={size.price.toFixed(2)}
+                          onBlur={(e) => handleUpdateSizePrice(size, e.target.value)}
+                          disabled={savingSizeId === size.id}
+                          className="w-24 bg-surface-02 border border-surface-03 rounded-lg px-2 py-1 text-gold font-bold text-sm outline-none focus:border-gold"
+                          step="0.01"
+                          min="0.01"
+                          title="Preco deste tamanho"
+                        />
                         <div className="flex items-center gap-1 flex-shrink-0">
                           <button onClick={() => handleToggleSizeField(size, "is_default")} disabled={savingSizeId === size.id} title={size.is_default ? "Remover como padrão" : "Marcar como padrão"} className={`p-1.5 rounded-lg transition-colors ${size.is_default ? "bg-gold/20 text-gold" : "text-stone hover:text-gold"}`}>
                             {savingSizeId === size.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
@@ -716,7 +830,7 @@ export default function AdminProducts() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-parchment text-xs font-medium mb-1">Rótulo *</label>
-                      <input type="text" value={sizeForm.label} onChange={(e) => setSizeForm((f) => ({ ...f, label: e.target.value }))} className={cls} placeholder='Ex: "G" ou "600ml"' maxLength={50} />
+                      <input type="text" value={sizeForm.label} onChange={(e) => setSizeForm((f) => ({ ...f, label: e.target.value }))} className={cls} placeholder={(sizesModalProduct as any).product_type === "drink" ? 'Ex: "600ml"' : 'Ex: "Brotinho"'} maxLength={50} />
                     </div>
                     <div>
                       <label className="block text-parchment text-xs font-medium mb-1">Preço (R$) *</label>
@@ -778,9 +892,16 @@ export default function AdminProducts() {
                             {!crust.active && <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-full">inativo</span>}
                           </div>
                         </div>
-                        <span className={`text-sm font-bold flex-shrink-0 ${crust.price_addition > 0 ? "text-amber-400" : "text-stone"}`}>
-                          {crust.price_addition > 0 ? `+R$ ${crust.price_addition.toFixed(2)}` : "Sem acréscimo"}
-                        </span>
+                        <input
+                          type="number"
+                          defaultValue={crust.price_addition.toFixed(2)}
+                          onBlur={(e) => handleUpdateCrustPrice(crust, e.target.value)}
+                          disabled={savingCrustId === crust.id}
+                          className="w-24 bg-surface-02 border border-surface-03 rounded-lg px-2 py-1 text-amber-400 font-bold text-sm outline-none focus:border-amber-400"
+                          step="0.01"
+                          min="0"
+                          title="Preco da massa"
+                        />
                         <div className="flex items-center gap-1 flex-shrink-0">
                           <button onClick={() => handleToggleCrustActive(crust)} disabled={savingCrustId === crust.id} title={crust.active ? "Desativar" : "Ativar"} className={`p-1.5 rounded-lg transition-colors ${crust.active ? "text-green-400 hover:text-red-400" : "text-red-400 hover:text-green-400"}`}>
                             {savingCrustId === crust.id ? <Loader2 size={13} className="animate-spin" /> : <Settings2 size={13} />}

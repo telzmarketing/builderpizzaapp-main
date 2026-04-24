@@ -59,7 +59,18 @@ function CartItemRow({ item, onRemove, onUpdate }: {
   );
 }
 
-const SIZE_LABEL: Record<string, string> = { P: "Pequena", M: "Média", G: "Grande", GG: "Gigante", Small: "Small", Medium: "Medium", Large: "Large", Massive: "Massive" };
+const SIZE_LABEL: Record<string, string> = {
+  Brotinho: "Brotinho",
+  "Pizza Grande": "Pizza Grande",
+  P: "Pequena",
+  M: "Media",
+  G: "Grande",
+  GG: "Gigante",
+  Small: "Small",
+  Medium: "Medium",
+  Large: "Large",
+  Massive: "Massive",
+};
 
 export default function Cart() {
   const navigate = useNavigate();

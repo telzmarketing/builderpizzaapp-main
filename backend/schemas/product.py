@@ -4,6 +4,28 @@ from datetime import datetime
 from backend.models.product import PricingRule
 
 
+class ProductCategoryCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    active: bool = True
+    sort_order: int = 0
+
+
+class ProductCategoryUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    active: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class ProductCategoryOut(BaseModel):
+    model_config = {"from_attributes": True}
+    id: str
+    name: str
+    active: bool
+    sort_order: int
+    created_at: datetime
+    updated_at: datetime
+
+
 class ProductSizeCreate(BaseModel):
     label: str
     description: Optional[str] = None

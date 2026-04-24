@@ -39,6 +39,18 @@ class Product(Base):
     drink_variants = relationship("ProductDrinkVariant", back_populates="product", cascade="all, delete-orphan", order_by="ProductDrinkVariant.sort_order")
 
 
+class ProductCategory(Base):
+    __tablename__ = "product_categories"
+
+    id = Column(String, primary_key=True)
+    name = Column(String(100), nullable=False, unique=True)
+    active = Column(Boolean, default=True)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
 class ProductSize(Base):
     __tablename__ = "product_sizes"
 
