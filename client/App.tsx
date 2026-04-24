@@ -75,6 +75,7 @@ import AdminConteudo from "./pages/admin/Conteudo";
 import AdminPagamentos from "./pages/admin/AdminPagamentos";
 import AdminFrete from "./pages/admin/AdminFrete";
 import AdminCampanhas from "./pages/admin/AdminCampanhas";
+import AdminPaidTraffic from "./pages/admin/PaidTraffic";
 import AdminChatbot from "./pages/admin/AdminChatbot";
 import AdminAparencia from "./pages/admin/Aparencia";
 import AdminHomeConfig from "./pages/admin/HomeConfig";
@@ -129,6 +130,7 @@ export default function App() {
                 <Route path="/painel/pagamentos" element={<AdminPagamentos />} />
                 <Route path="/painel/frete" element={<AdminFrete />} />
                 <Route path="/painel/campanhas" element={<AdminCampanhas />} />
+                <Route path="/painel/trafego-pago" element={<AdminPaidTraffic />} />
                 <Route path="/painel/chatbot"    element={<AdminChatbot />} />
                 <Route path="/painel/aparencia" element={<AdminAparencia />} />
                 <Route path="/painel/home-config" element={<AdminHomeConfig />} />

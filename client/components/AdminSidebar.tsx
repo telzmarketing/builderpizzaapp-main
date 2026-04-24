@@ -13,6 +13,7 @@ import {
   MessageCircle,
   Palette,
   LayoutDashboard,
+  MousePointerClick,
   User,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
@@ -23,6 +24,7 @@ const navItems = [
   { to: "/painel/products", icon: Package, label: "Produtos" },
   { to: "/painel/home-config", icon: LayoutDashboard, label: "Catálogo da Home" },
   { to: "/painel/orders", icon: ShoppingBag, label: "Pedidos" },
+  { to: "/painel/trafego-pago", icon: MousePointerClick, label: "Tráfego Pago" },
   { to: "/painel/campanhas", icon: Sparkles, label: "Promoções & Campanhas" },
   { to: "/painel/fidelidade", icon: Trophy, label: "Fidelidade" },
   { to: "/painel/conteudo", icon: FileText, label: "Conteúdo" },
