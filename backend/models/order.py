@@ -9,6 +9,10 @@ class OrderStatus(str, enum.Enum):
     pending          = "pending"           # pedido criado, aguardando abertura de pagamento
     waiting_payment  = "waiting_payment"   # pagamento iniciado (PIX gerado / link aberto)
     paid             = "paid"              # pagamento confirmado pelo gateway
+    aguardando_pagamento = "aguardando_pagamento"
+    pago             = "pago"
+    pagamento_recusado = "pagamento_recusado"
+    pagamento_expirado = "pagamento_expirado"
     preparing        = "preparing"         # cozinha em produção
     ready_for_pickup = "ready_for_pickup"  # pronto, aguardando motoboy (opcional)
     on_the_way       = "on_the_way"        # motoboy a caminho
@@ -32,6 +36,7 @@ class Order(Base):
     delivery_complement = Column(String(100))
 
     status = Column(Enum(OrderStatus), default=OrderStatus.pending)
+    external_reference = Column(String(120), nullable=True, unique=True)
     coupon_id = Column(String, ForeignKey("coupons.id"), nullable=True)
 
     subtotal = Column(Float, nullable=False)

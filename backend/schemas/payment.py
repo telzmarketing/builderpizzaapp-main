@@ -1,13 +1,22 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, Any
 from datetime import datetime
 from backend.models.payment import PaymentMethod, PaymentStatus
 
 
 class PaymentCreate(BaseModel):
     order_id: str
-    amount: float
-    payment_method: PaymentMethod
+    amount: Optional[float] = None
+    payment_method: Optional[PaymentMethod] = None
+    token: Optional[str] = None
+    payment_method_id: Optional[str] = None
+    payment_type_id: Optional[str] = None
+    installments: Optional[int] = None
+    issuer_id: Optional[str | int] = None
+    payer: Optional[dict[str, Any]] = None
+    form_data: Optional[dict[str, Any]] = Field(default=None, alias="formData")
+
+    model_config = {"populate_by_name": True}
 
 
 class PaymentOut(BaseModel):
@@ -16,6 +25,9 @@ class PaymentOut(BaseModel):
     method: PaymentMethod
     status: PaymentStatus
     amount: float
+    provider: Optional[str] = None
+    mercado_pago_payment_id: Optional[str] = None
+    external_reference: Optional[str] = None
     transaction_id: Optional[str] = None
     qr_code: Optional[str] = None
     qr_code_text: Optional[str] = None

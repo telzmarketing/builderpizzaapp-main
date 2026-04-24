@@ -286,6 +286,10 @@ export type OrderStatus =
   | "pending"
   | "waiting_payment"
   | "paid"
+  | "aguardando_pagamento"
+  | "pago"
+  | "pagamento_recusado"
+  | "pagamento_expirado"
   | "preparing"
   | "ready_for_pickup"
   | "on_the_way"
@@ -309,6 +313,9 @@ export interface ApiOrder {
   estimated_time: number;
   loyalty_points_earned: number;
   coupon_id: string | null;
+  pedido_status?: OrderStatus;
+  payment_status?: ApiPayment["status"] | "pending";
+  external_reference?: string | null;
   items: ApiOrderItem[];
   created_at: string;
   updated_at: string;
@@ -351,15 +358,26 @@ export interface CheckoutIn {
 export interface ApiPayment {
   id: string;
   order_id: string;
-  method: "pix" | "credit_card" | "cash";
-  status: "pending" | "paid" | "failed" | "refunded";
+  method: "pix" | "credit_card" | "debit_card" | "cash";
+  status: "pending" | "approved" | "rejected" | "cancelled" | "expired" | "paid" | "failed" | "refunded";
   amount: number;
+  provider: string | null;
+  mercado_pago_payment_id: string | null;
+  external_reference: string | null;
   transaction_id: string | null;
   qr_code: string | null;
   qr_code_text: string | null;
   payment_url: string | null;
   created_at: string;
   paid_at: string | null;
+}
+
+export interface ApiPaymentStatus {
+  order_id: string;
+  pedido_status: OrderStatus;
+  payment_status: ApiPayment["status"] | "pending";
+  mercado_pago_payment_id: string | null;
+  external_reference: string | null;
 }
 
 export interface ApiLoyaltyLevel {
@@ -679,6 +697,9 @@ export const ordersApi = {
 
   get: (id: string) => get<ApiOrder>(`/orders/${id}`),
 
+  paymentStatus: (id: string) =>
+    get<ApiPaymentStatus>(`/orders/${id}/payment-status`),
+
   updateStatus: (id: string, status: OrderStatus) =>
     put<ApiOrder>(`/orders/${id}/status`, { status }),
 
@@ -691,7 +712,12 @@ export const paymentsApi = {
   create: (order_id: string, amount: number, payment_method: ApiPayment["method"]) =>
     post<ApiPayment>("/payments/create", { order_id, amount, payment_method }),
 
+  createFromBrick: (order_id: string, formData: Record<string, unknown>) =>
+    post<ApiPayment>("/payments/create", { order_id, formData }),
+
   getByOrder: (order_id: string) => get<ApiPayment>(`/payments/${order_id}`),
+
+  publicKey: () => get<{ public_key: string }>("/payments/public-key"),
 };
 
 // ─── Coupons ──────────────────────────────────────────────────────────────────

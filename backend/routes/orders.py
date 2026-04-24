@@ -15,6 +15,7 @@ from backend.database import get_db
 from backend.models.order import Order, OrderStatus
 from backend.models.product import Product
 from backend.schemas.order import CheckoutIn, OrderStatusUpdate
+from backend.services.payment_service import PaymentService
 from backend.services.order_service import OrderService
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -82,6 +83,9 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
         "delivery_city": order.delivery_city,
         "delivery_complement": order.delivery_complement,
         "status": status,
+        "pedido_status": status,
+        "payment_status": order.payment.status.value if order.payment else "pending",
+        "external_reference": order.external_reference,
         "subtotal": order.subtotal,
         "shipping_fee": order.shipping_fee,
         "discount": order.discount,
@@ -139,6 +143,14 @@ def get_order(order_id: str, db: Session = Depends(get_db)):
     try:
         order = OrderService(db).get(order_id)
         return ok(_serialize_orders(db, [order])[0])
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.get("/{order_id}/payment-status")
+def get_order_payment_status(order_id: str, db: Session = Depends(get_db)):
+    try:
+        return ok(PaymentService(db).payment_status(order_id))
     except DomainError as exc:
         return err(exc)
 

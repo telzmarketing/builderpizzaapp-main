@@ -26,9 +26,13 @@ ORDER_TRANSITIONS: dict[str, list[str]] = {
     #        não pode ir para "delivered" sem passar por "on_the_way".
     #        "ready_for_pickup" é intermediário opcional entre preparing e on_the_way.
     # ────────────────────────────────────────────────────────────────────────────
-    "pending":           ["waiting_payment", "cancelled"],
-    "waiting_payment":   ["paid", "cancelled"],
+    "pending":           ["waiting_payment", "aguardando_pagamento", "cancelled"],
+    "waiting_payment":   ["paid", "pago", "pagamento_recusado", "pagamento_expirado", "cancelled"],
+    "aguardando_pagamento": ["paid", "pago", "pagamento_recusado", "pagamento_expirado", "cancelled"],
     "paid":              ["preparing", "cancelled", "refunded"],
+    "pago":              ["preparing", "cancelled", "refunded"],
+    "pagamento_recusado": ["aguardando_pagamento", "cancelled"],
+    "pagamento_expirado": ["aguardando_pagamento", "cancelled"],
     "preparing":         ["ready_for_pickup", "on_the_way", "cancelled"],
     "ready_for_pickup":  ["on_the_way"],
     "on_the_way":        ["delivered"],
@@ -49,9 +53,13 @@ DELIVERY_TRANSITIONS: dict[str, list[str]] = {
 }
 
 PAYMENT_TRANSITIONS: dict[str, list[str]] = {
-    "pending":   ["paid", "failed"],
+    "pending":   ["approved", "paid", "rejected", "failed", "cancelled", "expired"],
+    "approved":  ["refunded"],
     "paid":      ["refunded"],
-    "failed":    ["pending"],         # can be retried
+    "rejected":  ["pending"],
+    "failed":    ["pending"],
+    "cancelled": ["pending"],
+    "expired":   ["pending"],
     "refunded":  [],
 }
 

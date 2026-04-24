@@ -50,6 +50,11 @@ def create_payment(body: PaymentCreate, db: Session = Depends(get_db)):
         return err(exc)
 
 
+@router.get("/public-key")
+def get_public_key(db: Session = Depends(get_db)):
+    return ok(PaymentService(db).public_key())
+
+
 # ── Get payment ───────────────────────────────────────────────────────────────
 
 @router.get("/{order_id}")
@@ -86,6 +91,7 @@ async def payment_webhook(
     request: Request,
     db: Session = Depends(get_db),
     x_signature: str | None = Header(default=None),
+    x_request_id: str | None = Header(default=None),
 ):
     """
     Receive payment gateway callbacks (Mercado Pago, Stripe, PagSeguro).
@@ -109,7 +115,7 @@ async def payment_webhook(
         return err_msg("Payload de webhook inválido ou malformado.", code="WebhookParseError")
 
     try:
-        result = PaymentService(db).process_webhook(payload, raw_body, x_signature)
+        result = PaymentService(db).process_webhook(payload, raw_body, x_signature, x_request_id)
         return ok(result)
     except DomainError as exc:
         return err(exc)

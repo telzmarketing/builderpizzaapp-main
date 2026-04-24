@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.config import get_settings
 from backend.database import create_all_tables, SessionLocal, engine
-from backend.routes import products, orders, payments, shipping, coupons, loyalty, customers, promotions, admin, delivery, auth, admin_auth, campaigns
+from backend.routes import products, orders, payments, shipping, coupons, loyalty, customers, promotions, admin, delivery, auth, admin_auth, campaigns, webhooks
 from backend.routes import chatbot as chatbot_routes, admin_chatbot as admin_chatbot_routes
 from backend.routes import upload as upload_routes
 from backend.routes import theme as theme_routes
@@ -130,6 +130,26 @@ def _run_migrations():
         "ALTER TABLE customer_loyalty ADD COLUMN IF NOT EXISTS benefit_expiration_date TIMESTAMPTZ",
         # ── Loyalty transactions — new types ─────────────────────────────
         "ALTER TABLE loyalty_transactions ADD COLUMN IF NOT EXISTS description VARCHAR(300)",
+        # Payment Brick / Mercado Pago
+        "ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'aguardando_pagamento'",
+        "ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'pago'",
+        "ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'pagamento_recusado'",
+        "ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'pagamento_expirado'",
+        "ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'ready_for_pickup'",
+        "ALTER TYPE paymentstatus ADD VALUE IF NOT EXISTS 'approved'",
+        "ALTER TYPE paymentstatus ADD VALUE IF NOT EXISTS 'rejected'",
+        "ALTER TYPE paymentstatus ADD VALUE IF NOT EXISTS 'cancelled'",
+        "ALTER TYPE paymentstatus ADD VALUE IF NOT EXISTS 'expired'",
+        "ALTER TYPE paymentmethod ADD VALUE IF NOT EXISTS 'debit_card'",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS external_reference VARCHAR(120)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_external_reference ON orders (external_reference) WHERE external_reference IS NOT NULL",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider VARCHAR(50) DEFAULT 'mock'",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS mercado_pago_payment_id VARCHAR(100)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_payments_mercado_pago_payment_id ON payments (mercado_pago_payment_id) WHERE mercado_pago_payment_id IS NOT NULL",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS external_reference VARCHAR(120)",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS raw_response TEXT",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
+        "CREATE TABLE IF NOT EXISTS payment_events (id VARCHAR PRIMARY KEY, provider VARCHAR(50) NOT NULL DEFAULT 'mercado_pago', event_type VARCHAR(100), mercado_pago_payment_id VARCHAR(100), external_reference VARCHAR(120), raw_payload TEXT NOT NULL, processed_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())",
     ]
     for stmt in stmts:
         try:
@@ -177,6 +197,28 @@ app.include_router(admin_chatbot_routes.router)
 app.include_router(upload_routes.router)
 app.include_router(theme_routes.router)
 app.include_router(home_config_routes.router)
+app.include_router(webhooks.router)
+
+# Backward-compatible /api aliases expected by deployment/proxy setups.
+app.include_router(products.router, prefix="/api")
+app.include_router(orders.router, prefix="/api")
+app.include_router(payments.router, prefix="/api")
+app.include_router(shipping.router, prefix="/api")
+app.include_router(coupons.router, prefix="/api")
+app.include_router(loyalty.router, prefix="/api")
+app.include_router(customers.router, prefix="/api")
+app.include_router(promotions.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
+app.include_router(delivery.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
+app.include_router(admin_auth.router, prefix="/api")
+app.include_router(campaigns.router, prefix="/api")
+app.include_router(chatbot_routes.router, prefix="/api")
+app.include_router(admin_chatbot_routes.router, prefix="/api")
+app.include_router(upload_routes.router, prefix="/api")
+app.include_router(theme_routes.router, prefix="/api")
+app.include_router(home_config_routes.router, prefix="/api")
+app.include_router(webhooks.router, prefix="/api")
 
 # ── Static files (uploaded images) ───────────────────────────────────────────
 # Must be mounted AFTER all route registrations.

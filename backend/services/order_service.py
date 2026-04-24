@@ -22,6 +22,7 @@ from backend.core.events import (
     bus, OrderCreated, OrderStatusChanged, OrderCancelled as EvOrderCancelled,
 )
 from backend.models.order import Order, OrderItem, OrderItemFlavor, OrderStatus
+from backend.models.payment import Payment, PaymentMethod, PaymentStatus
 from backend.models.product import Product, MultiFlavorsConfig, PricingRule
 from backend.schemas.order import CheckoutIn, CartItemIn, FlavorIn, OrderStatusUpdate
 
@@ -231,15 +232,18 @@ class OrderService:
 
         # 4. Build order
         total = round(subtotal + shipping_fee - discount, 2)
+        order_id = f"order-{uuid.uuid4().hex[:8]}"
+        external_reference = order_id
         order = Order(
-            id=f"order-{uuid.uuid4().hex[:8]}",
+            id=order_id,
+            external_reference=external_reference,
             customer_id=payload.customer_id,
             delivery_name=payload.delivery.name,
             delivery_phone=payload.delivery.phone,
             delivery_street=payload.delivery.street,
             delivery_city=payload.delivery.city,
             delivery_complement=payload.delivery.complement,
-            status=OrderStatus.pending,
+            status=OrderStatus.aguardando_pagamento,
             coupon_id=resolved_coupon_id,
             subtotal=subtotal,
             shipping_fee=shipping_fee,
@@ -248,6 +252,19 @@ class OrderService:
             estimated_time=shipping_result.estimated_time,
         )
         self._db.add(order)
+        self._db.flush()
+
+        payment_method = PaymentMethod(payload.payment_method) if payload.payment_method in PaymentMethod._value2member_map_ else PaymentMethod.pix
+        self._db.add(Payment(
+            id=str(uuid.uuid4()),
+            order_id=order.id,
+            method=payment_method,
+            status=PaymentStatus.pending,
+            amount=total,
+            gateway="mercadopago",
+            provider="mercado_pago",
+            external_reference=external_reference,
+        ))
         self._db.flush()
 
         # 5. Order items and flavor breakdown

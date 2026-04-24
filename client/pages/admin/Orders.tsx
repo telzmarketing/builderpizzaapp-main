@@ -7,6 +7,10 @@ const STATUS_LABELS: Record<string, string> = {
   pending: "Aguardando",
   waiting_payment: "Ag. Pagamento",
   paid: "Pago",
+  aguardando_pagamento: "Ag. Pagamento",
+  pago: "Pago",
+  pagamento_recusado: "Pagamento recusado",
+  pagamento_expirado: "Pagamento expirado",
   preparing: "Preparando",
   ready_for_pickup: "Pronto",
   on_the_way: "A caminho",
@@ -18,15 +22,19 @@ const STATUS_LABELS: Record<string, string> = {
 const statusColor = (s: string) => {
   if (s === "delivered") return "bg-green-500/20 text-green-400";
   if (s === "on_the_way" || s === "ready_for_pickup") return "bg-blue-500/20 text-blue-400";
-  if (s === "cancelled" || s === "refunded") return "bg-red-500/20 text-red-400";
-  if (s === "paid") return "bg-cyan-500/20 text-cyan-400";
+  if (s === "cancelled" || s === "refunded" || s === "pagamento_recusado" || s === "pagamento_expirado") return "bg-red-500/20 text-red-400";
+  if (s === "paid" || s === "pago") return "bg-cyan-500/20 text-cyan-400";
   return "bg-gold/20 text-orange-400";
 };
 
 const NEXT_STATUSES: Record<OrderStatus, OrderStatus[]> = {
-  pending: ["waiting_payment", "preparing", "cancelled"],
-  waiting_payment: ["paid", "cancelled"],
+  pending: ["aguardando_pagamento", "cancelled"],
+  waiting_payment: ["cancelled"],
   paid: ["preparing", "cancelled"],
+  aguardando_pagamento: ["cancelled"],
+  pago: ["preparing", "cancelled"],
+  pagamento_recusado: ["aguardando_pagamento", "cancelled"],
+  pagamento_expirado: ["aguardando_pagamento", "cancelled"],
   preparing: ["ready_for_pickup", "on_the_way"],
   ready_for_pickup: ["on_the_way"],
   on_the_way: ["delivered"],

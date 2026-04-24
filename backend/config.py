@@ -16,8 +16,12 @@ class Settings(BaseSettings):
 
     # Payments (placeholders — swap for real gateway keys)
     PAYMENT_GATEWAY: str = "mock"          # "mock" | "stripe" | "mercadopago"
+    PAYMENT_PROVIDER: str = "mock"         # "mock" | "mercado_pago" | "mercadopago"
     PAYMENT_SECRET_KEY: str = "secret"
     PAYMENT_WEBHOOK_SECRET: str = "webhook_secret"
+    MERCADO_PAGO_ACCESS_TOKEN: str = ""
+    MERCADO_PAGO_PUBLIC_KEY: str = ""
+    MERCADO_PAGO_WEBHOOK_SECRET: str = ""
 
     # Admin JWT
     JWT_SECRET_KEY: str = "troque-esta-chave-secreta-em-producao"
