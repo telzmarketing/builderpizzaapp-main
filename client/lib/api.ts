@@ -163,13 +163,30 @@ export interface ApiCoupon {
   code: string;
   description: string | null;
   icon: string;
-  coupon_type: "percent" | "delivery" | "fixed";
+  coupon_type: "percentage" | "fixed";
   discount_value: number;
   min_order_value: number;
   max_uses: number | null;
-  uses_count: number;
+  max_uses_per_customer: number | null;
+  used_count: number;
   expiry_date: string | null;
   active: boolean;
+  campaign_id: string | null;
+  created_at: string;
+}
+
+export interface ApiCouponInput {
+  code?: string;
+  description?: string | null;
+  icon?: string;
+  coupon_type?: ApiCoupon["coupon_type"];
+  discount_value?: number;
+  min_order_value?: number;
+  max_uses?: number | null;
+  max_uses_per_customer?: number | null;
+  expiry_date?: string | null;
+  campaign_id?: string | null;
+  active?: boolean;
 }
 
 export interface ApiCouponApply {
@@ -320,7 +337,11 @@ export interface CheckoutIn {
     phone: string;
     street: string;
     city: string;
+    neighborhood?: string;
+    zip_code?: string;
     complement?: string;
+    is_pickup?: boolean;
+    is_scheduled?: boolean;
   };
   coupon_code?: string;
   customer_id?: string;
@@ -678,10 +699,10 @@ export const paymentsApi = {
 export const couponsApi = {
   list: () => get<ApiCoupon[]>("/coupons"),
 
-  create: (data: Omit<ApiCoupon, "id" | "uses_count">) =>
+  create: (data: ApiCouponInput & { code: string; discount_value: number }) =>
     post<ApiCoupon>("/coupons", data),
 
-  update: (id: string, data: Partial<Omit<ApiCoupon, "id" | "uses_count">>) =>
+  update: (id: string, data: ApiCouponInput) =>
     put<ApiCoupon>(`/coupons/${id}`, data),
 
   remove: (id: string) => del<void>(`/coupons/${id}`),

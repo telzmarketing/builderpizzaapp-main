@@ -80,7 +80,7 @@ interface PromotionForm {
 
 interface CouponForm {
   code: string; description: string; icon: string;
-  coupon_type: "percent" | "fixed" | "delivery";
+  coupon_type: "percentage" | "fixed";
   discount_value: number; min_order_value: number;
   max_uses: string; expiry_date: string; active: boolean;
 }
@@ -106,7 +106,7 @@ const emptyPromoForm: PromotionForm = {
 
 const emptyCouponForm: CouponForm = {
   code: "", description: "", icon: "🎟️",
-  coupon_type: "percent", discount_value: 10, min_order_value: 0,
+  coupon_type: "percentage", discount_value: 10, min_order_value: 0,
   max_uses: "", expiry_date: "", active: true,
 };
 
@@ -562,9 +562,8 @@ export default function AdminCampanhas() {
                     <div className="space-y-4">
                       {couponsList.map((c) => {
                         const discountLabel =
-                          c.coupon_type === "percent" ? `${c.discount_value}% OFF`
-                          : c.coupon_type === "fixed" ? `R$ ${c.discount_value.toFixed(2)} OFF`
-                          : "Frete Grátis";
+                          c.coupon_type === "percentage" ? `${c.discount_value}% OFF`
+                          : `R$ ${c.discount_value.toFixed(2)} OFF`;
                         return (
                           <div key={c.id} className={`bg-surface-02 rounded-xl border border-surface-03 overflow-hidden ${!c.active ? "opacity-60" : ""}`}>
                             <div className="flex items-center gap-4 p-4">
@@ -581,7 +580,7 @@ export default function AdminCampanhas() {
                                 </div>
                                 <div className="flex gap-3 mt-0.5 text-xs text-stone flex-wrap">
                                   {c.min_order_value > 0 && <span>Mínimo: R$ {c.min_order_value.toFixed(2)}</span>}
-                                  {c.max_uses !== null && <span>Usos: {c.uses_count}/{c.max_uses}</span>}
+                                  {c.max_uses !== null && <span>Usos: {c.used_count}/{c.max_uses}</span>}
                                   {c.expiry_date && <span>Validade: {new Date(c.expiry_date).toLocaleDateString("pt-BR")}</span>}
                                   {c.description && <span>{c.description}</span>}
                                 </div>
@@ -959,17 +958,15 @@ export default function AdminCampanhas() {
             <Txt label="Descrição" value={couponForm.description} onChange={(e) => setCouponForm({ ...couponForm, description: e.target.value })} rows={2} placeholder="Descrição do cupom" />
 
             <div className="grid grid-cols-2 gap-4">
-              <Sel label="Tipo de desconto" value={couponForm.coupon_type} onChange={(e) => setCouponForm({ ...couponForm, coupon_type: e.target.value as "percent" | "fixed" | "delivery" })}>
-                <option value="percent">Percentual (%)</option>
+              <Sel label="Tipo de desconto" value={couponForm.coupon_type} onChange={(e) => setCouponForm({ ...couponForm, coupon_type: e.target.value as "percentage" | "fixed" })}>
+                <option value="percentage">Percentual (%)</option>
                 <option value="fixed">Valor Fixo (R$)</option>
-                <option value="delivery">Frete Grátis</option>
               </Sel>
               <Inp
-                label={couponForm.coupon_type === "percent" ? "Desconto (%)" : couponForm.coupon_type === "fixed" ? "Desconto (R$)" : "Desconto (frete)"}
+                label={couponForm.coupon_type === "percentage" ? "Desconto (%)" : "Desconto (R$)"}
                 type="number" step="0.01" min="0"
                 value={couponForm.discount_value}
                 onChange={(e) => setCouponForm({ ...couponForm, discount_value: parseFloat(e.target.value) || 0 })}
-                disabled={couponForm.coupon_type === "delivery"}
               />
             </div>
 

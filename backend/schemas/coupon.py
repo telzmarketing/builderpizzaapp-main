@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
 from backend.models.coupon import CouponType
@@ -17,10 +17,19 @@ class CouponCreate(BaseModel):
     campaign_id: Optional[str] = None
     active: bool = True
 
+    @field_validator("coupon_type", mode="before")
+    @classmethod
+    def normalize_coupon_type(cls, value):
+        if value == "percent":
+            return CouponType.percentage
+        return value
+
 
 class CouponUpdate(BaseModel):
+    code: Optional[str] = None
     description: Optional[str] = None
     icon: Optional[str] = None
+    coupon_type: Optional[CouponType] = None
     discount_value: Optional[float] = None
     min_order_value: Optional[float] = None
     max_uses: Optional[int] = None
@@ -28,6 +37,13 @@ class CouponUpdate(BaseModel):
     expiry_date: Optional[datetime] = None
     campaign_id: Optional[str] = None
     active: Optional[bool] = None
+
+    @field_validator("coupon_type", mode="before")
+    @classmethod
+    def normalize_coupon_type(cls, value):
+        if value == "percent":
+            return CouponType.percentage
+        return value
 
 
 class CouponOut(BaseModel):

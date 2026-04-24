@@ -5,8 +5,7 @@ import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp, Coupon } from "@/context/AppContext";
 
 const typeColor = (type: Coupon["type"]) => {
-  if (type === "percent") return "bg-gold/20 text-gold-light border-gold/40";
-  if (type === "delivery") return "bg-blue-500/20 text-blue-400 border-blue-500/40";
+  if (type === "percentage") return "bg-gold/20 text-gold-light border-gold/40";
   return "bg-green-500/20 text-green-400 border-green-500/40";
 };
 

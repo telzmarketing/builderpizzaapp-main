@@ -93,7 +93,7 @@ export interface Coupon {
   discount: string;
   expiry: string;
   icon: string;
-  type: "percent" | "delivery" | "fixed";
+  type: "percentage" | "fixed";
   used: boolean;
 }
 
@@ -392,9 +392,8 @@ function apiPromotionToPromotion(p: ApiPromotion): Promotion {
 
 function apiCouponToCoupon(c: ApiCoupon): Coupon {
   let discount = "";
-  if (c.coupon_type === "percent") discount = `${c.discount_value}% OFF`;
-  else if (c.coupon_type === "fixed") discount = `R$${c.discount_value.toFixed(0)} OFF`;
-  else discount = "Frete Grátis";
+  if (c.coupon_type === "percentage") discount = `${c.discount_value}% OFF`;
+  else discount = `R$${c.discount_value.toFixed(0)} OFF`;
 
   return {
     id: c.id,
@@ -406,7 +405,7 @@ function apiCouponToCoupon(c: ApiCoupon): Coupon {
       : "Sem validade",
     icon: c.icon,
     type: c.coupon_type,
-    used: c.max_uses != null && c.uses_count >= c.max_uses,
+    used: c.max_uses != null && c.used_count >= c.max_uses,
   };
 }
 

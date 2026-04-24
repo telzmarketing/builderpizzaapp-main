@@ -3,12 +3,11 @@ import { Plus, Trash2, Edit2, Tag } from "lucide-react";
 import { useApp, Coupon } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 
-const emptyForm: Partial<Coupon> = { code: "", description: "", discount: "", expiry: "", icon: "🎟️", type: "percent", used: false };
+const emptyForm: Partial<Coupon> = { code: "", description: "", discount: "", expiry: "", icon: "🎟️", type: "percentage", used: false };
 
-const typeLabels = { percent: "Percentual (%)", delivery: "Frete Grátis", fixed: "Valor Fixo (R$)" };
+const typeLabels: Record<Coupon["type"], string> = { percentage: "Percentual (%)", fixed: "Valor Fixo (R$)" };
 const typeColor = (type: Coupon["type"]) => {
-  if (type === "percent") return "bg-gold/20 text-orange-400 border-gold/40";
-  if (type === "delivery") return "bg-blue-500/20 text-blue-400 border-blue-500/40";
+  if (type === "percentage") return "bg-gold/20 text-orange-400 border-gold/40";
   return "bg-green-500/20 text-green-400 border-green-500/40";
 };
 
@@ -36,7 +35,7 @@ export default function AdminCupons() {
           discount: formData.discount!,
           expiry: formData.expiry!,
           icon: formData.icon || "🎟️",
-          type: formData.type || "percent",
+          type: formData.type || "percentage",
         });
       }
       setFormData(emptyForm);
@@ -97,12 +96,11 @@ export default function AdminCupons() {
                     <div>
                       <label className="block text-parchment text-sm font-medium mb-2">Tipo de Desconto *</label>
                       <select
-                        value={formData.type || "percent"}
+                        value={formData.type || "percentage"}
                         onChange={(e) => setFormData({ ...formData, type: e.target.value as Coupon["type"] })}
                         className="w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream focus:outline-none focus:border-gold"
                       >
-                        <option value="percent">Percentual (%)</option>
-                        <option value="delivery">Frete Grátis</option>
+                        <option value="percentage">Percentual (%)</option>
                         <option value="fixed">Valor Fixo (R$)</option>
                       </select>
                     </div>

@@ -1,4 +1,4 @@
-const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+import { apiRequest } from "./api";
 
 export interface ThemeSettings {
   id: string;
@@ -59,24 +59,11 @@ export const DEFAULT_THEME: ThemeSettings = {
 
 export const themeApi = {
   async get(): Promise<ThemeSettings> {
-    const res = await fetch(`${BASE}/theme`);
-    if (!res.ok) throw new Error("theme fetch failed");
-    const json = await res.json();
-    return json.data ?? json;
+    return apiRequest<ThemeSettings>("GET", "/theme");
   },
 
   async update(token: string, data: Partial<Omit<ThemeSettings, "id" | "updated_at">>): Promise<ThemeSettings> {
-    const res = await fetch(`${BASE}/theme`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error?.message ?? "Erro ao salvar tema.");
-    }
-    const json = await res.json();
-    return json.data ?? json;
+    return apiRequest<ThemeSettings>("PUT", "/theme", data, { Authorization: `Bearer ${token}` });
   },
 };
 

@@ -54,7 +54,13 @@ def update_coupon(coupon_id: str, body: CouponUpdate, db: Session = Depends(get_
     coupon = db.query(Coupon).filter(Coupon.id == coupon_id).first()
     if not coupon:
         raise HTTPException(404, "Cupom não encontrado.")
-    for key, value in body.model_dump(exclude_none=True).items():
+    data = body.model_dump(exclude_none=True)
+    if "code" in data:
+        data["code"] = data["code"].upper()
+        existing = db.query(Coupon).filter(Coupon.code == data["code"], Coupon.id != coupon_id).first()
+        if existing:
+            raise HTTPException(400, f"Código '{data['code']}' já existe.")
+    for key, value in data.items():
         setattr(coupon, key, value)
     db.commit()
     db.refresh(coupon)

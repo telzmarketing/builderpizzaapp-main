@@ -2,27 +2,10 @@
  * API client do chatbot — segue o mesmo padrão de api.ts.
  */
 
-const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
-
-function authHeaders(): HeadersInit {
-  const token = localStorage.getItem("admin_token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
+import { apiRequest } from "./api";
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`;
-    try { const d = await res.json(); msg = d?.error?.message ?? d?.detail ?? msg; } catch {}
-    throw new Error(msg);
-  }
-  if (res.status === 204) return undefined as unknown as T;
-  const json = await res.json();
-  return ("data" in json ? json.data : json) as T;
+  return apiRequest<T>(method, path, body);
 }
 
 const get  = <T>(p: string)              => req<T>("GET",    p);

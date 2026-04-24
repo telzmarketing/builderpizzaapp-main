@@ -15,6 +15,7 @@ from backend.core.exceptions import (
     CartEmpty, OrderNotFound, OrderCancelled,
     ProductNotFound, PriceConflict,
     FlavorDivisionMismatch, MaxFlavorsExceeded,
+    DomainError,
 )
 from backend.core.state_machine import order_sm
 from backend.core.events import (
@@ -196,10 +197,19 @@ class OrderService:
 
         # 2. Shipping — delegated to ShippingService (lazy import avoids circular)
         from backend.services.shipping_service import ShippingService
-        from backend.schemas.shipping import ShippingCalculateIn
+        from backend.schemas.shipping_v2 import ShippingCalculateIn
         shipping_result = ShippingService(self._db).calculate(
-            ShippingCalculateIn(city=payload.delivery.city, order_subtotal=subtotal)
+            ShippingCalculateIn(
+                city=payload.delivery.city,
+                neighborhood=payload.delivery.neighborhood,
+                zip_code=payload.delivery.zip_code,
+                order_subtotal=subtotal,
+                is_pickup=payload.delivery.is_pickup,
+                is_scheduled=payload.delivery.is_scheduled,
+            )
         )
+        if not shipping_result.available:
+            raise DomainError(shipping_result.message or "Entrega indisponível para este pedido.")
         shipping_fee = shipping_result.shipping_price
 
         # 3. Coupon
@@ -235,7 +245,7 @@ class OrderService:
             shipping_fee=shipping_fee,
             discount=discount,
             total=total,
-            estimated_time=40,
+            estimated_time=shipping_result.estimated_time,
         )
         self._db.add(order)
         self._db.flush()
