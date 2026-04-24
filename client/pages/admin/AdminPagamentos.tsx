@@ -42,14 +42,6 @@ const GATEWAYS: { id: Gateway; label: string; icon: string; description: string;
   },
 ];
 
-const PIX_KEY_TYPES = [
-  { value: "cpf", label: "CPF" },
-  { value: "cnpj", label: "CNPJ" },
-  { value: "email", label: "E-mail" },
-  { value: "phone", label: "Telefone" },
-  { value: "random", label: "Chave Aleatória" },
-];
-
 export default function AdminPagamentos() {
   const [config, setConfig] = useState<GatewayConfig | null>(null);
   const [form, setForm] = useState<Record<string, string | boolean>>({});
@@ -79,10 +71,6 @@ export default function AdminPagamentos() {
           stripe_webhook_secret: "",
           pagseguro_email: gatewayData.pagseguro_email || "",
           pagseguro_token: "",
-          pix_key: gatewayData.pix_key || "",
-          pix_key_type: gatewayData.pix_key_type || "email",
-          pix_beneficiary_name: gatewayData.pix_beneficiary_name || "",
-          pix_beneficiary_city: gatewayData.pix_beneficiary_city || "",
         });
       })
       .catch(() => setError("Não foi possível carregar a configuração. O backend está rodando?"))
@@ -121,6 +109,9 @@ export default function AdminPagamentos() {
   };
 
   const selectedGateway = (form.gateway as Gateway) || "mock";
+  const webhookUrl = selectedGateway === "mercadopago"
+    ? `${window.location.origin}/api/webhooks/mercadopago`
+    : `${window.location.origin}/api/payments/webhook`;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-00 to-surface-00">
@@ -306,65 +297,6 @@ export default function AdminPagamentos() {
                   />
                 )}
 
-                {/* ── PIX avulso ────────────────────────────────────────── */}
-                {(form.accept_pix || selectedGateway === "mock") && (
-                  <section className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
-                    <div className="px-6 py-4 border-b border-surface-03">
-                      <h3 className="text-lg font-bold text-cream flex items-center gap-2">
-                        <QrCode size={20} className="text-orange-500" />
-                        Configuração PIX
-                      </h3>
-                      <p className="text-stone text-sm mt-1">
-                        Dados usados para gerar o QR Code PIX
-                      </p>
-                    </div>
-                    <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-parchment text-sm font-medium mb-2">Tipo de Chave PIX</label>
-                        <select
-                          value={(form.pix_key_type as string) || "email"}
-                          onChange={(e) => set("pix_key_type", e.target.value)}
-                          className="w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream focus:outline-none focus:border-gold"
-                        >
-                          {PIX_KEY_TYPES.map((t) => (
-                            <option key={t.value} value={t.value}>{t.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-parchment text-sm font-medium mb-2">Chave PIX</label>
-                        <input
-                          type="text"
-                          value={(form.pix_key as string) || ""}
-                          onChange={(e) => set("pix_key", e.target.value)}
-                          placeholder="sua@chave.pix"
-                          className="w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream placeholder-stone focus:outline-none focus:border-gold"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-parchment text-sm font-medium mb-2">Nome do Beneficiário</label>
-                        <input
-                          type="text"
-                          value={(form.pix_beneficiary_name as string) || ""}
-                          onChange={(e) => set("pix_beneficiary_name", e.target.value)}
-                          placeholder="PizzaApp Ltda"
-                          className="w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream placeholder-stone focus:outline-none focus:border-gold"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-parchment text-sm font-medium mb-2">Cidade do Beneficiário</label>
-                        <input
-                          type="text"
-                          value={(form.pix_beneficiary_city as string) || ""}
-                          onChange={(e) => set("pix_beneficiary_city", e.target.value)}
-                          placeholder="São Paulo"
-                          className="w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream placeholder-stone focus:outline-none focus:border-gold"
-                        />
-                      </div>
-                    </div>
-                  </section>
-                )}
-
                 {/* ── Status e webhook URL ──────────────────────────────── */}
                 <section className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
                   <div className="px-6 py-4 border-b border-surface-03">
@@ -376,17 +308,17 @@ export default function AdminPagamentos() {
                   <div className="p-6">
                     <div className="flex items-center gap-3 bg-surface-00 rounded-xl px-4 py-3 border border-surface-03">
                       <code className="text-orange-400 text-sm flex-1 break-all">
-                        http://localhost:8000/payments/webhook
+                        {webhookUrl}
                       </code>
                       <button
-                        onClick={() => navigator.clipboard.writeText("http://localhost:8000/payments/webhook")}
+                        onClick={() => navigator.clipboard.writeText(webhookUrl)}
                         className="text-stone hover:text-cream text-xs border border-surface-03 rounded px-2 py-1 transition-colors flex-shrink-0"
                       >
                         Copiar
                       </button>
                     </div>
                     <p className="text-stone/70 text-xs mt-2">
-                      Em produção, substitua <code className="text-stone">localhost:8000</code> pelo domínio do seu servidor.
+                      Em produção, cadastre esta URL no painel do gateway usando o domínio público da loja.
                     </p>
 
                     {/* Last updated */}

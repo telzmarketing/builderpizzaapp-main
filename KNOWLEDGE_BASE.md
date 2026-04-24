@@ -1,6 +1,6 @@
 # Base de Conhecimento — PizzaApp
 > Documento técnico completo: telas, funcionalidades, banco de dados, endpoints e integrações.
-> Gerado em: 2026-04-13 | **Atualizado em: 2026-04-15** | Versão: 2.1.0
+> Gerado em: 2026-04-13 | **Atualizado em: 2026-04-23** | Versão: 2.2.0
 
 ---
 
@@ -33,6 +33,7 @@
 11. [Sistema de Multi-Sabor](#11-sistema-de-multi-sabor)
 12. [Regras de Negócio Críticas](#12-regras-de-negócio-críticas)
 13. [Fluxo Completo de um Pedido](#13-fluxo-completo-de-um-pedido)
+14. [Atualizacao 2026-04-23 - Mercado Pago Payment Brick](#14-atualizacao-2026-04-23---mercado-pago-payment-brick)
 
 ---
 
@@ -1341,4 +1342,195 @@ STATUS DO PEDIDO AO LONGO DO FLUXO:
 
 11. Cliente acompanha em /order-tracking
     └── Barra de progresso: Preparing → On the way → Delivered
+```
+
+---
+
+## 14. Atualizacao 2026-04-23 - Mercado Pago Payment Brick
+
+Esta secao registra o fluxo atual implementado no commit `b5e33c3`. Ela prevalece sobre referencias antigas deste documento a Checkout Pro, QR/link gerado diretamente no backend ou confirmacao de pagamento baseada em resposta do frontend.
+
+### 14.1 Resumo da mudanca
+
+O checkout foi refatorado para usar Mercado Pago Payment Brick. O frontend cria o pedido, renderiza o Brick e envia o `formData` para o backend. O backend cria/processa o pagamento no Mercado Pago, mas o pedido so vira pago depois que o webhook do Mercado Pago for recebido e o backend consultar a API do Mercado Pago para confirmar o status real.
+
+### 14.2 Variaveis de ambiente
+
+Frontend Vite:
+
+```env
+VITE_MERCADO_PAGO_PUBLIC_KEY=
+```
+
+Backend:
+
+```env
+PAYMENT_PROVIDER=mercado_pago
+MERCADO_PAGO_ACCESS_TOKEN=
+MERCADO_PAGO_PUBLIC_KEY=
+MERCADO_PAGO_WEBHOOK_SECRET=
+```
+
+Regras:
+- `VITE_MERCADO_PAGO_PUBLIC_KEY` e chave publica e pode ser exposta ao browser.
+- `MERCADO_PAGO_ACCESS_TOKEN` e `MERCADO_PAGO_WEBHOOK_SECRET` ficam somente no backend.
+- Se `MERCADO_PAGO_WEBHOOK_SECRET` estiver configurado, webhook sem `x-signature` e rejeitado.
+
+### 14.3 Frontend
+
+Arquivo principal: `client/pages/Checkout.tsx`.
+
+Fluxo:
+1. Cliente preenche dados, frete e cupom no checkout.
+2. Frontend chama `ordersApi.checkout()` via `client/lib/api.ts`.
+3. Backend retorna pedido criado com status `aguardando_pagamento`.
+4. Frontend carrega `https://sdk.mercadopago.com/js/v2`.
+5. Frontend instancia `new MercadoPago(publicKey, { locale: "pt-BR" })`.
+6. Frontend renderiza o Payment Brick em `#paymentBrick_container`.
+7. `onSubmit` do Brick envia `formData` para `paymentsApi.createFromBrick(order_id, formData)`.
+8. Checkout consulta `ordersApi.paymentStatus(order_id)` periodicamente.
+9. Apenas quando backend retornar `payment_status=approved` ou `pedido_status=pago`, o carrinho e limpo e o usuario e enviado para rastreio.
+
+Estados exibidos no checkout:
+- aguardando pagamento
+- pagamento aprovado
+- pagamento recusado
+- pagamento expirado/cancelado
+- erro no pagamento
+
+### 14.4 Endpoints atuais
+
+Todos os endpoints tambem estao disponiveis com prefixo `/api` por alias em `backend/main.py`.
+
+| Metodo | Rota | Funcao |
+|--------|------|--------|
+| `POST` | `/orders` | Cria pedido com `pedido_status=aguardando_pagamento` e `payment_status=pending` |
+| `POST` | `/orders/checkout` | Alias legado para criar pedido |
+| `GET` | `/orders/{id}/payment-status` | Retorna status atual do pedido/pagamento para o frontend |
+| `GET` | `/payments/public-key` | Retorna Public Key do Mercado Pago cadastrada no backend |
+| `POST` | `/payments/create` | Recebe `formData` do Brick e cria/processa pagamento no Mercado Pago |
+| `GET` | `/payments/{order_id}` | Retorna pagamento por pedido |
+| `POST` | `/payments/webhook` | Webhook legado de pagamento |
+| `POST` | `/webhooks/mercadopago` | Webhook atual esperado para Mercado Pago |
+
+Endpoint publico recomendado no painel Mercado Pago:
+
+```txt
+https://SEU_DOMINIO/api/webhooks/mercadopago
+```
+
+### 14.5 Banco de dados
+
+`orders` recebeu:
+- `external_reference`
+- novos status: `aguardando_pagamento`, `pago`, `pagamento_recusado`, `pagamento_expirado`
+
+`payments` recebeu:
+- `provider`
+- `mercado_pago_payment_id`
+- `external_reference`
+- `raw_response`
+- `updated_at`
+- novos status: `approved`, `rejected`, `cancelled`, `expired`
+- novo metodo: `debit_card`
+
+Nova tabela `payment_events`:
+
+| Coluna | Uso |
+|--------|-----|
+| `id` | ID interno do evento |
+| `provider` | Ex.: `mercado_pago` |
+| `event_type` | Acao/tipo recebido no webhook |
+| `mercado_pago_payment_id` | ID do pagamento no Mercado Pago |
+| `external_reference` | Vinculo com pedido interno |
+| `raw_payload` | Payload bruto recebido |
+| `processed_at` | Quando o evento foi processado |
+| `created_at` | Criacao local |
+
+Migration criada:
+
+```txt
+backend/migrations/versions/20260423_payment_brick.py
+```
+
+O startup fallback em `backend/main.py` tambem inclui migracoes idempotentes para os novos campos, indices, enums e `payment_events`.
+
+### 14.6 PaymentService atual
+
+Arquivo: `backend/services/payment_service.py`.
+
+Responsabilidades:
+- carregar configuracao do gateway;
+- validar pedido e valor;
+- garantir `external_reference`;
+- criar/reusar `Payment` pendente;
+- criar pagamento em `/v1/payments` do Mercado Pago;
+- usar `X-Idempotency-Key`;
+- salvar `mercado_pago_payment_id`, `raw_response` e `webhook_data`;
+- nao marcar aprovado por resposta do frontend ou resposta imediata do create;
+- processar webhook, consultar `/v1/payments/{id}` e aplicar status real;
+- chamar `sendOrderToSaipos(orderId)` apenas quando o status muda pela primeira vez para `approved`.
+
+Mapeamento de status Mercado Pago:
+
+| Mercado Pago | `payments.status` | `orders.status` |
+|--------------|-------------------|-----------------|
+| `approved` | `approved` | `pago` |
+| `rejected` / `charged_back` | `rejected` | `pagamento_recusado` |
+| `cancelled` / `canceled` | `cancelled` | `pagamento_expirado` |
+| `expired` | `expired` | `pagamento_expirado` |
+| demais pendentes | `pending` | `aguardando_pagamento` |
+
+### 14.7 Idempotencia e seguranca
+
+Regras obrigatorias implementadas:
+- Pedido nao e duplicado pelo webhook.
+- Pagamento ja aprovado nao e recriado.
+- Webhook pode ser chamado mais de uma vez sem reenviar pedido para Saipos.
+- `external_reference` vincula pagamento Mercado Pago ao pedido interno.
+- Backend nao confia no payload do webhook: sempre consulta a API do Mercado Pago.
+- Frontend nunca marca pedido como pago.
+- Pedido nao e enviado para Saipos antes de `payment_status=approved`.
+
+### 14.8 Saipos
+
+Arquivo:
+
+```txt
+backend/services/saipos_service.py
+```
+
+Funcao stub atual:
+
+```python
+sendOrderToSaipos(order_id: str) -> None
+```
+
+Ela registra log quando chamada. Quando a integracao real Saipos estiver disponivel, a implementacao deve substituir o stub mantendo a mesma assinatura para preservar o contrato com `PaymentService`.
+
+### 14.9 Validacao executada
+
+Comandos executados apos a implementacao:
+
+```powershell
+npm.cmd run typecheck
+npm.cmd test
+npm.cmd run build
+.\.tools\python-3.12.10-embed-amd64\python.exe -m compileall -q backend
+git diff --check
+```
+
+Resultados:
+- TypeScript passou.
+- Vitest passou: 4 arquivos, 20 testes.
+- Build Vite passou.
+- Compilacao Python do backend passou.
+- `git diff --check` passou.
+
+### 14.10 Commit e push
+
+Commit enviado para `origin/main`:
+
+```txt
+b5e33c3 Implement Mercado Pago Payment Brick flow
 ```
