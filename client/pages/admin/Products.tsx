@@ -12,12 +12,6 @@ const PRICING_OPTIONS: { value: PricingRule; label: string; description: string 
   { value: "proportional", label: "Proporcional", description: "Cada parte paga sua fração do sabor" },
 ];
 
-const PRODUCT_TYPE_OPTIONS = [
-  { value: "pizza", label: "🍕 Pizza" },
-  { value: "drink", label: "🥤 Bebida" },
-  { value: "other", label: "🍔 Outros" },
-];
-
 type PTab = "produtos" | "categorias" | "config";
 
 export default function AdminProducts() {
@@ -462,28 +456,6 @@ export default function AdminProducts() {
                           <input type="number" value={formData.price || ""} onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) })} className={cls} placeholder="12.99" step="0.01" />
                         </div>
                       </div>
-
-                      {/* Tipo de Produto */}
-                      <div>
-                        <label className="block text-parchment text-sm font-medium mb-2">Tipo de Produto</label>
-                        <div className="flex gap-3">
-                          {PRODUCT_TYPE_OPTIONS.map((opt) => (
-                            <button
-                              key={opt.value}
-                              type="button"
-                              onClick={() => setFormData({ ...formData, product_type: opt.value })}
-                              className={`flex-1 py-2.5 rounded-xl border-2 text-sm font-bold transition-all ${
-                                (formData.product_type || "pizza") === opt.value
-                                  ? "border-gold bg-gold/10 text-gold"
-                                  : "border-surface-03 text-stone hover:border-gold/50"
-                              }`}
-                            >
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
                       <div>
                         <label className="block text-parchment text-sm font-medium mb-2">Descrição *</label>
                         <textarea value={formData.description || ""} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className={`${cls} resize-none`} placeholder="Descreva o produto..." rows={3} />
