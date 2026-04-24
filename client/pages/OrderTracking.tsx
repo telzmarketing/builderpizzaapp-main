@@ -4,6 +4,7 @@ import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
 import { useEffect, useState, useCallback } from "react";
 import { ordersApi, paymentsApi, type ApiOrder, type ApiPayment, type OrderStatus } from "@/lib/api";
+import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 
 const PROGRESS_STEPS: OrderStatus[] = ["preparing", "on_the_way", "delivered"];
 
@@ -231,7 +232,7 @@ export default function OrderTracking() {
                   <div className="flex-1 min-w-0">
                     <h4 className="text-cream font-semibold text-sm leading-tight">{displayName}</h4>
                     <p className="text-stone text-xs mt-0.5">
-                      {item.quantity}x · {item.selected_size} · {divLabel}
+                      {item.quantity}x · {pizzaSizeLabel(item.selected_size)} · {divLabel}
                     </p>
                   </div>
                   <p className="text-gold font-bold text-sm flex-shrink-0">

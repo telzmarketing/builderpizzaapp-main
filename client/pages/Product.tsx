@@ -4,17 +4,13 @@ import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check } from "lucide-react
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation } from "@/context/AppContext";
 import { sizesApi, crustApi, drinkVariantApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { isAllowedPizzaSize, pizzaSizeDescription, pizzaSizeLabel, PIZZA_SIZE_LABELS } from "@/lib/pizzaSizes";
 import { formatCrustAddition, normalizeCrustPriceAddition } from "@/lib/pricing";
 import { trackEvent } from "@/lib/tracking";
 
 // ─── Add-ons ──────────────────────────────────────────────────────────────────
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const PIZZA_SIZE_LABELS = ["Brotinho", "Pizza Grande"];
-const FALLBACK_SIZE_LABELS: Record<string, string> = { Brotinho: "Individual", "Pizza Grande": "Grande" };
-const isAllowedPizzaSize = (label: string) =>
-  PIZZA_SIZE_LABELS.some((allowed) => allowed.toLowerCase() === label.trim().toLowerCase());
 
 const DIVISION_OPTIONS: { value: FlavorDivision; label: string; emoji: string }[] = [
   { value: 1, label: "Inteira", emoji: "🍕" },
@@ -519,8 +515,8 @@ export default function Product() {
                       : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
                   }`}
                 >
-                  <span className="block font-black">{size.label}</span>
-                  {size.description && <span className="block text-[10px] opacity-70 font-normal">{size.description}</span>}
+                  <span className="block font-black">{pizzaSizeLabel(size.label)}</span>
+                  <span className="block text-[10px] opacity-70 font-normal">{pizzaSizeDescription(size.label, size.description)}</span>
                   <span className="block text-[10px] text-gold-light mt-0.5">R${size.price.toFixed(2)}</span>
                 </button>
               ))
@@ -536,7 +532,7 @@ export default function Product() {
                   }`}
                 >
                   <span className="block font-black">{size}</span>
-                  <span className="block text-[10px] opacity-70 font-normal">{FALLBACK_SIZE_LABELS[size]}</span>
+                  <span className="block text-[10px] opacity-70 font-normal">{pizzaSizeDescription(size)}</span>
                 </button>
               ))
             ) : (

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { checkoutTrackingPayload, trackEvent } from "@/lib/tracking";
+import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { useApp } from "@/context/AppContext";
 import {
   couponsApi,
@@ -473,7 +474,7 @@ export default function Checkout() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-cream font-semibold text-sm truncate">{displayName}</p>
-                    <p className="text-stone text-xs">{item.quantity}x - {item.selectedSize}</p>
+                    <p className="text-stone text-xs">{item.quantity}x - {pizzaSizeLabel(item.selectedSize)}</p>
                   </div>
                   <p className="text-gold font-bold text-sm flex-shrink-0">R$ {(item.finalPrice * item.quantity).toFixed(2)}</p>
                 </div>

@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Plus, Minus, Trash2, UtensilsCrossed, ShoppingCart, Tag, Check, X } from "lucide-react";
 import { useApp, CartItem } from "@/context/AppContext";
 import { couponsApi } from "@/lib/api";
+import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 
@@ -33,7 +34,7 @@ function CartItemRow({ item, onRemove, onUpdate }: {
           <h3 className="text-cream font-semibold text-sm leading-tight">{displayName}</h3>
           <div className="flex flex-wrap gap-1 mt-1">
             <span className="text-xs text-stone">
-              {SIZE_LABEL[item.selectedSize] ?? item.selectedSize}
+              {SIZE_LABEL[item.selectedSize] ?? pizzaSizeLabel(item.selectedSize)}
               {isMulti && ` · ${divisionLabel(item.flavorDivision)}`}
               {item.selectedCrustType && ` · ${item.selectedCrustType.name}`}
               {item.selectedDrinkVariant && ` · ${item.selectedDrinkVariant.name}`}
@@ -60,7 +61,8 @@ function CartItemRow({ item, onRemove, onUpdate }: {
 }
 
 const SIZE_LABEL: Record<string, string> = {
-  Brotinho: "Brotinho",
+  Brotinho: "Pizza Broto",
+  "Pizza Broto": "Pizza Broto",
   "Pizza Grande": "Pizza Grande",
   P: "Pequena",
   M: "Media",

@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { ChevronLeft, Loader2, ShoppingBag } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { ordersApi, type ApiOrder } from "@/lib/api";
+import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 
@@ -113,7 +114,7 @@ export default function Pedidos() {
                         <div className="flex-1 min-w-0">
                           <p className="text-cream text-sm truncate">{displayName}</p>
                           <p className="text-stone text-xs">
-                            x{item.quantity} · {item.selected_size}
+                            x{item.quantity} · {pizzaSizeLabel(item.selected_size)}
                             {isMulti && ` · ${item.flavor_division === 2 ? "Meio a Meio" : "3 Sabores"}`}
                           </p>
                         </div>

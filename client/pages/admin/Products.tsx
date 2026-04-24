@@ -4,6 +4,7 @@ import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import ImageUpload from "@/components/admin/ImageUpload";
 import { sizesApi, crustApi, drinkVariantApi, categoriesApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { pizzaSizeDescription, pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { normalizeCrustPriceAddition } from "@/lib/pricing";
 
 const PRICING_OPTIONS: { value: PricingRule; label: string; description: string }[] = [
@@ -369,8 +370,8 @@ export default function AdminProducts() {
 
   // ── Presets ───────────────────────────────────────────────────────────────────
   const SIZE_PRESETS = [
-    { label: "Brotinho", description: "Individual" },
-    { label: "Pizza Grande", description: "Grande" },
+    { label: "Pizza Broto", description: "25cm - 4 pedaços" },
+    { label: "Pizza Grande", description: "35cm - 8 pedaços" },
   ];
 
   const CRUST_PRESETS = [
@@ -789,11 +790,13 @@ export default function AdminProducts() {
                       <div key={size.id} className="flex items-center gap-3 bg-surface-03 rounded-xl px-4 py-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-cream font-bold text-sm">{size.label}</span>
+                            <span className="text-cream font-bold text-sm">{pizzaSizeLabel(size.label)}</span>
                             {size.is_default && <span className="text-[10px] bg-gold/20 text-gold border border-gold/30 px-1.5 py-0.5 rounded-full">padrão</span>}
                             {!size.active && <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-full">inativo</span>}
                           </div>
-                          {size.description && <p className="text-stone text-xs mt-0.5">{size.description}</p>}
+                          {pizzaSizeDescription(size.label, size.description) && (
+                            <p className="text-stone text-xs mt-0.5">{pizzaSizeDescription(size.label, size.description)}</p>
+                          )}
                         </div>
                         <input
                           type="number"
@@ -838,7 +841,7 @@ export default function AdminProducts() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-parchment text-xs font-medium mb-1">Rótulo *</label>
-                      <input type="text" value={sizeForm.label} onChange={(e) => setSizeForm((f) => ({ ...f, label: e.target.value }))} className={cls} placeholder={(sizesModalProduct as any).product_type === "drink" ? 'Ex: "600ml"' : 'Ex: "Brotinho"'} maxLength={50} />
+                      <input type="text" value={sizeForm.label} onChange={(e) => setSizeForm((f) => ({ ...f, label: e.target.value }))} className={cls} placeholder={(sizesModalProduct as any).product_type === "drink" ? 'Ex: "600ml"' : 'Ex: "Pizza Broto"'} maxLength={50} />
                     </div>
                     <div>
                       <label className="block text-parchment text-xs font-medium mb-1">Preço (R$) *</label>
