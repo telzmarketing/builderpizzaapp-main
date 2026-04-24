@@ -11,9 +11,9 @@ export default function MoschettieriLogo({ className = "h-10" }: { className?: s
       style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
       aria-label="Del Basito by Moschettieri Pizzeria"
     >
-      <span className="mb-[-0.42em] text-[0.34em] font-bold leading-[0.55] tracking-[0.03em]">Del Basito By</span>
-      <span className="text-[1em] font-bold leading-[0.76] tracking-[0.03em]">Moschettieri</span>
-      <span className="mt-[-0.14em] flex w-full items-center gap-[0.35em] text-[0.34em] font-bold leading-none tracking-[0.42em]">
+      <span className="mb-[-0.24em] text-[0.34em] font-bold leading-[0.8] tracking-[0.03em]">Del Basito By</span>
+      <span className="text-[1em] font-bold leading-[0.82] tracking-[0.03em]">Moschettieri</span>
+      <span className="mt-[-0.06em] flex w-full items-center gap-[0.35em] text-[0.34em] font-bold leading-none tracking-[0.42em]">
         <span className="h-px flex-1 bg-current" />
         <span>Pizzeria</span>
         <span className="h-px flex-1 bg-current" />
