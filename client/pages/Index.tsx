@@ -353,7 +353,7 @@ export default function Home() {
                   clickedPizza === product.id ? "scale-105 shadow-gold/30" : "hover:scale-[1.02]"
                 }`}
               >
-                <div className="w-28 h-28 mx-auto mb-4 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
+                <div className="w-36 h-36 mx-auto mb-4 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
                   {renderIcon(product.icon, index, "lg")}
                 </div>
                 <p className="text-cream font-bold text-center text-base leading-snug line-clamp-1">
@@ -371,9 +371,6 @@ export default function Home() {
                 <p className="text-gold font-bold text-center text-base">
                   R$ {(product.current_price ?? product.price).toFixed(2)}
                 </p>
-                <p className="text-xs text-stone text-center mt-1 leading-tight line-clamp-2">
-                  {product.description}
-                </p>
               </button>
             ))}
           </div>
@@ -388,14 +385,14 @@ export default function Home() {
           >
             <div className="flex items-center justify-center gap-2">
               {/* Previous (partially visible) */}
-              <div className="w-[18vw] max-w-[72px] flex-shrink-0 opacity-35 pointer-events-none">
+              <div className="w-[20vw] max-w-[84px] flex-shrink-0 opacity-35 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
                   {renderIcon(prevPizza?.icon, getPizzaIndex(-1), "sm")}
                 </div>
               </div>
 
               {/* Featured center card */}
-              <div className="flex-1 min-w-0" style={{ maxWidth: "min(240px, 56vw)" }}>
+              <div className="flex-1 min-w-0" style={{ maxWidth: "min(272px, 64vw)" }}>
                 <button
                   onTouchStart={handleTouchStart}
                   onTouchEnd={handleTouchEnd}
@@ -404,7 +401,7 @@ export default function Home() {
                     clickedPizza === currentPizza.id ? "scale-105 shadow-gold/30" : "active:scale-95"
                   }`}
                 >
-                  <div className="w-[min(120px,28vw)] h-[min(120px,28vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
+                  <div className="w-[min(156px,38vw)] h-[min(156px,38vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
                     {renderIcon(currentPizza?.icon, carouselPosition, "lg")}
                   </div>
                   <p className="text-cream font-bold text-center text-sm leading-snug line-clamp-1">
@@ -422,14 +419,11 @@ export default function Home() {
                   <p className="text-gold font-bold text-center text-sm">
                     R$ {((currentPizza as any)?.current_price ?? currentPizza?.price ?? 0).toFixed(2)}
                   </p>
-                  <p className="text-[11px] text-stone text-center mt-1 leading-tight line-clamp-2">
-                    {currentPizza?.description}
-                  </p>
                 </button>
               </div>
 
               {/* Next (partially visible) */}
-              <div className="w-[18vw] max-w-[72px] flex-shrink-0 opacity-35 pointer-events-none">
+              <div className="w-[20vw] max-w-[84px] flex-shrink-0 opacity-35 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
                   {renderIcon(nextPizza?.icon, getPizzaIndex(1), "sm")}
                 </div>
