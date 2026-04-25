@@ -6,20 +6,26 @@
  */
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+const IMAGE_FILE_RE = /\.(apng|avif|gif|jpe?g|jfif|pjpeg|pjp|png|svg|webp)$/i;
 
 export function isAssetUrl(value?: string | null): boolean {
-  return !!value && (
-    value.startsWith("data:") ||
-    value.startsWith("http") ||
-    value.startsWith("/")
+  const trimmed = value?.trim();
+  return !!trimmed && (
+    IMAGE_FILE_RE.test(trimmed) ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("http") ||
+    trimmed.startsWith("/")
   );
 }
 
 export function resolveAssetUrl(value?: string | null): string {
-  if (!value) return "";
-  if (value.startsWith("http") || value.startsWith("data:")) return value;
-  if (value.startsWith("/")) return `${BASE}${value}`;
-  return value;
+  const trimmed = value?.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("http") || trimmed.startsWith("data:")) return trimmed;
+  if (trimmed.startsWith("/")) return `${BASE}${trimmed}`;
+  if (trimmed.startsWith("uploads/")) return `${BASE}/${trimmed}`;
+  if (IMAGE_FILE_RE.test(trimmed)) return `${BASE}/uploads/${trimmed}`;
+  return trimmed;
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
