@@ -820,6 +820,15 @@ export const authApi = {
 
   googleLogin: (credential: string) =>
     post<{ customer: ApiCustomer; is_new: boolean }>("/auth/google", { credential }),
+
+  emailLogin: (email: string) =>
+    post<{ customer: ApiCustomer; is_new: boolean }>("/auth/login-email", { email }),
+
+  register: (data: {
+    name: string; email: string; phone: string;
+    street: string; number?: string; complement?: string;
+    neighborhood?: string; city: string; state?: string; zip_code?: string;
+  }) => post<{ customer: ApiCustomer; is_new: boolean }>("/auth/register", data),
 };
 
 // ─── Admin Auth ───────────────────────────────────────────────────────────────

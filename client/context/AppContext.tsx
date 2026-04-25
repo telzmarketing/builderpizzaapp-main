@@ -229,6 +229,8 @@ interface AppContextType {
   customer: ApiCustomer | null;
   customerLogin: (phone: string, name?: string) => Promise<void>;
   googleLogin: (credential: string) => Promise<void>;
+  emailLogin: (email: string) => Promise<void>;
+  registerCustomer: (data: { name: string; email: string; phone: string; street: string; number?: string; complement?: string; neighborhood?: string; city: string; zip_code?: string }) => Promise<void>;
   customerLogout: () => void;
   updateCustomer: (data: { name?: string; phone?: string }) => Promise<void>;
   addCustomerAddress: (data: { street: string; number?: string; complement?: string; neighborhood?: string; city: string; zip_code?: string }) => Promise<void>;
@@ -551,6 +553,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("customer", JSON.stringify(c));
   };
 
+  const emailLogin = async (email: string) => {
+    const { customer: c } = await authApi.emailLogin(email);
+    setCustomer(c);
+    localStorage.setItem("customer", JSON.stringify(c));
+  };
+
+  const registerCustomer = async (data: { name: string; email: string; phone: string; street: string; number?: string; complement?: string; neighborhood?: string; city: string; zip_code?: string }) => {
+    const { customer: c } = await authApi.register(data);
+    setCustomer(c);
+    localStorage.setItem("customer", JSON.stringify(c));
+  };
+
   const customerLogout = () => {
     setCustomer(null);
     localStorage.removeItem("customer");
@@ -738,7 +752,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value: AppContextType = {
     loading,
-    customer, customerLogin, googleLogin, customerLogout, updateCustomer, addCustomerAddress,
+    customer, customerLogin, googleLogin, emailLogin, registerCustomer, customerLogout, updateCustomer, addCustomerAddress,
     products, addProduct, updateProduct, deleteProduct,
     cart, addToCart, updateCartItem, removeFromCart, clearCart,
     cartSubtotal, cartDeliveryFee, cartTotal,

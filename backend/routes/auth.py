@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.response import ok, created, err_msg
 from backend.database import get_db
-from backend.models.customer import Customer
+from backend.models.customer import Customer, Address
 from backend.schemas.customer import CustomerOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -75,6 +75,23 @@ class LoginOut(BaseModel):
 
 class GoogleLoginIn(BaseModel):
     credential: str = Field(..., description="Google ID token from GSI")
+
+
+class EmailLoginIn(BaseModel):
+    email: str = Field(..., min_length=5, description="Customer email address")
+
+
+class RegisterIn(BaseModel):
+    name: str = Field(..., min_length=2)
+    email: str = Field(..., min_length=5)
+    phone: str = Field(..., min_length=8)
+    street: str = Field(..., min_length=3)
+    number: str | None = None
+    complement: str | None = None
+    neighborhood: str | None = None
+    city: str = Field(..., min_length=2)
+    state: str | None = None
+    zip_code: str | None = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -157,6 +174,65 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
         is_new=True,
     )
     return created(result, f"Conta criada! Bem-vindo, {new_customer.name}!")
+
+
+@router.post("/login-email")
+def login_email(body: EmailLoginIn, db: Session = Depends(get_db)):
+    """Login by email for customers who registered via the full form."""
+    email = body.email.strip().lower()
+    customer = db.query(Customer).filter(Customer.email == email).first()
+    if not customer:
+        return err_msg(
+            "E-mail não encontrado. Crie sua conta primeiro.",
+            code="EmailNotFound",
+            status_code=404,
+        )
+    return ok(LoginOut(customer=CustomerOut.model_validate(customer), is_new=False),
+              f"Bem-vindo de volta, {customer.name}!")
+
+
+@router.post("/register")
+def register(body: RegisterIn, db: Session = Depends(get_db)):
+    """Full registration: name, email, phone + delivery address."""
+    email = body.email.strip().lower()
+    phone = _normalize_phone(body.phone)
+
+    if db.query(Customer).filter(Customer.email == email).first():
+        return err_msg(
+            "E-mail já cadastrado. Tente fazer login.",
+            code="EmailTaken",
+            status_code=409,
+        )
+
+    new_customer = Customer(
+        id=str(uuid.uuid4()),
+        name=body.name.strip(),
+        email=email,
+        phone=phone,
+    )
+    db.add(new_customer)
+    db.flush()
+
+    new_address = Address(
+        id=str(uuid.uuid4()),
+        customer_id=new_customer.id,
+        street=body.street.strip(),
+        number=body.number,
+        complement=body.complement,
+        neighborhood=body.neighborhood,
+        city=body.city.strip(),
+        state=body.state,
+        zip_code=body.zip_code,
+        is_default=True,
+    )
+    db.add(new_address)
+    db.commit()
+    db.refresh(new_customer)
+
+    return created(
+        LoginOut(customer=CustomerOut.model_validate(new_customer), is_new=True),
+        f"Conta criada! Bem-vindo, {new_customer.name}!",
+    )
 
 
 @router.post("/google")
