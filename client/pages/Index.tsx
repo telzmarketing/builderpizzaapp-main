@@ -401,7 +401,7 @@ export default function Home() {
                     clickedPizza === currentPizza.id ? "scale-105 shadow-gold/30" : "active:scale-95"
                   }`}
                 >
-                  <div className="w-[min(168px,45vw)] h-[min(168px,45vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
+                  <div className="w-[min(156px,42vw)] h-[min(156px,42vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
                     {renderIcon(currentPizza?.icon, carouselPosition, "lg")}
                   </div>
                   <p className="text-cream font-bold text-center text-sm leading-snug line-clamp-1">
