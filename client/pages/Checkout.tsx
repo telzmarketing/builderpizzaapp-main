@@ -33,7 +33,6 @@ import {
   type CheckoutIn,
   type StoreOperationStatus,
 } from "@/lib/api";
-import StoreStatusBanner from "@/components/StoreStatusBanner";
 
 type DeliveryMode = "delivery" | "pickup";
 type PaymentState = "idle" | "loading" | "pending" | "approved" | "rejected" | "expired" | "error";
@@ -388,8 +387,6 @@ export default function Checkout() {
       </div>
 
       <div className="px-4 pt-6 pb-36 space-y-6">
-        <StoreStatusBanner />
-
         {storeStatus && !storeStatus.is_open && storeStatus.allow_scheduled_orders && !createdOrder && (
           <section className="bg-surface-02 border border-surface-03 rounded-xl p-4">
             <h2 className="text-cream font-bold text-lg mb-2 flex items-center gap-2">
