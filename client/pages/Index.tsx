@@ -249,7 +249,7 @@ export default function Home() {
       {/* ── Promo Banner (only if homeConfig.showPromotions) ── */}
       <div className="px-4 lg:px-8 pt-4">
         <div className="max-w-sm lg:max-w-4xl mx-auto">
-          <StoreStatusBanner />
+          <StoreStatusBanner openPill />
         </div>
       </div>
 

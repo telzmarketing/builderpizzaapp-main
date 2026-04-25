@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Clock, Store } from "lucide-react";
 import { storeOperationApi, type StoreOperationStatus } from "@/lib/api";
 
-export default function StoreStatusBanner({ compact = false }: { compact?: boolean }) {
+export default function StoreStatusBanner({ compact = false, openPill = false }: { compact?: boolean; openPill?: boolean }) {
   const [status, setStatus] = useState<StoreOperationStatus | null>(null);
 
   useEffect(() => {
@@ -19,6 +19,17 @@ export default function StoreStatusBanner({ compact = false }: { compact?: boole
   }, []);
 
   if (!status) return null;
+
+  if (openPill && status.is_open) {
+    return (
+      <div className="flex justify-center">
+        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5">
+          <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]" />
+          <span className="text-xs font-bold text-emerald-300">Loja online</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`rounded-xl border px-4 py-3 ${status.is_open ? "bg-emerald-500/10 border-emerald-500/30" : "bg-red-500/10 border-red-500/30"}`}>
