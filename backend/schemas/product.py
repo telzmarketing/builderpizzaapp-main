@@ -5,12 +5,14 @@ from backend.models.product import PricingRule
 
 
 class ProductCategoryCreate(BaseModel):
+    parent_id: Optional[str] = None
     name: str = Field(min_length=1, max_length=100)
     active: bool = True
     sort_order: int = 0
 
 
 class ProductCategoryUpdate(BaseModel):
+    parent_id: Optional[str] = None
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     active: Optional[bool] = None
     sort_order: Optional[int] = None
@@ -19,6 +21,7 @@ class ProductCategoryUpdate(BaseModel):
 class ProductCategoryOut(BaseModel):
     model_config = {"from_attributes": True}
     id: str
+    parent_id: Optional[str] = None
     name: str
     active: bool
     sort_order: int
@@ -119,6 +122,7 @@ class ProductBase(BaseModel):
     price: float = Field(gt=0)
     icon: str = "🍕"
     category: Optional[str] = None
+    subcategory: Optional[str] = None
     product_type: Optional[str] = None  # "pizza" | "drink" | "other"
     rating: float = Field(default=4.5, ge=1.0, le=5.0)
     active: bool = True
@@ -134,6 +138,7 @@ class ProductUpdate(BaseModel):
     price: Optional[float] = Field(default=None, gt=0)
     icon: Optional[str] = None
     category: Optional[str] = None
+    subcategory: Optional[str] = None
     product_type: Optional[str] = None
     rating: Optional[float] = Field(default=None, ge=1.0, le=5.0)
     active: Optional[bool] = None

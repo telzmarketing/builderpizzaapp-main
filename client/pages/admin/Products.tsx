@@ -63,14 +63,20 @@ export default function AdminProducts() {
   const [configSaved, setConfigSaved] = useState(false);
   const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState("");
+  const [newSubcategoryName, setNewSubcategoryName] = useState("");
+  const [newSubcategoryParentId, setNewSubcategoryParentId] = useState("");
   const [categorySaving, setCategorySaving] = useState(false);
 
   const sortedCatalogCategories = [...catalogCategories].sort((a, b) => {
     if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
     return a.name.localeCompare(b.name);
   });
-  const activeCatalogCategories = sortedCatalogCategories.filter((cat) => cat.active);
-  const catalogCategoryNames = sortedCatalogCategories.map((cat) => cat.name);
+  const parentCategories = sortedCatalogCategories.filter((cat) => !cat.parent_id);
+  const activeCatalogCategories = parentCategories.filter((cat) => cat.active);
+  const subcategories = sortedCatalogCategories.filter((cat) => !!cat.parent_id);
+  const activeSubcategories = subcategories.filter((cat) => cat.active);
+  const catalogCategoryNames = parentCategories.map((cat) => cat.name);
+  const catalogSubcategoryNames = subcategories.map((cat) => cat.name);
   const legacyProductCategories = [...new Set(
     products
       .map((p) => (p.category || "").trim())
@@ -87,14 +93,35 @@ export default function AdminProducts() {
     setCategorySaving(true);
     try {
       const created = await categoriesApi.create({
+        parent_id: null,
         name,
         active: true,
-        sort_order: catalogCategories.length,
+        sort_order: parentCategories.length,
       });
       setCatalogCategories((prev) => [...prev, created]);
       setNewCategoryName("");
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao criar categoria.");
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+
+  const handleAddSubcategory = async () => {
+    const name = newSubcategoryName.trim();
+    if (!name || !newSubcategoryParentId) return;
+    setCategorySaving(true);
+    try {
+      const created = await categoriesApi.create({
+        parent_id: newSubcategoryParentId,
+        name,
+        active: true,
+        sort_order: subcategories.filter((cat) => cat.parent_id === newSubcategoryParentId).length,
+      });
+      setCatalogCategories((prev) => [...prev, created]);
+      setNewSubcategoryName("");
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao criar subcategoria.");
     } finally {
       setCategorySaving(false);
     }
@@ -117,6 +144,9 @@ export default function AdminProducts() {
     name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5, product_type: "pizza",
   });
 
+  const selectedCategoryId = activeCatalogCategories.find((cat) => cat.name === ((formData as any).category || ""))?.id ?? "";
+  const availableSubcategories = activeSubcategories.filter((cat) => cat.parent_id === selectedCategoryId);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.description || !formData.price) {
@@ -124,19 +154,25 @@ export default function AdminProducts() {
       return;
     }
     const category = ((formData as any).category || "").trim();
+    const subcategory = ((formData as any).subcategory || "").trim();
     if (category && !catalogCategoryNames.includes(category)) {
       alert("Selecione uma categoria cadastrada na aba Categorias.");
       return;
     }
+    if (subcategory && !catalogSubcategoryNames.includes(subcategory)) {
+      alert("Selecione uma subcategoria cadastrada na aba Categorias.");
+      return;
+    }
     try {
       if (editingId) {
-        await updateProduct(editingId, { ...formData, category: category || null } as any);
+        await updateProduct(editingId, { ...formData, category: category || null, subcategory: subcategory || null } as any);
         setEditingId(null);
       } else {
         await addProduct({
           name: formData.name!, description: formData.description!,
           price: formData.price!, icon: formData.icon || "🍕",
           category: category || null,
+          subcategory: subcategory || null,
           product_type: formData.product_type || "pizza",
           rating: formData.rating || 4.5, active: true,
         } as any);
@@ -152,6 +188,7 @@ export default function AdminProducts() {
     setFormData({
       ...product,
       category: (product as any).category ?? "",
+      subcategory: (product as any).subcategory ?? "",
       product_type: (product as any).product_type ?? "pizza",
     });
     setEditingId(product.id);
@@ -682,7 +719,7 @@ export default function AdminProducts() {
                         </div>
                         <select
                           value={(formData as any).category || ""}
-                          onChange={(e) => setFormData({ ...formData, category: e.target.value } as any)}
+                          onChange={(e) => setFormData({ ...formData, category: e.target.value, subcategory: "" } as any)}
                           className={cls}
                           disabled={activeCatalogCategories.length === 0}
                         >
@@ -701,6 +738,25 @@ export default function AdminProducts() {
                             Esta categoria veio de um produto antigo. Crie ela na aba Categorias ou selecione uma categoria cadastrada.
                           </p>
                         )}
+                      </div>
+                      <div>
+                        <label className="block text-parchment text-sm font-medium mb-2">Subcategoria</label>
+                        <select
+                          value={(formData as any).subcategory || ""}
+                          onChange={(e) => setFormData({ ...formData, subcategory: e.target.value } as any)}
+                          className={cls}
+                          disabled={!selectedCategoryId || availableSubcategories.length === 0}
+                        >
+                          <option value="">
+                            {!selectedCategoryId ? "Selecione uma categoria primeiro" : availableSubcategories.length === 0 ? "Sem subcategorias cadastradas" : "Selecione uma subcategoria"}
+                          </option>
+                          {availableSubcategories.map((cat) => (
+                            <option key={cat.id} value={cat.name}>{cat.name}</option>
+                          ))}
+                          {(formData as any).subcategory && !catalogSubcategoryNames.includes((formData as any).subcategory) && (
+                            <option value={(formData as any).subcategory}>Subcategoria atual nao cadastrada: {(formData as any).subcategory}</option>
+                          )}
+                        </select>
                       </div>
                       <div className="grid grid-cols-2 gap-4 items-start">
                         <ImageUpload
@@ -766,6 +822,11 @@ export default function AdminProducts() {
                                 <span className="inline-flex items-center gap-1 text-xs bg-gold/20 text-gold border border-gold/30 px-2 py-0.5 rounded-full">
                                   <Tag size={10} />
                                   {(product as any).category}
+                                </span>
+                              )}
+                              {(product as any).subcategory && (
+                                <span className="inline-flex items-center gap-1 text-xs bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 px-2 py-0.5 rounded-full">
+                                  {(product as any).subcategory}
                                 </span>
                               )}
                               <span className="inline-flex items-center gap-1 text-xs bg-surface-03 text-stone border border-surface-03 px-2 py-0.5 rounded-full">
@@ -871,6 +932,37 @@ export default function AdminProducts() {
                     >
                       {categorySaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
                       Criar
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-[1fr,1fr,auto] gap-2 border-t border-surface-03 pt-4">
+                    <select
+                      value={newSubcategoryParentId}
+                      onChange={(e) => setNewSubcategoryParentId(e.target.value)}
+                      className={cls}
+                    >
+                      <option value="">Categoria principal</option>
+                      {parentCategories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={newSubcategoryName}
+                      onChange={(e) => setNewSubcategoryName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddSubcategory(); } }}
+                      className={cls}
+                      placeholder="Ex: Tradicionais, Especiais, Doce..."
+                      maxLength={100}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddSubcategory}
+                      disabled={categorySaving || !newSubcategoryName.trim() || !newSubcategoryParentId}
+                      className="flex items-center justify-center gap-2 bg-surface-03 hover:bg-brand-mid disabled:opacity-50 disabled:cursor-not-allowed text-cream font-bold py-2 px-4 rounded-lg transition-colors"
+                    >
+                      {categorySaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                      Subcategoria
                     </button>
                   </div>
 

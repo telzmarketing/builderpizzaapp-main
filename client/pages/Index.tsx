@@ -80,14 +80,14 @@ export default function Home() {
 
   // Categories derived from catalogProducts (respect home config)
   const productCats = [...new Set(
-    catalogProducts.filter(p => p.active && p.category).map(p => p.category as string)
+    catalogProducts.filter(p => p.active && (p.subcategory || p.category)).map(p => (p.subcategory || p.category) as string)
   )].sort();
   const effectiveCategories = [ALL_LABEL, ...productCats];
 
   const categoryProducts =
     activeCategory === ALL_LABEL || !activeCategory
       ? catalogProducts
-      : catalogProducts.filter((p) => (p.category ?? "").toLowerCase() === activeCategory.toLowerCase());
+      : catalogProducts.filter((p) => ((p.subcategory || p.category) ?? "").toLowerCase() === activeCategory.toLowerCase());
 
   const { home, media } = siteContent;
 

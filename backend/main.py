@@ -78,6 +78,7 @@ def _run_migrations():
         "ALTER TABLE coupons ADD COLUMN IF NOT EXISTS campaign_id VARCHAR REFERENCES campaigns(id) ON DELETE SET NULL",
         "ALTER TABLE products ALTER COLUMN icon TYPE TEXT",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100)",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS subcategory VARCHAR(100)",
         "ALTER TABLE promotions ALTER COLUMN icon TYPE TEXT",
         "ALTER TABLE promotions ADD COLUMN IF NOT EXISTS validity_text VARCHAR(200)",
         # ── Product sizes ─────────────────────────────────────────────────
@@ -111,6 +112,8 @@ def _run_migrations():
         # ── Product type + crust/drink variant tables ─────────────────────
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS product_type VARCHAR(20)",
         "CREATE TABLE IF NOT EXISTS product_categories (id VARCHAR PRIMARY KEY, name VARCHAR(100) NOT NULL UNIQUE, active BOOLEAN DEFAULT TRUE, sort_order INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "ALTER TABLE product_categories ADD COLUMN IF NOT EXISTS parent_id VARCHAR REFERENCES product_categories(id) ON DELETE CASCADE",
+        "CREATE INDEX IF NOT EXISTS ix_product_categories_parent_id ON product_categories(parent_id)",
         "CREATE TABLE IF NOT EXISTS product_crust_types (id VARCHAR PRIMARY KEY, product_id VARCHAR NOT NULL REFERENCES products(id) ON DELETE CASCADE, name VARCHAR(100) NOT NULL, price_addition FLOAT DEFAULT 0.0, active BOOLEAN DEFAULT TRUE, sort_order INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE TABLE IF NOT EXISTS product_drink_variants (id VARCHAR PRIMARY KEY, product_id VARCHAR NOT NULL REFERENCES products(id) ON DELETE CASCADE, name VARCHAR(100) NOT NULL, price_addition FLOAT DEFAULT 0.0, active BOOLEAN DEFAULT TRUE, sort_order INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE TABLE IF NOT EXISTS product_promotions (id VARCHAR PRIMARY KEY, product_id VARCHAR NOT NULL REFERENCES products(id) ON DELETE CASCADE, name VARCHAR(200) NOT NULL, active BOOLEAN DEFAULT TRUE, valid_weekdays TEXT NOT NULL DEFAULT '[]', start_time VARCHAR(5), end_time VARCHAR(5), start_date DATE, end_date DATE, discount_type VARCHAR(30) NOT NULL DEFAULT 'fixed_price', default_value FLOAT, timezone VARCHAR(80) NOT NULL DEFAULT 'America/Sao_Paulo', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",

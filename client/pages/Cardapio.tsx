@@ -18,7 +18,7 @@ export default function Cardapio() {
 
   // Categories derived from backend products (source of truth)
   const productCats = [...new Set(
-    products.filter(p => p.active && p.category).map(p => p.category as string)
+    products.filter(p => p.active && (p.subcategory || p.category)).map(p => (p.subcategory || p.category) as string)
   )].sort();
   const effectiveCategories = [ALL_LABEL, ...productCats];
 
@@ -26,7 +26,7 @@ export default function Cardapio() {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.description.toLowerCase().includes(search.toLowerCase());
     const matchCat = activeCategory === ALL_LABEL ||
-      (p.category ?? "").toLowerCase() === activeCategory.toLowerCase();
+      ((p.subcategory || p.category) ?? "").toLowerCase() === activeCategory.toLowerCase();
     return matchSearch && matchCat && p.active;
   });
 

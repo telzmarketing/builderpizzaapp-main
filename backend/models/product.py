@@ -26,6 +26,7 @@ class Product(Base):
     price = Column(Float, nullable=False)
     icon = Column(Text, default="🍕")
     category = Column(String(100), nullable=True)
+    subcategory = Column(String(100), nullable=True)
     product_type = Column(String(20), nullable=True)  # "pizza" | "drink" | "other"
     rating = Column(Float, default=4.5)
     active = Column(Boolean, default=True)
@@ -44,6 +45,7 @@ class ProductCategory(Base):
     __tablename__ = "product_categories"
 
     id = Column(String, primary_key=True)
+    parent_id = Column(String, ForeignKey("product_categories.id", ondelete="CASCADE"), nullable=True)
     name = Column(String(100), nullable=False, unique=True)
     active = Column(Boolean, default=True)
     sort_order = Column(Integer, default=0)

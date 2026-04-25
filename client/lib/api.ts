@@ -121,6 +121,7 @@ export interface ApiProductDrinkVariant {
 
 export interface ApiProductCategory {
   id: string;
+  parent_id: string | null;
   name: string;
   active: boolean;
   sort_order: number;
@@ -144,6 +145,7 @@ export interface ApiProduct {
   price: number;
   icon: string;
   category: string | null;
+  subcategory: string | null;
   product_type: string | null;  // "pizza" | "drink" | "other"
   rating: number;
   active: boolean;

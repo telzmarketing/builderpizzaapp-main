@@ -19,12 +19,17 @@ def create_category(db: Session, body: ProductCategoryCreate) -> ProductCategory
     name = body.name.strip()
     if not name:
         raise HTTPException(400, "Nome da categoria e obrigatorio.")
+    if body.parent_id:
+        parent = db.query(ProductCategory).filter(ProductCategory.id == body.parent_id).first()
+        if not parent:
+            raise HTTPException(404, "Categoria principal nao encontrada.")
     existing = db.query(ProductCategory).filter(func.lower(ProductCategory.name) == name.lower()).first()
     if existing:
         raise HTTPException(409, "Categoria ja cadastrada.")
 
     category = ProductCategory(
         id=f"cat-{uuid.uuid4().hex[:8]}",
+        parent_id=body.parent_id,
         name=name,
         active=body.active,
         sort_order=body.sort_order,
@@ -41,6 +46,12 @@ def update_category(db: Session, category_id: str, body: ProductCategoryUpdate) 
         raise HTTPException(404, "Categoria nao encontrada.")
 
     changes = body.model_dump(exclude_none=True)
+    if "parent_id" in changes and changes["parent_id"]:
+        if changes["parent_id"] == category_id:
+            raise HTTPException(400, "Categoria nao pode ser filha dela mesma.")
+        parent = db.query(ProductCategory).filter(ProductCategory.id == changes["parent_id"]).first()
+        if not parent:
+            raise HTTPException(404, "Categoria principal nao encontrada.")
     if "name" in changes:
         name = changes["name"].strip()
         if not name:
@@ -65,7 +76,12 @@ def delete_category(db: Session, category_id: str) -> None:
     category = db.query(ProductCategory).filter(ProductCategory.id == category_id).first()
     if not category:
         raise HTTPException(404, "Categoria nao encontrada.")
-    in_use = db.query(Product.id).filter(Product.category == category.name).first()
+    child = db.query(ProductCategory.id).filter(ProductCategory.parent_id == category_id).first()
+    if child:
+        raise HTTPException(400, "Categoria possui subcategorias. Remova as subcategorias antes de excluir.")
+    in_use = db.query(Product.id).filter(
+        (Product.category == category.name) | (Product.subcategory == category.name)
+    ).first()
     if in_use:
         raise HTTPException(400, "Categoria em uso por produto. Remova dos produtos antes de excluir.")
     db.delete(category)
