@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check, Loader2 } from "lucide-react";
+import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check, Loader2, X, ZoomIn } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation } from "@/context/AppContext";
 import { sizesApi, crustApi, drinkVariantApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, isAssetUrl, resolveAssetUrl } from "@/lib/api";
-import { isAllowedPizzaSize, pizzaSizeDescription, pizzaSizeLabel, PIZZA_SIZE_LABELS } from "@/lib/pizzaSizes";
+import { isAllowedPizzaSize, isPizzaBroto, pizzaSizeDescription, pizzaSizeLabel, PIZZA_SIZE_LABELS } from "@/lib/pizzaSizes";
 import { formatCrustAddition, normalizeCrustPriceAddition } from "@/lib/pricing";
 import { trackEvent } from "@/lib/tracking";
 
@@ -143,6 +143,8 @@ export default function Product() {
   // Drink variants (drink only)
   const [productDrinkVariants, setProductDrinkVariants] = useState<ApiProductDrinkVariant[]>([]);
   const [selectedDrinkVariant, setSelectedDrinkVariant] = useState<ApiProductDrinkVariant | null>(null);
+  const [imageZoomOpen, setImageZoomOpen] = useState(false);
+  const [imageZoomScale, setImageZoomScale] = useState(1.6);
 
   useEffect(() => {
     if (!product) return;
@@ -154,6 +156,8 @@ export default function Product() {
     setCartError(false);
     setSelectedCrust(null);
     setSelectedDrinkVariant(null);
+    setImageZoomOpen(false);
+    setImageZoomScale(1.6);
   }, [product?.id]);
 
   useEffect(() => {
@@ -208,7 +212,16 @@ export default function Product() {
   }, [product?.id, isPizza, isDrink]);
 
   const selectedSize = selectedSizeObj ? selectedSizeObj.label : selectedSizeFallback;
+  const isPizzaBrotoSelected = isPizza && isPizzaBroto(selectedSize);
   const productPrice = product?.price ?? 0;
+
+  useEffect(() => {
+    if (!isPizzaBrotoSelected || division === 1) return;
+    setDivision(1);
+    setActiveSlot(null);
+    setCartError(false);
+    setFlavorSlots((prev) => [prev[0] ?? product ?? null, null, null]);
+  }, [isPizzaBrotoSelected, division, product?.id]);
 
   // ── Computed values ──────────────────────────────────────────────────────────
 
@@ -241,6 +254,7 @@ export default function Product() {
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
   const handleDivisionChange = (d: FlavorDivision) => {
+    if (isPizzaBrotoSelected && d > 1) return;
     setDivision(d);
     setActiveSlot(null);
     setCartError(false);
@@ -269,6 +283,13 @@ export default function Product() {
 
   const handleAddToCart = () => {
     if (!product) return;
+    if (isPizzaBrotoSelected && division > 1) {
+      setDivision(1);
+      setActiveSlot(null);
+      setCartError(false);
+      setFlavorSlots((prev) => [prev[0] ?? product, null, null]);
+      return;
+    }
     if (isPizza && !allFilled) {
       setCartError(true);
       return;
@@ -369,11 +390,22 @@ export default function Product() {
 
         {/* ── Hero Product Image ───────────────────────────────────────────── */}
         <div className="flex flex-col items-center mb-6">
-          <div className="w-52 h-52 rounded-full bg-surface-02 border-4 border-surface-03 flex items-center justify-center text-8xl shadow-2xl shadow-black/40 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => {
+              setImageZoomScale(1.6);
+              setImageZoomOpen(true);
+            }}
+            className="relative w-52 h-52 rounded-full bg-surface-02 border-4 border-surface-03 flex items-center justify-center text-8xl shadow-2xl shadow-black/40 overflow-hidden transition-transform active:scale-95"
+            aria-label="Ampliar imagem do produto"
+          >
             {isAssetUrl(product.icon)
               ? <img src={resolveAssetUrl(product.icon)} alt={product.name} className="w-full h-full object-cover" />
               : <span>{product.icon || "🍕"}</span>}
-          </div>
+            <span className="absolute bottom-4 right-4 h-9 w-9 rounded-full bg-surface-00/95 border border-surface-03 flex items-center justify-center text-gold shadow-lg">
+              <ZoomIn size={17} />
+            </span>
+          </button>
           <h1 className="text-cream text-2xl font-bold mt-4 text-center">{product.name}</h1>
           <div className="flex gap-1 mt-2">
             {[...Array(5)].map((_, i) => (
@@ -399,21 +431,31 @@ export default function Product() {
           <div className="mb-6">
             <h3 className="text-cream font-bold mb-3">{p.divisionLabel}</h3>
             <div className="flex gap-2">
-              {divisionOptions.map(({ value, label, emoji }) => (
-                <button
-                  key={value}
-                  onClick={() => handleDivisionChange(value)}
-                  className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${
-                    division === value
-                      ? "bg-gold text-cream shadow-lg shadow-gold/30"
-                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
-                  }`}
-                >
-                  <span className="block text-base mb-0.5">{emoji}</span>
-                  {label}
-                </button>
-              ))}
+              {divisionOptions.map(({ value, label, emoji }) => {
+                const blockedBySize = isPizzaBrotoSelected && value > 1;
+                return (
+                  <button
+                    key={value}
+                    onClick={() => handleDivisionChange(value)}
+                    disabled={blockedBySize}
+                    className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${
+                      division === value
+                        ? "bg-gold text-cream shadow-lg shadow-gold/30"
+                        : blockedBySize
+                          ? "bg-surface-02/70 text-stone/60 border border-surface-03 cursor-not-allowed"
+                          : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                    }`}
+                  >
+                    <span className="block text-base mb-0.5">{emoji}</span>
+                    {label}
+                    {blockedBySize && <span className="block text-[10px] font-normal mt-1">Somente Grande</span>}
+                  </button>
+                );
+              })}
             </div>
+            {isPizzaBrotoSelected && (
+              <p className="text-stone/80 text-xs mt-2">Pizza Broto permite apenas 1 sabor.</p>
+            )}
           </div>
         )}
 
@@ -667,6 +709,62 @@ export default function Product() {
       </div>
 
       {/* ── Bottom Fixed Bar ────────────────────────────────────────────────── */}
+      {imageZoomOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-6"
+          onClick={() => setImageZoomOpen(false)}
+        >
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setImageZoomOpen(false);
+            }}
+            className="absolute top-5 right-5 h-11 w-11 rounded-full bg-surface-00 border border-surface-03 text-cream flex items-center justify-center shadow-lg"
+            aria-label="Fechar zoom"
+          >
+            <X size={20} />
+          </button>
+
+          <div className="flex flex-col items-center gap-5" onClick={(event) => event.stopPropagation()}>
+            <div className="w-[min(82vw,360px)] h-[min(82vw,360px)] rounded-full bg-surface-02 border-4 border-surface-03 flex items-center justify-center overflow-hidden text-[11rem] shadow-2xl shadow-black">
+              {isAssetUrl(product.icon) ? (
+                <img
+                  src={resolveAssetUrl(product.icon)}
+                  alt={product.name}
+                  className="w-full h-full object-cover transition-transform duration-200"
+                  style={{ transform: `scale(${imageZoomScale})` }}
+                />
+              ) : (
+                <span className="transition-transform duration-200" style={{ transform: `scale(${imageZoomScale})` }}>
+                  {product.icon || "🍕"}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 rounded-full bg-surface-00 border border-surface-03 px-4 py-3 shadow-lg">
+              <button
+                type="button"
+                onClick={() => setImageZoomScale((value) => Math.max(1, Number((value - 0.25).toFixed(2))))}
+                className="h-10 w-10 rounded-full bg-surface-03 text-parchment flex items-center justify-center"
+                aria-label="Diminuir zoom"
+              >
+                <Minus size={17} />
+              </button>
+              <span className="text-cream text-sm font-bold w-12 text-center">{Math.round(imageZoomScale * 100)}%</span>
+              <button
+                type="button"
+                onClick={() => setImageZoomScale((value) => Math.min(3, Number((value + 0.25).toFixed(2))))}
+                className="h-10 w-10 rounded-full bg-gold text-cream flex items-center justify-center"
+                aria-label="Aumentar zoom"
+              >
+                <Plus size={17} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="fixed bottom-0 left-0 right-0 bg-surface-00 border-t border-surface-03 px-4 py-4 shadow-[0_-18px_40px_rgba(0,0,0,0.45)]">
         <div className="flex items-center justify-between mb-3">
           <div>

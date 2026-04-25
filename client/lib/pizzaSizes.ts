@@ -17,3 +17,7 @@ export function pizzaSizeLabel(label: string) {
 export function pizzaSizeDescription(label: string, fallback?: string | null) {
   return PIZZA_SIZE_DETAILS[label.trim().toLowerCase()]?.description ?? fallback ?? "";
 }
+
+export function isPizzaBroto(label: string) {
+  return pizzaSizeLabel(label) === "Pizza Broto";
+}
