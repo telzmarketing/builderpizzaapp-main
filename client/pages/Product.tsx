@@ -321,7 +321,11 @@ export default function Product() {
   );
 
   const availableForSlot = (slotIndex: number) =>
-    products.filter((p) => !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id));
+    products.filter((p) => {
+      const productType = (p as any).product_type as string | null | undefined;
+      const canBePizzaFlavor = !productType || productType === "pizza";
+      return canBePizzaFlavor && !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id);
+    });
 
   const canAddToCart = isDrink ? true : allFilled;
 
@@ -391,8 +395,8 @@ export default function Product() {
         </div>
 
         {/* ── Pizza: Division Selector ─────────────────────────────────────── */}
-        {false && isPizza && (
-          <div className="hidden">
+        {isPizza && (
+          <div className="mb-6">
             <h3 className="text-cream font-bold mb-3">{p.divisionLabel}</h3>
             <div className="flex gap-2">
               {divisionOptions.map(({ value, label, emoji }) => (
@@ -414,7 +418,7 @@ export default function Product() {
         )}
 
         {/* ── Pizza: Flavor Slots ──────────────────────────────────────────── */}
-        {false && isPizza && (
+        {isPizza && (
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-cream font-bold">
