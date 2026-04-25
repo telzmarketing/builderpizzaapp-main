@@ -383,16 +383,16 @@ export default function Home() {
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
-            <div className="flex items-center justify-center gap-2">
+            <div className="grid grid-cols-[64px_minmax(0,1fr)_64px] min-[390px]:grid-cols-[72px_minmax(0,1fr)_72px] items-start gap-2">
               {/* Previous (partially visible) */}
-              <div className="w-[22vw] max-w-[92px] flex-shrink-0 opacity-35 pointer-events-none">
+              <div className="w-full mt-16 opacity-35 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
                   {renderIcon(prevPizza?.icon, getPizzaIndex(-1), "sm")}
                 </div>
               </div>
 
               {/* Featured center card */}
-              <div className="flex-1 min-w-0" style={{ maxWidth: "min(292px, 68vw)" }}>
+              <div className="w-full max-w-[236px] mx-auto">
                 <button
                   onTouchStart={handleTouchStart}
                   onTouchEnd={handleTouchEnd}
@@ -401,7 +401,7 @@ export default function Home() {
                     clickedPizza === currentPizza.id ? "scale-105 shadow-gold/30" : "active:scale-95"
                   }`}
                 >
-                  <div className="w-[min(184px,46vw)] h-[min(184px,46vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
+                  <div className="w-[min(168px,45vw)] h-[min(168px,45vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
                     {renderIcon(currentPizza?.icon, carouselPosition, "lg")}
                   </div>
                   <p className="text-cream font-bold text-center text-sm leading-snug line-clamp-1">
@@ -423,7 +423,7 @@ export default function Home() {
               </div>
 
               {/* Next (partially visible) */}
-              <div className="w-[22vw] max-w-[92px] flex-shrink-0 opacity-35 pointer-events-none">
+              <div className="w-full mt-16 opacity-35 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
                   {renderIcon(nextPizza?.icon, getPizzaIndex(1), "sm")}
                 </div>

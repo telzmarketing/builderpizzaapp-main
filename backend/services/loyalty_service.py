@@ -13,7 +13,7 @@ import string
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 
 from backend.models.loyalty import (
     CustomerLoyalty, LoyaltyLevel, LoyaltyReward, LoyaltyTransaction,
@@ -36,6 +36,19 @@ REFERRAL_POINTS = 10
 
 
 def get_loyalty_settings(db: Session) -> LoyaltySettings:
+    db.execute(text(
+        "CREATE TABLE IF NOT EXISTS loyalty_settings ("
+        "id VARCHAR PRIMARY KEY DEFAULT 'default', "
+        "enabled BOOLEAN NOT NULL DEFAULT TRUE, "
+        "points_per_real FLOAT NOT NULL DEFAULT 1.0, "
+        "updated_at TIMESTAMPTZ DEFAULT NOW()"
+        ")"
+    ))
+    db.execute(text(
+        "INSERT INTO loyalty_settings (id, enabled, points_per_real) "
+        "VALUES ('default', TRUE, 1.0) ON CONFLICT (id) DO NOTHING"
+    ))
+    db.commit()
     settings_row = db.query(LoyaltySettings).filter(LoyaltySettings.id == "default").first()
     if not settings_row:
         settings_row = LoyaltySettings(id="default", enabled=True, points_per_real=settings.POINTS_PER_REAL)
