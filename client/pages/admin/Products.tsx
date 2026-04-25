@@ -63,8 +63,7 @@ export default function AdminProducts() {
   const [configSaved, setConfigSaved] = useState(false);
   const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState("");
-  const [newSubcategoryName, setNewSubcategoryName] = useState("");
-  const [newSubcategoryParentId, setNewSubcategoryParentId] = useState("");
+  const [newSubcategoryNames, setNewSubcategoryNames] = useState<Record<string, string>>({});
   const [categorySaving, setCategorySaving] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
@@ -81,6 +80,8 @@ export default function AdminProducts() {
   const activeSubcategories = subcategories.filter((cat) => cat.active);
   const catalogCategoryNames = parentCategories.map((cat) => cat.name);
   const catalogSubcategoryNames = subcategories.map((cat) => cat.name);
+  const getSubcategoriesForCategory = (parentId: string) =>
+    subcategories.filter((cat) => cat.parent_id === parentId);
   const legacyProductCategories = [...new Set(
     products
       .map((p) => (p.category || "").trim())
@@ -111,19 +112,19 @@ export default function AdminProducts() {
     }
   };
 
-  const handleAddSubcategory = async () => {
-    const name = newSubcategoryName.trim();
-    if (!name || !newSubcategoryParentId) return;
+  const handleAddSubcategory = async (parentId: string) => {
+    const name = (newSubcategoryNames[parentId] || "").trim();
+    if (!name || !parentId) return;
     setCategorySaving(true);
     try {
       const created = await categoriesApi.create({
-        parent_id: newSubcategoryParentId,
+        parent_id: parentId,
         name,
         active: true,
-        sort_order: subcategories.filter((cat) => cat.parent_id === newSubcategoryParentId).length,
+        sort_order: getSubcategoriesForCategory(parentId).length,
       });
       setCatalogCategories((prev) => [...prev, created]);
-      setNewSubcategoryName("");
+      setNewSubcategoryNames((prev) => ({ ...prev, [parentId]: "" }));
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao criar subcategoria.");
     } finally {
@@ -942,17 +943,17 @@ export default function AdminProducts() {
 
             {/* ── TAB: CATEGORIAS ── */}
             {activeTab === "categorias" && (
-              <div className="max-w-xl space-y-4">
+              <div className="max-w-4xl space-y-4">
                 <div className="bg-surface-02 rounded-xl p-6 border border-surface-03 space-y-4">
                   <div className="flex items-center gap-3 pb-3 border-b border-surface-03">
                     <Tag size={18} className="text-gold" />
                     <div>
                       <h3 className="text-cream font-bold">Categorias do Cardapio</h3>
-                      <p className="text-stone text-sm">Crie categorias para usar no cadastro dos produtos.</p>
+                      <p className="text-stone text-sm">Crie categorias principais e adicione diversas subcategorias dentro de cada uma.</p>
                     </div>
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-[1fr,auto] gap-2">
                     <input
                       type="text"
                       value={newCategoryName}
@@ -973,40 +974,11 @@ export default function AdminProducts() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-[1fr,1fr,auto] gap-2 border-t border-surface-03 pt-4">
-                    <select
-                      value={newSubcategoryParentId}
-                      onChange={(e) => setNewSubcategoryParentId(e.target.value)}
-                      className={cls}
-                    >
-                      <option value="">Categoria principal</option>
-                      {parentCategories.map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      value={newSubcategoryName}
-                      onChange={(e) => setNewSubcategoryName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddSubcategory(); } }}
-                      className={cls}
-                      placeholder="Ex: Tradicionais, Especiais, Doce..."
-                      maxLength={100}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddSubcategory}
-                      disabled={categorySaving || !newSubcategoryName.trim() || !newSubcategoryParentId}
-                      className="flex items-center justify-center gap-2 bg-surface-03 hover:bg-brand-mid disabled:opacity-50 disabled:cursor-not-allowed text-cream font-bold py-2 px-4 rounded-lg transition-colors"
-                    >
-                      {categorySaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                      Subcategoria
-                    </button>
-                  </div>
-
                   {editingCategoryId && (
                     <div className="rounded-xl border border-gold/30 bg-gold/10 p-4 space-y-3">
-                      <p className="text-parchment text-sm font-bold">Editar categoria</p>
+                      <p className="text-parchment text-sm font-bold">
+                        Editar {catalogCategories.find((cat) => cat.id === editingCategoryId)?.parent_id ? "subcategoria" : "categoria"}
+                      </p>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         <input
                           value={editingCategoryName}
@@ -1015,16 +987,21 @@ export default function AdminProducts() {
                           placeholder="Nome da categoria"
                           maxLength={100}
                         />
-                        <select
-                          value={editingCategoryParentId}
-                          onChange={(e) => setEditingCategoryParentId(e.target.value)}
-                          className={cls}
-                        >
-                          <option value="">Categoria principal</option>
-                          {parentCategories.filter((cat) => cat.id !== editingCategoryId).map((cat) => (
-                            <option key={cat.id} value={cat.id}>Subcategoria de {cat.name}</option>
-                          ))}
-                        </select>
+                        {catalogCategories.find((cat) => cat.id === editingCategoryId)?.parent_id ? (
+                          <select
+                            value={editingCategoryParentId}
+                            onChange={(e) => setEditingCategoryParentId(e.target.value)}
+                            className={cls}
+                          >
+                            {parentCategories.map((cat) => (
+                              <option key={cat.id} value={cat.id}>Subcategoria de {cat.name}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-stone text-sm">
+                            Categoria principal
+                          </div>
+                        )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <label className="flex items-center gap-2 text-parchment text-xs">
@@ -1058,39 +1035,109 @@ export default function AdminProducts() {
                     </div>
                   )}
 
-                  {sortedCatalogCategories.length === 0 ? (
+                  {parentCategories.length === 0 ? (
                     <p className="text-stone text-sm text-center py-4">
                       Nenhuma categoria cadastrada.
                     </p>
                   ) : (
-                    <div className="space-y-2">
-                      {sortedCatalogCategories.map((category) => (
-                        <div key={category.id} className="flex items-center gap-3 bg-surface-03 rounded-xl px-4 py-3">
-                          <Tag size={14} className="text-gold flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-cream text-sm font-bold">{category.name}</p>
-                            <p className="text-stone text-xs">
-                              {category.active ? "Ativa para seleção no produto" : "Inativa"}
-                            </p>
+                    <div className="space-y-3">
+                      {parentCategories.map((category) => {
+                        const children = getSubcategoriesForCategory(category.id);
+                        const draftName = newSubcategoryNames[category.id] || "";
+
+                        return (
+                          <div key={category.id} className="rounded-xl border border-surface-03 bg-surface-01 p-4 space-y-3">
+                            <div className="flex items-center gap-3">
+                              <Tag size={14} className="text-gold flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-cream text-sm font-bold">{category.name}</p>
+                                <p className="text-stone text-xs">
+                                  {category.active ? "Categoria ativa" : "Categoria inativa"} - {children.length} subcategoria{children.length === 1 ? "" : "s"}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => startEditCategory(category)}
+                                className="text-stone hover:text-gold transition-colors p-1.5"
+                                title="Editar categoria"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCategory(category)}
+                                className="text-stone hover:text-red-400 transition-colors p-1.5"
+                                title="Remover categoria"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+
+                            <div className="pl-0 md:pl-8 space-y-2">
+                              {children.length === 0 ? (
+                                <p className="text-stone text-xs rounded-lg border border-dashed border-surface-03 px-3 py-2">
+                                  Nenhuma subcategoria criada para esta categoria.
+                                </p>
+                              ) : (
+                                children.map((subcategory) => (
+                                  <div key={subcategory.id} className="flex items-center gap-2 rounded-lg bg-surface-03 px-3 py-2">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-gold/70 flex-shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-parchment text-sm font-semibold">{subcategory.name}</p>
+                                      <p className="text-stone text-xs">
+                                        {subcategory.active ? "Ativa para selecao no produto" : "Inativa"}
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => startEditCategory(subcategory)}
+                                      className="text-stone hover:text-gold transition-colors p-1.5"
+                                      title="Editar subcategoria"
+                                    >
+                                      <Edit2 size={13} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteCategory(subcategory)}
+                                      className="text-stone hover:text-red-400 transition-colors p-1.5"
+                                      title="Remover subcategoria"
+                                    >
+                                      <X size={13} />
+                                    </button>
+                                  </div>
+                                ))
+                              )}
+
+                              <div className="grid grid-cols-1 md:grid-cols-[1fr,auto] gap-2 pt-1">
+                                <input
+                                  type="text"
+                                  value={draftName}
+                                  onChange={(e) => setNewSubcategoryNames((prev) => ({ ...prev, [category.id]: e.target.value }))}
+                                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddSubcategory(category.id); } }}
+                                  className={cls}
+                                  placeholder={`Nova subcategoria de ${category.name}`}
+                                  maxLength={100}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddSubcategory(category.id)}
+                                  disabled={categorySaving || !draftName.trim()}
+                                  className="flex items-center justify-center gap-2 bg-surface-03 hover:bg-brand-mid disabled:opacity-50 disabled:cursor-not-allowed text-cream font-bold py-2 px-4 rounded-lg transition-colors"
+                                >
+                                  {categorySaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                                  Adicionar subcategoria
+                                </button>
+                              </div>
+                            </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => startEditCategory(category)}
-                            className="text-stone hover:text-gold transition-colors p-1.5"
-                            title="Editar categoria"
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteCategory(category)}
-                            className="text-stone hover:text-red-400 transition-colors p-1.5"
-                            title="Remover categoria"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {subcategories.length > 0 && (
+                    <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-lg p-3 text-emerald-200 text-xs leading-relaxed">
+                      As subcategorias ativas aparecem automaticamente no catalogo da Home e na pagina Cardapio quando houver produto ativo vinculado a elas.
                     </div>
                   )}
 
