@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, type PointerEvent } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check, Loader2, X, ZoomIn } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
@@ -145,6 +145,8 @@ export default function Product() {
   const [selectedDrinkVariant, setSelectedDrinkVariant] = useState<ApiProductDrinkVariant | null>(null);
   const [imageZoomOpen, setImageZoomOpen] = useState(false);
   const [imageZoomScale, setImageZoomScale] = useState(1.6);
+  const [imageZoomActive, setImageZoomActive] = useState(false);
+  const [imageZoomPosition, setImageZoomPosition] = useState({ x: 50, y: 50 });
 
   useEffect(() => {
     if (!product) return;
@@ -158,6 +160,8 @@ export default function Product() {
     setSelectedDrinkVariant(null);
     setImageZoomOpen(false);
     setImageZoomScale(1.6);
+    setImageZoomActive(false);
+    setImageZoomPosition({ x: 50, y: 50 });
   }, [product?.id]);
 
   useEffect(() => {
@@ -281,6 +285,13 @@ export default function Product() {
     setCartError(false);
   };
 
+  const updateImageZoomPosition = (event: PointerEvent<HTMLElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100));
+    const y = Math.min(100, Math.max(0, ((event.clientY - rect.top) / rect.height) * 100));
+    setImageZoomPosition({ x, y });
+  };
+
   const handleAddToCart = () => {
     if (!product) return;
     if (isPizzaBrotoSelected && division > 1) {
@@ -393,15 +404,52 @@ export default function Product() {
           <button
             type="button"
             onClick={() => {
-              setImageZoomScale(1.6);
+              setImageZoomScale(2.2);
               setImageZoomOpen(true);
             }}
+            onPointerDown={(event) => {
+              setImageZoomActive(true);
+              updateImageZoomPosition(event);
+            }}
+            onPointerEnter={(event) => {
+              setImageZoomActive(true);
+              updateImageZoomPosition(event);
+            }}
+            onPointerMove={updateImageZoomPosition}
+            onPointerLeave={() => setImageZoomActive(false)}
+            onPointerUp={() => setImageZoomActive(false)}
             className="relative w-52 h-52 rounded-full bg-surface-02 border-4 border-surface-03 flex items-center justify-center text-8xl shadow-2xl shadow-black/40 overflow-hidden transition-transform active:scale-95"
             aria-label="Ampliar imagem do produto"
           >
             {isAssetUrl(product.icon)
-              ? <img src={resolveAssetUrl(product.icon)} alt={product.name} className="w-full h-full object-cover" />
-              : <span>{product.icon || "🍕"}</span>}
+              ? (
+                <img
+                  src={resolveAssetUrl(product.icon)}
+                  alt={product.name}
+                  className="w-full h-full object-cover transition-transform duration-150"
+                  style={{
+                    transform: imageZoomActive ? "scale(2.25)" : "scale(1)",
+                    transformOrigin: `${imageZoomPosition.x}% ${imageZoomPosition.y}%`,
+                  }}
+                />
+              )
+              : (
+                <span
+                  className="transition-transform duration-150"
+                  style={{
+                    transform: imageZoomActive ? "scale(1.8)" : "scale(1)",
+                    transformOrigin: `${imageZoomPosition.x}% ${imageZoomPosition.y}%`,
+                  }}
+                >
+                  {product.icon || "🍕"}
+                </span>
+              )}
+            {imageZoomActive && (
+              <span
+                className="pointer-events-none absolute h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-gold/80 bg-gold/10 shadow-[0_0_28px_rgba(184,126,59,0.45)]"
+                style={{ left: `${imageZoomPosition.x}%`, top: `${imageZoomPosition.y}%` }}
+              />
+            )}
             <span className="absolute bottom-4 right-4 h-9 w-9 rounded-full bg-surface-00/95 border border-surface-03 flex items-center justify-center text-gold shadow-lg">
               <ZoomIn size={17} />
             </span>
@@ -733,14 +781,31 @@ export default function Product() {
                   src={resolveAssetUrl(product.icon)}
                   alt={product.name}
                   className="w-full h-full object-cover transition-transform duration-200"
-                  style={{ transform: `scale(${imageZoomScale})` }}
+                  onPointerDown={updateImageZoomPosition}
+                  onPointerMove={updateImageZoomPosition}
+                  style={{
+                    transform: `scale(${imageZoomScale})`,
+                    transformOrigin: `${imageZoomPosition.x}% ${imageZoomPosition.y}%`,
+                    cursor: "zoom-in",
+                  }}
                 />
               ) : (
-                <span className="transition-transform duration-200" style={{ transform: `scale(${imageZoomScale})` }}>
+                <span
+                  className="transition-transform duration-200"
+                  onPointerDown={updateImageZoomPosition}
+                  onPointerMove={updateImageZoomPosition}
+                  style={{
+                    transform: `scale(${imageZoomScale})`,
+                    transformOrigin: `${imageZoomPosition.x}% ${imageZoomPosition.y}%`,
+                    cursor: "zoom-in",
+                  }}
+                >
                   {product.icon || "🍕"}
                 </span>
               )}
             </div>
+
+            <p className="text-stone text-xs text-center -mt-1">Arraste sobre a imagem para aproximar os detalhes.</p>
 
             <div className="flex items-center gap-3 rounded-full bg-surface-00 border border-surface-03 px-4 py-3 shadow-lg">
               <button
