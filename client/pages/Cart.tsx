@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Plus, Minus, Trash2, UtensilsCrossed, ShoppingCart, Tag, Check, X } from "lucide-react";
 import { useApp, CartItem } from "@/context/AppContext";
-import { couponsApi, storeOperationApi, type StoreOperationStatus } from "@/lib/api";
+import { couponsApi, isAssetUrl, resolveAssetUrl, storeOperationApi, type StoreOperationStatus } from "@/lib/api";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
@@ -14,13 +14,35 @@ function divisionLabel(d: number) {
   return "Inteira";
 }
 
+function CartProductIcon({ icons }: { icons: string[] }) {
+  const safeIcons = icons.filter(Boolean).slice(0, 3);
+  const displayIcons = safeIcons.length > 0 ? safeIcons : ["🍕"];
+  const isSingle = displayIcons.length === 1;
+
+  return (
+    <div className="w-16 h-16 rounded-xl bg-surface-03 flex-shrink-0 overflow-hidden">
+      <div className={`w-full h-full ${isSingle ? "flex items-center justify-center" : "grid grid-cols-2 gap-0.5 p-1"}`}>
+        {displayIcons.map((icon, index) => (
+          <div key={`${icon}-${index}`} className="min-w-0 min-h-0 rounded-lg bg-surface-02 flex items-center justify-center overflow-hidden">
+            {isAssetUrl(icon) ? (
+              <img src={resolveAssetUrl(icon)} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span className={isSingle ? "text-2xl leading-none" : "text-lg leading-none"}>{icon}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CartItemRow({ item, onRemove, onUpdate }: {
   item: CartItem;
   onRemove: () => void;
   onUpdate: (qty: number) => void;
 }) {
   const isMulti = item.flavorDivision > 1;
-  const displayIcons = item.flavors.map((f) => f.icon).join("");
+  const displayIcons = isMulti ? item.flavors.map((f) => f.icon) : [item.productData.icon];
   const displayName = isMulti
     ? item.flavors.map((f) => f.name).join(" + ")
     : item.productData.name;
@@ -28,9 +50,7 @@ function CartItemRow({ item, onRemove, onUpdate }: {
   return (
     <div className="bg-surface-02 rounded-2xl p-4 border border-surface-03">
       <div className="flex items-center gap-3">
-        <div className="w-16 h-16 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center text-2xl leading-none">
-          {displayIcons || item.productData.icon}
-        </div>
+        <CartProductIcon icons={displayIcons} />
         <div className="flex-1 min-w-0">
           <h3 className="text-cream font-semibold text-sm leading-tight">{displayName}</h3>
           <div className="flex flex-wrap gap-1 mt-1">
