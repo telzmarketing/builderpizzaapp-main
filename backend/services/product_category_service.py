@@ -23,6 +23,8 @@ def create_category(db: Session, body: ProductCategoryCreate) -> ProductCategory
         parent = db.query(ProductCategory).filter(ProductCategory.id == body.parent_id).first()
         if not parent:
             raise HTTPException(404, "Categoria principal nao encontrada.")
+        if parent.parent_id:
+            raise HTTPException(400, "Subcategoria deve pertencer a uma categoria principal.")
     existing = db.query(ProductCategory).filter(func.lower(ProductCategory.name) == name.lower()).first()
     if existing:
         raise HTTPException(409, "Categoria ja cadastrada.")
@@ -45,13 +47,19 @@ def update_category(db: Session, category_id: str, body: ProductCategoryUpdate) 
     if not category:
         raise HTTPException(404, "Categoria nao encontrada.")
 
+    old_name = category.name
     changes = body.model_dump(exclude_none=True)
     if "parent_id" in changes and changes["parent_id"]:
         if changes["parent_id"] == category_id:
             raise HTTPException(400, "Categoria nao pode ser filha dela mesma.")
+        child = db.query(ProductCategory.id).filter(ProductCategory.parent_id == category_id).first()
+        if child:
+            raise HTTPException(400, "Categoria com subcategorias nao pode virar subcategoria.")
         parent = db.query(ProductCategory).filter(ProductCategory.id == changes["parent_id"]).first()
         if not parent:
             raise HTTPException(404, "Categoria principal nao encontrada.")
+        if parent.parent_id:
+            raise HTTPException(400, "Subcategoria deve pertencer a uma categoria principal.")
     if "name" in changes:
         name = changes["name"].strip()
         if not name:
@@ -67,6 +75,15 @@ def update_category(db: Session, category_id: str, body: ProductCategoryUpdate) 
 
     for key, value in changes.items():
         setattr(category, key, value)
+    if "name" in changes and changes["name"] != old_name:
+        db.query(Product).filter(Product.category == old_name).update(
+            {Product.category: changes["name"]},
+            synchronize_session=False,
+        )
+        db.query(Product).filter(Product.subcategory == old_name).update(
+            {Product.subcategory: changes["name"]},
+            synchronize_session=False,
+        )
     db.commit()
     db.refresh(category)
     return category

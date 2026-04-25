@@ -353,7 +353,7 @@ export default function Home() {
                   clickedPizza === product.id ? "scale-105 shadow-gold/30" : "hover:scale-[1.02]"
                 }`}
               >
-                <div className="w-36 h-36 mx-auto mb-4 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
+                <div className="w-44 h-44 mx-auto mb-4 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
                   {renderIcon(product.icon, index, "lg")}
                 </div>
                 <p className="text-cream font-bold text-center text-base leading-snug line-clamp-1">
@@ -385,14 +385,14 @@ export default function Home() {
           >
             <div className="flex items-center justify-center gap-2">
               {/* Previous (partially visible) */}
-              <div className="w-[20vw] max-w-[84px] flex-shrink-0 opacity-35 pointer-events-none">
+              <div className="w-[22vw] max-w-[92px] flex-shrink-0 opacity-35 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
                   {renderIcon(prevPizza?.icon, getPizzaIndex(-1), "sm")}
                 </div>
               </div>
 
               {/* Featured center card */}
-              <div className="flex-1 min-w-0" style={{ maxWidth: "min(272px, 64vw)" }}>
+              <div className="flex-1 min-w-0" style={{ maxWidth: "min(292px, 68vw)" }}>
                 <button
                   onTouchStart={handleTouchStart}
                   onTouchEnd={handleTouchEnd}
@@ -401,7 +401,7 @@ export default function Home() {
                     clickedPizza === currentPizza.id ? "scale-105 shadow-gold/30" : "active:scale-95"
                   }`}
                 >
-                  <div className="w-[min(156px,38vw)] h-[min(156px,38vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
+                  <div className="w-[min(184px,46vw)] h-[min(184px,46vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
                     {renderIcon(currentPizza?.icon, carouselPosition, "lg")}
                   </div>
                   <p className="text-cream font-bold text-center text-sm leading-snug line-clamp-1">
@@ -423,7 +423,7 @@ export default function Home() {
               </div>
 
               {/* Next (partially visible) */}
-              <div className="w-[20vw] max-w-[84px] flex-shrink-0 opacity-35 pointer-events-none">
+              <div className="w-[22vw] max-w-[92px] flex-shrink-0 opacity-35 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
                   {renderIcon(nextPizza?.icon, getPizzaIndex(1), "sm")}
                 </div>

@@ -66,6 +66,10 @@ export default function AdminProducts() {
   const [newSubcategoryName, setNewSubcategoryName] = useState("");
   const [newSubcategoryParentId, setNewSubcategoryParentId] = useState("");
   const [categorySaving, setCategorySaving] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [editingCategoryParentId, setEditingCategoryParentId] = useState("");
+  const [editingCategoryActive, setEditingCategoryActive] = useState(true);
 
   const sortedCatalogCategories = [...catalogCategories].sort((a, b) => {
     if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
@@ -134,6 +138,40 @@ export default function AdminProducts() {
       setCatalogCategories((prev) => prev.filter((cat) => cat.id !== category.id));
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao remover categoria.");
+    }
+  };
+
+  const startEditCategory = (category: ApiProductCategory) => {
+    setEditingCategoryId(category.id);
+    setEditingCategoryName(category.name);
+    setEditingCategoryParentId(category.parent_id ?? "");
+    setEditingCategoryActive(category.active);
+  };
+
+  const cancelEditCategory = () => {
+    setEditingCategoryId(null);
+    setEditingCategoryName("");
+    setEditingCategoryParentId("");
+    setEditingCategoryActive(true);
+  };
+
+  const handleSaveCategory = async (category: ApiProductCategory) => {
+    const name = editingCategoryName.trim();
+    if (!name) return;
+    setCategorySaving(true);
+    try {
+      const updated = await categoriesApi.update(category.id, {
+        name,
+        parent_id: editingCategoryParentId || null,
+        active: editingCategoryActive,
+        sort_order: category.sort_order,
+      });
+      setCatalogCategories((prev) => prev.map((cat) => cat.id === updated.id ? updated : cat));
+      cancelEditCategory();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao atualizar categoria.");
+    } finally {
+      setCategorySaving(false);
     }
   };
 
@@ -966,6 +1004,60 @@ export default function AdminProducts() {
                     </button>
                   </div>
 
+                  {editingCategoryId && (
+                    <div className="rounded-xl border border-gold/30 bg-gold/10 p-4 space-y-3">
+                      <p className="text-parchment text-sm font-bold">Editar categoria</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <input
+                          value={editingCategoryName}
+                          onChange={(e) => setEditingCategoryName(e.target.value)}
+                          className={cls}
+                          placeholder="Nome da categoria"
+                          maxLength={100}
+                        />
+                        <select
+                          value={editingCategoryParentId}
+                          onChange={(e) => setEditingCategoryParentId(e.target.value)}
+                          className={cls}
+                        >
+                          <option value="">Categoria principal</option>
+                          {parentCategories.filter((cat) => cat.id !== editingCategoryId).map((cat) => (
+                            <option key={cat.id} value={cat.id}>Subcategoria de {cat.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="flex items-center gap-2 text-parchment text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingCategoryActive}
+                            onChange={(e) => setEditingCategoryActive(e.target.checked)}
+                            className="accent-gold"
+                          />
+                          Ativa
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const category = catalogCategories.find((cat) => cat.id === editingCategoryId);
+                            if (category) handleSaveCategory(category);
+                          }}
+                          disabled={categorySaving || !editingCategoryName.trim()}
+                          className="bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream text-xs font-bold px-3 py-1.5 rounded-lg"
+                        >
+                          Salvar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEditCategory}
+                          className="bg-surface-03 hover:bg-brand-mid text-parchment text-xs font-bold px-3 py-1.5 rounded-lg"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {sortedCatalogCategories.length === 0 ? (
                     <p className="text-stone text-sm text-center py-4">
                       Nenhuma categoria cadastrada.
@@ -981,6 +1073,14 @@ export default function AdminProducts() {
                               {category.active ? "Ativa para seleção no produto" : "Inativa"}
                             </p>
                           </div>
+                          <button
+                            type="button"
+                            onClick={() => startEditCategory(category)}
+                            className="text-stone hover:text-gold transition-colors p-1.5"
+                            title="Editar categoria"
+                          >
+                            <Edit2 size={14} />
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteCategory(category)}
