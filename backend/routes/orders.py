@@ -63,7 +63,10 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
             "product_name": product_name,
             "quantity": item.quantity,
             "selected_size": item.selected_size,
+            "selected_size_id": item.selected_size_id,
             "flavor_division": item.flavor_division,
+            "flavor_count": item.flavor_count or item.flavor_division,
+            "selected_crust_type_id": item.selected_crust_type_id,
             "selected_crust_type": item.selected_crust_type,
             "selected_drink_variant": item.selected_drink_variant,
             "notes": item.notes,
@@ -71,6 +74,14 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
             "add_ons": [],
             "unit_price": item.unit_price,
             "final_price": item.unit_price,
+            "standard_unit_price": item.standard_unit_price,
+            "applied_unit_price": item.applied_unit_price,
+            "promotion_id": item.promotion_id,
+            "promotion_name": item.promotion_name,
+            "promotion_discount": item.promotion_discount or 0,
+            "promotion_applied": bool(item.promotion_id),
+            "promotion_blocked": bool(item.promotion_blocked),
+            "promotion_block_reason": item.promotion_block_reason,
         })
 
     status = order.status.value if hasattr(order.status, "value") else str(order.status)

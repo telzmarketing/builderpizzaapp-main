@@ -73,12 +73,22 @@ class OrderItemOut(BaseModel):
     product_id: str
     quantity: int
     selected_size: str
+    selected_size_id: Optional[str] = None
     flavor_division: int
+    flavor_count: int = 1
+    selected_crust_type_id: Optional[str] = None
     selected_crust_type: Optional[str] = None
     selected_drink_variant: Optional[str] = None
     notes: Optional[str] = None
     unit_price: float
     total_price: float
+    standard_unit_price: Optional[float] = None
+    applied_unit_price: Optional[float] = None
+    promotion_id: Optional[str] = None
+    promotion_name: Optional[str] = None
+    promotion_discount: float = 0.0
+    promotion_blocked: bool = False
+    promotion_block_reason: Optional[str] = None
     flavors: list[OrderItemFlavorOut] = []
 
     model_config = {"from_attributes": True}

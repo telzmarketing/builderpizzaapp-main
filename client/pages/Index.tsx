@@ -191,7 +191,7 @@ export default function Home() {
                       <p className="text-cream font-semibold">{product.name}</p>
                       <p className="text-stone text-sm line-clamp-1">{product.description}</p>
                     </div>
-                    <p className="text-gold font-bold">R$ {product.price.toFixed(2)}</p>
+                    <p className="text-gold font-bold">R$ {(product.current_price ?? product.price).toFixed(2)}</p>
                   </button>
                 ))}
               </div>
@@ -362,7 +362,7 @@ export default function Home() {
                   ))}
                 </div>
                 <p className="text-gold font-bold text-center text-base">
-                  R$ {product.price.toFixed(2)}
+                  R$ {(product.current_price ?? product.price).toFixed(2)}
                 </p>
                 <p className="text-xs text-stone text-center mt-1 leading-tight line-clamp-2">
                   {product.description}
@@ -413,7 +413,7 @@ export default function Home() {
                     ))}
                   </div>
                   <p className="text-gold font-bold text-center text-sm">
-                    R$ {currentPizza?.price.toFixed(2)}
+                    R$ {((currentPizza as any)?.current_price ?? currentPizza?.price ?? 0).toFixed(2)}
                   </p>
                   <p className="text-[11px] text-stone text-center mt-1 leading-tight line-clamp-2">
                     {currentPizza?.description}

@@ -3,7 +3,7 @@ import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat,
 import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import ImageUpload from "@/components/admin/ImageUpload";
-import { sizesApi, crustApi, drinkVariantApi, categoriesApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { sizesApi, crustApi, drinkVariantApi, categoriesApi, productPromotionsApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, ApiProductPromotion, ApiProductPromotionCombination, ProductPromotionDiscountType, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { pizzaSizeDescription, pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { normalizeCrustPriceAddition } from "@/lib/pricing";
 
@@ -12,6 +12,48 @@ const PRICING_OPTIONS: { value: PricingRule; label: string; description: string 
   { value: "average", label: "Média", description: "Preço é a média aritmética dos sabores" },
   { value: "proportional", label: "Proporcional", description: "Cada parte paga sua fração do sabor" },
 ];
+
+const WEEKDAYS = [
+  { value: 0, label: "Seg" },
+  { value: 1, label: "Ter" },
+  { value: 2, label: "Qua" },
+  { value: 3, label: "Qui" },
+  { value: 4, label: "Sex" },
+  { value: 5, label: "Sab" },
+  { value: 6, label: "Dom" },
+];
+
+const DISCOUNT_LABELS: Record<ProductPromotionDiscountType, string> = {
+  fixed_price: "Preço fixo promocional",
+  amount_off: "Desconto em reais",
+  percent_off: "Desconto percentual",
+};
+
+type PromotionFormState = {
+  name: string;
+  active: boolean;
+  valid_weekdays: number[];
+  start_time: string;
+  end_time: string;
+  start_date: string;
+  end_date: string;
+  discount_type: ProductPromotionDiscountType;
+  default_value: number | null;
+  timezone: string;
+};
+
+const emptyPromotionForm = (): PromotionFormState => ({
+  name: "",
+  active: true,
+  valid_weekdays: [],
+  start_time: "",
+  end_time: "",
+  start_date: "",
+  end_date: "",
+  discount_type: "fixed_price",
+  default_value: null,
+  timezone: "America/Sao_Paulo",
+});
 
 type PTab = "produtos" | "categorias" | "config";
 
@@ -302,6 +344,172 @@ export default function AdminProducts() {
   };
 
   // ── Drink variants modal ──────────────────────────────────────────────────────
+  // Product promotions modal (pizza)
+  const [promotionModalProduct, setPromotionModalProduct] = useState<Pizza | null>(null);
+  const [productPromotions, setProductPromotions] = useState<ApiProductPromotion[]>([]);
+  const [promoSizes, setPromoSizes] = useState<ApiProductSize[]>([]);
+  const [promoCrusts, setPromoCrusts] = useState<ApiProductCrustType[]>([]);
+  const [promoCombinations, setPromoCombinations] = useState<ApiProductPromotionCombination[]>([]);
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoSaving, setPromoSaving] = useState(false);
+  const [editingPromotionId, setEditingPromotionId] = useState<string | null>(null);
+  const [promotionForm, setPromotionForm] = useState<PromotionFormState>(emptyPromotionForm());
+
+  const buildPromotionCombinations = (
+    sizes: ApiProductSize[],
+    crusts: ApiProductCrustType[],
+    existing: ApiProductPromotionCombination[] = [],
+  ): ApiProductPromotionCombination[] => {
+    const sizeRows = sizes.filter((size) => size.active);
+    const crustRows: (ApiProductCrustType | null)[] = crusts.filter((crust) => crust.active);
+    const rows = crustRows.length > 0 ? crustRows : [null];
+    return sizeRows.flatMap((size) => rows.map((crust) => {
+      const current = existing.find((combo) =>
+        combo.product_size_id === size.id &&
+        (combo.product_crust_type_id ?? null) === (crust?.id ?? null)
+      );
+      return {
+        product_size_id: size.id,
+        product_crust_type_id: crust?.id ?? null,
+        active: current?.active ?? true,
+        promotional_value: current?.promotional_value ?? null,
+      };
+    }));
+  };
+
+  const openPromotionModal = useCallback(async (product: Pizza) => {
+    setPromotionModalProduct(product);
+    setPromoLoading(true);
+    setEditingPromotionId(null);
+    setPromotionForm(emptyPromotionForm());
+    try {
+      const [promotions, sizes, crusts] = await Promise.all([
+        productPromotionsApi.list(product.id),
+        sizesApi.list(product.id),
+        crustApi.list(product.id),
+      ]);
+      setProductPromotions(promotions);
+      setPromoSizes(sizes);
+      setPromoCrusts(crusts);
+      setPromoCombinations(buildPromotionCombinations(sizes, crusts));
+    } catch (err: unknown) {
+      setProductPromotions([]);
+      setPromoSizes([]);
+      setPromoCrusts([]);
+      setPromoCombinations([]);
+      alert(err instanceof Error ? err.message : "Erro ao carregar promocoes.");
+    } finally {
+      setPromoLoading(false);
+    }
+  }, []);
+
+  const closePromotionModal = () => {
+    setPromotionModalProduct(null);
+    setProductPromotions([]);
+    setPromoSizes([]);
+    setPromoCrusts([]);
+    setPromoCombinations([]);
+    setEditingPromotionId(null);
+    setPromotionForm(emptyPromotionForm());
+  };
+
+  const handleEditPromotion = (promotion: ApiProductPromotion) => {
+    setEditingPromotionId(promotion.id);
+    setPromotionForm({
+      name: promotion.name,
+      active: promotion.active,
+      valid_weekdays: promotion.valid_weekdays,
+      start_time: promotion.start_time ?? "",
+      end_time: promotion.end_time ?? "",
+      start_date: promotion.start_date ?? "",
+      end_date: promotion.end_date ?? "",
+      discount_type: promotion.discount_type,
+      default_value: promotion.default_value,
+      timezone: promotion.timezone || "America/Sao_Paulo",
+    });
+    setPromoCombinations(buildPromotionCombinations(promoSizes, promoCrusts, promotion.combinations));
+  };
+
+  const handleNewPromotion = () => {
+    setEditingPromotionId(null);
+    setPromotionForm(emptyPromotionForm());
+    setPromoCombinations(buildPromotionCombinations(promoSizes, promoCrusts));
+  };
+
+  const handleTogglePromotionWeekday = (day: number) => {
+    setPromotionForm((form) => {
+      const exists = form.valid_weekdays.includes(day);
+      return {
+        ...form,
+        valid_weekdays: exists
+          ? form.valid_weekdays.filter((item) => item !== day)
+          : [...form.valid_weekdays, day].sort(),
+      };
+    });
+  };
+
+  const updatePromoCombination = (index: number, patch: Partial<ApiProductPromotionCombination>) => {
+    setPromoCombinations((prev) => prev.map((combo, i) => i === index ? { ...combo, ...patch } : combo));
+  };
+
+  const handleSavePromotion = async () => {
+    if (!promotionModalProduct || !promotionForm.name.trim()) {
+      alert("Informe o nome da promocao.");
+      return;
+    }
+    if (promotionForm.valid_weekdays.length === 0) {
+      alert("Selecione pelo menos um dia da semana.");
+      return;
+    }
+    const combinations = promoCombinations.map((combo) => ({
+      product_size_id: combo.product_size_id,
+      product_crust_type_id: combo.product_crust_type_id,
+      active: combo.active,
+      promotional_value: combo.promotional_value,
+    }));
+    if (combinations.every((combo) => !combo.active)) {
+      alert("Ative pelo menos uma combinacao da promocao.");
+      return;
+    }
+
+    setPromoSaving(true);
+    const payload = {
+      ...promotionForm,
+      name: promotionForm.name.trim(),
+      start_time: promotionForm.start_time || null,
+      end_time: promotionForm.end_time || null,
+      start_date: promotionForm.start_date || null,
+      end_date: promotionForm.end_date || null,
+      combinations,
+    };
+    try {
+      const saved = editingPromotionId
+        ? await productPromotionsApi.update(promotionModalProduct.id, editingPromotionId, payload)
+        : await productPromotionsApi.create(promotionModalProduct.id, payload);
+      setProductPromotions((prev) => editingPromotionId
+        ? prev.map((promotion) => promotion.id === saved.id ? saved : promotion)
+        : [saved, ...prev]
+      );
+      handleEditPromotion(saved);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao salvar promocao.");
+    } finally {
+      setPromoSaving(false);
+    }
+  };
+
+  const handleDeletePromotion = async (promotion: ApiProductPromotion) => {
+    if (!promotionModalProduct) return;
+    if (!confirm(`Excluir a promocao "${promotion.name}"?`)) return;
+    try {
+      await productPromotionsApi.remove(promotionModalProduct.id, promotion.id);
+      setProductPromotions((prev) => prev.filter((item) => item.id !== promotion.id));
+      if (editingPromotionId === promotion.id) handleNewPromotion();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao excluir promocao.");
+    }
+  };
+
   const [drinkModalProduct, setDrinkModalProduct] = useState<Pizza | null>(null);
   const [productDrinkVariants, setProductDrinkVariants] = useState<ApiProductDrinkVariant[]>([]);
   const [drinkLoading, setDrinkLoading] = useState(false);
@@ -601,6 +809,13 @@ export default function AdminProducts() {
                           </button>
                         )}
 
+                        {isPizza && (
+                          <button onClick={() => openPromotionModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-emerald-500/10 hover:border-emerald-500/40 text-parchment hover:text-emerald-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
+                            <Tag size={15} />
+                            Gerenciar Promoções
+                          </button>
+                        )}
+
                         {isDrink && (
                           <button onClick={() => openDrinkModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-blue-500/10 hover:border-blue-500/40 text-parchment hover:text-blue-400 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm">
                             <Droplets size={15} />
@@ -758,6 +973,187 @@ export default function AdminProducts() {
       </div>
 
       {/* ── Sizes Modal ───────────────────────────────────────────────────────── */}
+      {promotionModalProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03 sticky top-0 bg-surface-02 z-10">
+              <div className="flex items-center gap-3">
+                <Tag size={18} className="text-emerald-300" />
+                <div>
+                  <h3 className="text-cream font-bold">Promoções</h3>
+                  <p className="text-stone text-xs">{promotionModalProduct.name}</p>
+                </div>
+              </div>
+              <button onClick={closePromotionModal} className="text-stone hover:text-cream transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 grid grid-cols-1 lg:grid-cols-[260px,1fr] gap-5">
+              <aside className="space-y-3">
+                <button onClick={handleNewPromotion} className="w-full flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2.5 rounded-xl transition-colors text-sm">
+                  <Plus size={15} /> Nova Promoção
+                </button>
+                {promoLoading ? (
+                  <div className="flex items-center justify-center py-6 text-stone gap-2">
+                    <Loader2 size={16} className="animate-spin" />
+                    <span className="text-sm">Carregando...</span>
+                  </div>
+                ) : productPromotions.length === 0 ? (
+                  <p className="text-stone text-sm bg-surface-03 rounded-xl p-4">Nenhuma promoção cadastrada para esta pizza.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {productPromotions.map((promotion) => (
+                      <button
+                        key={promotion.id}
+                        onClick={() => handleEditPromotion(promotion)}
+                        className={`w-full text-left rounded-xl border px-4 py-3 transition-colors ${
+                          editingPromotionId === promotion.id
+                            ? "bg-emerald-500/10 border-emerald-500/40"
+                            : "bg-surface-03 border-surface-03 hover:border-emerald-500/30"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-cream font-bold text-sm line-clamp-1">{promotion.name}</span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full ${promotion.active ? "bg-emerald-500/20 text-emerald-300" : "bg-red-500/20 text-red-300"}`}>
+                            {promotion.active ? "ativa" : "inativa"}
+                          </span>
+                        </div>
+                        <p className="text-stone text-xs mt-1">{promotion.valid_weekdays.map((day) => WEEKDAYS.find((item) => item.value === day)?.label).filter(Boolean).join(", ") || "Sem dias"}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </aside>
+
+              <section className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-parchment text-xs font-medium mb-1">Nome da promoção *</label>
+                    <input value={promotionForm.name} onChange={(e) => setPromotionForm((form) => ({ ...form, name: e.target.value }))} className={cls} placeholder="Ex: Terça da Pizza" maxLength={200} />
+                  </div>
+                  <div>
+                    <label className="block text-parchment text-xs font-medium mb-1">Tipo de desconto</label>
+                    <select value={promotionForm.discount_type} onChange={(e) => setPromotionForm((form) => ({ ...form, discount_type: e.target.value as ProductPromotionDiscountType }))} className={cls}>
+                      {(Object.keys(DISCOUNT_LABELS) as ProductPromotionDiscountType[]).map((type) => (
+                        <option key={type} value={type}>{DISCOUNT_LABELS[type]}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="inline-flex items-center gap-2 text-parchment text-sm">
+                    <input type="checkbox" checked={promotionForm.active} onChange={(e) => setPromotionForm((form) => ({ ...form, active: e.target.checked }))} className="accent-gold" />
+                    Promoção ativa
+                  </label>
+                  <span className="text-stone text-xs">Timezone: America/Sao_Paulo</span>
+                </div>
+
+                <div>
+                  <label className="block text-parchment text-xs font-medium mb-2">Dias válidos</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {WEEKDAYS.map((day) => (
+                      <button
+                        key={day.value}
+                        type="button"
+                        onClick={() => handleTogglePromotionWeekday(day.value)}
+                        className={`px-3 py-2 rounded-lg text-xs font-bold border transition-colors ${
+                          promotionForm.valid_weekdays.includes(day.value)
+                            ? "bg-gold text-cream border-gold"
+                            : "bg-surface-03 text-stone border-surface-03 hover:text-cream"
+                        }`}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-parchment text-xs font-medium mb-1">Data inicial</label>
+                    <input type="date" value={promotionForm.start_date} onChange={(e) => setPromotionForm((form) => ({ ...form, start_date: e.target.value }))} className={cls} />
+                  </div>
+                  <div>
+                    <label className="block text-parchment text-xs font-medium mb-1">Data final</label>
+                    <input type="date" value={promotionForm.end_date} onChange={(e) => setPromotionForm((form) => ({ ...form, end_date: e.target.value }))} className={cls} />
+                  </div>
+                  <div>
+                    <label className="block text-parchment text-xs font-medium mb-1">Hora inicial</label>
+                    <input type="time" value={promotionForm.start_time} onChange={(e) => setPromotionForm((form) => ({ ...form, start_time: e.target.value }))} className={cls} />
+                  </div>
+                  <div>
+                    <label className="block text-parchment text-xs font-medium mb-1">Hora final</label>
+                    <input type="time" value={promotionForm.end_time} onChange={(e) => setPromotionForm((form) => ({ ...form, end_time: e.target.value }))} className={cls} />
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-surface-03">
+                  <table className="w-full min-w-[720px] text-sm">
+                    <thead className="bg-surface-03 text-stone">
+                      <tr>
+                        <th className="text-left px-4 py-3">Tamanho</th>
+                        <th className="text-left px-4 py-3">Massa</th>
+                        <th className="text-left px-4 py-3">Preço padrão</th>
+                        <th className="text-left px-4 py-3">{promotionForm.discount_type === "fixed_price" ? "Preço promocional" : "Valor do desconto"}</th>
+                        <th className="text-left px-4 py-3">Ativar</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-03">
+                      {promoCombinations.map((combo, index) => {
+                        const size = promoSizes.find((item) => item.id === combo.product_size_id);
+                        const crust = promoCrusts.find((item) => item.id === combo.product_crust_type_id);
+                        const standardPrice = (size?.price ?? promotionModalProduct.price) + (crust ? normalizeCrustPriceAddition(crust.price_addition, promotionModalProduct.price) : 0);
+                        return (
+                          <tr key={`${combo.product_size_id}-${combo.product_crust_type_id ?? "none"}`} className="bg-surface-02">
+                            <td className="px-4 py-3 text-cream font-semibold">{size ? pizzaSizeLabel(size.label) : "Padrão"}</td>
+                            <td className="px-4 py-3 text-parchment">{crust?.name ?? "Sem massa"}</td>
+                            <td className="px-4 py-3 text-gold font-bold">R$ {standardPrice.toFixed(2)}</td>
+                            <td className="px-4 py-3">
+                              <input
+                                type="number"
+                                value={combo.promotional_value ?? ""}
+                                onChange={(e) => updatePromoCombination(index, { promotional_value: e.target.value === "" ? null : Number(e.target.value) })}
+                                className="w-32 bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream outline-none focus:border-gold"
+                                placeholder={promotionForm.discount_type === "percent_off" ? "10" : "39.90"}
+                                step="0.01"
+                                min="0"
+                              />
+                            </td>
+                            <td className="px-4 py-3">
+                              <input type="checkbox" checked={combo.active} onChange={(e) => updatePromoCombination(index, { active: e.target.checked })} className="accent-gold" />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button onClick={handleSavePromotion} disabled={promoSaving || promoLoading} className="flex-1 flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 disabled:opacity-60 text-cream font-bold py-3 rounded-xl transition-colors text-sm">
+                    {promoSaving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                    {editingPromotionId ? "Salvar Promoção" : "Criar Promoção"}
+                  </button>
+                  {editingPromotionId && (
+                    <button
+                      onClick={() => {
+                        const promotion = productPromotions.find((item) => item.id === editingPromotionId);
+                        if (promotion) handleDeletePromotion(promotion);
+                      }}
+                      className="flex items-center justify-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold py-3 px-5 rounded-xl transition-colors text-sm"
+                    >
+                      <Trash2 size={16} /> Excluir
+                    </button>
+                  )}
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
+
       {sizesModalProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">

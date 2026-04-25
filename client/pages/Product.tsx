@@ -3,7 +3,7 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check, Loader2, X, ZoomIn } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation } from "@/context/AppContext";
-import { sizesApi, crustApi, drinkVariantApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { sizesApi, crustApi, drinkVariantApi, productPromotionsApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductPriceQuote, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { isAllowedPizzaSize, isPizzaBroto, pizzaSizeDescription, pizzaSizeLabel, PIZZA_SIZE_LABELS } from "@/lib/pizzaSizes";
 import { formatCrustAddition, normalizeCrustPriceAddition } from "@/lib/pricing";
 import { trackEvent } from "@/lib/tracking";
@@ -139,6 +139,7 @@ export default function Product() {
   // Crust types (pizza only)
   const [productCrusts, setProductCrusts] = useState<ApiProductCrustType[]>([]);
   const [selectedCrust, setSelectedCrust] = useState<ApiProductCrustType | null>(null);
+  const [priceQuote, setPriceQuote] = useState<ApiProductPriceQuote | null>(null);
 
   // Drink variants (drink only)
   const [productDrinkVariants, setProductDrinkVariants] = useState<ApiProductDrinkVariant[]>([]);
@@ -227,6 +228,35 @@ export default function Product() {
     setFlavorSlots((prev) => [prev[0] ?? product ?? null, null, null]);
   }, [isPizzaBrotoSelected, division, product?.id]);
 
+  const selectedFlavorIdsKey = flavorSlots.slice(0, division).map((flavor) => flavor?.id ?? "").join("|");
+
+  useEffect(() => {
+    if (!product || !isPizza) {
+      setPriceQuote(null);
+      return;
+    }
+
+    let cancelled = false;
+    const selectedFlavorIds = flavorSlots
+      .slice(0, division)
+      .map((flavor) => flavor?.id)
+      .filter((id): id is string => Boolean(id));
+    productPromotionsApi.quote(product.id, {
+      size_id: selectedSizeObj?.id ?? null,
+      crust_id: selectedCrust?.id ?? null,
+      flavor_count: isDrink ? 1 : division,
+      flavor_ids: selectedFlavorIds,
+    }).then((quote) => {
+      if (!cancelled) setPriceQuote(quote);
+    }).catch(() => {
+      if (!cancelled) setPriceQuote(null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [product?.id, isPizza, isDrink, selectedSizeObj?.id, selectedCrust?.id, division, selectedFlavorIdsKey]);
+
   // ── Computed values ──────────────────────────────────────────────────────────
 
   const activeFlavors = flavorSlots.slice(0, division);
@@ -252,7 +282,8 @@ export default function Product() {
     return 0;
   }, [isPizza, isDrink, selectedCrust, selectedDrinkVariant, productPrice]);
 
-  const pricePerUnit = flavorPrice + variantPriceAddition;
+  const localPricePerUnit = flavorPrice + variantPriceAddition;
+  const pricePerUnit = isPizza && priceQuote ? priceQuote.final_price : localPricePerUnit;
   const totalPrice = pricePerUnit * quantity;
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -834,7 +865,18 @@ export default function Product() {
         <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-stone text-xs">Total ({quantity}x)</p>
-            <p className="text-gold text-2xl font-bold">R$ {totalPrice.toFixed(2)}</p>
+            <div className="flex items-end gap-2">
+              <p className="text-gold text-2xl font-bold">R$ {totalPrice.toFixed(2)}</p>
+              {priceQuote?.promotion_applied && (
+                <p className="text-stone text-xs line-through mb-1">R$ {(priceQuote.standard_price * quantity).toFixed(2)}</p>
+              )}
+            </div>
+            {priceQuote?.promotion_applied && (
+              <p className="text-emerald-300 text-[11px] font-semibold mt-0.5">{priceQuote.promotion_name} aplicada</p>
+            )}
+            {priceQuote?.promotion_blocked && priceQuote.promotion_block_reason && (
+              <p className="text-amber-300 text-[11px] font-semibold mt-0.5">{priceQuote.promotion_block_reason}.</p>
+            )}
           </div>
           <div className="text-right">
             {isPizza && division > 1 && allFilled && (

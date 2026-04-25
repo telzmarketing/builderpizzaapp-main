@@ -25,6 +25,7 @@ from backend.models.order import Order, OrderItem, OrderItemFlavor, OrderStatus
 from backend.models.payment import Payment, PaymentMethod, PaymentStatus
 from backend.models.product import Product, MultiFlavorsConfig, PricingRule, ProductCrustType, ProductDrinkVariant, ProductSize
 from backend.schemas.order import CheckoutIn, CartItemIn, FlavorIn, OrderStatusUpdate
+from backend.services.product_pricing_service import ProductPriceResult, ProductPricingService, normalize_crust_price_addition
 
 
 # ── Pricing helpers (shared with front-end logic) ─────────────────────────────
@@ -46,12 +47,7 @@ def _compute_flavor_price(
 
 
 def _normalize_crust_price_addition(price_addition: float | None, product_base_price: float | None) -> float:
-    addition = float(price_addition or 0)
-    if addition <= 0:
-        return 0.0
-    if product_base_price and product_base_price > 0 and abs(addition - product_base_price) <= 0.01:
-        return 0.0
-    return round(addition, 2)
+    return normalize_crust_price_addition(price_addition, product_base_price)
 
 
 class OrderService:
@@ -94,7 +90,7 @@ class OrderService:
         self,
         item: CartItemIn,
         config: MultiFlavorsConfig,
-    ) -> tuple[float, list[Product]]:
+    ) -> tuple[float, list[Product], ProductPriceResult, ProductSize | None, ProductCrustType | None]:
         """
         Returns (server_unit_price, [Product per flavor]).
         Raises domain exceptions on any inconsistency.
@@ -110,16 +106,17 @@ class OrderService:
 
         # Fetch size price server-side (authoritative — client-submitted prices are ignored when size found)
         size_base_price: float | None = None
+        selected_size_obj: ProductSize | None = None
         if item.selected_size_id:
-            size = (
+            selected_size_obj = (
                 self._db.query(ProductSize)
                 .filter(ProductSize.id == item.selected_size_id,
                         ProductSize.product_id == item.product_id,
                         ProductSize.active == True)  # noqa: E712
                 .first()
             )
-            if size:
-                size_base_price = size.price
+            if selected_size_obj:
+                size_base_price = selected_size_obj.price
 
         flavor_products: list[Product] = []
         slot_prices: list[float] = []
@@ -158,18 +155,19 @@ class OrderService:
         server_price = round(server_price, 2)
 
         # Add crust type price addition if provided
+        selected_crust_obj: ProductCrustType | None = None
         if item.selected_crust_type_id:
-            crust = (
+            selected_crust_obj = (
                 self._db.query(ProductCrustType)
                 .filter(ProductCrustType.id == item.selected_crust_type_id,
                         ProductCrustType.product_id == item.product_id,
                         ProductCrustType.active == True)  # noqa: E712
                 .first()
             )
-            if crust:
+            if selected_crust_obj:
                 primary_product = next((p for p in flavor_products if p.id == item.product_id), flavor_products[0] if flavor_products else None)
                 crust_addition = _normalize_crust_price_addition(
-                    crust.price_addition,
+                    selected_crust_obj.price_addition,
                     primary_product.price if primary_product else None,
                 )
                 if crust_addition > 0:
@@ -187,7 +185,21 @@ class OrderService:
             if variant and variant.price_addition > 0:
                 server_price = round(server_price + variant.price_addition, 2)
 
-        return server_price, flavor_products
+        primary_product = next((p for p in flavor_products if p.id == item.product_id), flavor_products[0] if flavor_products else None)
+        if primary_product:
+            pricing = ProductPricingService(self._db).calculate(
+                product=primary_product,
+                size=selected_size_obj,
+                crust=selected_crust_obj,
+                standard_price_override=server_price,
+                flavor_count=item.flavor_division,
+                flavor_product_ids=[flavor.product_id for flavor in item.flavors],
+            )
+            server_price = pricing.final_price
+        else:
+            pricing = ProductPriceResult(standard_price=server_price, final_price=server_price)
+
+        return server_price, flavor_products, pricing, selected_size_obj, selected_crust_obj
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -204,12 +216,12 @@ class OrderService:
         config = self._get_config()
 
         # 1. Validate items and compute subtotal
-        item_data: list[tuple[CartItemIn, float, list[Product]]] = []
+        item_data: list[tuple[CartItemIn, float, list[Product], ProductPriceResult, ProductSize | None, ProductCrustType | None]] = []
         subtotal = 0.0
         for item in payload.items:
-            unit_price, flavor_products = self._validate_item(item, config)
+            unit_price, flavor_products, pricing, size_obj, crust_obj = self._validate_item(item, config)
             subtotal += unit_price * item.quantity
-            item_data.append((item, unit_price, flavor_products))
+            item_data.append((item, unit_price, flavor_products, pricing, size_obj, crust_obj))
         subtotal = round(subtotal, 2)
 
         # 2. Shipping — delegated to ShippingService (lazy import avoids circular)
@@ -293,19 +305,29 @@ class OrderService:
         self._db.flush()
 
         # 5. Order items and flavor breakdown
-        for item, unit_price, flavor_products in item_data:
+        for item, unit_price, flavor_products, pricing, size_obj, crust_obj in item_data:
             oi = OrderItem(
                 id=str(uuid.uuid4()),
                 order_id=order.id,
                 product_id=item.product_id,
                 quantity=item.quantity,
                 selected_size=item.selected_size,
+                selected_size_id=size_obj.id if size_obj else item.selected_size_id,
                 flavor_division=item.flavor_division,
+                flavor_count=item.flavor_division,
+                selected_crust_type_id=crust_obj.id if crust_obj else item.selected_crust_type_id,
                 selected_crust_type=item.selected_crust_type_name,
                 selected_drink_variant=item.selected_drink_variant_name,
                 notes=item.notes,
                 unit_price=unit_price,
                 total_price=round(unit_price * item.quantity, 2),
+                standard_unit_price=pricing.standard_price,
+                applied_unit_price=pricing.final_price,
+                promotion_id=pricing.promotion_id,
+                promotion_name=pricing.promotion_name,
+                promotion_discount=pricing.discount_amount,
+                promotion_blocked=pricing.promotion_blocked,
+                promotion_block_reason=pricing.promotion_block_reason,
             )
             self._db.add(oi)
             self._db.flush()

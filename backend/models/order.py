@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Integer, Enum, DateTime, ForeignKey, Text
+from sqlalchemy import Boolean, Column, String, Float, Integer, Enum, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -78,12 +78,22 @@ class OrderItem(Base):
 
     quantity = Column(Integer, default=1)
     selected_size = Column(String(50))
+    selected_size_id = Column(String, nullable=True)
     flavor_division = Column(Integer, default=1)
+    flavor_count = Column(Integer, default=1)
+    selected_crust_type_id = Column(String, nullable=True)
     selected_crust_type = Column(String(100), nullable=True)
     selected_drink_variant = Column(String(100), nullable=True)
     notes = Column(Text, nullable=True)
     unit_price = Column(Float, nullable=False)
     total_price = Column(Float, nullable=False)
+    standard_unit_price = Column(Float, nullable=True)
+    applied_unit_price = Column(Float, nullable=True)
+    promotion_id = Column(String, nullable=True)
+    promotion_name = Column(String(200), nullable=True)
+    promotion_discount = Column(Float, default=0.0)
+    promotion_blocked = Column(Boolean, default=False)
+    promotion_block_reason = Column(String(300), nullable=True)
 
     order = relationship("Order", back_populates="items")
     flavors = relationship("OrderItemFlavor", back_populates="order_item", cascade="all, delete-orphan")

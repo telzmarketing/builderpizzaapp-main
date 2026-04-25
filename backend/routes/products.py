@@ -1,9 +1,11 @@
+import json
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.models.product import Product, MultiFlavorsConfig, ProductSize, ProductCrustType, ProductDrinkVariant
+from backend.models.product_promotion import ProductPromotion, ProductPromotionCombination
 from backend.schemas.product import (
     ProductCreate, ProductUpdate, ProductOut,
     MultiFlavorsConfigUpdate, MultiFlavorsConfigOut,
@@ -11,11 +13,93 @@ from backend.schemas.product import (
     ProductSizeCreate, ProductSizeUpdate, ProductSizeOut,
     ProductCrustTypeCreate, ProductCrustTypeUpdate, ProductCrustTypeOut,
     ProductDrinkVariantCreate, ProductDrinkVariantUpdate, ProductDrinkVariantOut,
+    ProductPromotionCreate, ProductPromotionUpdate, ProductPromotionOut,
+    ProductPriceQuoteOut,
 )
 from backend.routes.admin_auth import get_current_admin
 from backend.services import product_category_service
+from backend.services.product_pricing_service import ProductPricingService
 
 router = APIRouter(prefix="/products", tags=["products"])
+
+
+def _ensure_weekdays(days: list[int] | None) -> list[int]:
+    if not days:
+        return []
+    clean = sorted(set(int(day) for day in days))
+    if any(day < 0 or day > 6 for day in clean):
+        raise HTTPException(400, "Dias da semana devem estar entre 0 (segunda) e 6 (domingo).")
+    return clean
+
+
+def _promotion_payload(promotion: ProductPromotion) -> dict:
+    try:
+        weekdays = json.loads(promotion.valid_weekdays or "[]")
+    except Exception:
+        weekdays = []
+    return {
+        "id": promotion.id,
+        "product_id": promotion.product_id,
+        "name": promotion.name,
+        "active": promotion.active,
+        "valid_weekdays": weekdays,
+        "start_time": promotion.start_time,
+        "end_time": promotion.end_time,
+        "start_date": promotion.start_date,
+        "end_date": promotion.end_date,
+        "discount_type": promotion.discount_type,
+        "default_value": promotion.default_value,
+        "timezone": promotion.timezone,
+        "created_at": promotion.created_at,
+        "updated_at": promotion.updated_at,
+        "combinations": promotion.combinations,
+    }
+
+
+def _add_promotion_combinations(
+    db: Session,
+    promotion: ProductPromotion,
+    combinations,
+) -> None:
+    for combo in combinations:
+        db.add(ProductPromotionCombination(
+            id=f"ppc-{uuid.uuid4().hex[:10]}",
+            promotion_id=promotion.id,
+            product_size_id=combo.product_size_id,
+            product_crust_type_id=combo.product_crust_type_id,
+            active=combo.active,
+            promotional_value=combo.promotional_value,
+        ))
+
+
+def _product_payload(product: Product, db: Session) -> dict:
+    payload = ProductOut.model_validate(product).model_dump()
+    default_size = next((size for size in product.sizes if size.active and size.is_default), None)
+    if not default_size:
+        default_size = next((size for size in product.sizes if size.active), None)
+    pricing = ProductPricingService(db)
+    quote = pricing.calculate(product=product, size=default_size)
+    active_sizes = [size for size in product.sizes if size.active] or [None]
+    active_crusts = [crust for crust in product.crust_types if crust.active]
+    crust_options = active_crusts or [None]
+    promotion_quotes = [
+        candidate
+        for size in active_sizes
+        for crust in crust_options
+        for candidate in [pricing.calculate(product=product, size=size, crust=crust)]
+        if candidate.promotion_applied
+    ]
+    if promotion_quotes:
+        quote = min(promotion_quotes, key=lambda candidate: candidate.final_price)
+    payload.update({
+        "standard_price": quote.standard_price,
+        "current_price": quote.final_price,
+        "promotion_applied": quote.promotion_applied,
+        "promotion_id": quote.promotion_id,
+        "promotion_name": quote.promotion_name,
+        "promotion_discount": quote.discount_amount,
+    })
+    return payload
 
 
 @router.get("/config/multi-flavors", response_model=MultiFlavorsConfigOut)
@@ -68,7 +152,8 @@ def list_products(active_only: bool = True, db: Session = Depends(get_db)):
     q = db.query(Product)
     if active_only:
         q = q.filter(Product.active == True)  # noqa: E712
-    return q.order_by(Product.name).all()
+    products = q.order_by(Product.name).all()
+    return [_product_payload(product, db) for product in products]
 
 
 @router.get("/{product_id}", response_model=ProductOut)
@@ -76,7 +161,141 @@ def get_product(product_id: str, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
-    return product
+    return _product_payload(product, db)
+
+
+@router.get("/{product_id}/price", response_model=ProductPriceQuoteOut)
+def quote_product_price(
+    product_id: str,
+    size_id: str | None = Query(default=None),
+    crust_id: str | None = Query(default=None),
+    flavor_count: int = Query(default=1, ge=1, le=3),
+    flavor_ids: list[str] | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    product = db.query(Product).filter(Product.id == product_id, Product.active == True).first()  # noqa: E712
+    if not product:
+        raise HTTPException(404, "Produto nao encontrado.")
+
+    size = None
+    if size_id:
+        size = (
+            db.query(ProductSize)
+            .filter(ProductSize.id == size_id, ProductSize.product_id == product_id, ProductSize.active == True)  # noqa: E712
+            .first()
+        )
+        if not size:
+            raise HTTPException(404, "Tamanho nao encontrado.")
+
+    crust = None
+    if crust_id:
+        crust = (
+            db.query(ProductCrustType)
+            .filter(ProductCrustType.id == crust_id, ProductCrustType.product_id == product_id, ProductCrustType.active == True)  # noqa: E712
+            .first()
+        )
+        if not crust:
+            raise HTTPException(404, "Tipo de massa nao encontrado.")
+
+    result = ProductPricingService(db).calculate(
+        product=product,
+        size=size,
+        crust=crust,
+        flavor_count=flavor_count,
+        flavor_product_ids=flavor_ids,
+    )
+    return {
+        "standard_price": result.standard_price,
+        "final_price": result.final_price,
+        "promotion_applied": result.promotion_applied,
+        "promotion_id": result.promotion_id,
+        "promotion_name": result.promotion_name,
+        "discount_amount": result.discount_amount,
+        "discount_type": result.discount_type,
+        "promotion_blocked": result.promotion_blocked,
+        "promotion_block_reason": result.promotion_block_reason,
+    }
+
+
+@router.get("/{product_id}/promotions", response_model=list[ProductPromotionOut])
+def list_product_promotions(product_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(404, "Produto nao encontrado.")
+    promotions = (
+        db.query(ProductPromotion)
+        .filter(ProductPromotion.product_id == product_id)
+        .order_by(ProductPromotion.created_at.desc())
+        .all()
+    )
+    return [_promotion_payload(promotion) for promotion in promotions]
+
+
+@router.post("/{product_id}/promotions", response_model=ProductPromotionOut, status_code=201)
+def create_product_promotion(product_id: str, body: ProductPromotionCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(404, "Produto nao encontrado.")
+    promotion = ProductPromotion(
+        id=f"pp-{uuid.uuid4().hex[:10]}",
+        product_id=product_id,
+        name=body.name,
+        active=body.active,
+        valid_weekdays=json.dumps(_ensure_weekdays(body.valid_weekdays)),
+        start_time=body.start_time,
+        end_time=body.end_time,
+        start_date=body.start_date,
+        end_date=body.end_date,
+        discount_type=body.discount_type,
+        default_value=body.default_value,
+        timezone=body.timezone,
+    )
+    db.add(promotion)
+    db.flush()
+    _add_promotion_combinations(db, promotion, body.combinations)
+    db.commit()
+    db.refresh(promotion)
+    return _promotion_payload(promotion)
+
+
+@router.put("/{product_id}/promotions/{promotion_id}", response_model=ProductPromotionOut)
+def update_product_promotion(product_id: str, promotion_id: str, body: ProductPromotionUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    promotion = (
+        db.query(ProductPromotion)
+        .filter(ProductPromotion.id == promotion_id, ProductPromotion.product_id == product_id)
+        .first()
+    )
+    if not promotion:
+        raise HTTPException(404, "Promocao nao encontrada.")
+
+    values = body.model_dump(exclude_unset=True, exclude={"combinations"})
+    if "valid_weekdays" in values:
+        promotion.valid_weekdays = json.dumps(_ensure_weekdays(values.pop("valid_weekdays")))
+    for key, value in values.items():
+        setattr(promotion, key, value)
+
+    if body.combinations is not None:
+        db.query(ProductPromotionCombination).filter(
+            ProductPromotionCombination.promotion_id == promotion.id
+        ).delete(synchronize_session=False)
+        _add_promotion_combinations(db, promotion, body.combinations)
+
+    db.commit()
+    db.refresh(promotion)
+    return _promotion_payload(promotion)
+
+
+@router.delete("/{product_id}/promotions/{promotion_id}", status_code=204)
+def delete_product_promotion(product_id: str, promotion_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    promotion = (
+        db.query(ProductPromotion)
+        .filter(ProductPromotion.id == promotion_id, ProductPromotion.product_id == product_id)
+        .first()
+    )
+    if not promotion:
+        raise HTTPException(404, "Promocao nao encontrada.")
+    db.delete(promotion)
+    db.commit()
 
 
 @router.post("", response_model=ProductOut, status_code=201)

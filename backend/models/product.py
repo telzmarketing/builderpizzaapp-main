@@ -37,6 +37,7 @@ class Product(Base):
     sizes = relationship("ProductSize", back_populates="product", cascade="all, delete-orphan", order_by="ProductSize.sort_order")
     crust_types = relationship("ProductCrustType", back_populates="product", cascade="all, delete-orphan", order_by="ProductCrustType.sort_order")
     drink_variants = relationship("ProductDrinkVariant", back_populates="product", cascade="all, delete-orphan", order_by="ProductDrinkVariant.sort_order")
+    promotions = relationship("ProductPromotion", back_populates="product", cascade="all, delete-orphan")
 
 
 class ProductCategory(Base):

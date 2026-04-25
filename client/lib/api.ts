@@ -146,6 +146,55 @@ export interface ApiProduct {
   sizes?: ApiProductSize[];
   crust_types?: ApiProductCrustType[];
   drink_variants?: ApiProductDrinkVariant[];
+  standard_price?: number | null;
+  current_price?: number | null;
+  promotion_applied?: boolean;
+  promotion_id?: string | null;
+  promotion_name?: string | null;
+  promotion_discount?: number;
+}
+
+export type ProductPromotionDiscountType = "fixed_price" | "amount_off" | "percent_off";
+
+export interface ApiProductPromotionCombination {
+  id?: string;
+  promotion_id?: string;
+  product_size_id: string | null;
+  product_crust_type_id: string | null;
+  active: boolean;
+  promotional_value: number | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ApiProductPromotion {
+  id: string;
+  product_id: string;
+  name: string;
+  active: boolean;
+  valid_weekdays: number[];
+  start_time: string | null;
+  end_time: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  discount_type: ProductPromotionDiscountType;
+  default_value: number | null;
+  timezone: string;
+  combinations: ApiProductPromotionCombination[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiProductPriceQuote {
+  standard_price: number;
+  final_price: number;
+  promotion_applied: boolean;
+  promotion_id: string | null;
+  promotion_name: string | null;
+  discount_amount: number;
+  discount_type: ProductPromotionDiscountType | null;
+  promotion_blocked: boolean;
+  promotion_block_reason: string | null;
 }
 
 export interface ApiPromotion {
@@ -353,7 +402,10 @@ export interface ApiOrderItem {
   product_name: string;
   quantity: number;
   selected_size: string;
+  selected_size_id?: string | null;
   flavor_division: number;
+  flavor_count?: number;
+  selected_crust_type_id?: string | null;
   selected_crust_type: string | null;
   selected_drink_variant: string | null;
   notes: string | null;
@@ -361,6 +413,14 @@ export interface ApiOrderItem {
   add_ons: string[];
   unit_price: number;
   final_price: number;
+  standard_unit_price?: number | null;
+  applied_unit_price?: number | null;
+  promotion_id?: string | null;
+  promotion_name?: string | null;
+  promotion_discount?: number;
+  promotion_applied?: boolean;
+  promotion_blocked?: boolean;
+  promotion_block_reason?: string | null;
 }
 
 export type OrderStatus =
@@ -742,6 +802,30 @@ export const crustApi = {
 };
 
 // ─── Drink Variants ───────────────────────────────────────────────────────────
+
+export const productPromotionsApi = {
+  list: (productId: string) =>
+    get<ApiProductPromotion[]>(`/products/${productId}/promotions`),
+
+  create: (productId: string, data: Omit<ApiProductPromotion, "id" | "product_id" | "created_at" | "updated_at">) =>
+    post<ApiProductPromotion>(`/products/${productId}/promotions`, data),
+
+  update: (productId: string, promotionId: string, data: Partial<Omit<ApiProductPromotion, "id" | "product_id" | "created_at" | "updated_at">>) =>
+    put<ApiProductPromotion>(`/products/${productId}/promotions/${promotionId}`, data),
+
+  remove: (productId: string, promotionId: string) =>
+    del<void>(`/products/${productId}/promotions/${promotionId}`),
+
+  quote: (productId: string, params?: { size_id?: string | null; crust_id?: string | null; flavor_count?: number; flavor_ids?: string[] }) => {
+    const search = new URLSearchParams();
+    if (params?.size_id) search.set("size_id", params.size_id);
+    if (params?.crust_id) search.set("crust_id", params.crust_id);
+    if (params?.flavor_count) search.set("flavor_count", String(params.flavor_count));
+    params?.flavor_ids?.forEach((id) => search.append("flavor_ids", id));
+    const suffix = search.toString() ? `?${search.toString()}` : "";
+    return get<ApiProductPriceQuote>(`/products/${productId}/price${suffix}`);
+  },
+};
 
 export const drinkVariantApi = {
   list: (productId: string) =>

@@ -31,16 +31,23 @@ export default function Cardapio() {
 
   const handleQuickAdd = (e: React.MouseEvent, product: typeof products[0]) => {
     e.stopPropagation();
+    const productType = (product as any).product_type as string | null | undefined;
+    const isPizza = !productType || productType === "pizza";
+    if (isPizza) {
+      navigate(`/product/${product.id}`);
+      return;
+    }
+    const unitPrice = product.current_price ?? product.price;
     addToCart(
       product,
       1,
       "M",
       [],
-      [{ productId: product.id, name: product.name, price: product.price, icon: product.icon || "🍕" }],
+      [{ productId: product.id, name: product.name, price: unitPrice, icon: product.icon || "🍕" }],
       1,
-      product.price
+      unitPrice
     );
-    trackEvent("add_to_cart", product.price, { product_id: product.id, source: "cardapio" });
+    trackEvent("add_to_cart", unitPrice, { product_id: product.id, source: "cardapio" });
     setJustAdded(product.id);
     setTimeout(() => setJustAdded(null), 1500);
   };
@@ -121,9 +128,16 @@ export default function Cardapio() {
                   </p>
                 </button>
                 <div className="flex items-center justify-between mt-3">
-                  <span className="text-gold font-bold text-sm">
-                    R$ {product.price.toFixed(2)}
-                  </span>
+                  <div>
+                    <span className="text-gold font-bold text-sm">
+                      R$ {(product.current_price ?? product.price).toFixed(2)}
+                    </span>
+                    {product.promotion_applied && product.standard_price && (
+                      <span className="block text-[10px] text-stone line-through">
+                        R$ {product.standard_price.toFixed(2)}
+                      </span>
+                    )}
+                  </div>
                   <button
                     onClick={(e) => handleQuickAdd(e, product)}
                     className={`w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-90 ${
