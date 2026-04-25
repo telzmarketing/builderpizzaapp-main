@@ -145,8 +145,7 @@ export default function Product() {
   const [productDrinkVariants, setProductDrinkVariants] = useState<ApiProductDrinkVariant[]>([]);
   const [selectedDrinkVariant, setSelectedDrinkVariant] = useState<ApiProductDrinkVariant | null>(null);
   const [imageZoomOpen, setImageZoomOpen] = useState(false);
-  const [imageZoomScale, setImageZoomScale] = useState(1.6);
-  const [imageZoomActive, setImageZoomActive] = useState(false);
+  const [imageZoomScale, setImageZoomScale] = useState(1);
   const [imageZoomPosition, setImageZoomPosition] = useState({ x: 50, y: 50 });
 
   useEffect(() => {
@@ -160,8 +159,7 @@ export default function Product() {
     setSelectedCrust(null);
     setSelectedDrinkVariant(null);
     setImageZoomOpen(false);
-    setImageZoomScale(1.6);
-    setImageZoomActive(false);
+    setImageZoomScale(1);
     setImageZoomPosition({ x: 50, y: 50 });
   }, [product?.id]);
 
@@ -434,21 +432,7 @@ export default function Product() {
         <div className="flex flex-col items-center mb-6">
           <button
             type="button"
-            onClick={() => {
-              setImageZoomScale(1);
-              setImageZoomOpen(true);
-            }}
-            onPointerDown={(event) => {
-              setImageZoomActive(true);
-              updateImageZoomPosition(event);
-            }}
-            onPointerEnter={(event) => {
-              setImageZoomActive(true);
-              updateImageZoomPosition(event);
-            }}
-            onPointerMove={updateImageZoomPosition}
-            onPointerLeave={() => setImageZoomActive(false)}
-            onPointerUp={() => setImageZoomActive(false)}
+            onClick={() => setImageZoomOpen(true)}
             className="relative w-52 h-52 rounded-full bg-surface-02 border-4 border-surface-03 flex items-center justify-center text-8xl shadow-2xl shadow-black/40 overflow-hidden transition-transform active:scale-95"
             aria-label="Ampliar imagem do produto"
           >
@@ -457,30 +441,12 @@ export default function Product() {
                 <img
                   src={resolveAssetUrl(product.icon)}
                   alt={product.name}
-                  className="w-full h-full object-cover transition-transform duration-150"
-                  style={{
-                    transform: imageZoomActive ? "scale(2.25)" : "scale(1)",
-                    transformOrigin: `${imageZoomPosition.x}% ${imageZoomPosition.y}%`,
-                  }}
+                  className="w-full h-full object-cover"
                 />
               )
               : (
-                <span
-                  className="transition-transform duration-150"
-                  style={{
-                    transform: imageZoomActive ? "scale(1.8)" : "scale(1)",
-                    transformOrigin: `${imageZoomPosition.x}% ${imageZoomPosition.y}%`,
-                  }}
-                >
-                  {product.icon || "🍕"}
-                </span>
+                <span>{product.icon || "🍕"}</span>
               )}
-            {imageZoomActive && (
-              <span
-                className="pointer-events-none absolute h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-gold/80 bg-gold/10 shadow-[0_0_28px_rgba(184,126,59,0.45)]"
-                style={{ left: `${imageZoomPosition.x}%`, top: `${imageZoomPosition.y}%` }}
-              />
-            )}
             <span className="absolute bottom-4 right-4 h-9 w-9 rounded-full bg-surface-00/95 border border-surface-03 flex items-center justify-center text-gold shadow-lg">
               <ZoomIn size={17} />
             </span>

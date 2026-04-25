@@ -23,9 +23,9 @@ export default function StoreStatusBanner({ compact = false, openPill = false }:
   if (openPill && status.is_open) {
     return (
       <div className="flex justify-center">
-        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5">
-          <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]" />
-          <span className="text-xs font-bold text-emerald-300">Loja online</span>
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/8 px-2.5 py-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/80 shadow-[0_0_6px_rgba(52,211,153,0.6)]" />
+          <span className="text-[10px] font-medium text-emerald-400/80 tracking-wide">Aberto agora</span>
         </div>
       </div>
     );
