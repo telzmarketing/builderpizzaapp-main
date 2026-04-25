@@ -435,7 +435,7 @@ export default function Product() {
           <button
             type="button"
             onClick={() => {
-              setImageZoomScale(2.2);
+              setImageZoomScale(1);
               setImageZoomOpen(true);
             }}
             onPointerDown={(event) => {
@@ -790,74 +790,86 @@ export default function Product() {
       {/* ── Bottom Fixed Bar ────────────────────────────────────────────────── */}
       {imageZoomOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-6"
+          className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center gap-5 p-6"
           onClick={() => setImageZoomOpen(false)}
         >
+          {/* Close */}
           <button
             type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setImageZoomOpen(false);
-            }}
+            onClick={(e) => { e.stopPropagation(); setImageZoomOpen(false); }}
             className="absolute top-5 right-5 h-11 w-11 rounded-full bg-surface-00 border border-surface-03 text-cream flex items-center justify-center shadow-lg"
             aria-label="Fechar zoom"
           >
             <X size={20} />
           </button>
 
-          <div className="flex flex-col items-center gap-5" onClick={(event) => event.stopPropagation()}>
-            <div className="w-[min(82vw,360px)] h-[min(82vw,360px)] rounded-full bg-surface-02 border-4 border-surface-03 flex items-center justify-center overflow-hidden text-[11rem] shadow-2xl shadow-black">
-              {isAssetUrl(product.icon) ? (
-                <img
-                  src={resolveAssetUrl(product.icon)}
-                  alt={product.name}
-                  className="w-full h-full object-cover transition-transform duration-200"
-                  onPointerDown={updateImageZoomPosition}
-                  onPointerMove={updateImageZoomPosition}
-                  style={{
-                    transform: `scale(${imageZoomScale})`,
-                    transformOrigin: `${imageZoomPosition.x}% ${imageZoomPosition.y}%`,
-                    cursor: "zoom-in",
-                  }}
-                />
-              ) : (
-                <span
-                  className="transition-transform duration-200"
-                  onPointerDown={updateImageZoomPosition}
-                  onPointerMove={updateImageZoomPosition}
-                  style={{
-                    transform: `scale(${imageZoomScale})`,
-                    transformOrigin: `${imageZoomPosition.x}% ${imageZoomPosition.y}%`,
-                    cursor: "zoom-in",
-                  }}
-                >
-                  {product.icon || "🍕"}
-                </span>
-              )}
-            </div>
+          {/* Product name */}
+          <p className="text-cream text-base font-bold text-center select-none">{product.name}</p>
 
-            <p className="text-stone text-xs text-center -mt-1">Arraste sobre a imagem para aproximar os detalhes.</p>
-
-            <div className="flex items-center gap-3 rounded-full bg-surface-00 border border-surface-03 px-4 py-3 shadow-lg">
-              <button
-                type="button"
-                onClick={() => setImageZoomScale((value) => Math.max(1, Number((value - 0.25).toFixed(2))))}
-                className="h-10 w-10 rounded-full bg-surface-03 text-parchment flex items-center justify-center"
-                aria-label="Diminuir zoom"
+          {/* Image container — rect, object-contain, full pizza visible */}
+          <div
+            className="relative overflow-hidden rounded-2xl bg-surface-01 border border-surface-03/60 shadow-2xl shadow-black/60 flex items-center justify-center"
+            style={{ width: "min(88vw, 400px)", height: "min(88vw, 400px)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {isAssetUrl(product.icon) ? (
+              <img
+                src={resolveAssetUrl(product.icon)}
+                alt={product.name}
+                className="w-full h-full object-contain transition-transform duration-200 select-none"
+                draggable={false}
+                onPointerDown={updateImageZoomPosition}
+                onPointerMove={updateImageZoomPosition}
+                style={{
+                  transform: `scale(${imageZoomScale})`,
+                  transformOrigin: `${imageZoomPosition.x}% ${imageZoomPosition.y}%`,
+                  cursor: imageZoomScale > 1 ? "grab" : "zoom-in",
+                }}
+              />
+            ) : (
+              <span
+                className="text-[9rem] transition-transform duration-200 select-none"
+                onPointerDown={updateImageZoomPosition}
+                onPointerMove={updateImageZoomPosition}
+                style={{
+                  transform: `scale(${imageZoomScale})`,
+                  transformOrigin: `${imageZoomPosition.x}% ${imageZoomPosition.y}%`,
+                }}
               >
-                <Minus size={17} />
-              </button>
-              <span className="text-cream text-sm font-bold w-12 text-center">{Math.round(imageZoomScale * 100)}%</span>
-              <button
-                type="button"
-                onClick={() => setImageZoomScale((value) => Math.min(3, Number((value + 0.25).toFixed(2))))}
-                className="h-10 w-10 rounded-full bg-gold text-cream flex items-center justify-center"
-                aria-label="Aumentar zoom"
-              >
-                <Plus size={17} />
-              </button>
-            </div>
+                {product.icon || "🍕"}
+              </span>
+            )}
           </div>
+
+          {/* Zoom controls */}
+          <div
+            className="flex items-center gap-3 rounded-full bg-surface-00 border border-surface-03 px-4 py-3 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setImageZoomScale((v) => Math.max(1, Number((v - 0.25).toFixed(2))))}
+              className="h-10 w-10 rounded-full bg-surface-03 text-parchment flex items-center justify-center disabled:opacity-40"
+              disabled={imageZoomScale <= 1}
+              aria-label="Diminuir zoom"
+            >
+              <Minus size={17} />
+            </button>
+            <span className="text-cream text-sm font-bold w-14 text-center">{Math.round(imageZoomScale * 100)}%</span>
+            <button
+              type="button"
+              onClick={() => setImageZoomScale((v) => Math.min(4, Number((v + 0.25).toFixed(2))))}
+              className="h-10 w-10 rounded-full bg-gold text-cream flex items-center justify-center disabled:opacity-40"
+              disabled={imageZoomScale >= 4}
+              aria-label="Aumentar zoom"
+            >
+              <Plus size={17} />
+            </button>
+          </div>
+
+          <p className="text-stone/60 text-[11px] text-center -mt-2 select-none">
+            Toque na imagem e arraste para explorar os detalhes
+          </p>
         </div>
       )}
 
