@@ -15,8 +15,11 @@ from __future__ import annotations
 
 import uuid
 import re
+import json
+import urllib.request
+import urllib.error
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -68,6 +71,10 @@ class LoginIn(BaseModel):
 class LoginOut(BaseModel):
     customer: CustomerOut
     is_new: bool = False   # True if account was just created in this call
+
+
+class GoogleLoginIn(BaseModel):
+    credential: str = Field(..., description="Google ID token from GSI")
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -150,3 +157,54 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
         is_new=True,
     )
     return created(result, f"Conta criada! Bem-vindo, {new_customer.name}!")
+
+
+@router.post("/google")
+def google_login(body: GoogleLoginIn, db: Session = Depends(get_db)):
+    """
+    Verify a Google ID token from the GSI client and return (or create) a customer.
+    The token is verified by calling Google's tokeninfo endpoint.
+    """
+    # Verify token with Google
+    try:
+        url = f"https://oauth2.googleapis.com/tokeninfo?id_token={body.credential}"
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            payload = json.loads(resp.read())
+    except (urllib.error.URLError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=401, detail="Token Google inválido ou expirado.") from exc
+
+    google_sub = payload.get("sub")
+    email = payload.get("email")
+    name = payload.get("name") or payload.get("given_name") or "Cliente"
+
+    if not google_sub or not email:
+        raise HTTPException(status_code=401, detail="Token Google não contém dados suficientes.")
+
+    # Find existing customer by google_id first, then by email
+    customer = (
+        db.query(Customer).filter(Customer.google_id == google_sub).first()
+        or db.query(Customer).filter(Customer.email == email).first()
+    )
+
+    if customer:
+        # Link google_id if not set yet (first Google login on phone-created account)
+        if not customer.google_id:
+            customer.google_id = google_sub
+            db.commit()
+            db.refresh(customer)
+        result = LoginOut(customer=CustomerOut.model_validate(customer), is_new=False)
+        return ok(result, f"Bem-vindo de volta, {customer.name}!")
+
+    # Create new customer from Google
+    new_customer = Customer(
+        id=str(uuid.uuid4()),
+        name=name,
+        email=email,
+        google_id=google_sub,
+    )
+    db.add(new_customer)
+    db.commit()
+    db.refresh(new_customer)
+
+    result = LoginOut(customer=CustomerOut.model_validate(new_customer), is_new=True)
+    return created(result, f"Bem-vindo, {new_customer.name}!")

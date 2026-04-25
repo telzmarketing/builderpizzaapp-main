@@ -26,6 +26,8 @@ import {
   paymentsApi,
   shippingApi,
   storeOperationApi,
+  isAssetUrl,
+  resolveAssetUrl,
   type ApiOrder,
   type ApiShipping,
   type CheckoutIn,
@@ -89,10 +91,16 @@ export default function Checkout() {
 
   useEffect(() => {
     if (!customer) return;
+    const defaultAddr = customer.addresses?.find((a) => a.is_default) ?? customer.addresses?.[0];
     setForm((prev) => ({
       ...prev,
       name: prev.name || customer.name,
       phone: prev.phone || (customer.phone ?? ""),
+      address: prev.address || (defaultAddr ? `${defaultAddr.street}${defaultAddr.number ? `, ${defaultAddr.number}` : ""}` : ""),
+      neighborhood: prev.neighborhood || defaultAddr?.neighborhood || "",
+      city: prev.city || defaultAddr?.city || "",
+      zip_code: prev.zip_code || defaultAddr?.zip_code || "",
+      complement: prev.complement || defaultAddr?.complement || "",
     }));
   }, [customer]);
 
@@ -502,12 +510,16 @@ export default function Checkout() {
           <div className="space-y-3">
             {cart.map((item) => {
               const isMulti = item.flavorDivision > 1;
-              const displayIcons = item.flavors.map((f) => f.icon).join("");
               const displayName = isMulti ? item.flavors.map((f) => f.name).join(" + ") : item.productData.name;
+              const iconSrc = item.flavors[0]?.icon ?? item.productData.icon;
+              const hasImage = isAssetUrl(iconSrc);
               return (
                 <div key={item.cartItemId} className="bg-surface-02 rounded-xl p-4 flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-surface-03 flex-shrink-0 flex items-center justify-center text-lg">
-                    {displayIcons || item.productData.icon}
+                  <div className="w-12 h-12 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center text-xl overflow-hidden">
+                    {hasImage
+                      ? <img src={resolveAssetUrl(iconSrc)} alt={displayName} className="w-full h-full object-cover" />
+                      : <span>{iconSrc || "🍕"}</span>
+                    }
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-cream font-semibold text-sm truncate">{displayName}</p>

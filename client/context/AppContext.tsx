@@ -228,8 +228,10 @@ interface AppContextType {
   // Customer auth
   customer: ApiCustomer | null;
   customerLogin: (phone: string, name?: string) => Promise<void>;
+  googleLogin: (credential: string) => Promise<void>;
   customerLogout: () => void;
   updateCustomer: (data: { name?: string; phone?: string }) => Promise<void>;
+  addCustomerAddress: (data: { street: string; number?: string; complement?: string; neighborhood?: string; city: string; zip_code?: string }) => Promise<void>;
 
   // Products
   products: Pizza[];
@@ -543,6 +545,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("customer", JSON.stringify(c));
   };
 
+  const googleLogin = async (credential: string) => {
+    const { customer: c } = await authApi.googleLogin(credential);
+    setCustomer(c);
+    localStorage.setItem("customer", JSON.stringify(c));
+  };
+
   const customerLogout = () => {
     setCustomer(null);
     localStorage.removeItem("customer");
@@ -551,6 +559,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateCustomer = async (data: { name?: string; phone?: string }) => {
     if (!customer) return;
     const updated = await customersApi.update(customer.id, data);
+    setCustomer(updated);
+    localStorage.setItem("customer", JSON.stringify(updated));
+  };
+
+  const addCustomerAddress = async (data: { street: string; number?: string; complement?: string; neighborhood?: string; city: string; zip_code?: string }) => {
+    if (!customer) return;
+    const newAddr = await customersApi.addAddress(customer.id, { ...data, is_default: (customer.addresses ?? []).length === 0 });
+    const updated = { ...customer, addresses: [...(customer.addresses ?? []), newAddr] };
     setCustomer(updated);
     localStorage.setItem("customer", JSON.stringify(updated));
   };
@@ -722,7 +738,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value: AppContextType = {
     loading,
-    customer, customerLogin, customerLogout, updateCustomer,
+    customer, customerLogin, googleLogin, customerLogout, updateCustomer, addCustomerAddress,
     products, addProduct, updateProduct, deleteProduct,
     cart, addToCart, updateCartItem, removeFromCart, clearCart,
     cartSubtotal, cartDeliveryFee, cartTotal,

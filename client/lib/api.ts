@@ -713,12 +713,27 @@ export interface ApiLoyaltyTransaction {
   created_at: string;
 }
 
+export interface ApiAddress {
+  id: string;
+  customer_id: string;
+  street: string;
+  number?: string | null;
+  complement?: string | null;
+  neighborhood?: string | null;
+  city: string;
+  state?: string | null;
+  zip_code?: string | null;
+  is_default: boolean;
+  created_at: string;
+}
+
 export interface ApiCustomer {
   id: string;
   name: string;
   phone: string | null;
   email: string | null;
   created_at: string;
+  addresses: ApiAddress[];
 }
 
 export interface ApiShipping {
@@ -802,6 +817,9 @@ export const authApi = {
       phone,
       name,
     }),
+
+  googleLogin: (credential: string) =>
+    post<{ customer: ApiCustomer; is_new: boolean }>("/auth/google", { credential }),
 };
 
 // ─── Admin Auth ───────────────────────────────────────────────────────────────
@@ -1114,6 +1132,11 @@ export const customersApi = {
   get: (id: string) => get<ApiCustomer>(`/customers/${id}`),
   update: (id: string, data: { name?: string; phone?: string }) =>
     put<ApiCustomer>(`/customers/${id}`, data),
+  addAddress: (
+    id: string,
+    data: { street: string; number?: string; complement?: string; neighborhood?: string; city: string; state?: string; zip_code?: string; is_default?: boolean }
+  ) => post<ApiAddress>(`/customers/${id}/addresses`, data),
+  listAddresses: (id: string) => get<ApiAddress[]>(`/customers/${id}/addresses`),
 };
 
 // ─── Campaigns ───────────────────────────────────────────────────────────────
