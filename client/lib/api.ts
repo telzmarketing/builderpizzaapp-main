@@ -453,6 +453,8 @@ export interface ApiOrder {
   total: number;
   estimated_time: number;
   loyalty_points_earned: number;
+  is_scheduled?: boolean;
+  scheduled_for?: string | null;
   coupon_id: string | null;
   pedido_status?: OrderStatus;
   payment_status?: ApiPayment["status"] | "pending";
@@ -490,6 +492,7 @@ export interface CheckoutIn {
     complement?: string;
     is_pickup?: boolean;
     is_scheduled?: boolean;
+    scheduled_for?: string | null;
   };
   coupon_code?: string;
   customer_id?: string;
@@ -503,6 +506,79 @@ export interface CheckoutIn {
   session_id?: string | null;
   landing_page?: string | null;
   referrer?: string | null;
+}
+
+export interface StoreOperationInterval {
+  id?: string;
+  schedule_id?: string;
+  tenant_id?: string;
+  open_time: string;
+  close_time: string;
+  created_at?: string;
+}
+
+export interface StoreWeeklySchedule {
+  id?: string;
+  tenant_id?: string;
+  weekday: number;
+  active: boolean;
+  intervals: StoreOperationInterval[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface StoreOperationSettings {
+  id?: string;
+  tenant_id?: string;
+  manual_mode: "auto" | "manual_closed" | "manual_open";
+  closed_message: string;
+  allow_scheduled_orders: boolean;
+  timezone: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface StoreOperationException {
+  id: string;
+  tenant_id?: string;
+  date: string;
+  exception_type: "closed" | "special_hours";
+  open_time: string | null;
+  close_time: string | null;
+  reason: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface StoreOperationConfig {
+  settings: StoreOperationSettings;
+  weekly_schedules: StoreWeeklySchedule[];
+  exceptions: StoreOperationException[];
+}
+
+export interface StoreOperationStatus {
+  is_open: boolean;
+  mode: string;
+  status_label: string;
+  message: string;
+  current_weekday: number;
+  today_hours: string;
+  next_opening_at: string | null;
+  next_opening_label: string | null;
+  allow_scheduled_orders: boolean;
+}
+
+export interface StoreOperationLog {
+  id: string;
+  tenant_id: string;
+  admin_id: string | null;
+  admin_email: string | null;
+  action: string;
+  entity: string;
+  entity_id: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  created_at: string;
 }
 
 export interface ApiPayment {
@@ -894,6 +970,21 @@ export const ordersApi = {
 };
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
+
+export const storeOperationApi = {
+  status: () => get<StoreOperationStatus>("/store-operation/status"),
+  config: () => get<StoreOperationConfig>("/store-operation/config"),
+  updateSettings: (data: StoreOperationSettings) =>
+    put<StoreOperationSettings>("/store-operation/settings", data),
+  updateWeeklySchedules: (data: StoreWeeklySchedule[]) =>
+    put<StoreWeeklySchedule[]>("/store-operation/weekly-schedules", data),
+  createException: (data: Omit<StoreOperationException, "id" | "tenant_id" | "created_at" | "updated_at">) =>
+    post<StoreOperationException>("/store-operation/exceptions", data),
+  updateException: (id: string, data: Omit<StoreOperationException, "id" | "tenant_id" | "created_at" | "updated_at">) =>
+    put<StoreOperationException>(`/store-operation/exceptions/${id}`, data),
+  removeException: (id: string) => del<void>(`/store-operation/exceptions/${id}`),
+  logs: (limit = 100) => get<StoreOperationLog[]>(`/store-operation/logs?limit=${limit}`),
+};
 
 export const paymentsApi = {
   create: (order_id: string, amount: number, payment_method: ApiPayment["method"]) =>

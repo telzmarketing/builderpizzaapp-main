@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Plus, Minus, Trash2, UtensilsCrossed, ShoppingCart, Tag, Check, X } from "lucide-react";
 import { useApp, CartItem } from "@/context/AppContext";
-import { couponsApi } from "@/lib/api";
+import { couponsApi, storeOperationApi, type StoreOperationStatus } from "@/lib/api";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
+import StoreStatusBanner from "@/components/StoreStatusBanner";
 
 function divisionLabel(d: number) {
   if (d === 2) return "Meio a Meio";
@@ -85,6 +86,11 @@ export default function Cart() {
   const [couponMsg, setCouponMsg] = useState("");
   const [couponApplied, setCouponApplied] = useState(false);
   const [couponLoading, setCouponLoading] = useState(false);
+  const [storeStatus, setStoreStatus] = useState<StoreOperationStatus | null>(null);
+
+  useEffect(() => {
+    storeOperationApi.status().then(setStoreStatus).catch(() => setStoreStatus(null));
+  }, []);
 
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) return;
@@ -253,13 +259,27 @@ export default function Cart() {
       </div>
 
       {/* Finalizar Pedido */}
+      <div className="px-4 mb-24">
+        <StoreStatusBanner compact />
+      </div>
+
       <div className="fixed bottom-20 left-0 right-0 px-4">
         <button
-          onClick={() => navigate("/checkout")}
-          className="w-full bg-gold hover:bg-gold/90 text-cream font-bold py-4 px-4 rounded-full text-center transition-colors text-base active:scale-95 shadow-lg shadow-gold/30 flex items-center justify-center gap-2"
+          onClick={() => {
+            if (storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders) return;
+            navigate("/checkout");
+          }}
+          disabled={!!storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders}
+          className={`w-full font-bold py-4 px-4 rounded-full text-center transition-colors text-base active:scale-95 shadow-lg flex items-center justify-center gap-2 ${
+            storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders
+              ? "bg-surface-03 text-stone cursor-not-allowed shadow-none"
+              : "bg-gold hover:bg-gold/90 text-cream shadow-gold/30"
+          }`}
         >
           <ShoppingCart size={18} />
-          Finalizar pedido · R$ {finalTotal.toFixed(2)}
+          {storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders
+            ? "Loja fechada"
+            : `Finalizar pedido · R$ ${finalTotal.toFixed(2)}`}
         </button>
       </div>
       <BottomNav />

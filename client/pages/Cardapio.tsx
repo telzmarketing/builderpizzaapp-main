@@ -6,6 +6,7 @@ import { isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { trackEvent } from "@/lib/tracking";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
+import StoreStatusBanner from "@/components/StoreStatusBanner";
 
 export default function Cardapio() {
   const navigate = useNavigate();
@@ -89,6 +90,10 @@ export default function Cardapio() {
             {cat}
           </button>
         ))}
+      </div>
+
+      <div className="px-4 pb-3 max-w-2xl mx-auto">
+        <StoreStatusBanner compact />
       </div>
 
       {/* Products Grid */}

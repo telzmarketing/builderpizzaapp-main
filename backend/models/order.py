@@ -56,6 +56,8 @@ class Order(Base):
     estimated_time = Column(Integer, default=40)           # minutes
     loyalty_points_earned = Column(Integer, default=0)
     notes = Column(Text)
+    is_scheduled = Column(Boolean, default=False)
+    scheduled_for = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),

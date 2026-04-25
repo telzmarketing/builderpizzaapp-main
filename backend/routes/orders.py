@@ -103,6 +103,8 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
         "total": order.total,
         "estimated_time": order.estimated_time,
         "loyalty_points_earned": order.loyalty_points_earned,
+        "is_scheduled": bool(order.is_scheduled),
+        "scheduled_for": order.scheduled_for,
         "coupon_id": order.coupon_id,
         "items": items,
         "created_at": order.created_at,

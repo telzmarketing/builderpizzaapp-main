@@ -39,6 +39,7 @@ class DeliveryAddressIn(BaseModel):
     complement: Optional[str] = None
     is_pickup: bool = False
     is_scheduled: bool = False
+    scheduled_for: Optional[datetime] = None
 
 
 class CheckoutIn(BaseModel):
@@ -109,6 +110,8 @@ class OrderOut(BaseModel):
     total: float
     estimated_time: int
     loyalty_points_earned: int
+    is_scheduled: bool = False
+    scheduled_for: Optional[datetime] = None
     coupon_id: Optional[str]
     campaign_id: Optional[str] = None
     utm_source: Optional[str] = None

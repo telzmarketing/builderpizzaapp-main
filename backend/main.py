@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.config import get_settings
 from backend.database import create_all_tables, SessionLocal, engine
-from backend.routes import products, orders, payments, shipping, coupons, loyalty, customers, promotions, admin, delivery, auth, admin_auth, campaigns, webhooks
+from backend.routes import products, orders, payments, shipping, coupons, loyalty, customers, promotions, admin, delivery, auth, admin_auth, campaigns, webhooks, store_operation
 from backend.routes import chatbot as chatbot_routes, admin_chatbot as admin_chatbot_routes
 from backend.routes import upload as upload_routes
 from backend.routes import theme as theme_routes
@@ -180,10 +180,25 @@ def _run_migrations():
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS session_id VARCHAR(120)",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS landing_page TEXT",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS referrer TEXT",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_scheduled BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ",
         "CREATE INDEX IF NOT EXISTS ix_orders_campaign_id ON orders(campaign_id)",
         "CREATE INDEX IF NOT EXISTS ix_orders_session_id ON orders(session_id)",
         "CREATE INDEX IF NOT EXISTS ix_orders_utm_campaign ON orders(utm_campaign)",
         "INSERT INTO campaign_settings (id) VALUES ('default') ON CONFLICT DO NOTHING",
+        "CREATE TABLE IF NOT EXISTS store_operation_settings (id VARCHAR PRIMARY KEY DEFAULT 'default', tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', manual_mode VARCHAR(30) NOT NULL DEFAULT 'manual_open', closed_message TEXT NOT NULL DEFAULT 'Loja fechada no momento.', allow_scheduled_orders BOOLEAN DEFAULT FALSE, timezone VARCHAR(80) NOT NULL DEFAULT 'America/Sao_Paulo', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_store_operation_settings_tenant_id ON store_operation_settings(tenant_id)",
+        "CREATE TABLE IF NOT EXISTS store_weekly_schedules (id VARCHAR PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', weekday INTEGER NOT NULL, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_store_weekly_schedules_tenant_id ON store_weekly_schedules(tenant_id)",
+        "CREATE INDEX IF NOT EXISTS ix_store_weekly_schedules_weekday ON store_weekly_schedules(weekday)",
+        "CREATE TABLE IF NOT EXISTS store_operation_intervals (id VARCHAR PRIMARY KEY, schedule_id VARCHAR NOT NULL REFERENCES store_weekly_schedules(id) ON DELETE CASCADE, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', open_time TIME NOT NULL, close_time TIME NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_store_operation_intervals_schedule_id ON store_operation_intervals(schedule_id)",
+        "CREATE INDEX IF NOT EXISTS ix_store_operation_intervals_tenant_id ON store_operation_intervals(tenant_id)",
+        "CREATE TABLE IF NOT EXISTS store_operation_exceptions (id VARCHAR PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', date DATE NOT NULL, exception_type VARCHAR(30) NOT NULL, open_time TIME, close_time TIME, reason TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_store_operation_exceptions_tenant_id ON store_operation_exceptions(tenant_id)",
+        "CREATE INDEX IF NOT EXISTS ix_store_operation_exceptions_date ON store_operation_exceptions(date)",
+        "CREATE TABLE IF NOT EXISTS store_operation_logs (id VARCHAR PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', admin_id VARCHAR, admin_email VARCHAR(200), action VARCHAR(80) NOT NULL, entity VARCHAR(80) NOT NULL, entity_id VARCHAR, old_value TEXT, new_value TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_store_operation_logs_tenant_id ON store_operation_logs(tenant_id)",
     ]
     for stmt in stmts:
         try:
@@ -234,6 +249,7 @@ app.include_router(home_config_routes.router)
 app.include_router(webhooks.router)
 app.include_router(paid_traffic_routes.router)
 app.include_router(paid_traffic_routes.admin_router)
+app.include_router(store_operation.router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")
@@ -257,6 +273,7 @@ app.include_router(home_config_routes.router, prefix="/api")
 app.include_router(webhooks.router, prefix="/api")
 app.include_router(paid_traffic_routes.router, prefix="/api")
 app.include_router(paid_traffic_routes.admin_router, prefix="/api")
+app.include_router(store_operation.router, prefix="/api")
 
 # ── Static files (uploaded images) ───────────────────────────────────────────
 # Must be mounted AFTER all route registrations.

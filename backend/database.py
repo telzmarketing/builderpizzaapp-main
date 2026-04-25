@@ -31,6 +31,6 @@ def create_all_tables():
     from backend.models import (  # noqa: F401 — import triggers table registration
         product, order, customer, payment, payment_config,
         shipping, shipping_v2, coupon, loyalty, promotion, delivery, admin, campaign,
-        chatbot, theme, home_config, paid_traffic, product_promotion,
+        chatbot, theme, home_config, paid_traffic, product_promotion, store_operation,
     )
     Base.metadata.create_all(bind=engine)

@@ -6,6 +6,7 @@ import { useApp } from "@/context/AppContext";
 import { homeCatalogApi, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
+import StoreStatusBanner from "@/components/StoreStatusBanner";
 
 const PIZZA_FALLBACKS = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🍖", "🍄", "🫒", "🔥", "🥩", "🌿", "🫑"];
 
@@ -246,6 +247,12 @@ export default function Home() {
       </div>
 
       {/* ── Promo Banner (only if homeConfig.showPromotions) ── */}
+      <div className="px-4 lg:px-8 pt-4">
+        <div className="max-w-sm lg:max-w-4xl mx-auto">
+          <StoreStatusBanner />
+        </div>
+      </div>
+
       {homeConfig.showPromotions && <div className="px-4 lg:px-8 pt-4 pb-3">
         <div className="max-w-sm lg:max-w-4xl mx-auto">
           <div

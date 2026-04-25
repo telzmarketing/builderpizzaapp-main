@@ -213,6 +213,13 @@ class OrderService:
         if not payload.items:
             raise CartEmpty()
 
+        from backend.services.store_operation_service import StoreOperationService
+
+        StoreOperationService(self._db).validate_order_allowed(
+            is_scheduled=payload.delivery.is_scheduled if payload.delivery else False,
+            scheduled_for=payload.delivery.scheduled_for if payload.delivery else None,
+        )
+
         config = self._get_config()
 
         # 1. Validate items and compute subtotal
@@ -287,6 +294,8 @@ class OrderService:
             discount=discount,
             total=total,
             estimated_time=shipping_result.estimated_time,
+            is_scheduled=payload.delivery.is_scheduled,
+            scheduled_for=payload.delivery.scheduled_for,
         )
         self._db.add(order)
         self._db.flush()

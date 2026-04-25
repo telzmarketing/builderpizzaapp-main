@@ -25,10 +25,13 @@ import {
   ordersApi,
   paymentsApi,
   shippingApi,
+  storeOperationApi,
   type ApiOrder,
   type ApiShipping,
   type CheckoutIn,
+  type StoreOperationStatus,
 } from "@/lib/api";
+import StoreStatusBanner from "@/components/StoreStatusBanner";
 
 type DeliveryMode = "delivery" | "pickup";
 type PaymentState = "idle" | "loading" | "pending" | "approved" | "rejected" | "expired" | "error";
@@ -80,6 +83,8 @@ export default function Checkout() {
   const [createdOrder, setCreatedOrder] = useState<ApiOrder | null>(null);
   const [paymentState, setPaymentState] = useState<PaymentState>("idle");
   const [paymentMessage, setPaymentMessage] = useState("");
+  const [storeStatus, setStoreStatus] = useState<StoreOperationStatus | null>(null);
+  const [scheduledFor, setScheduledFor] = useState("");
   const brickController = useRef<{ unmount: () => void } | null>(null);
 
   useEffect(() => {
@@ -90,6 +95,10 @@ export default function Checkout() {
       phone: prev.phone || (customer.phone ?? ""),
     }));
   }, [customer]);
+
+  useEffect(() => {
+    storeOperationApi.status().then(setStoreStatus).catch(() => setStoreStatus(null));
+  }, []);
 
   useEffect(() => {
     if (deliveryMode === "pickup") {
@@ -284,6 +293,15 @@ export default function Checkout() {
   };
 
   const handleConfirm = async () => {
+    const mustSchedule = !!storeStatus && !storeStatus.is_open && storeStatus.allow_scheduled_orders;
+    if (storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders) {
+      setApiError(storeStatus.message || "Loja fechada no momento.");
+      return;
+    }
+    if (mustSchedule && !scheduledFor) {
+      setApiError("Escolha um horario futuro disponivel para agendar o pedido.");
+      return;
+    }
     if (!shippingAvailable && deliveryMode === "delivery") {
       setApiError(shippingResult?.message || "Regiao nao atendida para delivery.");
       return;
@@ -328,7 +346,8 @@ export default function Checkout() {
         zip_code: deliveryMode === "pickup" ? undefined : form.zip_code || undefined,
         complement: form.complement || undefined,
         is_pickup: deliveryMode === "pickup",
-        is_scheduled: false,
+        is_scheduled: mustSchedule,
+        scheduled_for: mustSchedule ? new Date(scheduledFor).toISOString() : null,
       },
       payment_method: "pix",
       ...tracking,
@@ -361,6 +380,24 @@ export default function Checkout() {
       </div>
 
       <div className="px-4 pt-6 pb-36 space-y-6">
+        <StoreStatusBanner />
+
+        {storeStatus && !storeStatus.is_open && storeStatus.allow_scheduled_orders && !createdOrder && (
+          <section className="bg-surface-02 border border-surface-03 rounded-xl p-4">
+            <h2 className="text-cream font-bold text-lg mb-2 flex items-center gap-2">
+              <Clock size={20} className="text-gold" />
+              Pedido agendado
+            </h2>
+            <p className="text-stone text-sm mb-3">A loja esta fechada, mas aceita pedidos agendados para horarios disponiveis.</p>
+            <input
+              type="datetime-local"
+              value={scheduledFor}
+              onChange={(e) => setScheduledFor(e.target.value)}
+              className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream outline-none focus:border-gold"
+            />
+          </section>
+        )}
+
         <section>
           <h2 className="text-cream font-bold text-lg mb-3 flex items-center gap-2">
             <Truck size={20} className="text-gold" />
@@ -518,11 +555,11 @@ export default function Checkout() {
         <div className="fixed bottom-0 left-0 right-0 bg-surface-00 border-t border-surface-02 px-4 py-4">
           <button
             onClick={handleConfirm}
-            disabled={loading || (!shippingAvailable && deliveryMode === "delivery")}
-            className="w-full bg-gold hover:bg-gold/90 disabled:opacity-60 text-cream font-bold py-4 px-4 rounded-full text-center transition-colors text-lg active:scale-95 flex items-center justify-center gap-2"
+            disabled={loading || (!shippingAvailable && deliveryMode === "delivery") || (!!storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders)}
+            className="w-full bg-gold hover:bg-gold/90 disabled:opacity-60 disabled:cursor-not-allowed text-cream font-bold py-4 px-4 rounded-full text-center transition-colors text-lg active:scale-95 flex items-center justify-center gap-2"
           >
             {loading && <Loader2 size={20} className="animate-spin" />}
-            {loading ? "Processando..." : c.confirmButton}
+            {loading ? "Processando..." : storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders ? "Loja fechada" : c.confirmButton}
           </button>
         </div>
       )}
