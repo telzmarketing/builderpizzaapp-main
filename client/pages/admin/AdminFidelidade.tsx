@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import {
   Trophy, Plus, Trash2, Edit2, Save, X, Users, Star,
   RefreshCw, Gift, ChevronDown, ChevronUp, ArrowUpDown,
-  Layers, Coins,
+  Layers, Coins, Power, Settings2,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import {
   loyaltyApi,
   ApiLoyaltyLevel, ApiLoyaltyBenefit, ApiLoyaltyReward,
-  ApiCustomerLoyalty,
+  ApiCustomerLoyalty, ApiLoyaltySettings,
 } from "@/lib/api";
 
 // ── Color palette (keep class names literal for Tailwind JIT) ────────────────
@@ -28,10 +28,10 @@ const BENEFIT_TYPE_LABELS: Record<string, string> = {
   experience: "Experiência",
 };
 
-type Tab = "levels" | "benefits" | "customers" | "points";
+type Tab = "settings" | "levels" | "benefits" | "customers" | "points";
 
 export default function AdminFidelidade() {
-  const [tab, setTab] = useState<Tab>("levels");
+  const [tab, setTab] = useState<Tab>("settings");
   const [levels, setLevels] = useState<ApiLoyaltyLevel[]>([]);
   const [benefits, setBenefits] = useState<ApiLoyaltyBenefit[]>([]);
   const [rewards, setRewards] = useState<ApiLoyaltyReward[]>([]);
@@ -41,6 +41,8 @@ export default function AdminFidelidade() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [settings, setSettings] = useState<ApiLoyaltySettings | null>(null);
+  const [settingsForm, setSettingsForm] = useState({ enabled: true, points_per_real: 1 });
 
   // Level form
   const [showLevelForm, setShowLevelForm] = useState(false);
@@ -72,16 +74,34 @@ export default function AdminFidelidade() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [lvls, bens, rwds] = await Promise.all([
+      const [cfg, lvls, bens, rwds] = await Promise.all([
+        loyaltyApi.settings(),
         loyaltyApi.levels(),
         loyaltyApi.benefits(),
         loyaltyApi.rewards(),
       ]);
+      setSettings(cfg);
+      setSettingsForm({ enabled: cfg.enabled, points_per_real: cfg.points_per_real });
       setLevels(lvls);
       setBenefits(bens);
       setRewards(rwds);
     } catch { setError("Erro ao carregar dados de fidelidade."); }
     finally { setLoading(false); }
+  }
+
+  async function saveSettings() {
+    setSaving(true);
+    setError("");
+    try {
+      const updated = await loyaltyApi.updateSettings(settingsForm);
+      setSettings(updated);
+      setSettingsForm({ enabled: updated.enabled, points_per_real: updated.points_per_real });
+      flash("Configuração de fidelidade salva.");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erro ao salvar configuração.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function loadCustomers() {
@@ -216,12 +236,12 @@ export default function AdminFidelidade() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
-      <div className="flex h-screen">
+      <div className="flex flex-col md:flex-row min-h-screen md:h-screen">
         <AdminSidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
 
           {/* Header */}
-          <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 flex items-center gap-3 flex-shrink-0">
+          <div className="bg-surface-02 px-4 md:px-8 py-4 border-b border-surface-03 flex items-center gap-3 flex-shrink-0">
             <Trophy size={22} className="text-gold" />
             <div>
               <h2 className="text-xl font-bold text-cream">Fidelidade — Retention Engine Pro</h2>
@@ -230,8 +250,9 @@ export default function AdminFidelidade() {
           </div>
 
           {/* Tabs */}
-          <div className="bg-surface-02 border-b border-surface-03 px-8 flex gap-1 flex-shrink-0">
+          <div className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 flex gap-1 flex-shrink-0 overflow-x-auto">
             {([
+              ["settings",  "Configurações", Settings2],
               ["levels",    "Níveis",      Star],
               ["benefits",  "Benefícios",  Gift],
               ["customers", "Clientes",    Users],
@@ -240,7 +261,7 @@ export default function AdminFidelidade() {
               <button
                 key={key}
                 onClick={() => setTab(key)}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`flex items-center gap-2 px-3 md:px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   tab === key
                     ? "border-gold text-gold"
                     : "border-transparent text-stone hover:text-parchment"
@@ -253,26 +274,112 @@ export default function AdminFidelidade() {
 
           {/* Alerts */}
           {error && (
-            <div className="mx-8 mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm flex justify-between">
+            <div className="mx-4 md:mx-8 mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm flex justify-between">
               {error}
               <button onClick={() => setError("")}><X size={14} /></button>
             </div>
           )}
           {success && (
-            <div className="mx-8 mt-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-sm">
+            <div className="mx-4 md:mx-8 mt-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-sm">
               {success}
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6">
             {loading ? (
               <div className="flex justify-center items-center h-40 text-stone text-sm">Carregando...</div>
             ) : (
               <>
+                {tab === "settings" && (
+                  <div className="max-w-4xl space-y-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-[1.1fr,0.9fr] gap-4">
+                      <div className="bg-surface-02 rounded-xl border border-surface-03 p-5 space-y-5">
+                        <div className="flex items-start gap-3">
+                          <div className={`w-11 h-11 rounded-xl flex items-center justify-center border ${settingsForm.enabled ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-300" : "bg-red-500/15 border-red-500/30 text-red-300"}`}>
+                            <Power size={20} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-cream font-semibold">Operação do plano fidelidade</h3>
+                            <p className="text-stone text-sm mt-1">
+                              Ative ou desative a fidelidade em todo o sistema. Quando desligado, clientes não acessam pontos, resgates ou indicações, e pedidos não acumulam pontuação.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSettingsForm((form) => ({ ...form, enabled: true }))}
+                            className={`flex-1 rounded-xl border px-4 py-3 text-sm font-semibold transition-colors ${settingsForm.enabled ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-200" : "bg-surface-03 border-surface-03 text-stone hover:text-parchment"}`}
+                          >
+                            Ativar fidelidade
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSettingsForm((form) => ({ ...form, enabled: false }))}
+                            className={`flex-1 rounded-xl border px-4 py-3 text-sm font-semibold transition-colors ${!settingsForm.enabled ? "bg-red-500/20 border-red-500/40 text-red-200" : "bg-surface-03 border-surface-03 text-stone hover:text-parchment"}`}
+                          >
+                            Desativar fidelidade
+                          </button>
+                        </div>
+
+                        <div className="space-y-3">
+                          <label className="text-parchment text-sm font-medium block">Pontuação por real gasto</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {[1, 2].map((multiplier) => (
+                              <button
+                                key={multiplier}
+                                type="button"
+                                onClick={() => setSettingsForm((form) => ({ ...form, points_per_real: multiplier }))}
+                                className={`rounded-xl border px-4 py-4 text-left transition-colors ${settingsForm.points_per_real === multiplier ? "bg-gold/15 border-gold/50 text-gold" : "bg-surface-03 border-surface-03 text-parchment hover:border-gold/30"}`}
+                              >
+                                <span className="block text-lg font-bold">{multiplier}x</span>
+                                <span className="text-xs text-stone">R$ 1,00 vale {multiplier} ponto{multiplier === 1 ? "" : "s"}</span>
+                              </button>
+                            ))}
+                          </div>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            value={settingsForm.points_per_real}
+                            onChange={(e) => setSettingsForm((form) => ({ ...form, points_per_real: Number(e.target.value) || 0 }))}
+                            className="w-full bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream text-sm focus:border-gold outline-none"
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={saveSettings}
+                          disabled={saving}
+                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-gold text-cream rounded-lg text-sm font-semibold disabled:opacity-40"
+                        >
+                          <Save size={14} /> {saving ? "Salvando..." : "Salvar configurações"}
+                        </button>
+                      </div>
+
+                      <div className="bg-surface-02 rounded-xl border border-surface-03 p-5 space-y-4">
+                        <h3 className="text-cream font-semibold">Status atual</h3>
+                        <Stat label="Fidelidade" value={settingsForm.enabled ? "Ativada" : "Desativada"} />
+                        <Stat label="Multiplicador" value={`${settingsForm.points_per_real}x`} />
+                        <Stat
+                          label="Exemplo em pedido de R$ 100"
+                          value={`${Math.floor(100 * settingsForm.points_per_real)} pts`}
+                        />
+                        {settings?.updated_at && (
+                          <p className="text-stone text-xs">
+                            Última atualização: {new Date(settings.updated_at).toLocaleString("pt-BR")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* ── Levels Tab ─────────────────────────────────────────── */}
                 {tab === "levels" && (
                   <div className="max-w-4xl space-y-4">
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                       <h3 className="text-cream font-semibold">Níveis de Fidelidade</h3>
                       <button
                         onClick={() => { setShowLevelForm(true); setEditingLevelId(null); setLevelForm({ name: "", min_points: 0, max_points: "", icon: "🥉", color: "orange" }); }}
@@ -285,7 +392,7 @@ export default function AdminFidelidade() {
                     {showLevelForm && (
                       <form onSubmit={saveLevel} className="bg-surface-02 rounded-xl border border-surface-03 p-5 space-y-4">
                         <h4 className="text-cream font-semibold text-sm">{editingLevelId ? "Editar Nível" : "Novo Nível"}</h4>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="text-stone text-xs mb-1 block">Nome</label>
                             <input value={levelForm.name} onChange={e => setLevelForm(f => ({ ...f, name: e.target.value }))}
@@ -316,7 +423,7 @@ export default function AdminFidelidade() {
                             </select>
                           </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-col sm:flex-row gap-2">
                           <button type="submit" disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-gold text-cream rounded-lg text-sm disabled:opacity-40">
                             <Save size={14} /> {saving ? "Salvando..." : "Salvar"}
                           </button>
@@ -356,7 +463,7 @@ export default function AdminFidelidade() {
 
                     {/* Rewards sub-section */}
                     <div className="mt-6">
-                      <div className="flex justify-between items-center mb-3">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-3">
                         <h3 className="text-cream font-semibold text-sm">Recompensas por Pontos</h3>
                         <button onClick={() => setShowRewardForm(v => !v)} className="flex items-center gap-1 px-3 py-1.5 bg-surface-03 text-parchment rounded-lg text-xs hover:bg-surface-03/80">
                           <Plus size={12} /> Nova
@@ -364,7 +471,7 @@ export default function AdminFidelidade() {
                       </div>
 
                       {showRewardForm && (
-                        <form onSubmit={saveReward} className="bg-surface-02 rounded-xl border border-surface-03 p-4 mb-4 grid grid-cols-3 gap-3">
+                        <form onSubmit={saveReward} className="bg-surface-02 rounded-xl border border-surface-03 p-4 mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
                           <div>
                             <label className="text-stone text-xs mb-1 block">Label</label>
                             <input value={rewardForm.label} onChange={e => setRewardForm(f => ({ ...f, label: e.target.value }))}
@@ -380,7 +487,7 @@ export default function AdminFidelidade() {
                             <input value={rewardForm.icon} onChange={e => setRewardForm(f => ({ ...f, icon: e.target.value }))}
                               className="w-full bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream text-sm focus:border-gold outline-none" />
                           </div>
-                          <div className="col-span-3 flex gap-2">
+                          <div className="sm:col-span-3 flex flex-col sm:flex-row gap-2">
                             <button type="submit" disabled={saving} className="px-4 py-2 bg-gold text-cream rounded-lg text-sm disabled:opacity-40"><Save size={13} /></button>
                             <button type="button" onClick={() => setShowRewardForm(false)} className="px-4 py-2 bg-surface-03 text-parchment rounded-lg text-sm"><X size={13} /></button>
                           </div>
@@ -408,7 +515,7 @@ export default function AdminFidelidade() {
                 {/* ── Benefits Tab ───────────────────────────────────────── */}
                 {tab === "benefits" && (
                   <div className="max-w-5xl space-y-4">
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                       <h3 className="text-cream font-semibold">Benefícios por Nível</h3>
                       <button
                         onClick={() => { setShowBenefitForm(true); setEditingBenefitId(null); setBenefitForm({ level_id: levels[0]?.id ?? "", benefit_type: "discount", label: "", description: "", value: 0, min_order_value: 0, expires_in_days: "", usage_limit: 1, stackable: false, active: true }); }}
@@ -421,7 +528,7 @@ export default function AdminFidelidade() {
                     {showBenefitForm && (
                       <form onSubmit={saveBenefit} className="bg-surface-02 rounded-xl border border-surface-03 p-5 space-y-4">
                         <h4 className="text-cream font-semibold text-sm">{editingBenefitId ? "Editar Benefício" : "Novo Benefício"}</h4>
-                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                           <div>
                             <label className="text-stone text-xs mb-1 block">Nível</label>
                             <select value={benefitForm.level_id} onChange={e => setBenefitForm(f => ({ ...f, level_id: e.target.value }))}
@@ -472,7 +579,7 @@ export default function AdminFidelidade() {
                             </label>
                           </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-col sm:flex-row gap-2">
                           <button type="submit" disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-gold text-cream rounded-lg text-sm disabled:opacity-40">
                             <Save size={14} /> {saving ? "Salvando..." : "Salvar"}
                           </button>
@@ -519,7 +626,7 @@ export default function AdminFidelidade() {
                 {/* ── Customers Tab ──────────────────────────────────────── */}
                 {tab === "customers" && (
                   <div className="max-w-5xl space-y-4">
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
                       <h3 className="text-cream font-semibold">Clientes por Nível</h3>
                       <select value={filterLevel} onChange={e => setFilterLevel(e.target.value)}
                         className="bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream text-sm focus:border-gold outline-none">
@@ -538,7 +645,7 @@ export default function AdminFidelidade() {
                           <div key={c.id} className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
                             <button
                               onClick={() => setExpandedCustomer(isExpanded ? null : c.customer_id)}
-                              className="w-full flex items-center gap-4 px-5 py-4 hover:bg-surface-03/30 transition-colors text-left"
+                              className="w-full flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-5 py-4 hover:bg-surface-03/30 transition-colors text-left"
                             >
                               <span className="text-xl">{c.level?.icon ?? "—"}</span>
                               <div className="flex-1 min-w-0">
@@ -554,13 +661,13 @@ export default function AdminFidelidade() {
 
                             {isExpanded && (
                               <div className="px-5 pb-4 border-t border-surface-03 pt-4 space-y-3">
-                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                                   <Stat label="Rollover" value={`${c.rollover_points} pts`} />
                                   <Stat label="Ciclo início" value={c.cycle_start_date ? new Date(c.cycle_start_date).toLocaleDateString("pt-BR") : "—"} />
                                   <Stat label="Ciclo fim" value={c.cycle_end_date ? new Date(c.cycle_end_date).toLocaleDateString("pt-BR") : "—"} />
                                   <Stat label="Última atividade" value={c.last_activity_at ? new Date(c.last_activity_at).toLocaleDateString("pt-BR") : "—"} />
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex flex-col sm:flex-row gap-2">
                                   <button
                                     onClick={() => { setPointsForm(f => ({ ...f, customer_id: c.customer_id })); setTab("points"); }}
                                     className="flex items-center gap-1.5 px-3 py-1.5 bg-gold/10 text-gold border border-gold/30 rounded-lg text-xs hover:bg-gold/20"
@@ -634,7 +741,7 @@ export default function AdminFidelidade() {
                     <div className="bg-surface-02 rounded-xl border border-surface-03 p-5">
                       <h4 className="text-cream font-semibold text-sm mb-3">Encerrar Ciclo Manualmente</h4>
                       <p className="text-stone text-xs mb-3">50% dos pontos restantes são rolados para o próximo ciclo. O restante expira.</p>
-                      <div className="flex gap-3">
+                      <div className="flex flex-col sm:flex-row gap-3">
                         <input value={pointsForm.customer_id} onChange={e => setPointsForm(f => ({ ...f, customer_id: e.target.value }))}
                           placeholder="customer_id..."
                           className="flex-1 bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream text-sm focus:border-gold outline-none" />

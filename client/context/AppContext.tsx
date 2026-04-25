@@ -12,6 +12,7 @@ import {
   type ApiLoyaltyLevel,
   type ApiLoyaltyReward,
   type ApiLoyaltyRule,
+  type ApiLoyaltySettings,
   type ApiMultiFlavorsConfig,
   type ApiCustomer,
   type ApiOrder,
@@ -120,6 +121,8 @@ export interface EarnRule {
   label: string;
   points: string;
 }
+
+export type LoyaltySettings = Pick<ApiLoyaltySettings, "enabled" | "points_per_real">;
 
 // ─── CMS / Site Content ───────────────────────────────────────────────────────
 
@@ -280,6 +283,8 @@ interface AppContextType {
   setFidelidadeRewards: (rewards: FidelidadeReward[]) => void;
   earnRules: EarnRule[];
   setEarnRules: (rules: EarnRule[]) => void;
+  loyaltySettings: LoyaltySettings;
+  setLoyaltySettings: (settings: LoyaltySettings) => void;
 
   // Site Content (CMS local — futuro: persistir no backend)
   siteContent: SiteContent;
@@ -444,6 +449,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [fidelidadeLevels, setFidelidadeLevels] = useState<FidelidadeLevel[]>([]);
   const [fidelidadeRewards, setFidelidadeRewards] = useState<FidelidadeReward[]>([]);
   const [earnRules, setEarnRules] = useState<EarnRule[]>([]);
+  const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings>({
+    enabled: true,
+    points_per_real: 1,
+  });
   const [siteContent, setSiteContent] = useState<SiteContent>(() => {
     try {
       const stored = localStorage.getItem("siteContent");
@@ -461,11 +470,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async function bootstrap() {
       setLoading(true);
       try {
-        const [prods, promos, cfgRaw, cups, levels, rewards, rules] = await Promise.allSettled([
+        const [prods, promos, cfgRaw, cups, loyaltyCfg, levels, rewards, rules] = await Promise.allSettled([
           productsApi.list(true),
           promotionsApi.list(true),
           productsApi.getMultiFlavorsConfig(),
           couponsApi.list(),
+          loyaltyApi.settings(),
           loyaltyApi.levels(),
           loyaltyApi.rewards(),
           loyaltyApi.rules(),
@@ -479,6 +489,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setMultiFlavorsConfig({ maxFlavors: c.max_flavors, pricingRule: c.pricing_rule });
         }
         if (cups.status === "fulfilled") setCoupons(cups.value.map(apiCouponToCoupon));
+        if (loyaltyCfg.status === "fulfilled")
+          setLoyaltySettings({
+            enabled: loyaltyCfg.value.enabled,
+            points_per_real: loyaltyCfg.value.points_per_real,
+          });
         if (levels.status === "fulfilled")
           setFidelidadeLevels(levels.value.map(apiLevelToLevel));
         if (rewards.status === "fulfilled")
@@ -717,6 +732,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     fidelidadeLevels, setFidelidadeLevels,
     fidelidadeRewards, setFidelidadeRewards,
     earnRules, setEarnRules,
+    loyaltySettings, setLoyaltySettings,
     siteContent, updateSiteContent,
     multiFlavorsConfig, updateMultiFlavorsConfig,
   };

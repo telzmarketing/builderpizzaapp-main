@@ -640,6 +640,13 @@ export interface ApiLoyaltyRule {
   active: boolean;
 }
 
+export interface ApiLoyaltySettings {
+  id: string;
+  enabled: boolean;
+  points_per_real: number;
+  updated_at: string;
+}
+
 export interface ApiLoyaltyBenefit {
   id: string;
   level_id: string;
@@ -1030,6 +1037,10 @@ export const couponsApi = {
 // ─── Loyalty ──────────────────────────────────────────────────────────────────
 
 export const loyaltyApi = {
+  settings: () => get<ApiLoyaltySettings>("/loyalty/settings"),
+  updateSettings: (data: Pick<ApiLoyaltySettings, "enabled" | "points_per_real">) =>
+    put<ApiLoyaltySettings>("/loyalty/settings", data),
+
   levels: () => get<ApiLoyaltyLevel[]>("/loyalty/levels"),
   createLevel: (data: Omit<ApiLoyaltyLevel, "id">) =>
     post<ApiLoyaltyLevel>("/loyalty/levels", data),

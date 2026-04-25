@@ -18,7 +18,7 @@ from sqlalchemy import func
 from backend.models.loyalty import (
     CustomerLoyalty, LoyaltyLevel, LoyaltyReward, LoyaltyTransaction,
     LoyaltyBenefit, LoyaltyBenefitUsage, LoyaltyCycle, Referral,
-    TransactionType, CycleStatus, ReferralStatus,
+    TransactionType, CycleStatus, ReferralStatus, LoyaltySettings,
 )
 from backend.config import get_settings
 from backend.core.events import (
@@ -33,6 +33,16 @@ settings = get_settings()
 CYCLE_DAYS = 30
 ROLLOVER_RATIO = 0.5  # 50% of remaining points carry forward
 REFERRAL_POINTS = 10
+
+
+def get_loyalty_settings(db: Session) -> LoyaltySettings:
+    settings_row = db.query(LoyaltySettings).filter(LoyaltySettings.id == "default").first()
+    if not settings_row:
+        settings_row = LoyaltySettings(id="default", enabled=True, points_per_real=settings.POINTS_PER_REAL)
+        db.add(settings_row)
+        db.commit()
+        db.refresh(settings_row)
+    return settings_row
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -219,7 +229,11 @@ def _add_points(account: CustomerLoyalty, points: int, tx_type: TransactionType,
 
 def award_points_for_order(customer_id: str, order_id: str, order_total: float, db: Session) -> int:
     """Award points based on order total. Returns points awarded."""
-    points = int(order_total * settings.POINTS_PER_REAL) + settings.DELIVERY_POINTS
+    loyalty_settings = get_loyalty_settings(db)
+    if not loyalty_settings.enabled:
+        return 0
+
+    points = int(order_total * loyalty_settings.points_per_real) + settings.DELIVERY_POINTS
 
     account = _get_or_create_account(customer_id, db)
     _close_cycle_if_expired(account, db)

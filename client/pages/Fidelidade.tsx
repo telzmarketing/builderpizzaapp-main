@@ -30,7 +30,7 @@ const BENEFIT_ICONS: Record<string, string> = {
 
 export default function Fidelidade() {
   const navigate = useNavigate();
-  const { customer } = useApp();
+  const { customer, loyaltySettings } = useApp();
 
   const [account, setAccount] = useState<ApiCustomerLoyalty | null>(null);
   const [levels, setLevels] = useState<ApiLoyaltyLevel[]>([]);
@@ -84,6 +84,19 @@ export default function Fidelidade() {
     navigator.clipboard.writeText(referral.referral_code).then(() => {
       alert(`Código copiado: ${referral.referral_code}`);
     });
+  }
+
+  if (!loyaltySettings.enabled) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 flex flex-col items-center justify-center gap-4 px-8">
+        <Trophy size={48} className="text-stone" />
+        <p className="text-cream text-xl font-bold text-center">Programa de fidelidade indisponível</p>
+        <p className="text-stone text-sm text-center max-w-sm">No momento o plano fidelidade está desativado pela loja.</p>
+        <button onClick={() => navigate("/")} className="px-6 py-3 bg-gold text-cream rounded-xl font-semibold">
+          Voltar ao início
+        </button>
+      </div>
+    );
   }
 
   if (!customer) {

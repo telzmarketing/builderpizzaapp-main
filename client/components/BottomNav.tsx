@@ -12,8 +12,8 @@ export default function BottomNav() {
     location.pathname === path ? "text-gold" : "text-stone hover:text-cream";
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 pb-4 px-4 z-50">
-      <div className="bg-surface-02 rounded-full py-3 px-4 flex justify-around items-center shadow-2xl border border-surface-03">
+    <div className="fixed bottom-0 left-0 right-0 pb-[calc(1rem+env(safe-area-inset-bottom))] px-3 sm:px-4 z-50">
+      <div className="bg-surface-02 rounded-full py-3 px-3 sm:px-4 flex justify-around items-center shadow-2xl border border-surface-03 max-w-md mx-auto">
         <button onClick={() => navigate("/")} className={`flex flex-col items-center gap-1 transition-colors ${active("/")}`}>
           <Home size={18} />
           <span className="text-[10px] font-medium">{nav.home}</span>

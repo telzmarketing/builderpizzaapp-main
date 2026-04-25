@@ -7,7 +7,7 @@ import MoschettieriLogo from "@/components/MoschettieriLogo";
 
 export default function Conta() {
   const navigate = useNavigate();
-  const { orders, siteContent, customer, customerLogin, customerLogout, updateCustomer } = useApp();
+  const { orders, siteContent, customer, customerLogin, customerLogout, updateCustomer, loyaltySettings } = useApp();
   const { pages, nav } = siteContent;
   const c = pages.conta;
 
@@ -58,7 +58,7 @@ export default function Conta() {
   const totalSpent = orders.reduce((sum, o) => sum + o.total, 0);
 
   const menuLinks = [
-    { icon: "🏆", label: "Programa de Fidelidade", path: "/fidelidade" },
+    ...(loyaltySettings.enabled ? [{ icon: "🏆", label: "Programa de Fidelidade", path: "/fidelidade" }] : []),
     { icon: "🎟️", label: "Meus Cupons", path: "/cupons" },
     { icon: "📦", label: "Meus Pedidos", path: "/pedidos" },
     { icon: "📍", label: "Localização", path: "/localizacao" },

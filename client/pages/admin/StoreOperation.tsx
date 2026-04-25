@@ -136,7 +136,7 @@ export default function StoreOperation() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen bg-surface-01">
+      <div className="flex flex-col md:flex-row min-h-screen bg-surface-01">
         <AdminSidebar />
         <main className="flex-1 flex items-center justify-center text-stone gap-2">
           <Loader2 size={20} className="animate-spin" /> Carregando funcionamento...
@@ -148,7 +148,7 @@ export default function StoreOperation() {
   if (!settings) return null;
 
   return (
-    <div className="flex min-h-screen bg-surface-01">
+    <div className="flex flex-col md:flex-row min-h-screen bg-surface-01">
       <AdminSidebar />
       <main className="flex-1 overflow-y-auto">
         <header className="bg-surface-02 border-b border-surface-03 px-6 py-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">

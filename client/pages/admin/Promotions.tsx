@@ -40,7 +40,7 @@ export default function AdminPromotions() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-00 to-surface-00">
-      <div className="flex h-screen">
+      <div className="flex flex-col md:flex-row min-h-screen md:h-screen">
         <AdminSidebar />
 
         <div className="flex-1 overflow-auto">

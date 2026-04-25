@@ -78,7 +78,7 @@ export default function AdminDashboard() {
   const PIE_COLORS = ["#f97316", "#2d3d56"];
 
   return (
-    <div className="min-h-screen bg-surface-00 flex h-screen overflow-hidden">
+    <div className="min-h-screen bg-surface-00 flex flex-col md:flex-row md:h-screen overflow-hidden">
       <AdminSidebar />
 
       <div className="flex-1 flex flex-col overflow-hidden">

@@ -539,7 +539,7 @@ export default function AdminCampanhas() {
         </div>
       )}
 
-      <div className="flex h-screen">
+      <div className="flex flex-col md:flex-row min-h-screen md:h-screen">
         <AdminSidebar />
 
         <div className="flex-1 overflow-auto">

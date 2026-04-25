@@ -223,7 +223,7 @@ export default function AdminFrete() {
   useEffect(() => { loadAll(); }, [loadAll]);
 
   return (
-    <div className="flex h-screen bg-surface-00 overflow-hidden">
+    <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-surface-00 overflow-hidden">
       <AdminSidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}

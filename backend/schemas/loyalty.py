@@ -48,6 +48,18 @@ class LoyaltyRuleOut(LoyaltyRuleCreate):
     model_config = {"from_attributes": True}
 
 
+class LoyaltySettingsUpdate(BaseModel):
+    enabled: bool = True
+    points_per_real: float = Field(default=1.0, ge=0)
+
+
+class LoyaltySettingsOut(LoyaltySettingsUpdate):
+    id: str
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class LoyaltyBenefitCreate(BaseModel):
     level_id: str
     benefit_type: BenefitType

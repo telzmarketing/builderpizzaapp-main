@@ -82,10 +82,10 @@ export default function AdminSidebar() {
     to === "/painel" ? pathname === "/painel" : pathname.startsWith(to);
 
   return (
-    <div className="w-64 bg-surface-02 border-r border-surface-03 flex flex-col flex-shrink-0 h-screen">
+    <div className="w-full md:w-64 bg-surface-02 border-b md:border-b-0 md:border-r border-surface-03 flex flex-col flex-shrink-0 h-auto md:h-screen max-h-[52vh] md:max-h-none">
 
       {/* ── Brand header ─────────────────────────────────────────────── */}
-      <div className="px-5 pt-5 pb-4 border-b border-surface-03 flex-shrink-0">
+      <div className="px-4 md:px-5 pt-4 md:pt-5 pb-3 md:pb-4 border-b border-surface-03 flex-shrink-0">
         <div className="flex items-center gap-3">
           {brand.logo && (brand.logo.startsWith("http") || brand.logo.startsWith("data:")) ? (
             <img
@@ -104,7 +104,7 @@ export default function AdminSidebar() {
       </div>
 
       {/* ── Admin profile card ───────────────────────────────────────── */}
-      <div className="px-4 py-3 border-b border-surface-03 flex-shrink-0">
+      <div className="hidden md:block px-4 py-3 border-b border-surface-03 flex-shrink-0">
         <div className="flex items-center gap-3 bg-surface-01 rounded-xl px-3 py-2.5 border border-surface-03/60">
           {/* Avatar with online dot */}
           <div className="relative flex-shrink-0">
@@ -173,7 +173,7 @@ export default function AdminSidebar() {
       </nav>
 
       {/* ── Bottom actions ───────────────────────────────────────────── */}
-      <div className="px-3 py-3 border-t border-surface-03 space-y-0.5 flex-shrink-0">
+      <div className="hidden md:block px-3 py-3 border-t border-surface-03 space-y-0.5 flex-shrink-0">
         <Link
           to="/"
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-stone hover:bg-surface-03 hover:text-parchment transition-colors"

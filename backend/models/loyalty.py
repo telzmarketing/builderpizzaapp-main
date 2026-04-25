@@ -71,6 +71,19 @@ class LoyaltyRule(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class LoyaltySettings(Base):
+    __tablename__ = "loyalty_settings"
+
+    id = Column(String, primary_key=True, default="default")
+    enabled = Column(Boolean, default=True, nullable=False)
+    points_per_real = Column(Float, default=1.0, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class LoyaltyBenefit(Base):
     """Benefit attached to a loyalty level (unlocked when customer reaches that level)."""
     __tablename__ = "loyalty_benefits"

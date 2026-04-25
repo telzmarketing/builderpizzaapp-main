@@ -12,7 +12,7 @@ const PIZZA_FALLBACKS = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🍖", "�
 
 export default function Home() {
   const navigate = useNavigate();
-  const { products, promotions, siteContent } = useApp();
+  const { products, promotions, siteContent, loyaltySettings } = useApp();
   const { sectionSubtitle, sectionTitle, bannerRotationInterval } = siteContent.home;
   const rotationInterval = (bannerRotationInterval ?? 5) * 1000;
   const ALL_LABEL = "Todos";
@@ -218,7 +218,7 @@ export default function Home() {
                 { icon: <ShoppingCart size={20} />, label: "Carrinho", path: "/cart" },
                 { icon: <Bell size={20} />, label: "Meus Pedidos", path: "/pedidos" },
                 { icon: <Tag size={20} />, label: "Cupons", path: "/cupons" },
-                { icon: <Heart size={20} />, label: "Fidelidade", path: "/fidelidade" },
+                ...(loyaltySettings.enabled ? [{ icon: <Heart size={20} />, label: "Fidelidade", path: "/fidelidade" }] : []),
                 { icon: <User size={20} />, label: "Minha Conta", path: "/conta" },
               ].map(({ icon, label, path }) => (
                 <button
