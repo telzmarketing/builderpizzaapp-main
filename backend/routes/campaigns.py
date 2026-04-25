@@ -26,7 +26,7 @@ def list_campaigns(
 
 @router.get("/slug/{slug}", response_model=CampaignOut)
 def get_campaign_by_slug(slug: str, db: Session = Depends(get_db)):
-    campaign = CampaignService(db).get_by_slug(slug)
+    campaign = CampaignService(db).get_public_by_slug(slug)
     if not campaign:
         raise HTTPException(404, "Campanha não encontrada.")
     return campaign

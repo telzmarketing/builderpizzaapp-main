@@ -89,7 +89,7 @@ interface CampaignForm {
   name: string; description: string; status: CampaignStatus;
   start_at: string; end_at: string; banner: string; slug: string;
   campaign_type: CampaignType; display_title: string; display_subtitle: string;
-  display_order: number; published: boolean;
+  display_order: number; published: boolean; schedule_enabled: boolean;
 }
 
 interface KitForm {
@@ -114,6 +114,7 @@ const emptyCampaignForm: CampaignForm = {
   name: "", description: "", status: "draft", start_at: "", end_at: "",
   banner: "", slug: "", campaign_type: "products_promo",
   display_title: "", display_subtitle: "", display_order: 0, published: false,
+  schedule_enabled: false,
 };
 
 const emptyKitForm: KitForm = {
@@ -156,7 +157,7 @@ export default function AdminCampanhas() {
   const [selectedCampaign, setSelectedCampaign] = useState<ApiCampaign | null>(null);
   const [cpList, setCpList] = useState<ApiCampaignProduct[]>([]);
   const [showCpModal, setShowCpModal] = useState(false);
-  const [newCpProductId, setNewCpProductId] = useState("");
+  const [newCpProductIds, setNewCpProductIds] = useState<string[]>([]);
   const [newCpPrice, setNewCpPrice] = useState("");
   const [newCpDiscType, setNewCpDiscType] = useState<CpDiscountType | "">("");
   const [newCpDiscVal, setNewCpDiscVal] = useState("");
@@ -331,6 +332,7 @@ export default function AdminCampanhas() {
       campaign_type: c.campaign_type, display_title: c.display_title ?? "",
       display_subtitle: c.display_subtitle ?? "",
       display_order: c.display_order, published: c.published,
+      schedule_enabled: Boolean(c.start_at || c.end_at),
     });
     setShowCampaignModal(true);
   };
@@ -341,12 +343,21 @@ export default function AdminCampanhas() {
       showToast("Nome e slug são obrigatórios.");
       return;
     }
+    if (campaignForm.schedule_enabled && !campaignForm.start_at && !campaignForm.end_at) {
+      showToast("Informe inicio ou termino para agendar a campanha.");
+      return;
+    }
+    if (campaignForm.start_at && campaignForm.end_at && new Date(campaignForm.end_at) <= new Date(campaignForm.start_at)) {
+      showToast("O termino deve ser depois do inicio.");
+      return;
+    }
     setCampaignSaving(true);
     try {
+      const { schedule_enabled, ...formData } = campaignForm;
       const payload = {
-        ...campaignForm,
-        start_at: campaignForm.start_at ? new Date(campaignForm.start_at).toISOString() : null,
-        end_at: campaignForm.end_at ? new Date(campaignForm.end_at).toISOString() : null,
+        ...formData,
+        start_at: schedule_enabled && campaignForm.start_at ? new Date(campaignForm.start_at).toISOString() : null,
+        end_at: schedule_enabled && campaignForm.end_at ? new Date(campaignForm.end_at).toISOString() : null,
         description: campaignForm.description || null,
         banner: campaignForm.banner || null,
         display_title: campaignForm.display_title || null,
@@ -381,24 +392,35 @@ export default function AdminCampanhas() {
     setSelectedCampaign(c);
     const list = await campaignsApi.listProducts(c.id);
     setCpList(list);
+    setNewCpProductIds([]);
     setShowCpModal(true);
   };
 
+  const toggleCampaignProductSelection = (productId: string) => {
+    setNewCpProductIds((current) =>
+      current.includes(productId)
+        ? current.filter((id) => id !== productId)
+        : [...current, productId]
+    );
+  };
+
   const handleAddCampaignProduct = async () => {
-    if (!selectedCampaign || !newCpProductId) return;
+    if (!selectedCampaign || newCpProductIds.length === 0) return;
     try {
-      await campaignsApi.addProduct(selectedCampaign.id, {
-        product_id: newCpProductId || null,
-        kit_id: null,
-        promotional_price: newCpPrice ? parseFloat(newCpPrice) : null,
-        discount_type: (newCpDiscType as CpDiscountType) || null,
-        discount_value: newCpDiscVal ? parseFloat(newCpDiscVal) : null,
-        active: true,
-      });
+      await Promise.all(newCpProductIds.map((productId) =>
+        campaignsApi.addProduct(selectedCampaign.id, {
+          product_id: productId,
+          kit_id: null,
+          promotional_price: newCpPrice ? parseFloat(newCpPrice) : null,
+          discount_type: (newCpDiscType as CpDiscountType) || null,
+          discount_value: newCpDiscVal ? parseFloat(newCpDiscVal) : null,
+          active: true,
+        })
+      ));
       const list = await campaignsApi.listProducts(selectedCampaign.id);
       setCpList(list);
-      setNewCpProductId(""); setNewCpPrice(""); setNewCpDiscType(""); setNewCpDiscVal("");
-      showToast("Produto adicionado!");
+      setNewCpProductIds([]); setNewCpPrice(""); setNewCpDiscType(""); setNewCpDiscVal("");
+      showToast(newCpProductIds.length > 1 ? "Produtos adicionados!" : "Produto adicionado!");
     } catch { showToast("Erro ao adicionar produto."); }
   };
 
@@ -1021,6 +1043,24 @@ export default function AdminCampanhas() {
               <Inp label="Término" type="datetime-local" value={campaignForm.end_at} onChange={(e) => setCampaignForm({ ...campaignForm, end_at: e.target.value })} />
             </div>
 
+            <label className="flex items-start gap-3 rounded-xl border border-surface-03 bg-surface-03/40 p-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={campaignForm.schedule_enabled}
+                onChange={(e) => setCampaignForm({
+                  ...campaignForm,
+                  schedule_enabled: e.target.checked,
+                  start_at: e.target.checked ? campaignForm.start_at : "",
+                  end_at: e.target.checked ? campaignForm.end_at : "",
+                })}
+                className="w-4 h-4 mt-0.5 accent-gold"
+              />
+              <span>
+                <span className="block text-parchment text-sm font-bold">Agendar campanha</span>
+                <span className="block text-stone text-xs mt-0.5">Use os campos de inicio e termino acima para liberar a campanha automaticamente.</span>
+              </span>
+            </label>
+
             <ImageUpload
               value={campaignForm.banner}
               onChange={(v) => setCampaignForm({ ...campaignForm, banner: v })}
@@ -1061,8 +1101,32 @@ export default function AdminCampanhas() {
           <div className="space-y-4">
             <div className="bg-surface-03/50 rounded-xl p-4 space-y-3">
               <p className="text-parchment text-sm font-medium">Adicionar Produto</p>
-              <div className="grid grid-cols-2 gap-3">
-                <Sel label="Produto" value={newCpProductId} onChange={(e) => setNewCpProductId(e.target.value)}>
+              <div className="max-h-56 overflow-y-auto rounded-lg border border-surface-03 bg-surface-02/60 p-2 space-y-2">
+                {products.map((p) => {
+                  const checked = newCpProductIds.includes(p.id);
+                  const alreadyLinked = cpList.some((cp) => cp.product_id === p.id);
+                  return (
+                    <label key={p.id} className={`flex items-center gap-3 rounded-lg px-3 py-2 cursor-pointer transition-colors ${checked ? "bg-gold/15 border border-gold/30" : "bg-surface-03/60 border border-transparent hover:border-gold/20"}`}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleCampaignProductSelection(p.id)}
+                        className="w-4 h-4 accent-gold"
+                      />
+                      <span className="text-lg leading-none">{p.icon}</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-cream text-sm font-medium truncate">{p.name}</span>
+                        <span className="block text-stone text-xs">R$ {p.price.toFixed(2)}{alreadyLinked ? " · ja vinculado" : ""}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-stone text-xs">
+                {newCpProductIds.length} item(ns) selecionado(s). O preco/desconto abaixo sera aplicado a todos.
+              </p>
+              <div className="hidden">
+                <Sel label="Produto" value={newCpProductIds[0] ?? ""} onChange={(e) => setNewCpProductIds(e.target.value ? [e.target.value] : [])}>
                   <option value="">Selecione...</option>
                   {products.map((p) => (
                     <option key={p.id} value={p.id}>{p.icon} {p.name} (R$ {p.price.toFixed(2)})</option>
@@ -1070,6 +1134,7 @@ export default function AdminCampanhas() {
                 </Sel>
                 <Inp label="Preço Promo (R$)" type="number" step="0.01" value={newCpPrice} onChange={(e) => setNewCpPrice(e.target.value)} placeholder="Deixe vazio para usar desconto" />
               </div>
+              <Inp label="Preco Promo (R$)" type="number" step="0.01" value={newCpPrice} onChange={(e) => setNewCpPrice(e.target.value)} placeholder="Deixe vazio para usar desconto" />
               <div className="grid grid-cols-2 gap-3">
                 <Sel label="Tipo de Desconto" value={newCpDiscType} onChange={(e) => setNewCpDiscType(e.target.value as CpDiscountType | "")}>
                   <option value="">Sem desconto extra</option>
@@ -1080,10 +1145,10 @@ export default function AdminCampanhas() {
               </div>
               <button
                 onClick={handleAddCampaignProduct}
-                disabled={!newCpProductId}
+                disabled={newCpProductIds.length === 0}
                 className="w-full bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold py-2 rounded-lg text-sm transition-colors"
               >
-                Adicionar Produto
+                Adicionar selecionados
               </button>
             </div>
 

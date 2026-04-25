@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session, joinedload
 
-from backend.models.campaign import Campaign, CampaignProduct, PromotionalKit, PromotionalKitItem
+from backend.models.campaign import Campaign, CampaignProduct, PromotionalKit, PromotionalKitItem, CampaignStatus
 from backend.schemas.campaign import (
     CampaignCreate, CampaignUpdate,
     CampaignProductCreate, CampaignProductUpdate,
@@ -36,6 +36,20 @@ class CampaignService:
 
     def get_by_slug(self, slug: str) -> Campaign | None:
         return self._db.query(Campaign).filter(Campaign.slug == slug).first()
+
+    def get_public_by_slug(self, slug: str) -> Campaign | None:
+        now = datetime.now(timezone.utc)
+        return (
+            self._db.query(Campaign)
+            .filter(
+                Campaign.slug == slug,
+                Campaign.published == True,  # noqa: E712
+                Campaign.status == CampaignStatus.active,
+            )
+            .filter((Campaign.start_at == None) | (Campaign.start_at <= now))  # noqa: E711
+            .filter((Campaign.end_at == None) | (Campaign.end_at >= now))  # noqa: E711
+            .first()
+        )
 
     def create_campaign(self, payload: CampaignCreate) -> Campaign:
         existing = self._db.query(Campaign).filter(Campaign.slug == payload.slug).first()
@@ -91,6 +105,21 @@ class CampaignService:
         if not campaign:
             from fastapi import HTTPException
             raise HTTPException(404, "Campanha não encontrada.")
+        existing = (
+            self._db.query(CampaignProduct)
+            .filter(
+                CampaignProduct.campaign_id == campaign_id,
+                CampaignProduct.product_id == payload.product_id,
+                CampaignProduct.kit_id == payload.kit_id,
+            )
+            .first()
+        )
+        if existing:
+            for k, v in payload.model_dump().items():
+                setattr(existing, k, v)
+            self._db.commit()
+            self._db.refresh(existing)
+            return existing
         cp = CampaignProduct(id=str(uuid.uuid4()), campaign_id=campaign_id, **payload.model_dump())
         self._db.add(cp)
         self._db.commit()
