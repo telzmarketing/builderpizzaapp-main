@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check } from "lucide-react";
+import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check, Loader2 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation } from "@/context/AppContext";
 import { sizesApi, crustApi, drinkVariantApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, isAssetUrl, resolveAssetUrl } from "@/lib/api";
@@ -114,7 +114,7 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
 export default function Product() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { products, addToCart, multiFlavorsConfig, siteContent } = useApp();
+  const { products, addToCart, multiFlavorsConfig, siteContent, loading: appLoading } = useApp();
   const p = siteContent.pages.product;
 
   const product = products.find((p) => p.id === id);
@@ -146,6 +146,28 @@ export default function Product() {
 
   useEffect(() => {
     if (!product) return;
+    setQuantity(1);
+    setNotes("");
+    setDivision(1);
+    setFlavorSlots([product, null, null]);
+    setActiveSlot(null);
+    setCartError(false);
+    setSelectedCrust(null);
+    setSelectedDrinkVariant(null);
+  }, [product?.id]);
+
+  useEffect(() => {
+    if (!product) {
+      setProductSizes([]);
+      setSelectedSizeObj(null);
+      setProductCrusts([]);
+      setProductDrinkVariants([]);
+      return;
+    }
+    setProductSizes([]);
+    setSelectedSizeObj(null);
+    setProductCrusts([]);
+    setProductDrinkVariants([]);
 
     // Load sizes for all product types
     sizesApi.list(product.id).then((sizes) => {
@@ -186,17 +208,7 @@ export default function Product() {
   }, [product?.id, isPizza, isDrink]);
 
   const selectedSize = selectedSizeObj ? selectedSizeObj.label : selectedSizeFallback;
-
-  if (!product) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-cream text-xl">Produto não encontrado</p>
-          <Link to="/" className="text-gold hover:text-gold-light mt-4 block">Voltar ao início</Link>
-        </div>
-      </div>
-    );
-  }
+  const productPrice = product?.price ?? 0;
 
   // ── Computed values ──────────────────────────────────────────────────────────
 
@@ -206,7 +218,7 @@ export default function Product() {
   const flavorPrice = useMemo(() => {
     if (isDrink) {
       // For drinks: price is the size price or product base price
-      return selectedSizeObj?.price ?? product.price;
+      return selectedSizeObj?.price ?? productPrice;
     }
     if (productSizes.length > 0 && selectedSizeObj) {
       const slotsWithSizePrice = activeFlavors.map((f) =>
@@ -215,13 +227,13 @@ export default function Product() {
       return computeFlavorPrice(slotsWithSizePrice as (Pizza | null)[], division, multiFlavorsConfig.pricingRule);
     }
     return computeFlavorPrice(activeFlavors, division, multiFlavorsConfig.pricingRule);
-  }, [activeFlavors, division, multiFlavorsConfig.pricingRule, productSizes, selectedSizeObj, isDrink, product.price]);
+  }, [activeFlavors, division, multiFlavorsConfig.pricingRule, productSizes, selectedSizeObj, isDrink, productPrice]);
 
   const variantPriceAddition = useMemo(() => {
-    if (isPizza && selectedCrust) return normalizeCrustPriceAddition(selectedCrust.price_addition, product.price);
+    if (isPizza && selectedCrust) return normalizeCrustPriceAddition(selectedCrust.price_addition, productPrice);
     if (isDrink && selectedDrinkVariant) return selectedDrinkVariant.price_addition;
     return 0;
-  }, [isPizza, isDrink, selectedCrust, selectedDrinkVariant, product.price]);
+  }, [isPizza, isDrink, selectedCrust, selectedDrinkVariant, productPrice]);
 
   const pricePerUnit = flavorPrice + variantPriceAddition;
   const totalPrice = pricePerUnit * quantity;
@@ -256,6 +268,7 @@ export default function Product() {
   };
 
   const handleAddToCart = () => {
+    if (!product) return;
     if (isPizza && !allFilled) {
       setCartError(true);
       return;
@@ -267,7 +280,7 @@ export default function Product() {
       flavors = [{ productId: product.id, name: product.name, price: flavorPrice, icon: product.icon }];
     } else {
       // Use the size-adjusted price so backend validation passes with size-based pricing
-      const priceForFlavor = selectedSizeObj?.price ?? product.price;
+      const priceForFlavor = selectedSizeObj?.price ?? productPrice;
       flavors = (activeFlavors as Pizza[]).map((p) => ({
         productId: p.id,
         name: p.name,
@@ -277,7 +290,7 @@ export default function Product() {
     }
 
     const crustVariation: CartItemVariation | null = selectedCrust
-      ? { id: selectedCrust.id, name: selectedCrust.name, priceAddition: normalizeCrustPriceAddition(selectedCrust.price_addition, product.price) }
+      ? { id: selectedCrust.id, name: selectedCrust.name, priceAddition: normalizeCrustPriceAddition(selectedCrust.price_addition, productPrice) }
       : null;
 
     const drinkVariation: CartItemVariation | null = selectedDrinkVariant
@@ -311,6 +324,29 @@ export default function Product() {
     products.filter((p) => !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id));
 
   const canAddToCart = isDrink ? true : allFilled;
+
+  if (appLoading && !product) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Loader2 size={34} className="animate-spin text-gold" />
+          <p className="text-cream text-base font-semibold">Carregando produto...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!product) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 flex items-center justify-center px-6">
+        <div className="text-center">
+          <p className="text-cream text-xl font-bold">Produto não encontrado</p>
+          <p className="text-stone text-sm mt-2">O item pode estar indisponível ou o cardápio ainda não foi atualizado.</p>
+          <Link to="/" className="text-gold hover:text-gold-light mt-4 block font-semibold">Voltar ao início</Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
