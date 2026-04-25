@@ -667,7 +667,7 @@ export default function Product() {
       </div>
 
       {/* ── Bottom Fixed Bar ────────────────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 bg-surface-00/95 border-t border-surface-02 px-4 py-4 backdrop-blur-sm">
+      <div className="fixed bottom-0 left-0 right-0 bg-surface-00 border-t border-surface-03 px-4 py-4 shadow-[0_-18px_40px_rgba(0,0,0,0.45)]">
         <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-stone text-xs">Total ({quantity}x)</p>
