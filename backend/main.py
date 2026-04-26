@@ -106,6 +106,8 @@ def _run_migrations():
         "ALTER TABLE chatbot_automations ADD COLUMN IF NOT EXISTS condicao TEXT DEFAULT '{}'",
         "ALTER TABLE chatbot_automations ADD COLUMN IF NOT EXISTS prioridade INTEGER DEFAULT 0",
         "ALTER TABLE chatbot_automations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
+        # chatbot_messages: migration criou metadata_json mas modelo usa contexto_usado
+        "ALTER TABLE chatbot_messages ADD COLUMN IF NOT EXISTS contexto_usado TEXT",
         # Chatbot handoffs: migration usou admin_user_id, modelo usa operador_id
         "ALTER TABLE chatbot_handoffs ADD COLUMN IF NOT EXISTS operador_id VARCHAR REFERENCES admin_users(id) ON DELETE SET NULL",
         # Chatbot knowledge docs: migration não incluiu busca_vetor

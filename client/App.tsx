@@ -82,6 +82,7 @@ import AdminAparencia from "./pages/admin/Aparencia";
 import AdminHomeConfig from "./pages/admin/HomeConfig";
 import AdminLgpd from "./pages/admin/AdminLgpd";
 import AdminConfiguracoes from "./pages/admin/AdminConfiguracoes";
+import AdminCupons from "./pages/admin/AdminCupons";
 import Campanha from "./pages/Campanha";
 import Fidelidade from "./pages/Fidelidade";
 import Cupons from "./pages/Cupons";
@@ -140,6 +141,7 @@ export default function App() {
                 <Route path="/painel/home-config" element={<AdminHomeConfig />} />
                 <Route path="/painel/lgpd" element={<AdminLgpd />} />
                 <Route path="/painel/configuracoes" element={<AdminConfiguracoes />} />
+                <Route path="/painel/cupons" element={<AdminCupons />} />
               </Route>
 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

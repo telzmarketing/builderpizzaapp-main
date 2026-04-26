@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3, Package, ShoppingBag, ArrowLeft, Trophy, FileText,
   CreditCard, Truck, LogOut, Sparkles, MessageCircle, Palette,
-  LayoutDashboard, MousePointerClick, User, Clock, Shield, Printer,
+  LayoutDashboard, MousePointerClick, User, Clock, Shield, Printer, Tag,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
@@ -35,6 +35,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Marketing",
     items: [
       { to: "/painel/campanhas", icon: Sparkles, label: "Promoções & Campanhas" },
+      { to: "/painel/cupons", icon: Tag, label: "Cupons de Desconto" },
       { to: "/painel/fidelidade", icon: Trophy, label: "Fidelidade" },
     ],
   },
