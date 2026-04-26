@@ -182,36 +182,47 @@ export function buildCozinhaHtml(order: ApiOrder, settings: PrinterSettings): st
 
 export function buildEtiquetaHtml(order: ApiOrder, settings: PrinterSettings): string {
   const items = itemLines(order);
-  const resumo = items.slice(0, 3).map((i) => `${i.qty}x ${i.name}`).join(", ");
-  const mais = items.length > 3 ? ` +${items.length - 3} itens` : "";
+  const rows = items.map((i) => `
+    <tr>
+      <td class="bold">${i.qty}x</td>
+      <td style="width:100%">
+        <span class="bold">${i.name}</span>
+        ${i.details ? `<br/><span class="small">${i.details}</span>` : ""}
+        ${i.addOns.map((a) => `<br/><span class="small">+ ${a}</span>`).join("")}
+      </td>
+      <td class="right" style="white-space:nowrap">${fmt(i.price)}</td>
+    </tr>`).join("");
+
+  const headerLines = [
+    settings.storeName ? `<p class="center bold">${settings.storeName}</p>` : "",
+    settings.storeWebsite ? `<p class="center small">${settings.storeWebsite}</p>` : "",
+    settings.storeAddress ? `<p class="center small">${settings.storeAddress}</p>` : "",
+    settings.storePhone ? `<p class="center small">${settings.storePhone}</p>` : "",
+    settings.storeCnpj ? `<p class="center small">CNPJ: ${settings.storeCnpj}</p>` : "",
+  ].filter(Boolean).join("");
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <title>Etiqueta #${orderNo(order)}</title>
-<style>${baseCss()}body{${paperCss(settings.paperWidth)}}
-  .box{border:2px solid #000;padding:6px;margin-bottom:4px}
-  .destaque{font-size:18px;font-weight:bold;text-align:center;letter-spacing:1px}
-</style>
+<style>${baseCss()}body{${paperCss(settings.paperWidth)}}</style>
 </head><body>
-<div class="box">
-  <p class="small center">${settings.storeName}</p>
-  <hr/>
-  <p class="destaque">#${orderNo(order)}</p>
-  <p class="center small">${dt(order.created_at)}</p>
-</div>
-<div class="box">
-  <p class="bold" style="font-size:14px">${order.delivery_name}</p>
-  <p>${order.delivery_phone}</p>
-  <hr/>
-  <p class="bold">${order.delivery_street}</p>
-  ${order.delivery_complement ? `<p>${order.delivery_complement}</p>` : ""}
-  <p>${order.delivery_city}</p>
-</div>
-<div class="box">
-  <p class="small">${resumo}${mais}</p>
-  <hr/>
-  <p class="right bold" style="font-size:15px">TOTAL: ${fmt(order.total)}</p>
-  <p class="right small">Entrega: ${order.estimated_time} min</p>
-</div>
+${headerLines}
+<hr/>
+<p class="center bold">PEDIDO #${orderNo(order)}</p>
+<p class="center small">${dt(order.created_at)}</p>
+<hr/>
+<p class="bold">${order.delivery_name}</p>
+<p>${order.delivery_street}${order.delivery_complement ? ` — ${order.delivery_complement}` : ""}</p>
+<p>${order.delivery_city}</p>
+<hr/>
+<table>${rows}</table>
+<hr/>
+${order.shipping_fee > 0 ? `<p class="right">Frete: ${fmt(order.shipping_fee)}</p>` : ""}
+${order.discount > 0 ? `<p class="right">Desconto: -${fmt(order.discount)}</p>` : ""}
+<p class="right big">TOTAL: ${fmt(order.total)}</p>
+<hr/>
+<p>Entrega estimada: <span class="bold">${order.estimated_time} min</span></p>
+<hr/>
+<p class="center small">Obrigado pela preferência!</p>
 </body></html>`;
 }
 
