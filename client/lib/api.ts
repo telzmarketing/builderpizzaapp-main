@@ -52,6 +52,12 @@ async function request<T>(
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      localStorage.removeItem("admin_token");
+      localStorage.removeItem("admin_user");
+      window.location.replace("/painel/login");
+      throw new Error("Sessão expirada. Redirecionando para o login…");
+    }
     let message = `HTTP ${res.status}`;
     try {
       const data = await res.json();

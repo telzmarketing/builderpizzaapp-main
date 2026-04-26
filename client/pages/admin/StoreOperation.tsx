@@ -28,6 +28,7 @@ export default function StoreOperation() {
   const [schedules, setSchedules] = useState<StoreWeeklySchedule[]>(defaultSchedules());
   const [exceptions, setExceptions] = useState<StoreOperationException[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [exceptionForm, setExceptionForm] = useState({
@@ -45,19 +46,22 @@ export default function StoreOperation() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const data = await storeOperationApi.config();
       setConfig(data);
       setSettings(data.settings);
       setSchedules(data.weekly_schedules.length ? data.weekly_schedules : defaultSchedules());
       setExceptions(data.exceptions);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Erro ao carregar configurações.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    load().catch(() => setLoading(false));
+    load();
   }, []);
 
   const updateSchedule = (weekday: number, patch: Partial<StoreWeeklySchedule>) => {
@@ -140,6 +144,25 @@ export default function StoreOperation() {
         <AdminSidebar />
         <main className="flex-1 flex items-center justify-center text-stone gap-2">
           <Loader2 size={20} className="animate-spin" /> Carregando funcionamento...
+        </main>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex flex-col md:flex-row min-h-screen bg-surface-01">
+        <AdminSidebar />
+        <main className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+          <AlertCircle size={40} className="text-red-400" />
+          <p className="text-cream font-semibold text-lg">Erro ao carregar</p>
+          <p className="text-stone text-sm text-center max-w-sm">{loadError}</p>
+          <button
+            onClick={load}
+            className="mt-2 bg-gold hover:bg-gold/90 text-cream font-bold px-5 py-2.5 rounded-xl transition-colors"
+          >
+            Tentar novamente
+          </button>
         </main>
       </div>
     );
