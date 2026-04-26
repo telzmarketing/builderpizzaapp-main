@@ -252,7 +252,14 @@ export default function Checkout() {
 
   useEffect(() => {
     if (!createdOrder) return;
+    const deadline = Date.now() + 30 * 60 * 1000; // 30 min
     const id = setInterval(async () => {
+      if (Date.now() > deadline) {
+        clearInterval(id);
+        setPaymentState("expired");
+        setPaymentMessage("Tempo de pagamento esgotado. Tente novamente.");
+        return;
+      }
       try {
         const status = await ordersApi.paymentStatus(createdOrder.id);
         if (status.payment_status === "approved" || status.pedido_status === "pago") {
@@ -265,14 +272,16 @@ export default function Checkout() {
         } else if (status.payment_status === "rejected" || status.pedido_status === "pagamento_recusado") {
           setPaymentState("rejected");
           setPaymentMessage("Pagamento recusado. Tente novamente com outro metodo.");
+          clearInterval(id);
         } else if (["cancelled", "expired"].includes(status.payment_status) || status.pedido_status === "pagamento_expirado") {
           setPaymentState("expired");
           setPaymentMessage("Pagamento expirado ou cancelado. Tente novamente.");
+          clearInterval(id);
         }
       } catch {
         /* keep polling */
       }
-    }, 5000);
+    }, 8000);
     return () => clearInterval(id);
   }, [createdOrder, clearCart, navigate]);
 

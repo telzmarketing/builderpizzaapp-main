@@ -250,7 +250,7 @@ class PaymentService:
 
     def _build_mp_payment_body(self, order: Order, payment: Payment, form_data: dict[str, Any], amount: float) -> dict[str, Any]:
         payer = form_data.get("payer") or {}
-        email = payer.get("email") or form_data.get("payer_email") or "cliente@moschettieri.local"
+        email = payer.get("email") or form_data.get("payer_email") or f"cliente.{order.id[:8].lower()}@delivery.moschettieri.com.br"
         body: dict[str, Any] = {
             "transaction_amount": round(amount, 2),
             "description": f"Pedido #{order.id}",
