@@ -1,17 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle,
-  CheckCircle2,
-  Clock3,
-  Loader2,
-  PackageCheck,
-  RefreshCw,
-  Route,
-  ShoppingBag,
-  Utensils,
+  AlertTriangle, CheckCircle2, ChevronRight, Clock3, Loader2,
+  PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Utensils,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import { ordersApi, type ApiOrder, type OrderStatus } from "@/lib/api";
+
+// ── Status labels ──────────────────────────────────────────────────────────────
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Aguardando",
@@ -19,8 +14,8 @@ const STATUS_LABELS: Record<string, string> = {
   paid: "Pago",
   aguardando_pagamento: "Ag. pagamento",
   pago: "Pago",
-  pagamento_recusado: "Pagamento recusado",
-  pagamento_expirado: "Pagamento expirado",
+  pagamento_recusado: "Pgto recusado",
+  pagamento_expirado: "Pgto expirado",
   preparing: "Preparando",
   ready_for_pickup: "Pronto",
   on_the_way: "A caminho",
@@ -29,6 +24,8 @@ const STATUS_LABELS: Record<string, string> = {
   refunded: "Reembolsado",
 };
 
+// ── Kanban columns ─────────────────────────────────────────────────────────────
+
 type KanbanColumn = {
   id: string;
   title: string;
@@ -36,6 +33,7 @@ type KanbanColumn = {
   statuses: OrderStatus[];
   icon: typeof Clock3;
   accent: string;
+  targetStatus: OrderStatus | null; // status applied on drop
 };
 
 const KANBAN_COLUMNS: KanbanColumn[] = [
@@ -46,6 +44,7 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
     statuses: ["pending", "waiting_payment", "aguardando_pagamento"],
     icon: Clock3,
     accent: "text-orange-300 bg-orange-500/10 border-orange-500/20",
+    targetStatus: "pending",
   },
   {
     id: "paid",
@@ -54,14 +53,16 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
     statuses: ["paid", "pago"],
     icon: CheckCircle2,
     accent: "text-cyan-300 bg-cyan-500/10 border-cyan-500/20",
+    targetStatus: "paid",
   },
   {
     id: "preparing",
     title: "Preparando",
-    description: "Pedidos em producao",
+    description: "Pedidos em produção",
     statuses: ["preparing"],
     icon: Utensils,
     accent: "text-gold bg-gold/10 border-gold/20",
+    targetStatus: "preparing",
   },
   {
     id: "ready",
@@ -70,6 +71,7 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
     statuses: ["ready_for_pickup"],
     icon: PackageCheck,
     accent: "text-blue-300 bg-blue-500/10 border-blue-500/20",
+    targetStatus: "ready_for_pickup",
   },
   {
     id: "delivery",
@@ -78,6 +80,7 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
     statuses: ["on_the_way"],
     icon: Route,
     accent: "text-violet-300 bg-violet-500/10 border-violet-500/20",
+    targetStatus: "on_the_way",
   },
   {
     id: "done",
@@ -86,6 +89,7 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
     statuses: ["delivered"],
     icon: ShoppingBag,
     accent: "text-green-300 bg-green-500/10 border-green-500/20",
+    targetStatus: "delivered",
   },
   {
     id: "issues",
@@ -94,29 +98,50 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
     statuses: ["pagamento_recusado", "pagamento_expirado", "cancelled", "refunded"],
     icon: AlertTriangle,
     accent: "text-red-300 bg-red-500/10 border-red-500/20",
+    targetStatus: "cancelled",
   },
 ];
+
+// Status → next status in the flow
+const NEXT_STATUS: Partial<Record<string, OrderStatus>> = {
+  pending: "preparing",
+  waiting_payment: "preparing",
+  aguardando_pagamento: "preparing",
+  paid: "preparing",
+  pago: "preparing",
+  preparing: "ready_for_pickup",
+  ready_for_pickup: "on_the_way",
+  on_the_way: "delivered",
+};
+
+const NEXT_LABEL: Partial<Record<string, string>> = {
+  pending: "Preparando",
+  waiting_payment: "Preparando",
+  aguardando_pagamento: "Preparando",
+  paid: "Preparando",
+  pago: "Preparando",
+  preparing: "Pronto",
+  ready_for_pickup: "A caminho",
+  on_the_way: "Entregue",
+};
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 const statusColor = (status: string) => {
   if (status === "delivered") return "bg-green-500/15 text-green-300";
   if (status === "on_the_way" || status === "ready_for_pickup") return "bg-blue-500/15 text-blue-300";
-  if (status === "cancelled" || status === "refunded" || status === "pagamento_recusado" || status === "pagamento_expirado") {
+  if (["cancelled", "refunded", "pagamento_recusado", "pagamento_expirado"].includes(status))
     return "bg-red-500/15 text-red-300";
-  }
   if (status === "paid" || status === "pago") return "bg-cyan-500/15 text-cyan-300";
-  return "bg-gold/15 text-gold";
+  if (status === "preparing") return "bg-gold/15 text-gold";
+  return "bg-stone/20 text-stone";
 };
 
-const formatCurrency = (value: number) =>
-  value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const formatCurrency = (v: number) =>
+  v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-const formatDateTime = (value: string) =>
-  new Date(value).toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+const formatDateTime = (v: string) =>
+  new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 function orderTimeLabel(order: ApiOrder) {
   const diff = Date.now() - new Date(order.created_at).getTime();
@@ -127,14 +152,89 @@ function orderTimeLabel(order: ApiOrder) {
   return `${hours}h ${minutes % 60}min`;
 }
 
+// ── Print receipt ──────────────────────────────────────────────────────────────
+
+function printOrder(order: ApiOrder) {
+  const lines = order.items.map((item) => {
+    const isMulti = item.flavor_division > 1;
+    const name = isMulti ? item.flavors.map((f) => f.name).join(" + ") : item.product_name;
+    const details = [
+      item.selected_size ? item.selected_size : null,
+      item.selected_crust_type ? item.selected_crust_type : null,
+      item.selected_drink_variant ? item.selected_drink_variant : null,
+    ].filter(Boolean).join(" · ");
+    return `<tr>
+      <td style="padding:2px 4px">${item.quantity}x</td>
+      <td style="padding:2px 4px;width:100%">${name}${details ? ` (${details})` : ""}</td>
+      <td style="padding:2px 4px;text-align:right">R$ ${(item.unit_price * item.quantity).toFixed(2)}</td>
+    </tr>`;
+  }).join("");
+
+  const addOns = order.items.flatMap((item) =>
+    (item.add_ons ?? []).map((a) => `<tr>
+      <td></td>
+      <td style="padding:1px 4px;color:#888;font-size:11px">  + ${a}</td>
+      <td></td>
+    </tr>`)
+  ).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<title>Pedido #${order.id.slice(0, 8).toUpperCase()}</title>
+<style>
+  body{font-family:monospace;font-size:13px;margin:0;padding:16px;max-width:320px}
+  h1{font-size:16px;margin:0 0 4px}
+  hr{border:none;border-top:1px dashed #999;margin:8px 0}
+  table{width:100%;border-collapse:collapse}
+  .total{font-size:15px;font-weight:bold}
+  @media print{body{padding:0}}
+</style></head><body>
+  <div style="text-align:center;margin-bottom:8px">
+    <strong>MOSCHETTIERI PIZZERIA</strong><br/>
+    delivery.moschettieri.com.br
+  </div>
+  <hr/>
+  <h1>Pedido #${order.id.slice(0, 8).toUpperCase()}</h1>
+  <p style="margin:2px 0;font-size:11px">${formatDateTime(order.created_at)}</p>
+  <hr/>
+  <p style="margin:2px 0"><strong>${order.delivery_name}</strong></p>
+  <p style="margin:2px 0">${order.delivery_phone}</p>
+  <p style="margin:2px 0">${order.delivery_street}</p>
+  ${order.delivery_complement ? `<p style="margin:2px 0">${order.delivery_complement}</p>` : ""}
+  <p style="margin:2px 0">${order.delivery_city}</p>
+  <hr/>
+  <table>${lines}${addOns}</table>
+  <hr/>
+  ${order.shipping_fee > 0 ? `<p style="margin:2px 0;text-align:right">Frete: R$ ${order.shipping_fee.toFixed(2)}</p>` : ""}
+  ${order.discount > 0 ? `<p style="margin:2px 0;text-align:right">Desconto: -R$ ${order.discount.toFixed(2)}</p>` : ""}
+  <p class="total" style="margin:4px 0;text-align:right">TOTAL: ${formatCurrency(order.total)}</p>
+  <hr/>
+  <p style="margin:2px 0">Entrega estimada: ${order.estimated_time} min</p>
+  <hr/>
+  <p style="text-align:center;font-size:11px;color:#888">Obrigado pela preferência!</p>
+</body></html>`;
+
+  const w = window.open("", "_blank", "width=400,height=700,scrollbars=yes");
+  if (!w) { alert("Habilite pop-ups para imprimir."); return; }
+  w.document.write(html);
+  w.document.close();
+  w.onload = () => { w.focus(); w.print(); };
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
+
 export default function AdminOrders() {
   const [orders, setOrders] = useState<ApiOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const fetchOrders = async (silent = false) => {
+  // Drag state — ref avoids triggering re-renders during drag
+  const draggedId = useRef<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+
+  const fetchOrders = useCallback(async (silent = false) => {
     if (silent) setRefreshing(true);
     else setLoading(true);
     setError("");
@@ -144,47 +244,76 @@ export default function AdminOrders() {
       setOrders(sorted);
       setLastUpdated(new Date());
     } catch {
-      setError("Nao foi possivel carregar os pedidos. Verifique se o backend esta rodando.");
+      setError("Não foi possível carregar os pedidos.");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchOrders();
-    const interval = window.setInterval(() => fetchOrders(true), 15000);
-    return () => window.clearInterval(interval);
+    const id = window.setInterval(() => fetchOrders(true), 15_000);
+    return () => window.clearInterval(id);
+  }, [fetchOrders]);
+
+  const handleStatusChange = useCallback(async (orderId: string, newStatus: OrderStatus) => {
+    setUpdatingId(orderId);
+    try {
+      const updated = await ordersApi.updateStatus(orderId, newStatus);
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+    } catch {
+      alert("Erro ao atualizar status.");
+    } finally {
+      setUpdatingId(null);
+    }
   }, []);
+
+  // Drag handlers
+  const handleDragStart = useCallback((orderId: string) => {
+    draggedId.current = orderId;
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    draggedId.current = null;
+    setDragOverColumn(null);
+  }, []);
+
+  const handleDrop = useCallback((column: KanbanColumn) => {
+    const id = draggedId.current;
+    if (!id || !column.targetStatus) return;
+    const order = orders.find((o) => o.id === id);
+    if (!order || order.status === column.targetStatus) return;
+    handleStatusChange(id, column.targetStatus);
+    setDragOverColumn(null);
+  }, [orders, handleStatusChange]);
 
   const groupedOrders = useMemo(() => {
     const grouped = new Map<string, ApiOrder[]>();
-    KANBAN_COLUMNS.forEach((column) => grouped.set(column.id, []));
-
+    KANBAN_COLUMNS.forEach((col) => grouped.set(col.id, []));
     orders.forEach((order) => {
-      const column = KANBAN_COLUMNS.find((item) => item.statuses.includes(order.status));
-      grouped.get(column?.id ?? "waiting")?.push(order);
+      const col = KANBAN_COLUMNS.find((c) => c.statuses.includes(order.status));
+      grouped.get(col?.id ?? "waiting")?.push(order);
     });
-
     return grouped;
   }, [orders]);
 
-  const activeOrders = orders.filter((order) => !["delivered", "cancelled", "refunded"].includes(order.status)).length;
+  const activeOrders = orders.filter((o) => !["delivered", "cancelled", "refunded"].includes(o.status)).length;
 
   return (
     <div className="min-h-screen bg-surface-00 flex flex-col md:flex-row md:h-screen overflow-hidden">
       <AdminSidebar />
 
       <main className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
         <header className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 py-4 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
           <div>
             <p className="text-gold text-xs font-bold uppercase tracking-[0.24em]">Kanban operacional</p>
             <h1 className="text-cream text-2xl font-black mt-1">Pedidos</h1>
             <p className="text-stone text-sm mt-1">
-              Visualizacao somente leitura. Os cards mudam de coluna conforme o status salvo no banco de dados.
+              Arraste os cards entre colunas ou use os botões para avançar o status.
             </p>
           </div>
-
           <div className="flex flex-wrap items-center gap-3">
             <div className="rounded-xl border border-surface-03 bg-surface-03/60 px-3 py-2">
               <p className="text-stone text-[11px] uppercase tracking-widest">Ativos</p>
@@ -205,17 +334,17 @@ export default function AdminOrders() {
           </div>
         </header>
 
-        <section className="border-b border-surface-03 bg-surface-00 px-4 md:px-8 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-          <p className="text-stone text-xs">
-            Atualizacao automatica a cada 15 segundos. Nenhuma acao manual altera status por esta tela.
-          </p>
+        {/* Sub-header */}
+        <section className="border-b border-surface-03 bg-surface-00 px-4 md:px-8 py-2 flex items-center justify-between gap-2">
+          <p className="text-stone text-xs">Atualização automática a cada 15s · Arraste ou clique <ChevronRight size={11} className="inline" /> para avançar status</p>
           {lastUpdated && (
             <p className="text-stone text-xs">
-              Ultima leitura: {lastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              {lastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </p>
           )}
         </section>
 
+        {/* Body */}
         <div className="flex-1 overflow-hidden">
           {error && (
             <div className="mx-4 md:mx-8 mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
@@ -231,7 +360,7 @@ export default function AdminOrders() {
             <div className="flex h-full flex-col items-center justify-center px-6 text-center">
               <ShoppingBag size={54} className="mb-4 text-gold" />
               <p className="text-cream text-xl font-bold">Nenhum pedido ainda</p>
-              <p className="text-stone text-sm mt-2">Os pedidos aparecem aqui automaticamente quando forem criados.</p>
+              <p className="text-stone text-sm mt-2">Os pedidos aparecem aqui automaticamente.</p>
             </div>
           ) : (
             <div className="h-full overflow-x-auto overflow-y-hidden p-4 md:p-6">
@@ -239,8 +368,24 @@ export default function AdminOrders() {
                 {KANBAN_COLUMNS.map((column) => {
                   const Icon = column.icon;
                   const columnOrders = groupedOrders.get(column.id) ?? [];
+                  const isDragOver = dragOverColumn === column.id;
                   return (
-                    <section key={column.id} className="flex h-full w-[300px] flex-col rounded-2xl border border-surface-03 bg-surface-02">
+                    <section
+                      key={column.id}
+                      className={`flex h-full w-[300px] flex-col rounded-2xl border transition-colors ${
+                        isDragOver
+                          ? "border-gold bg-gold/5"
+                          : "border-surface-03 bg-surface-02"
+                      }`}
+                      onDragOver={(e) => { e.preventDefault(); setDragOverColumn(column.id); }}
+                      onDragLeave={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                          setDragOverColumn(null);
+                        }
+                      }}
+                      onDrop={() => handleDrop(column)}
+                    >
+                      {/* Column header */}
                       <header className="border-b border-surface-03 p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -252,19 +397,33 @@ export default function AdminOrders() {
                             </div>
                             <p className="text-stone text-xs mt-2 leading-snug">{column.description}</p>
                           </div>
-                          <span className="rounded-full bg-surface-03 px-2.5 py-1 text-xs font-bold text-parchment">
+                          <span className="rounded-full bg-surface-03 px-2.5 py-1 text-xs font-bold text-parchment flex-shrink-0">
                             {columnOrders.length}
                           </span>
                         </div>
                       </header>
 
+                      {/* Cards */}
                       <div className="flex-1 overflow-y-auto p-3 space-y-3">
                         {columnOrders.length === 0 ? (
-                          <div className="rounded-xl border border-dashed border-surface-03 p-4 text-center text-xs text-stone">
-                            Sem pedidos nesta etapa
+                          <div className={`rounded-xl border border-dashed p-6 text-center text-xs text-stone transition-colors ${isDragOver ? "border-gold/50 bg-gold/5 text-gold" : "border-surface-03"}`}>
+                            {isDragOver ? "Soltar aqui" : "Sem pedidos"}
                           </div>
                         ) : (
-                          columnOrders.map((order) => <OrderCard key={order.id} order={order} />)
+                          columnOrders.map((order) => (
+                            <OrderCard
+                              key={order.id}
+                              order={order}
+                              updating={updatingId === order.id}
+                              onAdvance={() => {
+                                const next = NEXT_STATUS[order.status];
+                                if (next) handleStatusChange(order.id, next);
+                              }}
+                              onPrint={() => printOrder(order)}
+                              onDragStart={() => handleDragStart(order.id)}
+                              onDragEnd={handleDragEnd}
+                            />
+                          ))
                         )}
                       </div>
                     </section>
@@ -279,57 +438,105 @@ export default function AdminOrders() {
   );
 }
 
-function OrderCard({ order }: { order: ApiOrder }) {
-  const itemSummary = order.items
-    .slice(0, 2)
-    .map((item) => {
-      const isMulti = item.flavor_division > 1;
-      const name = isMulti ? item.flavors.map((flavor) => flavor.name).join(" + ") : item.product_name;
-      return `${item.quantity}x ${name}`;
-    });
+// ── Order Card ─────────────────────────────────────────────────────────────────
 
-  const remainingItems = Math.max(order.items.length - itemSummary.length, 0);
+interface OrderCardProps {
+  order: ApiOrder;
+  updating: boolean;
+  onAdvance: () => void;
+  onPrint: () => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+}
+
+function OrderCard({ order, updating, onAdvance, onPrint, onDragStart, onDragEnd }: OrderCardProps) {
+  const nextLabel = NEXT_LABEL[order.status];
+
+  const itemSummary = order.items.slice(0, 2).map((item) => {
+    const isMulti = item.flavor_division > 1;
+    const name = isMulti ? item.flavors.map((f) => f.name).join(" + ") : item.product_name;
+    return `${item.quantity}x ${name}`;
+  });
+  const remaining = Math.max(order.items.length - 2, 0);
 
   return (
-    <article className="rounded-2xl border border-surface-03 bg-surface-03/45 p-4 shadow-sm">
+    <article
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      className={`rounded-2xl border border-surface-03 bg-surface-03/45 p-4 shadow-sm select-none transition-opacity cursor-grab active:cursor-grabbing ${updating ? "opacity-50 pointer-events-none" : ""}`}
+    >
+      {/* Top row: ID + status badge */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-cream font-mono text-sm font-black">#{order.id.slice(0, 8).toUpperCase()}</h3>
           <p className="text-stone text-xs mt-1">{formatDateTime(order.created_at)} · {orderTimeLabel(order)}</p>
         </div>
-        <span className={`rounded-full px-2 py-1 text-[10px] font-bold whitespace-nowrap ${statusColor(order.status)}`}>
+        <span className={`rounded-full px-2 py-1 text-[10px] font-bold whitespace-nowrap flex-shrink-0 ${statusColor(order.status)}`}>
           {STATUS_LABELS[order.status] ?? order.status}
         </span>
       </div>
 
-      <div className="mt-4">
+      {/* Customer */}
+      <div className="mt-3">
         <p className="text-cream text-sm font-bold truncate">{order.delivery_name}</p>
-        <p className="text-stone text-xs mt-1 truncate">{order.delivery_phone}</p>
-        <p className="text-stone/80 text-xs mt-1 line-clamp-2">
-          {order.delivery_street}, {order.delivery_city}
-          {order.delivery_complement ? ` - ${order.delivery_complement}` : ""}
+        <p className="text-stone text-xs mt-0.5 truncate">{order.delivery_phone}</p>
+        <p className="text-stone/80 text-xs mt-0.5 line-clamp-2">
+          {order.delivery_street}
+          {order.delivery_complement ? ` — ${order.delivery_complement}` : ""}
+          {`, ${order.delivery_city}`}
         </p>
       </div>
 
-      <div className="mt-4 rounded-xl bg-surface-02/80 p-3">
-        <p className="text-parchment text-xs font-bold mb-2">Itens</p>
-        <div className="space-y-1">
-          {itemSummary.map((item, index) => (
-            <p key={`${order.id}-${index}`} className="text-stone text-xs line-clamp-1">{item}</p>
+      {/* Items */}
+      <div className="mt-3 rounded-xl bg-surface-02/80 p-3">
+        <p className="text-parchment text-xs font-bold mb-1.5">Itens</p>
+        <div className="space-y-0.5">
+          {itemSummary.map((item, i) => (
+            <p key={i} className="text-stone text-xs line-clamp-1">{item}</p>
           ))}
-          {remainingItems > 0 && <p className="text-gold text-xs font-semibold">+ {remainingItems} item(ns)</p>}
+          {remaining > 0 && <p className="text-gold text-xs font-semibold">+ {remaining} item(ns)</p>}
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between border-t border-surface-03 pt-3">
+      {/* Total */}
+      <div className="mt-3 flex items-center justify-between border-t border-surface-03 pt-3">
         <div>
           <p className="text-stone text-[10px] uppercase tracking-widest">Total</p>
-          <p className="text-gold text-lg font-black">{formatCurrency(order.total)}</p>
+          <p className="text-gold text-base font-black">{formatCurrency(order.total)}</p>
         </div>
         <div className="text-right">
           <p className="text-stone text-[10px] uppercase tracking-widest">Entrega</p>
           <p className="text-parchment text-xs font-semibold">{order.estimated_time} min</p>
         </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="mt-3 flex gap-2">
+        {/* Advance status */}
+        {nextLabel && (
+          <button
+            onClick={onAdvance}
+            disabled={updating}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-gold/15 hover:bg-gold/25 text-gold text-xs font-bold py-2 px-3 transition-colors disabled:opacity-50"
+          >
+            {updating ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <ChevronRight size={13} />
+            )}
+            {nextLabel}
+          </button>
+        )}
+
+        {/* Print */}
+        <button
+          onClick={onPrint}
+          title="Imprimir pedido"
+          className="flex items-center justify-center rounded-lg bg-surface-02 hover:bg-surface-03 text-parchment p-2 transition-colors"
+        >
+          <Printer size={14} />
+        </button>
       </div>
     </article>
   );
