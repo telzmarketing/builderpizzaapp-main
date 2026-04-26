@@ -204,6 +204,7 @@ export default function Checkout() {
             paymentMethods: {
               creditCard: "all",
               debitCard: "all",
+              bankTransfer: "all",
               maxInstallments: 6,
             },
           },
