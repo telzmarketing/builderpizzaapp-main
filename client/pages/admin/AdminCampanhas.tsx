@@ -172,21 +172,19 @@ export default function AdminCampanhas() {
 
   const loadAll = useCallback(async () => {
     setLoadingData(true);
-    try {
-      const [c, k, p, u, cps] = await Promise.all([
-        campaignsApi.list(),
-        campaignsApi.listKits(),
-        productsApi.list(false),
-        couponsApi.listUsage(),
-        couponsApi.list(),
-      ]);
-      setCampaigns(c);
-      setKits(k);
-      setProducts(p);
-      setUsage(u);
-      setCouponsList(cps);
-    } catch { /* ignore */ }
-    finally { setLoadingData(false); }
+    const [c, k, p, u, cps] = await Promise.allSettled([
+      campaignsApi.list(),
+      campaignsApi.listKits(),
+      productsApi.list(false),
+      couponsApi.listUsage(),
+      couponsApi.list(),
+    ]);
+    if (c.status === "fulfilled") setCampaigns(c.value);
+    if (k.status === "fulfilled") setKits(k.value);
+    if (p.status === "fulfilled") setProducts(p.value);
+    if (u.status === "fulfilled") setUsage(u.value);
+    if (cps.status === "fulfilled") setCouponsList(cps.value);
+    setLoadingData(false);
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
@@ -591,8 +589,20 @@ export default function AdminCampanhas() {
                     </div>
 
                     <div className="space-y-4">
-                      {campaigns.map((c) => (
+                      {campaigns.map((c) => {
+                        const visibleInStore = c.published && c.status === "active";
+                        return (
                         <div key={c.id} className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
+                          {!visibleInStore && (
+                            <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 flex items-center gap-2">
+                              <span className="text-amber-400 text-xs font-semibold">Invisível na loja</span>
+                              <span className="text-stone text-xs">
+                                {!c.published && c.status !== "active" ? "— marque como Publicada e mude o status para Ativa" :
+                                 !c.published ? "— marque como Publicada para aparecer na loja" :
+                                 "— mude o status para Ativa para aparecer na loja"}
+                              </span>
+                            </div>
+                          )}
                           <div className="flex items-center gap-4 p-4">
                             <div className="w-14 h-14 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center overflow-hidden">
                               {c.banner ? (
@@ -654,7 +664,8 @@ export default function AdminCampanhas() {
                             </div>
                           </div>
                         </div>
-                      ))}
+                      );
+                      })}
                     </div>
 
                     {campaigns.length === 0 && (
@@ -946,11 +957,12 @@ export default function AdminCampanhas() {
 
             <div className="grid grid-cols-2 gap-4">
               <Inp label="Ordem de Exibição" type="number" value={campaignForm.display_order} onChange={(e) => setCampaignForm({ ...campaignForm, display_order: parseInt(e.target.value) || 0 })} />
-              <div className="flex items-end gap-3">
-                <label className="flex items-center gap-2 cursor-pointer pb-2">
+              <div className="flex flex-col justify-end gap-1">
+                <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={campaignForm.published} onChange={(e) => setCampaignForm({ ...campaignForm, published: e.target.checked })} className="w-4 h-4 accent-gold" />
-                  <span className="text-parchment text-sm">Publicada (visível ao público)</span>
+                  <span className="text-parchment text-sm font-medium">Publicada</span>
                 </label>
+                <p className="text-stone text-[11px]">Requer status <strong className="text-parchment">Ativa</strong> + Publicada para aparecer na loja</p>
               </div>
             </div>
 
