@@ -590,17 +590,27 @@ export default function AdminCampanhas() {
 
                     <div className="space-y-4">
                       {campaigns.map((c) => {
-                        const visibleInStore = c.published && c.status === "active";
+                        const now = new Date();
+                        const notStartedYet = c.start_at && new Date(c.start_at) > now;
+                        const alreadyEnded = c.end_at && new Date(c.end_at) < now;
+                        const visibleInStore = c.published && c.status === "active" && !notStartedYet && !alreadyEnded;
+                        const notVisibleReason = !c.published && c.status !== "active"
+                          ? "marque como Publicada e mude o status para Ativa"
+                          : !c.published
+                          ? "marque como Publicada para aparecer na loja"
+                          : c.status !== "active"
+                          ? "mude o status para Ativa para aparecer na loja"
+                          : notStartedYet
+                          ? `agendada para iniciar em ${new Date(c.start_at!).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} — edite e remova o início para ativar agora`
+                          : alreadyEnded
+                          ? "campanha encerrada (data de término já passou)"
+                          : "";
                         return (
                         <div key={c.id} className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
                           {!visibleInStore && (
                             <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 flex items-center gap-2">
                               <span className="text-amber-400 text-xs font-semibold">Invisível na loja</span>
-                              <span className="text-stone text-xs">
-                                {!c.published && c.status !== "active" ? "— marque como Publicada e mude o status para Ativa" :
-                                 !c.published ? "— marque como Publicada para aparecer na loja" :
-                                 "— mude o status para Ativa para aparecer na loja"}
-                              </span>
+                              <span className="text-stone text-xs">— {notVisibleReason}</span>
                             </div>
                           )}
                           <div className="flex items-center gap-4 p-4">
@@ -628,11 +638,11 @@ export default function AdminCampanhas() {
                               <p className="text-stone text-xs mt-0.5">
                                 /{c.slug} · {c.campaign_type === "exclusive_page" ? "Página exclusiva" : "Produtos em promoção"}
                               </p>
-                              {c.end_at && (
-                                <p className="text-stone text-xs mt-0.5">
-                                  Até {new Date(c.end_at).toLocaleDateString("pt-BR")}
-                                </p>
-                              )}
+                              <p className="text-stone text-xs mt-0.5">
+                                {c.start_at && <span>De {new Date(c.start_at).toLocaleDateString("pt-BR")} </span>}
+                                {c.end_at && <span>até {new Date(c.end_at).toLocaleDateString("pt-BR")}</span>}
+                                {!c.start_at && !c.end_at && <span>Sem agendamento</span>}
+                              </p>
                             </div>
                             <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end">
                               <button
