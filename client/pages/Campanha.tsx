@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, ShoppingCart, Clock, Tag } from "lucide-react";
-import { campaignsApi, type ApiCampaign, type ApiCampaignProduct, productsApi, type ApiProduct } from "@/lib/api";
+import { campaignsApi, type ApiCampaign, type ApiCampaignProduct, productsApi, type ApiProduct, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { useApp } from "@/context/AppContext";
 import { trackEvent } from "@/lib/tracking";
 import BottomNav from "@/components/BottomNav";
@@ -103,7 +103,9 @@ export default function Campanha() {
       {/* Banner */}
       {campaign.banner && (
         <div className="w-full h-48 overflow-hidden">
-          {campaign.banner.startsWith("http") || campaign.banner.startsWith("data:") ? (
+          {isAssetUrl(campaign.banner) ? (
+            <img src={resolveAssetUrl(campaign.banner)} alt={campaign.name} className="w-full h-full object-cover" />
+          ) : campaign.banner.startsWith("http") || campaign.banner.startsWith("data:") ? (
             <img src={campaign.banner} alt={campaign.name} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-gold/20 to-gold/5 flex items-center justify-center text-7xl">
@@ -153,8 +155,12 @@ export default function Campanha() {
 
                 return (
                   <div key={cp.id} className="bg-surface-02 rounded-2xl p-4 border border-surface-03 flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center text-2xl">
-                      {product.icon}
+                    <div className="w-14 h-14 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                      {isAssetUrl(product.icon) ? (
+                        <img src={resolveAssetUrl(product.icon)} alt={product.name} className="w-full h-full object-contain" />
+                      ) : (
+                        <span className="text-2xl">{product.icon || "🍕"}</span>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="text-cream font-semibold text-sm">{product.name}</h3>
