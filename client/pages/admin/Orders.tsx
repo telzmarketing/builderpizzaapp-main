@@ -106,8 +106,8 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
 // Status → next status in the flow
 const NEXT_STATUS: Partial<Record<string, OrderStatus>> = {
   pending: "preparing",
-  waiting_payment: "preparing",
-  aguardando_pagamento: "preparing",
+  waiting_payment: "paid",
+  aguardando_pagamento: "paid",
   paid: "preparing",
   pago: "preparing",
   preparing: "ready_for_pickup",
@@ -117,8 +117,8 @@ const NEXT_STATUS: Partial<Record<string, OrderStatus>> = {
 
 const NEXT_LABEL: Partial<Record<string, string>> = {
   pending: "Preparando",
-  waiting_payment: "Preparando",
-  aguardando_pagamento: "Preparando",
+  waiting_payment: "Confirmar Pago",
+  aguardando_pagamento: "Confirmar Pago",
   paid: "Preparando",
   pago: "Preparando",
   preparing: "Pronto",
