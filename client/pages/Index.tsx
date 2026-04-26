@@ -46,7 +46,13 @@ export default function Home() {
     }).catch(() => { /* use defaults if backend unavailable */ });
   }, []);
 
-  const activePromotions = promotions.filter((p) => p.active);
+  const todayDay = new Date().getDay(); // 0=Dom … 6=Sáb
+  const activePromotions = promotions.filter((p) => {
+    if (!p.active) return false;
+    const days = (p as any).active_days as string | null | undefined;
+    if (!days) return true; // sem restrição de dias
+    return days.split(",").map(Number).includes(todayDay);
+  });
   const displayBanner = activePromotions.length > 0 ? activePromotions[activeBannerIndex] : promotions[0];
 
   // Banner auto-rotation

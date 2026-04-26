@@ -90,6 +90,7 @@ interface CampaignForm {
   start_at: string; end_at: string; banner: string; slug: string;
   campaign_type: CampaignType; display_title: string; display_subtitle: string;
   display_order: number; published: boolean; schedule_enabled: boolean;
+  active_days: number[];  // [] = todos os dias; [0..6] onde 0=Dom
 }
 
 interface KitForm {
@@ -110,11 +111,21 @@ const emptyCouponForm: CouponForm = {
   max_uses: "", expiry_date: "", active: true,
 };
 
+const WEEK_DAYS = [
+  { value: 0, label: "Dom" },
+  { value: 1, label: "Seg" },
+  { value: 2, label: "Ter" },
+  { value: 3, label: "Qua" },
+  { value: 4, label: "Qui" },
+  { value: 5, label: "Sex" },
+  { value: 6, label: "Sáb" },
+];
+
 const emptyCampaignForm: CampaignForm = {
   name: "", description: "", status: "draft", start_at: "", end_at: "",
   banner: "", slug: "", campaign_type: "products_promo",
   display_title: "", display_subtitle: "", display_order: 0, published: false,
-  schedule_enabled: false,
+  schedule_enabled: false, active_days: [],
 };
 
 const emptyKitForm: KitForm = {
@@ -333,6 +344,7 @@ export default function AdminCampanhas() {
       display_subtitle: c.display_subtitle ?? "",
       display_order: c.display_order, published: c.published,
       schedule_enabled: Boolean(c.start_at || c.end_at),
+      active_days: c.active_days ? c.active_days.split(",").map(Number) : [],
     });
     setShowCampaignModal(true);
   };
@@ -353,7 +365,7 @@ export default function AdminCampanhas() {
     }
     setCampaignSaving(true);
     try {
-      const { schedule_enabled, ...formData } = campaignForm;
+      const { schedule_enabled, active_days, ...formData } = campaignForm;
       const payload = {
         ...formData,
         start_at: schedule_enabled && campaignForm.start_at ? new Date(campaignForm.start_at).toISOString() : null,
@@ -362,6 +374,7 @@ export default function AdminCampanhas() {
         banner: campaignForm.banner || null,
         display_title: campaignForm.display_title || null,
         display_subtitle: campaignForm.display_subtitle || null,
+        active_days: active_days.length > 0 ? active_days.sort((a, b) => a - b).join(",") : null,
       };
       if (editingCampaignId) {
         await campaignsApi.update(editingCampaignId, payload as any);
@@ -1060,6 +1073,47 @@ export default function AdminCampanhas() {
                 <span className="block text-stone text-xs mt-0.5">Use os campos de inicio e termino acima para liberar a campanha automaticamente.</span>
               </span>
             </label>
+
+            {/* Days of week */}
+            <div className="rounded-xl border border-surface-03 bg-surface-03/40 p-4 space-y-3">
+              <div>
+                <p className="text-parchment text-sm font-bold">Dias de exibição</p>
+                <p className="text-stone text-xs mt-0.5">Selecione os dias em que o banner aparece. Sem seleção = todos os dias.</p>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {WEEK_DAYS.map(({ value, label }) => {
+                  const checked = campaignForm.active_days.includes(value);
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => {
+                        const days = checked
+                          ? campaignForm.active_days.filter((d) => d !== value)
+                          : [...campaignForm.active_days, value];
+                        setCampaignForm({ ...campaignForm, active_days: days });
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                        checked
+                          ? "bg-gold text-cream border-gold shadow-sm"
+                          : "bg-surface-02 text-stone border-surface-03 hover:border-gold/50 hover:text-parchment"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              {campaignForm.active_days.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setCampaignForm({ ...campaignForm, active_days: [] })}
+                  className="text-xs text-stone hover:text-parchment underline"
+                >
+                  Limpar (exibir todos os dias)
+                </button>
+              )}
+            </div>
 
             <ImageUpload
               value={campaignForm.banner}

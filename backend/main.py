@@ -205,6 +205,7 @@ def _run_migrations():
         "CREATE TABLE IF NOT EXISTS store_operation_logs (id VARCHAR PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', admin_id VARCHAR, admin_email VARCHAR(200), action VARCHAR(80) NOT NULL, entity VARCHAR(80) NOT NULL, entity_id VARCHAR, old_value TEXT, new_value TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE INDEX IF NOT EXISTS ix_store_operation_logs_tenant_id ON store_operation_logs(tenant_id)",
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS google_id VARCHAR(200)",
+        "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS active_days VARCHAR(20)",
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_customers_google_id ON customers(google_id) WHERE google_id IS NOT NULL",
     ]
     for stmt in stmts:

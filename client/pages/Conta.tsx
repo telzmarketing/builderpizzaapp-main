@@ -356,7 +356,7 @@ export default function Conta() {
                   <div className={`flex items-center gap-3 bg-surface-01 rounded-xl px-4 py-3 border transition-colors ${editMode ? "border-gold/50" : "border-surface-03"}`}>
                     <input
                       type="text"
-                      value={editMode ? draft[field] : (customer as Record<string, string>)[field] ?? ""}
+                      value={editMode ? draft[field] : (customer as unknown as Record<string, string>)[field] ?? ""}
                       onChange={(e) => setDraft((p) => ({ ...p, [field]: e.target.value }))}
                       disabled={!editMode}
                       placeholder={placeholder}

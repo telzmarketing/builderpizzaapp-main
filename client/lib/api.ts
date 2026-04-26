@@ -364,6 +364,7 @@ export interface ApiCampaign {
   display_subtitle: string | null;
   display_order: number;
   published: boolean;
+  active_days: string | null;
   created_at: string;
   updated_at: string;
 }
