@@ -198,7 +198,7 @@ export default function Product() {
       crustApi.list(product.id).then((crusts) => {
         const activeCrusts = crusts.filter((c) => c.active);
         setProductCrusts(activeCrusts);
-        // Don't auto-select — make it an explicit choice
+        if (activeCrusts.length > 0) setSelectedCrust(activeCrusts[0]);
       }).catch(() => setProductCrusts([]));
     }
 
@@ -321,6 +321,17 @@ export default function Product() {
     setImageZoomPosition({ x, y });
   };
 
+  const openProductImageZoom = () => {
+    setImageZoomPosition({ x: 50, y: 50 });
+    setImageZoomScale(1.25);
+    setImageZoomOpen(true);
+  };
+
+  const toggleProductImageZoom = () => {
+    setImageZoomPosition({ x: 50, y: 50 });
+    setImageZoomScale((value) => (value < 1.8 ? 2.15 : 1.25));
+  };
+
   const handleAddToCart = () => {
     if (!product) return;
     if (isPizzaBrotoSelected && division > 1) {
@@ -388,7 +399,7 @@ export default function Product() {
       return canBePizzaFlavor && !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id);
     });
 
-  const canAddToCart = isDrink ? true : allFilled;
+  const canAddToCart = isDrink ? true : (allFilled && (productCrusts.length === 0 || selectedCrust !== null));
 
   if (appLoading && !product) {
     return (
@@ -432,7 +443,7 @@ export default function Product() {
         <div className="flex flex-col items-center mb-6">
           <button
             type="button"
-            onClick={() => setImageZoomOpen(true)}
+            onClick={openProductImageZoom}
             className="relative w-52 h-52 rounded-full bg-surface-02 border-4 border-surface-03 flex items-center justify-center text-8xl shadow-2xl shadow-black/40 overflow-hidden transition-transform active:scale-95"
             aria-label="Ampliar imagem do produto"
           >
@@ -468,6 +479,80 @@ export default function Product() {
                 <Plus size={16} />
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* ── Pizza: Tipo de Massa ─────────────────────────────────────────── */}
+        {isPizza && productCrusts.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-cream font-bold mb-3">Tipo de Massa</h3>
+            <div className="flex gap-2 flex-wrap">
+              {productCrusts.map((crust) => {
+                const effectiveAddition = normalizeCrustPriceAddition(crust.price_addition, product.price);
+                return (
+                <button
+                  key={crust.id}
+                  onClick={() => setSelectedCrust(crust)}
+                  className={`flex-1 min-w-[80px] py-3 px-2 rounded-xl text-sm font-bold transition-all ${
+                    selectedCrust?.id === crust.id
+                      ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
+                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                  }`}
+                >
+                  <span className="block font-black text-xs">{crust.name}</span>
+                  <span className={`block text-[10px] mt-0.5 ${selectedCrust?.id === crust.id ? "text-white/80" : effectiveAddition > 0 ? "text-amber-400" : "opacity-70"}`}>
+                    {formatCrustAddition(effectiveAddition)}
+                  </span>
+                </button>
+                );
+              })}
+            </div>
+            {selectedCrust && (
+              <p className="text-amber-400 text-xs mt-2">Massa {selectedCrust.name} selecionada - {formatCrustAddition(variantPriceAddition)}</p>
+            )}
+          </div>
+        )}
+
+        {/* ── Size Selector ───────────────────────────────────────────────── */}
+        <div className="mb-6">
+          <h3 className="text-cream font-bold mb-3">
+            {isDrink ? "Tamanho da Bebida" : p.sizeLabel}
+          </h3>
+          <div className="flex gap-2 flex-wrap">
+            {productSizes.length > 0 ? (
+              productSizes.map((size) => (
+                <button
+                  key={size.id}
+                  onClick={() => setSelectedSizeObj(size)}
+                  className={`flex-1 min-w-[60px] py-3 rounded-xl text-sm font-bold transition-all ${
+                    selectedSizeObj?.id === size.id
+                      ? "bg-gold text-cream shadow-lg shadow-gold/30"
+                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                  }`}
+                >
+                  <span className="block font-black">{pizzaSizeLabel(size.label)}</span>
+                  <span className="block text-[10px] opacity-70 font-normal">{pizzaSizeDescription(size.label, size.description)}</span>
+                  <span className="block text-[10px] text-gold-light mt-0.5">R${size.price.toFixed(2)}</span>
+                </button>
+              ))
+            ) : !isDrink ? (
+              PIZZA_SIZE_LABELS.map((size) => (
+                <button
+                  key={size}
+                  onClick={() => setSelectedSizeFallback(size)}
+                  className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${
+                    selectedSizeFallback === size
+                      ? "bg-gold text-cream shadow-lg shadow-gold/30"
+                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                  }`}
+                >
+                  <span className="block font-black">{size}</span>
+                  <span className="block text-[10px] opacity-70 font-normal">{pizzaSizeDescription(size)}</span>
+                </button>
+              ))
+            ) : (
+              <p className="text-stone text-sm py-2">Nenhum tamanho configurado.</p>
+            )}
           </div>
         </div>
 
@@ -621,80 +706,6 @@ export default function Product() {
                   )}
                 </div>
               </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Size Selector ───────────────────────────────────────────────── */}
-        <div className="mb-6">
-          <h3 className="text-cream font-bold mb-3">
-            {isDrink ? "Tamanho da Bebida" : p.sizeLabel}
-          </h3>
-          <div className="flex gap-2 flex-wrap">
-            {productSizes.length > 0 ? (
-              productSizes.map((size) => (
-                <button
-                  key={size.id}
-                  onClick={() => setSelectedSizeObj(size)}
-                  className={`flex-1 min-w-[60px] py-3 rounded-xl text-sm font-bold transition-all ${
-                    selectedSizeObj?.id === size.id
-                      ? "bg-gold text-cream shadow-lg shadow-gold/30"
-                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
-                  }`}
-                >
-                  <span className="block font-black">{pizzaSizeLabel(size.label)}</span>
-                  <span className="block text-[10px] opacity-70 font-normal">{pizzaSizeDescription(size.label, size.description)}</span>
-                  <span className="block text-[10px] text-gold-light mt-0.5">R${size.price.toFixed(2)}</span>
-                </button>
-              ))
-            ) : !isDrink ? (
-              PIZZA_SIZE_LABELS.map((size) => (
-                <button
-                  key={size}
-                  onClick={() => setSelectedSizeFallback(size)}
-                  className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${
-                    selectedSizeFallback === size
-                      ? "bg-gold text-cream shadow-lg shadow-gold/30"
-                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
-                  }`}
-                >
-                  <span className="block font-black">{size}</span>
-                  <span className="block text-[10px] opacity-70 font-normal">{pizzaSizeDescription(size)}</span>
-                </button>
-              ))
-            ) : (
-              <p className="text-stone text-sm py-2">Nenhum tamanho configurado.</p>
-            )}
-          </div>
-        </div>
-
-        {/* ── Pizza: Tipo de Massa ─────────────────────────────────────────── */}
-        {isPizza && productCrusts.length > 0 && (
-          <div className="mb-6">
-            <h3 className="text-cream font-bold mb-3">Tipo de Massa</h3>
-            <div className="flex gap-2 flex-wrap">
-              {productCrusts.map((crust) => {
-                const effectiveAddition = normalizeCrustPriceAddition(crust.price_addition, product.price);
-                return (
-                <button
-                  key={crust.id}
-                  onClick={() => setSelectedCrust(prev => prev?.id === crust.id ? null : crust)}
-                  className={`flex-1 min-w-[80px] py-3 px-2 rounded-xl text-sm font-bold transition-all ${
-                    selectedCrust?.id === crust.id
-                      ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
-                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
-                  }`}
-                >
-                  <span className="block font-black text-xs">{crust.name}</span>
-                  <span className={`block text-[10px] mt-0.5 ${selectedCrust?.id === crust.id ? "text-white/80" : effectiveAddition > 0 ? "text-amber-400" : "opacity-70"}`}>
-                    {formatCrustAddition(effectiveAddition)}
-                  </span>
-                </button>
-                );
-              })}
-            </div>
-            {selectedCrust && (
-              <p className="text-amber-400 text-xs mt-2">Massa {selectedCrust.name} selecionada - {formatCrustAddition(variantPriceAddition)}</p>
             )}
           </div>
         )}

@@ -717,6 +717,7 @@ export interface ApiLoyaltyTransaction {
 export interface ApiAddress {
   id: string;
   customer_id: string;
+  label?: string | null;
   street: string;
   number?: string | null;
   complement?: string | null;
@@ -733,8 +734,30 @@ export interface ApiCustomer {
   name: string;
   phone: string | null;
   email: string | null;
+  lgpd_consent: boolean;
+  lgpd_policy_version: string | null;
+  marketing_email_consent: boolean;
+  marketing_whatsapp_consent: boolean;
   created_at: string;
   addresses: ApiAddress[];
+}
+
+export interface ApiLgpdPolicy {
+  id: string;
+  version: string;
+  title: string;
+  intro_text: string | null;
+  data_controller_text: string | null;
+  data_collected_text: string | null;
+  data_usage_text: string | null;
+  data_retention_text: string | null;
+  rights_text: string | null;
+  contact_text: string | null;
+  marketing_email_label: string | null;
+  marketing_whatsapp_label: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ApiShipping {
@@ -827,9 +850,26 @@ export const authApi = {
 
   register: (data: {
     name: string; email: string; phone: string;
-    street: string; number?: string; complement?: string;
-    neighborhood?: string; city: string; state?: string; zip_code?: string;
+    street: string; number: string; complement?: string;
+    neighborhood: string; city: string; state?: string; zip_code: string;
+    label?: string;
+    lgpd_consent: boolean; lgpd_policy_version?: string;
+    marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean;
   }) => post<{ customer: ApiCustomer; is_new: boolean }>("/auth/register", data),
+};
+
+// ─── LGPD ─────────────────────────────────────────────────────────────────────
+
+export const lgpdApi = {
+  current: () => get<ApiLgpdPolicy | null>("/lgpd/current"),
+  list: () => get<ApiLgpdPolicy[]>("/admin/lgpd"),
+  create: (data: Omit<ApiLgpdPolicy, "id" | "created_at" | "updated_at">) =>
+    post<ApiLgpdPolicy>("/admin/lgpd", data),
+  update: (id: string, data: Partial<Omit<ApiLgpdPolicy, "id" | "created_at" | "updated_at">>) =>
+    put<ApiLgpdPolicy>(`/admin/lgpd/${id}`, data),
+  remove: (id: string) => del<void>(`/admin/lgpd/${id}`),
+  activate: (id: string) => post<ApiLgpdPolicy>(`/admin/lgpd/${id}/activate`, {}),
+  seedDefault: () => post<{ message?: string; id?: string }>("/admin/lgpd/seed-default", {}),
 };
 
 // ─── Admin Auth ───────────────────────────────────────────────────────────────
@@ -1144,8 +1184,10 @@ export const customersApi = {
     put<ApiCustomer>(`/customers/${id}`, data),
   addAddress: (
     id: string,
-    data: { street: string; number?: string; complement?: string; neighborhood?: string; city: string; state?: string; zip_code?: string; is_default?: boolean }
+    data: { label?: string; street: string; number?: string; complement?: string; neighborhood?: string; city: string; state?: string; zip_code?: string; is_default?: boolean }
   ) => post<ApiAddress>(`/customers/${id}/addresses`, data),
+  deleteAddress: (customerId: string, addressId: string) =>
+    del<void>(`/customers/${customerId}/addresses/${addressId}`),
   listAddresses: (id: string) => get<ApiAddress[]>(`/customers/${id}/addresses`),
 };
 

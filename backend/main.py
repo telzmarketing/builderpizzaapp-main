@@ -23,6 +23,7 @@ from backend.routes import upload as upload_routes
 from backend.routes import theme as theme_routes
 from backend.routes import home_config as home_config_routes
 from backend.routes import paid_traffic as paid_traffic_routes
+from backend.routes import lgpd as lgpd_routes
 
 settings = get_settings()
 
@@ -207,6 +208,16 @@ def _run_migrations():
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS google_id VARCHAR(200)",
         "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS active_days VARCHAR(20)",
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_customers_google_id ON customers(google_id) WHERE google_id IS NOT NULL",
+        # ── LGPD consent fields on customers ─────────────────────────────
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS lgpd_consent BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS lgpd_consent_at TIMESTAMPTZ",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS lgpd_policy_version VARCHAR(20)",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS marketing_email_consent BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS marketing_whatsapp_consent BOOLEAN DEFAULT FALSE",
+        # ── Address label ─────────────────────────────────────────────────
+        "ALTER TABLE addresses ADD COLUMN IF NOT EXISTS label VARCHAR(100)",
+        # ── LGPD policies table ───────────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS lgpd_policies (id VARCHAR PRIMARY KEY, version VARCHAR(20) NOT NULL, title VARCHAR(300) NOT NULL DEFAULT 'Política de Privacidade e Proteção de Dados', intro_text TEXT, data_controller_text TEXT, data_collected_text TEXT, data_usage_text TEXT, data_retention_text TEXT, rights_text TEXT, contact_text TEXT, marketing_email_label VARCHAR(500) DEFAULT 'Desejo receber promoções e novidades por e-mail', marketing_whatsapp_label VARCHAR(500) DEFAULT 'Desejo receber promoções e novidades pelo WhatsApp', is_active BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
     ]
     for stmt in stmts:
         try:
@@ -258,6 +269,8 @@ app.include_router(webhooks.router)
 app.include_router(paid_traffic_routes.router)
 app.include_router(paid_traffic_routes.admin_router)
 app.include_router(store_operation.router)
+app.include_router(lgpd_routes.router)
+app.include_router(lgpd_routes.admin_router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")
@@ -282,6 +295,8 @@ app.include_router(webhooks.router, prefix="/api")
 app.include_router(paid_traffic_routes.router, prefix="/api")
 app.include_router(paid_traffic_routes.admin_router, prefix="/api")
 app.include_router(store_operation.router, prefix="/api")
+app.include_router(lgpd_routes.router, prefix="/api")
+app.include_router(lgpd_routes.admin_router, prefix="/api")
 
 # ── Static files (uploaded images) ───────────────────────────────────────────
 # Must be mounted AFTER all route registrations.

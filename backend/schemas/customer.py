@@ -4,6 +4,7 @@ from datetime import datetime
 
 
 class AddressBase(BaseModel):
+    label: Optional[str] = None
     street: str
     number: Optional[str] = None
     complement: Optional[str] = None
@@ -43,6 +44,10 @@ class CustomerUpdate(BaseModel):
 
 class CustomerOut(CustomerBase):
     id: str
+    lgpd_consent: bool = False
+    lgpd_policy_version: Optional[str] = None
+    marketing_email_consent: bool = False
+    marketing_whatsapp_consent: bool = False
     created_at: datetime
     updated_at: datetime
     addresses: list[AddressOut] = []

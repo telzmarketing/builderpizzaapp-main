@@ -80,6 +80,7 @@ import AdminPaidTraffic from "./pages/admin/PaidTraffic";
 import AdminChatbot from "./pages/admin/AdminChatbot";
 import AdminAparencia from "./pages/admin/Aparencia";
 import AdminHomeConfig from "./pages/admin/HomeConfig";
+import AdminLgpd from "./pages/admin/AdminLgpd";
 import Campanha from "./pages/Campanha";
 import Fidelidade from "./pages/Fidelidade";
 import Cupons from "./pages/Cupons";
@@ -136,6 +137,7 @@ export default function App() {
                 <Route path="/painel/chatbot"    element={<AdminChatbot />} />
                 <Route path="/painel/aparencia" element={<AdminAparencia />} />
                 <Route path="/painel/home-config" element={<AdminHomeConfig />} />
+                <Route path="/painel/lgpd" element={<AdminLgpd />} />
               </Route>
 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

@@ -86,12 +86,17 @@ class RegisterIn(BaseModel):
     email: str = Field(..., min_length=5)
     phone: str = Field(..., min_length=8)
     street: str = Field(..., min_length=3)
-    number: str | None = None
+    number: str = Field(..., min_length=1)
     complement: str | None = None
-    neighborhood: str | None = None
+    neighborhood: str = Field(..., min_length=2)
     city: str = Field(..., min_length=2)
     state: str | None = None
-    zip_code: str | None = None
+    zip_code: str = Field(..., min_length=8)
+    label: str | None = None
+    lgpd_consent: bool = Field(..., description="Must be True to complete registration")
+    lgpd_policy_version: str | None = None
+    marketing_email_consent: bool = False
+    marketing_whatsapp_consent: bool = False
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -178,22 +183,41 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
 
 @router.post("/login-email")
 def login_email(body: EmailLoginIn, db: Session = Depends(get_db)):
-    """Login by email for customers who registered via the full form."""
-    email = body.email.strip().lower()
-    customer = db.query(Customer).filter(Customer.email == email).first()
-    if not customer:
-        return err_msg(
-            "E-mail não encontrado. Crie sua conta primeiro.",
-            code="EmailNotFound",
-            status_code=404,
-        )
+    """Login by email or phone for registered customers."""
+    identifier = body.email.strip()
+    # Detect phone vs email
+    if "@" in identifier:
+        email = identifier.lower()
+        customer = db.query(Customer).filter(Customer.email == email).first()
+        if not customer:
+            return err_msg(
+                "E-mail não encontrado. Crie sua conta primeiro.",
+                code="EmailNotFound",
+                status_code=404,
+            )
+    else:
+        phone = _normalize_phone(identifier)
+        customer = _find_by_phone(phone, db)
+        if not customer:
+            return err_msg(
+                "Telefone não encontrado. Crie sua conta primeiro.",
+                code="PhoneNotFound",
+                status_code=404,
+            )
     return ok(LoginOut(customer=CustomerOut.model_validate(customer), is_new=False),
               f"Bem-vindo de volta, {customer.name}!")
 
 
 @router.post("/register")
 def register(body: RegisterIn, db: Session = Depends(get_db)):
-    """Full registration: name, email, phone + delivery address."""
+    """Full registration: name, email, phone + delivery address + LGPD consent."""
+    if not body.lgpd_consent:
+        return err_msg(
+            "É necessário aceitar os Termos de Privacidade para criar a conta.",
+            code="LgpdRequired",
+            status_code=422,
+        )
+
     email = body.email.strip().lower()
     phone = _normalize_phone(body.phone)
 
@@ -203,12 +227,26 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
             code="EmailTaken",
             status_code=409,
         )
+    if phone and db.query(Customer).filter(Customer.phone == phone).first():
+        return err_msg(
+            "Telefone já cadastrado. Tente fazer login.",
+            code="PhoneTaken",
+            status_code=409,
+        )
+
+    from datetime import datetime, timezone as tz
+    now = datetime.now(tz.utc)
 
     new_customer = Customer(
         id=str(uuid.uuid4()),
         name=body.name.strip(),
         email=email,
         phone=phone,
+        lgpd_consent=True,
+        lgpd_consent_at=now,
+        lgpd_policy_version=body.lgpd_policy_version,
+        marketing_email_consent=body.marketing_email_consent,
+        marketing_whatsapp_consent=body.marketing_whatsapp_consent,
     )
     db.add(new_customer)
     db.flush()
@@ -216,6 +254,7 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     new_address = Address(
         id=str(uuid.uuid4()),
         customer_id=new_customer.id,
+        label=body.label,
         street=body.street.strip(),
         number=body.number,
         complement=body.complement,

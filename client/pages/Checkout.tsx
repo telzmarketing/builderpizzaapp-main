@@ -63,6 +63,7 @@ export default function Checkout() {
   const c = siteContent.pages.checkout;
 
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("delivery");
+  const [selectedAddressId, setSelectedAddressId] = useState<string | "new" | null>(null);
   const [form, setForm] = useState({
     name: customer?.name ?? "",
     phone: customer?.phone ?? "",
@@ -88,20 +89,40 @@ export default function Checkout() {
   const [scheduledFor, setScheduledFor] = useState("");
   const brickController = useRef<{ unmount: () => void } | null>(null);
 
+  const savedAddresses = customer?.addresses ?? [];
+
+  const applyAddress = (addrId: string | "new") => {
+    setSelectedAddressId(addrId);
+    if (addrId === "new") {
+      setForm((prev) => ({ ...prev, address: "", neighborhood: "", city: "", zip_code: "", complement: "" }));
+      return;
+    }
+    const addr = savedAddresses.find((a) => a.id === addrId);
+    if (addr) {
+      setForm((prev) => ({
+        ...prev,
+        address: `${addr.street}${addr.number ? `, ${addr.number}` : ""}`,
+        neighborhood: addr.neighborhood || "",
+        city: addr.city,
+        zip_code: addr.zip_code || "",
+        complement: addr.complement || "",
+      }));
+    }
+  };
+
   useEffect(() => {
     if (!customer) return;
-    const defaultAddr = customer.addresses?.find((a) => a.is_default) ?? customer.addresses?.[0];
     setForm((prev) => ({
       ...prev,
       name: prev.name || customer.name,
       phone: prev.phone || (customer.phone ?? ""),
-      address: prev.address || (defaultAddr ? `${defaultAddr.street}${defaultAddr.number ? `, ${defaultAddr.number}` : ""}` : ""),
-      neighborhood: prev.neighborhood || defaultAddr?.neighborhood || "",
-      city: prev.city || defaultAddr?.city || "",
-      zip_code: prev.zip_code || defaultAddr?.zip_code || "",
-      complement: prev.complement || defaultAddr?.complement || "",
     }));
-  }, [customer]);
+    if (savedAddresses.length > 0 && selectedAddressId === null) {
+      const def = savedAddresses.find((a) => a.is_default) ?? savedAddresses[0];
+      applyAddress(def.id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customer?.id]);
 
   useEffect(() => {
     storeOperationApi.status().then(setStoreStatus).catch(() => setStoreStatus(null));
@@ -183,7 +204,6 @@ export default function Checkout() {
             paymentMethods: {
               creditCard: "all",
               debitCard: "all",
-              bankTransfer: "all",
               maxInstallments: 6,
             },
           },
@@ -440,11 +460,58 @@ export default function Checkout() {
             <Field icon={Phone} placeholder={c.fields.phone} value={form.phone} disabled={!!createdOrder} onChange={(v) => handleChange("phone", v)} error={errors.phone} />
             {deliveryMode === "delivery" && (
               <>
-                <Field icon={Home} placeholder={c.fields.address} value={form.address} disabled={!!createdOrder} onChange={(v) => handleChange("address", v)} error={errors.address} />
-                <Field icon={MapPin} placeholder="Bairro" value={form.neighborhood} disabled={!!createdOrder} onChange={(v) => handleChange("neighborhood", v)} />
-                <Field icon={MapPin} placeholder={c.fields.city} value={form.city} disabled={!!createdOrder} onChange={(v) => handleChange("city", v)} error={errors.city} />
-                <Field icon={Hash} placeholder="CEP (opcional)" value={form.zip_code} disabled={!!createdOrder} onChange={(v) => handleChange("zip_code", v)} />
-                <Field icon={Home} placeholder={c.fields.complement} value={form.complement} disabled={!!createdOrder} onChange={(v) => handleChange("complement", v)} />
+                {/* Saved address selector */}
+                {savedAddresses.length > 0 && !createdOrder && (
+                  <div className="space-y-2">
+                    <p className="text-stone text-xs font-medium ml-0.5">Escolher endereço</p>
+                    <div className="space-y-2">
+                      {savedAddresses.map((addr) => (
+                        <button
+                          key={addr.id}
+                          type="button"
+                          onClick={() => applyAddress(addr.id)}
+                          className={`w-full flex items-start gap-3 p-3 rounded-xl border text-left transition-all ${
+                            selectedAddressId === addr.id
+                              ? "border-gold bg-gold/10"
+                              : "border-surface-03 bg-surface-02 hover:border-brand-mid"
+                          }`}
+                        >
+                          <MapPin size={14} className={`mt-0.5 flex-shrink-0 ${selectedAddressId === addr.id ? "text-gold" : "text-stone"}`} />
+                          <div className="flex-1 min-w-0">
+                            {addr.label && <p className="text-gold text-xs font-semibold leading-none mb-0.5">{addr.label}</p>}
+                            <p className="text-cream text-xs">{addr.street}{addr.number ? `, ${addr.number}` : ""}</p>
+                            <p className="text-stone text-[11px] truncate">
+                              {[addr.neighborhood, addr.city, addr.zip_code].filter(Boolean).join(" · ")}
+                            </p>
+                          </div>
+                          {selectedAddressId === addr.id && <Check size={14} className="text-gold flex-shrink-0 mt-0.5" />}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => applyAddress("new")}
+                        className={`w-full flex items-center gap-2 p-3 rounded-xl border text-left transition-all ${
+                          selectedAddressId === "new"
+                            ? "border-gold bg-gold/10"
+                            : "border-dashed border-surface-03 hover:border-brand-mid"
+                        }`}
+                      >
+                        <span className="text-gold text-lg leading-none">+</span>
+                        <span className="text-stone text-xs">Novo endereço</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {/* Address form — always visible for guests, visible when "new" selected for logged-in */}
+                {(savedAddresses.length === 0 || selectedAddressId === "new" || !customer) && (
+                  <>
+                    <Field icon={Home} placeholder={c.fields.address} value={form.address} disabled={!!createdOrder} onChange={(v) => handleChange("address", v)} error={errors.address} />
+                    <Field icon={MapPin} placeholder="Bairro" value={form.neighborhood} disabled={!!createdOrder} onChange={(v) => handleChange("neighborhood", v)} />
+                    <Field icon={MapPin} placeholder={c.fields.city} value={form.city} disabled={!!createdOrder} onChange={(v) => handleChange("city", v)} error={errors.city} />
+                    <Field icon={Hash} placeholder="CEP (opcional)" value={form.zip_code} disabled={!!createdOrder} onChange={(v) => handleChange("zip_code", v)} />
+                    <Field icon={Home} placeholder={c.fields.complement} value={form.complement} disabled={!!createdOrder} onChange={(v) => handleChange("complement", v)} />
+                  </>
+                )}
               </>
             )}
           </div>
