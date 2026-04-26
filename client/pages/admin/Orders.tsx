@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import { ordersApi, type ApiOrder, type OrderStatus } from "@/lib/api";
+import { printOrder } from "@/lib/printing";
 
 // ── Status labels ──────────────────────────────────────────────────────────────
 
@@ -150,74 +151,6 @@ function orderTimeLabel(order: ApiOrder) {
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
   return `${hours}h ${minutes % 60}min`;
-}
-
-// ── Print receipt ──────────────────────────────────────────────────────────────
-
-function printOrder(order: ApiOrder) {
-  const lines = order.items.map((item) => {
-    const isMulti = item.flavor_division > 1;
-    const name = isMulti ? item.flavors.map((f) => f.name).join(" + ") : item.product_name;
-    const details = [
-      item.selected_size ? item.selected_size : null,
-      item.selected_crust_type ? item.selected_crust_type : null,
-      item.selected_drink_variant ? item.selected_drink_variant : null,
-    ].filter(Boolean).join(" · ");
-    return `<tr>
-      <td style="padding:2px 4px">${item.quantity}x</td>
-      <td style="padding:2px 4px;width:100%">${name}${details ? ` (${details})` : ""}</td>
-      <td style="padding:2px 4px;text-align:right">R$ ${(item.unit_price * item.quantity).toFixed(2)}</td>
-    </tr>`;
-  }).join("");
-
-  const addOns = order.items.flatMap((item) =>
-    (item.add_ons ?? []).map((a) => `<tr>
-      <td></td>
-      <td style="padding:1px 4px;color:#888;font-size:11px">  + ${a}</td>
-      <td></td>
-    </tr>`)
-  ).join("");
-
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-<title>Pedido #${order.id.slice(0, 8).toUpperCase()}</title>
-<style>
-  body{font-family:monospace;font-size:13px;margin:0;padding:16px;max-width:320px}
-  h1{font-size:16px;margin:0 0 4px}
-  hr{border:none;border-top:1px dashed #999;margin:8px 0}
-  table{width:100%;border-collapse:collapse}
-  .total{font-size:15px;font-weight:bold}
-  @media print{body{padding:0}}
-</style></head><body>
-  <div style="text-align:center;margin-bottom:8px">
-    <strong>MOSCHETTIERI PIZZERIA</strong><br/>
-    delivery.moschettieri.com.br
-  </div>
-  <hr/>
-  <h1>Pedido #${order.id.slice(0, 8).toUpperCase()}</h1>
-  <p style="margin:2px 0;font-size:11px">${formatDateTime(order.created_at)}</p>
-  <hr/>
-  <p style="margin:2px 0"><strong>${order.delivery_name}</strong></p>
-  <p style="margin:2px 0">${order.delivery_phone}</p>
-  <p style="margin:2px 0">${order.delivery_street}</p>
-  ${order.delivery_complement ? `<p style="margin:2px 0">${order.delivery_complement}</p>` : ""}
-  <p style="margin:2px 0">${order.delivery_city}</p>
-  <hr/>
-  <table>${lines}${addOns}</table>
-  <hr/>
-  ${order.shipping_fee > 0 ? `<p style="margin:2px 0;text-align:right">Frete: R$ ${order.shipping_fee.toFixed(2)}</p>` : ""}
-  ${order.discount > 0 ? `<p style="margin:2px 0;text-align:right">Desconto: -R$ ${order.discount.toFixed(2)}</p>` : ""}
-  <p class="total" style="margin:4px 0;text-align:right">TOTAL: ${formatCurrency(order.total)}</p>
-  <hr/>
-  <p style="margin:2px 0">Entrega estimada: ${order.estimated_time} min</p>
-  <hr/>
-  <p style="text-align:center;font-size:11px;color:#888">Obrigado pela preferência!</p>
-</body></html>`;
-
-  const w = window.open("", "_blank", "width=400,height=700,scrollbars=yes");
-  if (!w) { alert("Habilite pop-ups para imprimir."); return; }
-  w.document.write(html);
-  w.document.close();
-  w.onload = () => { w.focus(); w.print(); };
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
