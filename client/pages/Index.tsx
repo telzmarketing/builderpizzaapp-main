@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Menu, Search, Star, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, Tag, Heart, UtensilsCrossed } from "lucide-react";
 
 import { useApp } from "@/context/AppContext";
-import { homeCatalogApi, isAssetUrl, resolveAssetUrl, storeOperationApi } from "@/lib/api";
+import { homeCatalogApi, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 
@@ -21,7 +21,6 @@ export default function Home() {
   const [clickedPizza, setClickedPizza] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [storeOnline, setStoreOnline] = useState<boolean | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
@@ -33,10 +32,6 @@ export default function Home() {
     selectedProductIds: string[];
     showPromotions: boolean;
   }>({ mode: "all", selectedCategories: [], selectedProductIds: [], showPromotions: true });
-
-  useEffect(() => {
-    storeOperationApi.status().then((s) => setStoreOnline(s.is_open)).catch(() => {});
-  }, []);
 
   useEffect(() => {
     homeCatalogApi.get().then((config) => {
@@ -245,17 +240,9 @@ export default function Home() {
           <Menu size={24} />
         </button>
         <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />
-        <div className="flex items-center gap-2">
-          {storeOnline && (
-            <div className="flex items-center gap-1 bg-emerald-500/15 border border-emerald-500/25 rounded-full px-2 py-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]" />
-              <span className="text-[10px] font-bold text-emerald-400 leading-none">ON</span>
-            </div>
-          )}
-          <button onClick={() => setSearchOpen(true)} className="text-parchment hover:text-cream transition-colors">
-            <Search size={24} />
-          </button>
-        </div>
+        <button onClick={() => setSearchOpen(true)} className="text-parchment hover:text-cream transition-colors">
+          <Search size={24} />
+        </button>
       </div>
 
       {homeConfig.showPromotions && <div className="px-4 lg:px-8 pt-4 pb-3">
