@@ -188,7 +188,7 @@ export default function AdminProducts() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.description || !formData.price) {
+    if (!formData.name || !formData.description) {
       alert("Preencha todos os campos obrigatórios");
       return;
     }
@@ -731,15 +731,9 @@ export default function AdminProducts() {
                   <div className="bg-surface-02 rounded-xl p-6 border border-surface-03 mb-8">
                     <h3 className="text-xl font-bold text-cream mb-4">{editingId ? "Editar Produto" : "Novo Produto"}</h3>
                     <form onSubmit={handleSubmit} className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-parchment text-sm font-medium mb-2">Nome do Produto *</label>
-                          <input type="text" value={formData.name || ""} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className={cls} placeholder="Ex: Pizza Pepperoni" />
-                        </div>
-                        <div>
-                          <label className="block text-parchment text-sm font-medium mb-2">Preço (R$) *</label>
-                          <input type="number" value={formData.price || ""} onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) })} className={cls} placeholder="12.99" step="0.01" />
-                        </div>
+                      <div>
+                        <label className="block text-parchment text-sm font-medium mb-2">Nome do Produto *</label>
+                        <input type="text" value={formData.name || ""} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className={cls} placeholder="Ex: Pizza Pepperoni" />
                       </div>
                       <div>
                         <label className="block text-parchment text-sm font-medium mb-2">Descrição *</label>
@@ -802,9 +796,9 @@ export default function AdminProducts() {
                           value={formData.icon || ""}
                           onChange={(v) => setFormData({ ...formData, icon: v })}
                           label="Ícone / Imagem do produto"
-                          sizeGuide="Tamanho recomendado: 200×200px, máx. 512KB"
+                          sizeGuide="Tamanho recomendado: 800×800px ou maior, máx. 2MB"
                           hint="Faça upload de uma imagem ou use um emoji 🍕"
-                          maxKB={512}
+                          maxKB={2048}
                         />
                         <div>
                           <label className="block text-parchment text-sm font-medium mb-2">Avaliação (1–5)</label>
@@ -876,8 +870,7 @@ export default function AdminProducts() {
                         </div>
 
                         <p className="text-stone text-sm mb-3 line-clamp-2">{product.description}</p>
-                        <div className="flex justify-between items-center mb-4">
-                          <span className="text-gold font-bold">R$ {product.price.toFixed(2)}</span>
+                        <div className="flex justify-end items-center mb-4">
                           <span className="text-stone text-sm">⭐ {product.rating}</span>
                         </div>
 

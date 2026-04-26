@@ -786,7 +786,7 @@ export default function Product() {
           {/* Image container — rect, object-contain, full pizza visible */}
           <div
             className="relative overflow-hidden rounded-2xl bg-surface-01 border border-surface-03/60 shadow-2xl shadow-black/60 flex items-center justify-center"
-            style={{ width: "min(88vw, 400px)", height: "min(88vw, 400px)" }}
+            style={{ width: "min(94vw, 640px)", height: "min(94vw, 640px)" }}
             onClick={(e) => e.stopPropagation()}
           >
             {isAssetUrl(product.icon) ? (
@@ -801,6 +801,8 @@ export default function Product() {
                   transform: `scale(${imageZoomScale})`,
                   transformOrigin: `${imageZoomPosition.x}% ${imageZoomPosition.y}%`,
                   cursor: imageZoomScale > 1 ? "grab" : "zoom-in",
+                  willChange: "transform",
+                  imageRendering: "high-quality" as React.CSSProperties["imageRendering"],
                 }}
               />
             ) : (
