@@ -6,8 +6,10 @@ import {
   loyaltyApi,
   authApi,
   customersApi,
+  campaignsApi,
   type ApiProduct,
   type ApiPromotion,
+  type ApiCampaign,
   type ApiCoupon,
   type ApiLoyaltyLevel,
   type ApiLoyaltyReward,
@@ -297,6 +299,9 @@ interface AppContextType {
   // Multi-Flavors Config
   multiFlavorsConfig: MultiFlavorsConfig;
   updateMultiFlavorsConfig: (update: Partial<MultiFlavorsConfig>) => Promise<void>;
+
+  // Campaign banners (unificado — substitui promotions no home)
+  campaignBanners: ApiCampaign[];
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -448,6 +453,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<Pizza[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [campaignBanners, setCampaignBanners] = useState<ApiCampaign[]>([]);
   const [orders, setOrders] = useState<ApiOrder[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [fidelidadeLevels, setFidelidadeLevels] = useState<FidelidadeLevel[]>([]);
@@ -474,7 +480,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async function bootstrap() {
       setLoading(true);
       try {
-        const [prods, promos, cfgRaw, cups, loyaltyCfg, levels, rewards, rules] = await Promise.allSettled([
+        const [prods, promos, cfgRaw, cups, loyaltyCfg, levels, rewards, rules, camps] = await Promise.allSettled([
           productsApi.list(true),
           promotionsApi.list(true),
           productsApi.getMultiFlavorsConfig(),
@@ -483,11 +489,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           loyaltyApi.levels(),
           loyaltyApi.rewards(),
           loyaltyApi.rules(),
+          campaignsApi.list(true),
         ]);
 
         if (prods.status === "fulfilled") setProducts(prods.value);
         if (promos.status === "fulfilled")
           setPromotions(promos.value.map(apiPromotionToPromotion));
+        if (camps.status === "fulfilled") setCampaignBanners(camps.value);
         if (cfgRaw.status === "fulfilled") {
           const c = cfgRaw.value;
           setMultiFlavorsConfig({ maxFlavors: c.max_flavors, pricingRule: c.pricing_rule });
@@ -517,13 +525,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async function refreshStoreData() {
       if (window.location.pathname.startsWith("/painel")) return;
       try {
-        const [prods, promos] = await Promise.allSettled([
+        const [prods, promos, camps] = await Promise.allSettled([
           productsApi.list(true),
           promotionsApi.list(true),
+          campaignsApi.list(true),
         ]);
         if (prods.status === "fulfilled") setProducts(prods.value);
         if (promos.status === "fulfilled")
           setPromotions(promos.value.map(apiPromotionToPromotion));
+        if (camps.status === "fulfilled") setCampaignBanners(camps.value);
       } catch {
         // silent
       }
@@ -757,6 +767,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     cart, addToCart, updateCartItem, removeFromCart, clearCart,
     cartSubtotal, cartDeliveryFee, cartTotal,
     promotions, addPromotion, updatePromotion, deletePromotion,
+    campaignBanners,
     orders, setOrders, updateOrderStatus,
     coupons, addCoupon, updateCoupon, deleteCoupon,
     fidelidadeLevels, setFidelidadeLevels,

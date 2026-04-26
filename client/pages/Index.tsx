@@ -11,7 +11,7 @@ const PIZZA_FALLBACKS = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🍖", "�
 
 export default function Home() {
   const navigate = useNavigate();
-  const { products, promotions, siteContent, loyaltySettings } = useApp();
+  const { products, campaignBanners, siteContent, loyaltySettings } = useApp();
   const { sectionSubtitle, sectionTitle, bannerRotationInterval } = siteContent.home;
   const rotationInterval = (bannerRotationInterval ?? 5) * 1000;
   const ALL_LABEL = "Todos";
@@ -47,22 +47,24 @@ export default function Home() {
   }, []);
 
   const todayDay = new Date().getDay(); // 0=Dom … 6=Sáb
-  const activePromotions = promotions.filter((p) => {
-    if (!p.active) return false;
-    const days = (p as any).active_days as string | null | undefined;
-    if (!days) return true; // sem restrição de dias
-    return days.split(",").map(Number).includes(todayDay);
+  const now = new Date();
+  const activeBanners = campaignBanners.filter((c) => {
+    if (c.status !== "active" || !c.published) return false;
+    if (c.start_at && new Date(c.start_at) > now) return false;
+    if (c.end_at && new Date(c.end_at) < now) return false;
+    if (!c.active_days) return true;
+    return c.active_days.split(",").map(Number).includes(todayDay);
   });
-  const displayBanner = activePromotions.length > 0 ? activePromotions[activeBannerIndex] : promotions[0];
+  const displayBanner = activeBanners[activeBannerIndex % Math.max(1, activeBanners.length)];
 
   // Banner auto-rotation
   useEffect(() => {
-    if (activePromotions.length <= 1 || rotationInterval <= 0) return;
+    if (activeBanners.length <= 1 || rotationInterval <= 0) return;
     const timer = setInterval(() => {
-      setActiveBannerIndex((prev) => (prev + 1) % activePromotions.length);
+      setActiveBannerIndex((prev) => (prev + 1) % activeBanners.length);
     }, rotationInterval);
     return () => clearInterval(timer);
-  }, [activePromotions.length, rotationInterval]);
+  }, [activeBanners.length, rotationInterval]);
 
   const filteredProducts = searchQuery.trim()
     ? products.filter((p) =>
@@ -251,61 +253,71 @@ export default function Home() {
         </button>
       </div>
 
-      {homeConfig.showPromotions && <div className="px-4 lg:px-8 pt-4 pb-3">
-        <div className="max-w-sm lg:max-w-4xl mx-auto">
-          <div
-            className="rounded-2xl px-4 py-3 lg:px-10 lg:py-6 flex items-center gap-3 lg:gap-8 overflow-hidden relative"
-            style={media.heroBannerImage
-              ? { backgroundImage: `url(${resolveAssetUrl(media.heroBannerImage)})`, backgroundSize: "cover", backgroundPosition: "center" }
-              : { background: "var(--home-banner-bg)" }}
-          >
-            {/* Icon */}
-            <div className="w-16 h-16 lg:w-28 lg:h-28 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-xl bg-white/5">
-              {renderIcon(displayBanner?.icon, 0, "md")}
-            </div>
+      {homeConfig.showPromotions && activeBanners.length > 0 && (
+        <div className="px-4 lg:px-8 pt-4 pb-3">
+          <div className="max-w-sm lg:max-w-4xl mx-auto">
+            <button
+              className="w-full text-left focus:outline-none"
+              onClick={() => displayBanner?.slug && navigate(`/campanha/${displayBanner.slug}`)}
+            >
+              <div
+                className="rounded-2xl overflow-hidden relative h-36 lg:h-56"
+                style={
+                  displayBanner?.banner
+                    ? { backgroundImage: `url(${resolveAssetUrl(displayBanner.banner)})`, backgroundSize: "cover", backgroundPosition: "center" }
+                    : media.heroBannerImage
+                      ? { backgroundImage: `url(${resolveAssetUrl(media.heroBannerImage)})`, backgroundSize: "cover", backgroundPosition: "center" }
+                      : { background: "var(--home-banner-bg)" }
+                }
+              >
+                {/* Gradient overlay */}
+                <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/40 to-transparent" />
 
-            {/* Text */}
-            <div className="flex-1 min-w-0">
-              <p className="text-xs lg:text-sm text-parchment/80 truncate">{displayBanner?.title || "Promoção"}</p>
-              <p className="text-base lg:text-3xl font-bold text-cream leading-tight line-clamp-2">
-                {displayBanner?.subtitle || "Em qualquer pizza"}
-              </p>
-              {((displayBanner as any)?.validity_text || home.bannerValidityText) && (
-                <p className="text-[10px] lg:text-sm text-stone mt-0.5 lg:mt-1.5 truncate">
-                  {(displayBanner as any)?.validity_text || home.bannerValidityText}
-                </p>
-              )}
-            </div>
-
-            {/* Dots + arrows when multiple */}
-            {activePromotions.length > 1 && (
-              <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
-                <button
-                  onClick={() => setActiveBannerIndex((prev) => (prev - 1 + activePromotions.length) % activePromotions.length)}
-                  className="w-6 h-6 lg:w-8 lg:h-8 rounded-full bg-surface-03/80 text-stone hover:text-cream flex items-center justify-center"
-                >
-                  <ChevronLeft size={13} />
-                </button>
-                <div className="flex gap-1">
-                  {activePromotions.map((_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setActiveBannerIndex(i)}
-                      className={`h-1 rounded-full transition-all ${i === activeBannerIndex ? "bg-gold w-3" : "bg-stone/50 w-1"}`}
-                    />
-                  ))}
+                {/* Text */}
+                <div className="absolute inset-0 flex flex-col justify-end px-5 pb-5 lg:px-10 lg:pb-8">
+                  {(displayBanner?.display_title || displayBanner?.name) && (
+                    <p className="text-xs lg:text-sm text-parchment/80 truncate mb-0.5">
+                      {displayBanner.display_title || displayBanner.name}
+                    </p>
+                  )}
+                  {displayBanner?.display_subtitle && (
+                    <p className="text-lg lg:text-3xl font-bold text-cream leading-tight line-clamp-2">
+                      {displayBanner.display_subtitle}
+                    </p>
+                  )}
                 </div>
-                <button
-                  onClick={() => setActiveBannerIndex((prev) => (prev + 1) % activePromotions.length)}
-                  className="w-6 h-6 lg:w-8 lg:h-8 rounded-full bg-surface-03/80 text-stone hover:text-cream flex items-center justify-center"
-                >
-                  <ChevronRight size={13} />
-                </button>
+
+                {/* Navigation dots */}
+                {activeBanners.length > 1 && (
+                  <div className="absolute bottom-3 right-3 flex items-center gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setActiveBannerIndex((prev) => (prev - 1 + activeBanners.length) % activeBanners.length); }}
+                      className="w-6 h-6 rounded-full bg-black/50 text-stone hover:text-cream flex items-center justify-center"
+                    >
+                      <ChevronLeft size={13} />
+                    </button>
+                    <div className="flex gap-1">
+                      {activeBanners.map((_, i) => (
+                        <button
+                          key={i}
+                          onClick={(e) => { e.stopPropagation(); setActiveBannerIndex(i); }}
+                          className={`h-1.5 rounded-full transition-all ${i === activeBannerIndex % activeBanners.length ? "bg-gold w-4" : "bg-white/40 w-1.5"}`}
+                        />
+                      ))}
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setActiveBannerIndex((prev) => (prev + 1) % activeBanners.length); }}
+                      className="w-6 h-6 rounded-full bg-black/50 text-stone hover:text-cream flex items-center justify-center"
+                    >
+                      <ChevronRight size={13} />
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
+            </button>
           </div>
         </div>
-      </div>}
+      )}
 
       {/* ── Content ── */}
       <div className="px-4 lg:px-8 pb-32 max-w-lg lg:max-w-5xl mx-auto w-full">

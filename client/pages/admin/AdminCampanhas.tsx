@@ -1,15 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Plus, Trash2, Edit2, Sparkles, Package, Tag, BarChart2,
-  X, ExternalLink, Star,
+  X, ExternalLink,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import ImageUpload from "@/components/admin/ImageUpload";
 import {
-  campaignsApi, productsApi, couponsApi, promotionsApi,
+  campaignsApi, productsApi, couponsApi,
   isAssetUrl, resolveAssetUrl,
   type ApiCampaign, type ApiCampaignProduct, type ApiPromotionalKit,
-  type ApiProduct, type ApiCoupon, type ApiCouponUsage, type ApiPromotion,
+  type ApiProduct, type ApiCoupon, type ApiCouponUsage,
   type CampaignStatus, type CampaignType, type CpDiscountType, type KitType,
 } from "@/lib/api";
 
@@ -74,11 +74,6 @@ type Tab = "cupons" | "campanhas" | "kits" | "uso_cupons";
 
 // ── Forms ──────────────────────────────────────────────────────────────────────
 
-interface PromotionForm {
-  title: string; subtitle: string; icon: string; description: string;
-  validity_text: string; valid_from: string; valid_until: string; active: boolean;
-}
-
 interface CouponForm {
   code: string; description: string; icon: string;
   coupon_type: "percentage" | "fixed";
@@ -100,11 +95,6 @@ interface KitForm {
   discount_type: CpDiscountType | ""; discount_value: number;
   valid_until: string; active: boolean;
 }
-
-const emptyPromoForm: PromotionForm = {
-  title: "", subtitle: "", icon: "", description: "",
-  validity_text: "", valid_from: "", valid_until: "", active: true,
-};
 
 const emptyCouponForm: CouponForm = {
   code: "", description: "", icon: "🎟️",
@@ -139,19 +129,12 @@ export default function AdminCampanhas() {
   const [activeTab, setActiveTab] = useState<Tab>("campanhas");
 
   // ── Data ───────────────────────────────────────────────────────────────────
-  const [promotionsList, setPromotionsList] = useState<ApiPromotion[]>([]);
   const [campaigns, setCampaigns] = useState<ApiCampaign[]>([]);
   const [kits, setKits] = useState<ApiPromotionalKit[]>([]);
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [usage, setUsage] = useState<ApiCouponUsage[]>([]);
   const [couponsList, setCouponsList] = useState<ApiCoupon[]>([]);
   const [loadingData, setLoadingData] = useState(true);
-
-  // ── Promotion modal ────────────────────────────────────────────────────────
-  const [showPromoModal, setShowPromoModal] = useState(false);
-  const [editingPromoId, setEditingPromoId] = useState<string | null>(null);
-  const [promoForm, setPromoForm] = useState<PromotionForm>(emptyPromoForm);
-  const [promoSaving, setPromoSaving] = useState(false);
 
   // ── Coupon modal ───────────────────────────────────────────────────────────
   const [showCouponModal, setShowCouponModal] = useState(false);
@@ -190,15 +173,13 @@ export default function AdminCampanhas() {
   const loadAll = useCallback(async () => {
     setLoadingData(true);
     try {
-      const [promos, c, k, p, u, cps] = await Promise.all([
-        promotionsApi.list(false),
+      const [c, k, p, u, cps] = await Promise.all([
         campaignsApi.list(),
         campaignsApi.listKits(),
         productsApi.list(false),
         couponsApi.listUsage(),
         couponsApi.list(),
       ]);
-      setPromotionsList(promos);
       setCampaigns(c);
       setKits(k);
       setProducts(p);
@@ -209,63 +190,6 @@ export default function AdminCampanhas() {
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
-
-  // ── Promotion CRUD ──────────────────────────────────────────────────────────
-
-  const openCreatePromo = () => {
-    setEditingPromoId(null);
-    setPromoForm(emptyPromoForm);
-    setShowPromoModal(true);
-  };
-
-  const openEditPromo = (p: ApiPromotion) => {
-    setEditingPromoId(p.id);
-    setPromoForm({
-      title: p.title, subtitle: p.subtitle ?? "", icon: p.icon,
-      description: p.description ?? "", validity_text: p.validity_text ?? "",
-      valid_from: p.valid_from ? p.valid_from.slice(0, 16) : "",
-      valid_until: p.valid_until ? p.valid_until.slice(0, 16) : "",
-      active: p.active,
-    });
-    setShowPromoModal(true);
-  };
-
-  const handleSavePromo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!promoForm.title.trim()) { showToast("Título é obrigatório."); return; }
-    setPromoSaving(true);
-    try {
-      const payload = {
-        title: promoForm.title,
-        subtitle: promoForm.subtitle || null,
-        icon: promoForm.icon || "⭐",
-        description: promoForm.description || null,
-        validity_text: promoForm.validity_text || null,
-        valid_from: promoForm.valid_from ? new Date(promoForm.valid_from).toISOString() : null,
-        valid_until: promoForm.valid_until ? new Date(promoForm.valid_until).toISOString() : null,
-        active: promoForm.active,
-      };
-      if (editingPromoId) {
-        await promotionsApi.update(editingPromoId, payload);
-        showToast("Promoção atualizada!");
-      } else {
-        await promotionsApi.create(payload as any);
-        showToast("Promoção criada!");
-      }
-      setShowPromoModal(false);
-      loadAll();
-    } catch { showToast("Erro ao salvar."); }
-    finally { setPromoSaving(false); }
-  };
-
-  const deletePromo = async (id: string) => {
-    if (!confirm("Excluir esta promoção?")) return;
-    try {
-      await promotionsApi.remove(id);
-      showToast("Promoção removida.");
-      loadAll();
-    } catch { showToast("Erro ao excluir."); }
-  };
 
   // ── Coupon CRUD ─────────────────────────────────────────────────────────────
 
@@ -560,7 +484,7 @@ export default function AdminCampanhas() {
           {/* Header */}
           <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 sticky top-0 z-20">
             <h2 className="text-2xl font-bold text-cream">Campanhas</h2>
-            <p className="text-stone text-sm">{campaigns.length} campanhas · {promotionsList.length} banners · {couponsList.length} cupons · {kits.length} kits</p>
+            <p className="text-stone text-sm">{campaigns.length} campanhas · {couponsList.length} cupons · {kits.length} kits</p>
           </div>
 
           {/* Tabs */}
@@ -743,77 +667,6 @@ export default function AdminCampanhas() {
                       </div>
                     )}
 
-                    {/* ── Banners da Home (ex-Promoções) ── */}
-                    <div className="mt-10 pt-8 border-t border-surface-03">
-                      <div className="flex items-center justify-between mb-6">
-                        <div>
-                          <h3 className="text-cream font-bold text-lg flex items-center gap-2">
-                            <Star size={18} className="text-gold" />
-                            Banners da Home
-                          </h3>
-                          <p className="text-stone text-xs mt-1">Banners rotativos exibidos na página inicial da loja</p>
-                        </div>
-                        <button
-                          onClick={openCreatePromo}
-                          className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors text-sm"
-                        >
-                          <Plus size={16} />
-                          Novo Banner
-                        </button>
-                      </div>
-
-                      <div className="space-y-4">
-                        {promotionsList.map((p) => (
-                          <div key={p.id} className={`bg-surface-02 rounded-xl border border-surface-03 overflow-hidden ${!p.active ? "opacity-60" : ""}`}>
-                            <div className="flex items-center gap-4 p-4">
-                              <div className="w-14 h-14 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center overflow-hidden">
-                                {p.icon && (p.icon.startsWith("data:") || p.icon.startsWith("http")) ? (
-                                  <img src={p.icon} className="w-full h-full object-cover" alt={p.title} />
-                                ) : (
-                                  <span className="text-2xl">{p.icon || "⭐"}</span>
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <h3 className="text-cream font-bold text-sm">{p.title}</h3>
-                                  <span className={`text-xs px-2 py-0.5 rounded-full border ${p.active ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-stone/20 text-stone border-stone/30"}`}>
-                                    {p.active ? "Ativo" : "Inativo"}
-                                  </span>
-                                </div>
-                                {p.subtitle && <p className="text-stone text-xs mt-0.5">{p.subtitle}</p>}
-                                {p.validity_text && (
-                                  <p className="text-gold/70 text-xs mt-0.5">📅 {p.validity_text}</p>
-                                )}
-                              </div>
-                              <div className="flex gap-2 flex-shrink-0">
-                                <button
-                                  onClick={() => openEditPromo(p)}
-                                  className="p-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-colors"
-                                >
-                                  <Edit2 size={14} />
-                                </button>
-                                <button
-                                  onClick={() => deletePromo(p.id)}
-                                  className="p-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {promotionsList.length === 0 && (
-                        <div className="text-center py-8 bg-surface-02 rounded-xl border border-surface-03 border-dashed">
-                          <Star size={32} className="text-stone mx-auto mb-3" />
-                          <p className="text-stone text-sm">Nenhum banner criado</p>
-                          <button onClick={openCreatePromo} className="mt-3 bg-gold hover:bg-gold/90 text-cream font-bold py-1.5 px-4 rounded-lg text-sm transition-colors inline-flex items-center gap-2">
-                            <Plus size={14} /> Criar Banner
-                          </button>
-                        </div>
-                      )}
-                    </div>
                   </>
                 )}
 
@@ -933,46 +786,7 @@ export default function AdminCampanhas() {
         </div>
       </div>
 
-      {/* ── Modal: Promotion Form ─────────────────────────────────────────────── */}
-      {showPromoModal && (
-        <Modal title={editingPromoId ? "Editar Promoção" : "Nova Promoção"} onClose={() => setShowPromoModal(false)}>
-          <form onSubmit={handleSavePromo} className="space-y-4">
-            <Inp label="Título *" value={promoForm.title} onChange={(e) => setPromoForm({ ...promoForm, title: e.target.value })} placeholder="Ex: Pizza do Mês" />
 
-            <Inp label="Subtítulo" value={promoForm.subtitle} onChange={(e) => setPromoForm({ ...promoForm, subtitle: e.target.value })} placeholder="Slogan da promoção" />
-
-            <ImageUpload
-              value={promoForm.icon}
-              onChange={(v) => setPromoForm({ ...promoForm, icon: v })}
-              label="Imagem / Ícone"
-              sizeGuide="Recomendado: 400×300px, máx. 500KB"
-              hint="Imagem exibida no banner da promoção na loja."
-              maxKB={500}
-            />
-
-            <Txt label="Descrição" value={promoForm.description} onChange={(e) => setPromoForm({ ...promoForm, description: e.target.value })} rows={2} placeholder="Detalhes da promoção" />
-
-            <Inp label="Texto de validade" value={promoForm.validity_text} onChange={(e) => setPromoForm({ ...promoForm, validity_text: e.target.value })} placeholder="Ex: Válido até 30 de Junho" />
-
-            <div className="grid grid-cols-2 gap-4">
-              <Inp label="Válido de" type="datetime-local" value={promoForm.valid_from} onChange={(e) => setPromoForm({ ...promoForm, valid_from: e.target.value })} />
-              <Inp label="Válido até" type="datetime-local" value={promoForm.valid_until} onChange={(e) => setPromoForm({ ...promoForm, valid_until: e.target.value })} />
-            </div>
-
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={promoForm.active} onChange={(e) => setPromoForm({ ...promoForm, active: e.target.checked })} className="w-4 h-4 accent-gold" />
-              <span className="text-parchment text-sm">Ativa (visível na loja)</span>
-            </label>
-
-            <div className="flex gap-3 pt-2">
-              <SaveBtn loading={promoSaving} />
-              <button type="button" onClick={() => setShowPromoModal(false)} className="flex-1 bg-surface-03 hover:bg-slate-600 text-cream font-bold py-2 px-4 rounded-lg text-sm transition-colors">
-                Cancelar
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
 
       {/* ── Modal: Coupon Form ────────────────────────────────────────────────── */}
       {showCouponModal && (
