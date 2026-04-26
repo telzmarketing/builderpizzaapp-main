@@ -198,8 +198,18 @@ export default function Checkout() {
         if (brickController.current) brickController.current.unmount();
 
         const mp = new window.MercadoPago(publicKey, { locale: "pt-BR" });
+
+        // Pré-preenche o email do pagador para não pedir ao usuário no brick.
+        // Usa email real se disponível, ou deriva do telefone (MP exige campo email mas não o valida de verdade para PIX).
+        const payerEmail =
+          customer?.email ||
+          (form.phone ? `${form.phone.replace(/\D/g, "")}@pix.moschettieri.com.br` : null);
+
         brickController.current = await mp.bricks().create("payment", "paymentBrick_container", {
-          initialization: { amount: createdOrder.total },
+          initialization: {
+            amount: createdOrder.total,
+            ...(payerEmail ? { payer: { email: payerEmail } } : {}),
+          },
           customization: {
             paymentMethods: {
               creditCard: "all",
