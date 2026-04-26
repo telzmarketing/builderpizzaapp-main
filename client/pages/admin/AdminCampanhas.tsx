@@ -7,6 +7,7 @@ import AdminSidebar from "@/components/AdminSidebar";
 import ImageUpload from "@/components/admin/ImageUpload";
 import {
   campaignsApi, productsApi, couponsApi, promotionsApi,
+  isAssetUrl, resolveAssetUrl,
   type ApiCampaign, type ApiCampaignProduct, type ApiPromotionalKit,
   type ApiProduct, type ApiCoupon, type ApiCouponUsage, type ApiPromotion,
   type CampaignStatus, type CampaignType, type CpDiscountType, type KitType,
@@ -1167,7 +1168,12 @@ export default function AdminCampanhas() {
                         onChange={() => toggleCampaignProductSelection(p.id)}
                         className="w-4 h-4 accent-gold"
                       />
-                      <span className="text-lg leading-none">{p.icon}</span>
+                      <span className="w-8 h-8 flex-shrink-0 flex items-center justify-center">
+                        {isAssetUrl(p.icon)
+                          ? <img src={resolveAssetUrl(p.icon)} className="w-8 h-8 rounded object-cover" alt={p.name} />
+                          : <span className="text-lg leading-none">{p.icon}</span>
+                        }
+                      </span>
                       <span className="flex-1 min-w-0">
                         <span className="block text-cream text-sm font-medium truncate">{p.name}</span>
                         <span className="block text-stone text-xs">R$ {p.price.toFixed(2)}{alreadyLinked ? " · ja vinculado" : ""}</span>
@@ -1211,7 +1217,11 @@ export default function AdminCampanhas() {
                 const p = cp.product_id ? products.find((x) => x.id === cp.product_id) : null;
                 return (
                   <div key={cp.id} className="flex items-center gap-3 bg-surface-02 rounded-lg p-3 border border-surface-03">
-                    {p && <span className="text-xl">{p.icon}</span>}
+                    {p && (
+                      isAssetUrl(p.icon)
+                        ? <img src={resolveAssetUrl(p.icon)} className="w-8 h-8 rounded object-cover flex-shrink-0" alt={p.name} />
+                        : <span className="text-xl flex-shrink-0">{p.icon}</span>
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="text-cream text-sm font-medium">{p?.name ?? cp.product_id}</p>
                       <p className="text-stone text-xs">
