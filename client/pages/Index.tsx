@@ -40,7 +40,7 @@ export default function Home() {
           mode: config.mode,
           selectedCategories: JSON.parse(config.selected_categories || "[]"),
           selectedProductIds: JSON.parse(config.selected_product_ids || "[]"),
-          showPromotions: config.show_promotions,
+          showPromotions: config.show_promotions !== false,
         });
       } catch { /* use defaults on parse error */ }
     }).catch(() => { /* use defaults if backend unavailable */ });

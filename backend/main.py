@@ -218,6 +218,8 @@ def _run_migrations():
         "ALTER TABLE addresses ADD COLUMN IF NOT EXISTS label VARCHAR(100)",
         # ── LGPD policies table ───────────────────────────────────────────
         "CREATE TABLE IF NOT EXISTS lgpd_policies (id VARCHAR PRIMARY KEY, version VARCHAR(20) NOT NULL, title VARCHAR(300) NOT NULL DEFAULT 'Política de Privacidade e Proteção de Dados', intro_text TEXT, data_controller_text TEXT, data_collected_text TEXT, data_usage_text TEXT, data_retention_text TEXT, rights_text TEXT, contact_text TEXT, marketing_email_label VARCHAR(500) DEFAULT 'Desejo receber promoções e novidades por e-mail', marketing_whatsapp_label VARCHAR(500) DEFAULT 'Desejo receber promoções e novidades pelo WhatsApp', is_active BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        # ── Fix home_catalog_config show_promotions NULL rows ─────────────
+        "UPDATE home_catalog_config SET show_promotions = TRUE WHERE show_promotions IS NULL",
     ]
     for stmt in stmts:
         try:
