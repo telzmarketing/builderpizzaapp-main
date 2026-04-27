@@ -1,4 +1,4 @@
-import { trackingApi } from "./api";
+import { trackingApi, marketingTrackApi } from "./api";
 
 const STORAGE_KEY = "paid_traffic_tracking";
 
@@ -68,7 +68,19 @@ export function trackEvent(event_type: string, value?: number, metadata?: Record
     value,
     path: window.location.pathname,
     metadata,
-  }).catch(() => {
-    /* Tracking must never break the customer experience. */
-  });
+  }).catch(() => { /* Tracking must never break the customer experience. */ });
+
+  marketingTrackApi.track({
+    fingerprint: data.session_id,
+    session_id: data.session_id,
+    event_type,
+    page: window.location.pathname,
+    metadata,
+    utm_source: data.utm_source,
+    utm_medium: data.utm_medium,
+    utm_campaign: data.utm_campaign,
+    utm_content: data.utm_content,
+    utm_term: data.utm_term,
+    referrer: data.referrer,
+  }).catch(() => { /* Tracking must never break the customer experience. */ });
 }

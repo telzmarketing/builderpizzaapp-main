@@ -1300,6 +1300,23 @@ export const trackingApi = {
   event: (data: Record<string, unknown>) => post<{ id: string }>("/tracking/event", data),
 };
 
+export const marketingTrackApi = {
+  track: (data: {
+    fingerprint: string;
+    session_id?: string | null;
+    event_type: string;
+    page?: string;
+    product_id?: string;
+    metadata?: Record<string, unknown>;
+    utm_source?: string | null;
+    utm_medium?: string | null;
+    utm_campaign?: string | null;
+    utm_content?: string | null;
+    utm_term?: string | null;
+    referrer?: string | null;
+  }) => post<{ ok: boolean }>("/marketing/track", data),
+};
+
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
 export const adminApi = {

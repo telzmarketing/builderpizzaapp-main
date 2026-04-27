@@ -26,6 +26,8 @@ from backend.routes import paid_traffic as paid_traffic_routes
 from backend.routes import lgpd as lgpd_routes
 from backend.routes import exit_popup as exit_popup_routes
 from backend.routes import admin_users as admin_users_routes
+from backend.routes import crm as crm_routes
+from backend.routes import marketing as marketing_routes
 
 settings = get_settings()
 
@@ -227,6 +229,95 @@ def _run_migrations():
         # ── Exit popup config ─────────────────────────────────────────────
         "CREATE TABLE IF NOT EXISTS exit_popup_config (id VARCHAR PRIMARY KEY DEFAULT 'default', enabled BOOLEAN DEFAULT FALSE, title VARCHAR(200) DEFAULT 'Espera! Temos uma oferta para você 🍕', subtitle TEXT DEFAULT 'Use o cupom abaixo e ganhe desconto no seu pedido!', coupon_code VARCHAR(50), button_text VARCHAR(100) DEFAULT 'Usar cupom agora', image_url TEXT, show_once_per_session BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         "INSERT INTO exit_popup_config (id) VALUES ('default') ON CONFLICT DO NOTHING",
+
+        # ══════════════════════════════════════════════════════════════════════
+        # MÓDULO MARKETING & CRM — Fase 1
+        # ══════════════════════════════════════════════════════════════════════
+
+        # ── Customer enhancements ─────────────────────────────────────────────
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS birth_date DATE",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS tags TEXT DEFAULT '[]'",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS crm_status VARCHAR(50) DEFAULT 'lead'",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS source VARCHAR(100)",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS notes TEXT",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS first_order_at TIMESTAMPTZ",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_order_at TIMESTAMPTZ",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS total_orders INTEGER DEFAULT 0",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS total_spent FLOAT DEFAULT 0.0",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS avg_ticket FLOAT DEFAULT 0.0",
+
+        # ── Customer groups ───────────────────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS customer_groups (id VARCHAR PRIMARY KEY, name VARCHAR(200) NOT NULL, description TEXT, group_type VARCHAR(20) NOT NULL DEFAULT 'manual', color VARCHAR(20) DEFAULT '#f97316', icon VARCHAR(50), active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS customer_group_rules (id VARCHAR PRIMARY KEY, group_id VARCHAR NOT NULL REFERENCES customer_groups(id) ON DELETE CASCADE, field VARCHAR(100) NOT NULL, operator VARCHAR(30) NOT NULL, value TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS customer_group_members (id VARCHAR PRIMARY KEY, group_id VARCHAR NOT NULL REFERENCES customer_groups(id) ON DELETE CASCADE, customer_id VARCHAR NOT NULL REFERENCES customers(id) ON DELETE CASCADE, added_at TIMESTAMPTZ DEFAULT NOW(), CONSTRAINT uq_group_member UNIQUE(group_id, customer_id))",
+
+        # ── Customer timeline / events ────────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS customer_timeline (id VARCHAR PRIMARY KEY, customer_id VARCHAR NOT NULL REFERENCES customers(id) ON DELETE CASCADE, event_type VARCHAR(80) NOT NULL, title VARCHAR(300) NOT NULL, description TEXT, metadata_json TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_customer_timeline_customer_id ON customer_timeline(customer_id)",
+        "CREATE INDEX IF NOT EXISTS ix_customer_timeline_event_type ON customer_timeline(event_type)",
+        "CREATE INDEX IF NOT EXISTS ix_customer_timeline_created_at ON customer_timeline(created_at DESC)",
+
+        # ── CRM Pipelines ─────────────────────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS crm_pipelines (id VARCHAR PRIMARY KEY, name VARCHAR(200) NOT NULL, description TEXT, pipeline_type VARCHAR(30) DEFAULT 'custom', active BOOLEAN DEFAULT TRUE, sort_order INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS crm_stages (id VARCHAR PRIMARY KEY, pipeline_id VARCHAR NOT NULL REFERENCES crm_pipelines(id) ON DELETE CASCADE, name VARCHAR(200) NOT NULL, description TEXT, color VARCHAR(20) DEFAULT '#2d3d56', sort_order INTEGER DEFAULT 0, auto_move_rule TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_crm_stages_pipeline_id ON crm_stages(pipeline_id)",
+        "CREATE TABLE IF NOT EXISTS crm_cards (id VARCHAR PRIMARY KEY, pipeline_id VARCHAR NOT NULL REFERENCES crm_pipelines(id) ON DELETE CASCADE, stage_id VARCHAR NOT NULL REFERENCES crm_stages(id) ON DELETE CASCADE, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, title VARCHAR(300) NOT NULL, description TEXT, value FLOAT, source VARCHAR(100), responsible VARCHAR(200), tags TEXT DEFAULT '[]', last_interaction_at TIMESTAMPTZ, next_follow_up_at TIMESTAMPTZ, sort_order INTEGER DEFAULT 0, archived BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_crm_cards_pipeline_id ON crm_cards(pipeline_id)",
+        "CREATE INDEX IF NOT EXISTS ix_crm_cards_stage_id ON crm_cards(stage_id)",
+        "CREATE INDEX IF NOT EXISTS ix_crm_cards_customer_id ON crm_cards(customer_id)",
+
+        # ── CRM Tasks ─────────────────────────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS crm_tasks (id VARCHAR PRIMARY KEY, card_id VARCHAR REFERENCES crm_cards(id) ON DELETE SET NULL, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, title VARCHAR(300) NOT NULL, description TEXT, task_type VARCHAR(50) DEFAULT 'other', responsible VARCHAR(200), due_date TIMESTAMPTZ, priority VARCHAR(20) DEFAULT 'medium', status VARCHAR(20) DEFAULT 'pending', completed_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_crm_tasks_customer_id ON crm_tasks(customer_id)",
+        "CREATE INDEX IF NOT EXISTS ix_crm_tasks_status ON crm_tasks(status)",
+
+        # ── Marketing Campaigns (unified) ─────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS marketing_campaigns (id VARCHAR PRIMARY KEY, name VARCHAR(300) NOT NULL, campaign_type VARCHAR(50) NOT NULL, channel VARCHAR(50), status VARCHAR(30) DEFAULT 'draft', product_id VARCHAR REFERENCES products(id) ON DELETE SET NULL, coupon_id VARCHAR REFERENCES coupons(id) ON DELETE SET NULL, group_id VARCHAR REFERENCES customer_groups(id) ON DELETE SET NULL, budget FLOAT, spend FLOAT DEFAULT 0, revenue FLOAT DEFAULT 0, leads INTEGER DEFAULT 0, orders_count INTEGER DEFAULT 0, clicks INTEGER DEFAULT 0, impressions INTEGER DEFAULT 0, start_date DATE, end_date DATE, target_url TEXT, description TEXT, metadata_json TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_marketing_campaigns_status ON marketing_campaigns(status)",
+        "CREATE INDEX IF NOT EXISTS ix_marketing_campaigns_channel ON marketing_campaigns(channel)",
+
+        # ── Visitor profiles & sessions ───────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS visitor_profiles (id VARCHAR PRIMARY KEY, fingerprint VARCHAR(128) UNIQUE, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, ip_hash VARCHAR(64), city VARCHAR(100), state VARCHAR(50), country VARCHAR(50), device_type VARCHAR(30), browser VARCHAR(80), os VARCHAR(80), first_seen_at TIMESTAMPTZ DEFAULT NOW(), last_seen_at TIMESTAMPTZ DEFAULT NOW(), total_sessions INTEGER DEFAULT 0, total_pageviews INTEGER DEFAULT 0, total_orders INTEGER DEFAULT 0)",
+        "CREATE INDEX IF NOT EXISTS ix_visitor_profiles_fingerprint ON visitor_profiles(fingerprint)",
+        "CREATE INDEX IF NOT EXISTS ix_visitor_profiles_customer_id ON visitor_profiles(customer_id)",
+        "CREATE TABLE IF NOT EXISTS visitor_sessions (id VARCHAR PRIMARY KEY, visitor_id VARCHAR NOT NULL REFERENCES visitor_profiles(id) ON DELETE CASCADE, utm_source VARCHAR(100), utm_medium VARCHAR(100), utm_campaign VARCHAR(200), utm_content VARCHAR(200), utm_term VARCHAR(200), landing_page TEXT, referrer TEXT, started_at TIMESTAMPTZ DEFAULT NOW(), ended_at TIMESTAMPTZ, pageviews INTEGER DEFAULT 0)",
+        "CREATE INDEX IF NOT EXISTS ix_visitor_sessions_visitor_id ON visitor_sessions(visitor_id)",
+        "CREATE INDEX IF NOT EXISTS ix_visitor_sessions_started_at ON visitor_sessions(started_at DESC)",
+        "CREATE TABLE IF NOT EXISTS visitor_events (id VARCHAR PRIMARY KEY, visitor_id VARCHAR NOT NULL REFERENCES visitor_profiles(id) ON DELETE CASCADE, session_id VARCHAR REFERENCES visitor_sessions(id) ON DELETE SET NULL, event_type VARCHAR(80) NOT NULL, page TEXT, product_id VARCHAR, metadata_json TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_visitor_events_visitor_id ON visitor_events(visitor_id)",
+        "CREATE INDEX IF NOT EXISTS ix_visitor_events_event_type ON visitor_events(event_type)",
+        "CREATE INDEX IF NOT EXISTS ix_visitor_events_created_at ON visitor_events(created_at DESC)",
+
+        # ── Tracking links ────────────────────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS tracking_links (id VARCHAR PRIMARY KEY, slug VARCHAR(100) UNIQUE NOT NULL, destination_url TEXT NOT NULL, campaign_id VARCHAR REFERENCES marketing_campaigns(id) ON DELETE SET NULL, product_id VARCHAR REFERENCES products(id) ON DELETE SET NULL, coupon_id VARCHAR REFERENCES coupons(id) ON DELETE SET NULL, utm_source VARCHAR(100), utm_medium VARCHAR(100), utm_campaign VARCHAR(200), clicks INTEGER DEFAULT 0, unique_clicks INTEGER DEFAULT 0, orders_count INTEGER DEFAULT 0, revenue FLOAT DEFAULT 0, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_tracking_links_slug ON tracking_links(slug)",
+        "CREATE TABLE IF NOT EXISTS tracking_clicks (id VARCHAR PRIMARY KEY, link_id VARCHAR NOT NULL REFERENCES tracking_links(id) ON DELETE CASCADE, visitor_id VARCHAR REFERENCES visitor_profiles(id) ON DELETE SET NULL, ip_hash VARCHAR(64), user_agent TEXT, referrer TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_tracking_clicks_link_id ON tracking_clicks(link_id)",
+
+        # ── Marketing settings ────────────────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS marketing_settings (id VARCHAR PRIMARY KEY DEFAULT 'default', tracking_enabled BOOLEAN DEFAULT TRUE, ip_anonymization BOOLEAN DEFAULT TRUE, online_visitor_minutes INTEGER DEFAULT 5, data_retention_days INTEGER DEFAULT 365, attribution_window_days INTEGER DEFAULT 30, default_utm_source VARCHAR(100), default_utm_medium VARCHAR(100), tracking_domain VARCHAR(300), created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "INSERT INTO marketing_settings (id) VALUES ('default') ON CONFLICT DO NOTHING",
+
+        # ── Integration credentials (encrypted at app level) ──────────────────
+        "CREATE TABLE IF NOT EXISTS integration_connections (id VARCHAR PRIMARY KEY, integration_type VARCHAR(50) NOT NULL, status VARCHAR(20) DEFAULT 'disconnected', credentials_json TEXT, last_sync_at TIMESTAMPTZ, last_error TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), CONSTRAINT uq_integration_type UNIQUE(integration_type))",
+        "INSERT INTO integration_connections (id, integration_type) VALUES ('meta_ads', 'meta_ads') ON CONFLICT DO NOTHING",
+        "INSERT INTO integration_connections (id, integration_type) VALUES ('google_ads', 'google_ads') ON CONFLICT DO NOTHING",
+        "INSERT INTO integration_connections (id, integration_type) VALUES ('tiktok_ads', 'tiktok_ads') ON CONFLICT DO NOTHING",
+        "INSERT INTO integration_connections (id, integration_type) VALUES ('whatsapp_cloud', 'whatsapp_cloud') ON CONFLICT DO NOTHING",
+        "INSERT INTO integration_connections (id, integration_type) VALUES ('whatsapp_qr', 'whatsapp_qr') ON CONFLICT DO NOTHING",
+        "INSERT INTO integration_connections (id, integration_type) VALUES ('smtp', 'smtp') ON CONFLICT DO NOTHING",
+
+        # ── Seed default CRM pipeline (Delivery) ──────────────────────────────
+        "INSERT INTO crm_pipelines (id, name, description, pipeline_type, sort_order) VALUES ('delivery', 'Funil Delivery', 'Pipeline padrão para delivery', 'delivery', 0) ON CONFLICT DO NOTHING",
+        "INSERT INTO crm_stages (id, pipeline_id, name, color, sort_order) VALUES ('st_novo', 'delivery', 'Novo cliente', '#6366f1', 0) ON CONFLICT DO NOTHING",
+        "INSERT INTO crm_stages (id, pipeline_id, name, color, sort_order) VALUES ('st_visualizou', 'delivery', 'Visualizou produto', '#8b5cf6', 1) ON CONFLICT DO NOTHING",
+        "INSERT INTO crm_stages (id, pipeline_id, name, color, sort_order) VALUES ('st_carrinho', 'delivery', 'Adicionou ao carrinho', '#f59e0b', 2) ON CONFLICT DO NOTHING",
+        "INSERT INTO crm_stages (id, pipeline_id, name, color, sort_order) VALUES ('st_abandonou', 'delivery', 'Abandonou carrinho', '#ef4444', 3) ON CONFLICT DO NOTHING",
+        "INSERT INTO crm_stages (id, pipeline_id, name, color, sort_order) VALUES ('st_primeiro', 'delivery', 'Primeiro pedido', '#10b981', 4) ON CONFLICT DO NOTHING",
+        "INSERT INTO crm_stages (id, pipeline_id, name, color, sort_order) VALUES ('st_entregue', 'delivery', 'Pedido entregue', '#22c55e', 5) ON CONFLICT DO NOTHING",
+        "INSERT INTO crm_stages (id, pipeline_id, name, color, sort_order) VALUES ('st_recorrente', 'delivery', 'Cliente recorrente', '#f97316', 6) ON CONFLICT DO NOTHING",
+        "INSERT INTO crm_stages (id, pipeline_id, name, color, sort_order) VALUES ('st_inativo', 'delivery', 'Cliente inativo', '#94a3b8', 7) ON CONFLICT DO NOTHING",
+        "INSERT INTO crm_stages (id, pipeline_id, name, color, sort_order) VALUES ('st_reativacao', 'delivery', 'Reativação', '#3b82f6', 8) ON CONFLICT DO NOTHING",
     ]
     for stmt in stmts:
         try:
@@ -282,6 +373,9 @@ app.include_router(lgpd_routes.router)
 app.include_router(lgpd_routes.admin_router)
 app.include_router(exit_popup_routes.router)
 app.include_router(admin_users_routes.router)
+app.include_router(crm_routes.router)
+app.include_router(marketing_routes.router)
+app.include_router(marketing_routes.public_router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")

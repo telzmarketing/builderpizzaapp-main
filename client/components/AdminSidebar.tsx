@@ -3,6 +3,7 @@ import {
   BarChart3, Package, ShoppingBag, ArrowLeft, Trophy, FileText,
   CreditCard, Truck, LogOut, Sparkles, MessageCircle, Palette,
   LayoutDashboard, MousePointerClick, User, Users, Clock, Shield, Printer, Tag, LogIn,
+  TrendingUp, Megaphone, Eye, LinkIcon, Plug, KanbanSquare, UserCheck, ClipboardList,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
@@ -35,10 +36,24 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Marketing",
     items: [
-      { to: "/painel/campanhas", icon: Sparkles, label: "Promoções & Campanhas" },
+      { to: "/painel/marketing", icon: TrendingUp, label: "Dashboard Marketing" },
+      { to: "/painel/marketing/campanhas", icon: Megaphone, label: "Campanhas" },
+      { to: "/painel/marketing/visitantes", icon: Eye, label: "Análise de Visitantes" },
+      { to: "/painel/marketing/links", icon: LinkIcon, label: "Links Rastreáveis" },
+      { to: "/painel/marketing/integracoes", icon: Plug, label: "Integrações" },
+      { to: "/painel/campanhas", icon: Sparkles, label: "Promoções & Banners" },
       { to: "/painel/cupons", icon: Tag, label: "Cupons de Desconto" },
       { to: "/painel/fidelidade", icon: Trophy, label: "Fidelidade" },
       { to: "/painel/popup-saida", icon: LogIn, label: "Popup de Saída" },
+    ],
+  },
+  {
+    label: "CRM",
+    items: [
+      { to: "/painel/crm", icon: BarChart3, label: "Dashboard CRM" },
+      { to: "/painel/crm/pipeline", icon: KanbanSquare, label: "Pipeline" },
+      { to: "/painel/crm/grupos", icon: UserCheck, label: "Grupos & Segmentações" },
+      { to: "/painel/crm/tarefas", icon: ClipboardList, label: "Tarefas" },
     ],
   },
   {
@@ -84,8 +99,9 @@ export default function AdminSidebar() {
 
   const { brand } = siteContent;
 
+  const EXACT_ROUTES = new Set(["/painel", "/painel/marketing", "/painel/crm"]);
   const isActive = (to: string) =>
-    to === "/painel" ? pathname === "/painel" : pathname.startsWith(to);
+    EXACT_ROUTES.has(to) ? pathname === to : pathname.startsWith(to);
 
   return (
     <div className="w-full md:w-64 bg-surface-02 border-b md:border-b-0 md:border-r border-surface-03 flex flex-col flex-shrink-0 h-auto md:h-screen max-h-[52vh] md:max-h-none">

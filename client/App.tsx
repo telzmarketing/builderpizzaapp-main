@@ -87,6 +87,15 @@ import AdminClientes from "./pages/admin/AdminClientes";
 import AdminExitPopup from "./pages/admin/AdminExitPopup";
 import AdminUsuarios from "./pages/admin/AdminUsuarios";
 import ExitPopup from "./components/ExitPopup";
+import MarketingDashboard from "./pages/admin/marketing/MarketingDashboard";
+import MarketingCampanhas from "./pages/admin/marketing/MarketingCampanhas";
+import MarketingVisitantes from "./pages/admin/marketing/MarketingVisitantes";
+import MarketingLinks from "./pages/admin/marketing/MarketingLinks";
+import MarketingIntegracoes from "./pages/admin/marketing/MarketingIntegracoes";
+import CrmDashboard from "./pages/admin/crm/CrmDashboard";
+import CrmPipeline from "./pages/admin/crm/CrmPipeline";
+import CrmGrupos from "./pages/admin/crm/CrmGrupos";
+import CrmTarefas from "./pages/admin/crm/CrmTarefas";
 import Campanha from "./pages/Campanha";
 import Fidelidade from "./pages/Fidelidade";
 import Cupons from "./pages/Cupons";
@@ -150,6 +159,17 @@ export default function App() {
                 <Route path="/painel/clientes" element={<AdminClientes />} />
                 <Route path="/painel/popup-saida" element={<AdminExitPopup />} />
                 <Route path="/painel/usuarios" element={<AdminUsuarios />} />
+                {/* ── Marketing routes ── */}
+                <Route path="/painel/marketing" element={<MarketingDashboard />} />
+                <Route path="/painel/marketing/campanhas" element={<MarketingCampanhas />} />
+                <Route path="/painel/marketing/visitantes" element={<MarketingVisitantes />} />
+                <Route path="/painel/marketing/links" element={<MarketingLinks />} />
+                <Route path="/painel/marketing/integracoes" element={<MarketingIntegracoes />} />
+                {/* ── CRM routes ── */}
+                <Route path="/painel/crm" element={<CrmDashboard />} />
+                <Route path="/painel/crm/pipeline" element={<CrmPipeline />} />
+                <Route path="/painel/crm/grupos" element={<CrmGrupos />} />
+                <Route path="/painel/crm/tarefas" element={<CrmTarefas />} />
               </Route>
 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
