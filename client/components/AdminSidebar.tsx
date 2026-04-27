@@ -4,6 +4,7 @@ import {
   CreditCard, Truck, LogOut, Sparkles, MessageCircle, Palette,
   LayoutDashboard, MousePointerClick, User, Users, Clock, Shield, Printer, Tag, LogIn,
   TrendingUp, Megaphone, Eye, LinkIcon, Plug, KanbanSquare, UserCheck, ClipboardList,
+  Mail, Zap,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
@@ -41,6 +42,9 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/painel/marketing/visitantes", icon: Eye, label: "Análise de Visitantes" },
       { to: "/painel/marketing/links", icon: LinkIcon, label: "Links Rastreáveis" },
       { to: "/painel/marketing/integracoes", icon: Plug, label: "Integrações" },
+      { to: "/painel/marketing/whatsapp", icon: MessageCircle, label: "WhatsApp Marketing" },
+      { to: "/painel/marketing/email", icon: Mail, label: "E-mail Marketing" },
+      { to: "/painel/marketing/automacoes", icon: Zap, label: "Automações" },
       { to: "/painel/campanhas", icon: Sparkles, label: "Promoções & Banners" },
       { to: "/painel/cupons", icon: Tag, label: "Cupons de Desconto" },
       { to: "/painel/fidelidade", icon: Trophy, label: "Fidelidade" },

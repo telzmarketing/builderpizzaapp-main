@@ -28,6 +28,9 @@ from backend.routes import exit_popup as exit_popup_routes
 from backend.routes import admin_users as admin_users_routes
 from backend.routes import crm as crm_routes
 from backend.routes import marketing as marketing_routes
+from backend.routes import whatsapp_marketing as whatsapp_marketing_routes
+from backend.routes import email_marketing as email_marketing_routes
+from backend.routes import automations as automations_routes
 
 settings = get_settings()
 
@@ -318,6 +321,35 @@ def _run_migrations():
         "INSERT INTO crm_stages (id, pipeline_id, name, color, sort_order) VALUES ('st_recorrente', 'delivery', 'Cliente recorrente', '#f97316', 6) ON CONFLICT DO NOTHING",
         "INSERT INTO crm_stages (id, pipeline_id, name, color, sort_order) VALUES ('st_inativo', 'delivery', 'Cliente inativo', '#94a3b8', 7) ON CONFLICT DO NOTHING",
         "INSERT INTO crm_stages (id, pipeline_id, name, color, sort_order) VALUES ('st_reativacao', 'delivery', 'Reativação', '#3b82f6', 8) ON CONFLICT DO NOTHING",
+
+        # ══════════════════════════════════════════════════════════════════════
+        # MÓDULO MARKETING — WhatsApp, Email & Automações
+        # ══════════════════════════════════════════════════════════════════════
+
+        # ── WhatsApp Marketing ────────────────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS whatsapp_templates (id VARCHAR PRIMARY KEY, name VARCHAR(200) NOT NULL, body TEXT NOT NULL, category VARCHAR(50) DEFAULT 'marketing', language VARCHAR(10) DEFAULT 'pt_BR', active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_whatsapp_templates_active ON whatsapp_templates(active)",
+        "CREATE TABLE IF NOT EXISTS whatsapp_messages (id VARCHAR PRIMARY KEY, template_id VARCHAR REFERENCES whatsapp_templates(id) ON DELETE SET NULL, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, phone VARCHAR(20) NOT NULL, body_sent TEXT, status VARCHAR(20) DEFAULT 'pending', wamid VARCHAR(200), error TEXT, sent_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_whatsapp_messages_customer_id ON whatsapp_messages(customer_id)",
+        "CREATE INDEX IF NOT EXISTS ix_whatsapp_messages_status ON whatsapp_messages(status)",
+        "CREATE INDEX IF NOT EXISTS ix_whatsapp_messages_created_at ON whatsapp_messages(created_at DESC)",
+
+        # ── Email Marketing ───────────────────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS email_templates (id VARCHAR PRIMARY KEY, name VARCHAR(200) NOT NULL, subject VARCHAR(500) NOT NULL, body_html TEXT NOT NULL, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_email_templates_active ON email_templates(active)",
+        "CREATE TABLE IF NOT EXISTS email_messages (id VARCHAR PRIMARY KEY, template_id VARCHAR REFERENCES email_templates(id) ON DELETE SET NULL, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, to_email VARCHAR(300) NOT NULL, subject_sent VARCHAR(500), status VARCHAR(20) DEFAULT 'pending', error TEXT, sent_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_email_messages_customer_id ON email_messages(customer_id)",
+        "CREATE INDEX IF NOT EXISTS ix_email_messages_status ON email_messages(status)",
+        "CREATE INDEX IF NOT EXISTS ix_email_messages_created_at ON email_messages(created_at DESC)",
+
+        # ── Marketing Automations ─────────────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS marketing_automations (id VARCHAR PRIMARY KEY, name VARCHAR(200) NOT NULL, trigger VARCHAR(50) NOT NULL, trigger_value VARCHAR(100), channel VARCHAR(20) NOT NULL, template_id VARCHAR, message_body TEXT, active BOOLEAN DEFAULT TRUE, runs_total INTEGER DEFAULT 0, last_run_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_marketing_automations_trigger ON marketing_automations(trigger)",
+        "CREATE INDEX IF NOT EXISTS ix_marketing_automations_active ON marketing_automations(active)",
+        "CREATE TABLE IF NOT EXISTS automation_logs (id VARCHAR PRIMARY KEY, automation_id VARCHAR NOT NULL REFERENCES marketing_automations(id) ON DELETE CASCADE, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, channel VARCHAR(20), status VARCHAR(20), error TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_automation_logs_automation_id ON automation_logs(automation_id)",
+        "CREATE INDEX IF NOT EXISTS ix_automation_logs_customer_id ON automation_logs(customer_id)",
+        "CREATE INDEX IF NOT EXISTS ix_automation_logs_created_at ON automation_logs(created_at DESC)",
     ]
     for stmt in stmts:
         try:
@@ -376,6 +408,9 @@ app.include_router(admin_users_routes.router)
 app.include_router(crm_routes.router)
 app.include_router(marketing_routes.router)
 app.include_router(marketing_routes.public_router)
+app.include_router(whatsapp_marketing_routes.router)
+app.include_router(email_marketing_routes.router)
+app.include_router(automations_routes.router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")
