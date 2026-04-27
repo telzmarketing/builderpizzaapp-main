@@ -127,12 +127,13 @@ export default function AdminDashboard() {
                 <p className="text-parchment text-xs font-semibold uppercase tracking-widest mb-3">Visão Geral</p>
                 <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
                   <OverviewCard
-                    label="Total de Pedidos"
+                    label="Pedidos Confirmados"
                     value={stats?.total_orders ?? 0}
                     icon={ShoppingBag}
                     iconClass="bg-gold/15 text-gold"
-                    trend="+12% vs ontem"
-                    trendUp
+                    trend={(stats?.waiting_payment_orders ?? 0) > 0
+                      ? `+ ${stats!.waiting_payment_orders} ag. pagamento`
+                      : "Apenas pedidos pagos"}
                   />
                   <OverviewCard
                     label="Total de Produtos"
@@ -176,7 +177,7 @@ export default function AdminDashboard() {
                     <ProgressRow label="Recorrentes" pct={68} color="bg-gold" />
                     <ProgressRow label="Novos (30d)" pct={32} color="bg-purple-400" />
                   </div>
-                  <Link to="/painel/conteudo" className="mt-4 flex items-center gap-1 text-gold text-xs font-semibold hover:underline">
+                  <Link to="/painel/clientes" className="mt-4 flex items-center gap-1 text-gold text-xs font-semibold hover:underline">
                     Ver clientes <ArrowUpRight size={12} />
                   </Link>
                 </div>

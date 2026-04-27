@@ -1,11 +1,45 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, CheckCircle2, ChevronRight, Clock3, Loader2,
-  PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Utensils,
+  PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Utensils, Volume2, VolumeX,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import { ordersApi, type ApiOrder, type OrderStatus } from "@/lib/api";
 import { printOrder } from "@/lib/printing";
+
+// ── Alertas de novo pedido ─────────────────────────────────────────────────────
+
+function playNewOrderAlert() {
+  try {
+    const ctx = new AudioContext();
+    const beep = (freq: number, start: number, dur: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = "sine";
+      gain.gain.setValueAtTime(0.35, ctx.currentTime + start);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
+      osc.start(ctx.currentTime + start);
+      osc.stop(ctx.currentTime + start + dur + 0.05);
+    };
+    beep(880, 0, 0.15);
+    beep(1100, 0.2, 0.15);
+    beep(880, 0.4, 0.25);
+    setTimeout(() => {
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        const utter = new SpeechSynthesisUtterance("Novo pedido!");
+        utter.lang = "pt-BR";
+        utter.rate = 0.95;
+        utter.pitch = 1.1;
+        window.speechSynthesis.speak(utter);
+      }
+    }, 700);
+  } catch {
+    // AudioContext pode falhar se não houver interação do usuário — silencia
+  }
+}
 
 // ── Status labels ──────────────────────────────────────────────────────────────
 
@@ -162,6 +196,12 @@ export default function AdminOrders() {
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [newOrderFlash, setNewOrderFlash] = useState(false);
+
+  // Tracks known order IDs to detect truly new arrivals
+  const knownIds = useRef<Set<string>>(new Set());
+  const isFirstFetch = useRef(true);
 
   // Drag state — ref avoids triggering re-renders during drag
   const draggedId = useRef<string | null>(null);
@@ -174,6 +214,18 @@ export default function AdminOrders() {
     try {
       const data = await ordersApi.list({ limit: 150 });
       const sorted = [...data].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      if (!isFirstFetch.current) {
+        const incoming = sorted.filter((o) => !knownIds.current.has(o.id));
+        if (incoming.length > 0 && soundEnabled) {
+          playNewOrderAlert();
+          setNewOrderFlash(true);
+          setTimeout(() => setNewOrderFlash(false), 2000);
+        }
+      }
+      isFirstFetch.current = false;
+      knownIds.current = new Set(sorted.map((o) => o.id));
+
       setOrders(sorted);
       setLastUpdated(new Date());
     } catch {
@@ -182,7 +234,7 @@ export default function AdminOrders() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [soundEnabled]);
 
   useEffect(() => {
     fetchOrders();
@@ -248,7 +300,7 @@ export default function AdminOrders() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="rounded-xl border border-surface-03 bg-surface-03/60 px-3 py-2">
+            <div className={`rounded-xl border px-3 py-2 transition-colors ${newOrderFlash ? "border-gold bg-gold/20" : "border-surface-03 bg-surface-03/60"}`}>
               <p className="text-stone text-[11px] uppercase tracking-widest">Ativos</p>
               <p className="text-cream text-sm font-black">{activeOrders}</p>
             </div>
@@ -256,6 +308,13 @@ export default function AdminOrders() {
               <p className="text-stone text-[11px] uppercase tracking-widest">Total carregado</p>
               <p className="text-cream text-sm font-black">{orders.length}</p>
             </div>
+            <button
+              onClick={() => setSoundEnabled((v) => !v)}
+              title={soundEnabled ? "Desativar alerta sonoro" : "Ativar alerta sonoro"}
+              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-bold transition-colors ${soundEnabled ? "border-gold/40 bg-gold/10 text-gold hover:bg-gold/20" : "border-surface-03 bg-surface-03/60 text-stone hover:text-cream"}`}
+            >
+              {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            </button>
             <button
               onClick={() => fetchOrders(true)}
               disabled={loading || refreshing}

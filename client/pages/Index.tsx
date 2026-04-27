@@ -262,14 +262,18 @@ export default function Home() {
             >
               <div
                 className="rounded-2xl overflow-hidden relative h-36 lg:h-56"
-                style={
-                  displayBanner?.banner
-                    ? { backgroundImage: `url(${resolveAssetUrl(displayBanner.banner)})`, backgroundSize: "cover", backgroundPosition: "center" }
-                    : media.heroBannerImage
-                      ? { backgroundImage: `url(${resolveAssetUrl(media.heroBannerImage)})`, backgroundSize: "cover", backgroundPosition: "center" }
-                      : { background: "var(--home-banner-bg)" }
-                }
+                style={(!displayBanner?.banner && !media.heroBannerImage) ? { background: "var(--home-banner-bg)" } : {}}
               >
+                {/* Full-quality image rendered via <img> instead of background-image */}
+                {(displayBanner?.banner || media.heroBannerImage) && (
+                  <img
+                    src={resolveAssetUrl((displayBanner?.banner || media.heroBannerImage)!)}
+                    alt={displayBanner?.name ?? "Banner"}
+                    className="absolute inset-0 w-full h-full object-cover object-center"
+                    loading="eager"
+                    decoding="async"
+                  />
+                )}
                 {/* Gradient overlay */}
                 <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/40 to-transparent" />
 

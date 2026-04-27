@@ -24,6 +24,8 @@ from backend.routes import theme as theme_routes
 from backend.routes import home_config as home_config_routes
 from backend.routes import paid_traffic as paid_traffic_routes
 from backend.routes import lgpd as lgpd_routes
+from backend.routes import exit_popup as exit_popup_routes
+from backend.routes import admin_users as admin_users_routes
 
 settings = get_settings()
 
@@ -222,6 +224,9 @@ def _run_migrations():
         "CREATE TABLE IF NOT EXISTS lgpd_policies (id VARCHAR PRIMARY KEY, version VARCHAR(20) NOT NULL, title VARCHAR(300) NOT NULL DEFAULT 'Política de Privacidade e Proteção de Dados', intro_text TEXT, data_controller_text TEXT, data_collected_text TEXT, data_usage_text TEXT, data_retention_text TEXT, rights_text TEXT, contact_text TEXT, marketing_email_label VARCHAR(500) DEFAULT 'Desejo receber promoções e novidades por e-mail', marketing_whatsapp_label VARCHAR(500) DEFAULT 'Desejo receber promoções e novidades pelo WhatsApp', is_active BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         # ── Fix home_catalog_config show_promotions NULL rows ─────────────
         "UPDATE home_catalog_config SET show_promotions = TRUE WHERE show_promotions IS NULL",
+        # ── Exit popup config ─────────────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS exit_popup_config (id VARCHAR PRIMARY KEY DEFAULT 'default', enabled BOOLEAN DEFAULT FALSE, title VARCHAR(200) DEFAULT 'Espera! Temos uma oferta para você 🍕', subtitle TEXT DEFAULT 'Use o cupom abaixo e ganhe desconto no seu pedido!', coupon_code VARCHAR(50), button_text VARCHAR(100) DEFAULT 'Usar cupom agora', image_url TEXT, show_once_per_session BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "INSERT INTO exit_popup_config (id) VALUES ('default') ON CONFLICT DO NOTHING",
     ]
     for stmt in stmts:
         try:
@@ -275,6 +280,8 @@ app.include_router(paid_traffic_routes.admin_router)
 app.include_router(store_operation.router)
 app.include_router(lgpd_routes.router)
 app.include_router(lgpd_routes.admin_router)
+app.include_router(exit_popup_routes.router)
+app.include_router(admin_users_routes.router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")

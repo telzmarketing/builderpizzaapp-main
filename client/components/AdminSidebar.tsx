@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3, Package, ShoppingBag, ArrowLeft, Trophy, FileText,
   CreditCard, Truck, LogOut, Sparkles, MessageCircle, Palette,
-  LayoutDashboard, MousePointerClick, User, Clock, Shield, Printer, Tag,
+  LayoutDashboard, MousePointerClick, User, Users, Clock, Shield, Printer, Tag, LogIn,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
@@ -28,6 +28,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Operações",
     items: [
       { to: "/painel/orders", icon: ShoppingBag, label: "Pedidos" },
+      { to: "/painel/clientes", icon: User, label: "Clientes" },
       { to: "/painel/trafego-pago", icon: MousePointerClick, label: "Tráfego Pago" },
     ],
   },
@@ -37,6 +38,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/painel/campanhas", icon: Sparkles, label: "Promoções & Campanhas" },
       { to: "/painel/cupons", icon: Tag, label: "Cupons de Desconto" },
       { to: "/painel/fidelidade", icon: Trophy, label: "Fidelidade" },
+      { to: "/painel/popup-saida", icon: LogIn, label: "Popup de Saída" },
     ],
   },
   {
@@ -48,6 +50,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/painel/funcionamento", icon: Clock, label: "Funcionamento da Loja" },
       { to: "/painel/chatbot", icon: MessageCircle, label: "Chatbot" },
       { to: "/painel/aparencia", icon: Palette, label: "Aparência" },
+      { to: "/painel/usuarios", icon: Users, label: "Usuários do Sistema" },
       { to: "/painel/lgpd", icon: Shield, label: "LGPD & Privacidade" },
       { to: "/painel/configuracoes", icon: Printer, label: "Impressora & Modelos" },
     ],

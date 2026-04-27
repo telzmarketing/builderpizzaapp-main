@@ -83,6 +83,10 @@ import AdminHomeConfig from "./pages/admin/HomeConfig";
 import AdminLgpd from "./pages/admin/AdminLgpd";
 import AdminConfiguracoes from "./pages/admin/AdminConfiguracoes";
 import AdminCupons from "./pages/admin/AdminCupons";
+import AdminClientes from "./pages/admin/AdminClientes";
+import AdminExitPopup from "./pages/admin/AdminExitPopup";
+import AdminUsuarios from "./pages/admin/AdminUsuarios";
+import ExitPopup from "./components/ExitPopup";
 import Campanha from "./pages/Campanha";
 import Fidelidade from "./pages/Fidelidade";
 import Cupons from "./pages/Cupons";
@@ -106,6 +110,7 @@ export default function App() {
           <BrowserRouter>
             <StoreWidget />
             <TrackingInjector />
+            <ExitPopup />
             <Routes>
               {/* ── Customer routes ── */}
               <Route path="/" element={<Index />} />
@@ -142,6 +147,9 @@ export default function App() {
                 <Route path="/painel/lgpd" element={<AdminLgpd />} />
                 <Route path="/painel/configuracoes" element={<AdminConfiguracoes />} />
                 <Route path="/painel/cupons" element={<AdminCupons />} />
+                <Route path="/painel/clientes" element={<AdminClientes />} />
+                <Route path="/painel/popup-saida" element={<AdminExitPopup />} />
+                <Route path="/painel/usuarios" element={<AdminUsuarios />} />
               </Route>
 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

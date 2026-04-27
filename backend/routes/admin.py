@@ -11,6 +11,7 @@ from backend.models.product import Product
 from backend.models.customer import Customer
 from backend.models.payment import Payment, PaymentStatus
 from backend.models.payment_config import PaymentGatewayConfig
+from backend.config import get_settings
 from backend.routes.admin_auth import get_current_admin
 from backend.schemas.payment_config import (
     PaymentGatewayConfigOut, PaymentGatewayConfigUpdate, _mask
@@ -19,9 +20,31 @@ from backend.schemas.payment_config import (
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
+CONFIRMED_STATUSES = [
+    OrderStatus.paid,
+    OrderStatus.preparing,
+    OrderStatus.ready_for_pickup,
+    OrderStatus.on_the_way,
+    OrderStatus.delivered,
+]
+
+
 @router.get("/dashboard")
 def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    total_orders = db.query(func.count(Order.id)).scalar() or 0
+    # Only count confirmed orders (paid or beyond)
+    total_orders = (
+        db.query(func.count(Order.id))
+        .filter(Order.status.in_(CONFIRMED_STATUSES))
+        .scalar()
+        or 0
+    )
+    # Waiting payment — shown separately in dashboard
+    waiting_payment_orders = (
+        db.query(func.count(Order.id))
+        .filter(Order.status.in_([OrderStatus.pending, OrderStatus.waiting_payment]))
+        .scalar()
+        or 0
+    )
     total_revenue = (
         db.query(func.sum(Order.total))
         .join(Payment, Payment.order_id == Order.id)
@@ -54,6 +77,7 @@ def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin))
 
     return {
         "total_orders": total_orders,
+        "waiting_payment_orders": waiting_payment_orders,
         "total_revenue": round(total_revenue, 2),
         "pending_orders": pending_orders,
         "total_products": total_products,
@@ -72,6 +96,27 @@ def _get_or_create_config(db: Session) -> PaymentGatewayConfig:
     if not config:
         config = PaymentGatewayConfig(id="default")
         db.add(config)
+        db.flush()
+
+    # Sync env-var credentials into DB so admin page shows "configured" status
+    s = get_settings()
+    dirty = False
+    if s.MERCADO_PAGO_ACCESS_TOKEN and not config.mp_access_token:
+        config.mp_access_token = s.MERCADO_PAGO_ACCESS_TOKEN
+        dirty = True
+    if s.MERCADO_PAGO_PUBLIC_KEY and not config.mp_public_key:
+        config.mp_public_key = s.MERCADO_PAGO_PUBLIC_KEY
+        dirty = True
+    if s.MERCADO_PAGO_WEBHOOK_SECRET and not config.mp_webhook_secret:
+        config.mp_webhook_secret = s.MERCADO_PAGO_WEBHOOK_SECRET
+        dirty = True
+    if s.PAYMENT_PROVIDER not in ("", "mock") and not config.gateway:
+        config.gateway = s.PAYMENT_PROVIDER.replace("mercado_pago", "mercadopago")
+        dirty = True
+    if s.PAYMENT_GATEWAY not in ("", "mock") and not config.gateway:
+        config.gateway = s.PAYMENT_GATEWAY
+        dirty = True
+    if dirty:
         db.commit()
         db.refresh(config)
     return config
