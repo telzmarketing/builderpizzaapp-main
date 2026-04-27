@@ -249,6 +249,15 @@ def list_cards(pipeline_id: str, archived: bool = False, db: Session = Depends(g
     return ok([_card_to_dict(c, db) for c in cards])
 
 
+@router.post("/cards")
+def create_card_shorthand(body: CardCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    """Shorthand — looks up pipeline_id from the stage."""
+    stage = db.query(CrmStage).filter(CrmStage.id == body.stage_id).first()
+    if not stage:
+        raise HTTPException(404, "Etapa não encontrada.")
+    return create_card(stage.pipeline_id, body, db, None)
+
+
 @router.post("/pipelines/{pipeline_id}/cards")
 def create_card(pipeline_id: str, body: CardCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     import json
@@ -357,6 +366,48 @@ def complete_task(task_id: str, db: Session = Depends(get_db), _=Depends(get_cur
     return ok({"id": task.id, "status": "completed"})
 
 
+class TaskUpdate(BaseModel):
+    status: str | None = None
+    title: str | None = None
+    priority: str | None = None
+    responsible: str | None = None
+    description: str | None = None
+
+
+@router.patch("/tasks/{task_id}")
+def update_task(task_id: str, body: TaskUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    task = db.query(CrmTask).filter(CrmTask.id == task_id).first()
+    if not task:
+        raise HTTPException(404, "Tarefa não encontrada.")
+    if body.status is not None:
+        task.status = body.status
+        if body.status == "completed":
+            task.completed_at = _now()
+        else:
+            task.completed_at = None
+    if body.title is not None:
+        task.title = body.title
+    if body.priority is not None:
+        task.priority = body.priority
+    if body.responsible is not None:
+        task.responsible = body.responsible
+    if body.description is not None:
+        task.description = body.description
+    task.updated_at = _now()
+    db.commit()
+    return ok({"id": task.id, "status": task.status})
+
+
+@router.delete("/tasks/{task_id}")
+def delete_task(task_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    task = db.query(CrmTask).filter(CrmTask.id == task_id).first()
+    if not task:
+        raise HTTPException(404, "Tarefa não encontrada.")
+    db.delete(task)
+    db.commit()
+    return ok(None, "Tarefa removida.")
+
+
 # ── Customer Groups ───────────────────────────────────────────────────────────
 
 @router.get("/groups")
@@ -391,6 +442,52 @@ def create_group(body: GroupCreate, db: Session = Depends(get_db), _=Depends(get
         ), {"id": str(uuid.uuid4()), "gid": g.id, "field": rule["field"], "op": rule["operator"], "val": str(rule["value"])})
     db.commit()
     return created({"id": g.id, "name": g.name}, "Grupo criado.")
+
+
+class GroupUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    color: str | None = None
+    icon: str | None = None
+    group_type: str | None = None
+    rules: list[dict] | None = None
+
+
+@router.patch("/groups/{group_id}")
+def update_group(group_id: str, body: GroupUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    g = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
+    if not g:
+        raise HTTPException(404, "Grupo não encontrado.")
+    if body.name is not None:
+        g.name = body.name
+    if body.description is not None:
+        g.description = body.description
+    if body.color is not None:
+        g.color = body.color
+    if body.icon is not None:
+        g.icon = body.icon
+    if body.group_type is not None:
+        g.group_type = body.group_type
+    if body.rules is not None:
+        db.execute(text("DELETE FROM customer_group_rules WHERE group_id = :gid"), {"gid": group_id})
+        for rule in body.rules:
+            db.execute(text(
+                "INSERT INTO customer_group_rules (id, group_id, field, operator, value) VALUES (:id, :gid, :field, :op, :val)"
+            ), {"id": str(uuid.uuid4()), "gid": group_id, "field": rule["field"], "op": rule["operator"], "val": str(rule["value"])})
+    g.updated_at = _now()
+    db.commit()
+    return ok({"id": g.id, "name": g.name})
+
+
+@router.delete("/groups/{group_id}")
+def delete_group(group_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    g = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
+    if not g:
+        raise HTTPException(404, "Grupo não encontrado.")
+    g.active = False
+    g.updated_at = _now()
+    db.commit()
+    return ok(None, "Grupo removido.")
 
 
 @router.post("/groups/{group_id}/members/{customer_id}")
@@ -450,18 +547,22 @@ def crm_dashboard(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     active_cards = db.query(func.count(CrmCard.id)).filter(CrmCard.archived == False).scalar() or 0  # noqa: E712
     tasks_pending = db.query(func.count(CrmTask.id)).filter(CrmTask.status == "pending").scalar() or 0
     groups_count = db.query(func.count(CustomerGroup.id)).filter(CustomerGroup.active == True).scalar() or 0  # noqa: E712
-    by_stage = db.execute(sql_text("""
-        SELECT cs.name, COUNT(cc.id) as cards
-        FROM crm_stages cs
-        LEFT JOIN crm_cards cc ON cc.stage_id = cs.id AND cc.archived = FALSE
-        WHERE cs.pipeline_id = 'delivery'
-        GROUP BY cs.id, cs.name, cs.sort_order
-        ORDER BY cs.sort_order
-    """)).fetchall()
+    # Use first available pipeline for funnel if "delivery" doesn't exist
+    first_pipeline = db.query(CrmPipeline).filter(CrmPipeline.active == True).order_by(CrmPipeline.sort_order).first()  # noqa: E712
+    funnel_rows = []
+    if first_pipeline:
+        funnel_rows = db.execute(sql_text("""
+            SELECT cs.name, COUNT(cc.id) as cards
+            FROM crm_stages cs
+            LEFT JOIN crm_cards cc ON cc.stage_id = cs.id AND cc.archived = FALSE
+            WHERE cs.pipeline_id = :pid
+            GROUP BY cs.id, cs.name, cs.sort_order
+            ORDER BY cs.sort_order
+        """), {"pid": first_pipeline.id}).fetchall()
     return ok({
-        "total_customers": total,
-        "active_cards": active_cards,
-        "tasks_pending": tasks_pending,
+        "total_clients": total,
+        "pipeline_cards": active_cards,
+        "pending_tasks": tasks_pending,
         "groups": groups_count,
-        "pipeline_delivery": [{"stage": r[0], "cards": r[1]} for r in by_stage],
+        "funnel": [{"name": r[0], "count": r[1]} for r in funnel_rows],
     })

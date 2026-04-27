@@ -5,6 +5,8 @@ import {
 import AdminSidebar from "@/components/AdminSidebar";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const unwrap = (json: any) => json?.data ?? json;
 
 type CampaignStatus = "draft" | "active" | "paused" | "ended";
 type CampaignChannel = "whatsapp" | "email" | "paid_traffic" | "internal";
@@ -98,6 +100,7 @@ export default function MarketingCampanhas() {
     setError("");
     fetch(`${BASE}/marketing/campaigns`, { headers })
       .then((r) => { if (!r.ok) throw new Error("Falha ao carregar campanhas."); return r.json(); })
+      .then(unwrap)
       .then(setCampaigns)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));

@@ -5,6 +5,8 @@ import {
 import AdminSidebar from "@/components/AdminSidebar";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const unwrap = (json: any) => json?.data ?? json;
 const STORE_DOMAIN = (import.meta.env.VITE_STORE_DOMAIN ?? "delivery.moschettieri.com.br");
 
 interface TrackingLink {
@@ -50,6 +52,7 @@ export default function MarketingLinks() {
     setError("");
     fetch(`${BASE}/marketing/tracking-links`, { headers })
       .then((r) => { if (!r.ok) throw new Error("Falha ao carregar links."); return r.json(); })
+      .then(unwrap)
       .then(setLinks)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));

@@ -3,6 +3,8 @@ import { Loader2, Plus, X, ChevronRight } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const unwrap = (json: any) => json?.data ?? json;
 
 interface Pipeline {
   id: string;
@@ -69,13 +71,13 @@ export default function CrmPipeline() {
     try {
       const res = await fetch(`${BASE}/crm/pipelines`, { headers });
       if (!res.ok) throw new Error("Falha ao carregar pipelines.");
-      const pipelines: Pipeline[] = await res.json();
+      const pipelines: Pipeline[] = unwrap(await res.json());
       const p = pipelines[0];
       if (!p) { setPipeline(null); setLoading(false); return; }
       setPipeline(p);
       const cardsRes = await fetch(`${BASE}/crm/pipelines/${p.id}/cards`, { headers });
       if (!cardsRes.ok) throw new Error("Falha ao carregar cards.");
-      setCards(await cardsRes.json());
+      setCards(unwrap(await cardsRes.json()));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro desconhecido.");
     } finally {
@@ -162,7 +164,7 @@ export default function CrmPipeline() {
         body: JSON.stringify({ ...form, stage_id: modalStageId }),
       });
       if (!res.ok) throw new Error("Erro ao criar card.");
-      const newCard = await res.json();
+      const newCard = unwrap(await res.json());
       setCards((prev) => [...prev, newCard]);
       setShowModal(false);
     } catch {

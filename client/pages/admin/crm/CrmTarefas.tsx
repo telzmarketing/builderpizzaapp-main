@@ -6,6 +6,8 @@ import {
 import AdminSidebar from "@/components/AdminSidebar";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const unwrap = (json: any) => json?.data ?? json;
 
 type TaskStatus = "pending" | "completed";
 type TaskType = "whatsapp" | "call" | "proposal" | "coupon" | "followup";
@@ -14,7 +16,7 @@ type TaskPriority = "low" | "medium" | "high";
 interface Task {
   id: string;
   title: string;
-  type: TaskType;
+  task_type: TaskType;
   customer_name?: string;
   customer_id?: string;
   responsible?: string;
@@ -63,7 +65,7 @@ const PRIORITY_COLORS: Record<TaskPriority, string> = {
 
 const emptyForm = (): Partial<Task> => ({
   title: "",
-  type: "followup",
+  task_type: "followup",
   customer_id: "",
   responsible: "",
   due_date: "",
@@ -89,6 +91,7 @@ export default function CrmTarefas() {
     setError("");
     fetch(`${BASE}/crm/tasks`, { headers })
       .then((r) => { if (!r.ok) throw new Error("Falha ao carregar tarefas."); return r.json(); })
+      .then(unwrap)
       .then(setTasks)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -125,7 +128,6 @@ export default function CrmTarefas() {
   const handleComplete = async (task: Task) => {
     setCompleting(task.id);
     const newStatus: TaskStatus = task.status === "pending" ? "completed" : "pending";
-    // Optimistic
     setTasks((prev) =>
       prev.map((t) => (t.id === task.id ? { ...t, status: newStatus } : t))
     );
@@ -136,7 +138,6 @@ export default function CrmTarefas() {
         body: JSON.stringify({ status: newStatus }),
       });
     } catch {
-      // Revert
       setTasks((prev) =>
         prev.map((t) => (t.id === task.id ? { ...t, status: task.status } : t))
       );
@@ -202,7 +203,7 @@ export default function CrmTarefas() {
               </div>
             )}
             {filtered.map((task) => {
-              const TypeIcon = TYPE_ICONS[task.type] ?? ClipboardList;
+              const TypeIcon = TYPE_ICONS[task.task_type] ?? ClipboardList;
               const isCompleted = task.status === "completed";
               return (
                 <div
@@ -232,9 +233,9 @@ export default function CrmTarefas() {
                       <p className={`font-medium text-sm ${isCompleted ? "line-through text-stone" : "text-cream"}`}>
                         {task.title}
                       </p>
-                      <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[task.type]}`}>
+                      <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[task.task_type]}`}>
                         <TypeIcon size={10} />
-                        {TYPE_LABELS[task.type]}
+                        {TYPE_LABELS[task.task_type]}
                       </span>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[task.priority]}`}>
                         {PRIORITY_LABELS[task.priority]}
@@ -293,8 +294,8 @@ export default function CrmTarefas() {
                   <div className="space-y-1">
                     <label className="text-xs text-stone">Tipo</label>
                     <select
-                      value={form.type ?? "followup"}
-                      onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as TaskType }))}
+                      value={form.task_type ?? "followup"}
+                      onChange={(e) => setForm((f) => ({ ...f, task_type: e.target.value as TaskType }))}
                       className={inputCls}
                     >
                       {Object.entries(TYPE_LABELS).map(([v, l]) => (

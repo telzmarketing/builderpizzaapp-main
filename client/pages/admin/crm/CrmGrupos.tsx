@@ -3,6 +3,8 @@ import { Loader2, Plus, Trash2, Pencil, X, FolderOpen, PlusCircle, MinusCircle }
 import AdminSidebar from "@/components/AdminSidebar";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const unwrap = (json: any) => json?.data ?? json;
 
 type GroupType = "manual" | "dynamic";
 
@@ -15,7 +17,7 @@ interface DynamicRule {
 interface Group {
   id: string;
   name: string;
-  type: GroupType;
+  group_type: GroupType;
   color: string;
   icon: string;
   description?: string;
@@ -25,7 +27,7 @@ interface Group {
 
 const emptyForm = (): Partial<Group> => ({
   name: "",
-  type: "manual",
+  group_type: "manual",
   color: "#f97316",
   icon: "👥",
   description: "",
@@ -71,6 +73,7 @@ export default function CrmGrupos() {
     setError("");
     fetch(`${BASE}/crm/groups`, { headers })
       .then((r) => { if (!r.ok) throw new Error("Falha ao carregar grupos."); return r.json(); })
+      .then(unwrap)
       .then(setGroups)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -202,12 +205,12 @@ export default function CrmGrupos() {
                           <p className="text-cream font-semibold text-sm">{g.name}</p>
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full ${
-                              g.type === "dynamic"
+                              g.group_type === "dynamic"
                                 ? "bg-purple-500/20 text-purple-400"
                                 : "bg-surface-03 text-stone"
                             }`}
                           >
-                            {g.type === "dynamic" ? "Dinâmico" : "Manual"}
+                            {g.group_type === "dynamic" ? "Dinâmico" : "Manual"}
                           </span>
                         </div>
                       </div>
@@ -266,8 +269,8 @@ export default function CrmGrupos() {
                   <div className="space-y-1">
                     <label className="text-xs text-stone">Tipo</label>
                     <select
-                      value={form.type ?? "manual"}
-                      onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as GroupType }))}
+                      value={form.group_type ?? "manual"}
+                      onChange={(e) => setForm((f) => ({ ...f, group_type: e.target.value as GroupType }))}
                       className={inputCls}
                     >
                       <option value="manual">Manual</option>
@@ -312,7 +315,7 @@ export default function CrmGrupos() {
                 </div>
 
                 {/* Dynamic rules */}
-                {form.type === "dynamic" && (
+                {form.group_type === "dynamic" && (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <label className="text-xs text-stone font-medium">Regras de Segmentação</label>

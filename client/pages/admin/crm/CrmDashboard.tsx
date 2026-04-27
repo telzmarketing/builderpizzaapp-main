@@ -3,6 +3,8 @@ import { Loader2, Users, KanbanSquare, ClipboardList, FolderOpen, RefreshCw } fr
 import AdminSidebar from "@/components/AdminSidebar";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const unwrap = (json: any) => json?.data ?? json;
 
 interface FunnelStage {
   name: string;
@@ -39,6 +41,7 @@ export default function CrmDashboard() {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => { if (!r.ok) throw new Error("Falha ao carregar dashboard CRM."); return r.json(); })
+      .then(unwrap)
       .then(setData)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));

@@ -6,6 +6,8 @@ import {
 import AdminSidebar from "@/components/AdminSidebar";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const unwrap = (json: any) => json?.data ?? json;
 
 type Period = "today" | "7d" | "30d" | "90d";
 
@@ -81,6 +83,7 @@ export default function MarketingDashboard() {
         if (!r.ok) throw new Error("Falha ao carregar dados.");
         return r.json();
       })
+      .then(unwrap)
       .then(setData)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));

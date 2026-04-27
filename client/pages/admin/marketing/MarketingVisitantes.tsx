@@ -3,6 +3,8 @@ import { Loader2, Users, Monitor, Smartphone, RefreshCw, Globe } from "lucide-re
 import AdminSidebar from "@/components/AdminSidebar";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const unwrap = (json: any) => json?.data ?? json;
 
 type Period = "today" | "7d" | "30d";
 
@@ -50,6 +52,7 @@ export default function MarketingVisitantes() {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => { if (!r.ok) throw new Error("Falha ao carregar visitantes."); return r.json(); })
+      .then(unwrap)
       .then(setData)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));

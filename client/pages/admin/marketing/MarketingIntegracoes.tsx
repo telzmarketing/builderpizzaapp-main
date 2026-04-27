@@ -3,6 +3,8 @@ import { Loader2, ChevronDown, ChevronUp, CheckCircle2, XCircle, RefreshCw } fro
 import AdminSidebar from "@/components/AdminSidebar";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const unwrap = (json: any) => json?.data ?? json;
 
 interface Integration {
   id: string;
@@ -105,6 +107,7 @@ export default function MarketingIntegracoes() {
     setError("");
     fetch(`${BASE}/marketing/integrations`, { headers })
       .then((r) => { if (!r.ok) throw new Error("Falha ao carregar integrações."); return r.json(); })
+      .then(unwrap)
       .then((data: Integration[]) => {
         setIntegrations(data);
         const initial: Record<string, Record<string, string>> = {};
