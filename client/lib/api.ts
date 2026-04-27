@@ -776,42 +776,6 @@ export interface ApiShipping {
   message: string;
 }
 
-// ── Customers ─────────────────────────────────────────────────────────────────
-
-export interface ApiAddress {
-  id: string;
-  customer_id: string;
-  label: string | null;
-  street: string;
-  number: string | null;
-  complement: string | null;
-  neighborhood: string | null;
-  city: string;
-  state: string | null;
-  zip_code: string | null;
-  is_default: boolean;
-  created_at: string;
-}
-
-export interface ApiCustomer {
-  id: string;
-  name: string;
-  email: string;
-  phone: string | null;
-  lgpd_consent: boolean;
-  lgpd_policy_version: string | null;
-  marketing_email_consent: boolean;
-  marketing_whatsapp_consent: boolean;
-  created_at: string;
-  updated_at: string;
-  addresses: ApiAddress[];
-}
-
-export const customersApi = {
-  list: () => get<ApiCustomer[]>("/customers"),
-  get: (id: string) => get<ApiCustomer>(`/customers/${id}`),
-};
-
 // ── Exit Popup ────────────────────────────────────────────────────────────────
 
 export interface ApiExitPopupConfig {
