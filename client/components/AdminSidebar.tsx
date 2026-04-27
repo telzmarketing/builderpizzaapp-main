@@ -1,10 +1,11 @@
+import { useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3, Package, ShoppingBag, ArrowLeft, Trophy, FileText,
   CreditCard, Truck, LogOut, Sparkles, MessageCircle, Palette,
-  LayoutDashboard, MousePointerClick, User, Users, Clock, Shield, Printer, Tag, LogIn,
-  TrendingUp, Megaphone, Eye, LinkIcon, Plug, KanbanSquare, UserCheck, ClipboardList,
-  Mail, Zap,
+  LayoutDashboard, User, Users, Clock, Shield, Printer, Tag, LogIn,
+  TrendingUp, Eye, Plug, KanbanSquare, UserCheck, ClipboardList,
+  Mail, Zap, MousePointerClick, CheckSquare,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
@@ -30,35 +31,37 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Operações",
     items: [
       { to: "/painel/orders", icon: ShoppingBag, label: "Pedidos" },
-      { to: "/painel/clientes", icon: User, label: "Clientes" },
-      { to: "/painel/trafego-pago", icon: MousePointerClick, label: "Tráfego Pago" },
-    ],
-  },
-  {
-    label: "Marketing",
-    items: [
-      { to: "/painel/marketing", icon: TrendingUp, label: "Dashboard Marketing" },
-      { to: "/painel/marketing/campanhas", icon: Megaphone, label: "Campanhas" },
-      { to: "/painel/marketing/visitantes", icon: Eye, label: "Análise de Visitantes" },
-      { to: "/painel/marketing/links", icon: LinkIcon, label: "Links Rastreáveis" },
-      { to: "/painel/marketing/integracoes", icon: Plug, label: "Integrações" },
-      { to: "/painel/marketing/whatsapp", icon: MessageCircle, label: "WhatsApp Marketing" },
-      { to: "/painel/marketing/email", icon: Mail, label: "E-mail Marketing" },
-      { to: "/painel/marketing/automacoes", icon: Zap, label: "Automações" },
-      { to: "/painel/marketing/ads", icon: BarChart3, label: "Painel de Anúncios" },
-      { to: "/painel/campanhas", icon: Sparkles, label: "Promoções & Banners" },
-      { to: "/painel/cupons", icon: Tag, label: "Cupons de Desconto" },
-      { to: "/painel/fidelidade", icon: Trophy, label: "Fidelidade" },
-      { to: "/painel/popup-saida", icon: LogIn, label: "Popup de Saída" },
     ],
   },
   {
     label: "CRM",
     items: [
       { to: "/painel/crm", icon: BarChart3, label: "Dashboard CRM" },
+      { to: "/painel/clientes", icon: User, label: "Clientes" },
       { to: "/painel/crm/pipeline", icon: KanbanSquare, label: "Pipeline" },
       { to: "/painel/crm/grupos", icon: UserCheck, label: "Grupos & Segmentações" },
       { to: "/painel/crm/tarefas", icon: ClipboardList, label: "Tarefas" },
+    ],
+  },
+  {
+    label: "Marketing",
+    items: [
+      { to: "/painel/marketing", icon: TrendingUp, label: "Dashboard Marketing" },
+      { to: "/painel/marketing/visitantes", icon: Eye, label: "Análise de Visitantes" },
+      { to: "/painel/marketing/whatsapp", icon: MessageCircle, label: "Disparador WhatsApp" },
+      { to: "/painel/marketing/email", icon: Mail, label: "Disparador de Email" },
+      { to: "/painel/trafego-pago", icon: MousePointerClick, label: "Tráfego Pago" },
+      { to: "/painel/marketing/automacoes", icon: Zap, label: "Automação de Marketing" },
+      { to: "/painel/marketing/workflow", icon: CheckSquare, label: "Workflow de Aprovação" },
+    ],
+  },
+  {
+    label: "Fidelização",
+    items: [
+      { to: "/painel/campanhas", icon: Sparkles, label: "Promoções & Banners" },
+      { to: "/painel/cupons", icon: Tag, label: "Cupons de Desconto" },
+      { to: "/painel/fidelidade", icon: Trophy, label: "Fidelidade" },
+      { to: "/painel/popup-saida", icon: LogIn, label: "Popup de Saída" },
     ],
   },
   {
@@ -70,6 +73,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/painel/funcionamento", icon: Clock, label: "Funcionamento da Loja" },
       { to: "/painel/chatbot", icon: MessageCircle, label: "Chatbot" },
       { to: "/painel/aparencia", icon: Palette, label: "Aparência" },
+      { to: "/painel/marketing/integracoes", icon: Plug, label: "Integrações" },
       { to: "/painel/usuarios", icon: Users, label: "Usuários do Sistema" },
       { to: "/painel/lgpd", icon: Shield, label: "LGPD & Privacidade" },
       { to: "/painel/configuracoes", icon: Printer, label: "Impressora & Modelos" },
@@ -89,6 +93,8 @@ export default function AdminSidebar() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { siteContent } = useApp();
+  const navRef = useRef<HTMLElement>(null);
+  const activeLinkRef = useRef<HTMLAnchorElement>(null);
 
   const adminUserRaw = localStorage.getItem("admin_user");
   const adminUser = adminUserRaw ? JSON.parse(adminUserRaw) : null;
@@ -107,6 +113,36 @@ export default function AdminSidebar() {
   const EXACT_ROUTES = new Set(["/painel", "/painel/marketing", "/painel/crm"]);
   const isActive = (to: string) =>
     EXACT_ROUTES.has(to) ? pathname === to : pathname.startsWith(to);
+
+  // Restore sidebar scroll position
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const saved = sessionStorage.getItem("admin-sidebar-scroll");
+    if (saved) nav.scrollTop = parseInt(saved, 10);
+  }, []);
+
+  // Save scroll position while scrolling
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const onScroll = () =>
+      sessionStorage.setItem("admin-sidebar-scroll", String(nav.scrollTop));
+    nav.addEventListener("scroll", onScroll, { passive: true });
+    return () => nav.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Scroll active item into view when it's outside the visible area
+  useEffect(() => {
+    const link = activeLinkRef.current;
+    const nav = navRef.current;
+    if (!link || !nav) return;
+    const navRect = nav.getBoundingClientRect();
+    const linkRect = link.getBoundingClientRect();
+    if (linkRect.top < navRect.top || linkRect.bottom > navRect.bottom) {
+      link.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [pathname]);
 
   return (
     <div className="w-full md:w-64 bg-surface-02 border-b md:border-b-0 md:border-r border-surface-03 flex flex-col flex-shrink-0 h-auto md:h-screen max-h-[52vh] md:max-h-none">
@@ -133,7 +169,6 @@ export default function AdminSidebar() {
       {/* ── Admin profile card ───────────────────────────────────────── */}
       <div className="hidden md:block px-4 py-3 border-b border-surface-03 flex-shrink-0">
         <div className="flex items-center gap-3 bg-surface-01 rounded-xl px-3 py-2.5 border border-surface-03/60">
-          {/* Avatar with online dot */}
           <div className="relative flex-shrink-0">
             <div className="w-9 h-9 rounded-full bg-gold/20 border border-gold/40 flex items-center justify-center">
               {initials ? (
@@ -144,8 +179,6 @@ export default function AdminSidebar() {
             </div>
             <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-surface-02 rounded-full" />
           </div>
-
-          {/* Info */}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <p className="text-cream text-xs font-semibold truncate leading-none">{adminName}</p>
@@ -161,15 +194,12 @@ export default function AdminSidebar() {
       </div>
 
       {/* ── Navigation ──────────────────────────────────────────────── */}
-      <nav className="flex-1 overflow-y-auto py-3 px-3">
+      <nav ref={navRef} className="flex-1 overflow-y-auto py-3 px-3">
         {NAV_GROUPS.map((group, gi) => (
           <div key={group.label} className={gi > 0 ? "mt-4" : ""}>
-            {/* Section label */}
             <p className="px-3 mb-1 text-[10px] font-bold uppercase tracking-[0.15em] text-stone/50 select-none">
               {group.label}
             </p>
-
-            {/* Items */}
             <div className="space-y-0.5">
               {group.items.map(({ to, icon: Icon, label }) => {
                 const active = isActive(to);
@@ -177,6 +207,7 @@ export default function AdminSidebar() {
                   <Link
                     key={to}
                     to={to}
+                    ref={active ? (activeLinkRef as React.RefObject<HTMLAnchorElement>) : undefined}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                       active
                         ? "bg-gold text-cream shadow-sm shadow-gold/20"

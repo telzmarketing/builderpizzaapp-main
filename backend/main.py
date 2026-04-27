@@ -32,6 +32,7 @@ from backend.routes import whatsapp_marketing as whatsapp_marketing_routes
 from backend.routes import email_marketing as email_marketing_routes
 from backend.routes import automations as automations_routes
 from backend.routes import ads_oauth as ads_oauth_routes
+from backend.routes import marketing_workflow as marketing_workflow_routes
 
 settings = get_settings()
 
@@ -359,6 +360,14 @@ def _run_migrations():
         "CREATE TABLE IF NOT EXISTS ads_campaigns (id VARCHAR PRIMARY KEY, platform VARCHAR(30) NOT NULL, external_id VARCHAR(200) NOT NULL, name VARCHAR(300), status VARCHAR(30), objective VARCHAR(100), budget_daily FLOAT, spend FLOAT DEFAULT 0, impressions INTEGER DEFAULT 0, clicks INTEGER DEFAULT 0, conversions INTEGER DEFAULT 0, revenue FLOAT DEFAULT 0, ctr FLOAT DEFAULT 0, cpc FLOAT DEFAULT 0, cpa FLOAT DEFAULT 0, roas FLOAT DEFAULT 0, last_synced_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE INDEX IF NOT EXISTS ix_ads_campaigns_platform ON ads_campaigns(platform)",
         "CREATE INDEX IF NOT EXISTS ix_ads_campaigns_spend ON ads_campaigns(spend DESC)",
+
+        # ══════════════════════════════════════════════════════════════════════
+        # WORKFLOW DE APROVAÇÃO — Fase 4
+        # ══════════════════════════════════════════════════════════════════════
+        "CREATE TABLE IF NOT EXISTS marketing_workflows (id VARCHAR PRIMARY KEY, name VARCHAR(300) NOT NULL, campaign_type VARCHAR(50) NOT NULL DEFAULT 'whatsapp', status VARCHAR(40) NOT NULL DEFAULT 'draft', audience_description TEXT, template_preview TEXT, scheduled_at TIMESTAMPTZ, budget FLOAT, created_by VARCHAR(200) NOT NULL DEFAULT 'Admin', approved_by VARCHAR(200), approved_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_marketing_workflows_status ON marketing_workflows(status)",
+        "CREATE TABLE IF NOT EXISTS marketing_workflow_comments (id VARCHAR PRIMARY KEY, workflow_id VARCHAR NOT NULL REFERENCES marketing_workflows(id) ON DELETE CASCADE, author VARCHAR(200) NOT NULL DEFAULT 'Admin', body TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_marketing_workflow_comments_workflow_id ON marketing_workflow_comments(workflow_id)",
     ]
     for stmt in stmts:
         try:
@@ -421,6 +430,7 @@ app.include_router(whatsapp_marketing_routes.router)
 app.include_router(email_marketing_routes.router)
 app.include_router(automations_routes.router)
 app.include_router(ads_oauth_routes.router)
+app.include_router(marketing_workflow_routes.router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")

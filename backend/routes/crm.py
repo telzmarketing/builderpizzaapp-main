@@ -540,14 +540,92 @@ def add_timeline_event(customer_id: str, body: dict, db: Session = Depends(get_d
 # ── CRM Dashboard ─────────────────────────────────────────────────────────────
 
 @router.get("/dashboard")
-def crm_dashboard(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def crm_dashboard(period: str = "30d", db: Session = Depends(get_db), _=Depends(get_current_admin)):
     from sqlalchemy import func, text as sql_text
     from backend.models.customer import Customer
+    from datetime import datetime, timezone, timedelta
+
+    # Period window
+    _period_days = {"today": 1, "7d": 7, "30d": 30, "90d": 90}
+    days = _period_days.get(period, 30)
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
     total = db.query(func.count(Customer.id)).scalar() or 0
+
+    # New clients in period
+    try:
+        new_clients = db.execute(
+            sql_text("SELECT COUNT(*) FROM customers WHERE created_at >= :since"),
+            {"since": since},
+        ).scalar() or 0
+    except Exception:
+        new_clients = 0
+
+    # Recurring clients (more than 1 order)
+    try:
+        recurring = db.execute(
+            sql_text("SELECT COUNT(*) FROM customers WHERE total_orders > 1"),
+        ).scalar() or 0
+    except Exception:
+        recurring = 0
+
+    # Inactive clients (no order in 60+ days)
+    try:
+        inactive_since = datetime.now(timezone.utc) - timedelta(days=60)
+        inactive = db.execute(
+            sql_text("SELECT COUNT(*) FROM customers WHERE last_order_at < :s OR last_order_at IS NULL"),
+            {"s": inactive_since},
+        ).scalar() or 0
+    except Exception:
+        inactive = 0
+
+    # Birthday clients this month
+    try:
+        birthday = db.execute(
+            sql_text("SELECT COUNT(*) FROM customers WHERE birth_date IS NOT NULL AND EXTRACT(MONTH FROM birth_date) = EXTRACT(MONTH FROM CURRENT_DATE)"),
+        ).scalar() or 0
+    except Exception:
+        birthday = 0
+
+    # Avg ticket
+    try:
+        avg_ticket = db.execute(
+            sql_text("SELECT COALESCE(AVG(avg_ticket), 0) FROM customers WHERE avg_ticket > 0"),
+        ).scalar() or 0.0
+    except Exception:
+        avg_ticket = 0.0
+
+    # Revenue per client
+    try:
+        rev_per_client = db.execute(
+            sql_text("SELECT COALESCE(AVG(total_spent), 0) FROM customers WHERE total_spent > 0"),
+        ).scalar() or 0.0
+    except Exception:
+        rev_per_client = 0.0
+
     active_cards = db.query(func.count(CrmCard.id)).filter(CrmCard.archived == False).scalar() or 0  # noqa: E712
+
+    # Open opportunities (cards with value > 0)
+    try:
+        open_opps = db.execute(
+            sql_text("SELECT COUNT(*) FROM crm_cards WHERE archived = FALSE AND value > 0"),
+        ).scalar() or 0
+    except Exception:
+        open_opps = 0
+
     tasks_pending = db.query(func.count(CrmTask.id)).filter(CrmTask.status == "pending").scalar() or 0
+
+    # Overdue tasks
+    try:
+        overdue = db.execute(
+            sql_text("SELECT COUNT(*) FROM crm_tasks WHERE status = 'pending' AND due_date < NOW()"),
+        ).scalar() or 0
+    except Exception:
+        overdue = 0
+
     groups_count = db.query(func.count(CustomerGroup.id)).filter(CustomerGroup.active == True).scalar() or 0  # noqa: E712
-    # Use first available pipeline for funnel if "delivery" doesn't exist
+
+    # Funnel
     first_pipeline = db.query(CrmPipeline).filter(CrmPipeline.active == True).order_by(CrmPipeline.sort_order).first()  # noqa: E712
     funnel_rows = []
     if first_pipeline:
@@ -559,10 +637,53 @@ def crm_dashboard(db: Session = Depends(get_db), _=Depends(get_current_admin)):
             GROUP BY cs.id, cs.name, cs.sort_order
             ORDER BY cs.sort_order
         """), {"pid": first_pipeline.id}).fetchall()
+
+    # Clients by neighborhood
+    try:
+        nbh_rows = db.execute(
+            sql_text("""
+                SELECT a.neighborhood as name, COUNT(DISTINCT c.id) as count
+                FROM customers c
+                JOIN addresses a ON a.customer_id = c.id
+                WHERE a.neighborhood IS NOT NULL AND a.neighborhood <> ''
+                GROUP BY a.neighborhood
+                ORDER BY count DESC
+                LIMIT 10
+            """),
+        ).fetchall()
+        clients_by_neighborhood = [{"name": r[0], "count": r[1]} for r in nbh_rows]
+    except Exception:
+        clients_by_neighborhood = []
+
+    # Clients by origin
+    try:
+        origin_rows = db.execute(
+            sql_text("""
+                SELECT COALESCE(source, 'Desconhecida') as name, COUNT(*) as count
+                FROM customers
+                GROUP BY source
+                ORDER BY count DESC
+                LIMIT 8
+            """),
+        ).fetchall()
+        clients_by_origin = [{"name": r[0], "count": r[1]} for r in origin_rows]
+    except Exception:
+        clients_by_origin = []
+
     return ok({
         "total_clients": total,
+        "new_clients": new_clients,
+        "recurring_clients": recurring,
+        "inactive_clients": inactive,
+        "birthday_clients": birthday,
+        "avg_ticket": float(avg_ticket),
+        "revenue_per_client": float(rev_per_client),
         "pipeline_cards": active_cards,
+        "open_opportunities": open_opps,
         "pending_tasks": tasks_pending,
+        "overdue_tasks": overdue,
         "groups": groups_count,
         "funnel": [{"name": r[0], "count": r[1]} for r in funnel_rows],
+        "clients_by_neighborhood": clients_by_neighborhood,
+        "clients_by_origin": clients_by_origin,
     })
