@@ -45,6 +45,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/painel/marketing/whatsapp", icon: MessageCircle, label: "WhatsApp Marketing" },
       { to: "/painel/marketing/email", icon: Mail, label: "E-mail Marketing" },
       { to: "/painel/marketing/automacoes", icon: Zap, label: "Automações" },
+      { to: "/painel/marketing/ads", icon: BarChart3, label: "Painel de Anúncios" },
       { to: "/painel/campanhas", icon: Sparkles, label: "Promoções & Banners" },
       { to: "/painel/cupons", icon: Tag, label: "Cupons de Desconto" },
       { to: "/painel/fidelidade", icon: Trophy, label: "Fidelidade" },

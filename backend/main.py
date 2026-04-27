@@ -31,6 +31,7 @@ from backend.routes import marketing as marketing_routes
 from backend.routes import whatsapp_marketing as whatsapp_marketing_routes
 from backend.routes import email_marketing as email_marketing_routes
 from backend.routes import automations as automations_routes
+from backend.routes import ads_oauth as ads_oauth_routes
 
 settings = get_settings()
 
@@ -350,6 +351,14 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_automation_logs_automation_id ON automation_logs(automation_id)",
         "CREATE INDEX IF NOT EXISTS ix_automation_logs_customer_id ON automation_logs(customer_id)",
         "CREATE INDEX IF NOT EXISTS ix_automation_logs_created_at ON automation_logs(created_at DESC)",
+
+        # ══════════════════════════════════════════════════════════════════════
+        # MÓDULO ADS — OAuth + CAPI + Campaign Sync — Fase 3
+        # ══════════════════════════════════════════════════════════════════════
+        "CREATE TABLE IF NOT EXISTS ads_oauth_states (id VARCHAR PRIMARY KEY, platform VARCHAR(30) NOT NULL, redirect_uri TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS ads_campaigns (id VARCHAR PRIMARY KEY, platform VARCHAR(30) NOT NULL, external_id VARCHAR(200) NOT NULL, name VARCHAR(300), status VARCHAR(30), objective VARCHAR(100), budget_daily FLOAT, spend FLOAT DEFAULT 0, impressions INTEGER DEFAULT 0, clicks INTEGER DEFAULT 0, conversions INTEGER DEFAULT 0, revenue FLOAT DEFAULT 0, ctr FLOAT DEFAULT 0, cpc FLOAT DEFAULT 0, cpa FLOAT DEFAULT 0, roas FLOAT DEFAULT 0, last_synced_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_ads_campaigns_platform ON ads_campaigns(platform)",
+        "CREATE INDEX IF NOT EXISTS ix_ads_campaigns_spend ON ads_campaigns(spend DESC)",
     ]
     for stmt in stmts:
         try:
@@ -411,6 +420,7 @@ app.include_router(marketing_routes.public_router)
 app.include_router(whatsapp_marketing_routes.router)
 app.include_router(email_marketing_routes.router)
 app.include_router(automations_routes.router)
+app.include_router(ads_oauth_routes.router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")

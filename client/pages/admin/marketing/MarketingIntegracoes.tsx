@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, ChevronDown, ChevronUp, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import { Loader2, ChevronDown, ChevronUp, CheckCircle2, XCircle, RefreshCw, ExternalLink } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
@@ -22,6 +22,13 @@ interface IntegrationDef {
   fields: { key: string; label: string; placeholder: string; secret?: boolean }[];
 }
 
+// Platforms that support OAuth (ads_oauth router)
+const OAUTH_PLATFORMS: Record<string, string> = {
+  meta_ads: "meta",
+  google_ads: "google",
+  tiktok_ads: "tiktok",
+};
+
 const INTEGRATIONS: IntegrationDef[] = [
   {
     type: "meta_ads",
@@ -40,7 +47,8 @@ const INTEGRATIONS: IntegrationDef[] = [
     description: "Integre com o Google Ads para acompanhar conversões e sincronizar audiências.",
     fields: [
       { key: "conversion_id", label: "Conversion ID", placeholder: "AW-1234567890" },
-      { key: "api_key", label: "API Key", placeholder: "AIza...", secret: true },
+      { key: "client_id", label: "Client ID", placeholder: "xxxxxxx.apps.googleusercontent.com" },
+      { key: "client_secret", label: "Client Secret", placeholder: "...", secret: true },
     ],
   },
   {
@@ -50,7 +58,8 @@ const INTEGRATIONS: IntegrationDef[] = [
     description: "Integre com o TikTok Ads Manager para rastrear eventos e conversões.",
     fields: [
       { key: "pixel_id", label: "Pixel ID", placeholder: "CXXXXXXXXXXXXXXXX" },
-      { key: "access_token", label: "Access Token", placeholder: "...", secret: true },
+      { key: "app_id", label: "App ID", placeholder: "..." },
+      { key: "app_secret", label: "App Secret", placeholder: "...", secret: true },
     ],
   },
   {
@@ -166,6 +175,24 @@ export default function MarketingIntegracoes() {
     }));
   };
 
+  const handleOAuth = async (type: string) => {
+    const platform = OAUTH_PLATFORMS[type];
+    if (!platform) return;
+    try {
+      const redirectUri = `${window.location.origin}/painel/marketing/integracoes`;
+      const res = await fetch(
+        `${BASE}/ads/${platform}/connect-url?redirect_uri=${encodeURIComponent(redirectUri)}`,
+        { headers },
+      );
+      const data = await res.json();
+      const url = data?.data?.url ?? data?.url;
+      if (url) window.open(url, "_blank", "width=600,height=700");
+      else alert("Erro ao gerar URL OAuth.");
+    } catch {
+      alert("Erro ao iniciar OAuth.");
+    }
+  };
+
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-surface-01">
       <AdminSidebar />
@@ -227,14 +254,23 @@ export default function MarketingIntegracoes() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 mt-4">
+                    <div className="flex items-center gap-2 mt-4 flex-wrap">
                       <button
                         onClick={() => setExpanded(isExpanded ? null : def.type)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gold hover:bg-gold/90 text-black text-xs font-semibold transition-colors"
                       >
                         {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                        {connected ? "Configurar" : "Conectar"}
+                        {connected ? "Configurar" : "Configurar"}
                       </button>
+                      {OAUTH_PLATFORMS[def.type] && (
+                        <button
+                          onClick={() => handleOAuth(def.type)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-500/40 text-blue-400 hover:bg-blue-500/10 text-xs transition-colors"
+                        >
+                          <ExternalLink size={12} />
+                          OAuth
+                        </button>
+                      )}
                       <button
                         onClick={() => handleTest(def.type)}
                         disabled={testing === def.type || !connected}
