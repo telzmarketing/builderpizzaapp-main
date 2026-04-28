@@ -165,6 +165,49 @@ export default function AdminAparencia() {
 
                 {/* Color editor */}
                 <div className="lg:col-span-2 space-y-5">
+
+                  {/* Presets */}
+                  <div className="bg-surface-02 rounded-2xl border border-surface-03 p-6">
+                    <h3 className="text-cream font-semibold text-sm mb-1">Presets de Cor Principal</h3>
+                    <p className="text-stone text-xs mb-4">Aplica a cor principal rapidamente — ajuste as demais cores individualmente abaixo</p>
+                    <div className="flex flex-wrap gap-3">
+                      {[
+                        { label: "Laranja", color: "#f97316" },
+                        { label: "Vermelho", color: "#ef4444" },
+                        { label: "Verde",   color: "#22c55e" },
+                        { label: "Roxo",    color: "#a855f7" },
+                        { label: "Amarelo", color: "#eab308" },
+                        { label: "Azul",    color: "#3b82f6" },
+                      ].map(({ label, color }) => {
+                        const isActive = theme.primary?.toLowerCase() === color.toLowerCase();
+                        return (
+                          <button
+                            key={color}
+                            title={label}
+                            onClick={() => handleChange("primary", color)}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all ${
+                              isActive
+                                ? "border-gold/70 bg-surface-03 text-cream"
+                                : "border-surface-03 bg-surface-03/40 text-stone hover:text-cream hover:border-surface-03/70"
+                            }`}
+                          >
+                            <span
+                              className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center"
+                              style={{ backgroundColor: color }}
+                            >
+                              {isActive && (
+                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                  <path d="M2 6L4.5 8.5L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              )}
+                            </span>
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   {GROUPS.map((group) => {
                     const Icon = group.icon;
                     return (
