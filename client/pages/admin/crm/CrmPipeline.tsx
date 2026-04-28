@@ -272,7 +272,7 @@ export default function CrmPipeline() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-surface-01">
+    <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-surface-00 overflow-hidden">
       <AdminSidebar />
       <main className="flex-1 overflow-hidden flex flex-col">
 
