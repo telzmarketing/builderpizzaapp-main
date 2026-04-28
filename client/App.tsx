@@ -71,6 +71,7 @@ import AdminLogin from "./pages/admin/Login";
 import AdminDashboard from "./pages/admin/Dashboard";
 import AdminProducts from "./pages/admin/Products";
 import AdminOrders from "./pages/admin/Orders";
+import AdminCozinha from "./pages/admin/Cozinha";
 import AdminFidelidade from "./pages/admin/AdminFidelidade";
 import AdminConteudo from "./pages/admin/Conteudo";
 import AdminPagamentos from "./pages/admin/AdminPagamentos";
@@ -150,6 +151,7 @@ export default function App() {
                 <Route path="/painel" element={<AdminDashboard />} />
                 <Route path="/painel/products" element={<AdminProducts />} />
                 <Route path="/painel/orders" element={<AdminOrders />} />
+                <Route path="/painel/cozinha" element={<AdminCozinha />} />
                 <Route path="/painel/fidelidade" element={<AdminFidelidade />} />
                 <Route path="/painel/conteudo" element={<AdminConteudo />} />
                 <Route path="/painel/pagamentos" element={<AdminPagamentos />} />
