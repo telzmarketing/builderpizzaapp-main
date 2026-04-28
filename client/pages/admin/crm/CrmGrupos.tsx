@@ -40,20 +40,46 @@ const COLORS = [
 ];
 
 const FIELD_OPTIONS = [
-  { value: "last_order_days", label: "Dias desde último pedido" },
-  { value: "total_orders", label: "Total de pedidos" },
-  { value: "total_spent", label: "Total gasto (R$)" },
-  { value: "city", label: "Cidade" },
-  { value: "loyalty_points", label: "Pontos de fidelidade" },
+  // Comportamento de pedidos
+  { value: "last_order_days",   label: "Dias desde último pedido" },
+  { value: "total_orders",      label: "Total de pedidos" },
+  { value: "total_spent",       label: "Total gasto (R$)" },
+  { value: "avg_ticket",        label: "Ticket médio (R$)" },
+  { value: "days_without_order",label: "Dias sem pedido" },
+  // Localização
+  { value: "city",              label: "Cidade" },
+  { value: "neighborhood",      label: "Bairro" },
+  // Fidelidade
+  { value: "loyalty_points",    label: "Pontos de fidelidade" },
+  { value: "loyalty_tier",      label: "Nível de fidelidade" },
+  // Perfil
+  { value: "birth_month",       label: "Mês de aniversário" },
+  { value: "customer_status",   label: "Status do cliente (novo/recorrente/inativo/VIP)" },
+  // Produto & histórico
+  { value: "product_ordered",   label: "Produto já pedido (nome)" },
+  { value: "category_ordered",  label: "Categoria já pedida" },
+  // Cupons & campanhas
+  { value: "coupon_used",       label: "Usou cupom (código)" },
+  { value: "campaign_origin",   label: "Origem de campanha (UTM source)" },
+  // Engajamento digital
+  { value: "opened_email",      label: "Abriu email (template)" },
+  { value: "clicked_email",     label: "Clicou em email" },
+  { value: "responded_whatsapp",label: "Respondeu WhatsApp" },
+  { value: "whatsapp_sent",     label: "Recebeu WhatsApp (contagem)" },
+  // Financeiro
+  { value: "has_unpaid_order",  label: "Tem pedido não pago" },
+  { value: "payment_method",    label: "Método de pagamento preferido" },
 ];
 
 const OPERATOR_OPTIONS = [
-  { value: ">", label: "maior que" },
-  { value: "<", label: "menor que" },
-  { value: "=", label: "igual a" },
-  { value: "!=", label: "diferente de" },
-  { value: ">=", label: "maior ou igual" },
-  { value: "<=", label: "menor ou igual" },
+  { value: ">",        label: "maior que" },
+  { value: "<",        label: "menor que" },
+  { value: "=",        label: "igual a" },
+  { value: "!=",       label: "diferente de" },
+  { value: ">=",       label: "maior ou igual" },
+  { value: "<=",       label: "menor ou igual" },
+  { value: "contains", label: "contém" },
+  { value: "in",       label: "está em (lista separada por vírgula)" },
 ];
 
 export default function CrmGrupos() {

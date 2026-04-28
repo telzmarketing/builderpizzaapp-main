@@ -135,6 +135,7 @@ import MarketingEmail from "./pages/admin/marketing/MarketingEmail";
 import MarketingAutomacoes from "./pages/admin/marketing/MarketingAutomacoes";
 import MarketingAdsPanel from "./pages/admin/marketing/MarketingAdsPanel";
 import MarketingWorkflow from "./pages/admin/marketing/MarketingWorkflow";
+import MarketingCupons from "./pages/admin/marketing/MarketingCupons";
 import CrmDashboard from "./pages/admin/crm/CrmDashboard";
 import CrmPipeline from "./pages/admin/crm/CrmPipeline";
 import CrmGrupos from "./pages/admin/crm/CrmGrupos";
@@ -214,6 +215,7 @@ export default function App() {
                 <Route path="/painel/marketing/automacoes" element={<MarketingAutomacoes />} />
                 <Route path="/painel/marketing/ads" element={<MarketingAdsPanel />} />
                 <Route path="/painel/marketing/workflow" element={<MarketingWorkflow />} />
+                <Route path="/painel/marketing/cupons" element={<MarketingCupons />} />
                 {/* ── CRM routes ── */}
                 <Route path="/painel/crm" element={<CrmDashboard />} />
                 <Route path="/painel/crm/pipeline" element={<CrmPipeline />} />

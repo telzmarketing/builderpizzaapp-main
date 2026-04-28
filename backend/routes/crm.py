@@ -104,6 +104,24 @@ class CustomerTimeline(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class CrmCardNote(Base):
+    __tablename__ = "crm_card_notes"
+    id = Column(String, primary_key=True)
+    card_id = Column(String, ForeignKey("crm_cards.id", ondelete="CASCADE"), nullable=False)
+    author = Column(String(200), default="Admin")
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class CrmCardHistory(Base):
+    __tablename__ = "crm_card_history"
+    id = Column(String, primary_key=True)
+    card_id = Column(String, ForeignKey("crm_cards.id", ondelete="CASCADE"), nullable=False)
+    event_type = Column(String(80), nullable=False)
+    description = Column(Text)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
 
 class PipelineCreate(BaseModel):
@@ -112,11 +130,30 @@ class PipelineCreate(BaseModel):
     pipeline_type: str = "custom"
 
 
+class PipelineUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    pipeline_type: str | None = None
+
+
 class StageCreate(BaseModel):
     name: str
     description: str | None = None
     color: str = "#2d3d56"
     sort_order: int = 0
+
+
+class StageUpdate(BaseModel):
+    name: str | None = None
+    color: str | None = None
+    sort_order: int | None = None
+    order: int | None = None  # alias used by frontend
+    description: str | None = None
+
+
+class CardNoteCreate(BaseModel):
+    body: str
+    author: str = "Admin"
 
 
 class CardCreate(BaseModel):
@@ -147,6 +184,7 @@ class CardUpdate(BaseModel):
 
 class TaskCreate(BaseModel):
     card_id: str | None = None
+    pipeline_card_id: str | None = None  # alias for card_id used by the frontend
     customer_id: str | None = None
     title: str
     description: str | None = None
@@ -154,6 +192,7 @@ class TaskCreate(BaseModel):
     responsible: str | None = None
     due_date: str | None = None
     priority: str = "medium"
+    status: str = "pending"
 
 
 class GroupCreate(BaseModel):
@@ -202,7 +241,7 @@ def list_pipelines(db: Session = Depends(get_db), _=Depends(get_current_admin)):
         result.append({
             "id": p.id, "name": p.name, "description": p.description,
             "pipeline_type": p.pipeline_type, "sort_order": p.sort_order,
-            "stages": [{"id": s.id, "name": s.name, "color": s.color, "sort_order": s.sort_order, "description": s.description} for s in stages],
+            "stages": [{"id": s.id, "name": s.name, "color": s.color, "order": s.sort_order, "pipeline_id": p.id, "description": s.description} for s in stages],
         })
     return ok(result)
 
@@ -225,7 +264,7 @@ def create_stage(pipeline_id: str, body: StageCreate, db: Session = Depends(get_
     db.add(s)
     db.commit()
     db.refresh(s)
-    return created({"id": s.id, "name": s.name, "color": s.color, "sort_order": s.sort_order})
+    return created({"id": s.id, "name": s.name, "color": s.color, "order": s.sort_order, "pipeline_id": pipeline_id})
 
 
 @router.delete("/stages/{stage_id}")
@@ -344,10 +383,12 @@ def list_tasks(customer_id: str | None = None, status: str | None = None,
 
 @router.post("/tasks")
 def create_task(body: TaskCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    resolved_card_id = body.card_id or body.pipeline_card_id or None
     task = CrmTask(
-        id=str(uuid.uuid4()), card_id=body.card_id, customer_id=body.customer_id,
+        id=str(uuid.uuid4()), card_id=resolved_card_id, customer_id=body.customer_id,
         title=body.title, description=body.description, task_type=body.task_type,
         responsible=body.responsible, priority=body.priority,
+        status=body.status or "pending",
         due_date=datetime.fromisoformat(body.due_date) if body.due_date else None,
     )
     db.add(task)
@@ -687,3 +728,101 @@ def crm_dashboard(period: str = "30d", db: Session = Depends(get_db), _=Depends(
         "clients_by_neighborhood": clients_by_neighborhood,
         "clients_by_origin": clients_by_origin,
     })
+
+
+# ── Pipeline PATCH / DELETE ───────────────────────────────────────────────────
+
+@router.patch("/pipelines/{pipeline_id}")
+def update_pipeline(pipeline_id: str, body: PipelineUpdate,
+                    db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    p = db.query(CrmPipeline).filter(CrmPipeline.id == pipeline_id).first()
+    if not p:
+        raise HTTPException(404, "Pipeline não encontrado.")
+    if body.name is not None:          p.name = body.name
+    if body.description is not None:   p.description = body.description
+    if body.pipeline_type is not None: p.pipeline_type = body.pipeline_type
+    p.updated_at = _now()
+    db.commit()
+    return ok({"id": p.id, "name": p.name})
+
+
+@router.delete("/pipelines/{pipeline_id}")
+def delete_pipeline(pipeline_id: str, db: Session = Depends(get_db),
+                    _=Depends(get_current_admin)):
+    p = db.query(CrmPipeline).filter(CrmPipeline.id == pipeline_id).first()
+    if not p:
+        raise HTTPException(404, "Pipeline não encontrado.")
+    p.active = False
+    p.updated_at = _now()
+    db.commit()
+    return ok(None, "Pipeline removido.")
+
+
+# ── Stage PATCH ───────────────────────────────────────────────────────────────
+
+@router.patch("/stages/{stage_id}")
+def update_stage(stage_id: str, body: StageUpdate,
+                 db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    s = db.query(CrmStage).filter(CrmStage.id == stage_id).first()
+    if not s:
+        raise HTTPException(404, "Etapa não encontrada.")
+    if body.name is not None:        s.name = body.name
+    if body.color is not None:       s.color = body.color
+    effective_order = body.order if body.order is not None else body.sort_order
+    if effective_order is not None:  s.sort_order = effective_order
+    if body.description is not None: s.description = body.description
+    db.commit()
+    return ok({"id": s.id, "name": s.name, "color": s.color, "order": s.sort_order, "pipeline_id": s.pipeline_id})
+
+
+# ── Card Notes ────────────────────────────────────────────────────────────────
+
+@router.get("/cards/{card_id}/notes")
+def list_card_notes(card_id: str, db: Session = Depends(get_db),
+                    _=Depends(get_current_admin)):
+    notes = (
+        db.query(CrmCardNote)
+        .filter(CrmCardNote.card_id == card_id)
+        .order_by(CrmCardNote.created_at.desc())
+        .all()
+    )
+    return ok([{
+        "id": n.id, "author": n.author, "body": n.body,
+        "created_at": n.created_at.isoformat(),
+    } for n in notes])
+
+
+@router.post("/cards/{card_id}/notes")
+def create_card_note(card_id: str, body: CardNoteCreate,
+                     db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    if not db.query(CrmCard).filter(CrmCard.id == card_id).first():
+        raise HTTPException(404, "Card não encontrado.")
+    n = CrmCardNote(id=str(uuid.uuid4()), card_id=card_id,
+                    author=body.author, body=body.body)
+    db.add(n)
+    # Also record in history
+    h = CrmCardHistory(id=str(uuid.uuid4()), card_id=card_id,
+                       event_type="note_added",
+                       description=f"{body.author} adicionou uma nota.")
+    db.add(h)
+    db.commit()
+    return created({"id": n.id, "body": n.body, "created_at": n.created_at.isoformat()},
+                   "Nota adicionada.")
+
+
+# ── Card History ──────────────────────────────────────────────────────────────
+
+@router.get("/cards/{card_id}/history")
+def list_card_history(card_id: str, db: Session = Depends(get_db),
+                      _=Depends(get_current_admin)):
+    rows = (
+        db.query(CrmCardHistory)
+        .filter(CrmCardHistory.card_id == card_id)
+        .order_by(CrmCardHistory.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    return ok([{
+        "id": r.id, "event_type": r.event_type, "description": r.description,
+        "created_at": r.created_at.isoformat(),
+    } for r in rows])

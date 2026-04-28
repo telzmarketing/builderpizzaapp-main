@@ -275,6 +275,11 @@ def _run_migrations():
         "CREATE TABLE IF NOT EXISTS crm_tasks (id VARCHAR PRIMARY KEY, card_id VARCHAR REFERENCES crm_cards(id) ON DELETE SET NULL, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, title VARCHAR(300) NOT NULL, description TEXT, task_type VARCHAR(50) DEFAULT 'other', responsible VARCHAR(200), due_date TIMESTAMPTZ, priority VARCHAR(20) DEFAULT 'medium', status VARCHAR(20) DEFAULT 'pending', completed_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE INDEX IF NOT EXISTS ix_crm_tasks_customer_id ON crm_tasks(customer_id)",
         "CREATE INDEX IF NOT EXISTS ix_crm_tasks_status ON crm_tasks(status)",
+        # CRM card notes + history
+        "CREATE TABLE IF NOT EXISTS crm_card_notes (id VARCHAR PRIMARY KEY, card_id VARCHAR NOT NULL REFERENCES crm_cards(id) ON DELETE CASCADE, author VARCHAR(200) DEFAULT 'Admin', body TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_crm_card_notes_card_id ON crm_card_notes(card_id)",
+        "CREATE TABLE IF NOT EXISTS crm_card_history (id VARCHAR PRIMARY KEY, card_id VARCHAR NOT NULL REFERENCES crm_cards(id) ON DELETE CASCADE, event_type VARCHAR(80) NOT NULL, description TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_crm_card_history_card_id ON crm_card_history(card_id)",
 
         # ── Marketing Campaigns (unified) ─────────────────────────────────────
         "CREATE TABLE IF NOT EXISTS marketing_campaigns (id VARCHAR PRIMARY KEY, name VARCHAR(300) NOT NULL, campaign_type VARCHAR(50) NOT NULL, channel VARCHAR(50), status VARCHAR(30) DEFAULT 'draft', product_id VARCHAR REFERENCES products(id) ON DELETE SET NULL, coupon_id VARCHAR REFERENCES coupons(id) ON DELETE SET NULL, group_id VARCHAR REFERENCES customer_groups(id) ON DELETE SET NULL, budget FLOAT, spend FLOAT DEFAULT 0, revenue FLOAT DEFAULT 0, leads INTEGER DEFAULT 0, orders_count INTEGER DEFAULT 0, clicks INTEGER DEFAULT 0, impressions INTEGER DEFAULT 0, start_date DATE, end_date DATE, target_url TEXT, description TEXT, metadata_json TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
@@ -335,14 +340,26 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_whatsapp_messages_customer_id ON whatsapp_messages(customer_id)",
         "CREATE INDEX IF NOT EXISTS ix_whatsapp_messages_status ON whatsapp_messages(status)",
         "CREATE INDEX IF NOT EXISTS ix_whatsapp_messages_created_at ON whatsapp_messages(created_at DESC)",
+        # WhatsApp campaigns + config
+        "CREATE TABLE IF NOT EXISTS whatsapp_campaigns (id VARCHAR PRIMARY KEY, name VARCHAR(300) NOT NULL, status VARCHAR(30) NOT NULL DEFAULT 'draft', template_id VARCHAR REFERENCES whatsapp_templates(id) ON DELETE SET NULL, group_id VARCHAR, scheduled_at TIMESTAMPTZ, sent_count INTEGER DEFAULT 0, delivered_count INTEGER DEFAULT 0, read_count INTEGER DEFAULT 0, error_count INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_whatsapp_campaigns_status ON whatsapp_campaigns(status)",
+        "CREATE TABLE IF NOT EXISTS whatsapp_config (id VARCHAR PRIMARY KEY DEFAULT 'default', connection_type VARCHAR(30) DEFAULT 'official', status VARCHAR(20) DEFAULT 'disconnected', messages_per_minute INTEGER DEFAULT 10, interval_seconds INTEGER DEFAULT 3, daily_limit INTEGER DEFAULT 1000, webhook_url VARCHAR(500) DEFAULT '', updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "INSERT INTO whatsapp_config (id) VALUES ('default') ON CONFLICT DO NOTHING",
+        "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS campaign_id VARCHAR REFERENCES whatsapp_campaigns(id) ON DELETE SET NULL",
 
         # ── Email Marketing ───────────────────────────────────────────────────
         "CREATE TABLE IF NOT EXISTS email_templates (id VARCHAR PRIMARY KEY, name VARCHAR(200) NOT NULL, subject VARCHAR(500) NOT NULL, body_html TEXT NOT NULL, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE INDEX IF NOT EXISTS ix_email_templates_active ON email_templates(active)",
+        "ALTER TABLE email_templates ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT 'marketing'",
+        "CREATE TABLE IF NOT EXISTS email_campaigns (id VARCHAR PRIMARY KEY, name VARCHAR(300) NOT NULL, status VARCHAR(30) NOT NULL DEFAULT 'draft', template_id VARCHAR REFERENCES email_templates(id) ON DELETE SET NULL, group_id VARCHAR, scheduled_at TIMESTAMPTZ, sent_count INTEGER DEFAULT 0, delivered_count INTEGER DEFAULT 0, open_count INTEGER DEFAULT 0, click_count INTEGER DEFAULT 0, bounce_count INTEGER DEFAULT 0, unsubscribe_count INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_email_campaigns_status ON email_campaigns(status)",
         "CREATE TABLE IF NOT EXISTS email_messages (id VARCHAR PRIMARY KEY, template_id VARCHAR REFERENCES email_templates(id) ON DELETE SET NULL, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, to_email VARCHAR(300) NOT NULL, subject_sent VARCHAR(500), status VARCHAR(20) DEFAULT 'pending', error TEXT, sent_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "ALTER TABLE email_messages ADD COLUMN IF NOT EXISTS campaign_id VARCHAR REFERENCES email_campaigns(id) ON DELETE SET NULL",
         "CREATE INDEX IF NOT EXISTS ix_email_messages_customer_id ON email_messages(customer_id)",
         "CREATE INDEX IF NOT EXISTS ix_email_messages_status ON email_messages(status)",
         "CREATE INDEX IF NOT EXISTS ix_email_messages_created_at ON email_messages(created_at DESC)",
+        "CREATE TABLE IF NOT EXISTS email_config (id VARCHAR PRIMARY KEY DEFAULT 'default', provider VARCHAR(30) DEFAULT 'smtp', smtp_host VARCHAR(200) DEFAULT '', smtp_port INTEGER DEFAULT 587, smtp_user VARCHAR(300) DEFAULT '', smtp_password VARCHAR(500) DEFAULT '', from_name VARCHAR(200) DEFAULT 'Moschettieri', from_email VARCHAR(300) DEFAULT '', reply_to VARCHAR(300) DEFAULT '', status VARCHAR(20) DEFAULT 'disconnected', daily_limit INTEGER DEFAULT 5000, rate_per_hour INTEGER DEFAULT 500, updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "INSERT INTO email_config (id) VALUES ('default') ON CONFLICT DO NOTHING",
 
         # ── Marketing Automations ─────────────────────────────────────────────
         "CREATE TABLE IF NOT EXISTS marketing_automations (id VARCHAR PRIMARY KEY, name VARCHAR(200) NOT NULL, trigger VARCHAR(50) NOT NULL, trigger_value VARCHAR(100), channel VARCHAR(20) NOT NULL, template_id VARCHAR, message_body TEXT, active BOOLEAN DEFAULT TRUE, runs_total INTEGER DEFAULT 0, last_run_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
@@ -352,6 +369,10 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_automation_logs_automation_id ON automation_logs(automation_id)",
         "CREATE INDEX IF NOT EXISTS ix_automation_logs_customer_id ON automation_logs(customer_id)",
         "CREATE INDEX IF NOT EXISTS ix_automation_logs_created_at ON automation_logs(created_at DESC)",
+        # Automation templates + delay column
+        "ALTER TABLE marketing_automations ADD COLUMN IF NOT EXISTS trigger_delay_hours INTEGER DEFAULT 0",
+        "CREATE TABLE IF NOT EXISTS automation_templates (id VARCHAR PRIMARY KEY, name VARCHAR(200) NOT NULL, channel VARCHAR(20) NOT NULL DEFAULT 'whatsapp', subject VARCHAR(500), body TEXT NOT NULL, variables VARCHAR(500), category VARCHAR(50) DEFAULT 'marketing', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_automation_templates_channel ON automation_templates(channel)",
 
         # ══════════════════════════════════════════════════════════════════════
         # MÓDULO ADS — OAuth + CAPI + Campaign Sync — Fase 3
@@ -360,6 +381,13 @@ def _run_migrations():
         "CREATE TABLE IF NOT EXISTS ads_campaigns (id VARCHAR PRIMARY KEY, platform VARCHAR(30) NOT NULL, external_id VARCHAR(200) NOT NULL, name VARCHAR(300), status VARCHAR(30), objective VARCHAR(100), budget_daily FLOAT, spend FLOAT DEFAULT 0, impressions INTEGER DEFAULT 0, clicks INTEGER DEFAULT 0, conversions INTEGER DEFAULT 0, revenue FLOAT DEFAULT 0, ctr FLOAT DEFAULT 0, cpc FLOAT DEFAULT 0, cpa FLOAT DEFAULT 0, roas FLOAT DEFAULT 0, last_synced_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE INDEX IF NOT EXISTS ix_ads_campaigns_platform ON ads_campaigns(platform)",
         "CREATE INDEX IF NOT EXISTS ix_ads_campaigns_spend ON ads_campaigns(spend DESC)",
+        # Ads UTM links + pixels
+        "CREATE TABLE IF NOT EXISTS ads_utm_links (id VARCHAR PRIMARY KEY, name VARCHAR(300) NOT NULL, url TEXT NOT NULL, utm_source VARCHAR(100) DEFAULT '', utm_medium VARCHAR(100) DEFAULT '', utm_campaign VARCHAR(200) DEFAULT '', utm_term VARCHAR(200) DEFAULT '', utm_content VARCHAR(200) DEFAULT '', clicks INTEGER DEFAULT 0, conversions INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS ads_pixels (id VARCHAR PRIMARY KEY, platform VARCHAR(30) NOT NULL, pixel_id VARCHAR(200) NOT NULL, enabled BOOLEAN DEFAULT TRUE, events_tracked VARCHAR(500) DEFAULT 'PageView,Purchase,Lead', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_ads_pixels_platform ON ads_pixels(platform)",
+        # UTM columns on customers (for lead attribution)
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS utm_source VARCHAR(100)",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS utm_campaign VARCHAR(200)",
 
         # ══════════════════════════════════════════════════════════════════════
         # WORKFLOW DE APROVAÇÃO — Fase 4

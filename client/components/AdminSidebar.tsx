@@ -53,13 +53,13 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/painel/trafego-pago", icon: MousePointerClick, label: "Tráfego Pago" },
       { to: "/painel/marketing/automacoes", icon: Zap, label: "Automação de Marketing" },
       { to: "/painel/marketing/workflow", icon: CheckSquare, label: "Workflow de Aprovação" },
+      { to: "/painel/marketing/cupons", icon: Tag, label: "Cupons de Desconto" },
     ],
   },
   {
     label: "Fidelização",
     items: [
       { to: "/painel/campanhas", icon: Sparkles, label: "Promoções & Banners" },
-      { to: "/painel/cupons", icon: Tag, label: "Cupons de Desconto" },
       { to: "/painel/fidelidade", icon: Trophy, label: "Fidelidade" },
       { to: "/painel/popup-saida", icon: LogIn, label: "Popup de Saída" },
     ],

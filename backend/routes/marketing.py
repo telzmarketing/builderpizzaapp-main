@@ -435,7 +435,8 @@ def list_visitors(
     db: Session = Depends(get_db), _=Depends(get_current_admin)
 ):
     now = datetime.now(timezone.utc)
-    days = 7 if period == "7d" else 30 if period == "30d" else 1
+    _period_days = {"today": 1, "7d": 7, "30d": 30, "90d": 90}
+    days = _period_days.get(period, 7)
     since = now - timedelta(days=days)
 
     total = db.query(func.count(VisitorProfile.id)).filter(VisitorProfile.last_seen_at >= since).scalar() or 0
@@ -455,6 +456,84 @@ def list_visitors(
         GROUP BY event_type ORDER BY cnt DESC LIMIT 10
     """), {"since": since}).fetchall()
 
+    # UTM breakdown
+    try:
+        utm_rows = db.execute(text("""
+            SELECT
+                COALESCE(utm_source, 'direto') AS utm_source,
+                utm_medium, utm_campaign,
+                COUNT(*) AS sessions,
+                COUNT(*) FILTER (WHERE total_orders > 0) AS conversions
+            FROM visitor_sessions vs
+            JOIN visitor_profiles vp ON vp.id = vs.visitor_id
+            WHERE vs.started_at >= :since
+            GROUP BY utm_source, utm_medium, utm_campaign
+            ORDER BY sessions DESC
+            LIMIT 20
+        """), {"since": since}).fetchall()
+        utm_breakdown = [{
+            "utm_source": r[0], "utm_medium": r[1], "utm_campaign": r[2],
+            "sessions": r[3] or 0, "conversions": r[4] or 0,
+            "conversion_rate": round((r[4] or 0) / (r[3] or 1) * 100, 2),
+        } for r in utm_rows]
+    except Exception:
+        utm_breakdown = []
+
+    # Device breakdown
+    try:
+        dev_rows = db.execute(text("""
+            SELECT COALESCE(device_type, 'unknown') AS device_type, COUNT(*) AS sessions
+            FROM visitor_profiles
+            WHERE last_seen_at >= :since
+            GROUP BY device_type ORDER BY sessions DESC
+        """), {"since": since}).fetchall()
+        total_dev = sum(r[1] for r in dev_rows) or 1
+        devices = [{"device_type": r[0], "sessions": r[1] or 0,
+                    "percentage": round((r[1] or 0) / total_dev * 100, 1)} for r in dev_rows]
+    except Exception:
+        devices = []
+
+    # Top products viewed/ordered
+    try:
+        prod_rows = db.execute(text("""
+            SELECT p.name,
+                   COUNT(ve.id) FILTER (WHERE ve.event_type = 'product_view') AS views,
+                   COUNT(ve.id) FILTER (WHERE ve.event_type = 'add_to_cart') AS orders,
+                   0 AS revenue
+            FROM visitor_events ve
+            JOIN products p ON p.id = ve.product_id
+            WHERE ve.created_at >= :since AND ve.product_id IS NOT NULL
+            GROUP BY p.name ORDER BY views DESC LIMIT 10
+        """), {"since": since}).fetchall()
+        top_products = [{"name": r[0], "views": r[1] or 0, "orders": r[2] or 0,
+                         "revenue": float(r[3] or 0)} for r in prod_rows]
+    except Exception:
+        top_products = []
+
+    # Conversion funnel
+    try:
+        funnel_data = db.execute(text("""
+            SELECT
+                COUNT(DISTINCT id) FILTER (WHERE total_sessions > 0) AS visited,
+                COUNT(DISTINCT id) FILTER (WHERE total_pageviews > 1) AS engaged,
+                COUNT(DISTINCT id) FILTER (WHERE total_orders > 0) AS converted
+            FROM visitor_profiles
+            WHERE last_seen_at >= :since
+        """), {"since": since}).fetchone()
+        visited = funnel_data[0] or 0
+        engaged = funnel_data[1] or 0
+        converted = funnel_data[2] or 0
+        funnel = [
+            {"step": "Visitantes", "count": visited,
+             "drop_rate": 0},
+            {"step": "Engajados", "count": engaged,
+             "drop_rate": round((visited - engaged) / visited * 100, 1) if visited > 0 else 0},
+            {"step": "Convertidos", "count": converted,
+             "drop_rate": round((engaged - converted) / engaged * 100, 1) if engaged > 0 else 0},
+        ]
+    except Exception:
+        funnel = []
+
     return ok({
         "summary": {"total": total, "online": online},
         "visitors": [{
@@ -464,6 +543,10 @@ def list_visitors(
             "last_seen_at": v.last_seen_at.isoformat(),
         } for v in recent],
         "top_events": [{"event": r[0], "count": r[1]} for r in top_events],
+        "utm_breakdown": utm_breakdown,
+        "devices": devices,
+        "top_products": top_products,
+        "funnel": funnel,
     })
 
 

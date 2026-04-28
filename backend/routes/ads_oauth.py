@@ -11,7 +11,7 @@ from typing import Optional
 import requests
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import Column, String, Text, DateTime, Float, Integer, text
+from sqlalchemy import Column, String, Text, DateTime, Float, Integer, Boolean, text
 from sqlalchemy.orm import Session
 
 from backend.core.response import ok, created, err_msg
@@ -51,6 +51,57 @@ class AdsCampaign(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
+
+
+class AdsUtmLink(Base):
+    __tablename__ = "ads_utm_links"
+    id = Column(String, primary_key=True)
+    name = Column(String(300), nullable=False)
+    url = Column(Text, nullable=False)
+    utm_source = Column(String(100), default="")
+    utm_medium = Column(String(100), default="")
+    utm_campaign = Column(String(200), default="")
+    utm_term = Column(String(200), default="")
+    utm_content = Column(String(200), default="")
+    clicks = Column(Integer, default=0)
+    conversions = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class AdsPixel(Base):
+    __tablename__ = "ads_pixels"
+    id = Column(String, primary_key=True)
+    platform = Column(String(30), nullable=False)
+    pixel_id = Column(String(200), nullable=False)
+    enabled = Column(Boolean, default=True)
+    events_tracked = Column(String(500), default="PageView,Purchase,Lead")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
+# ── Pydantic schemas (UTM + Pixel) ────────────────────────────────────────────
+
+class UtmLinkCreate(BaseModel):
+    name: str
+    url: str
+    utm_source: str = ""
+    utm_medium: str = ""
+    utm_campaign: str = ""
+    utm_term: str = ""
+    utm_content: str = ""
+
+
+class PixelCreate(BaseModel):
+    platform: str
+    pixel_id: str
+    events_tracked: str = "PageView,Purchase,Lead"
+
+
+class PixelUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    events_tracked: Optional[str] = None
+    pixel_id: Optional[str] = None
 
 
 # ── Helper: credentials CRUD ──────────────────────────────────────────────────
@@ -815,3 +866,182 @@ def fire_capi_event(
         db=db,
     )
     return ok({"fired": True})
+
+
+# ── Routes: UTM Links ─────────────────────────────────────────────────────────
+
+@router.get("/utms")
+def list_utms(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    utms = db.query(AdsUtmLink).order_by(AdsUtmLink.created_at.desc()).all()
+    return ok([{
+        "id": u.id, "name": u.name, "url": u.url,
+        "utm_source": u.utm_source, "utm_medium": u.utm_medium,
+        "utm_campaign": u.utm_campaign, "utm_term": u.utm_term,
+        "utm_content": u.utm_content, "clicks": u.clicks or 0,
+        "conversions": u.conversions or 0,
+        "created_at": u.created_at.isoformat(),
+    } for u in utms])
+
+
+@router.post("/utms")
+def create_utm(body: UtmLinkCreate, db: Session = Depends(get_db),
+               _=Depends(get_current_admin)):
+    u = AdsUtmLink(
+        id=str(uuid.uuid4()), name=body.name, url=body.url,
+        utm_source=body.utm_source, utm_medium=body.utm_medium,
+        utm_campaign=body.utm_campaign, utm_term=body.utm_term,
+        utm_content=body.utm_content,
+    )
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return created({"id": u.id, "name": u.name}, "Link UTM criado.")
+
+
+@router.delete("/utms/{utm_id}")
+def delete_utm(utm_id: str, db: Session = Depends(get_db),
+               _=Depends(get_current_admin)):
+    u = db.query(AdsUtmLink).filter(AdsUtmLink.id == utm_id).first()
+    if not u:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Link UTM não encontrado.")
+    db.delete(u)
+    db.commit()
+    return ok(None, "Link UTM excluído.")
+
+
+# ── Routes: Leads ─────────────────────────────────────────────────────────────
+
+@router.get("/leads")
+def list_leads(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    rows = db.execute(text("""
+        SELECT
+            c.id, c.name AS customer_name, c.phone, c.email,
+            COALESCE(c.source, 'Desconhecida') AS source,
+            c.utm_source, c.utm_campaign,
+            NULL AS pipeline_stage,
+            NULL AS value,
+            c.created_at
+        FROM customers c
+        WHERE c.utm_source IS NOT NULL OR c.source IS NOT NULL
+        ORDER BY c.created_at DESC
+        LIMIT 200
+    """)).fetchall()
+    return ok([{
+        "id": r[0], "customer_name": r[1], "phone": r[2], "email": r[3],
+        "source": r[4], "utm_source": r[5], "utm_campaign": r[6],
+        "pipeline_stage": r[7], "value": r[8],
+        "created_at": r[9].isoformat() if r[9] else None,
+    } for r in rows])
+
+
+# ── Routes: Pixels ────────────────────────────────────────────────────────────
+
+@router.get("/pixels")
+def list_pixels(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    pixels = db.query(AdsPixel).order_by(AdsPixel.created_at.desc()).all()
+    return ok([{
+        "id": p.id, "platform": p.platform, "pixel_id": p.pixel_id,
+        "enabled": p.enabled, "events_tracked": p.events_tracked,
+        "created_at": p.created_at.isoformat(),
+    } for p in pixels])
+
+
+@router.post("/pixels")
+def create_pixel(body: PixelCreate, db: Session = Depends(get_db),
+                 _=Depends(get_current_admin)):
+    p = AdsPixel(
+        id=str(uuid.uuid4()), platform=body.platform,
+        pixel_id=body.pixel_id, events_tracked=body.events_tracked,
+    )
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return created({"id": p.id, "platform": p.platform, "pixel_id": p.pixel_id}, "Pixel salvo.")
+
+
+@router.patch("/pixels/{pixel_id}")
+def update_pixel(pixel_id: str, body: PixelUpdate,
+                 db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    from fastapi import HTTPException
+    p = db.query(AdsPixel).filter(AdsPixel.id == pixel_id).first()
+    if not p:
+        raise HTTPException(404, "Pixel não encontrado.")
+    if body.enabled is not None:        p.enabled = body.enabled
+    if body.events_tracked is not None: p.events_tracked = body.events_tracked
+    if body.pixel_id is not None:       p.pixel_id = body.pixel_id
+    p.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return ok({"id": p.id, "enabled": p.enabled})
+
+
+@router.delete("/pixels/{pixel_id}")
+def delete_pixel(pixel_id: str, db: Session = Depends(get_db),
+                 _=Depends(get_current_admin)):
+    from fastapi import HTTPException
+    p = db.query(AdsPixel).filter(AdsPixel.id == pixel_id).first()
+    if not p:
+        raise HTTPException(404, "Pixel não encontrado.")
+    db.delete(p)
+    db.commit()
+    return ok(None, "Pixel removido.")
+
+
+# ── Routes: ROI ───────────────────────────────────────────────────────────────
+
+@router.get("/roi")
+def get_roi(period: str = "30d", db: Session = Depends(get_db),
+            _=Depends(get_current_admin)):
+    from datetime import timedelta
+    period_days = {"7d": 7, "30d": 30, "90d": 90}
+    days = period_days.get(period, 30)
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # Per-platform aggregation from ads_campaigns
+    rows = db.execute(text("""
+        SELECT
+            platform,
+            SUM(spend) AS spend,
+            SUM(revenue) AS revenue,
+            SUM(conversions) AS orders,
+            SUM(clicks) AS leads
+        FROM ads_campaigns
+        GROUP BY platform
+    """)).fetchall()
+
+    # Orders & revenue attributed via utm_medium for last N days
+    utm_rows = db.execute(text("""
+        SELECT utm_medium, COUNT(*), COALESCE(SUM(total), 0)
+        FROM orders
+        WHERE utm_medium IS NOT NULL AND created_at >= :since
+        GROUP BY utm_medium
+    """), {"since": since}).fetchall()
+    utm_map = {r[0]: {"orders": r[1], "revenue": float(r[2])} for r in utm_rows}
+
+    result = []
+    for r in rows:
+        platform = r[0]
+        spend = float(r[1] or 0)
+        revenue = float(r[2] or 0)
+        orders = int(r[3] or 0)
+        leads = int(r[4] or 0)
+
+        # Supplement with real order data if platform name matches utm_medium
+        if platform in utm_map:
+            orders = utm_map[platform]["orders"]
+            revenue = utm_map[platform]["revenue"]
+
+        roas = revenue / spend if spend > 0 else 0
+        roi_pct = ((revenue - spend) / spend * 100) if spend > 0 else 0
+        cpl = spend / leads if leads > 0 else 0
+        cpo = spend / orders if orders > 0 else 0
+
+        result.append({
+            "period": period, "platform": platform,
+            "spend": spend, "revenue": revenue,
+            "roas": round(roas, 2), "roi_pct": round(roi_pct, 2),
+            "leads": leads, "orders": orders,
+            "cpl": round(cpl, 2), "cpo": round(cpo, 2),
+        })
+
+    return ok(result)

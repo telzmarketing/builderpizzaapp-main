@@ -289,7 +289,7 @@ export default function CrmDashboard() {
                   <h2 className="text-sm font-semibold text-cream">Clientes por Bairro</h2>
                 </div>
                 {d.clients_by_neighborhood?.length ? (
-                  <StatBar data={d.clients_by_neighborhood as Record<string, unknown>[]} labelKey="name" valueKey="count" color="bg-gold" />
+                  <StatBar data={d.clients_by_neighborhood as unknown as Record<string, unknown>[]} labelKey="name" valueKey="count" color="bg-gold" />
                 ) : (
                   <p className="text-stone text-xs text-center py-6">Sem dados de bairro disponíveis.</p>
                 )}
@@ -302,7 +302,7 @@ export default function CrmDashboard() {
                   <h2 className="text-sm font-semibold text-cream">Clientes por Origem</h2>
                 </div>
                 {d.clients_by_origin?.length ? (
-                  <StatBar data={d.clients_by_origin as Record<string, unknown>[]} labelKey="name" valueKey="count" color="bg-purple-500" />
+                  <StatBar data={d.clients_by_origin as unknown as Record<string, unknown>[]} labelKey="name" valueKey="count" color="bg-purple-500" />
                 ) : (
                   <p className="text-stone text-xs text-center py-6">Sem dados de origem disponíveis.</p>
                 )}
