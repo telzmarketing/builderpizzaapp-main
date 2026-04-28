@@ -1,4 +1,5 @@
 """CRM — Pipelines, Stages, Cards, Tasks, Customer Groups, Timeline."""
+from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query

@@ -1,4 +1,5 @@
 """Marketing Automations — regras de disparo automático (WhatsApp/Email)."""
+from __future__ import annotations
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional

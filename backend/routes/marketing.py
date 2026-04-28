@@ -1,4 +1,5 @@
 """Marketing — Campaigns, Visitor tracking, Tracking links, Settings."""
+from __future__ import annotations
 import hashlib
 import json
 import uuid

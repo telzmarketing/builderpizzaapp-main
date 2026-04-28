@@ -1,4 +1,5 @@
 """WhatsApp Marketing — templates, campanhas, disparo, monitoramento, config."""
+from __future__ import annotations
 import json
 import uuid
 import requests

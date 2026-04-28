@@ -1,4 +1,5 @@
 """Email Marketing — templates HTML, campanhas, envio via SMTP, config, histórico."""
+from __future__ import annotations
 import json
 import smtplib
 import uuid
