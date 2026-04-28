@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from backend.core.auth import require_admin
+from backend.routes.admin_auth import get_current_admin as require_admin
 from backend.core.response import ok
 from backend.database import SessionLocal
 
