@@ -1,5 +1,9 @@
-from pydantic import BaseModel, EmailStr
+from __future__ import annotations
+
 from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, EmailStr
 
 
 class AdminLoginIn(BaseModel):
@@ -12,6 +16,12 @@ class AdminOut(BaseModel):
     email: str
     name: str
     active: bool
+    phone: Optional[str] = None
+    role_id: Optional[str] = None
+    store_id: Optional[str] = None
+    last_login_at: Optional[datetime] = None
+    created_by: Optional[str] = None
+    updated_by: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

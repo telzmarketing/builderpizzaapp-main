@@ -794,24 +794,132 @@ export const exitPopupApi = {
   update: (body: Partial<ApiExitPopupConfig>) => put<ApiExitPopupConfig>("/exit-popup", body),
 };
 
-// ── Admin Users ───────────────────────────────────────────────────────────────
+// ── Admin Users + RBAC ────────────────────────────────────────────────────────
 
 export interface ApiAdminUser {
   id: string;
   name: string;
   email: string;
   active: boolean;
+  phone?: string | null;
+  role_id?: string | null;
+  role_name?: string | null;
+  store_id?: string | null;
+  last_login_at?: string | null;
+  created_by?: string | null;
+  updated_by?: string | null;
   created_at: string;
   updated_at: string;
 }
 
+export interface ApiRole {
+  id: string;
+  name: string;
+  description?: string | null;
+  is_system: boolean;
+  user_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiModule {
+  id: string;
+  key: string;
+  name: string;
+  description?: string | null;
+  parent_id?: string | null;
+  order_index: number;
+  is_active: boolean;
+}
+
+export interface ApiPermission {
+  id: string;
+  key: string;
+  name: string;
+  description?: string | null;
+}
+
+export interface ApiRolePermission {
+  module_id: string;
+  permission_id: string;
+  allowed: boolean;
+}
+
+export interface ApiAuditLog {
+  id: string;
+  user_id?: string | null;
+  user_name?: string | null;
+  action: string;
+  module_key?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  old_value?: string | null;
+  new_value?: string | null;
+  ip_address?: string | null;
+  created_at: string;
+}
+
+export interface ApiEffectivePermissions {
+  is_master: boolean;
+  role_id?: string | null;
+  role_name?: string | null;
+  modules: Record<string, Record<string, boolean>>;
+}
+
 export const adminUsersApi = {
   list: () => get<ApiAdminUser[]>("/admin/users"),
-  create: (body: { name: string; email: string; password: string; active?: boolean }) =>
-    post<ApiAdminUser>("/admin/users", body),
-  update: (id: string, body: { name?: string; email?: string; active?: boolean; password?: string }) =>
-    put<ApiAdminUser>(`/admin/users/${id}`, body),
+  create: (body: {
+    name: string; email: string; password: string; active?: boolean;
+    phone?: string; role_id?: string; store_id?: string;
+  }) => post<ApiAdminUser>("/admin/users", body),
+  update: (id: string, body: {
+    name?: string; email?: string; active?: boolean; password?: string;
+    phone?: string; role_id?: string | null; store_id?: string | null;
+  }) => put<ApiAdminUser>(`/admin/users/${id}`, body),
+  toggleStatus: (id: string) => patch<ApiAdminUser>(`/admin/users/${id}/status`, {}),
+  resetPassword: (id: string, new_password: string) =>
+    patch<null>(`/admin/users/${id}/reset-password`, { new_password }),
   remove: (id: string) => del<null>(`/admin/users/${id}`),
+};
+
+export const rbacApi = {
+  // Roles
+  listRoles: () => get<ApiRole[]>("/admin/roles"),
+  createRole: (body: { name: string; description?: string }) =>
+    post<ApiRole>("/admin/roles", body),
+  updateRole: (id: string, body: { name?: string; description?: string }) =>
+    put<ApiRole>(`/admin/roles/${id}`, body),
+  deleteRole: (id: string) => del<null>(`/admin/roles/${id}`),
+  duplicateRole: (id: string) => post<ApiRole>(`/admin/roles/${id}/duplicate`, {}),
+
+  // Modules & permissions
+  listModules: () => get<ApiModule[]>("/admin/modules"),
+  listPermissions: () => get<ApiPermission[]>("/admin/permissions"),
+
+  // Role permission matrix
+  getRolePermissions: (roleId: string) => get<ApiRolePermission[]>(`/admin/roles/${roleId}/permissions`),
+  updateRolePermissions: (roleId: string, permissions: ApiRolePermission[]) =>
+    put<null>(`/admin/roles/${roleId}/permissions`, { permissions }),
+
+  // User permission overrides
+  getUserPermissions: (userId: string) => get<ApiRolePermission[]>(`/admin/users/${userId}/permissions`),
+  updateUserPermissions: (userId: string, permissions: ApiRolePermission[]) =>
+    put<null>(`/admin/users/${userId}/permissions`, { permissions }),
+
+  // Audit logs
+  getAuditLogs: (params?: { user_id?: string; module_key?: string; action?: string; limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.user_id) qs.set("user_id", params.user_id);
+    if (params?.module_key) qs.set("module_key", params.module_key);
+    if (params?.action) qs.set("action", params.action);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (params?.offset) qs.set("offset", String(params.offset));
+    const q = qs.toString();
+    return get<{ total: number; items: ApiAuditLog[] }>(`/admin/audit-logs${q ? `?${q}` : ""}`);
+  },
+
+  // Effective permissions for current session
+  myPermissions: () => get<ApiEffectivePermissions>("/admin/auth/me/permissions"),
 };
 
 export interface ApiDashboard {

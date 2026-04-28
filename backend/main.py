@@ -33,6 +33,7 @@ from backend.routes import email_marketing as email_marketing_routes
 from backend.routes import automations as automations_routes
 from backend.routes import ads_oauth as ads_oauth_routes
 from backend.routes import marketing_workflow as marketing_workflow_routes
+from backend.routes import rbac as rbac_routes
 
 settings = get_settings()
 
@@ -396,6 +397,27 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_marketing_workflows_status ON marketing_workflows(status)",
         "CREATE TABLE IF NOT EXISTS marketing_workflow_comments (id VARCHAR PRIMARY KEY, workflow_id VARCHAR NOT NULL REFERENCES marketing_workflows(id) ON DELETE CASCADE, author VARCHAR(200) NOT NULL DEFAULT 'Admin', body TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE INDEX IF NOT EXISTS ix_marketing_workflow_comments_workflow_id ON marketing_workflow_comments(workflow_id)",
+
+        # ══════════════════════════════════════════════════════════════════════
+        # MÓDULO RBAC — Usuários, Perfis e Permissões
+        # ══════════════════════════════════════════════════════════════════════
+        "CREATE TABLE IF NOT EXISTS roles (id VARCHAR PRIMARY KEY, name VARCHAR(100) NOT NULL UNIQUE, description TEXT, is_system BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS rbac_modules (id VARCHAR PRIMARY KEY, key VARCHAR(50) NOT NULL UNIQUE, name VARCHAR(100) NOT NULL, description TEXT, parent_id VARCHAR REFERENCES rbac_modules(id) ON DELETE SET NULL, order_index INTEGER DEFAULT 0, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS rbac_permissions (id VARCHAR PRIMARY KEY, key VARCHAR(30) NOT NULL UNIQUE, name VARCHAR(100) NOT NULL, description TEXT)",
+        "CREATE TABLE IF NOT EXISTS role_permissions (id VARCHAR PRIMARY KEY, role_id VARCHAR NOT NULL REFERENCES roles(id) ON DELETE CASCADE, module_id VARCHAR NOT NULL REFERENCES rbac_modules(id) ON DELETE CASCADE, permission_id VARCHAR NOT NULL REFERENCES rbac_permissions(id) ON DELETE CASCADE, allowed BOOLEAN DEFAULT TRUE, CONSTRAINT uq_role_module_perm UNIQUE (role_id, module_id, permission_id))",
+        "CREATE TABLE IF NOT EXISTS user_permissions (id VARCHAR PRIMARY KEY, user_id VARCHAR NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE, module_id VARCHAR NOT NULL REFERENCES rbac_modules(id) ON DELETE CASCADE, permission_id VARCHAR NOT NULL REFERENCES rbac_permissions(id) ON DELETE CASCADE, allowed BOOLEAN DEFAULT TRUE, overrides_role BOOLEAN DEFAULT TRUE, CONSTRAINT uq_user_module_perm UNIQUE (user_id, module_id, permission_id))",
+        "CREATE TABLE IF NOT EXISTS admin_audit_logs (id VARCHAR PRIMARY KEY, user_id VARCHAR REFERENCES admin_users(id) ON DELETE SET NULL, user_name VARCHAR(200), action VARCHAR(50) NOT NULL, module_key VARCHAR(50), entity_type VARCHAR(100), entity_id VARCHAR(100), old_value TEXT, new_value TEXT, ip_address VARCHAR(50), user_agent TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_role_permissions_role_id ON role_permissions(role_id)",
+        "CREATE INDEX IF NOT EXISTS ix_user_permissions_user_id ON user_permissions(user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_admin_audit_logs_user_id ON admin_audit_logs(user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_admin_audit_logs_created_at ON admin_audit_logs(created_at DESC)",
+        # Extend admin_users with RBAC fields
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS phone VARCHAR(30)",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS role_id VARCHAR(100)",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS store_id VARCHAR(100)",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS created_by VARCHAR",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS updated_by VARCHAR",
     ]
     for stmt in stmts:
         try:
@@ -459,6 +481,7 @@ app.include_router(email_marketing_routes.router)
 app.include_router(automations_routes.router)
 app.include_router(ads_oauth_routes.router)
 app.include_router(marketing_workflow_routes.router)
+app.include_router(rbac_routes.router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")

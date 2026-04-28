@@ -2,6 +2,8 @@
 Seeds the database with initial data if tables are empty.
 Run once on startup.
 """
+from __future__ import annotations
+
 import uuid
 from sqlalchemy.orm import Session
 
@@ -12,6 +14,7 @@ from backend.models.promotion import Promotion
 from backend.models.shipping import ShippingRule, ShippingRuleType
 from backend.models.admin import AdminUser
 from backend.models.chatbot import ChatbotSettings
+from backend.models.rbac import Role, RbacModule, RbacPermission, RolePermission
 
 
 def seed_all(db: Session) -> None:
@@ -23,6 +26,7 @@ def seed_all(db: Session) -> None:
     _seed_shipping(db)
     _seed_admin(db)
     _seed_chatbot_settings(db)
+    _seed_rbac(db)
     db.commit()
 
 
@@ -214,3 +218,194 @@ def _seed_shipping(db: Session) -> None:
         free_above_amount=100.0,
         priority=10,
     ))
+
+
+# ── RBAC seed ─────────────────────────────────────────────────────────────────
+
+_ROLES = [
+    ("master",         "Master — acesso total ao sistema",                           True),
+    ("administrador",  "Administrador — acesso quase total exceto configurações críticas", True),
+    ("gerente",        "Gerente — acesso operacional e relatórios",                   True),
+    ("atendente",      "Atendente — pedidos, clientes e atendimento",                 True),
+    ("cozinha",        "Cozinha — visualização e produção de pedidos",                True),
+    ("entregador",     "Entregador/Motoboy — acesso apenas às entregas atribuídas",   True),
+    ("financeiro",     "Financeiro — caixa, pagamentos e relatórios financeiros",     True),
+    ("marketing",      "Marketing — campanhas, cupons, CRM e métricas",               True),
+]
+
+_MODULES = [
+    ("dashboard",       "Dashboard",              0),
+    ("pedidos",         "Pedidos",                1),
+    ("cardapio",        "Cardápio / Produtos",    2),
+    ("categorias",      "Categorias",             3),
+    ("promocoes",       "Promoções e Banners",    4),
+    ("cupons",          "Cupons de Desconto",     5),
+    ("kits",            "Kits e Combos",          6),
+    ("clientes",        "Clientes / CRM",         7),
+    ("whatsapp",        "WhatsApp / Disparador",  8),
+    ("marketing",       "Marketing",              9),
+    ("campanhas",       "Campanhas",              10),
+    ("relatorios",      "Relatórios",             11),
+    ("financeiro",      "Financeiro",             12),
+    ("fluxo_caixa",     "Fluxo de Caixa",         13),
+    ("formas_pagamento","Formas de Pagamento",    14),
+    ("entregas",        "Entregas",               15),
+    ("motoboys",        "Motoboys",               16),
+    ("reservas",        "Reservas",               17),
+    ("mesas",           "Mesas",                  18),
+    ("loja_online",     "Loja Online",            19),
+    ("funcionamento",   "Funcionamento da Loja",  20),
+    ("frete",           "Frete e Regiões",        21),
+    ("integracoes",     "Integrações",            22),
+    ("configuracoes",   "Configurações Gerais",   23),
+    ("usuarios",        "Usuários e Permissões",  24),
+    ("auditoria",       "Auditoria / Logs",       25),
+    ("cozinha",         "Cozinha (KDS)",          26),
+]
+
+_PERMISSIONS = [
+    ("view",    "Visualizar"),
+    ("create",  "Criar"),
+    ("edit",    "Editar"),
+    ("delete",  "Excluir"),
+    ("approve", "Aprovar"),
+    ("export",  "Exportar"),
+    ("manage",  "Gerenciar Configurações"),
+]
+
+ALL_PERMS = ["view", "create", "edit", "delete", "approve", "export", "manage"]
+
+# {role_name: {module_key: [perm_keys]}}
+_ROLE_PERMISSIONS: dict = {
+    "master": {m: ALL_PERMS for m, _, _ in _MODULES},
+    "administrador": {
+        "dashboard":        ["view", "export"],
+        "pedidos":          ["view", "create", "edit", "delete", "approve", "export"],
+        "cardapio":         ["view", "create", "edit", "delete"],
+        "categorias":       ["view", "create", "edit", "delete"],
+        "promocoes":        ["view", "create", "edit", "delete"],
+        "cupons":           ["view", "create", "edit", "delete"],
+        "kits":             ["view", "create", "edit", "delete"],
+        "clientes":         ["view", "create", "edit", "delete", "export"],
+        "whatsapp":         ["view", "create", "edit", "delete"],
+        "marketing":        ["view", "create", "edit", "delete"],
+        "campanhas":        ["view", "create", "edit", "delete"],
+        "relatorios":       ["view", "export"],
+        "financeiro":       ["view", "export"],
+        "fluxo_caixa":      ["view", "export"],
+        "formas_pagamento": ["view", "edit"],
+        "entregas":         ["view", "create", "edit", "delete"],
+        "motoboys":         ["view", "create", "edit", "delete"],
+        "reservas":         ["view", "create", "edit", "delete"],
+        "mesas":            ["view", "create", "edit", "delete"],
+        "loja_online":      ["view", "edit"],
+        "funcionamento":    ["view", "edit"],
+        "frete":            ["view", "edit"],
+        "integracoes":      ["view", "manage"],
+        "configuracoes":    ["view"],
+        "usuarios":         ["view", "create", "edit"],
+        "auditoria":        ["view"],
+        "cozinha":          ["view", "edit"],
+    },
+    "gerente": {
+        "dashboard":     ["view"],
+        "pedidos":       ["view", "create", "edit"],
+        "cardapio":      ["view", "create", "edit"],
+        "categorias":    ["view", "create", "edit"],
+        "promocoes":     ["view", "create", "edit"],
+        "cupons":        ["view", "create", "edit"],
+        "clientes":      ["view", "create", "edit"],
+        "relatorios":    ["view", "export"],
+        "financeiro":    ["view"],
+        "entregas":      ["view", "create", "edit"],
+        "motoboys":      ["view", "edit"],
+        "reservas":      ["view", "create", "edit"],
+        "mesas":         ["view", "create", "edit"],
+        "funcionamento": ["view", "edit"],
+        "frete":         ["view"],
+        "cozinha":       ["view", "edit"],
+    },
+    "atendente": {
+        "dashboard":  ["view"],
+        "pedidos":    ["view", "create", "edit"],
+        "clientes":   ["view", "create", "edit"],
+        "entregas":   ["view"],
+        "cozinha":    ["view"],
+    },
+    "cozinha": {
+        "pedidos": ["view", "edit"],
+        "cozinha": ["view", "edit"],
+    },
+    "entregador": {
+        "entregas": ["view", "edit"],
+        "motoboys": ["view"],
+    },
+    "financeiro": {
+        "dashboard":        ["view"],
+        "pedidos":          ["view", "export"],
+        "financeiro":       ["view", "export", "manage"],
+        "fluxo_caixa":      ["view", "export"],
+        "formas_pagamento": ["view", "manage"],
+        "relatorios":       ["view", "export"],
+    },
+    "marketing": {
+        "dashboard":   ["view"],
+        "marketing":   ["view", "create", "edit", "delete"],
+        "campanhas":   ["view", "create", "edit", "delete"],
+        "cupons":      ["view", "create", "edit", "delete"],
+        "clientes":    ["view", "create", "edit"],
+        "whatsapp":    ["view", "create", "edit"],
+        "relatorios":  ["view"],
+    },
+}
+
+
+def _seed_rbac(db: Session) -> None:
+    if db.query(Role).first():
+        return  # already seeded
+
+    # Roles
+    role_map: dict[str, str] = {}  # name → id
+    for name, description, is_system in _ROLES:
+        r = Role(id=str(uuid.uuid4()), name=name, description=description, is_system=is_system)
+        db.add(r)
+        role_map[name] = r.id
+    db.flush()
+
+    # Modules
+    module_map: dict[str, str] = {}  # key → id
+    for key, name, order in _MODULES:
+        m = RbacModule(id=str(uuid.uuid4()), key=key, name=name, order_index=order, is_active=True)
+        db.add(m)
+        module_map[key] = m.id
+    db.flush()
+
+    # Permissions
+    perm_map: dict[str, str] = {}  # key → id
+    for key, name in _PERMISSIONS:
+        p = RbacPermission(id=str(uuid.uuid4()), key=key, name=name)
+        db.add(p)
+        perm_map[key] = p.id
+    db.flush()
+
+    # Role permissions
+    for role_name, modules in _ROLE_PERMISSIONS.items():
+        role_id = role_map.get(role_name)
+        if not role_id:
+            continue
+        for mod_key, perms in modules.items():
+            mod_id = module_map.get(mod_key)
+            if not mod_id:
+                continue
+            for perm_key in perms:
+                perm_id = perm_map.get(perm_key)
+                if not perm_id:
+                    continue
+                db.add(RolePermission(
+                    id=str(uuid.uuid4()),
+                    role_id=role_id,
+                    module_id=mod_id,
+                    permission_id=perm_id,
+                    allowed=True,
+                ))
+    db.flush()

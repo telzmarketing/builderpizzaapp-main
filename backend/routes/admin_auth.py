@@ -100,9 +100,14 @@ def admin_login(body: AdminLoginIn, db: Session = Depends(get_db)):
             status_code=401,
         )
 
+    # Track last login
+    from datetime import datetime, timezone
+    admin.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+
     token = create_access_token(
         subject=admin.id,
-        extra={"email": admin.email, "name": admin.name},
+        extra={"email": admin.email, "name": admin.name, "role_id": admin.role_id},
     )
 
     result = TokenOut(
