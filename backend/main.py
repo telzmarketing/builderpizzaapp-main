@@ -427,8 +427,6 @@ def _run_migrations():
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS total_time_minutes INTEGER",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS preparation_time_minutes INTEGER",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_time_minutes INTEGER",
-        # ── Limpa campos de timer com timestamps incorretos do backfill anterior ─
-        "UPDATE orders SET paid_at = NULL, preparation_started_at = NULL, out_for_delivery_at = NULL WHERE delivered_at IS NULL AND paid_at IS NOT NULL AND paid_at < NOW() - INTERVAL '2 minutes'",
     ]
     for stmt in stmts:
         try:
