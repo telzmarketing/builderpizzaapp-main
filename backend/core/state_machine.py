@@ -22,13 +22,13 @@ ORDER_TRANSITIONS: dict[str, list[str]] = {
     # ── Happy path ──────────────────────────────────────────────────────────────
     # pending → waiting_payment → paid → preparing → on_the_way → delivered
     #
-    # REGRA: não pode ir para "preparing" sem pagamento aprovado.
-    #        não pode ir para "delivered" sem passar por "on_the_way".
-    #        "ready_for_pickup" é intermediário opcional entre preparing e on_the_way.
+    # Admin overrides: pending/waiting_payment can jump directly to paid or
+    # preparing to support cash orders and manual Kanban management.
+    # "ready_for_pickup" é intermediário opcional entre preparing e on_the_way.
     # ────────────────────────────────────────────────────────────────────────────
-    "pending":           ["waiting_payment", "aguardando_pagamento", "cancelled"],
-    "waiting_payment":   ["paid", "pago", "pagamento_recusado", "pagamento_expirado", "cancelled"],
-    "aguardando_pagamento": ["paid", "pago", "pagamento_recusado", "pagamento_expirado", "cancelled"],
+    "pending":           ["waiting_payment", "aguardando_pagamento", "paid", "pago", "preparing", "cancelled"],
+    "waiting_payment":   ["paid", "pago", "preparing", "pagamento_recusado", "pagamento_expirado", "cancelled"],
+    "aguardando_pagamento": ["paid", "pago", "preparing", "pagamento_recusado", "pagamento_expirado", "cancelled"],
     "paid":              ["preparing", "cancelled", "refunded"],
     "pago":              ["preparing", "cancelled", "refunded"],
     "pagamento_recusado": ["aguardando_pagamento", "cancelled"],

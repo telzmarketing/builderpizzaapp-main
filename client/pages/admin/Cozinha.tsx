@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bell, BellOff, ChefHat, CheckCircle2, Clock3, Loader2,
-  Maximize2, Minimize2, RefreshCw, UtensilsCrossed,
+  Maximize2, Minimize2, RefreshCw, Route, UtensilsCrossed,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import { ordersApi, type ApiOrder, type ApiOrderItem, type OrderStatus } from "@/lib/api";
@@ -68,7 +68,7 @@ function itemDescription(item: ApiOrderItem): string {
 
 // ── Column config ──────────────────────────────────────────────────────────────
 
-const KITCHEN_STATUSES: OrderStatus[] = ["paid", "pago", "preparing", "ready_for_pickup"];
+const KITCHEN_STATUSES: OrderStatus[] = ["paid", "pago", "preparing", "ready_for_pickup", "on_the_way", "delivered"];
 
 type KitchenColumn = {
   id: string;
@@ -80,6 +80,7 @@ type KitchenColumn = {
   actionLabel: string | null;
   actionStatus: OrderStatus | null;
   actionClass: string;
+  showDeliveryBadge?: boolean;
 };
 
 const COLUMNS: KitchenColumn[] = [
@@ -107,14 +108,15 @@ const COLUMNS: KitchenColumn[] = [
   },
   {
     id: "ready",
-    label: "Pronto — Aguardando Entrega",
-    statuses: ["ready_for_pickup"],
+    label: "Pronto",
+    statuses: ["ready_for_pickup", "on_the_way", "delivered"],
     accent: "text-green-400",
     headerBorder: "border-green-500/30",
     badge: "bg-green-500/20 text-green-300",
-    actionLabel: "Saiu para Entrega",
-    actionStatus: "on_the_way",
-    actionClass: "bg-blue-600 hover:bg-blue-500 text-white",
+    actionLabel: null,
+    actionStatus: null,
+    actionClass: "",
+    showDeliveryBadge: true,
   },
 ];
 
@@ -122,6 +124,28 @@ function urgencyBorder(minutes: number): string {
   if (minutes >= 40) return "border-red-500/60 shadow-red-500/10 shadow-lg";
   if (minutes >= 25) return "border-amber-500/50";
   return "border-surface-03";
+}
+
+function DeliveryStatusBadge({ status }: { status: OrderStatus }) {
+  if (status === "ready_for_pickup") return (
+    <div className="flex items-center gap-2 text-xs font-semibold text-amber-400 bg-amber-500/10 rounded-lg px-3 py-2">
+      <Clock3 size={12} />
+      Aguardando entrega
+    </div>
+  );
+  if (status === "on_the_way") return (
+    <div className="flex items-center gap-2 text-xs font-semibold text-blue-400 bg-blue-500/10 rounded-lg px-3 py-2">
+      <Route size={12} />
+      A caminho
+    </div>
+  );
+  if (status === "delivered") return (
+    <div className="flex items-center gap-2 text-xs font-semibold text-green-400 bg-green-500/10 rounded-lg px-3 py-2">
+      <CheckCircle2 size={12} />
+      Entregue
+    </div>
+  );
+  return null;
 }
 
 // ── Main page ──────────────────────────────────────────────────────────────────
@@ -299,11 +323,12 @@ export default function AdminCozinha() {
                     {colOrders.map((order) => {
                       const mins       = elapsedMinutes(order.created_at);
                       const isUpdating = updating === order.id;
+                      const showUrgency = order.status !== "on_the_way" && order.status !== "delivered";
 
                       return (
                         <div
                           key={order.id}
-                          className={`bg-surface-02 rounded-xl border p-4 space-y-3 transition-all ${urgencyBorder(mins)}`}
+                          className={`bg-surface-02 rounded-xl border p-4 space-y-3 transition-all ${showUrgency ? urgencyBorder(mins) : "border-surface-03"}`}
                         >
                           {/* Card header */}
                           <div className="flex items-start justify-between gap-2">
@@ -315,9 +340,9 @@ export default function AdminCozinha() {
                             </div>
                             <div
                               className={`flex items-center gap-1 text-xs flex-shrink-0 font-semibold ${
-                                mins >= 40
+                                showUrgency && mins >= 40
                                   ? "text-red-400"
-                                  : mins >= 25
+                                  : showUrgency && mins >= 25
                                   ? "text-amber-400"
                                   : "text-stone"
                               }`}
@@ -349,8 +374,12 @@ export default function AdminCozinha() {
                             ))}
                           </div>
 
-                          {/* Action */}
-                          {col.actionLabel && col.actionStatus && (
+                          {/* Action button OR delivery status badge */}
+                          {col.showDeliveryBadge ? (
+                            <div className="border-t border-surface-03 pt-3">
+                              <DeliveryStatusBadge status={order.status} />
+                            </div>
+                          ) : col.actionLabel && col.actionStatus ? (
                             <button
                               onClick={() => moveOrder(order.id, col.actionStatus!)}
                               disabled={isUpdating}
@@ -363,7 +392,7 @@ export default function AdminCozinha() {
                               )}
                               {col.actionLabel}
                             </button>
-                          )}
+                          ) : null}
                         </div>
                       );
                     })}
