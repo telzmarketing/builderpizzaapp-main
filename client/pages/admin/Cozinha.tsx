@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import { ordersApi, type ApiOrder, type ApiOrderItem, type OrderStatus } from "@/lib/api";
+import OrderTimer from "@/components/OrderTimer";
 
 // ── Sound alert ────────────────────────────────────────────────────────────────
 
@@ -373,6 +374,16 @@ export default function AdminCozinha() {
                               </div>
                             ))}
                           </div>
+
+                          {/* Operational timer */}
+                          {order.paid_at && (
+                            <OrderTimer
+                              paidAt={order.paid_at}
+                              deliveredAt={order.delivered_at}
+                              targetMinutes={order.target_delivery_minutes ?? 45}
+                              status={order.status}
+                            />
+                          )}
 
                           {/* Action button OR delivery status badge */}
                           {col.showDeliveryBadge ? (

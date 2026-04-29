@@ -477,6 +477,14 @@ export interface ApiOrder {
   items: ApiOrderItem[];
   created_at: string;
   updated_at: string;
+  paid_at: string | null;
+  preparation_started_at: string | null;
+  out_for_delivery_at: string | null;
+  delivered_at: string | null;
+  target_delivery_minutes: number;
+  total_time_minutes: number | null;
+  preparation_time_minutes: number | null;
+  delivery_time_minutes: number | null;
 }
 
 export interface CheckoutItemIn {

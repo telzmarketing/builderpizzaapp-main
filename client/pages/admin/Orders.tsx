@@ -6,6 +6,7 @@ import {
 import AdminSidebar from "@/components/AdminSidebar";
 import { ordersApi, type ApiOrder, type OrderStatus } from "@/lib/api";
 import { printOrder } from "@/lib/printing";
+import OrderTimer from "@/components/OrderTimer";
 
 // ── Alertas de novo pedido ─────────────────────────────────────────────────────
 
@@ -502,6 +503,16 @@ function OrderCard({ order, updating, onAdvance, onPrint, onDragStart, onDragEnd
           <p className="text-parchment text-xs font-semibold">{order.estimated_time} min</p>
         </div>
       </div>
+
+      {/* Operational timer */}
+      {order.paid_at && !["cancelled", "refunded", "pagamento_recusado", "pagamento_expirado"].includes(order.status) && (
+        <OrderTimer
+          paidAt={order.paid_at}
+          deliveredAt={order.delivered_at}
+          targetMinutes={order.target_delivery_minutes ?? 45}
+          status={order.status}
+        />
+      )}
 
       {/* Action buttons */}
       <div className="mt-3 flex gap-2">

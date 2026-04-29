@@ -6,6 +6,8 @@ All business logic lives in OrderService. These handlers only:
   2. Call the service.
   3. Return a standardized JSON envelope.
 """
+from datetime import datetime, timezone, timedelta
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -197,3 +199,56 @@ def cancel_order(order_id: str, db: Session = Depends(get_db)):
         return ok(_serialize_orders(db, [order])[0], "Pedido cancelado.")
     except DomainError as exc:
         return err(exc)
+
+
+@router.get("/reports/operational")
+def operational_report(
+    days: int = 7,
+    db: Session = Depends(get_db),
+):
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    delivered = (
+        db.query(Order)
+        .filter(Order.status == OrderStatus.delivered, Order.delivered_at >= cutoff)
+        .all()
+    )
+    if not delivered:
+        return ok({
+            "period_days": days,
+            "total_orders": 0,
+            "within_target": 0,
+            "outside_target": 0,
+            "pct_within_target": 0.0,
+            "avg_total_minutes": None,
+            "avg_preparation_minutes": None,
+            "avg_delivery_minutes": None,
+            "most_delayed": [],
+        })
+    total = len(delivered)
+    within = [o for o in delivered if o.total_time_minutes is not None and o.total_time_minutes <= (o.target_delivery_minutes or 45)]
+    outside = [o for o in delivered if o.total_time_minutes is not None and o.total_time_minutes > (o.target_delivery_minutes or 45)]
+    timed = [o for o in delivered if o.total_time_minutes]
+    avg_total = round(sum(o.total_time_minutes for o in timed) / max(len(timed), 1), 1) if timed else None
+    prep_vals = [o.preparation_time_minutes for o in delivered if o.preparation_time_minutes]
+    avg_prep = round(sum(prep_vals) / len(prep_vals), 1) if prep_vals else None
+    del_vals = [o.delivery_time_minutes for o in delivered if o.delivery_time_minutes]
+    avg_del = round(sum(del_vals) / len(del_vals), 1) if del_vals else None
+    most_delayed = sorted(
+        timed,
+        key=lambda o: o.total_time_minutes,
+        reverse=True,
+    )[:5]
+    return ok({
+        "period_days": days,
+        "total_orders": total,
+        "within_target": len(within),
+        "outside_target": len(outside),
+        "pct_within_target": round(len(within) / total * 100, 1) if total else 0.0,
+        "avg_total_minutes": avg_total,
+        "avg_preparation_minutes": avg_prep,
+        "avg_delivery_minutes": avg_del,
+        "most_delayed": [
+            {"id": o.id, "total_time_minutes": o.total_time_minutes, "target": o.target_delivery_minutes}
+            for o in most_delayed
+        ],
+    })

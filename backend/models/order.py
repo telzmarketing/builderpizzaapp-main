@@ -63,6 +63,15 @@ class Order(Base):
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
 
+    paid_at                  = Column(DateTime(timezone=True), nullable=True)
+    preparation_started_at   = Column(DateTime(timezone=True), nullable=True)
+    out_for_delivery_at      = Column(DateTime(timezone=True), nullable=True)
+    delivered_at             = Column(DateTime(timezone=True), nullable=True)
+    target_delivery_minutes  = Column(Integer, default=45)
+    total_time_minutes       = Column(Integer, nullable=True)
+    preparation_time_minutes = Column(Integer, nullable=True)
+    delivery_time_minutes    = Column(Integer, nullable=True)
+
     customer = relationship("Customer", back_populates="orders")
     address = relationship("Address", back_populates="orders")
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")

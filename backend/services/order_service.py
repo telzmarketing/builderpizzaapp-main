@@ -417,6 +417,25 @@ class OrderService:
         old_status = current
         order.status = OrderStatus(new_status)
         order.updated_at = datetime.now(timezone.utc)
+
+        now = datetime.now(timezone.utc)
+        if new_status in ("paid", "pago") and not order.paid_at:
+            order.paid_at = now
+        if new_status == "preparing" and not order.preparation_started_at:
+            order.preparation_started_at = now
+        if new_status == "on_the_way" and not order.out_for_delivery_at:
+            order.out_for_delivery_at = now
+        if new_status == "delivered" and not order.delivered_at:
+            order.delivered_at = now
+            if order.paid_at:
+                order.total_time_minutes = int((now - order.paid_at).total_seconds() / 60)
+            if order.out_for_delivery_at:
+                order.delivery_time_minutes = int((now - order.out_for_delivery_at).total_seconds() / 60)
+            if order.paid_at and order.out_for_delivery_at:
+                order.preparation_time_minutes = int((order.out_for_delivery_at - order.paid_at).total_seconds() / 60)
+            elif order.preparation_started_at and order.out_for_delivery_at:
+                order.preparation_time_minutes = int((order.out_for_delivery_at - order.preparation_started_at).total_seconds() / 60)
+
         self._db.commit()
 
         bus.publish(OrderStatusChanged(

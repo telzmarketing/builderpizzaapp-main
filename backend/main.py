@@ -418,6 +418,15 @@ def _run_migrations():
         "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ",
         "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS created_by VARCHAR",
         "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS updated_by VARCHAR",
+        # ── Operational timer fields ──────────────────────────────────────────
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS preparation_started_at TIMESTAMPTZ",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS out_for_delivery_at TIMESTAMPTZ",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS target_delivery_minutes INTEGER DEFAULT 45",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS total_time_minutes INTEGER",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS preparation_time_minutes INTEGER",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_time_minutes INTEGER",
     ]
     for stmt in stmts:
         try:

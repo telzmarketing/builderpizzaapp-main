@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
@@ -125,6 +127,14 @@ class OrderOut(BaseModel):
     items: list[OrderItemOut] = []
     created_at: datetime
     updated_at: datetime
+    paid_at: Optional[datetime] = None
+    preparation_started_at: Optional[datetime] = None
+    out_for_delivery_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    target_delivery_minutes: int = 45
+    total_time_minutes: Optional[int] = None
+    preparation_time_minutes: Optional[int] = None
+    delivery_time_minutes: Optional[int] = None
 
     model_config = {"from_attributes": True}
 
