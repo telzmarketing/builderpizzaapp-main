@@ -111,6 +111,14 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
         "items": items,
         "created_at": order.created_at,
         "updated_at": order.updated_at,
+        "paid_at": order.paid_at,
+        "preparation_started_at": order.preparation_started_at,
+        "out_for_delivery_at": order.out_for_delivery_at,
+        "delivered_at": order.delivered_at,
+        "target_delivery_minutes": order.target_delivery_minutes or 45,
+        "total_time_minutes": order.total_time_minutes,
+        "preparation_time_minutes": order.preparation_time_minutes,
+        "delivery_time_minutes": order.delivery_time_minutes,
     }
 
 

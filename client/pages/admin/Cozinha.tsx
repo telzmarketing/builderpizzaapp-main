@@ -131,8 +131,9 @@ export default function AdminCozinha() {
   const [fullscreen, setFullscreen] = useState(false);
   const [, setTick]               = useState(0);
 
-  const knownIds  = useRef<Set<string>>(new Set());
-  const soundRef  = useRef(soundOn);
+  // paidIds fires sound only once per order when it first enters paid status
+  const paidIds  = useRef<Set<string>>(new Set());
+  const soundRef = useRef(soundOn);
   soundRef.current = soundOn;
 
   const fetchOrders = useCallback(async (initial = false) => {
@@ -141,13 +142,16 @@ export default function AdminCozinha() {
       const kitchen = all.filter((o) => KITCHEN_STATUSES.includes(o.status));
 
       if (!initial) {
-        const fresh = kitchen.filter(
-          (o) => (o.status === "paid" || o.status === "pago") && !knownIds.current.has(o.id),
+        const newlyPaid = kitchen.filter(
+          (o) => (o.status === "paid" || o.status === "pago") && !paidIds.current.has(o.id),
         );
-        if (fresh.length > 0 && soundRef.current) playNewOrderAlert();
+        if (newlyPaid.length > 0 && soundRef.current) playNewOrderAlert();
       }
 
-      kitchen.forEach((o) => knownIds.current.add(o.id));
+      // Mark paid orders so subsequent polls don't re-alert
+      kitchen
+        .filter((o) => o.status === "paid" || o.status === "pago")
+        .forEach((o) => paidIds.current.add(o.id));
       setOrders(kitchen);
       setLastRefresh(new Date());
     } catch {

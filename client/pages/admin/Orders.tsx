@@ -171,8 +171,8 @@ export default function AdminOrders() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [newOrderFlash, setNewOrderFlash] = useState(false);
 
-  // Tracks known order IDs to detect truly new arrivals
-  const knownIds = useRef<Set<string>>(new Set());
+  // paidIds tracks orders already alerted — fires sound only once per order when it first becomes paid
+  const paidIds = useRef<Set<string>>(new Set());
   const isFirstFetch = useRef(true);
 
   // Drag state — ref avoids triggering re-renders during drag
@@ -188,15 +188,21 @@ export default function AdminOrders() {
       const sorted = [...data].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       if (!isFirstFetch.current) {
-        const incoming = sorted.filter((o) => !knownIds.current.has(o.id));
-        if (incoming.length > 0 && soundEnabled) {
+        // Alert fires only when an order ENTERS paid/pago status for the first time
+        const newlyPaid = sorted.filter(
+          (o) => (o.status === "paid" || o.status === "pago") && !paidIds.current.has(o.id),
+        );
+        if (newlyPaid.length > 0 && soundEnabled) {
           playNewOrderAlert();
           setNewOrderFlash(true);
           setTimeout(() => setNewOrderFlash(false), 2000);
         }
       }
       isFirstFetch.current = false;
-      knownIds.current = new Set(sorted.map((o) => o.id));
+      // Mark all currently-paid orders so subsequent polls don't re-alert
+      sorted
+        .filter((o) => o.status === "paid" || o.status === "pago")
+        .forEach((o) => paidIds.current.add(o.id));
 
       setOrders(sorted);
       setLastUpdated(new Date());
