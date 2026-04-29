@@ -504,10 +504,10 @@ function OrderCard({ order, updating, onAdvance, onPrint, onDragStart, onDragEnd
         </div>
       </div>
 
-      {/* Operational timer — paid_at preferred; falls back to created_at for legacy orders */}
-      {!["cancelled", "refunded", "pagamento_recusado", "pagamento_expirado", "pending", "waiting_payment", "aguardando_pagamento"].includes(order.status) && (
+      {/* Operational timer — só aparece após pagamento confirmado */}
+      {order.paid_at && (
         <OrderTimer
-          paidAt={order.paid_at ?? order.created_at}
+          paidAt={order.paid_at}
           deliveredAt={order.delivered_at}
           targetMinutes={order.target_delivery_minutes ?? 45}
           status={order.status}
