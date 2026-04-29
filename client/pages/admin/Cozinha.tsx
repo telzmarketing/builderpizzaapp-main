@@ -6,39 +6,10 @@ import {
 import AdminSidebar from "@/components/AdminSidebar";
 import { ordersApi, type ApiOrder, type ApiOrderItem, type OrderStatus } from "@/lib/api";
 import OrderTimer from "@/components/OrderTimer";
-
-// ── Sound alert ────────────────────────────────────────────────────────────────
+import { playOrderAlert, loadSoundType } from "@/lib/orderSound";
 
 function playNewOrderAlert() {
-  try {
-    const ctx = new AudioContext();
-    const beep = (freq: number, start: number, dur: number) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = freq;
-      osc.type = "sine";
-      gain.gain.setValueAtTime(0.35, ctx.currentTime + start);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
-      osc.start(ctx.currentTime + start);
-      osc.stop(ctx.currentTime + start + dur + 0.05);
-    };
-    beep(880, 0, 0.15);
-    beep(1100, 0.2, 0.15);
-    beep(880, 0.4, 0.25);
-    setTimeout(() => {
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        const u = new SpeechSynthesisUtterance("Novo pedido!");
-        u.lang = "pt-BR";
-        u.rate = 0.95;
-        u.pitch = 1.1;
-        window.speechSynthesis.speak(u);
-      }
-    }, 700);
-  } catch {
-    // AudioContext pode falhar sem interação do usuário
-  }
+  playOrderAlert(loadSoundType());
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

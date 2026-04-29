@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Printer, Eye, Settings2 } from "lucide-react";
+import { Bell, BellOff, Check, Printer, Eye, Settings2, Volume2 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import {
   loadPrinterSettings, savePrinterSettings,
@@ -7,10 +7,14 @@ import {
   SAMPLE_ORDER, DEFAULT_PRINTER_SETTINGS,
   type PrinterSettings, type PrintTemplate, type PaperWidth,
 } from "@/lib/printing";
+import {
+  loadSoundType, saveSoundType, playOrderAlert,
+  SOUND_OPTIONS, type OrderSoundType,
+} from "@/lib/orderSound";
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-type Tab = "impressora";
+type Tab = "impressora" | "som";
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -108,9 +112,11 @@ function TemplateCard({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function AdminConfiguracoes() {
-  const [activeTab] = useState<Tab>("impressora");
+  const [activeTab, setActiveTab] = useState<Tab>("impressora");
   const [settings, setSettings] = useState<PrinterSettings>(loadPrinterSettings);
   const [saved, setSaved] = useState(false);
+  const [soundType, setSoundType] = useState<OrderSoundType>(loadSoundType);
+  const [soundSaved, setSoundSaved] = useState(false);
 
   const update = (patch: Partial<PrinterSettings>) =>
     setSettings((prev) => ({ ...prev, ...patch }));
@@ -150,14 +156,100 @@ export default function AdminConfiguracoes() {
           {/* Tabs */}
           <div className="px-8 pt-4 flex gap-2">
             <button
-              className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-gold text-cream"
+              onClick={() => setActiveTab("impressora")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "impressora" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
             >
               <Printer size={14} />
               Impressora
             </button>
+            <button
+              onClick={() => setActiveTab("som")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "som" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
+            >
+              <Volume2 size={14} />
+              Som
+            </button>
           </div>
 
           <div className="p-8 space-y-8 max-w-5xl">
+
+            {/* ── Aba Som ───────────────────────────────────────────────── */}
+            {activeTab === "som" && (
+              <>
+                <section className="bg-surface-02 rounded-2xl border border-surface-03 p-6">
+                  <h3 className="text-cream font-bold text-lg mb-1">Alerta sonoro de novo pedido</h3>
+                  <p className="text-stone text-sm mb-6">
+                    Escolha o som que toca nos módulos <strong className="text-parchment">Pedidos</strong> e <strong className="text-parchment">Cozinha</strong> quando um novo pedido é recebido.
+                    A preferência é salva neste navegador/dispositivo.
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {SOUND_OPTIONS.map((opt) => {
+                      const isSelected = soundType === opt.id;
+                      const Icon = opt.id === "silent" ? BellOff : opt.id === "bell" ? Bell : Volume2;
+                      return (
+                        <div
+                          key={opt.id}
+                          onClick={() => setSoundType(opt.id)}
+                          className={`cursor-pointer rounded-2xl border-2 p-5 flex flex-col gap-3 transition-all ${
+                            isSelected
+                              ? "border-gold bg-gold/10 shadow-lg shadow-gold/10"
+                              : "border-surface-03 hover:border-gold/40"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className={`p-2.5 rounded-xl ${isSelected ? "bg-gold/20" : "bg-surface-03"}`}>
+                              <Icon size={20} className={isSelected ? "text-gold" : "text-stone"} />
+                            </div>
+                            {isSelected && (
+                              <span className="flex items-center gap-1 text-[10px] font-bold text-gold bg-gold/15 border border-gold/30 rounded-full px-2 py-0.5">
+                                <Check size={9} /> Ativo
+                              </span>
+                            )}
+                          </div>
+
+                          <div>
+                            <p className={`font-bold text-sm ${isSelected ? "text-gold" : "text-parchment"}`}>
+                              {opt.label}
+                            </p>
+                            <p className="text-stone text-xs mt-1 leading-snug">{opt.description}</p>
+                          </div>
+
+                          {opt.id !== "silent" && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); playOrderAlert(opt.id); }}
+                              className="mt-auto flex items-center justify-center gap-1.5 text-xs text-stone hover:text-parchment bg-surface-03 hover:bg-surface-03/70 rounded-lg px-3 py-2 transition-colors"
+                            >
+                              <Volume2 size={12} />
+                              Ouvir prévia
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      saveSoundType(soundType);
+                      setSoundSaved(true);
+                      setTimeout(() => setSoundSaved(false), 2500);
+                    }}
+                    className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2.5 px-6 rounded-xl transition-colors"
+                  >
+                    {soundSaved ? <Check size={16} /> : <Volume2 size={16} />}
+                    {soundSaved ? "Salvo!" : "Salvar preferência"}
+                  </button>
+                </div>
+
+                <p className="text-stone/60 text-xs">
+                  A configuração de som é salva localmente neste navegador/dispositivo. Cada terminal pode ter seu próprio som configurado.
+                </p>
+              </>
+            )}
 
             {activeTab === "impressora" && (
               <>
