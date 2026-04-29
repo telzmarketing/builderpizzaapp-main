@@ -375,15 +375,13 @@ export default function AdminCozinha() {
                             ))}
                           </div>
 
-                          {/* Operational timer */}
-                          {order.paid_at && (
-                            <OrderTimer
-                              paidAt={order.paid_at}
-                              deliveredAt={order.delivered_at}
-                              targetMinutes={order.target_delivery_minutes ?? 45}
-                              status={order.status}
-                            />
-                          )}
+                          {/* Operational timer — paid_at preferred; falls back to created_at for legacy orders */}
+                          <OrderTimer
+                            paidAt={order.paid_at ?? order.created_at}
+                            deliveredAt={order.delivered_at}
+                            targetMinutes={order.target_delivery_minutes ?? 45}
+                            status={order.status}
+                          />
 
                           {/* Action button OR delivery status badge */}
                           {col.showDeliveryBadge ? (
