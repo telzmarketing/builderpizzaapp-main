@@ -10,7 +10,7 @@ log = logging.getLogger("chatbot.ai.claude")
 
 
 class ClaudeProvider(AIProvider):
-    def __init__(self, model: str = "claude-sonnet-4-6"):
+    def __init__(self, model: str = "claude-sonnet-4-20250514"):
         self._model = model
         self._settings = get_settings()
 

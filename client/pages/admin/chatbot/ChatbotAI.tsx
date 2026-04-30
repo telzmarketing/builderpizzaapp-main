@@ -3,13 +3,14 @@ import { Save, Zap, CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { chatbotAdminApi, type ChatbotSettings } from "@/lib/chatbotApi";
 
 const CLAUDE_MODELS = [
-  { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5 (rápido, barato)" },
-  { value: "claude-sonnet-4-6",         label: "Claude Sonnet 4.6 (balanceado)" },
-  { value: "claude-opus-4-7",           label: "Claude Opus 4.7 (mais capaz)" },
+  { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4 (balanceado)" },
+  { value: "claude-3-5-haiku-20241022", label: "Claude Haiku 3.5 (rápido, barato)" },
+  { value: "claude-opus-4-1-20250805", label: "Claude Opus 4.1 (mais capaz)" },
 ];
+
 const OPENAI_MODELS = [
   { value: "gpt-4o-mini", label: "GPT-4o Mini (rápido, barato)" },
-  { value: "gpt-4o",      label: "GPT-4o (balanceado)" },
+  { value: "gpt-4o", label: "GPT-4o (balanceado)" },
   { value: "gpt-4-turbo", label: "GPT-4 Turbo (avançado)" },
 ];
 
@@ -32,15 +33,18 @@ export default function ChatbotAI() {
     setSettings((prev) => prev ? { ...prev, [k]: v } : prev);
 
   const models = settings.provedor_ia === "claude" ? CLAUDE_MODELS : OPENAI_MODELS;
+  const modelValue = models.some((m) => m.value === settings.modelo_ia)
+    ? settings.modelo_ia
+    : models[0].value;
 
   const save = async () => {
     setSaving(true); setMsg("");
     try {
       const s = await chatbotAdminApi.updateSettings({
         provedor_ia: settings.provedor_ia,
-        modelo_ia:   settings.modelo_ia,
+        modelo_ia: modelValue,
         temperatura: settings.temperatura,
-        max_tokens:  settings.max_tokens,
+        max_tokens: settings.max_tokens,
       });
       setSettings(s); setMsg("Salvo!");
       const st = await chatbotAdminApi.aiStatus();
@@ -60,7 +64,9 @@ export default function ChatbotAI() {
     } finally { setTesting(false); }
   };
 
-  const isConfigured = status[settings.provedor_ia] === true;
+  const selectedConfigured = status[settings.provedor_ia] === true;
+  const isConfigured = status.ativo === true;
+  const usingFallbackProvider = status.using_fallback_provider === true;
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -75,7 +81,6 @@ export default function ChatbotAI() {
         </div>
       </div>
 
-      {/* Status badges */}
       <div className="flex gap-3 flex-wrap">
         {[
           { key: "claude", label: "Claude (Anthropic)" },
@@ -86,18 +91,19 @@ export default function ChatbotAI() {
           }`}>
             {status[key] ? <CheckCircle size={13} /> : <XCircle size={13} />}
             {label}
-            {status[key] ? " — Configurado" : " — Sem chave"}
+            {status[key] ? " - Configurado" : " - Sem chave"}
           </div>
         ))}
       </div>
 
-      {!isConfigured && (
+      {!selectedConfigured && (
         <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl px-4 py-3 text-orange-300 text-sm">
-          O provedor selecionado não possui chave de API configurada no servidor. Configure a variável <code className="bg-surface-03 px-1 rounded text-xs">{settings.provedor_ia === "claude" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"}</code> no arquivo <code className="bg-surface-03 px-1 rounded text-xs">.env</code> do backend.
+          {usingFallbackProvider
+            ? "O provedor selecionado não possui chave no servidor; o backend usará o outro provedor configurado."
+            : <>O provedor selecionado não possui chave de API configurada no servidor. Configure a variável <code className="bg-surface-03 px-1 rounded text-xs">{settings.provedor_ia === "claude" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"}</code> no arquivo <code className="bg-surface-03 px-1 rounded text-xs">.env</code> do backend.</>}
         </div>
       )}
 
-      {/* Provedor */}
       <div>
         <label className="block text-parchment text-xs font-medium mb-2">Provedor</label>
         <div className="flex gap-3">
@@ -118,19 +124,17 @@ export default function ChatbotAI() {
         </div>
       </div>
 
-      {/* Modelo */}
       <div>
         <label className="block text-parchment text-xs font-medium mb-1">Modelo</label>
-        <select value={settings.modelo_ia} onChange={(e) => upd("modelo_ia", e.target.value)}
+        <select value={modelValue} onChange={(e) => upd("modelo_ia", e.target.value)}
           className="w-full bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold">
           {models.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
         </select>
       </div>
 
-      {/* Temperatura */}
       <div>
         <label className="block text-parchment text-xs font-medium mb-1">
-          Temperatura — <span className="text-gold">{settings.temperatura.toFixed(1)}</span>
+          Temperatura - <span className="text-gold">{settings.temperatura.toFixed(1)}</span>
           <span className="text-stone ml-2 font-normal">(0 = determinístico, 1 = criativo)</span>
         </label>
         <input type="range" min={0} max={1} step={0.1}
@@ -143,7 +147,6 @@ export default function ChatbotAI() {
         </div>
       </div>
 
-      {/* Max tokens */}
       <div>
         <label className="block text-parchment text-xs font-medium mb-1">Máximo de tokens por resposta</label>
         <input type="number" min={100} max={4096} step={50}
@@ -151,10 +154,9 @@ export default function ChatbotAI() {
           onChange={(e) => upd("max_tokens", Number(e.target.value))}
           className="w-full bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold"
         />
-        <p className="text-stone text-xs mt-1">Recomendado: 512–1024 para chatbot de atendimento.</p>
+        <p className="text-stone text-xs mt-1">Recomendado: 512-1024 para chatbot de atendimento.</p>
       </div>
 
-      {/* Test */}
       <div className="bg-surface-02 border border-surface-03 rounded-xl p-5 space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-parchment text-sm font-medium">Testar conexão com IA</span>

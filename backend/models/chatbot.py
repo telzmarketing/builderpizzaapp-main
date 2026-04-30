@@ -72,7 +72,7 @@ class ChatbotSettings(Base):
     tempo_disparo_auto      = Column(Integer, default=0)            # 0 = desativado
     fallback_humano_ativo   = Column(Boolean, default=True)
     provedor_ia             = Column(SAEnum(AIProviderEnum), default=AIProviderEnum.claude)
-    modelo_ia               = Column(String(100), default="claude-sonnet-4-6")
+    modelo_ia               = Column(String(100), default="claude-sonnet-4-20250514")
     temperatura             = Column(Float, default=0.7)
     max_tokens              = Column(Integer, default=1024)
     prompt_base             = Column(Text, default="")
