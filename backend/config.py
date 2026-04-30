@@ -1,4 +1,5 @@
 from functools import lru_cache
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
@@ -54,3 +55,80 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
+
+def get_ai_api_key(name: str) -> str:
+    if name not in {"OPENAI_API_KEY", "ANTHROPIC_API_KEY"}:
+        raise ValueError("Chave de IA invÃ¡lida.")
+
+    env_file_value = _read_backend_env_value(name)
+    if env_file_value:
+        return env_file_value
+
+    env_value = os.environ.get(name, "").strip()
+    if env_value:
+        return env_value
+
+    return getattr(get_settings(), name, "").strip()
+
+
+def save_ai_api_keys(*, openai_api_key: str | None = None, anthropic_api_key: str | None = None) -> None:
+    updates = {
+        "OPENAI_API_KEY": openai_api_key,
+        "ANTHROPIC_API_KEY": anthropic_api_key,
+    }
+    cleaned = {
+        key: value.strip()
+        for key, value in updates.items()
+        if value is not None and value.strip()
+    }
+    if not cleaned:
+        return
+
+    for key, value in cleaned.items():
+        if "\n" in value or "\r" in value:
+            raise ValueError(f"{key} nÃ£o pode conter quebra de linha.")
+
+    env_path = BACKEND_DIR / ".env"
+    existing_lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    seen: set[str] = set()
+    next_lines: list[str] = []
+
+    for line in existing_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            next_lines.append(line)
+            continue
+
+        key = line.split("=", 1)[0].strip()
+        if key in cleaned:
+            next_lines.append(f"{key}={cleaned[key]}")
+            seen.add(key)
+        else:
+            next_lines.append(line)
+
+    for key, value in cleaned.items():
+        if key not in seen:
+            next_lines.append(f"{key}={value}")
+
+    env_path.write_text("\n".join(next_lines).rstrip() + "\n", encoding="utf-8")
+
+    for key, value in cleaned.items():
+        os.environ[key] = value
+    get_settings.cache_clear()
+
+
+def _read_backend_env_value(name: str) -> str:
+    env_path = BACKEND_DIR / ".env"
+    if not env_path.exists():
+        return ""
+
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        if key.strip() != name:
+            continue
+        return value.strip().strip('"').strip("'")
+    return ""

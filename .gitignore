@@ -28,3 +28,4 @@ __pycache__/
 
 .config/
 !.env
+backend/.env

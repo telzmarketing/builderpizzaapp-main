@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Save, Zap, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { Save, Zap, CheckCircle, XCircle, Loader2, KeyRound } from "lucide-react";
 import { chatbotAdminApi, type ChatbotSettings } from "@/lib/chatbotApi";
 
 const CLAUDE_MODELS = [
@@ -19,7 +19,10 @@ export default function ChatbotAI() {
   const [status, setStatus] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [savingKeys, setSavingKeys] = useState(false);
   const [msg, setMsg] = useState("");
+  const [openAIKey, setOpenAIKey] = useState("");
+  const [anthropicKey, setAnthropicKey] = useState("");
   const [testResult, setTestResult] = useState<{ resposta: string; latencia_ms: number; tokens: number } | null>(null);
 
   useEffect(() => {
@@ -64,6 +67,28 @@ export default function ChatbotAI() {
     } finally { setTesting(false); }
   };
 
+  const saveKeys = async () => {
+    const body: { openai_api_key?: string; anthropic_api_key?: string } = {};
+    if (openAIKey.trim()) body.openai_api_key = openAIKey.trim();
+    if (anthropicKey.trim()) body.anthropic_api_key = anthropicKey.trim();
+
+    if (!body.openai_api_key && !body.anthropic_api_key) {
+      setMsg("Informe pelo menos uma chave.");
+      return;
+    }
+
+    setSavingKeys(true); setMsg("");
+    try {
+      const st = await chatbotAdminApi.updateAIKeys(body);
+      setStatus(st);
+      setOpenAIKey("");
+      setAnthropicKey("");
+      setMsg("Chaves salvas!");
+    } catch (e: unknown) {
+      setMsg(e instanceof Error ? e.message : "Erro ao salvar chaves.");
+    } finally { setSavingKeys(false); }
+  };
+
   const selectedConfigured = status[settings.provedor_ia] === true;
   const isConfigured = status.ativo === true;
   const usingFallbackProvider = status.using_fallback_provider === true;
@@ -103,6 +128,48 @@ export default function ChatbotAI() {
             : <>O provedor selecionado não possui chave de API configurada no servidor. Configure a variável <code className="bg-surface-03 px-1 rounded text-xs">{settings.provedor_ia === "claude" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"}</code> no arquivo <code className="bg-surface-03 px-1 rounded text-xs">.env</code> do backend.</>}
         </div>
       )}
+
+      <div className="bg-surface-02 border border-surface-03 rounded-xl p-5 space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-parchment text-sm font-medium flex items-center gap-2">
+            <KeyRound size={14} className="text-gold" /> Chaves dos provedores
+          </span>
+          <button onClick={saveKeys} disabled={savingKeys}
+            className="flex items-center gap-2 bg-surface-03 hover:bg-surface-02 disabled:opacity-50 border border-surface-03 text-parchment py-1.5 px-4 rounded-lg text-xs font-medium transition-colors">
+            <Save size={13} /> {savingKeys ? "Salvando..." : "Salvar chaves"}
+          </button>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="block text-parchment text-xs font-medium mb-1">OpenAI API key</span>
+            <input
+              type="password"
+              value={openAIKey}
+              onChange={(e) => setOpenAIKey(e.target.value)}
+              placeholder={status.openai ? "Configurada - deixe vazio para manter" : "sk-..."}
+              autoComplete="off"
+              className="w-full bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold"
+            />
+          </label>
+
+          <label className="block">
+            <span className="block text-parchment text-xs font-medium mb-1">Claude API key</span>
+            <input
+              type="password"
+              value={anthropicKey}
+              onChange={(e) => setAnthropicKey(e.target.value)}
+              placeholder={status.claude ? "Configurada - deixe vazio para manter" : "sk-ant-..."}
+              autoComplete="off"
+              className="w-full bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold"
+            />
+          </label>
+        </div>
+
+        <p className="text-stone text-xs">
+          As chaves sÃ£o salvas no backend/.env e nÃ£o sÃ£o exibidas novamente.
+        </p>
+      </div>
 
       <div>
         <label className="block text-parchment text-xs font-medium mb-2">Provedor</label>

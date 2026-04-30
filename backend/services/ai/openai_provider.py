@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 
-from backend.config import get_settings
+from backend.config import get_ai_api_key
 from backend.services.ai.base import AIMessage, AIProvider, AIResponse
 
 log = logging.getLogger("chatbot.ai.openai")
@@ -12,14 +12,13 @@ log = logging.getLogger("chatbot.ai.openai")
 class OpenAIProvider(AIProvider):
     def __init__(self, model: str = "gpt-4o-mini"):
         self._model = model
-        self._settings = get_settings()
 
     @property
     def provider_name(self) -> str:
         return "openai"
 
     def is_configured(self) -> bool:
-        return bool(self._settings.OPENAI_API_KEY)
+        return bool(get_ai_api_key("OPENAI_API_KEY"))
 
     def generate(
         self,
@@ -34,7 +33,7 @@ class OpenAIProvider(AIProvider):
         try:
             from openai import OpenAI
 
-            client = OpenAI(api_key=self._settings.OPENAI_API_KEY, timeout=30)
+            client = OpenAI(api_key=get_ai_api_key("OPENAI_API_KEY"), timeout=30)
             payload = [{"role": "system", "content": system_prompt}]
             payload += [{"role": m.role, "content": m.content} for m in messages]
 

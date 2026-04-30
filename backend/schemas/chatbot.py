@@ -35,6 +35,11 @@ class ChatbotSettingsUpdate(BaseModel):
     limitacoes_proibicoes:   Optional[str]              = None
 
 
+class ChatbotAIKeysUpdate(BaseModel):
+    openai_api_key:    Optional[str] = Field(default=None, min_length=1, max_length=500)
+    anthropic_api_key: Optional[str] = Field(default=None, min_length=1, max_length=500)
+
+
 class ChatbotSettingsOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

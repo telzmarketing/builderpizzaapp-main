@@ -128,6 +128,8 @@ export const chatbotAdminApi = {
   getSettings:      ()                       => get<ChatbotSettings>("/admin/chatbot/settings"),
   updateSettings:   (d: Partial<ChatbotSettings>) => put<ChatbotSettings>("/admin/chatbot/settings", d),
   aiStatus:         ()                       => get<Record<string, boolean>>("/admin/chatbot/settings/ai-status"),
+  updateAIKeys:      (d: { openai_api_key?: string; anthropic_api_key?: string }) =>
+    put<Record<string, boolean>>("/admin/chatbot/settings/ai-keys", d),
   testAI:           ()                       => post<{ resposta: string; latencia_ms: number; tokens: number }>("/admin/chatbot/settings/test-ai", {}),
 
   // FAQ
