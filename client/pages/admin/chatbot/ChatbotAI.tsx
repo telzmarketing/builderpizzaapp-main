@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Save, Zap, CheckCircle, XCircle, Loader2, KeyRound } from "lucide-react";
-import { chatbotAdminApi, type ChatbotSettings } from "@/lib/chatbotApi";
+import { chatbotAdminApi, type ChatbotAIStatus, type ChatbotSettings } from "@/lib/chatbotApi";
 
 const CLAUDE_MODELS = [
   { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4 (balanceado)" },
@@ -14,9 +14,18 @@ const OPENAI_MODELS = [
   { value: "gpt-4-turbo", label: "GPT-4 Turbo (avançado)" },
 ];
 
+const EMPTY_STATUS: ChatbotAIStatus = {
+  claude: false,
+  openai: false,
+  ativo: false,
+  using_fallback_provider: false,
+  openai_key_preview: null,
+  anthropic_key_preview: null,
+};
+
 export default function ChatbotAI() {
   const [settings, setSettings] = useState<ChatbotSettings | null>(null);
-  const [status, setStatus] = useState<Record<string, boolean>>({});
+  const [status, setStatus] = useState<ChatbotAIStatus>(EMPTY_STATUS);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [savingKeys, setSavingKeys] = useState(false);
@@ -50,8 +59,7 @@ export default function ChatbotAI() {
         max_tokens: settings.max_tokens,
       });
       setSettings(s); setMsg("Salvo!");
-      const st = await chatbotAdminApi.aiStatus();
-      setStatus(st);
+      setStatus(await chatbotAdminApi.aiStatus());
     } catch (e: unknown) {
       setMsg(e instanceof Error ? e.message : "Erro.");
     } finally { setSaving(false); }
@@ -60,8 +68,7 @@ export default function ChatbotAI() {
   const test = async () => {
     setTesting(true); setTestResult(null); setMsg("");
     try {
-      const r = await chatbotAdminApi.testAI();
-      setTestResult(r);
+      setTestResult(await chatbotAdminApi.testAI());
     } catch (e: unknown) {
       setMsg(e instanceof Error ? e.message : "Erro no teste.");
     } finally { setTesting(false); }
@@ -79,8 +86,7 @@ export default function ChatbotAI() {
 
     setSavingKeys(true); setMsg("");
     try {
-      const st = await chatbotAdminApi.updateAIKeys(body);
-      setStatus(st);
+      setStatus(await chatbotAdminApi.updateAIKeys(body));
       setOpenAIKey("");
       setAnthropicKey("");
       setMsg("Chaves salvas!");
@@ -108,15 +114,15 @@ export default function ChatbotAI() {
 
       <div className="flex gap-3 flex-wrap">
         {[
-          { key: "claude", label: "Claude (Anthropic)" },
-          { key: "openai", label: "OpenAI" },
-        ].map(({ key, label }) => (
+          { key: "claude" as const, label: "Claude (Anthropic)", preview: status.anthropic_key_preview },
+          { key: "openai" as const, label: "OpenAI", preview: status.openai_key_preview },
+        ].map(({ key, label, preview }) => (
           <div key={key} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${
             status[key] ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-surface-03 border-surface-03 text-stone"
           }`}>
             {status[key] ? <CheckCircle size={13} /> : <XCircle size={13} />}
             {label}
-            {status[key] ? " - Configurado" : " - Sem chave"}
+            {status[key] ? ` - Configurado${preview ? ` (${preview})` : ""}` : " - Sem chave"}
           </div>
         ))}
       </div>
@@ -125,7 +131,7 @@ export default function ChatbotAI() {
         <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl px-4 py-3 text-orange-300 text-sm">
           {usingFallbackProvider
             ? "O provedor selecionado não possui chave no servidor; o backend usará o outro provedor configurado."
-            : <>O provedor selecionado não possui chave de API configurada no servidor. Configure a variável <code className="bg-surface-03 px-1 rounded text-xs">{settings.provedor_ia === "claude" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"}</code> no arquivo <code className="bg-surface-03 px-1 rounded text-xs">.env</code> do backend.</>}
+            : <>O provedor selecionado não possui chave de API configurada no servidor. Configure a variável <code className="bg-surface-03 px-1 rounded text-xs">{settings.provedor_ia === "claude" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"}</code> no arquivo <code className="bg-surface-03 px-1 rounded text-xs">backend/.env</code> ou pelo campo abaixo.</>}
         </div>
       )}
 
@@ -147,7 +153,7 @@ export default function ChatbotAI() {
               type="password"
               value={openAIKey}
               onChange={(e) => setOpenAIKey(e.target.value)}
-              placeholder={status.openai ? "Configurada - deixe vazio para manter" : "sk-..."}
+              placeholder={status.openai_key_preview ? `${status.openai_key_preview} - deixe vazio para manter` : "sk-..."}
               autoComplete="off"
               className="w-full bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold"
             />
@@ -159,7 +165,7 @@ export default function ChatbotAI() {
               type="password"
               value={anthropicKey}
               onChange={(e) => setAnthropicKey(e.target.value)}
-              placeholder={status.claude ? "Configurada - deixe vazio para manter" : "sk-ant-..."}
+              placeholder={status.anthropic_key_preview ? `${status.anthropic_key_preview} - deixe vazio para manter` : "sk-ant-..."}
               autoComplete="off"
               className="w-full bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold"
             />
@@ -167,7 +173,7 @@ export default function ChatbotAI() {
         </div>
 
         <p className="text-stone text-xs">
-          As chaves sÃ£o salvas no backend/.env e nÃ£o sÃ£o exibidas novamente.
+          As chaves são salvas no backend/.env. Por segurança, o painel mostra apenas uma prévia mascarada.
         </p>
       </div>
 

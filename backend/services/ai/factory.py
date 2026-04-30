@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from backend.config import get_ai_api_key_preview
 from backend.models.chatbot import AIProviderEnum, ChatbotSettings
 from backend.services.ai.base import AIProvider
 from backend.services.ai.claude_provider import ClaudeProvider
@@ -36,14 +37,16 @@ def get_ai_provider(settings: ChatbotSettings) -> AIProvider:
     return ClaudeProvider(model=model)
 
 
-def check_provider_status(settings: ChatbotSettings) -> dict[str, bool]:
-    """Return provider availability without exposing API keys."""
+def check_provider_status(settings: ChatbotSettings) -> dict[str, bool | str | None]:
+    """Return provider availability and masked key previews without exposing secrets."""
     selected_provider = _select_provider(settings)
     return {
         "claude": ClaudeProvider().is_configured(),
         "openai": OpenAIProvider().is_configured(),
         "ativo": get_ai_provider(settings).is_configured(),
         "using_fallback_provider": selected_provider != _provider_value(settings),
+        "openai_key_preview": get_ai_api_key_preview("OPENAI_API_KEY"),
+        "anthropic_key_preview": get_ai_api_key_preview("ANTHROPIC_API_KEY"),
     }
 
 

@@ -59,7 +59,7 @@ def get_settings() -> Settings:
 
 def get_ai_api_key(name: str) -> str:
     if name not in {"OPENAI_API_KEY", "ANTHROPIC_API_KEY"}:
-        raise ValueError("Chave de IA invÃ¡lida.")
+        raise ValueError("Chave de IA inválida.")
 
     env_file_value = _read_backend_env_value(name)
     if env_file_value:
@@ -70,6 +70,15 @@ def get_ai_api_key(name: str) -> str:
         return env_value
 
     return getattr(get_settings(), name, "").strip()
+
+
+def get_ai_api_key_preview(name: str) -> str | None:
+    value = get_ai_api_key(name)
+    if not value:
+        return None
+    if len(value) <= 10:
+        return "configurada"
+    return f"{value[:3]}...{value[-4:]}"
 
 
 def save_ai_api_keys(*, openai_api_key: str | None = None, anthropic_api_key: str | None = None) -> None:
@@ -87,7 +96,7 @@ def save_ai_api_keys(*, openai_api_key: str | None = None, anthropic_api_key: st
 
     for key, value in cleaned.items():
         if "\n" in value or "\r" in value:
-            raise ValueError(f"{key} nÃ£o pode conter quebra de linha.")
+            raise ValueError(f"{key} não pode conter quebra de linha.")
 
     env_path = BACKEND_DIR / ".env"
     existing_lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
