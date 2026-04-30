@@ -21,6 +21,8 @@ class CampaignCreate(BaseModel):
     published: bool = False
     active_days: Optional[str] = None
     card_bg_color: Optional[str] = None
+    media_type: Optional[str] = "image"
+    video_url: Optional[str] = None
 
 
 class CampaignUpdate(BaseModel):
@@ -38,6 +40,8 @@ class CampaignUpdate(BaseModel):
     published: Optional[bool] = None
     active_days: Optional[str] = None
     card_bg_color: Optional[str] = None
+    media_type: Optional[str] = None
+    video_url: Optional[str] = None
 
 
 class CampaignOut(BaseModel):
@@ -56,6 +60,8 @@ class CampaignOut(BaseModel):
     published: bool
     active_days: Optional[str]
     card_bg_color: Optional[str]
+    media_type: Optional[str]
+    video_url: Optional[str]
     created_at: datetime
     updated_at: datetime
 

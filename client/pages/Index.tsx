@@ -276,8 +276,17 @@ export default function Home() {
                     : {}
                 }
               >
-                {/* Full-quality image rendered via <img> instead of background-image */}
-                {(displayBanner?.banner || media.heroBannerImage) && (
+                {/* Banner: vídeo ou imagem */}
+                {displayBanner?.media_type === "video" && displayBanner?.video_url ? (
+                  <video
+                    src={resolveAssetUrl(displayBanner.video_url)}
+                    className="absolute inset-0 w-full h-full object-cover object-center"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                  />
+                ) : (displayBanner?.banner || media.heroBannerImage) ? (
                   <img
                     src={resolveAssetUrl((displayBanner?.banner || media.heroBannerImage)!)}
                     alt={displayBanner?.name ?? "Banner"}
@@ -285,7 +294,7 @@ export default function Home() {
                     loading="eager"
                     decoding="async"
                   />
-                )}
+                ) : null}
                 {/* Gradient overlay */}
                 <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/40 to-transparent" />
 

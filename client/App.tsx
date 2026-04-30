@@ -86,6 +86,7 @@ import AdminLgpd from "./pages/admin/AdminLgpd";
 import AdminConfiguracoes from "./pages/admin/AdminConfiguracoes";
 import AdminCupons from "./pages/admin/AdminCupons";
 import AdminClientes from "./pages/admin/AdminClientes";
+import ClienteDetalhe from "./pages/admin/ClienteDetalhe";
 import AdminExitPopup from "./pages/admin/AdminExitPopup";
 import AdminUsuarios from "./pages/admin/AdminUsuarios";
 import ExitPopup from "./components/ExitPopup";
@@ -166,6 +167,7 @@ export default function App() {
                 <Route path="/painel/configuracoes" element={<AdminConfiguracoes />} />
                 <Route path="/painel/cupons" element={<AdminCupons />} />
                 <Route path="/painel/clientes" element={<AdminClientes />} />
+                <Route path="/painel/clientes/:id" element={<ClienteDetalhe />} />
                 <Route path="/painel/popup-saida" element={<AdminExitPopup />} />
                 <Route path="/painel/usuarios" element={<AdminUsuarios />} />
                 {/* ── Marketing routes ── */}

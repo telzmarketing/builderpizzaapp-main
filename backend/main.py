@@ -34,6 +34,7 @@ from backend.routes import automations as automations_routes
 from backend.routes import ads_oauth as ads_oauth_routes
 from backend.routes import marketing_workflow as marketing_workflow_routes
 from backend.routes import rbac as rbac_routes
+from backend.routes import customer_events as customer_events_routes
 
 settings = get_settings()
 
@@ -429,6 +430,16 @@ def _run_migrations():
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_time_minutes INTEGER",
         # ── Campaign card background color ────────────────────────────────────
         "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS card_bg_color VARCHAR(20)",
+        # ── Feature: Video banners ────────────────────────────────────────────
+        "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS media_type VARCHAR(10) DEFAULT 'image'",
+        "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS video_url TEXT",
+        # ── Feature: Customer Events table ────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS customer_events (id VARCHAR PRIMARY KEY, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, session_id VARCHAR(200), event_type VARCHAR(80) NOT NULL, event_name VARCHAR(200), event_description TEXT, entity_type VARCHAR(80), entity_id VARCHAR, product_id VARCHAR REFERENCES products(id) ON DELETE SET NULL, order_id VARCHAR REFERENCES orders(id) ON DELETE SET NULL, campaign_id VARCHAR, coupon_id VARCHAR, metadata_json TEXT, source VARCHAR(100), utm_source VARCHAR(100), utm_medium VARCHAR(100), utm_campaign VARCHAR(200), device_type VARCHAR(30), browser VARCHAR(80), operating_system VARCHAR(80), ip_address VARCHAR(50), page_url TEXT, referrer_url TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_customer_events_customer_id ON customer_events(customer_id)",
+        "CREATE INDEX IF NOT EXISTS ix_customer_events_session_id ON customer_events(session_id)",
+        "CREATE INDEX IF NOT EXISTS ix_customer_events_event_type ON customer_events(event_type)",
+        "CREATE INDEX IF NOT EXISTS ix_customer_events_created_at ON customer_events(created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_customer_events_order_id ON customer_events(order_id)",
     ]
     for stmt in stmts:
         try:
@@ -493,6 +504,7 @@ app.include_router(automations_routes.router)
 app.include_router(ads_oauth_routes.router)
 app.include_router(marketing_workflow_routes.router)
 app.include_router(rbac_routes.router)
+app.include_router(customer_events_routes.router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")

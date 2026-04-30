@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import ImageUpload from "@/components/admin/ImageUpload";
+import MediaUpload from "@/components/admin/MediaUpload";
 import {
   campaignsApi, productsApi, couponsApi,
   isAssetUrl, resolveAssetUrl,
@@ -88,6 +89,8 @@ interface CampaignForm {
   display_order: number; published: boolean; schedule_enabled: boolean;
   active_days: number[];  // [] = todos os dias; [0..6] onde 0=Dom
   card_bg_color: string;
+  media_type: "image" | "video";
+  video_url: string;
 }
 
 interface KitForm {
@@ -118,6 +121,7 @@ const emptyCampaignForm: CampaignForm = {
   banner: "", slug: "", campaign_type: "products_promo",
   display_title: "", display_subtitle: "", display_order: 0, published: false,
   schedule_enabled: false, active_days: [], card_bg_color: "",
+  media_type: "image", video_url: "",
 };
 
 const emptyKitForm: KitForm = {
@@ -270,6 +274,8 @@ export default function AdminCampanhas() {
       schedule_enabled: Boolean(c.start_at || c.end_at),
       active_days: c.active_days ? c.active_days.split(",").map(Number) : [],
       card_bg_color: c.card_bg_color ?? "",
+      media_type: (c.media_type as "image" | "video") ?? "image",
+      video_url: c.video_url ?? "",
     });
     setShowCampaignModal(true);
   };
@@ -301,6 +307,8 @@ export default function AdminCampanhas() {
         display_subtitle: campaignForm.display_subtitle || null,
         active_days: active_days.length > 0 ? active_days.sort((a, b) => a - b).join(",") : null,
         card_bg_color: campaignForm.card_bg_color || null,
+        media_type: campaignForm.media_type,
+        video_url: campaignForm.video_url || null,
       };
       if (editingCampaignId) {
         await campaignsApi.update(editingCampaignId, payload as any);
@@ -954,14 +962,51 @@ export default function AdminCampanhas() {
               )}
             </div>
 
-            <ImageUpload
-              value={campaignForm.banner}
-              onChange={(v) => setCampaignForm({ ...campaignForm, banner: v })}
-              label="Banner da Campanha"
-              sizeGuide="Recomendado: 800×300px, máx. 500KB"
-              hint="Imagem exibida na página pública da campanha."
-              maxKB={500}
-            />
+            {/* Tipo de mídia */}
+            <div className="space-y-2">
+              <label className="block text-parchment text-sm font-medium">Tipo de Mídia</label>
+              <div className="flex gap-3">
+                {(["image", "video"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setCampaignForm({
+                      ...campaignForm,
+                      media_type: t,
+                      banner: t === "video" ? "" : campaignForm.banner,
+                      video_url: t === "image" ? "" : campaignForm.video_url,
+                    })}
+                    className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all ${
+                      campaignForm.media_type === t
+                        ? "border-gold bg-gold/15 text-gold"
+                        : "border-surface-03 text-stone hover:text-cream"
+                    }`}
+                  >
+                    {t === "image" ? "🖼️ Imagem" : "🎬 Vídeo / Motion"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {campaignForm.media_type === "image" ? (
+              <MediaUpload
+                value={campaignForm.banner}
+                onChange={(v) => setCampaignForm({ ...campaignForm, banner: v })}
+                mediaType="image"
+                label="Banner da Campanha"
+                sizeGuide="Recomendado: 800×300px, máx. 5MB"
+                hint="Imagem exibida na página pública da campanha."
+              />
+            ) : (
+              <MediaUpload
+                value={campaignForm.video_url}
+                onChange={(v) => setCampaignForm({ ...campaignForm, video_url: v })}
+                mediaType="video"
+                label="Vídeo do Banner"
+                sizeGuide="Recomendado: 1280×480px, duração até 15s"
+                hint="Vídeo em loop exibido como banner. autoplay + muted + loop."
+              />
+            )}
 
             {/* Cor de fundo do card (usada quando não há imagem) */}
             <div className="space-y-2">

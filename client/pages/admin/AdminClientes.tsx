@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Users, MapPin, Phone, Mail, Calendar, ShieldCheck, ShieldOff, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Search, Users, MapPin, Phone, Mail, Calendar, ShieldCheck, ShieldOff, Loader2, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import { customersApi, type ApiCustomer } from "@/lib/api";
 
@@ -17,6 +18,7 @@ function ConsentBadge({ ok, label }: { ok: boolean; label: string }) {
 
 function CustomerRow({ customer }: { customer: ApiCustomer }) {
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
   const defaultAddr = customer.addresses.find((a) => a.is_default) ?? customer.addresses[0];
 
   return (
@@ -59,6 +61,13 @@ function CustomerRow({ customer }: { customer: ApiCustomer }) {
           )}
         </div>
 
+        <button
+          onClick={(e) => { e.stopPropagation(); navigate(`/painel/clientes/${customer.id}`); }}
+          className="flex-shrink-0 flex items-center gap-1 text-xs text-gold hover:text-gold/80 font-medium px-2 py-1 rounded-lg hover:bg-gold/10 transition-colors"
+          title="Ver perfil completo"
+        >
+          <ExternalLink size={12} /> Ver Perfil
+        </button>
         <div className="flex-shrink-0 text-stone">
           {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </div>

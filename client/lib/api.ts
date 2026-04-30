@@ -372,6 +372,8 @@ export interface ApiCampaign {
   published: boolean;
   active_days: string | null;
   card_bg_color: string | null;
+  media_type: string | null;
+  video_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1337,6 +1339,93 @@ export const shippingApi = {
     }),
 };
 
+// ─── Customer extended types ──────────────────────────────────────────────────
+
+export interface ApiCustomerOrderItem {
+  id: string;
+  product_id: string;
+  quantity: number;
+  selected_size: string | null;
+  selected_crust_type: string | null;
+  selected_drink_variant: string | null;
+  notes: string | null;
+  flavors: Array<{ name: string; price: number }>;
+  unit_price: number;
+}
+
+export interface ApiCustomerOrder {
+  id: string;
+  status: string;
+  total: number;
+  subtotal: number;
+  shipping_fee: number;
+  discount: number;
+  created_at: string;
+  paid_at: string | null;
+  delivered_at: string | null;
+  delivery_name: string;
+  delivery_street: string;
+  delivery_city: string;
+  delivery_complement: string | null;
+  coupon_id: string | null;
+  total_time_minutes: number | null;
+  estimated_time: number | null;
+  items: ApiCustomerOrderItem[];
+  payment_status: string;
+}
+
+export interface ApiCustomerEvent {
+  id: string;
+  session_id: string | null;
+  event_type: string;
+  event_name: string | null;
+  event_description: string | null;
+  product_id: string | null;
+  order_id: string | null;
+  campaign_id: string | null;
+  coupon_id: string | null;
+  metadata_json: string | null;
+  source: string | null;
+  utm_source: string | null;
+  utm_campaign: string | null;
+  device_type: string | null;
+  browser: string | null;
+  page_url: string | null;
+  created_at: string;
+}
+
+export interface ApiCustomerSummary {
+  customer: {
+    id: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+    crm_status: string | null;
+    source: string | null;
+    utm_source: string | null;
+    utm_campaign: string | null;
+    created_at: string;
+  };
+  orders: {
+    total: number;
+    total_spent: number;
+    avg_ticket: number;
+    paid: number;
+    delivered: number;
+    cancelled: number;
+    last_order_at: string | null;
+    first_order_at: string | null;
+  };
+  behavior: {
+    status: string;
+    total_visits: number;
+    products_viewed: number;
+    cart_abandonments: number;
+    checkout_abandonments: number;
+    last_activity_at: string | null;
+  };
+}
+
 // ─── Customers ────────────────────────────────────────────────────────────────
 
 export const customersApi = {
@@ -1351,6 +1440,36 @@ export const customersApi = {
   deleteAddress: (customerId: string, addressId: string) =>
     del<void>(`/customers/${customerId}/addresses/${addressId}`),
   listAddresses: (id: string) => get<ApiAddress[]>(`/customers/${id}/addresses`),
+  getOrders: (id: string) => get<ApiCustomerOrder[]>(`/customers/${id}/orders`),
+  getEvents: (id: string, event_type?: string) =>
+    get<ApiCustomerEvent[]>(`/customers/${id}/events${event_type ? `?event_type=${event_type}` : ""}`),
+  getSummary: (id: string) => get<ApiCustomerSummary>(`/customers/${id}/summary`),
+};
+
+// ─── Customer Events ──────────────────────────────────────────────────────────
+
+export const customerEventsApi = {
+  register: (data: {
+    customer_id?: string | null;
+    session_id?: string | null;
+    event_type: string;
+    event_name?: string;
+    product_id?: string | null;
+    order_id?: string | null;
+    campaign_id?: string | null;
+    coupon_id?: string | null;
+    metadata_json?: string | null;
+    source?: string | null;
+    utm_source?: string | null;
+    utm_medium?: string | null;
+    utm_campaign?: string | null;
+    device_type?: string | null;
+    browser?: string | null;
+    page_url?: string | null;
+    referrer_url?: string | null;
+  }) => post<{ id: string }>("/customer-events", data),
+  identify: (session_id: string, customer_id: string) =>
+    post<{ updated_events: number }>("/customer-events/identify", { session_id, customer_id }),
 };
 
 // ─── Campaigns ───────────────────────────────────────────────────────────────
