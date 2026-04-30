@@ -289,6 +289,14 @@ export default function Checkout() {
           setPaymentState("approved");
           setPaymentMessage("Pagamento aprovado! Pedido enviado para preparo.");
           trackEvent("order_paid", createdOrder.total, { order_id: createdOrder.id });
+          const _tdPaid = getTrackingData();
+          customerEventsApi.register({
+            event_type: "order_paid",
+            event_name: "Pagamento confirmado",
+            order_id: createdOrder.id,
+            customer_id: customer?.id ?? null,
+            session_id: _tdPaid.session_id,
+          }).catch(() => {});
           clearCart();
           clearInterval(id);
           setTimeout(() => navigate(`/order-tracking?orderId=${createdOrder.id}`), 1200);
@@ -418,6 +426,14 @@ export default function Checkout() {
     try {
       const order = await ordersApi.checkout(payload);
       trackEvent("order_created", order.total, { order_id: order.id });
+      const _td = getTrackingData();
+      customerEventsApi.register({
+        event_type: "order_created",
+        event_name: "Pedido criado",
+        order_id: order.id,
+        customer_id: customer?.id ?? null,
+        session_id: _td.session_id,
+      }).catch(() => {});
       setCreatedOrder(order);
       setPaymentState("pending");
       setPaymentMessage("Pedido criado. Conclua o pagamento abaixo.");
