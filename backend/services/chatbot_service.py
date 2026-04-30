@@ -129,6 +129,7 @@ class ChatbotService:
 
         # Conversa assumida por humano → não chamar IA
         if conv.status == ConversationStatus.em_humano:
+            self._db.commit()
             return SendMessageOut(
                 session_id=session_id,
                 resposta="",
@@ -145,6 +146,7 @@ class ChatbotService:
         if not _is_within_hours(settings.horario_funcionamento):
             bot_msg = settings.mensagem_fora_horario or "Estamos fora do horário de atendimento."
             self._save_message(conv.id, MessageSender.bot, bot_msg)
+            self._db.commit()
             return SendMessageOut(
                 session_id=session_id,
                 resposta=bot_msg,
@@ -163,6 +165,7 @@ class ChatbotService:
             temperatura=settings.temperatura,
             max_tokens=settings.max_tokens,
         )
+        context_snapshot = _with_ai_diagnostics(context_snapshot, ai_resp)
 
         # Persiste resposta do bot
         self._save_message(
@@ -177,6 +180,7 @@ class ChatbotService:
 
         # Verifica se deve gerar resumo
         self._maybe_summarize(conv, settings)
+        self._db.commit()
 
         return SendMessageOut(
             session_id=session_id,
@@ -377,6 +381,20 @@ class ChatbotService:
 
 def _hash_ip(ip: str) -> str:
     return hashlib.sha256(ip.encode()).hexdigest()
+
+
+def _with_ai_diagnostics(context_snapshot: str, ai_resp) -> str:
+    try:
+        data = json.loads(context_snapshot) if context_snapshot else {}
+        data["ai"] = {
+            "provider": ai_resp.provider,
+            "model": ai_resp.model,
+            "fallback": bool(ai_resp.error_reason),
+            "error_reason": ai_resp.error_reason or None,
+        }
+        return json.dumps(data, ensure_ascii=False)
+    except Exception:
+        return context_snapshot
 
 
 def _is_within_hours(horario_json: Optional[str]) -> bool:

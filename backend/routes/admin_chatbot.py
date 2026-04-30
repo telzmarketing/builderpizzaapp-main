@@ -89,6 +89,12 @@ def test_ai_connection(
         temperatura=0.0,
         max_tokens=10,
     )
+    if resp.error_reason:
+        return err_msg(
+            f"Falha ao chamar IA ({resp.provider}): {resp.error_reason}",
+            code="AIProviderError",
+            status_code=502,
+        )
     return ok({"resposta": resp.content, "latencia_ms": resp.latencia_ms, "tokens": resp.tokens_output})
 
 

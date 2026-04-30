@@ -1,5 +1,11 @@
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+from pathlib import Path
+
+from pydantic_settings import BaseSettings
+
+
+BACKEND_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BACKEND_DIR.parent
 
 
 class Settings(BaseSettings):
@@ -37,7 +43,10 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
 
     class Config:
-        env_file = ".env"
+        env_file = (
+            PROJECT_ROOT / ".env",
+            BACKEND_DIR / ".env",
+        )
         env_file_encoding = "utf-8"
         extra = "ignore"    # ignore Node/Vite env vars present in the root .env
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -18,6 +18,7 @@ class AIResponse:
     latencia_ms: int   = 0
     provider: str      = ""
     model: str         = ""
+    error_reason: str  = ""
 
 
 _FALLBACK = (
@@ -49,4 +50,4 @@ class AIProvider(ABC):
         import logging
         if reason:
             logging.getLogger("chatbot.ai").warning("AI fallback: %s", reason)
-        return AIResponse(content=_FALLBACK, provider=self.provider_name)
+        return AIResponse(content=_FALLBACK, provider=self.provider_name, error_reason=reason)
