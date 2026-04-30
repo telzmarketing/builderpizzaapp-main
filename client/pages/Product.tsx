@@ -3,10 +3,10 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check, Loader2, X, ZoomIn } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation } from "@/context/AppContext";
-import { sizesApi, crustApi, drinkVariantApi, productPromotionsApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductPriceQuote, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { sizesApi, crustApi, drinkVariantApi, productPromotionsApi, customerEventsApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductPriceQuote, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { isAllowedPizzaSize, isPizzaBroto, pizzaSizeDescription, pizzaSizeLabel, PIZZA_SIZE_LABELS } from "@/lib/pizzaSizes";
 import { formatCrustAddition, normalizeCrustPriceAddition } from "@/lib/pricing";
-import { trackEvent } from "@/lib/tracking";
+import { trackEvent, getTrackingData } from "@/lib/tracking";
 
 // ─── Add-ons ──────────────────────────────────────────────────────────────────
 
@@ -114,7 +114,7 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
 export default function Product() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { products, addToCart, multiFlavorsConfig, siteContent, loading: appLoading } = useApp();
+  const { products, addToCart, multiFlavorsConfig, siteContent, loading: appLoading, customer } = useApp();
   const p = siteContent.pages.product;
 
   const product = products.find((p) => p.id === id);
@@ -147,6 +147,19 @@ export default function Product() {
   const [imageZoomOpen, setImageZoomOpen] = useState(false);
   const [imageZoomScale, setImageZoomScale] = useState(1);
   const [imageZoomPosition, setImageZoomPosition] = useState({ x: 50, y: 50 });
+
+  useEffect(() => {
+    if (!product) return;
+    const td = getTrackingData();
+    customerEventsApi.register({
+      event_type: "product_viewed",
+      event_name: `Visualizou ${product.name}`,
+      product_id: product.id,
+      customer_id: customer?.id ?? null,
+      session_id: td.session_id,
+      page_url: window.location.href,
+    }).catch(() => {});
+  }, [product?.id]);
 
   useEffect(() => {
     if (!product) return;

@@ -6,7 +6,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { themeApi, applyTheme, DEFAULT_THEME } from "./lib/themeApi";
-import { captureTrackingFromUrl, trackEvent } from "./lib/tracking";
+import { captureTrackingFromUrl, trackEvent, getTrackingData } from "./lib/tracking";
+import { customerEventsApi } from "./lib/api";
 
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
 
@@ -35,6 +36,25 @@ function ThemeInjector() {
 
 function TrackingInjector() {
   const { pathname, search } = useLocation();
+
+  useEffect(() => {
+    if (pathname.startsWith("/painel")) return;
+    if (sessionStorage.getItem("_mo_site_opened")) return;
+    sessionStorage.setItem("_mo_site_opened", "1");
+    const td = getTrackingData();
+    customerEventsApi.register({
+      event_type: "site_opened",
+      event_name: "Abriu o site",
+      session_id: td.session_id,
+      utm_source: td.utm_source,
+      utm_medium: td.utm_medium,
+      utm_campaign: td.utm_campaign,
+      page_url: window.location.href,
+      referrer_url: td.referrer,
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (pathname.startsWith("/painel")) return;
     captureTrackingFromUrl();

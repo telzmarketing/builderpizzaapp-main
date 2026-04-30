@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { getTrackingData } from "@/lib/tracking";
 import {
   productsApi,
   promotionsApi,
@@ -6,6 +7,7 @@ import {
   loyaltyApi,
   authApi,
   customersApi,
+  customerEventsApi,
   campaignsApi,
   type ApiProduct,
   type ApiPromotion,
@@ -646,6 +648,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         selectedDrinkVariant: drinkVariant ?? null,
       },
     ]);
+    const _td = getTrackingData();
+    customerEventsApi.register({
+      event_type: "cart_item_added",
+      event_name: `Adicionou ${primaryProduct.name} ao carrinho`,
+      product_id: primaryProduct.id,
+      customer_id: customer?.id ?? null,
+      session_id: _td.session_id,
+    }).catch(() => {});
   };
 
   const updateCartItem = (cartItemId: string, quantity: number, size: string, addOns: string[]) =>
@@ -657,8 +667,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       )
     );
 
-  const removeFromCart = (cartItemId: string) =>
-    setCart((prev) => prev.filter((item) => item.cartItemId !== cartItemId));
+  const removeFromCart = (cartItemId: string) => {
+    const item = cart.find((i) => i.cartItemId === cartItemId);
+    if (item) {
+      const _td = getTrackingData();
+      customerEventsApi.register({
+        event_type: "cart_item_removed",
+        event_name: `Removeu ${item.productData.name} do carrinho`,
+        product_id: item.productId,
+        customer_id: customer?.id ?? null,
+        session_id: _td.session_id,
+      }).catch(() => {});
+    }
+    setCart((prev) => prev.filter((i) => i.cartItemId !== cartItemId));
+  };
 
   const clearCart = () => setCart([]);
 

@@ -17,11 +17,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
-import { checkoutTrackingPayload, trackEvent } from "@/lib/tracking";
+import { checkoutTrackingPayload, trackEvent, getTrackingData } from "@/lib/tracking";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { useApp } from "@/context/AppContext";
 import {
   couponsApi,
+  customerEventsApi,
   ordersApi,
   paymentsApi,
   shippingApi,
@@ -123,6 +124,18 @@ export default function Checkout() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer?.id]);
+
+  useEffect(() => {
+    const td = getTrackingData();
+    customerEventsApi.register({
+      event_type: "checkout_started",
+      event_name: "Iniciou checkout",
+      customer_id: customer?.id ?? null,
+      session_id: td.session_id,
+      page_url: window.location.href,
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     storeOperationApi.status().then(setStoreStatus).catch(() => setStoreStatus(null));
