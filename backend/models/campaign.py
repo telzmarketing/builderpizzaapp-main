@@ -45,6 +45,7 @@ class Campaign(Base):
     display_order = Column(Integer, default=0)
     published = Column(Boolean, default=False)
     active_days = Column(String(20), nullable=True)  # "0,1,2,3,4,5,6" — NULL = all days
+    card_bg_color = Column(String(20), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

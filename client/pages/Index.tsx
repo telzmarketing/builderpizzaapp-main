@@ -6,6 +6,7 @@ import { useApp } from "@/context/AppContext";
 import { homeCatalogApi, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
+import StoreStatusBanner from "@/components/StoreStatusBanner";
 
 const PIZZA_FALLBACKS = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🍖", "🍄", "🫒", "🔥", "🥩", "🌿", "🫑"];
 
@@ -253,6 +254,11 @@ export default function Home() {
         </button>
       </div>
 
+      {/* Aviso de horário de funcionamento */}
+      <div className="px-4 lg:px-8 pt-3 max-w-sm lg:max-w-4xl mx-auto w-full">
+        <StoreStatusBanner openPill />
+      </div>
+
       {homeConfig.showPromotions && activeBanners.length > 0 && (
         <div className="px-4 lg:px-8 pt-4 pb-3">
           <div className="max-w-sm lg:max-w-4xl mx-auto">
@@ -262,7 +268,13 @@ export default function Home() {
             >
               <div
                 className="rounded-2xl overflow-hidden relative h-36 lg:h-56"
-                style={(!displayBanner?.banner && !media.heroBannerImage) ? { background: "var(--home-banner-bg)" } : {}}
+                style={
+                  displayBanner?.card_bg_color
+                    ? { background: displayBanner.card_bg_color }
+                    : (!displayBanner?.banner && !media.heroBannerImage)
+                    ? { background: "var(--home-banner-bg)" }
+                    : {}
+                }
               >
                 {/* Full-quality image rendered via <img> instead of background-image */}
                 {(displayBanner?.banner || media.heroBannerImage) && (

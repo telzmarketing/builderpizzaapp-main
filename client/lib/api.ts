@@ -371,6 +371,7 @@ export interface ApiCampaign {
   display_order: number;
   published: boolean;
   active_days: string | null;
+  card_bg_color: string | null;
   created_at: string;
   updated_at: string;
 }

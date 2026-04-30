@@ -427,6 +427,8 @@ def _run_migrations():
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS total_time_minutes INTEGER",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS preparation_time_minutes INTEGER",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_time_minutes INTEGER",
+        # ── Campaign card background color ────────────────────────────────────
+        "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS card_bg_color VARCHAR(20)",
     ]
     for stmt in stmts:
         try:

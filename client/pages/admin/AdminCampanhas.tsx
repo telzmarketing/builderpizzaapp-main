@@ -87,6 +87,7 @@ interface CampaignForm {
   campaign_type: CampaignType; display_title: string; display_subtitle: string;
   display_order: number; published: boolean; schedule_enabled: boolean;
   active_days: number[];  // [] = todos os dias; [0..6] onde 0=Dom
+  card_bg_color: string;
 }
 
 interface KitForm {
@@ -116,7 +117,7 @@ const emptyCampaignForm: CampaignForm = {
   name: "", description: "", status: "draft", start_at: "", end_at: "",
   banner: "", slug: "", campaign_type: "products_promo",
   display_title: "", display_subtitle: "", display_order: 0, published: false,
-  schedule_enabled: false, active_days: [],
+  schedule_enabled: false, active_days: [], card_bg_color: "",
 };
 
 const emptyKitForm: KitForm = {
@@ -268,6 +269,7 @@ export default function AdminCampanhas() {
       display_order: c.display_order, published: c.published,
       schedule_enabled: Boolean(c.start_at || c.end_at),
       active_days: c.active_days ? c.active_days.split(",").map(Number) : [],
+      card_bg_color: c.card_bg_color ?? "",
     });
     setShowCampaignModal(true);
   };
@@ -298,6 +300,7 @@ export default function AdminCampanhas() {
         display_title: campaignForm.display_title || null,
         display_subtitle: campaignForm.display_subtitle || null,
         active_days: active_days.length > 0 ? active_days.sort((a, b) => a - b).join(",") : null,
+        card_bg_color: campaignForm.card_bg_color || null,
       };
       if (editingCampaignId) {
         await campaignsApi.update(editingCampaignId, payload as any);
@@ -959,6 +962,41 @@ export default function AdminCampanhas() {
               hint="Imagem exibida na página pública da campanha."
               maxKB={500}
             />
+
+            {/* Cor de fundo do card (usada quando não há imagem) */}
+            <div className="space-y-2">
+              <label className="block text-parchment text-sm font-medium">Cor de Fundo do Card</label>
+              <p className="text-stone text-[11px]">Aplicada quando não há imagem de banner. Deixe vazio para usar a cor padrão do tema.</p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={campaignForm.card_bg_color || "#1f2937"}
+                  onChange={(e) => setCampaignForm({ ...campaignForm, card_bg_color: e.target.value })}
+                  className="w-10 h-10 rounded-lg border border-surface-03 cursor-pointer bg-transparent p-0.5"
+                />
+                <div className="flex gap-2 flex-wrap">
+                  {["#1f2937","#7c2d12","#14532d","#1e3a5f","#3b0764","#78350f","#1c1917",""].map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      title={color || "Padrão"}
+                      onClick={() => setCampaignForm({ ...campaignForm, card_bg_color: color })}
+                      className={`w-7 h-7 rounded-md border-2 transition-all ${campaignForm.card_bg_color === color ? "border-gold scale-110" : "border-surface-03 hover:border-stone"}`}
+                      style={color ? { background: color } : { background: "var(--home-banner-bg)" }}
+                    />
+                  ))}
+                </div>
+                {campaignForm.card_bg_color && (
+                  <button
+                    type="button"
+                    onClick={() => setCampaignForm({ ...campaignForm, card_bg_color: "" })}
+                    className="text-stone hover:text-cream text-xs underline"
+                  >
+                    Limpar
+                  </button>
+                )}
+              </div>
+            </div>
 
             <div className="grid grid-cols-2 gap-4">
               <Inp label="Título de Exibição" value={campaignForm.display_title} onChange={(e) => setCampaignForm({ ...campaignForm, display_title: e.target.value })} placeholder="Título na página pública" />
