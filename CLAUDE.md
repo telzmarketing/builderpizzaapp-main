@@ -52,6 +52,80 @@ Para toda demanda de funcionalidade ou mudança estrutural, responda sempre nest
 [Como validar que está pronto]
 ```
 
+## Protocolo Obrigatório Antes de Qualquer Implementação
+
+Antes de implementar qualquer alteração, analisar obrigatoriamente toda a estrutura atual do sistema relacionada ao módulo.
+
+**Objetivo:** Garantir que nenhuma funcionalidade existente seja quebrada e que a nova implementação seja feita de forma compatível e evolutiva.
+
+### Passo 1 — Análise da estrutura atual
+
+1. Identifique todos os pontos envolvidos no módulo:
+   - Models (banco de dados)
+   - Schemas
+   - Rotas (API)
+   - Controllers/Services
+   - Componentes frontend
+   - Fluxos existentes
+
+2. Analise:
+   - Como os dados são armazenados atualmente
+   - Quais campos já existem
+   - Como os banners são renderizados na loja
+   - Como funciona o upload atual
+   - Quais validações já existem
+   - Dependências com outros módulos
+
+3. Verifique compatibilidade:
+   - O que pode ser reaproveitado
+   - O que precisa ser adaptado
+   - O que não pode ser alterado (para não quebrar o sistema)
+
+### Passo 2 — Planejamento da adaptação
+
+1. NÃO recriar estruturas do zero se já existir algo funcional
+2. Trabalhar com extensão da estrutura atual
+3. Definir claramente:
+   - Novos campos necessários
+   - Alterações necessárias
+   - O que será mantido intacto
+
+### Passo 3 — Regras obrigatórias
+
+1. Não quebrar dados existentes
+2. Garantir retrocompatibilidade:
+   - Dados antigos devem continuar funcionando
+   - Se necessário, definir valores padrão
+3. Se houver mudança no banco:
+   - Criar migration segura
+   - Usar `IF NOT EXISTS` quando possível
+4. Evitar duplicação de lógica:
+   - Reutilizar funções existentes
+   - Adaptar ao invés de recriar
+
+### Passo 4 — Implementação
+
+Somente após a análise completa, implementar:
+
+- Backend (models, rotas, validações)
+- Frontend (interface e comportamento)
+- Upload (se aplicável)
+- Renderização na loja
+
+### Passo 5 — Testes obrigatórios
+
+Validar:
+
+- Funcionalidade antiga continua funcionando
+- Nova funcionalidade funciona corretamente
+- Não houve quebra de layout
+- Não houve erro de API
+- Dados antigos continuam válidos
+
+**Resultado esperado:** A nova funcionalidade deve ser implementada respeitando totalmente a estrutura atual do sistema, sem quebra de compatibilidade, com código organizado, reaproveitamento de lógica existente e comportamento consistente em todo o sistema.
+
+---
+
 ## Stack do Projeto
 
 - **Frontend:** React 18 + TypeScript + Vite + Tailwind + shadcn/ui
