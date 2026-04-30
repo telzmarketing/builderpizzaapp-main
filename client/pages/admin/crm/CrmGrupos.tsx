@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Plus, Trash2, Pencil, X, FolderOpen, PlusCircle, MinusCircle } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, X, FolderOpen, PlusCircle, MinusCircle, PlayCircle } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
@@ -124,18 +124,21 @@ export default function CrmGrupos() {
     if (!form.name?.trim()) { alert("Nome obrigatório."); return; }
     setSaving(true);
     try {
-      if (editingId) {
-        await fetch(`${BASE}/crm/groups/${editingId}`, {
-          method: "PATCH",
-          headers,
-          body: JSON.stringify(form),
-        });
-      } else {
-        await fetch(`${BASE}/crm/groups`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(form),
-        });
+      const r = editingId
+        ? await fetch(`${BASE}/crm/groups/${editingId}`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify(form),
+          })
+        : await fetch(`${BASE}/crm/groups`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(form),
+          });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        alert(err?.error?.message ?? "Erro ao salvar grupo.");
+        return;
       }
       setShowModal(false);
       fetchGroups();
@@ -144,6 +147,14 @@ export default function CrmGrupos() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleEvaluate = async (id: string) => {
+    const r = await fetch(`${BASE}/crm/groups/${id}/evaluate`, { method: "POST", headers });
+    const json = await r.json().catch(() => ({}));
+    const msg = json?.data?.message ?? (r.ok ? "Avaliação concluída." : "Erro ao avaliar.");
+    alert(msg);
+    fetchGroups();
   };
 
   const handleDelete = async (id: string) => {
@@ -241,6 +252,15 @@ export default function CrmGrupos() {
                         </div>
                       </div>
                       <div className="flex gap-1 shrink-0">
+                        {g.group_type === "dynamic" && (
+                          <button
+                            onClick={() => handleEvaluate(g.id)}
+                            className="p-1.5 rounded-lg hover:bg-purple-500/10 text-stone hover:text-purple-400 transition-colors"
+                            title="Avaliar regras e atualizar membros"
+                          >
+                            <PlayCircle size={13} />
+                          </button>
+                        )}
                         <button
                           onClick={() => openEdit(g)}
                           className="p-1.5 rounded-lg hover:bg-surface-03 text-stone hover:text-cream transition-colors"

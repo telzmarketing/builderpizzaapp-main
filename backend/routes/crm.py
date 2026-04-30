@@ -461,10 +461,15 @@ def list_groups(db: Session = Depends(get_db), _=Depends(get_current_admin)):
             text("SELECT COUNT(*) FROM customer_group_members WHERE group_id = :gid"),
             {"gid": g.id}
         ).scalar()
+        rules = db.execute(
+            text("SELECT field, operator, value FROM customer_group_rules WHERE group_id = :gid ORDER BY created_at"),
+            {"gid": g.id}
+        ).fetchall()
         result.append({
             "id": g.id, "name": g.name, "description": g.description,
             "group_type": g.group_type, "color": g.color, "icon": g.icon,
             "member_count": count, "created_at": g.created_at.isoformat(),
+            "rules": [{"field": r[0], "operator": r[1], "value": r[2]} for r in rules],
         })
     return ok(result)
 
@@ -530,6 +535,83 @@ def delete_group(group_id: str, db: Session = Depends(get_db), _=Depends(get_cur
     g.updated_at = _now()
     db.commit()
     return ok(None, "Grupo removido.")
+
+
+# Numeric operators safe for dynamic SQL (value cast to float)
+_NUMERIC_OPS = {">": ">", "<": "<", "=": "=", "!=": "!=", ">=": ">=", "<=": "<="}
+# Safe column expressions mapped from rule field names
+_FIELD_EXPRS = {
+    "total_orders":      "COALESCE(total_orders, 0)",
+    "total_spent":       "COALESCE(total_spent, 0.0)",
+    "avg_ticket":        "COALESCE(avg_ticket, 0.0)",
+    "last_order_days":   "COALESCE(EXTRACT(DAY FROM (NOW() - last_order_at))::int, 9999)",
+    "days_without_order":"COALESCE(EXTRACT(DAY FROM (NOW() - last_order_at))::int, 9999)",
+    "birth_month":       "EXTRACT(MONTH FROM birth_date)::int",
+}
+_TEXT_FIELDS = {"city", "neighborhood", "loyalty_tier", "customer_status",
+                "payment_method", "product_ordered", "category_ordered",
+                "coupon_used", "campaign_origin"}
+
+
+def _build_evaluate_sql(rules: list) -> tuple[str, bool]:
+    """Return (WHERE clause, is_valid). Uses only safe parameterized expressions."""
+    clauses = []
+    for field, operator, value in rules:
+        if field in _FIELD_EXPRS:
+            expr = _FIELD_EXPRS[field]
+            if operator in _NUMERIC_OPS:
+                try:
+                    float(value)
+                except (ValueError, TypeError):
+                    continue
+                clauses.append(f"({expr}) {_NUMERIC_OPS[operator]} {float(value)}")
+        elif field in _TEXT_FIELDS:
+            safe_val = value.replace("'", "''")
+            if operator == "=":
+                clauses.append(f"LOWER(COALESCE({field}, '')) = LOWER('{safe_val}')")
+            elif operator == "!=":
+                clauses.append(f"LOWER(COALESCE({field}, '')) != LOWER('{safe_val}')")
+            elif operator == "contains":
+                clauses.append(f"LOWER(COALESCE({field}, '')) LIKE '%{safe_val.lower()}%'")
+    if not clauses:
+        return "", False
+    return " AND ".join(clauses), True
+
+
+@router.post("/groups/{group_id}/evaluate")
+def evaluate_group(group_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    """Re-evaluate dynamic rules and populate customer_group_members."""
+    g = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
+    if not g:
+        raise HTTPException(404, "Grupo não encontrado.")
+    if g.group_type != "dynamic":
+        raise HTTPException(400, "Apenas grupos dinâmicos podem ser avaliados automaticamente.")
+
+    rules = db.execute(
+        text("SELECT field, operator, value FROM customer_group_rules WHERE group_id = :gid"),
+        {"gid": group_id}
+    ).fetchall()
+
+    if not rules:
+        return ok({"added": 0, "message": "Nenhuma regra definida."})
+
+    where_clause, valid = _build_evaluate_sql(rules)
+    if not valid:
+        return ok({"added": 0, "message": "Nenhuma condição válida para avaliar."})
+
+    customer_ids = db.execute(text(f"SELECT id FROM customers WHERE {where_clause}")).fetchall()  # noqa: S608
+
+    added = 0
+    for (cid,) in customer_ids:
+        try:
+            db.execute(text(
+                "INSERT INTO customer_group_members (id, group_id, customer_id) VALUES (:id, :gid, :cid) ON CONFLICT DO NOTHING"
+            ), {"id": str(uuid.uuid4()), "gid": group_id, "cid": cid})
+            added += 1
+        except Exception:
+            pass
+    db.commit()
+    return ok({"added": added, "total": len(customer_ids), "message": f"{added} clientes adicionados ao grupo."})
 
 
 @router.post("/groups/{group_id}/members/{customer_id}")

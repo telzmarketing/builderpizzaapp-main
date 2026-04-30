@@ -151,6 +151,15 @@ export default function Home() {
 
   useEffect(() => { setCarouselPosition(0); }, [activeCategory]);
 
+  // Auto-rotate carousel every 4 seconds on mobile
+  useEffect(() => {
+    if (categoryProducts.length <= 1) return;
+    const timer = setInterval(() => {
+      setCarouselPosition((prev) => (prev + 1) % categoryProducts.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [categoryProducts.length, activeCategory]);
+
   if (products.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 flex items-center justify-center">

@@ -535,7 +535,58 @@ def list_visitors(
     except Exception:
         funnel = []
 
+    # Count total sessions and events in period
+    try:
+        total_sessions = db.execute(
+            text("SELECT COUNT(*) FROM visitor_sessions WHERE started_at >= :since"), {"since": since}
+        ).scalar() or 0
+    except Exception:
+        total_sessions = 0
+
+    try:
+        total_events = db.execute(
+            text("SELECT COUNT(*) FROM visitor_events WHERE created_at >= :since"), {"since": since}
+        ).scalar() or 0
+    except Exception:
+        total_events = 0
+
+    # Normalize devices to match frontend {device_type, count, pct}
+    normalized_devices = [{"device_type": d["device_type"], "count": d["sessions"], "pct": d["percentage"]}
+                          for d in devices]
+
+    # Normalize utm to match frontend {source, medium, campaign, sessions, conversions}
+    normalized_utm = [{"source": u["utm_source"], "medium": u.get("utm_medium"), "campaign": u.get("utm_campaign"),
+                       "sessions": u["sessions"], "conversions": u["conversions"]}
+                      for u in utm_breakdown]
+
+    # Normalize top_products to match frontend {product_name, views, add_to_cart, orders}
+    normalized_products = [{"product_name": p["name"], "views": p["views"],
+                            "add_to_cart": p.get("orders", 0), "orders": p.get("orders", 0)}
+                           for p in top_products]
+
+    # Normalize funnel to match frontend {label, value}
+    normalized_funnel = [{"label": f["step"], "value": f["count"]} for f in funnel] if funnel else []
+
     return ok({
+        # Flat fields expected by MarketingVisitantes
+        "visitors_today": total,
+        "online_visitors": online,
+        "total_sessions": total_sessions,
+        "total_events": total_events,
+        "bounce_rate": 0,
+        "avg_session_duration": 0,
+        "recent_visitors": [{
+            "id": v.id, "city": v.city or "", "browser": v.browser or "",
+            "device": v.device_type or "desktop",
+            "sessions": v.total_sessions or 0, "pageviews": v.total_pageviews or 0,
+            "last_seen": v.last_seen_at.isoformat(),
+        } for v in recent],
+        "common_events": [{"name": r[0], "count": r[1]} for r in top_events],
+        "utm_breakdown": normalized_utm,
+        "devices": normalized_devices,
+        "top_products": normalized_products,
+        "funnel": normalized_funnel,
+        # Legacy nested structure (kept for backward compatibility)
         "summary": {"total": total, "online": online},
         "visitors": [{
             "id": v.id, "city": v.city, "country": v.country, "device_type": v.device_type,
@@ -544,10 +595,6 @@ def list_visitors(
             "last_seen_at": v.last_seen_at.isoformat(),
         } for v in recent],
         "top_events": [{"event": r[0], "count": r[1]} for r in top_events],
-        "utm_breakdown": utm_breakdown,
-        "devices": devices,
-        "top_products": top_products,
-        "funnel": funnel,
     })
 
 
