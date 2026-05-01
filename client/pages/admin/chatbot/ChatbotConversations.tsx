@@ -37,6 +37,7 @@ function ConversationDetail({ conv, onBack, onRefresh }: {
   const [detail, setDetail] = useState<ChatbotConversation | null>(null);
   const [reply, setReply]   = useState("");
   const [sending, setSending] = useState(false);
+  const [replyErr, setReplyErr] = useState("");
   const [loading, setLoading] = useState(true);
 
   const load = () => chatbotAdminApi.getConversation(conv.id)
@@ -62,10 +63,12 @@ function ConversationDetail({ conv, onBack, onRefresh }: {
   const sendReply = async () => {
     const text = reply.trim();
     if (!text || sending) return;
-    setSending(true); setReply("");
+    setSending(true); setReply(""); setReplyErr("");
     try {
       await chatbotAdminApi.reply(conv.id, text);
       load();
+    } catch (e: unknown) {
+      setReplyErr(e instanceof Error ? e.message : "Erro ao enviar resposta.");
     } finally { setSending(false); }
   };
 
@@ -127,18 +130,21 @@ function ConversationDetail({ conv, onBack, onRefresh }: {
         </div>
 
         {detail.status === "em_humano" && (
-          <div className="flex gap-2 px-4 pb-4 border-t border-surface-03 pt-3">
-            <input
-              value={reply}
-              onChange={(e) => setReply(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendReply()}
-              placeholder="Responder como atendente..."
-              className="flex-1 bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream placeholder-stone text-sm focus:outline-none focus:border-gold"
-            />
-            <button onClick={sendReply} disabled={sending || !reply.trim()}
-              className="bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold px-4 py-2 rounded-lg text-sm">
-              <Send size={14} />
-            </button>
+          <div className="px-4 pb-4 border-t border-surface-03 pt-3 space-y-2">
+            <div className="flex gap-2">
+              <input
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendReply()}
+                placeholder="Responder como atendente..."
+                className="flex-1 bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream placeholder-stone text-sm focus:outline-none focus:border-gold"
+              />
+              <button onClick={sendReply} disabled={sending || !reply.trim()}
+                className="bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold px-4 py-2 rounded-lg text-sm">
+                <Send size={14} />
+              </button>
+            </div>
+            {replyErr && <p className="text-red-400 text-xs">{replyErr}</p>}
           </div>
         )}
       </div>

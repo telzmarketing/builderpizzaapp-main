@@ -40,6 +40,7 @@ export default function ChatbotWidget() {
   const bottomRef       = useRef<HTMLDivElement>(null);
   const inputRef        = useRef<HTMLInputElement>(null);
   const pollRef         = useRef<ReturnType<typeof setInterval> | null>(null);
+  const statusPollRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   const shownIds        = useRef(new Set<string>());
   const autoFiredRef    = useRef(false);
   const userDismissed   = useRef(false);  // true after user manually closes — blocks all auto-triggers
@@ -107,6 +108,24 @@ export default function ChatbotWidget() {
     return () => timers.forEach(clearTimeout);
   }, [config, automations]);
 
+  // ── Light status poll — detects admin takeover while widget is open ────────
+  useEffect(() => {
+    if (!open || !started || awaiting) {
+      if (statusPollRef.current) { clearInterval(statusPollRef.current); statusPollRef.current = null; }
+      return;
+    }
+    statusPollRef.current = setInterval(async () => {
+      try {
+        const r = await chatbotPublicApi.history(sessionId);
+        if (r.status === "em_humano") {
+          setAwaiting(true);
+          setConvStatus("em_humano");
+        }
+      } catch {}
+    }, 6000);
+    return () => { if (statusPollRef.current) { clearInterval(statusPollRef.current); statusPollRef.current = null; } };
+  }, [open, started, awaiting, sessionId]);
+
   // ── Scroll to bottom ───────────────────────────────────────────────────────
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -124,32 +143,40 @@ export default function ChatbotWidget() {
       return;
     }
 
-    const poll = async () => {
-      try {
-        const r = await chatbotPublicApi.history(sessionId);
-        setConvStatus(r.status);
-
-        for (const m of r.messages) {
-          if (shownIds.current.has(m.id)) continue;
-          shownIds.current.add(m.id);
-
-          if (m.sender === "visitor") continue; // already shown locally
-
-          const role = m.sender === "human"
-            ? (m.tipo === "system" ? "system" : "human")
-            : "bot";
-
-          setMsgs((prev) => [...prev, { id: m.id, role, content: m.mensagem, ts: new Date(m.timestamp).getTime() }]);
-        }
-
-        if (r.status === "aberta" || r.status === "encerrada") {
-          setAwaiting(false);
-        }
-      } catch {}
+    const applyHistory = (r: { status: string; messages: Array<{ id: string; sender: string; tipo: string; mensagem: string; timestamp: string }> }, showNew: boolean) => {
+      setConvStatus(r.status);
+      for (const m of r.messages) {
+        const isNew = !shownIds.current.has(m.id);
+        shownIds.current.add(m.id);
+        if (!isNew || !showNew) continue;
+        if (m.sender === "visitor") continue;
+        const role = m.sender === "human"
+          ? (m.tipo === "system" ? "system" : "human")
+          : "bot";
+        setMsgs((prev) => [...prev, { id: m.id, role, content: m.mensagem, ts: new Date(m.timestamp).getTime() }]);
+      }
+      if (r.status === "aberta" || r.status === "encerrada") setAwaiting(false);
     };
 
-    pollRef.current = setInterval(poll, 3000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    let cancelled = false;
+    // Hydrate shownIds with all existing messages so polling only shows NEW ones
+    chatbotPublicApi.history(sessionId)
+      .then((r) => { if (!cancelled) applyHistory(r, false); })
+      .catch(() => {})
+      .finally(() => {
+        if (cancelled) return;
+        pollRef.current = setInterval(async () => {
+          try {
+            const r = await chatbotPublicApi.history(sessionId);
+            applyHistory(r, true);
+          } catch {}
+        }, 3000);
+      });
+
+    return () => {
+      cancelled = true;
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    };
   }, [awaiting, sessionId]);
 
   // ── Start session ──────────────────────────────────────────────────────────
