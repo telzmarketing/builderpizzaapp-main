@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session
 from backend.core.exceptions import DomainError
 from backend.core.response import ok, created, err, err_msg
 from backend.database import get_db
+from backend.routes.admin_auth import get_current_admin
+from backend.models.admin import AdminUser
 from backend.schemas.payment import PaymentCreate, WebhookPayload
 from backend.services.payment_service import PaymentService
 
@@ -69,7 +71,11 @@ def get_payment(order_id: str, db: Session = Depends(get_db)):
 # ── Cash confirmation (ERP / cashier) ────────────────────────────────────────
 
 @router.post("/cash/{order_id}")
-def confirm_cash(order_id: str, db: Session = Depends(get_db)):
+def confirm_cash(
+    order_id: str,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
     """
     ERP / cashier: mark a cash-on-delivery order as paid.
 

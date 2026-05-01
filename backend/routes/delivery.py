@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from backend.core.exceptions import DomainError
 from backend.core.response import ok, created, no_content, err
 from backend.database import get_db
+from backend.routes.admin_auth import get_current_admin
 from backend.services.delivery_service import DeliveryService
 from backend.schemas.delivery import (
     DeliveryPersonCreate,
@@ -44,7 +45,11 @@ router = APIRouter(prefix="/delivery", tags=["delivery"])
 # ── Delivery Persons ──────────────────────────────────────────────────────────
 
 @router.post("/persons", status_code=201)
-def create_person(body: DeliveryPersonCreate, db: Session = Depends(get_db)):
+def create_person(
+    body: DeliveryPersonCreate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
     """Register a new delivery person (motoboy)."""
     try:
         person = DeliveryService(db).create_person(
@@ -59,6 +64,7 @@ def create_person(body: DeliveryPersonCreate, db: Session = Depends(get_db)):
 def list_persons(
     available_only: bool = Query(default=False),
     db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
 ):
     """
     List active delivery persons.
@@ -72,7 +78,10 @@ def list_persons(
 
 
 @router.get("/persons/available")
-def list_available_persons(db: Session = Depends(get_db)):
+def list_available_persons(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
     """Shortcut: list only available (ready) delivery persons."""
     try:
         return ok(DeliveryService(db).list_persons(available_only=True))
@@ -81,7 +90,11 @@ def list_available_persons(db: Session = Depends(get_db)):
 
 
 @router.get("/persons/{person_id}")
-def get_person(person_id: str, db: Session = Depends(get_db)):
+def get_person(
+    person_id: str,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
     """Get a single delivery person by ID."""
     try:
         return ok(DeliveryService(db).get_person(person_id))
@@ -94,6 +107,7 @@ def update_person_status(
     person_id: str,
     body: DeliveryPersonStatusUpdate,
     db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
 ):
     """
     Set a delivery person's availability.
@@ -115,6 +129,7 @@ def update_person_location(
     person_id: str,
     body: DeliveryPersonLocationUpdate,
     db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
 ):
     """
     Update real-time GPS coordinates for a delivery person.
@@ -128,7 +143,11 @@ def update_person_location(
 
 
 @router.delete("/persons/{person_id}", status_code=204)
-def deactivate_person(person_id: str, db: Session = Depends(get_db)):
+def deactivate_person(
+    person_id: str,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
     """Soft-delete a delivery person (sets active=False)."""
     try:
         DeliveryService(db).deactivate_person(person_id)
@@ -140,7 +159,11 @@ def deactivate_person(person_id: str, db: Session = Depends(get_db)):
 # ── Deliveries ────────────────────────────────────────────────────────────────
 
 @router.post("/assign", status_code=201)
-def assign_delivery(body: DeliveryAssignIn, db: Session = Depends(get_db)):
+def assign_delivery(
+    body: DeliveryAssignIn,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
     """
     Assign a delivery person to an order.
 
@@ -167,7 +190,10 @@ def assign_delivery(body: DeliveryAssignIn, db: Session = Depends(get_db)):
 
 
 @router.get("/active")
-def list_active_deliveries(db: Session = Depends(get_db)):
+def list_active_deliveries(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
     """Return all deliveries currently in progress (assigned / picked_up / on_the_way)."""
     try:
         return ok(DeliveryService(db).list_active())
@@ -176,7 +202,11 @@ def list_active_deliveries(db: Session = Depends(get_db)):
 
 
 @router.get("/order/{order_id}")
-def get_delivery_by_order(order_id: str, db: Session = Depends(get_db)):
+def get_delivery_by_order(
+    order_id: str,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
     """Get the delivery record linked to a specific order."""
     try:
         return ok(DeliveryService(db).get_by_order(order_id))
@@ -185,7 +215,11 @@ def get_delivery_by_order(order_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{delivery_id}")
-def get_delivery(delivery_id: str, db: Session = Depends(get_db)):
+def get_delivery(
+    delivery_id: str,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
     """Get a delivery by its own ID."""
     try:
         return ok(DeliveryService(db).get(delivery_id))
@@ -198,6 +232,7 @@ def update_delivery_status(
     delivery_id: str,
     body: DeliveryStatusUpdate,
     db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
 ):
     """
     Advance a delivery through its state machine.
@@ -222,6 +257,7 @@ def complete_delivery(
     delivery_id: str,
     body: DeliveryCompleteIn,
     db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
 ):
     """
     Mark a delivery as completed and record proof of delivery.

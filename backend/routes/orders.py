@@ -8,19 +8,28 @@ All business logic lives in OrderService. These handlers only:
 """
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
 from backend.core.response import ok, created, err
 from backend.database import get_db
+from backend.routes.admin_auth import get_current_admin
 from backend.models.order import Order, OrderStatus
+from backend.models.admin import AdminUser
 from backend.models.product import Product
 from backend.schemas.order import CheckoutIn, OrderStatusUpdate
 from backend.services.payment_service import PaymentService
 from backend.services.order_service import OrderService
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+
+def _require_admin(request: Request, db: Session) -> AdminUser:
+    return get_current_admin(
+        authorization=request.headers.get("authorization"),
+        db=db,
+    )
 
 
 def _build_product_lookup(db: Session, orders: list[Order]) -> dict[str, Product]:
@@ -137,7 +146,6 @@ def create_order(body: CheckoutIn, db: Session = Depends(get_db)):
     except DomainError as exc:
         return err(exc)
 
-
 @router.post("/checkout", status_code=201, include_in_schema=False)
 def checkout_alias(body: CheckoutIn, db: Session = Depends(get_db)):
     return create_order(body, db)
@@ -145,12 +153,15 @@ def checkout_alias(body: CheckoutIn, db: Session = Depends(get_db)):
 
 @router.get("")
 def list_orders(
+    request: Request,
     status: OrderStatus | None = Query(default=None),
     customer_id: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
     try:
+        if not customer_id:
+            _require_admin(request, db)
         orders = OrderService(db).list(
             status=status.value if status else None,
             customer_id=customer_id,
@@ -161,58 +172,11 @@ def list_orders(
         return err(exc)
 
 
-@router.get("/{order_id}")
-def get_order(order_id: str, db: Session = Depends(get_db)):
-    try:
-        order = OrderService(db).get(order_id)
-        return ok(_serialize_orders(db, [order])[0])
-    except DomainError as exc:
-        return err(exc)
-
-
-@router.get("/{order_id}/payment-status")
-def get_order_payment_status(order_id: str, db: Session = Depends(get_db)):
-    try:
-        return ok(PaymentService(db).payment_status(order_id))
-    except DomainError as exc:
-        return err(exc)
-
-
-@router.put("/{order_id}/status")
-def update_order_status(
-    order_id: str,
-    body: OrderStatusUpdate,
-    db: Session = Depends(get_db),
-):
-    try:
-        order = OrderService(db).change_status(
-            order_id,
-            body.status.value,
-            changed_by="admin",
-        )
-        return ok(_serialize_orders(db, [order])[0], f"Status atualizado para '{body.status.value}'.")
-    except DomainError as exc:
-        return err(exc)
-
-
-@router.patch("/{order_id}/status", include_in_schema=False)
-def patch_order_status(order_id: str, body: OrderStatusUpdate, db: Session = Depends(get_db)):
-    return update_order_status(order_id, body, db)
-
-
-@router.post("/{order_id}/cancel")
-def cancel_order(order_id: str, db: Session = Depends(get_db)):
-    try:
-        order = OrderService(db).cancel(order_id, changed_by="admin")
-        return ok(_serialize_orders(db, [order])[0], "Pedido cancelado.")
-    except DomainError as exc:
-        return err(exc)
-
-
 @router.get("/reports/operational")
 def operational_report(
     days: int = 7,
     db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
 ):
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     delivered = (
@@ -260,3 +224,61 @@ def operational_report(
             for o in most_delayed
         ],
     })
+
+
+@router.get("/{order_id}")
+def get_order(order_id: str, db: Session = Depends(get_db)):
+    try:
+        order = OrderService(db).get(order_id)
+        return ok(_serialize_orders(db, [order])[0])
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.get("/{order_id}/payment-status")
+def get_order_payment_status(order_id: str, db: Session = Depends(get_db)):
+    try:
+        return ok(PaymentService(db).payment_status(order_id))
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.put("/{order_id}/status")
+def update_order_status(
+    order_id: str,
+    body: OrderStatusUpdate,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    try:
+        order = OrderService(db).change_status(
+            order_id,
+            body.status.value,
+            changed_by="admin",
+        )
+        return ok(_serialize_orders(db, [order])[0], f"Status atualizado para '{body.status.value}'.")
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.patch("/{order_id}/status", include_in_schema=False)
+def patch_order_status(
+    order_id: str,
+    body: OrderStatusUpdate,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    return update_order_status(order_id, body, db)
+
+
+@router.post("/{order_id}/cancel")
+def cancel_order(
+    order_id: str,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    try:
+        order = OrderService(db).cancel(order_id, changed_by="admin")
+        return ok(_serialize_orders(db, [order])[0], "Pedido cancelado.")
+    except DomainError as exc:
+        return err(exc)

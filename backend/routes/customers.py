@@ -6,6 +6,8 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
+from backend.routes.admin_auth import get_current_admin
+from backend.models.admin import AdminUser
 from backend.models.customer import Customer, Address
 from backend.models.order import Order
 from backend.models.customer_event import CustomerEvent
@@ -19,12 +21,19 @@ router = APIRouter(prefix="/customers", tags=["customers"])
 
 
 @router.get("", response_model=list[CustomerOut])
-def list_customers(db: Session = Depends(get_db)):
+def list_customers(
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
     return db.query(Customer).order_by(Customer.name).all()
 
 
 @router.get("/{customer_id}", response_model=CustomerOut)
-def get_customer(customer_id: str, db: Session = Depends(get_db)):
+def get_customer(
+    customer_id: str,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
@@ -155,6 +164,7 @@ def get_customer_events(
     event_type: Optional[str] = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
 ):
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
@@ -190,7 +200,11 @@ def get_customer_events(
 # ── Customer behavioral summary ────────────────────────────────────────────────
 
 @router.get("/{customer_id}/summary")
-def get_customer_summary(customer_id: str, db: Session = Depends(get_db)):
+def get_customer_summary(
+    customer_id: str,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
