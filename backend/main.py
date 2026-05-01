@@ -22,6 +22,7 @@ from backend.routes import chatbot as chatbot_routes, admin_chatbot as admin_cha
 from backend.routes import upload as upload_routes
 from backend.routes import theme as theme_routes
 from backend.routes import home_config as home_config_routes
+from backend.routes import site_config as site_config_routes
 from backend.routes import paid_traffic as paid_traffic_routes
 from backend.routes import lgpd as lgpd_routes
 from backend.routes import exit_popup as exit_popup_routes
@@ -445,6 +446,9 @@ def _run_migrations():
         "ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS openai_api_key TEXT",
         # ── Clear AI-fallback error messages incorrectly stored as conversation summary ──
         "UPDATE chatbot_conversations SET resumo_conversa = NULL WHERE resumo_conversa LIKE '%dificuldades técnicas%'",
+        # ── Site config (CMS persistence) ─────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS site_config (id VARCHAR PRIMARY KEY DEFAULT 'default', content TEXT NOT NULL DEFAULT '{}', updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "INSERT INTO site_config (id, content) VALUES ('default', '{}') ON CONFLICT DO NOTHING",
     ]
     for stmt in stmts:
         try:
@@ -492,6 +496,7 @@ app.include_router(admin_chatbot_routes.router)
 app.include_router(upload_routes.router)
 app.include_router(theme_routes.router)
 app.include_router(home_config_routes.router)
+app.include_router(site_config_routes.router)
 app.include_router(webhooks.router)
 app.include_router(paid_traffic_routes.router)
 app.include_router(paid_traffic_routes.admin_router)

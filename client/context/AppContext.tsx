@@ -9,6 +9,7 @@ import {
   customersApi,
   customerEventsApi,
   campaignsApi,
+  siteConfigApi,
   type ApiProduct,
   type ApiPromotion,
   type ApiCampaign,
@@ -294,7 +295,6 @@ interface AppContextType {
   loyaltySettings: LoyaltySettings;
   setLoyaltySettings: (settings: LoyaltySettings) => void;
 
-  // Site Content (CMS local — futuro: persistir no backend)
   siteContent: SiteContent;
   updateSiteContent: (update: DeepPartial<SiteContent>) => void;
 
@@ -513,6 +513,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (rewards.status === "fulfilled")
           setFidelidadeRewards(rewards.value.map(apiRewardToReward));
         if (rules.status === "fulfilled") setEarnRules(rules.value.map(apiRuleToRule));
+
+        // Load site content from backend (overwrites localStorage if backend has data)
+        try {
+          const data = await siteConfigApi.get();
+          if (data && Object.keys(data).length > 0) {
+            setSiteContent((prev) => deepMerge(prev, data) as SiteContent);
+          }
+        } catch { /* offline — keep localStorage value */ }
       } catch {
         // Se o backend não estiver disponível, continua com estado vazio
       } finally {
@@ -780,14 +788,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setMultiFlavorsConfig({ maxFlavors: updated.max_flavors, pricingRule: updated.pricing_rule });
   };
 
-  // ── Site Content (CMS — local por enquanto) ───────────────────────────────
+  // ── Site Content (CMS — persisted in backend) ────────────────────────────
 
-  const updateSiteContent = (update: DeepPartial<SiteContent>) =>
+  const updateSiteContent = (update: DeepPartial<SiteContent>) => {
     setSiteContent((prev) => {
-      const next = deepMerge(prev, update);
+      const next = deepMerge(prev, update) as SiteContent;
       try { localStorage.setItem("siteContent", JSON.stringify(next)); } catch { /* storage full */ }
-      return next as SiteContent;
+      siteConfigApi.save(next).catch(() => {});
+      return next;
     });
+  };
 
   // ── Context value ─────────────────────────────────────────────────────────
 

@@ -1581,3 +1581,16 @@ export const uploadApi = {
     return data.url as string;
   },
 };
+
+// ─── Site Config (CMS persistence) ───────────────────────────────────────────
+
+export const siteConfigApi = {
+  get: async (): Promise<Record<string, unknown>> => {
+    const res = await fetch(`${BASE}/site-config`);
+    if (!res.ok) return {};
+    const json = await res.json();
+    return (json?.data ?? json) as Record<string, unknown>;
+  },
+  save: (content: unknown): Promise<unknown> =>
+    put("/admin/site-config", content),
+};
