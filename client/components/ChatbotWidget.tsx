@@ -37,12 +37,13 @@ export default function ChatbotWidget() {
   const [awaiting, setAwaiting]     = useState(false);
   const [convStatus, setConvStatus] = useState<string>("aberta");
 
-  const bottomRef    = useRef<HTMLDivElement>(null);
-  const inputRef     = useRef<HTMLInputElement>(null);
-  const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
-  const shownIds     = useRef(new Set<string>());
-  const autoFiredRef = useRef(false);
-  const sessionId    = useSessionId();
+  const bottomRef       = useRef<HTMLDivElement>(null);
+  const inputRef        = useRef<HTMLInputElement>(null);
+  const pollRef         = useRef<ReturnType<typeof setInterval> | null>(null);
+  const shownIds        = useRef(new Set<string>());
+  const autoFiredRef    = useRef(false);
+  const userDismissed   = useRef(false);  // true after user manually closes — blocks all auto-triggers
+  const sessionId       = useSessionId();
 
   // ── Load config + automations ──────────────────────────────────────────────
   useEffect(() => {
@@ -50,12 +51,17 @@ export default function ChatbotWidget() {
     chatbotPublicApi.automations().then(setAutomations).catch(() => {});
   }, []);
 
-  // ── Config-based auto-trigger (open only) ─────────────────────────────────
+  // ── Config-based auto-trigger (fires once, never after user dismisses) ────
   useEffect(() => {
-    if (!config?.ativo || !config.tempo_disparo_auto || open) return;
-    const t = setTimeout(() => setOpen(true), config.tempo_disparo_auto * 1000);
+    if (!config?.ativo || !config.tempo_disparo_auto) return;
+    if (autoFiredRef.current) return;
+    const t = setTimeout(() => {
+      if (userDismissed.current || autoFiredRef.current) return;
+      autoFiredRef.current = true;
+      setOpen(true);
+    }, config.tempo_disparo_auto * 1000);
     return () => clearTimeout(t);
-  }, [config, open]);
+  }, [config]); // 'open' removed from deps — prevents re-trigger on close
 
   // ── Automation rules evaluation ───────────────────────────────────────────
   useEffect(() => {
@@ -68,7 +74,7 @@ export default function ChatbotWidget() {
       if (auto.gatilho === "pagina_especifica") {
         if (pathname.includes(auto.condicao)) {
           const t = setTimeout(() => {
-            if (autoFiredRef.current) return;
+            if (autoFiredRef.current || userDismissed.current) return;
             autoFiredRef.current = true;
             setOpen(true);
             setMsgs((m) => m.length === 0 ? [{ role: "bot", content: auto.mensagem, ts: Date.now() }] : m);
@@ -78,7 +84,7 @@ export default function ChatbotWidget() {
         }
       } else if (auto.gatilho === "produto_visualizado" && pathname.startsWith("/product/")) {
         const t = setTimeout(() => {
-          if (autoFiredRef.current) return;
+          if (autoFiredRef.current || userDismissed.current) return;
           autoFiredRef.current = true;
           setOpen(true);
           setMsgs((m) => m.length === 0 ? [{ role: "bot", content: auto.mensagem, ts: Date.now() }] : m);
@@ -88,7 +94,7 @@ export default function ChatbotWidget() {
       } else if (auto.gatilho === "tempo_na_pagina") {
         const delay = (parseInt(auto.condicao, 10) || 30) * 1000;
         const t = setTimeout(() => {
-          if (autoFiredRef.current) return;
+          if (autoFiredRef.current || userDismissed.current) return;
           autoFiredRef.current = true;
           setOpen(true);
           setMsgs((m) => m.length === 0 ? [{ role: "bot", content: auto.mensagem, ts: Date.now() }] : m);
@@ -171,7 +177,10 @@ export default function ChatbotWidget() {
     if (config && !started) startSession(config);
   }, [config, started, startSession]);
 
-  const handleClose = () => setOpen(false);
+  const handleClose = () => {
+    setOpen(false);
+    userDismissed.current = true;  // block all future auto-triggers for this session
+  };
 
   // ── Send message ───────────────────────────────────────────────────────────
   const send = async () => {
