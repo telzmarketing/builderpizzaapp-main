@@ -443,6 +443,8 @@ def _run_migrations():
         # ── Chatbot API keys stored in DB (survives restarts, no .env write needed) ──
         "ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS anthropic_api_key TEXT",
         "ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS openai_api_key TEXT",
+        # ── Clear AI-fallback error messages incorrectly stored as conversation summary ──
+        "UPDATE chatbot_conversations SET resumo_conversa = NULL WHERE resumo_conversa LIKE '%dificuldades técnicas%'",
     ]
     for stmt in stmts:
         try:

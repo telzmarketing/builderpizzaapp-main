@@ -383,8 +383,9 @@ class ChatbotService:
             temperatura=0.3,
             max_tokens=300,
         )
-        conv.resumo_conversa = resp.content
-        self._db.commit()
+        if not resp.error_reason:
+            conv.resumo_conversa = resp.content
+            self._db.commit()
 
 
 # ── Utilitários ───────────────────────────────────────────────────────────────
