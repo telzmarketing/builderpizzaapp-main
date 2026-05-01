@@ -19,6 +19,8 @@ from backend.models.chatbot import (
     ChatbotConversation, ChatbotFAQ, ChatbotKnowledgeDoc,
     ChatbotMessage, ChatbotSettings, MessageSender,
 )
+from backend.models.customer import Customer
+from backend.models.order import Order, OrderStatus
 from backend.models.product import Product
 from backend.models.promotion import Promotion
 from backend.services.ai.base import AIMessage
@@ -26,6 +28,23 @@ from backend.services.ai.base import AIMessage
 _MAX_HISTORY_MSGS   = 20   # após esse limite usa o resumo
 _MAX_FAQ_RESULTS    = 5
 _MAX_PRODUCTS_CONTEXT = 8
+
+_ACTIVE_ORDER_STATUSES = {
+    OrderStatus.pending, OrderStatus.waiting_payment, OrderStatus.paid,
+    OrderStatus.aguardando_pagamento, OrderStatus.pago,
+    OrderStatus.preparing, OrderStatus.ready_for_pickup, OrderStatus.on_the_way,
+}
+
+_STATUS_LABEL = {
+    "pending": "aguardando confirmação",
+    "waiting_payment": "aguardando pagamento",
+    "paid": "pago",
+    "aguardando_pagamento": "aguardando pagamento",
+    "pago": "pago",
+    "preparing": "em preparação",
+    "ready_for_pickup": "pronto para retirada",
+    "on_the_way": "saiu para entrega",
+}
 
 
 class ContextBuilder:
@@ -40,6 +59,7 @@ class ContextBuilder:
         conversation: ChatbotConversation,
         user_message: str,
         page_url: Optional[str] = None,
+        customer_id: Optional[str] = None,
     ) -> tuple[str, list[AIMessage]]:
         """
         Retorna (system_prompt, messages[]).
@@ -47,7 +67,7 @@ class ContextBuilder:
         messages[] contém o histórico formatado para a API.
         """
         layer1 = self._layer1(settings)
-        layer2 = self._layer2(user_message, page_url)
+        layer2 = self._layer2(user_message, page_url, customer_id)
         layer3 = self._layer3(conversation)
 
         system_prompt = "\n\n---\n\n".join(filter(None, [layer1, layer2, layer3]))
@@ -61,10 +81,11 @@ class ContextBuilder:
         conversation: ChatbotConversation,
         user_message: str,
         page_url: Optional[str] = None,
+        customer_id: Optional[str] = None,
     ) -> str:
         """Retorna JSON string do contexto completo — salvo em chatbot_messages.contexto_usado."""
         layer1 = self._layer1(settings)
-        layer2 = self._layer2(user_message, page_url)
+        layer2 = self._layer2(user_message, page_url, customer_id)
         layer3 = self._layer3(conversation)
         return json.dumps(
             {"layer1": layer1, "layer2": layer2, "layer3": layer3},
@@ -91,8 +112,17 @@ class ContextBuilder:
 
     # ── Camada 2 — Contexto dinâmico ─────────────────────────────────────────
 
-    def _layer2(self, user_message: str, page_url: Optional[str]) -> str:
+    def _layer2(self, user_message: str, page_url: Optional[str], customer_id: Optional[str] = None) -> str:
         parts: list[str] = ["## Contexto da loja (atualizado em tempo real)"]
+
+        # Dados do cliente logado + pedidos em andamento
+        if customer_id:
+            customer_ctx = self._customer_context(customer_id)
+            if customer_ctx:
+                parts.append(customer_ctx)
+            orders_ctx = self._orders_context(customer_id)
+            if orders_ctx:
+                parts.append(orders_ctx)
 
         # Produtos em destaque / produto da página atual
         product_ctx = self._product_context(page_url)
@@ -119,6 +149,41 @@ class ContextBuilder:
             parts.append(f"Página atual do visitante: {page_url}")
 
         return "\n\n".join(parts)
+
+    def _customer_context(self, customer_id: str) -> str:
+        try:
+            customer = self._db.query(Customer).filter(Customer.id == customer_id).first()
+            if not customer:
+                return ""
+            parts = [f"Cliente logado: {customer.name}"]
+            if customer.phone:
+                parts.append(f"Telefone: {customer.phone}")
+            return "\n".join(parts)
+        except Exception:
+            return ""
+
+    def _orders_context(self, customer_id: str) -> str:
+        try:
+            orders = (
+                self._db.query(Order)
+                .filter(
+                    Order.customer_id == customer_id,
+                    Order.status.in_(_ACTIVE_ORDER_STATUSES),
+                )
+                .order_by(Order.created_at.desc())
+                .limit(3)
+                .all()
+            )
+            if not orders:
+                return ""
+            lines = []
+            for o in orders:
+                status_label = _STATUS_LABEL.get(o.status.value if hasattr(o.status, "value") else o.status, o.status)
+                created = o.created_at.strftime("%d/%m %H:%M") if o.created_at else "?"
+                lines.append(f"- Pedido #{o.id[-6:]}: {status_label} — R$ {o.total:.2f} (criado em {created})")
+            return "Pedidos em andamento do cliente:\n" + "\n".join(lines)
+        except Exception:
+            return ""
 
     def _product_context(self, page_url: Optional[str]) -> str:
         # Se o visitante está em /product/:id, prioriza esse produto

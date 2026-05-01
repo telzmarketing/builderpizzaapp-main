@@ -81,10 +81,15 @@ function ConversationDetail({ conv, onBack, onRefresh }: {
           <ArrowLeft size={18} />
         </button>
         <div className="flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${STATUS_COLOR[detail.status]}`}>
               {STATUS_LABEL[detail.status]}
             </span>
+            {detail.nome_cliente && (
+              <span className="text-cream text-xs font-semibold bg-gold/20 border border-gold/30 px-2 py-0.5 rounded-full">
+                {detail.nome_cliente}
+              </span>
+            )}
             <span className="text-stone text-xs">{detail.pagina_origem || "/"}</span>
             {detail.intencao_detectada && (
               <span className="text-parchment text-xs bg-surface-03 px-2 py-0.5 rounded-full">{detail.intencao_detectada}</span>
@@ -210,9 +215,14 @@ export default function ChatbotConversations() {
               <span className={`text-xs px-2 py-0.5 rounded-full border font-medium flex-shrink-0 ${STATUS_COLOR[c.status]}`}>
                 {STATUS_LABEL[c.status]}
               </span>
-              <span className="text-stone text-xs flex-shrink-0">{c.pagina_origem || "/"}</span>
+              {c.nome_cliente ? (
+                <span className="text-cream text-xs font-semibold flex-shrink-0">{c.nome_cliente}</span>
+              ) : (
+                <span className="text-stone text-xs flex-shrink-0 italic">Visitante</span>
+              )}
+              <span className="text-stone text-xs flex-shrink-0 hidden sm:inline">{c.pagina_origem || "/"}</span>
               {c.intencao_detectada && (
-                <span className="text-parchment text-xs bg-surface-03 px-2 py-0.5 rounded-full">{c.intencao_detectada}</span>
+                <span className="text-parchment text-xs bg-surface-03 px-2 py-0.5 rounded-full hidden sm:inline">{c.intencao_detectada}</span>
               )}
               {c.resumo_conversa && (
                 <span className="text-stone text-xs flex-1 truncate">{c.resumo_conversa}</span>

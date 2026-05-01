@@ -100,6 +100,7 @@ export interface ChatbotConversation {
   id: string;
   session_id: string;
   cliente_id: string | null;
+  nome_cliente: string | null;
   pagina_origem: string | null;
   status: "aberta" | "em_humano" | "encerrada";
   tags: string | null;

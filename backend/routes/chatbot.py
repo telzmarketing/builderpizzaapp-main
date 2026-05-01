@@ -56,6 +56,7 @@ def start_session(
         pagina_origem=body.pagina_origem,
         user_agent=body.user_agent,
         ip=ip,
+        customer_id=body.customer_id,
     )
     return ok(result)
 
@@ -71,6 +72,7 @@ def send_message(body: SendMessageIn, db: Session = Depends(get_db)):
         user_message=body.mensagem,
         page_url=body.page_url,
         visitor_fingerprint=body.visitor_fingerprint,
+        customer_id=body.customer_id,
     )
     return ok(result)
 

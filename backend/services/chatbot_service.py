@@ -69,6 +69,7 @@ class ChatbotService:
         pagina_origem: Optional[str],
         user_agent: Optional[str],
         ip: Optional[str] = None,
+        customer_id: Optional[str] = None,
     ) -> StartSessionOut:
         settings = self.get_settings()
         conv = self._db.query(ChatbotConversation).filter(
@@ -84,7 +85,11 @@ class ChatbotService:
                 ip_hash=_hash_ip(ip) if ip else None,
             )
             self._db.add(conv)
-            self._db.commit()
+
+        if customer_id and not conv.cliente_id:
+            conv.cliente_id = customer_id
+
+        self._db.commit()
 
         config = ChatbotPublicConfigOut.model_validate(settings)
         return StartSessionOut(session_id=session_id, config=config)
@@ -109,6 +114,7 @@ class ChatbotService:
         user_message: str,
         page_url: Optional[str] = None,
         visitor_fingerprint: Optional[str] = None,
+        customer_id: Optional[str] = None,
     ) -> SendMessageOut:
         settings = self.get_settings()
         conv = self.get_conversation(session_id)
@@ -119,10 +125,14 @@ class ChatbotService:
                 session_id=session_id,
                 visitor_fingerprint=visitor_fingerprint,
                 pagina_origem=page_url,
+                cliente_id=customer_id,
             )
             self._db.add(conv)
             self._db.commit()
             self._db.refresh(conv)
+        elif customer_id and not conv.cliente_id:
+            conv.cliente_id = customer_id
+            self._db.commit()
 
         # Salva mensagem do visitante
         self._save_message(conv.id, MessageSender.visitor, user_message)
@@ -155,8 +165,8 @@ class ChatbotService:
 
         # Monta contexto e chama IA
         builder = ContextBuilder(self._db)
-        system_prompt, messages = builder.build(settings, conv, user_message, page_url)
-        context_snapshot = builder.build_snapshot(settings, conv, user_message, page_url)
+        system_prompt, messages = builder.build(settings, conv, user_message, page_url, conv.cliente_id)
+        context_snapshot = builder.build_snapshot(settings, conv, user_message, page_url, conv.cliente_id)
 
         provider = get_ai_provider(settings)
         ai_resp = provider.generate(

@@ -5,6 +5,7 @@ import {
   type ChatbotSettings,
   type PublicAutomation,
 } from "@/lib/chatbotApi";
+import { useApp } from "@/context/AppContext";
 
 interface Msg {
   id?:    string;
@@ -27,6 +28,7 @@ function useSessionId() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function ChatbotWidget() {
+  const { customer }                = useApp();
   const [config, setConfig]         = useState<ChatbotSettings | null>(null);
   const [automations, setAutomations] = useState<PublicAutomation[]>([]);
   const [open, setOpen]             = useState(false);
@@ -189,6 +191,7 @@ export default function ChatbotWidget() {
         pagina_origem: window.location.pathname,
         user_agent:   navigator.userAgent,
         referrer:     document.referrer || undefined,
+        customer_id:  customer?.id ?? undefined,
       });
       const welcome = r.config?.mensagem_inicial ?? cfg.mensagem_inicial;
       if (welcome) {
@@ -219,9 +222,10 @@ export default function ChatbotWidget() {
     setLoading(true);
     try {
       const r = await chatbotPublicApi.message({
-        session_id: sessionId,
-        mensagem:   text,
-        page_url:   window.location.pathname,
+        session_id:  sessionId,
+        mensagem:    text,
+        page_url:    window.location.pathname,
+        customer_id: customer?.id ?? undefined,
       });
 
       if (r.awaiting_human) {

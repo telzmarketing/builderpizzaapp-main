@@ -18,6 +18,7 @@ from backend.models.chatbot import (
     ChatbotKnowledgeDoc, ChatbotMessage, ChatbotSettings,
     ConversationStatus, MessageSender,
 )
+from backend.models.customer import Customer
 from backend.routes.admin_auth import get_current_admin
 from backend.schemas.chatbot import (
     AdminReplyIn, ChatbotAIKeysUpdate, ChatbotAnalyticsOut,
@@ -301,6 +302,19 @@ def delete_knowledge(
 
 # ── Conversas ─────────────────────────────────────────────────────────────────
 
+def _resolve_customer_names(db: Session, convs: list) -> dict[str, str]:
+    ids = [c.cliente_id for c in convs if c.cliente_id]
+    if not ids:
+        return {}
+    return {c.id: c.name for c in db.query(Customer).filter(Customer.id.in_(ids)).all()}
+
+
+def _conv_dict(conv, nome_cliente: Optional[str]) -> dict:
+    d = ChatbotConversationOut.model_validate(conv).model_dump()
+    d["nome_cliente"] = nome_cliente
+    return d
+
+
 @router.get("/conversations", response_model=None)
 def list_conversations(
     status: Optional[str]   = Query(default=None),
@@ -318,11 +332,12 @@ def list_conversations(
 
     total = q.count()
     items = q.offset((page - 1) * page_size).limit(page_size).all()
+    names = _resolve_customer_names(db, items)
     return ok({
         "total": total,
         "page": page,
         "page_size": page_size,
-        "items": [ChatbotConversationOut.model_validate(c) for c in items],
+        "items": [_conv_dict(c, names.get(c.cliente_id)) for c in items],
     })
 
 
@@ -335,8 +350,13 @@ def get_conversation(
     conv = db.query(ChatbotConversation).filter(ChatbotConversation.id == conv_id).first()
     if not conv:
         return err_msg("Conversa não encontrada.", status_code=404)
-    out = ChatbotConversationDetailOut.model_validate(conv)
-    return ok(out)
+    nome_cliente = None
+    if conv.cliente_id:
+        c = db.query(Customer).filter(Customer.id == conv.cliente_id).first()
+        nome_cliente = c.name if c else None
+    detail = ChatbotConversationDetailOut.model_validate(conv).model_dump()
+    detail["nome_cliente"] = nome_cliente
+    return ok(detail)
 
 
 @router.post("/conversations/{conv_id}/takeover", response_model=None)

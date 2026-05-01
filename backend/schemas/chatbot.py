@@ -200,6 +200,7 @@ class ChatbotConversationOut(BaseModel):
     id:                   str
     session_id:           str
     cliente_id:           Optional[str]
+    nome_cliente:         Optional[str] = None
     pagina_origem:        Optional[str]
     status:               ConversationStatus
     tags:                 Optional[str]
@@ -222,6 +223,7 @@ class StartSessionIn(BaseModel):
     pagina_origem:       Optional[str] = None
     user_agent:          Optional[str] = None
     referrer:            Optional[str] = None
+    customer_id:         Optional[str] = None   # cliente logado
 
 
 class StartSessionOut(BaseModel):
@@ -234,6 +236,7 @@ class SendMessageIn(BaseModel):
     mensagem:            str = Field(..., min_length=1, max_length=2000)
     page_url:            Optional[str] = None
     visitor_fingerprint: Optional[str] = None
+    customer_id:         Optional[str] = None   # cliente logado
 
 
 class SendMessageOut(BaseModel):
