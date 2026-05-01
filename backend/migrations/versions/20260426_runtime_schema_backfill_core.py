@@ -25,7 +25,7 @@ DDL = [
         limitacoes_proibicoes, updated_at
     ) VALUES (
         'default', TRUE, 'Assistente', 'Ola! Como posso ajudar?', '#f97316',
-        'bottom-right', 'Estamos fora do horario de atendimento.', 0, TRUE,
+        'bottom_right', 'Estamos fora do horario de atendimento.', 0, TRUE,
         'claude', 'claude-sonnet-4-20250514', 0.7, 1024, '', '', '', '', '',
         '', NOW()
     ) ON CONFLICT DO NOTHING""",
