@@ -63,6 +63,7 @@ class ChatbotSettings(Base):
 
     id                      = Column(String, primary_key=True, default="default")
     ativo                   = Column(Boolean, default=True)
+    ia_ativo                = Column(Boolean, default=True)
     nome_bot                = Column(String(100), default="Assistente")
     mensagem_inicial        = Column(Text, default="Olá! Como posso ajudar?")
     cor_primaria            = Column(String(20), default="#f97316")

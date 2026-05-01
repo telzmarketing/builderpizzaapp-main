@@ -60,6 +60,7 @@ export default function ChatbotConfig() {
     try {
       const s = await chatbotAdminApi.updateSettings({
         ativo: settings.ativo,
+        ia_ativo: settings.ia_ativo,
         nome_bot: settings.nome_bot,
         mensagem_inicial: settings.mensagem_inicial,
         cor_primaria: settings.cor_primaria,
@@ -89,6 +90,19 @@ export default function ChatbotConfig() {
           >
             <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${settings.ativo ? "translate-x-6" : "translate-x-1"}`} />
           </button>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex items-center gap-3 bg-surface-02 rounded-xl px-4 py-3 border border-surface-03">
+            <span className="text-parchment text-sm flex-1">Atendimento IA</span>
+            <button
+              onClick={() => upd("ia_ativo", !settings.ia_ativo)}
+              className={`relative w-11 h-6 rounded-full transition-colors ${settings.ia_ativo ? "bg-gold" : "bg-surface-03"}`}
+              aria-label="Alternar atendimento por IA"
+            >
+              <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${settings.ia_ativo ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+          </div>
         </div>
 
         <Inp label="Nome do bot" value={settings.nome_bot} onChange={(e) => upd("nome_bot", e.target.value)} />
@@ -125,7 +139,7 @@ export default function ChatbotConfig() {
         </div>
 
         <div className="flex items-center gap-3 bg-surface-02 rounded-xl px-4 py-3 border border-surface-03">
-          <span className="text-parchment text-sm flex-1">Permitir transferência para humano</span>
+          <span className="text-parchment text-sm flex-1">Atendimento humano</span>
           <button
             onClick={() => upd("fallback_humano_ativo", !settings.fallback_humano_ativo)}
             className={`relative w-11 h-6 rounded-full transition-colors ${settings.fallback_humano_ativo ? "bg-gold" : "bg-surface-03"}`}

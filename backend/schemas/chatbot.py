@@ -15,6 +15,7 @@ from backend.models.chatbot import (
 
 class ChatbotSettingsUpdate(BaseModel):
     ativo:                   Optional[bool]             = None
+    ia_ativo:                Optional[bool]             = None
     nome_bot:                Optional[str]              = None
     mensagem_inicial:        Optional[str]              = None
     cor_primaria:            Optional[str]              = None
@@ -45,6 +46,7 @@ class ChatbotSettingsOut(BaseModel):
 
     id:                      str
     ativo:                   bool
+    ia_ativo:                bool
     nome_bot:                str
     mensagem_inicial:        str
     cor_primaria:            str
@@ -71,6 +73,7 @@ class ChatbotPublicConfigOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     ativo:                 bool
+    ia_ativo:              bool
     nome_bot:              str
     mensagem_inicial:      str
     cor_primaria:          str

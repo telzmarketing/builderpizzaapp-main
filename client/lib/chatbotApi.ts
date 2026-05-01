@@ -19,6 +19,7 @@ const del  = <T>(p: string)              => req<T>("DELETE",  p);
 export interface ChatbotSettings {
   id: string;
   ativo: boolean;
+  ia_ativo: boolean;
   nome_bot: string;
   mensagem_inicial: string;
   cor_primaria: string;

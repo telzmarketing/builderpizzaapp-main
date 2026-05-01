@@ -163,6 +163,27 @@ class ChatbotService:
                 fora_do_horario=True,
             )
 
+        # Atendimento por IA desativado: direciona para humano quando permitido.
+        if not getattr(settings, "ia_ativo", True):
+            if settings.fallback_humano_ativo:
+                conv.status = ConversationStatus.em_humano
+                bot_msg = "Recebemos sua mensagem. Um atendente humano vai responder em instantes."
+                self._save_message(conv.id, MessageSender.bot, bot_msg, tipo=MessageType.system)
+                self._db.commit()
+                return SendMessageOut(
+                    session_id=session_id,
+                    resposta=bot_msg,
+                    awaiting_human=True,
+                )
+
+            bot_msg = "Atendimento por IA indisponivel no momento."
+            self._save_message(conv.id, MessageSender.bot, bot_msg)
+            self._db.commit()
+            return SendMessageOut(
+                session_id=session_id,
+                resposta=bot_msg,
+            )
+
         # Monta contexto e chama IA
         builder = ContextBuilder(self._db)
         system_prompt, messages = builder.build(settings, conv, user_message, page_url, conv.cliente_id)
@@ -176,6 +197,25 @@ class ChatbotService:
             max_tokens=settings.max_tokens,
         )
         context_snapshot = _with_ai_diagnostics(context_snapshot, ai_resp)
+
+        if ai_resp.error_reason and settings.fallback_humano_ativo:
+            conv.status = ConversationStatus.em_humano
+            bot_msg = "Tive uma dificuldade tecnica agora. Vou encaminhar sua conversa para um atendente humano."
+            self._save_message(
+                conv.id,
+                MessageSender.bot,
+                bot_msg,
+                tipo=MessageType.system,
+                provedor=ai_resp.provider or settings.provedor_ia.value,
+                latencia=ai_resp.latencia_ms,
+                contexto=context_snapshot,
+            )
+            self._db.commit()
+            return SendMessageOut(
+                session_id=session_id,
+                resposta=bot_msg,
+                awaiting_human=True,
+            )
 
         # Persiste resposta do bot
         self._save_message(
