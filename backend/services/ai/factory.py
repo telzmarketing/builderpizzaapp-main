@@ -71,11 +71,11 @@ def check_provider_status(settings: ChatbotSettings) -> dict[str, bool | str | N
 
 def _select_provider(settings: ChatbotSettings) -> ProviderName:
     requested = _provider_value(settings)
-    if _provider_instance(requested).is_configured():
+    if _provider_instance(requested, settings).is_configured():
         return requested
 
     alternate: ProviderName = "openai" if requested == "claude" else "claude"
-    if _provider_instance(alternate).is_configured():
+    if _provider_instance(alternate, settings).is_configured():
         return alternate
 
     return requested
@@ -92,7 +92,9 @@ def _provider_value(settings: ChatbotSettings) -> ProviderName:
     return "openai" if value == "openai" else "claude"
 
 
-def _provider_instance(provider_name: ProviderName) -> AIProvider:
+def _provider_instance(provider_name: ProviderName, settings: ChatbotSettings | None = None) -> AIProvider:
     if provider_name == "openai":
-        return OpenAIProvider(model=DEFAULT_MODELS["openai"])
-    return ClaudeProvider(model=DEFAULT_MODELS["claude"])
+        key = _db_key(settings, "OPENAI_API_KEY") if settings else ""
+        return OpenAIProvider(model=DEFAULT_MODELS["openai"], api_key=key)
+    key = _db_key(settings, "ANTHROPIC_API_KEY") if settings else ""
+    return ClaudeProvider(model=DEFAULT_MODELS["claude"], api_key=key)
