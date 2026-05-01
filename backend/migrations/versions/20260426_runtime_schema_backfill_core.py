@@ -34,12 +34,26 @@ DDL = [
     "ALTER TABLE IF EXISTS chatbot_automations ADD COLUMN IF NOT EXISTS condicao TEXT DEFAULT '{}'",
     "ALTER TABLE IF EXISTS chatbot_automations ADD COLUMN IF NOT EXISTS prioridade INTEGER DEFAULT 0",
     "ALTER TABLE IF EXISTS chatbot_automations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
+    "ALTER TABLE IF EXISTS chatbot_settings ADD COLUMN IF NOT EXISTS anthropic_api_key TEXT",
+    "ALTER TABLE IF EXISTS chatbot_settings ADD COLUMN IF NOT EXISTS openai_api_key TEXT",
     "ALTER TABLE IF EXISTS chatbot_messages ADD COLUMN IF NOT EXISTS contexto_usado TEXT",
     "ALTER TABLE IF EXISTS chatbot_handoffs ADD COLUMN IF NOT EXISTS operador_id VARCHAR REFERENCES admin_users(id) ON DELETE SET NULL",
     "ALTER TABLE IF EXISTS chatbot_knowledge_docs ADD COLUMN IF NOT EXISTS busca_vetor TSVECTOR",
     # Visual/storefront singleton tables.
     "CREATE TABLE IF NOT EXISTS theme_settings (id VARCHAR PRIMARY KEY DEFAULT 'default', \"primary\" VARCHAR(20) NOT NULL DEFAULT '#f97316', secondary VARCHAR(20) NOT NULL DEFAULT '#2d3d56', background_main VARCHAR(20) NOT NULL DEFAULT '#0c1220', background_alt VARCHAR(20) NOT NULL DEFAULT '#111827', background_card VARCHAR(20) NOT NULL DEFAULT '#1e2a3b', text_primary VARCHAR(20) NOT NULL DEFAULT '#f8fafc', text_secondary VARCHAR(20) NOT NULL DEFAULT '#e2e8f0', text_muted VARCHAR(20) NOT NULL DEFAULT '#94a3b8', status_success VARCHAR(20) NOT NULL DEFAULT '#22c55e', status_error VARCHAR(20) NOT NULL DEFAULT '#ef4444', status_warning VARCHAR(20) NOT NULL DEFAULT '#f59e0b', status_info VARCHAR(20) NOT NULL DEFAULT '#3b82f6', border VARCHAR(20) NOT NULL DEFAULT '#2d3d56', interaction_hover VARCHAR(20) NOT NULL DEFAULT '#fb923c', interaction_active VARCHAR(20) NOT NULL DEFAULT '#ea6f10', interaction_focus VARCHAR(20) NOT NULL DEFAULT '#f97316', navbar VARCHAR(20) NOT NULL DEFAULT '#111827', footer VARCHAR(20) NOT NULL DEFAULT '#0c1220', sidebar VARCHAR(20) NOT NULL DEFAULT '#111827', modal VARCHAR(20) NOT NULL DEFAULT '#1e2a3b', overlay VARCHAR(20) NOT NULL DEFAULT '#000000', badge VARCHAR(20) NOT NULL DEFAULT '#f97316', tag VARCHAR(20) NOT NULL DEFAULT '#2d3d56', home_banner_background VARCHAR(20) NOT NULL DEFAULT '#1f2937', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
-    "INSERT INTO theme_settings (id) VALUES ('default') ON CONFLICT DO NOTHING",
+    """INSERT INTO theme_settings (
+        id, "primary", secondary, background_main, background_alt, background_card,
+        text_primary, text_secondary, text_muted, status_success, status_error,
+        status_warning, status_info, border, interaction_hover, interaction_active,
+        interaction_focus, navbar, footer, sidebar, modal, overlay, badge, tag,
+        home_banner_background
+    ) VALUES (
+        'default', '#f97316', '#2d3d56', '#0c1220', '#111827', '#1e2a3b',
+        '#f8fafc', '#e2e8f0', '#94a3b8', '#22c55e', '#ef4444',
+        '#f59e0b', '#3b82f6', '#2d3d56', '#fb923c', '#ea6f10',
+        '#f97316', '#111827', '#0c1220', '#111827', '#1e2a3b', '#000000',
+        '#f97316', '#2d3d56', '#1f2937'
+    ) ON CONFLICT DO NOTHING""",
     "ALTER TABLE IF EXISTS theme_settings ADD COLUMN IF NOT EXISTS home_banner_background VARCHAR(20) NOT NULL DEFAULT '#1f2937'",
     "CREATE TABLE IF NOT EXISTS home_catalog_config (id VARCHAR PRIMARY KEY DEFAULT 'default', mode VARCHAR(20) NOT NULL DEFAULT 'all', selected_categories TEXT DEFAULT '[]', selected_product_ids TEXT DEFAULT '[]', show_promotions BOOLEAN DEFAULT TRUE, updated_at TIMESTAMPTZ DEFAULT NOW())",
     "INSERT INTO home_catalog_config (id) VALUES ('default') ON CONFLICT DO NOTHING",
@@ -58,7 +72,7 @@ DDL = [
     "ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS marketing_email_consent BOOLEAN DEFAULT FALSE",
     "ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS marketing_whatsapp_consent BOOLEAN DEFAULT FALSE",
     "ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS crm_status VARCHAR(40) DEFAULT 'lead'",
-    "ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS lead_source VARCHAR(100)",
+    "ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS source VARCHAR(100)",
     "ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS notes TEXT",
     "ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS tags TEXT DEFAULT '[]'",
     "ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS last_contact_at TIMESTAMPTZ",
