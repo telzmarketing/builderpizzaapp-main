@@ -1,6 +1,6 @@
 """runtime schema backfill core
 
-Revision ID: 20260426_runtime_schema_backfill_core
+Revision ID: 20260426_runtime_backfill
 Revises: 20260425_loyalty_settings
 Create Date: 2026-04-26
 """
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from alembic import op
 
-revision = "20260426_runtime_schema_backfill_core"
+revision = "20260426_runtime_backfill"
 down_revision = "20260425_loyalty_settings"
 branch_labels = None
 depends_on = None
