@@ -81,6 +81,8 @@ class ChatbotSettings(Base):
     objetivo                = Column(Text, default="")
     instrucoes_transferencia = Column(Text, default="")
     limitacoes_proibicoes   = Column(Text, default="")
+    anthropic_api_key       = Column(Text, nullable=True)   # stored in DB, never exposed to frontend
+    openai_api_key          = Column(Text, nullable=True)   # stored in DB, never exposed to frontend
     updated_at              = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

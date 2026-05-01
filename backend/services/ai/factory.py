@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from backend.config import get_ai_api_key_preview
+from backend.config import get_ai_api_key
 from backend.models.chatbot import AIProviderEnum, ChatbotSettings
 from backend.services.ai.base import AIProvider
 from backend.services.ai.claude_provider import ClaudeProvider
@@ -27,26 +27,45 @@ KNOWN_MODELS: dict[ProviderName, set[str]] = {
 }
 
 
+def _db_key(settings: ChatbotSettings, name: str) -> str:
+    """Read API key from DB settings (primary) or fall back to env."""
+    if name == "ANTHROPIC_API_KEY":
+        db_val = getattr(settings, "anthropic_api_key", None)
+    else:
+        db_val = getattr(settings, "openai_api_key", None)
+    return (db_val or "").strip() or get_ai_api_key(name)
+
+
+def _key_preview(key: str | None) -> str | None:
+    if not key:
+        return None
+    if len(key) <= 10:
+        return "configurada"
+    return f"{key[:4]}...{key[-4:]}"
+
+
 def get_ai_provider(settings: ChatbotSettings) -> AIProvider:
     """Return the selected AI provider, falling back to a configured provider."""
     provider_name = _select_provider(settings)
     model = _select_model(provider_name, settings.modelo_ia)
 
     if provider_name == "openai":
-        return OpenAIProvider(model=model)
-    return ClaudeProvider(model=model)
+        return OpenAIProvider(model=model, api_key=_db_key(settings, "OPENAI_API_KEY"))
+    return ClaudeProvider(model=model, api_key=_db_key(settings, "ANTHROPIC_API_KEY"))
 
 
 def check_provider_status(settings: ChatbotSettings) -> dict[str, bool | str | None]:
     """Return provider availability and masked key previews without exposing secrets."""
+    claude_key  = _db_key(settings, "ANTHROPIC_API_KEY")
+    openai_key  = _db_key(settings, "OPENAI_API_KEY")
     selected_provider = _select_provider(settings)
     return {
-        "claude": ClaudeProvider().is_configured(),
-        "openai": OpenAIProvider().is_configured(),
-        "ativo": get_ai_provider(settings).is_configured(),
+        "claude": bool(claude_key),
+        "openai": bool(openai_key),
+        "ativo": bool(claude_key if selected_provider == "claude" else openai_key),
         "using_fallback_provider": selected_provider != _provider_value(settings),
-        "openai_key_preview": get_ai_api_key_preview("OPENAI_API_KEY"),
-        "anthropic_key_preview": get_ai_api_key_preview("ANTHROPIC_API_KEY"),
+        "openai_key_preview": _key_preview(openai_key),
+        "anthropic_key_preview": _key_preview(claude_key),
     }
 
 

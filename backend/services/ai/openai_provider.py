@@ -10,15 +10,16 @@ log = logging.getLogger("chatbot.ai.openai")
 
 
 class OpenAIProvider(AIProvider):
-    def __init__(self, model: str = "gpt-4o-mini"):
+    def __init__(self, model: str = "gpt-4o-mini", api_key: str = ""):
         self._model = model
+        self._api_key = api_key.strip() or get_ai_api_key("OPENAI_API_KEY")
 
     @property
     def provider_name(self) -> str:
         return "openai"
 
     def is_configured(self) -> bool:
-        return bool(get_ai_api_key("OPENAI_API_KEY"))
+        return bool(self._api_key)
 
     def generate(
         self,
@@ -27,13 +28,13 @@ class OpenAIProvider(AIProvider):
         temperatura: float = 0.7,
         max_tokens: int = 1024,
     ) -> AIResponse:
-        if not self.is_configured():
+        if not self._api_key:
             return self._fallback("OPENAI_API_KEY não configurada")
 
         try:
             from openai import OpenAI
 
-            client = OpenAI(api_key=get_ai_api_key("OPENAI_API_KEY"), timeout=30)
+            client = OpenAI(api_key=self._api_key, timeout=30)
             payload = [{"role": "system", "content": system_prompt}]
             payload += [{"role": m.role, "content": m.content} for m in messages]
 

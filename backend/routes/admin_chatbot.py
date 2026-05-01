@@ -11,7 +11,6 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.config import save_ai_api_keys
 from backend.core.response import ok, created, err_msg
 from backend.database import get_db
 from backend.models.chatbot import (
@@ -74,26 +73,21 @@ def update_ai_keys(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    """Atualiza chaves de IA no backend/.env sem expor os valores salvos."""
+    """Salva chaves de IA no banco de dados (coluna chatbot_settings)."""
     if not body.openai_api_key and not body.anthropic_api_key:
         return err_msg("Informe pelo menos uma chave de API.", status_code=400)
 
-    try:
-        save_ai_api_keys(
-            openai_api_key=body.openai_api_key,
-            anthropic_api_key=body.anthropic_api_key,
-        )
-    except ValueError as exc:
-        return err_msg(str(exc), status_code=400)
-    except OSError:
-        return err_msg(
-            "NÃ£o foi possÃ­vel gravar backend/.env. Verifique permissÃ£o de escrita do serviÃ§o.",
-            code="EnvWriteError",
-            status_code=500,
-        )
+    svc = ChatbotService(db)
+    settings = svc.get_settings()
 
-    settings = ChatbotService(db).get_settings()
-    return ok(check_provider_status(settings), "Chaves atualizadas.")
+    if body.anthropic_api_key:
+        settings.anthropic_api_key = body.anthropic_api_key.strip()
+    if body.openai_api_key:
+        settings.openai_api_key = body.openai_api_key.strip()
+
+    db.commit()
+    db.refresh(settings)
+    return ok(check_provider_status(settings), "Chaves salvas com sucesso.")
 
 
 @router.post("/settings/test-ai", response_model=None)

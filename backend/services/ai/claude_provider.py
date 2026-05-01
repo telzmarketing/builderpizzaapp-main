@@ -10,15 +10,16 @@ log = logging.getLogger("chatbot.ai.claude")
 
 
 class ClaudeProvider(AIProvider):
-    def __init__(self, model: str = "claude-sonnet-4-20250514"):
+    def __init__(self, model: str = "claude-sonnet-4-20250514", api_key: str = ""):
         self._model = model
+        self._api_key = api_key.strip() or get_ai_api_key("ANTHROPIC_API_KEY")
 
     @property
     def provider_name(self) -> str:
         return "claude"
 
     def is_configured(self) -> bool:
-        return bool(get_ai_api_key("ANTHROPIC_API_KEY"))
+        return bool(self._api_key)
 
     def generate(
         self,
@@ -27,13 +28,13 @@ class ClaudeProvider(AIProvider):
         temperatura: float = 0.7,
         max_tokens: int = 1024,
     ) -> AIResponse:
-        if not self.is_configured():
+        if not self._api_key:
             return self._fallback("ANTHROPIC_API_KEY não configurada")
 
         try:
             import anthropic
 
-            client = anthropic.Anthropic(api_key=get_ai_api_key("ANTHROPIC_API_KEY"))
+            client = anthropic.Anthropic(api_key=self._api_key)
             t0 = time.monotonic()
             response = client.messages.create(
                 model=self._model,

@@ -440,6 +440,9 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_customer_events_event_type ON customer_events(event_type)",
         "CREATE INDEX IF NOT EXISTS ix_customer_events_created_at ON customer_events(created_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_customer_events_order_id ON customer_events(order_id)",
+        # ── Chatbot API keys stored in DB (survives restarts, no .env write needed) ──
+        "ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS anthropic_api_key TEXT",
+        "ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS openai_api_key TEXT",
     ]
     for stmt in stmts:
         try:
