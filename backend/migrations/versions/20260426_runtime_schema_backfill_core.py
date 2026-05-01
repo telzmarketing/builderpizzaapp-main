@@ -17,7 +17,18 @@ depends_on = None
 DDL = [
     # Chatbot schema currently bootstrapped by backend.main._run_migrations.
     "CREATE TABLE IF NOT EXISTS chatbot_settings (id VARCHAR PRIMARY KEY DEFAULT 'default', ativo BOOLEAN DEFAULT TRUE, nome_bot VARCHAR(100) DEFAULT 'Assistente', mensagem_inicial TEXT DEFAULT 'Ola! Como posso ajudar?', cor_primaria VARCHAR(20) DEFAULT '#f97316', posicao_widget VARCHAR(20) DEFAULT 'bottom-right', horario_funcionamento TEXT, mensagem_fora_horario TEXT DEFAULT 'Estamos fora do horario de atendimento.', tempo_disparo_auto INTEGER DEFAULT 0, fallback_humano_ativo BOOLEAN DEFAULT TRUE, provedor_ia VARCHAR(20) DEFAULT 'claude', modelo_ia VARCHAR(100) DEFAULT 'claude-sonnet-4-20250514', temperatura FLOAT DEFAULT 0.7, max_tokens INTEGER DEFAULT 1024, prompt_base TEXT DEFAULT '', regras_fixas TEXT DEFAULT '', tom_de_voz TEXT DEFAULT '', objetivo TEXT DEFAULT '', instrucoes_transferencia TEXT DEFAULT '', limitacoes_proibicoes TEXT DEFAULT '', updated_at TIMESTAMPTZ DEFAULT NOW())",
-    "INSERT INTO chatbot_settings (id) VALUES ('default') ON CONFLICT DO NOTHING",
+    """INSERT INTO chatbot_settings (
+        id, ativo, nome_bot, mensagem_inicial, cor_primaria, posicao_widget,
+        mensagem_fora_horario, tempo_disparo_auto, fallback_humano_ativo,
+        provedor_ia, modelo_ia, temperatura, max_tokens, prompt_base,
+        regras_fixas, tom_de_voz, objetivo, instrucoes_transferencia,
+        limitacoes_proibicoes, updated_at
+    ) VALUES (
+        'default', TRUE, 'Assistente', 'Ola! Como posso ajudar?', '#f97316',
+        'bottom-right', 'Estamos fora do horario de atendimento.', 0, TRUE,
+        'claude', 'claude-sonnet-4-20250514', 0.7, 1024, '', '', '', '', '',
+        '', NOW()
+    ) ON CONFLICT DO NOTHING""",
     "CREATE TABLE IF NOT EXISTS chatbot_faq (id VARCHAR PRIMARY KEY, pergunta TEXT NOT NULL, resposta TEXT NOT NULL, categoria VARCHAR(100) DEFAULT 'geral', prioridade INTEGER DEFAULT 0, ativo BOOLEAN DEFAULT TRUE, vinculo_produto_id VARCHAR REFERENCES products(id) ON DELETE SET NULL, busca_vetor TSVECTOR, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
     "CREATE INDEX IF NOT EXISTS ix_chatbot_faq_busca_vetor ON chatbot_faq USING gin (busca_vetor) WHERE busca_vetor IS NOT NULL",
     "CREATE TABLE IF NOT EXISTS chatbot_conversations (id VARCHAR PRIMARY KEY, session_id VARCHAR UNIQUE NOT NULL, cliente_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, visitor_fingerprint VARCHAR(100), pagina_origem VARCHAR(500), user_agent TEXT, ip_hash VARCHAR(64), status VARCHAR(20) DEFAULT 'aberta', tags TEXT, iniciada_em TIMESTAMPTZ DEFAULT NOW(), encerrada_em TIMESTAMPTZ, assumida_por_user_id VARCHAR REFERENCES admin_users(id) ON DELETE SET NULL, intencao_detectada VARCHAR(200), resumo_conversa TEXT)",
@@ -56,10 +67,21 @@ DDL = [
     ) ON CONFLICT DO NOTHING""",
     "ALTER TABLE IF EXISTS theme_settings ADD COLUMN IF NOT EXISTS home_banner_background VARCHAR(20) NOT NULL DEFAULT '#1f2937'",
     "CREATE TABLE IF NOT EXISTS home_catalog_config (id VARCHAR PRIMARY KEY DEFAULT 'default', mode VARCHAR(20) NOT NULL DEFAULT 'all', selected_categories TEXT DEFAULT '[]', selected_product_ids TEXT DEFAULT '[]', show_promotions BOOLEAN DEFAULT TRUE, updated_at TIMESTAMPTZ DEFAULT NOW())",
-    "INSERT INTO home_catalog_config (id) VALUES ('default') ON CONFLICT DO NOTHING",
+    """INSERT INTO home_catalog_config (
+        id, mode, selected_categories, selected_product_ids, show_promotions, updated_at
+    ) VALUES (
+        'default', 'all', '[]', '[]', TRUE, NOW()
+    ) ON CONFLICT DO NOTHING""",
     "CREATE TABLE IF NOT EXISTS lgpd_policies (id VARCHAR PRIMARY KEY, version VARCHAR(20) NOT NULL, title VARCHAR(300) NOT NULL DEFAULT 'Politica de Privacidade e Protecao de Dados', intro_text TEXT, data_controller_text TEXT, data_collected_text TEXT, data_usage_text TEXT, data_retention_text TEXT, rights_text TEXT, contact_text TEXT, marketing_email_label VARCHAR(500), marketing_whatsapp_label VARCHAR(500), is_active BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
     "CREATE TABLE IF NOT EXISTS exit_popup_config (id VARCHAR PRIMARY KEY DEFAULT 'default', enabled BOOLEAN DEFAULT FALSE, title VARCHAR(200) DEFAULT 'Espera! Temos uma oferta para voce', subtitle TEXT DEFAULT 'Use o cupom abaixo e ganhe desconto no seu pedido!', coupon_code VARCHAR(50), button_text VARCHAR(100) DEFAULT 'Usar cupom agora', image_url TEXT, show_once_per_session BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
-    "INSERT INTO exit_popup_config (id) VALUES ('default') ON CONFLICT DO NOTHING",
+    """INSERT INTO exit_popup_config (
+        id, enabled, title, subtitle, button_text, show_once_per_session,
+        created_at, updated_at
+    ) VALUES (
+        'default', FALSE, 'Espera! Temos uma oferta para voce',
+        'Use o cupom abaixo e ganhe desconto no seu pedido!',
+        'Usar cupom agora', TRUE, NOW(), NOW()
+    ) ON CONFLICT DO NOTHING""",
     "ALTER TABLE IF EXISTS exit_popup_config ADD COLUMN IF NOT EXISTS subtitle TEXT DEFAULT 'Use o cupom abaixo e ganhe desconto no seu pedido!'",
     "ALTER TABLE IF EXISTS exit_popup_config ADD COLUMN IF NOT EXISTS button_text VARCHAR(100) DEFAULT 'Usar cupom agora'",
     "ALTER TABLE IF EXISTS exit_popup_config ADD COLUMN IF NOT EXISTS show_once_per_session BOOLEAN DEFAULT TRUE",
