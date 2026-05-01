@@ -6,7 +6,6 @@ Create Date: 2026-04-25
 """
 from __future__ import annotations
 
-import sqlalchemy as sa
 from alembic import op
 
 revision = "20260425_product_subcategories"
@@ -16,16 +15,26 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("products", sa.Column("subcategory", sa.String(length=100), nullable=True))
-    op.add_column("product_categories", sa.Column("parent_id", sa.String(), nullable=True))
-    op.create_index("ix_product_categories_parent_id", "product_categories", ["parent_id"])
-    op.create_foreign_key(
-        "fk_product_categories_parent_id",
-        "product_categories",
-        "product_categories",
-        ["parent_id"],
-        ["id"],
-        ondelete="CASCADE",
+    op.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS subcategory VARCHAR(100)")
+    op.execute("ALTER TABLE product_categories ADD COLUMN IF NOT EXISTS parent_id VARCHAR")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_product_categories_parent_id ON product_categories(parent_id)")
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'fk_product_categories_parent_id'
+            ) THEN
+                ALTER TABLE product_categories
+                ADD CONSTRAINT fk_product_categories_parent_id
+                FOREIGN KEY (parent_id)
+                REFERENCES product_categories(id)
+                ON DELETE CASCADE;
+            END IF;
+        END $$;
+        """
     )
 
 

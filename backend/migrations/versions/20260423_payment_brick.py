@@ -7,7 +7,6 @@ Create Date: 2026-04-23
 from __future__ import annotations
 
 from alembic import op
-import sqlalchemy as sa
 
 revision = "20260423_payment_brick"
 down_revision = None
@@ -22,25 +21,33 @@ def upgrade() -> None:
         op.execute(f"ALTER TYPE paymentstatus ADD VALUE IF NOT EXISTS '{value}'")
     op.execute("ALTER TYPE paymentmethod ADD VALUE IF NOT EXISTS 'debit_card'")
 
-    op.add_column("orders", sa.Column("external_reference", sa.String(length=120), nullable=True))
-    op.create_index("ix_orders_external_reference", "orders", ["external_reference"], unique=True, postgresql_where=sa.text("external_reference IS NOT NULL"))
-    op.add_column("payments", sa.Column("provider", sa.String(length=50), nullable=True, server_default="mock"))
-    op.add_column("payments", sa.Column("mercado_pago_payment_id", sa.String(length=100), nullable=True))
-    op.create_index("ix_payments_mercado_pago_payment_id", "payments", ["mercado_pago_payment_id"], unique=True, postgresql_where=sa.text("mercado_pago_payment_id IS NOT NULL"))
-    op.add_column("payments", sa.Column("external_reference", sa.String(length=120), nullable=True))
-    op.add_column("payments", sa.Column("raw_response", sa.Text(), nullable=True))
-    op.add_column("payments", sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True))
-    op.create_table(
-        "payment_events",
-        sa.Column("id", sa.String(), nullable=False),
-        sa.Column("provider", sa.String(length=50), nullable=False, server_default="mercado_pago"),
-        sa.Column("event_type", sa.String(length=100), nullable=True),
-        sa.Column("mercado_pago_payment_id", sa.String(length=100), nullable=True),
-        sa.Column("external_reference", sa.String(length=120), nullable=True),
-        sa.Column("raw_payload", sa.Text(), nullable=False),
-        sa.Column("processed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS external_reference VARCHAR(120)")
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_external_reference "
+        "ON orders(external_reference) WHERE external_reference IS NOT NULL"
+    )
+    op.execute("ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider VARCHAR(50) DEFAULT 'mock'")
+    op.execute("ALTER TABLE payments ADD COLUMN IF NOT EXISTS mercado_pago_payment_id VARCHAR(100)")
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_payments_mercado_pago_payment_id "
+        "ON payments(mercado_pago_payment_id) WHERE mercado_pago_payment_id IS NOT NULL"
+    )
+    op.execute("ALTER TABLE payments ADD COLUMN IF NOT EXISTS external_reference VARCHAR(120)")
+    op.execute("ALTER TABLE payments ADD COLUMN IF NOT EXISTS raw_response TEXT")
+    op.execute("ALTER TABLE payments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ")
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS payment_events (
+            id VARCHAR PRIMARY KEY,
+            provider VARCHAR(50) NOT NULL DEFAULT 'mercado_pago',
+            event_type VARCHAR(100),
+            mercado_pago_payment_id VARCHAR(100),
+            external_reference VARCHAR(120),
+            raw_payload TEXT NOT NULL,
+            processed_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ
+        )
+        """
     )
 
 
