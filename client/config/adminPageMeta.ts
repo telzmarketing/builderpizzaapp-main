@@ -21,90 +21,43 @@ export type PageMeta = {
   toolbar?: PageToolbarItem[];
 };
 
-const catalogTabs: PageTab[] = [
-  { label: "Produtos", path: "/painel/products" },
-  { label: "Catalogo da Home", path: "/painel/home-config" },
-];
-
-const operationTabs: PageTab[] = [
-  { label: "Pedidos", path: "/painel/orders" },
-  { label: "Cozinha", path: "/painel/cozinha" },
-  { label: "Logistica", path: "/painel/logistica" },
-];
-
-const crmTabs: PageTab[] = [
-  { label: "Dashboard", path: "/painel/crm", exact: true },
-  { label: "Clientes", path: "/painel/clientes" },
-  { label: "Inteligencia", path: "/painel/crm/inteligencia" },
-  { label: "Pipeline", path: "/painel/crm/pipeline" },
-  { label: "Grupos", path: "/painel/crm/grupos" },
-  { label: "Tarefas", path: "/painel/crm/tarefas" },
-];
-
-const marketingTabs: PageTab[] = [
-  { label: "Dashboard", path: "/painel/marketing", exact: true },
-  { label: "Visitantes", path: "/painel/marketing/visitantes" },
-  { label: "WhatsApp", path: "/painel/marketing/whatsapp" },
-  { label: "Email", path: "/painel/marketing/email" },
-  { label: "Trafego Pago", path: "/painel/trafego-pago" },
-  { label: "Automacoes", path: "/painel/marketing/automacoes" },
-  { label: "Workflow", path: "/painel/marketing/workflow" },
-  { label: "Cupons", path: "/painel/marketing/cupons" },
-  { label: "Promocoes", path: "/painel/campanhas" },
-  { label: "Fidelidade", path: "/painel/fidelidade" },
-  { label: "Popup", path: "/painel/popup-saida" },
-];
-
-const settingsTabs: PageTab[] = [
-  { label: "Conteudo", path: "/painel/conteudo" },
-  { label: "Pagamentos", path: "/painel/pagamentos" },
-  { label: "Frete", path: "/painel/frete" },
-  { label: "Funcionamento", path: "/painel/funcionamento" },
-  { label: "Chatbot", path: "/painel/chatbot" },
-  { label: "Aparencia", path: "/painel/aparencia" },
-  { label: "Integracoes", path: "/painel/marketing/integracoes" },
-  { label: "Usuarios", path: "/painel/usuarios" },
-  { label: "LGPD", path: "/painel/lgpd" },
-  { label: "Configuracoes", path: "/painel/configuracoes" },
-];
-
 export const adminPageMeta: Record<string, PageMeta> = {
   "/painel": { eyebrow: "Visao geral", title: "Dashboard", subtitle: "Resumo operacional da loja em tempo real" },
-  "/painel/products": { eyebrow: "Catalogo", title: "Produtos", subtitle: "Gestao do cardapio e categorias", tabs: catalogTabs },
-  "/painel/home-config": { eyebrow: "Catalogo", title: "Catalogo da Home", subtitle: "Organizacao da vitrine da loja", tabs: catalogTabs },
-  "/painel/orders": { eyebrow: "Operacoes", title: "Pedidos", subtitle: "Acompanhamento e gestao dos pedidos", tabs: operationTabs },
-  "/painel/cozinha": { eyebrow: "Operacoes", title: "Cozinha", subtitle: "Fila de preparo e expedicao", tabs: operationTabs },
-  "/painel/logistica": { eyebrow: "Operacoes", title: "Logistica", subtitle: "Gerenciamento de entregas e motoboys", tabs: operationTabs },
-  "/painel/crm": { eyebrow: "CRM", title: "Dashboard CRM", subtitle: "Relacionamento e inteligencia de clientes", tabs: crmTabs },
-  "/painel/clientes": { eyebrow: "CRM", title: "Clientes", subtitle: "Base de clientes e historico", tabs: crmTabs },
-  "/painel/clientes/:id": { eyebrow: "CRM", title: "Detalhe do Cliente", subtitle: "Perfil, pedidos e relacionamento", tabs: crmTabs },
-  "/painel/crm/inteligencia": { eyebrow: "CRM", title: "Inteligencia de Clientes", subtitle: "Analises e recomendacoes de relacionamento", tabs: crmTabs },
-  "/painel/crm/pipeline": { eyebrow: "CRM", title: "Pipeline", subtitle: "Oportunidades e etapas comerciais", tabs: crmTabs },
-  "/painel/crm/grupos": { eyebrow: "CRM", title: "Grupos & Segmentacoes", subtitle: "Segmentacao da base de clientes", tabs: crmTabs },
-  "/painel/crm/tarefas": { eyebrow: "CRM", title: "Tarefas", subtitle: "Atividades e follow-ups", tabs: crmTabs },
-  "/painel/marketing": { eyebrow: "Marketing", title: "Dashboard Marketing", subtitle: "Indicadores de campanhas e canais", tabs: marketingTabs },
-  "/painel/marketing/campanhas": { eyebrow: "Marketing", title: "Campanhas", subtitle: "Planejamento e execucao de campanhas", tabs: marketingTabs },
-  "/painel/marketing/visitantes": { eyebrow: "Marketing", title: "Analise de Visitantes", subtitle: "Origem e comportamento no site", tabs: marketingTabs },
-  "/painel/marketing/links": { eyebrow: "Marketing", title: "Links Rastreaveis", subtitle: "UTMs e rastreamento de campanhas", tabs: marketingTabs },
-  "/painel/marketing/integracoes": { eyebrow: "Configuracoes", title: "Integracoes", subtitle: "Conexoes com canais externos", tabs: settingsTabs },
-  "/painel/marketing/whatsapp": { eyebrow: "Marketing", title: "Disparador WhatsApp", subtitle: "Mensagens e campanhas por WhatsApp", tabs: marketingTabs },
-  "/painel/marketing/email": { eyebrow: "Marketing", title: "Disparador de Email", subtitle: "Campanhas e mensagens por email", tabs: marketingTabs },
-  "/painel/marketing/automacoes": { eyebrow: "Marketing", title: "Automacao de Marketing", subtitle: "Fluxos automaticos e eventos", tabs: marketingTabs },
-  "/painel/marketing/ads": { eyebrow: "Marketing", title: "Ads", subtitle: "Campanhas pagas, pixels e ROI", tabs: marketingTabs },
-  "/painel/marketing/workflow": { eyebrow: "Marketing", title: "Workflow de Aprovacao", subtitle: "Aprovacao antes de disparar campanhas", tabs: marketingTabs },
-  "/painel/marketing/cupons": { eyebrow: "Marketing", title: "Cupons de Desconto", subtitle: "Cupons e uso em campanhas", tabs: marketingTabs },
-  "/painel/campanhas": { eyebrow: "Marketing", title: "Promocoes & Banners", subtitle: "Ofertas, banners e campanhas promocionais", tabs: marketingTabs },
-  "/painel/fidelidade": { eyebrow: "Marketing", title: "Fidelidade", subtitle: "Regras, beneficios e pontos dos clientes", tabs: marketingTabs },
-  "/painel/popup-saida": { eyebrow: "Marketing", title: "Popup de Saida", subtitle: "Captura e retencao no site", tabs: marketingTabs },
-  "/painel/conteudo": { eyebrow: "Configuracoes", title: "Conteudo", subtitle: "Textos, marca e informacoes da loja", tabs: settingsTabs },
-  "/painel/pagamentos": { eyebrow: "Configuracoes", title: "Pagamentos", subtitle: "Meios de pagamento e credenciais", tabs: settingsTabs },
-  "/painel/frete": { eyebrow: "Configuracoes", title: "Entregas e Fretes", subtitle: "Regras de entrega e taxas", tabs: settingsTabs },
-  "/painel/funcionamento": { eyebrow: "Configuracoes", title: "Funcionamento da Loja Online", subtitle: "Dias, horarios, excecoes e agendamento", tabs: settingsTabs },
-  "/painel/chatbot": { eyebrow: "Configuracoes", title: "Chatbot", subtitle: "Atendimento inteligente integrado ao site", tabs: settingsTabs },
-  "/painel/aparencia": { eyebrow: "Configuracoes", title: "Aparencia", subtitle: "Tema visual e identidade da loja", tabs: settingsTabs },
-  "/painel/usuarios": { eyebrow: "Configuracoes", title: "Usuarios do Sistema", subtitle: "Acessos administrativos", tabs: settingsTabs },
-  "/painel/lgpd": { eyebrow: "Configuracoes", title: "LGPD & Privacidade", subtitle: "Politicas, consentimentos e privacidade", tabs: settingsTabs },
-  "/painel/configuracoes": { eyebrow: "Configuracoes", title: "Configuracoes", subtitle: "Preferencias do sistema", tabs: settingsTabs },
+  "/painel/products": { eyebrow: "Catalogo", title: "Produtos", subtitle: "Gestao do cardapio e categorias" },
+  "/painel/home-config": { eyebrow: "Catalogo", title: "Catalogo da Home", subtitle: "Organizacao da vitrine da loja" },
+  "/painel/orders": { eyebrow: "Operacoes", title: "Pedidos", subtitle: "Acompanhamento e gestao dos pedidos" },
+  "/painel/cozinha": { eyebrow: "Operacoes", title: "Cozinha", subtitle: "Fila de preparo e expedicao" },
+  "/painel/logistica": { eyebrow: "Operacoes", title: "Logistica", subtitle: "Gerenciamento de entregas e motoboys" },
+  "/painel/crm": { eyebrow: "CRM", title: "Dashboard CRM", subtitle: "Relacionamento e inteligencia de clientes" },
+  "/painel/clientes": { eyebrow: "CRM", title: "Clientes", subtitle: "Base de clientes e historico" },
+  "/painel/clientes/:id": { eyebrow: "CRM", title: "Detalhe do Cliente", subtitle: "Perfil, pedidos e relacionamento" },
+  "/painel/crm/inteligencia": { eyebrow: "CRM", title: "Inteligencia de Clientes", subtitle: "Analises e recomendacoes de relacionamento" },
+  "/painel/crm/pipeline": { eyebrow: "CRM", title: "Pipeline", subtitle: "Oportunidades e etapas comerciais" },
+  "/painel/crm/grupos": { eyebrow: "CRM", title: "Grupos & Segmentacoes", subtitle: "Segmentacao da base de clientes" },
+  "/painel/crm/tarefas": { eyebrow: "CRM", title: "Tarefas", subtitle: "Atividades e follow-ups" },
+  "/painel/marketing": { eyebrow: "Marketing", title: "Dashboard Marketing", subtitle: "Indicadores de campanhas e canais" },
+  "/painel/marketing/campanhas": { eyebrow: "Marketing", title: "Campanhas", subtitle: "Planejamento e execucao de campanhas" },
+  "/painel/marketing/visitantes": { eyebrow: "Marketing", title: "Analise de Visitantes", subtitle: "Origem e comportamento no site" },
+  "/painel/marketing/links": { eyebrow: "Marketing", title: "Links Rastreaveis", subtitle: "UTMs e rastreamento de campanhas" },
+  "/painel/marketing/integracoes": { eyebrow: "Configuracoes", title: "Integracoes", subtitle: "Conexoes com canais externos" },
+  "/painel/marketing/whatsapp": { eyebrow: "Marketing", title: "Disparador WhatsApp", subtitle: "Mensagens e campanhas por WhatsApp" },
+  "/painel/marketing/email": { eyebrow: "Marketing", title: "Disparador de Email", subtitle: "Campanhas e mensagens por email" },
+  "/painel/marketing/automacoes": { eyebrow: "Marketing", title: "Automacao de Marketing", subtitle: "Fluxos automaticos e eventos" },
+  "/painel/marketing/ads": { eyebrow: "Marketing", title: "Ads", subtitle: "Campanhas pagas, pixels e ROI" },
+  "/painel/marketing/workflow": { eyebrow: "Marketing", title: "Workflow de Aprovacao", subtitle: "Aprovacao antes de disparar campanhas" },
+  "/painel/marketing/cupons": { eyebrow: "Marketing", title: "Cupons de Desconto", subtitle: "Cupons e uso em campanhas" },
+  "/painel/campanhas": { eyebrow: "Marketing", title: "Promocoes & Banners", subtitle: "Ofertas, banners e campanhas promocionais" },
+  "/painel/fidelidade": { eyebrow: "Marketing", title: "Fidelidade", subtitle: "Regras, beneficios e pontos dos clientes" },
+  "/painel/popup-saida": { eyebrow: "Marketing", title: "Popup de Saida", subtitle: "Captura e retencao no site" },
+  "/painel/conteudo": { eyebrow: "Configuracoes", title: "Conteudo", subtitle: "Textos, marca e informacoes da loja" },
+  "/painel/pagamentos": { eyebrow: "Configuracoes", title: "Pagamentos", subtitle: "Meios de pagamento e credenciais" },
+  "/painel/frete": { eyebrow: "Configuracoes", title: "Entregas e Fretes", subtitle: "Regras de entrega e taxas" },
+  "/painel/funcionamento": { eyebrow: "Configuracoes", title: "Funcionamento da Loja Online", subtitle: "Dias, horarios, excecoes e agendamento" },
+  "/painel/chatbot": { eyebrow: "Configuracoes", title: "Chatbot", subtitle: "Atendimento inteligente integrado ao site" },
+  "/painel/aparencia": { eyebrow: "Configuracoes", title: "Aparencia", subtitle: "Tema visual e identidade da loja" },
+  "/painel/usuarios": { eyebrow: "Configuracoes", title: "Usuarios do Sistema", subtitle: "Acessos administrativos" },
+  "/painel/lgpd": { eyebrow: "Configuracoes", title: "LGPD & Privacidade", subtitle: "Politicas, consentimentos e privacidade" },
+  "/painel/configuracoes": { eyebrow: "Configuracoes", title: "Configuracoes", subtitle: "Preferencias do sistema" },
 };
 
 export function getAdminPageMeta(pathname: string): PageMeta {
@@ -117,4 +70,3 @@ export function getAdminPageMeta(pathname: string): PageMeta {
 
   return fallback ?? { eyebrow: "Painel", title: "Painel Administrativo" };
 }
-

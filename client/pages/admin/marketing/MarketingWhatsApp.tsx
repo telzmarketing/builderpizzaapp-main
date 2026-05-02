@@ -24,7 +24,7 @@ const TABS: AdminPageTab<Tab>[] = [
   { id: "campanhas",     label: "Campanhas",       icon: <Megaphone size={15} /> },
   { id: "disparo",       label: "Disparo Imediato",icon: <Send size={15} /> },
   { id: "monitoramento", label: "Monitoramento",   icon: <Eye size={15} /> },
-  { id: "configuracoes", label: "Configurações",   icon: Settings },
+  { id: "configuracoes", label: "Configurações",   icon: <Settings size={15} /> },
 ];
 
 const STATUS_CFG: Record<string, { label: string; cls: string; icon: React.ElementType }> = {
