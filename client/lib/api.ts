@@ -1570,6 +1570,21 @@ export interface ApiCustomerSegment {
   updated_at: string | null;
 }
 
+export interface ApiCustomerGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  group_type: string;
+  color: string | null;
+  icon: string | null;
+  member_count: number | null;
+  created_at: string | null;
+  rules?: Array<{ field: string; operator: string; value: string }>;
+  member_id?: string;
+  member_source?: string | null;
+  added_at?: string | null;
+}
+
 export interface ApiSegmentPreview {
   total: number;
   customers: Array<{
@@ -1743,6 +1758,13 @@ export const crmApi = {
   inactiveSegment: (id: string) => del<void>(`/crm/segments/${id}`),
   previewSegment: (id: string, limit = 50) =>
     post<ApiSegmentPreview>(`/crm/segments/${id}/preview?limit=${limit}`, {}),
+  listGroups: () => get<ApiCustomerGroup[]>("/crm/groups"),
+  listCustomerGroups: (customerId: string) =>
+    get<ApiCustomerGroup[]>(`/crm/customers/${customerId}/groups`),
+  assignCustomerGroup: (customerId: string, groupId: string) =>
+    post<void>(`/crm/groups/${groupId}/members/${customerId}`, {}),
+  removeCustomerGroup: (customerId: string, groupId: string) =>
+    del<void>(`/crm/groups/${groupId}/members/${customerId}`),
 };
 
 // ─── Customer Events ──────────────────────────────────────────────────────────

@@ -924,6 +924,39 @@ def delete_group(group_id: str, db: Session = Depends(get_db), _=Depends(get_cur
     return ok(None, "Grupo removido.")
 
 
+@router.get("/customers/{customer_id}/groups")
+def list_customer_groups(customer_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    rows = db.execute(
+        text(
+            """
+            SELECT g.id, g.name, g.description, g.group_type, g.color, g.icon,
+                   g.created_at, m.id AS member_id, m.source, m.added_at
+            FROM customer_group_members m
+            JOIN customer_groups g ON g.id = m.group_id
+            WHERE m.customer_id = :customer_id AND g.active = TRUE
+            ORDER BY g.name ASC
+            """
+        ),
+        {"customer_id": customer_id},
+    ).fetchall()
+    return ok([
+        {
+            "id": row[0],
+            "name": row[1],
+            "description": row[2],
+            "group_type": row[3],
+            "color": row[4],
+            "icon": row[5],
+            "member_count": None,
+            "created_at": row[6].isoformat() if row[6] else None,
+            "member_id": row[7],
+            "member_source": row[8],
+            "added_at": row[9].isoformat() if row[9] else None,
+        }
+        for row in rows
+    ])
+
+
 # Numeric operators safe for dynamic SQL (value cast to float)
 _NUMERIC_OPS = {">": ">", "<": "<", "=": "=", "!=": "!=", ">=": ">=", "<=": "<="}
 # Safe column expressions mapped from rule field names
@@ -1003,20 +1036,47 @@ def evaluate_group(group_id: str, db: Session = Depends(get_db), _=Depends(get_c
 
 @router.post("/groups/{group_id}/members/{customer_id}")
 def add_member(group_id: str, customer_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    try:
+    group = db.query(CustomerGroup).filter(CustomerGroup.id == group_id, CustomerGroup.active == True).first()  # noqa: E712
+    if not group:
+        raise HTTPException(404, "Grupo nao encontrado.")
+    customer_exists = db.execute(text("SELECT 1 FROM customers WHERE id = :id"), {"id": customer_id}).first()
+    if not customer_exists:
+        raise HTTPException(404, "Cliente nao encontrado.")
+
+    existing = db.execute(
+        text("SELECT 1 FROM customer_group_members WHERE group_id = :gid AND customer_id = :cid"),
+        {"gid": group_id, "cid": customer_id},
+    ).first()
+    if not existing:
         db.execute(text(
-            "INSERT INTO customer_group_members (id, group_id, customer_id) VALUES (:id, :gid, :cid) ON CONFLICT DO NOTHING"
+            "INSERT INTO customer_group_members (id, group_id, customer_id, source) VALUES (:id, :gid, :cid, 'manual') ON CONFLICT DO NOTHING"
         ), {"id": str(uuid.uuid4()), "gid": group_id, "cid": customer_id})
-        db.commit()
-    except Exception:
-        db.rollback()
+        db.add(CustomerTimeline(
+            id=str(uuid.uuid4()),
+            customer_id=customer_id,
+            event_type="group_added",
+            title=f"Grupo adicionado: {group.name}",
+            description="Cliente adicionado manualmente ao grupo.",
+            metadata_json=json.dumps({"group_id": group.id, "group_name": group.name}, ensure_ascii=False),
+        ))
+    db.commit()
     return ok(None, "Membro adicionado.")
 
 
 @router.delete("/groups/{group_id}/members/{customer_id}")
 def remove_member(group_id: str, customer_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    db.execute(text("DELETE FROM customer_group_members WHERE group_id=:gid AND customer_id=:cid"),
-               {"gid": group_id, "cid": customer_id})
+    group = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
+    deleted = db.execute(text("DELETE FROM customer_group_members WHERE group_id=:gid AND customer_id=:cid"),
+                         {"gid": group_id, "cid": customer_id}).rowcount
+    if deleted and group:
+        db.add(CustomerTimeline(
+            id=str(uuid.uuid4()),
+            customer_id=customer_id,
+            event_type="group_removed",
+            title=f"Grupo removido: {group.name}",
+            description="Cliente removido manualmente do grupo.",
+            metadata_json=json.dumps({"group_id": group.id, "group_name": group.name}, ensure_ascii=False),
+        ))
     db.commit()
     return ok(None, "Membro removido.")
 

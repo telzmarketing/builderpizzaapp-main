@@ -4,17 +4,20 @@ import {
   ArrowLeft, User, ShoppingBag, Clock, BarChart2, Phone,
   MapPin, Star, ShoppingCart, Eye, MessageSquare, Tag, Gift,
   CreditCard, Package, ChevronDown, ChevronUp, Loader2, AlertCircle,
-  TrendingUp, Calendar, DollarSign, Repeat, Brain, Sparkles, CheckCircle2, XCircle,
+  TrendingUp, Calendar, DollarSign, Repeat, Brain, Sparkles, CheckCircle2, XCircle, Users,
   type LucideIcon,
 } from "lucide-react";
 import {
+  crmApi,
   customersApi,
   ApiCustomer,
   ApiCustomerAIProfile,
   ApiCustomerAISuggestion,
+  ApiCustomerGroup,
   ApiCustomerOrder,
   ApiCustomerEvent,
   ApiCustomerSummary,
+  ApiCustomerTag,
 } from "@/lib/api";
 
 type Tab = "overview" | "orders" | "timeline" | "behavior";
@@ -234,6 +237,14 @@ export default function ClienteDetalhe() {
   const [aiSuggestions, setAiSuggestions] = useState<ApiCustomerAISuggestion[]>([]);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
+  const [allTags, setAllTags] = useState<ApiCustomerTag[]>([]);
+  const [customerTags, setCustomerTags] = useState<ApiCustomerTag[]>([]);
+  const [allGroups, setAllGroups] = useState<ApiCustomerGroup[]>([]);
+  const [customerGroups, setCustomerGroups] = useState<ApiCustomerGroup[]>([]);
+  const [selectedTagId, setSelectedTagId] = useState("");
+  const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [crmBusy, setCrmBusy] = useState(false);
+  const [crmError, setCrmError] = useState<string | null>(null);
 
   const [eventFilter, setEventFilter] = useState("");
 
@@ -248,7 +259,11 @@ export default function ClienteDetalhe() {
       customersApi.getSummary(id),
       customersApi.getAIProfile(id),
       customersApi.getAISuggestions(id),
-    ]).then(([c, o, e, s, profile, suggestions]) => {
+      crmApi.listTags(),
+      crmApi.listCustomerTags(id),
+      crmApi.listGroups(),
+      crmApi.listCustomerGroups(id),
+    ]).then(([c, o, e, s, profile, suggestions, tags, assignedTags, groups, assignedGroups]) => {
       if (c.status === "fulfilled") setCustomer(c.value as ApiCustomer);
       else setError("Não foi possível carregar o cliente.");
       if (o.status === "fulfilled") setOrders(o.value as ApiCustomerOrder[]);
@@ -257,6 +272,13 @@ export default function ClienteDetalhe() {
       if (profile.status === "fulfilled") setAiProfile(profile.value as ApiCustomerAIProfile | null);
       if (suggestions.status === "fulfilled") setAiSuggestions(suggestions.value as ApiCustomerAISuggestion[]);
       if (profile.status === "rejected" || suggestions.status === "rejected") setAiError("Não foi possível carregar a inteligência do cliente.");
+      if (tags.status === "fulfilled") setAllTags(tags.value as ApiCustomerTag[]);
+      if (assignedTags.status === "fulfilled") setCustomerTags(assignedTags.value as ApiCustomerTag[]);
+      if (groups.status === "fulfilled") setAllGroups(groups.value as ApiCustomerGroup[]);
+      if (assignedGroups.status === "fulfilled") setCustomerGroups(assignedGroups.value as ApiCustomerGroup[]);
+      if (tags.status === "rejected" || assignedTags.status === "rejected" || groups.status === "rejected" || assignedGroups.status === "rejected") {
+        setCrmError("Não foi possível carregar tags e grupos do cliente.");
+      }
     }).finally(() => setLoading(false));
   }, [id]);
 
@@ -294,10 +316,86 @@ export default function ClienteDetalhe() {
       if (action === "accept") await customersApi.acceptSuggestion(suggestionId);
       else await customersApi.rejectSuggestion(suggestionId);
       await refreshAISuggestions();
+      if (id) {
+        const [tags, groups] = await Promise.allSettled([
+          crmApi.listCustomerTags(id),
+          crmApi.listCustomerGroups(id),
+        ]);
+        if (tags.status === "fulfilled") setCustomerTags(tags.value);
+        if (groups.status === "fulfilled") setCustomerGroups(groups.value);
+      }
     } catch (err) {
       setAiError(err instanceof Error ? err.message : "Falha ao atualizar sugestão.");
     } finally {
       setAiBusy(false);
+    }
+  }
+
+  async function refreshCustomerCrm() {
+    if (!id) return;
+    const [tags, groups] = await Promise.all([
+      crmApi.listCustomerTags(id),
+      crmApi.listCustomerGroups(id),
+    ]);
+    setCustomerTags(tags);
+    setCustomerGroups(groups);
+  }
+
+  async function handleAddTag() {
+    if (!id || !selectedTagId) return;
+    setCrmBusy(true);
+    setCrmError(null);
+    try {
+      await crmApi.assignCustomerTag(id, selectedTagId);
+      setSelectedTagId("");
+      await refreshCustomerCrm();
+    } catch (err) {
+      setCrmError(err instanceof Error ? err.message : "Falha ao adicionar tag.");
+    } finally {
+      setCrmBusy(false);
+    }
+  }
+
+  async function handleRemoveTag(tagId: string) {
+    if (!id) return;
+    setCrmBusy(true);
+    setCrmError(null);
+    try {
+      await crmApi.removeCustomerTag(id, tagId);
+      await refreshCustomerCrm();
+    } catch (err) {
+      setCrmError(err instanceof Error ? err.message : "Falha ao remover tag.");
+    } finally {
+      setCrmBusy(false);
+    }
+  }
+
+  async function handleAddGroup() {
+    if (!id || !selectedGroupId) return;
+    setCrmBusy(true);
+    setCrmError(null);
+    try {
+      await crmApi.assignCustomerGroup(id, selectedGroupId);
+      setSelectedGroupId("");
+      await refreshCustomerCrm();
+    } catch (err) {
+      setCrmError(err instanceof Error ? err.message : "Falha ao adicionar grupo.");
+    } finally {
+      setCrmBusy(false);
+    }
+  }
+
+  async function handleRemoveGroup(groupId: string) {
+    if (!id) return;
+    setCrmBusy(true);
+    setCrmError(null);
+    try {
+      await crmApi.removeCustomerGroup(id, groupId);
+      await refreshCustomerCrm();
+    } catch (err) {
+      setCrmError(err instanceof Error ? err.message : "Falha ao remover grupo.");
+    } finally {
+      setCrmBusy(false);
     }
   }
 
@@ -356,6 +454,8 @@ export default function ClienteDetalhe() {
   const cancelledOrders = summary?.orders.cancelled ?? 0;
   const aiRisk = aiRiskConfig(aiProfile?.churn_risk);
   const repurchasePercent = Math.round((aiProfile?.repurchase_probability ?? 0) * 100);
+  const availableTags = allTags.filter((tag) => !customerTags.some((assigned) => assigned.id === tag.id));
+  const availableGroups = allGroups.filter((group) => !customerGroups.some((assigned) => assigned.id === group.id));
 
   return (
     <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
@@ -443,6 +543,122 @@ export default function ClienteDetalhe() {
               </div>
             </div>
           )}
+          <div className="bg-surface-02 rounded-xl border border-surface-03 p-4 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <User size={17} className="text-gold" />
+                <h3 className="text-parchment font-medium">Tags e Grupos do Cliente</h3>
+              </div>
+              {crmBusy && <Loader2 size={16} className="animate-spin text-gold" />}
+            </div>
+            {crmError && (
+              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+                {crmError}
+              </div>
+            )}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Tag size={15} className="text-orange-300" />
+                  <p className="text-sm font-medium text-parchment">Tags</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {customerTags.length === 0 ? (
+                    <span className="text-sm text-stone/50">Nenhuma tag atribuída.</span>
+                  ) : (
+                    customerTags.map((tag) => (
+                      <span
+                        key={tag.id}
+                        className="inline-flex items-center gap-1 rounded-full border border-surface-03 bg-surface-01 px-2.5 py-1 text-xs text-parchment"
+                      >
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color || "#f97316" }} />
+                        {tag.name}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTag(tag.id)}
+                          disabled={crmBusy}
+                          className="text-stone/50 hover:text-red-300"
+                          aria-label={`Remover tag ${tag.name}`}
+                        >
+                          <XCircle size={12} />
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedTagId}
+                    onChange={(event) => setSelectedTagId(event.target.value)}
+                    className="min-w-0 flex-1 rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-parchment outline-none focus:border-gold/60"
+                  >
+                    <option value="">Adicionar tag</option>
+                    {availableTags.map((tag) => (
+                      <option key={tag.id} value={tag.id}>{tag.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleAddTag}
+                    disabled={crmBusy || !selectedTagId}
+                    className="rounded-lg border border-gold/40 px-3 py-2 text-sm font-medium text-gold hover:bg-gold/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Adicionar
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Users size={15} className="text-blue-300" />
+                  <p className="text-sm font-medium text-parchment">Grupos</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {customerGroups.length === 0 ? (
+                    <span className="text-sm text-stone/50">Nenhum grupo atribuído.</span>
+                  ) : (
+                    customerGroups.map((group) => (
+                      <span
+                        key={group.id}
+                        className="inline-flex items-center gap-1 rounded-full border border-surface-03 bg-surface-01 px-2.5 py-1 text-xs text-parchment"
+                      >
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: group.color || "#f97316" }} />
+                        {group.name}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveGroup(group.id)}
+                          disabled={crmBusy}
+                          className="text-stone/50 hover:text-red-300"
+                          aria-label={`Remover grupo ${group.name}`}
+                        >
+                          <XCircle size={12} />
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedGroupId}
+                    onChange={(event) => setSelectedGroupId(event.target.value)}
+                    className="min-w-0 flex-1 rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-parchment outline-none focus:border-gold/60"
+                  >
+                    <option value="">Adicionar grupo</option>
+                    {availableGroups.map((group) => (
+                      <option key={group.id} value={group.id}>{group.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleAddGroup}
+                    disabled={crmBusy || !selectedGroupId}
+                    className="rounded-lg border border-gold/40 px-3 py-2 text-sm font-medium text-gold hover:bg-gold/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Adicionar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
           <div className="bg-surface-02 rounded-xl border border-surface-03 p-4 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center gap-2">
