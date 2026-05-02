@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Boolean, DateTime, Date, ForeignKey, Text, Integer, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from backend.database import Base
@@ -24,6 +24,12 @@ class Customer(Base):
     last_contact_at = Column(DateTime(timezone=True), nullable=True)
     utm_source = Column(String(100), nullable=True)
     utm_campaign = Column(String(200), nullable=True)
+    birth_date = Column(Date, nullable=True)
+    first_order_at = Column(DateTime(timezone=True), nullable=True)
+    last_order_at = Column(DateTime(timezone=True), nullable=True)
+    total_orders = Column(Integer, default=0)
+    total_spent = Column(Float, default=0.0)
+    avg_ticket = Column(Float, default=0.0)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))

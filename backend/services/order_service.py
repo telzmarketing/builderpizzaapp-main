@@ -25,6 +25,7 @@ from backend.models.order import Order, OrderItem, OrderItemFlavor, OrderStatus
 from backend.models.payment import Payment, PaymentMethod, PaymentStatus
 from backend.models.product import Product, MultiFlavorsConfig, PricingRule, ProductCrustType, ProductDrinkVariant, ProductSize
 from backend.schemas.order import CheckoutIn, CartItemIn, FlavorIn, OrderStatusUpdate
+from backend.services.customer_metrics_service import sync_customer_order_metrics
 from backend.services.product_pricing_service import ProductPriceResult, ProductPricingService, normalize_crust_price_addition
 
 
@@ -360,6 +361,7 @@ class OrderService:
                 order_id=order.id,
             )
 
+        sync_customer_order_metrics(self._db, order.customer_id)
         self._db.commit()
         self._db.refresh(order)
 
@@ -436,6 +438,8 @@ class OrderService:
             elif order.preparation_started_at and order.out_for_delivery_at:
                 order.preparation_time_minutes = int((order.out_for_delivery_at - order.preparation_started_at).total_seconds() / 60)
 
+        self._db.flush()
+        sync_customer_order_metrics(self._db, order.customer_id)
         self._db.commit()
 
         bus.publish(OrderStatusChanged(
@@ -452,6 +456,8 @@ class OrderService:
                 order.customer_id, order_id, order.total, self._db
             )
             order.loyalty_points_earned = points
+            self._db.flush()
+            sync_customer_order_metrics(self._db, order.customer_id)
             self._db.commit()
 
         self._db.refresh(order)

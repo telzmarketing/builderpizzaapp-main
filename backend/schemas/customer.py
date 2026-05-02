@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional
-from datetime import datetime
+from datetime import date, datetime
 
 
 class AddressBase(BaseModel):
@@ -55,6 +55,12 @@ class CustomerOut(CustomerBase):
     last_contact_at: Optional[datetime] = None
     utm_source: Optional[str] = None
     utm_campaign: Optional[str] = None
+    birth_date: Optional[date] = None
+    first_order_at: Optional[datetime] = None
+    last_order_at: Optional[datetime] = None
+    total_orders: int = 0
+    total_spent: float = 0.0
+    avg_ticket: float = 0.0
     created_at: datetime
     updated_at: datetime
     addresses: list[AddressOut] = []

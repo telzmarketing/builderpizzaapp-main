@@ -206,10 +206,12 @@ class DeliveryService:
                 # Award loyalty points
                 if order.customer_id:
                     from backend.services.loyalty_service import award_points_for_order
+                    from backend.services.customer_metrics_service import sync_customer_order_metrics
                     points = award_points_for_order(
                         order.customer_id, delivery.order_id, order.total, self._db
                     )
                     order.loyalty_points_earned = points
+                    sync_customer_order_metrics(self._db, order.customer_id)
 
         elif new_status in ("failed", "cancelled"):
             # Free up the delivery person

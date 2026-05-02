@@ -36,6 +36,7 @@ from backend.models.order import Order, OrderStatus
 from backend.models.payment import Payment, PaymentEvent, PaymentMethod, PaymentStatus
 from backend.models.payment_config import PaymentGatewayConfig
 from backend.schemas.payment import PaymentCreate, PaymentOut, WebhookPayload
+from backend.services.customer_metrics_service import sync_customer_order_metrics
 from backend.services.saipos_service import sendOrderToSaipos
 
 settings = get_settings()
@@ -288,6 +289,10 @@ class PaymentService:
                 order_sm.transition(order.id, order.status.value, target_order_status.value)
             order.status = target_order_status
             order.updated_at = datetime.now(timezone.utc)
+
+        if order:
+            self._db.flush()
+            sync_customer_order_metrics(self._db, order.customer_id)
 
         self._db.commit()
 
