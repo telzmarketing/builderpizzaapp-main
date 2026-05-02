@@ -22,6 +22,7 @@ import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { useApp } from "@/context/AppContext";
 import {
   couponsApi,
+  customersApi,
   customerEventsApi,
   ordersApi,
   paymentsApi,
@@ -29,6 +30,7 @@ import {
   storeOperationApi,
   isAssetUrl,
   resolveAssetUrl,
+  type ApiAddress,
   type ApiOrder,
   type ApiShipping,
   type CheckoutIn,
@@ -88,9 +90,22 @@ export default function Checkout() {
   const [paymentMessage, setPaymentMessage] = useState("");
   const [storeStatus, setStoreStatus] = useState<StoreOperationStatus | null>(null);
   const [scheduledFor, setScheduledFor] = useState("");
+  const [checkoutAddresses, setCheckoutAddresses] = useState<ApiAddress[] | null>(null);
   const brickController = useRef<{ unmount: () => void } | null>(null);
 
-  const savedAddresses = customer?.addresses ?? [];
+  const savedAddresses = checkoutAddresses ?? customer?.addresses ?? [];
+  const savedAddressSignature = savedAddresses
+    .map((addr) => [
+      addr.id,
+      addr.is_default,
+      addr.street,
+      addr.number ?? "",
+      addr.neighborhood ?? "",
+      addr.city,
+      addr.zip_code ?? "",
+      addr.complement ?? "",
+    ].join(":"))
+    .join("|");
 
   const applyAddress = (addrId: string | "new") => {
     setSelectedAddressId(addrId);
@@ -118,12 +133,41 @@ export default function Checkout() {
       name: prev.name || customer.name,
       phone: prev.phone || (customer.phone ?? ""),
     }));
-    if (savedAddresses.length > 0 && selectedAddressId === null) {
-      const def = savedAddresses.find((a) => a.is_default) ?? savedAddresses[0];
-      applyAddress(def.id);
+  }, [customer?.id, customer?.name, customer?.phone]);
+
+  useEffect(() => {
+    if (!customer?.id) {
+      setCheckoutAddresses(null);
+      setSelectedAddressId(null);
+      return;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    let cancelled = false;
+    setCheckoutAddresses(customer.addresses ?? []);
+    customersApi.listAddresses(customer.id)
+      .then((addresses) => {
+        if (!cancelled) setCheckoutAddresses(addresses);
+      })
+      .catch(() => {
+        if (!cancelled) setCheckoutAddresses(customer.addresses ?? []);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [customer?.id]);
+
+  useEffect(() => {
+    if (!customer || deliveryMode !== "delivery" || savedAddresses.length === 0) return;
+    if (selectedAddressId === "new") return;
+
+    const selectedStillExists = selectedAddressId
+      ? savedAddresses.some((addr) => addr.id === selectedAddressId)
+      : false;
+    const def = savedAddresses.find((addr) => addr.is_default) ?? savedAddresses[0];
+    applyAddress(selectedStillExists && selectedAddressId ? selectedAddressId : def.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customer?.id, deliveryMode, selectedAddressId, savedAddressSignature]);
 
   useEffect(() => {
     const td = getTrackingData();
