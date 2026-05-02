@@ -119,6 +119,28 @@ export default function LogisticaConfig() {
             className="w-24 rounded-lg bg-surface-03 border border-surface-03 text-cream px-3 py-2 text-sm"
           />
         </label>
+
+        <div className="border-t border-surface-03" />
+
+        <label className="flex flex-col gap-2">
+          <div>
+            <p className="text-cream text-sm font-medium">Valor por entrega (R$)</p>
+            <p className="text-stone text-xs mt-0.5">Repasse automático creditado ao motoboy ao finalizar cada entrega · visível na aba Financeiro</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-stone text-sm font-medium">R$</span>
+            <input
+              type="number"
+              min={0} step={0.50}
+              value={settings.rate_per_delivery ?? 0}
+              onChange={(e) => setSettings((s) => ({ ...s, rate_per_delivery: Number(e.target.value) }))}
+              className="w-28 rounded-lg bg-surface-03 border border-surface-03 text-cream px-3 py-2 text-sm"
+            />
+          </div>
+          {(settings.rate_per_delivery ?? 0) === 0 && (
+            <p className="text-stone/60 text-xs">Deixe em R$ 0,00 para não gerar registros financeiros automaticamente.</p>
+          )}
+        </label>
       </div>
 
       {error && <p className="mt-3 text-sm text-red-300">{error}</p>}

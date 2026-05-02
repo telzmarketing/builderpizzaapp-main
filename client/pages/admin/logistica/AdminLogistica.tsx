@@ -1,18 +1,24 @@
 import { useState } from "react";
-import { Truck, Users, MapPin, Settings, Map } from "lucide-react";
+import { Truck, Users, MapPin, Settings, Map, DollarSign, BarChart2, AlertTriangle } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import LogisticaMotoboys from "./LogisticaMotoboys";
 import LogisticaAtivas from "./LogisticaAtivas";
 import LogisticaMapa from "./LogisticaMapa";
 import LogisticaConfig from "./LogisticaConfig";
+import LogisticaFinanceiro from "./LogisticaFinanceiro";
+import LogisticaAnalytics from "./LogisticaAnalytics";
+import LogisticaAlertas from "./LogisticaAlertas";
 
-type Tab = "motoboys" | "ativas" | "mapa" | "config";
+type Tab = "motoboys" | "ativas" | "mapa" | "financeiro" | "analytics" | "alertas" | "config";
 
 const TABS: { id: Tab; icon: React.ReactNode; label: string }[] = [
-  { id: "motoboys", icon: <Users size={15} />,    label: "Motoboys" },
-  { id: "ativas",   icon: <MapPin size={15} />,    label: "Entregas Ativas" },
-  { id: "mapa",     icon: <Map size={15} />,       label: "Mapa" },
-  { id: "config",   icon: <Settings size={15} />,  label: "Configurações" },
+  { id: "motoboys",   icon: <Users size={15} />,         label: "Motoboys" },
+  { id: "ativas",     icon: <MapPin size={15} />,         label: "Entregas Ativas" },
+  { id: "mapa",       icon: <Map size={15} />,            label: "Mapa" },
+  { id: "financeiro", icon: <DollarSign size={15} />,     label: "Financeiro" },
+  { id: "analytics",  icon: <BarChart2 size={15} />,      label: "Análises" },
+  { id: "alertas",    icon: <AlertTriangle size={15} />,  label: "Alertas" },
+  { id: "config",     icon: <Settings size={15} />,       label: "Configurações" },
 ];
 
 export default function AdminLogistica() {
@@ -53,10 +59,13 @@ export default function AdminLogistica() {
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto bg-surface-01 p-6">
-            {tab === "motoboys" && <LogisticaMotoboys />}
-            {tab === "ativas"   && <LogisticaAtivas />}
-            {tab === "mapa"     && <LogisticaMapa />}
-            {tab === "config"   && <LogisticaConfig />}
+            {tab === "motoboys"   && <LogisticaMotoboys />}
+            {tab === "ativas"     && <LogisticaAtivas />}
+            {tab === "mapa"       && <LogisticaMapa />}
+            {tab === "financeiro" && <LogisticaFinanceiro />}
+            {tab === "analytics"  && <LogisticaAnalytics />}
+            {tab === "alertas"    && <LogisticaAlertas />}
+            {tab === "config"     && <LogisticaConfig />}
           </div>
 
         </div>

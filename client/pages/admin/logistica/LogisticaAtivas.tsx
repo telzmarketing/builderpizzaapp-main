@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, MapPin, RefreshCw, Route, Clock } from "lucide-react";
+import { Loader2, MapPin, RefreshCw, Route, Clock, Zap } from "lucide-react";
 import { deliveryApi, type DeliveryRecord } from "@/lib/api";
 
 function etaText(assignedAt?: string, estimatedMinutes?: number): { text: string; urgent: boolean } | null {
@@ -38,6 +38,8 @@ export default function LogisticaAtivas() {
   const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [autoAssigning, setAutoAssigning] = useState(false);
+  const [autoAssignMsg, setAutoAssignMsg] = useState("");
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -60,19 +62,51 @@ export default function LogisticaAtivas() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h3 className="text-cream font-bold text-lg">Entregas Ativas</h3>
           <p className="text-stone text-sm mt-0.5">Pedidos em rota agora · atualiza a cada 15s</p>
         </div>
-        <button
-          onClick={() => load()}
-          className="flex items-center gap-1.5 rounded-xl border border-surface-03 px-3 py-2 text-stone text-sm hover:text-cream transition-colors"
-        >
-          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-          Atualizar
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              setAutoAssigning(true);
+              setAutoAssignMsg("");
+              try {
+                const result = await deliveryApi.autoAssign();
+                const n = result?.length ?? 0;
+                setAutoAssignMsg(n > 0 ? `${n} entrega(s) atribuída(s)` : "Nenhuma entrega pendente ou sem motoboys disponíveis");
+                if (n > 0) load(true);
+                setTimeout(() => setAutoAssignMsg(""), 4000);
+              } catch {
+                setAutoAssignMsg("Erro ao executar auto-atribuição.");
+                setTimeout(() => setAutoAssignMsg(""), 3000);
+              } finally {
+                setAutoAssigning(false);
+              }
+            }}
+            disabled={autoAssigning}
+            className="flex items-center gap-1.5 rounded-xl border border-gold/40 bg-gold/10 px-3 py-2 text-gold text-sm hover:bg-gold/20 disabled:opacity-50 transition-colors"
+            title="Atribuir motoboys disponíveis a pedidos aguardando designação"
+          >
+            {autoAssigning ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+            Auto-atribuir
+          </button>
+          <button
+            onClick={() => load()}
+            className="flex items-center gap-1.5 rounded-xl border border-surface-03 px-3 py-2 text-stone text-sm hover:text-cream transition-colors"
+          >
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            Atualizar
+          </button>
+        </div>
       </div>
+
+      {autoAssignMsg && (
+        <div className="mb-4 rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-sm text-gold">
+          {autoAssignMsg}
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">

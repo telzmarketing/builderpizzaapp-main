@@ -33,6 +33,7 @@ Delivery endpoints:
   POST /delivery/{id}/rate          → customer rates delivery (1–5)
 """
 import base64
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.orm import Session
@@ -55,6 +56,7 @@ from backend.schemas.delivery import (
     DeliveryRateIn,
     DriverLoginIn,
     LogisticsSettingsUpdate,
+    BulkPayIn,
 )
 
 router = APIRouter(prefix="/delivery", tags=["delivery"])
@@ -301,6 +303,116 @@ def update_logistics_settings(
     try:
         settings = DeliveryService(db).update_logistics_settings(**body.model_dump(exclude_none=True))
         return ok(settings, "Configurações salvas.")
+    except DomainError as exc:
+        return err(exc)
+
+
+# ── Phase 4 — Auto-assignment ────────────────────────────────────────────────
+
+@router.post("/auto-assign")
+def auto_assign(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    """
+    Scan for unassigned eligible orders and assign available drivers automatically.
+    Only runs when auto_assign is enabled in logistics settings.
+    """
+    try:
+        result = DeliveryService(db).auto_assign_pending()
+        return ok(result, f"{len(result)} entrega(s) atribuída(s) automaticamente.")
+    except DomainError as exc:
+        return err(exc)
+
+
+# ── Phase 4 — Geocoding ───────────────────────────────────────────────────────
+
+@router.get("/geocode")
+def geocode_address(
+    q: str = Query(..., description="Full address string to geocode"),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    """
+    Geocode a delivery address via Nominatim (OpenStreetMap). Results are cached
+    in the DB so each unique address only hits the external API once.
+    """
+    try:
+        result = DeliveryService(db).geocode_address(q)
+        return ok(result)
+    except DomainError as exc:
+        return err(exc)
+
+
+# ── Phase 3 — Earnings ───────────────────────────────────────────────────────
+
+@router.get("/earnings")
+def list_earnings(
+    person_id: Optional[str] = Query(default=None),
+    status: Optional[str] = Query(default=None),
+    period_from: Optional[str] = Query(default=None),
+    period_to: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    """List delivery earnings with optional filters (person, status, period)."""
+    try:
+        earnings = DeliveryService(db).list_earnings(
+            person_id=person_id,
+            status=status,
+            period_from=period_from,
+            period_to=period_to,
+        )
+        return ok(earnings)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/earnings/pay")
+def pay_earnings(
+    body: BulkPayIn,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    """Mark a list of earnings as paid (PIX repasse)."""
+    try:
+        paid = DeliveryService(db).bulk_pay_earnings(body.earning_ids, paid_by=body.paid_by)
+        return ok({"paid": paid}, f"{paid} pagamento(s) registrado(s).")
+    except DomainError as exc:
+        return err(exc)
+
+
+# ── Phase 3 — Analytics ───────────────────────────────────────────────────────
+
+@router.get("/analytics")
+def get_analytics(
+    period_from: Optional[str] = Query(default=None),
+    period_to: Optional[str] = Query(default=None),
+    person_id: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    """Per-driver performance metrics: total deliveries, avg time, avg rating, completion rate, earnings."""
+    try:
+        return ok(DeliveryService(db).get_analytics(
+            period_from=period_from,
+            period_to=period_to,
+            person_id=person_id,
+        ))
+    except DomainError as exc:
+        return err(exc)
+
+
+# ── Phase 3 — Delay Alerts ────────────────────────────────────────────────────
+
+@router.get("/alerts")
+def get_delivery_alerts(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    """Return active deliveries that are past their estimated ETA, sorted most-overdue first."""
+    try:
+        return ok(DeliveryService(db).get_alerts())
     except DomainError as exc:
         return err(exc)
 

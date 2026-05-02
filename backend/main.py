@@ -72,6 +72,19 @@ async def lifespan(app: FastAPI):
     bus.subscribe(DeliveryCompleted, erp_delivery_completed_handler)
     bus.subscribe(DeliveryCompleted, push_notification_handler)
 
+    # Phase 4 — Auto-assign driver when order reaches ready_for_pickup
+    def _auto_assign_handler(event: OrderStatusChanged):
+        if event.to_status not in ("ready_for_pickup", "preparing"):
+            return
+        try:
+            with SessionLocal() as db:
+                from backend.services.delivery_service import DeliveryService
+                DeliveryService(db).auto_assign_pending()
+        except Exception:
+            pass
+
+    bus.subscribe(OrderStatusChanged, _auto_assign_handler)
+
     yield
     # ── Shutdown ──────────────────────────────────────────────────────────────
 
@@ -466,6 +479,21 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_delivery_events_delivery_id ON delivery_events(delivery_id)",
         "CREATE TABLE IF NOT EXISTS logistics_settings (id VARCHAR PRIMARY KEY DEFAULT 'default', auto_assign BOOLEAN DEFAULT FALSE, max_concurrent_deliveries INTEGER DEFAULT 3, default_estimated_minutes INTEGER DEFAULT 40, confirmation_code_enabled BOOLEAN DEFAULT TRUE, updated_at TIMESTAMPTZ DEFAULT NOW())",
         "INSERT INTO logistics_settings (id) VALUES ('default') ON CONFLICT DO NOTHING",
+
+        # ══════════════════════════════════════════════════════════════════════
+        # MÓDULO LOGÍSTICA — Fase 3 (Financeiro, Análises, Alertas)
+        # ══════════════════════════════════════════════════════════════════════
+        "ALTER TABLE logistics_settings ADD COLUMN IF NOT EXISTS rate_per_delivery FLOAT DEFAULT 0.0",
+        "CREATE TABLE IF NOT EXISTS delivery_earnings (id VARCHAR PRIMARY KEY, delivery_id VARCHAR NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE, delivery_person_id VARCHAR NOT NULL REFERENCES delivery_persons(id) ON DELETE CASCADE, amount FLOAT NOT NULL DEFAULT 0.0, status VARCHAR(20) NOT NULL DEFAULT 'pending', period_date DATE NOT NULL, paid_at TIMESTAMPTZ, paid_by VARCHAR(200), notes TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_delivery_earnings_delivery_person_id ON delivery_earnings(delivery_person_id)",
+        "CREATE INDEX IF NOT EXISTS ix_delivery_earnings_status ON delivery_earnings(status)",
+        "CREATE INDEX IF NOT EXISTS ix_delivery_earnings_period_date ON delivery_earnings(period_date)",
+
+        # ══════════════════════════════════════════════════════════════════════
+        # MÓDULO LOGÍSTICA — Fase 4 (Auto-atribuição + Geocodificação)
+        # ══════════════════════════════════════════════════════════════════════
+        "CREATE TABLE IF NOT EXISTS geocode_cache (id VARCHAR(32) PRIMARY KEY, query TEXT NOT NULL, lat FLOAT, lng FLOAT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_geocode_cache_created_at ON geocode_cache(created_at DESC)",
     ]
     for stmt in stmts:
         try:

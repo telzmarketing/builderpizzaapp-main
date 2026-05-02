@@ -1777,6 +1777,51 @@ export interface LogisticsSettings {
   max_concurrent_deliveries: number;
   default_estimated_minutes: number;
   confirmation_code_enabled: boolean;
+  rate_per_delivery: number;
+  updated_at?: string;
+}
+
+// ── Phase 3 types ─────────────────────────────────────────────────────────────
+
+export interface DeliveryEarning {
+  id: string;
+  delivery_id: string;
+  delivery_person_id: string;
+  person_name?: string;
+  person_phone?: string;
+  amount: number;
+  status: "pending" | "paid";
+  period_date?: string;
+  paid_at?: string;
+  paid_by?: string;
+  notes?: string;
+  created_at?: string;
+}
+
+export interface DriverAnalytics {
+  person_id: string;
+  person_name: string;
+  person_phone: string;
+  vehicle_type: string;
+  total_deliveries: number;
+  avg_duration_minutes: number | null;
+  avg_rating: number | null;
+  completion_rate: number;
+  pending_earnings: number;
+  paid_earnings: number;
+}
+
+export interface DeliveryAlert {
+  id: string;
+  order_id: string;
+  delivery_person_id: string | null;
+  person_name: string | null;
+  person_phone: string | null;
+  status: string;
+  assigned_at: string | null;
+  estimated_minutes: number;
+  overdue_minutes: number;
+  delivery_street?: string | null;
 }
 
 function driverAuthHeaders(): HeadersInit {
@@ -1836,4 +1881,40 @@ export const deliveryApi = {
   // Confirm delivery (public — no auth needed)
   confirmCode: (deliveryId: string, code: string) =>
     driverRequest<DeliveryRecord>("POST", `/delivery/${deliveryId}/confirm-code`, { code }),
+
+  // Admin — Phase 3: earnings
+  listEarnings: (params?: { person_id?: string; status?: string; period_from?: string; period_to?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.person_id) qs.set("person_id", params.person_id);
+    if (params?.status) qs.set("status", params.status);
+    if (params?.period_from) qs.set("period_from", params.period_from);
+    if (params?.period_to) qs.set("period_to", params.period_to);
+    const q = qs.toString();
+    return get<DeliveryEarning[]>(`/delivery/earnings${q ? `?${q}` : ""}`);
+  },
+  payEarnings: (earning_ids: string[], paid_by = "admin") =>
+    post<{ paid: number }>("/delivery/earnings/pay", { earning_ids, paid_by }),
+
+  // Admin — Phase 3: analytics
+  getAnalytics: (params?: { period_from?: string; period_to?: string; person_id?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.period_from) qs.set("period_from", params.period_from);
+    if (params?.period_to) qs.set("period_to", params.period_to);
+    if (params?.person_id) qs.set("person_id", params.person_id);
+    const q = qs.toString();
+    return get<DriverAnalytics[]>(`/delivery/analytics${q ? `?${q}` : ""}`);
+  },
+
+  // Admin — Phase 3: delay alerts
+  getAlerts: () => get<DeliveryAlert[]>("/delivery/alerts"),
+
+  // Admin — Phase 4: auto-assignment
+  autoAssign: () =>
+    post<Array<{ order_id: string; delivery_id: string; person_name: string }>>("/delivery/auto-assign", {}),
+
+  // Admin — Phase 4: geocoding proxy (Nominatim, cached in DB)
+  geocode: (q: string) =>
+    get<{ lat: number | null; lng: number | null; cached: boolean }>(
+      `/delivery/geocode?q=${encodeURIComponent(q)}`
+    ),
 };

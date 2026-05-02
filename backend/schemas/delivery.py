@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, date
+from typing import Optional, List
 from pydantic import BaseModel, Field
 
 from backend.models.delivery import VehicleType, DeliveryPersonStatus, DeliveryStatus
@@ -159,6 +159,7 @@ class LogisticsSettingsOut(BaseModel):
     max_concurrent_deliveries: int
     default_estimated_minutes: int
     confirmation_code_enabled: bool
+    rate_per_delivery: Optional[float] = 0.0
     updated_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
@@ -169,3 +170,52 @@ class LogisticsSettingsUpdate(BaseModel):
     max_concurrent_deliveries: Optional[int] = None
     default_estimated_minutes: Optional[int] = None
     confirmation_code_enabled: Optional[bool] = None
+    rate_per_delivery: Optional[float] = None
+
+
+# ── Phase 3 — Earnings / Analytics / Alerts ───────────────────────────────────
+
+class BulkPayIn(BaseModel):
+    earning_ids: List[str]
+    paid_by: str = "admin"
+
+
+class DeliveryEarningOut(BaseModel):
+    id: str
+    delivery_id: str
+    delivery_person_id: str
+    person_name: Optional[str] = None
+    person_phone: Optional[str] = None
+    amount: float
+    status: str
+    period_date: Optional[str] = None
+    paid_at: Optional[datetime] = None
+    paid_by: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class DriverAnalyticsOut(BaseModel):
+    person_id: str
+    person_name: str
+    person_phone: str
+    vehicle_type: str
+    total_deliveries: int
+    avg_duration_minutes: Optional[float] = None
+    avg_rating: Optional[float] = None
+    completion_rate: float
+    pending_earnings: float
+    paid_earnings: float
+
+
+class DeliveryAlertOut(BaseModel):
+    id: str
+    order_id: str
+    delivery_person_id: Optional[str] = None
+    person_name: Optional[str] = None
+    person_phone: Optional[str] = None
+    status: str
+    assigned_at: Optional[str] = None
+    estimated_minutes: int
+    overdue_minutes: int
+    delivery_street: Optional[str] = None

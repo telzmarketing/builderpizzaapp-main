@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Float, Integer, Enum, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Boolean, Float, Integer, Enum, DateTime, Date, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -13,6 +13,7 @@ class LogisticsSettings(Base):
     max_concurrent_deliveries  = Column(Integer, default=3)
     default_estimated_minutes  = Column(Integer, default=40)
     confirmation_code_enabled  = Column(Boolean, default=True)
+    rate_per_delivery          = Column(Float, default=0.0, nullable=True)
     updated_at                 = Column(DateTime(timezone=True),
                                         default=lambda: datetime.now(timezone.utc),
                                         onupdate=lambda: datetime.now(timezone.utc))
@@ -130,3 +131,32 @@ class DeliveryEvent(Base):
     created_at    = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     delivery = relationship("Delivery", back_populates="events")
+
+
+class DeliveryEarning(Base):
+    __tablename__ = "delivery_earnings"
+
+    id                 = Column(String, primary_key=True)
+    delivery_id        = Column(String, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False)
+    delivery_person_id = Column(String, ForeignKey("delivery_persons.id", ondelete="CASCADE"), nullable=False)
+    amount             = Column(Float, default=0.0, nullable=False)
+    status             = Column(String(20), default="pending", nullable=False)  # pending | paid
+    period_date        = Column(Date, nullable=False)
+    paid_at            = Column(DateTime(timezone=True), nullable=True)
+    paid_by            = Column(String(200), nullable=True)
+    notes              = Column(Text, nullable=True)
+    created_at         = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    delivery        = relationship("Delivery")
+    delivery_person = relationship("DeliveryPerson")
+
+
+class GeocodeCache(Base):
+    """Address → lat/lng cache to avoid repeated Nominatim calls."""
+    __tablename__ = "geocode_cache"
+
+    id         = Column(String(32), primary_key=True)  # sha256[:32] of normalised address
+    query      = Column(Text, nullable=False)
+    lat        = Column(Float, nullable=True)
+    lng        = Column(Float, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

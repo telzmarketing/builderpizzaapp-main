@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import random
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from passlib.context import CryptContext
@@ -25,8 +25,8 @@ from backend.core.events import (
     bus, DeliveryAssigned, DeliveryStatusChanged, DeliveryCompleted,
 )
 from backend.models.delivery import (
-    Delivery, DeliveryEvent, DeliveryPerson, DeliveryStatus,
-    DeliveryPersonStatus, LogisticsSettings,
+    Delivery, DeliveryEvent, DeliveryEarning, DeliveryPerson, DeliveryStatus,
+    DeliveryPersonStatus, LogisticsSettings, GeocodeCache,
 )
 from backend.models.order import Order, OrderStatus
 
@@ -272,6 +272,23 @@ class DeliveryService:
         if delivery.assigned_at and delivery.delivered_at:
             delta = delivery.delivered_at - delivery.assigned_at
             duration_minutes = int(delta.total_seconds() / 60)
+
+        # Auto-create earnings record if rate_per_delivery is configured
+        try:
+            settings_row = self._db.query(LogisticsSettings).filter(LogisticsSettings.id == "default").first()
+            rate = (getattr(settings_row, "rate_per_delivery", None) or 0.0) if settings_row else 0.0
+            if rate > 0 and delivery.delivery_person_id:
+                earning = DeliveryEarning(
+                    id=str(uuid.uuid4()),
+                    delivery_id=delivery.id,
+                    delivery_person_id=delivery.delivery_person_id,
+                    amount=rate,
+                    status="pending",
+                    period_date=datetime.now(timezone.utc).date(),
+                )
+                self._db.add(earning)
+        except Exception:
+            pass  # never fail completion due to earnings issue
 
         self._db.commit()
         self._db.refresh(delivery)
@@ -584,3 +601,305 @@ class DeliveryService:
         self._db.commit()
         self._db.refresh(settings)
         return settings
+
+    # ── Phase 3 — Earnings ────────────────────────────────────────────────────
+
+    def list_earnings(
+        self,
+        person_id: str | None = None,
+        status: str | None = None,
+        period_from=None,
+        period_to=None,
+    ) -> list[dict]:
+        """List earnings with optional filters. Returns plain dicts to avoid lazy-load issues."""
+        from sqlalchemy.orm import joinedload
+        q = (
+            self._db.query(DeliveryEarning)
+            .options(joinedload(DeliveryEarning.delivery_person))
+        )
+        if person_id:
+            q = q.filter(DeliveryEarning.delivery_person_id == person_id)
+        if status:
+            q = q.filter(DeliveryEarning.status == status)
+        if period_from:
+            q = q.filter(DeliveryEarning.period_date >= period_from)
+        if period_to:
+            q = q.filter(DeliveryEarning.period_date <= period_to)
+
+        earnings = q.order_by(DeliveryEarning.created_at.desc()).all()
+        return [
+            {
+                "id": e.id,
+                "delivery_id": e.delivery_id,
+                "delivery_person_id": e.delivery_person_id,
+                "person_name": e.delivery_person.name if e.delivery_person else None,
+                "person_phone": e.delivery_person.phone if e.delivery_person else None,
+                "amount": e.amount,
+                "status": e.status,
+                "period_date": str(e.period_date) if e.period_date else None,
+                "paid_at": e.paid_at.isoformat() if e.paid_at else None,
+                "paid_by": e.paid_by,
+                "notes": e.notes,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in earnings
+        ]
+
+    def bulk_pay_earnings(self, earning_ids: list[str], paid_by: str = "admin") -> int:
+        """Mark a list of earnings as paid. Returns count of earnings actually updated."""
+        now = datetime.now(timezone.utc)
+        paid_count = 0
+        for eid in earning_ids:
+            earning = (
+                self._db.query(DeliveryEarning)
+                .filter(DeliveryEarning.id == eid, DeliveryEarning.status == "pending")
+                .first()
+            )
+            if earning:
+                earning.status = "paid"
+                earning.paid_at = now
+                earning.paid_by = paid_by
+                paid_count += 1
+        if paid_count > 0:
+            self._db.commit()
+        return paid_count
+
+    # ── Phase 3 — Analytics ───────────────────────────────────────────────────
+
+    def get_analytics(
+        self,
+        period_from=None,
+        period_to=None,
+        person_id: str | None = None,
+    ) -> list[dict]:
+        """Per-driver performance stats for the given period."""
+        persons = self.list_persons()
+        result = []
+
+        for person in persons:
+            if person_id and person.id != person_id:
+                continue
+
+            dq = self._db.query(Delivery).filter(Delivery.delivery_person_id == person.id)
+            if period_from:
+                dq = dq.filter(Delivery.delivered_at >= period_from)
+            if period_to:
+                dq = dq.filter(Delivery.delivered_at <= period_to)
+            deliveries_in_period = dq.all()
+
+            completed = [
+                d for d in deliveries_in_period
+                if d.status in (DeliveryStatus.delivered, DeliveryStatus.completed)
+            ]
+            failed = [
+                d for d in deliveries_in_period
+                if d.status in (DeliveryStatus.failed, DeliveryStatus.cancelled)
+            ]
+            total = len(completed) + len(failed)
+
+            durations = []
+            for d in completed:
+                if d.assigned_at and d.delivered_at:
+                    a = d.assigned_at if d.assigned_at.tzinfo else d.assigned_at.replace(tzinfo=timezone.utc)
+                    b = d.delivered_at if d.delivered_at.tzinfo else d.delivered_at.replace(tzinfo=timezone.utc)
+                    durations.append((b - a).total_seconds() / 60)
+
+            ratings = [d.rating for d in completed if d.rating is not None]
+
+            eq = self._db.query(DeliveryEarning).filter(DeliveryEarning.delivery_person_id == person.id)
+            if period_from:
+                eq = eq.filter(DeliveryEarning.period_date >= period_from)
+            if period_to:
+                eq = eq.filter(DeliveryEarning.period_date <= period_to)
+            earnings = eq.all()
+
+            result.append({
+                "person_id": person.id,
+                "person_name": person.name,
+                "person_phone": person.phone,
+                "vehicle_type": person.vehicle_type.value,
+                "total_deliveries": len(completed),
+                "avg_duration_minutes": round(sum(durations) / len(durations), 1) if durations else None,
+                "avg_rating": round(sum(ratings) / len(ratings), 2) if ratings else None,
+                "completion_rate": round(len(completed) / total * 100, 1) if total > 0 else 100.0,
+                "pending_earnings": round(sum(e.amount for e in earnings if e.status == "pending"), 2),
+                "paid_earnings": round(sum(e.amount for e in earnings if e.status == "paid"), 2),
+            })
+
+        return sorted(result, key=lambda x: x["total_deliveries"], reverse=True)
+
+    # ── Phase 3 — Delay Alerts ────────────────────────────────────────────────
+
+    def get_alerts(self) -> list[dict]:
+        """Return active deliveries past their ETA, sorted by most overdue first."""
+        from sqlalchemy.orm import joinedload
+        now = datetime.now(timezone.utc)
+
+        active = (
+            self._db.query(Delivery)
+            .options(joinedload(Delivery.delivery_person), joinedload(Delivery.order))
+            .filter(
+                Delivery.status.in_([
+                    DeliveryStatus.assigned,
+                    DeliveryStatus.picked_up,
+                    DeliveryStatus.on_the_way,
+                ]),
+                Delivery.assigned_at.isnot(None),
+            )
+            .all()
+        )
+
+        alerts = []
+        for d in active:
+            if not d.assigned_at or not d.estimated_minutes:
+                continue
+            assigned = d.assigned_at
+            if assigned.tzinfo is None:
+                assigned = assigned.replace(tzinfo=timezone.utc)
+            deadline = assigned + timedelta(minutes=d.estimated_minutes)
+            if deadline < now:
+                overdue_minutes = int((now - deadline).total_seconds() / 60)
+                alerts.append({
+                    "id": d.id,
+                    "order_id": d.order_id,
+                    "delivery_person_id": d.delivery_person_id,
+                    "person_name": d.delivery_person.name if d.delivery_person else None,
+                    "person_phone": d.delivery_person.phone if d.delivery_person else None,
+                    "status": d.status.value,
+                    "assigned_at": d.assigned_at.isoformat() if d.assigned_at else None,
+                    "estimated_minutes": d.estimated_minutes,
+                    "overdue_minutes": overdue_minutes,
+                    "delivery_street": d.order.delivery_street if d.order else None,
+                })
+
+        return sorted(alerts, key=lambda x: x["overdue_minutes"], reverse=True)
+
+    # ── Phase 4 — Auto-assignment ─────────────────────────────────────────────
+
+    def auto_assign_pending(self) -> list[dict]:
+        """
+        Auto-assign available drivers to unassigned eligible orders.
+        Only runs when auto_assign is enabled in logistics settings.
+        Returns list of {order_id, delivery_id, person_name} for each assignment made.
+        """
+        settings = self.get_logistics_settings()
+        if not settings.auto_assign:
+            return []
+
+        from sqlalchemy import func
+
+        # Orders eligible for assignment
+        eligible_orders = (
+            self._db.query(Order)
+            .filter(Order.status.in_([OrderStatus.ready_for_pickup, OrderStatus.preparing]))
+            .all()
+        )
+        if not eligible_orders:
+            return []
+
+        # Orders that already have an active delivery
+        active_order_ids = {
+            row[0] for row in self._db.query(Delivery.order_id).filter(
+                Delivery.status.notin_([DeliveryStatus.failed, DeliveryStatus.cancelled])
+            ).all()
+        }
+        unassigned = [o for o in eligible_orders if o.id not in active_order_ids]
+        if not unassigned:
+            return []
+
+        # Available drivers
+        available = (
+            self._db.query(DeliveryPerson)
+            .filter(
+                DeliveryPerson.active == True,  # noqa: E712
+                DeliveryPerson.status == DeliveryPersonStatus.available,
+            )
+            .all()
+        )
+        if not available:
+            return []
+
+        # Active delivery counts per driver (single query)
+        counts_raw = (
+            self._db.query(Delivery.delivery_person_id, func.count(Delivery.id))
+            .filter(Delivery.status.in_([
+                DeliveryStatus.assigned,
+                DeliveryStatus.picked_up,
+                DeliveryStatus.on_the_way,
+            ]))
+            .group_by(Delivery.delivery_person_id)
+            .all()
+        )
+        active_counts: dict[str, int] = {row[0]: row[1] for row in counts_raw}
+
+        assigned = []
+        for order in unassigned:
+            eligible_drivers = [
+                p for p in available
+                if active_counts.get(p.id, 0) < settings.max_concurrent_deliveries
+            ]
+            if not eligible_drivers:
+                break  # all drivers at capacity
+
+            best = min(eligible_drivers, key=lambda p: active_counts.get(p.id, 0))
+            try:
+                delivery = self.assign(
+                    order.id,
+                    best.id,
+                    estimated_minutes=settings.default_estimated_minutes,
+                )
+                active_counts[best.id] = active_counts.get(best.id, 0) + 1
+                assigned.append({
+                    "order_id": order.id,
+                    "delivery_id": delivery.id,
+                    "person_name": best.name,
+                })
+            except Exception:
+                continue
+
+        return assigned
+
+    # ── Phase 4 — Geocoding ───────────────────────────────────────────────────
+
+    def geocode_address(self, query: str) -> dict:
+        """
+        Geocode an address string via Nominatim (OpenStreetMap).
+        Results are cached in the geocode_cache table — Nominatim is only
+        called once per unique address, respecting their usage policy.
+        """
+        import hashlib
+        import urllib.request
+        import urllib.parse
+        import json as _json
+
+        cache_key = hashlib.sha256(query.lower().strip().encode()).hexdigest()[:32]
+        cached = self._db.query(GeocodeCache).filter(GeocodeCache.id == cache_key).first()
+        if cached:
+            return {"lat": cached.lat, "lng": cached.lng, "cached": True}
+
+        lat, lng = None, None
+        try:
+            url = (
+                "https://nominatim.openstreetmap.org/search"
+                f"?q={urllib.parse.quote(query)}&format=json&limit=1&countrycodes=br"
+            )
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "MoschettieriDelivery/1.0"},
+            )
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = _json.loads(resp.read())
+            if data:
+                lat = float(data[0]["lat"])
+                lng = float(data[0]["lon"])
+        except Exception:
+            pass
+
+        try:
+            entry = GeocodeCache(id=cache_key, query=query, lat=lat, lng=lng)
+            self._db.add(entry)
+            self._db.commit()
+        except Exception:
+            self._db.rollback()
+
+        return {"lat": lat, "lng": lng, "cached": False}
