@@ -45,7 +45,7 @@ export default function AppSidebar() {
   );
 
   const [openGroups, setOpenGroups] = useState<Set<string>>(
-    () => new Set(activeGroups.length ? activeGroups : adminNavigationGroups.map((group) => group.label)),
+    () => new Set(adminNavigationGroups.map((group) => group.label)),
   );
 
   useEffect(() => {
