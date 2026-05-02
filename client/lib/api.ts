@@ -1586,6 +1586,65 @@ export interface ApiSegmentPreview {
   message?: string;
 }
 
+export interface ApiCustomerAIProfile {
+  id: string;
+  customer_id: string;
+  profile_summary: string;
+  segment: string;
+  preferences: {
+    favorite_products?: Array<{ name: string; count: number }>;
+    favorite_categories?: Array<{ name: string; count: number }>;
+    favorite_flavors?: Array<{ name: string; count: number }>;
+    favorite_sizes?: Array<{ name: string; count: number }>;
+    favorite_crusts?: Array<{ name: string; count: number }>;
+    favorite_drinks?: Array<{ name: string; count: number }>;
+    best_purchase_days?: Array<{ name: string; count: number }>;
+    best_purchase_hours?: Array<{ name: string; count: number }>;
+  };
+  behavior: {
+    total_orders?: number;
+    total_spent?: number;
+    average_ticket?: number;
+    last_order_at?: string | null;
+    days_since_last_order?: number | null;
+    cart_abandonments?: number;
+    checkout_abandonments?: number;
+    visits_without_purchase?: number;
+    coupon_events?: number;
+    campaign_events?: number;
+    chatbot_interactions?: number;
+  };
+  churn_risk: string;
+  repurchase_probability: number;
+  average_ticket: number;
+  best_contact_day: string | null;
+  best_contact_hour: string | null;
+  next_best_action: string | null;
+  recommended_offer: string | null;
+  recommended_message: string | null;
+  analysis_source: string;
+  model_version: string;
+  generated_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ApiCustomerAISuggestion {
+  id: string;
+  customer_id: string;
+  suggestion_type: "tag" | "group" | string;
+  name: string;
+  slug: string;
+  reason: string;
+  confidence: "high" | "medium" | "low" | string;
+  status: "pending" | "accepted" | "rejected" | string;
+  target_id: string | null;
+  source: string;
+  created_at: string | null;
+  updated_at: string | null;
+  resolved_at: string | null;
+}
+
 // ─── Customers ────────────────────────────────────────────────────────────────
 
 export const customersApi = {
@@ -1606,6 +1665,15 @@ export const customersApi = {
   getEvents: (id: string, event_type?: string) =>
     get<ApiCustomerEvent[]>(`/customers/${id}/events${event_type ? `?event_type=${event_type}` : ""}`),
   getSummary: (id: string) => get<ApiCustomerSummary>(`/customers/${id}/summary`),
+  analyzeProfile: (id: string) =>
+    post<{ profile: ApiCustomerAIProfile; suggestions: ApiCustomerAISuggestion[] }>(`/customers/${id}/analyze`, {}),
+  getAIProfile: (id: string) => get<ApiCustomerAIProfile | null>(`/customers/${id}/profile`),
+  getAISuggestions: (id: string, status = "pending") =>
+    get<ApiCustomerAISuggestion[]>(`/customers/${id}/suggestions?status=${encodeURIComponent(status)}`),
+  acceptSuggestion: (suggestionId: string) =>
+    post<ApiCustomerAISuggestion>(`/suggestions/${suggestionId}/accept`, {}),
+  rejectSuggestion: (suggestionId: string) =>
+    post<ApiCustomerAISuggestion>(`/suggestions/${suggestionId}/reject`, {}),
 };
 
 export const crmApi = {

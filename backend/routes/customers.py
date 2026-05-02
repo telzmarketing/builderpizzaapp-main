@@ -12,6 +12,13 @@ from backend.models.admin import AdminUser
 from backend.models.customer import Customer, Address
 from backend.models.order import Order
 from backend.models.customer_event import CustomerEvent
+from backend.services.customer_ai_service import (
+    accept_customer_ai_suggestion,
+    analyze_customer_profile,
+    get_customer_ai_profile,
+    list_customer_ai_suggestions,
+    reject_customer_ai_suggestion,
+)
 from backend.schemas.customer import (
     CustomerCreate, CustomerUpdate, CustomerOut,
     AddressCreate, AddressOut,
@@ -19,6 +26,7 @@ from backend.schemas.customer import (
 from backend.core.response import ok
 
 router = APIRouter(prefix="/customers", tags=["customers"])
+suggestions_router = APIRouter(prefix="/suggestions", tags=["customer-ai"])
 
 
 @router.get("", response_model=list[CustomerOut])
@@ -319,3 +327,70 @@ def get_customer_summary(
             "last_activity_at": last_event.created_at if last_event else None,
         },
     })
+
+
+# AI customer profile
+
+@router.post("/{customer_id}/analyze")
+def analyze_customer(
+    customer_id: str,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    try:
+        result = analyze_customer_profile(db, customer_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return ok(result, "Perfil inteligente analisado.")
+
+
+@router.get("/{customer_id}/profile")
+def get_customer_profile(
+    customer_id: str,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(404, "Cliente nao encontrado.")
+    return ok(get_customer_ai_profile(db, customer_id))
+
+
+@router.get("/{customer_id}/suggestions")
+def get_customer_suggestions(
+    customer_id: str,
+    status: str = Query(default="pending"),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(404, "Cliente nao encontrado.")
+    return ok(list_customer_ai_suggestions(db, customer_id, status=status))
+
+
+@suggestions_router.post("/{suggestion_id}/accept")
+def accept_suggestion(
+    suggestion_id: str,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    admin_name = getattr(admin, "name", None) or getattr(admin, "email", None)
+    try:
+        result = accept_customer_ai_suggestion(db, suggestion_id, admin_name=admin_name)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return ok(result, "Sugestao aceita.")
+
+
+@suggestions_router.post("/{suggestion_id}/reject")
+def reject_suggestion(
+    suggestion_id: str,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    try:
+        result = reject_customer_ai_suggestion(db, suggestion_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return ok(result, "Sugestao rejeitada.")

@@ -4,10 +4,18 @@ import {
   ArrowLeft, User, ShoppingBag, Clock, BarChart2, Phone,
   MapPin, Star, ShoppingCart, Eye, MessageSquare, Tag, Gift,
   CreditCard, Package, ChevronDown, ChevronUp, Loader2, AlertCircle,
-  TrendingUp, Calendar, DollarSign, Repeat,
+  TrendingUp, Calendar, DollarSign, Repeat, Brain, Sparkles, CheckCircle2, XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { customersApi, ApiCustomer, ApiCustomerOrder, ApiCustomerEvent, ApiCustomerSummary } from "@/lib/api";
+import {
+  customersApi,
+  ApiCustomer,
+  ApiCustomerAIProfile,
+  ApiCustomerAISuggestion,
+  ApiCustomerOrder,
+  ApiCustomerEvent,
+  ApiCustomerSummary,
+} from "@/lib/api";
 
 type Tab = "overview" | "orders" | "timeline" | "behavior";
 
@@ -179,6 +187,38 @@ function behaviorStatusConfig(status: string) {
   return configs[status] ?? { label: status, color: "bg-surface-03 text-stone/60", description: "" };
 }
 
+function aiSegmentLabel(segment?: string | null) {
+  const labels: Record<string, string> = {
+    lead: "Lead",
+    novo_comprador: "Novo comprador",
+    recorrente: "Recorrente",
+    vip: "VIP",
+    alto_ticket: "Alto ticket",
+    em_risco: "Em risco",
+    inativo: "Inativo",
+  };
+  return labels[segment ?? ""] ?? (segment ? segment.replace("_", " ") : "Sem análise");
+}
+
+function aiRiskConfig(risk?: string | null) {
+  const configs: Record<string, { label: string; color: string }> = {
+    low: { label: "Baixo", color: "bg-green-500/15 text-green-400" },
+    medium: { label: "Médio", color: "bg-yellow-500/15 text-yellow-400" },
+    high: { label: "Alto", color: "bg-red-500/15 text-red-400" },
+  };
+  return configs[risk ?? ""] ?? { label: risk ?? "Sem dados", color: "bg-surface-03 text-stone/60" };
+}
+
+function confidenceLabel(confidence: string) {
+  const labels: Record<string, string> = { high: "Alta", medium: "Média", low: "Baixa" };
+  return labels[confidence] ?? confidence;
+}
+
+function compactList(items?: Array<{ name: string; count: number }>, fallback = "Sem padrão identificado") {
+  if (!items || items.length === 0) return fallback;
+  return items.slice(0, 3).map((item) => item.name).join(", ");
+}
+
 export default function ClienteDetalhe() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -190,6 +230,10 @@ export default function ClienteDetalhe() {
   const [orders, setOrders] = useState<ApiCustomerOrder[]>([]);
   const [events, setEvents] = useState<ApiCustomerEvent[]>([]);
   const [summary, setSummary] = useState<ApiCustomerSummary | null>(null);
+  const [aiProfile, setAiProfile] = useState<ApiCustomerAIProfile | null>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<ApiCustomerAISuggestion[]>([]);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
 
   const [eventFilter, setEventFilter] = useState("");
 
@@ -202,14 +246,60 @@ export default function ClienteDetalhe() {
       customersApi.getOrders(id),
       customersApi.getEvents(id),
       customersApi.getSummary(id),
-    ]).then(([c, o, e, s]) => {
+      customersApi.getAIProfile(id),
+      customersApi.getAISuggestions(id),
+    ]).then(([c, o, e, s, profile, suggestions]) => {
       if (c.status === "fulfilled") setCustomer(c.value as ApiCustomer);
       else setError("Não foi possível carregar o cliente.");
       if (o.status === "fulfilled") setOrders(o.value as ApiCustomerOrder[]);
       if (e.status === "fulfilled") setEvents(e.value as ApiCustomerEvent[]);
       if (s.status === "fulfilled") setSummary(s.value as ApiCustomerSummary);
+      if (profile.status === "fulfilled") setAiProfile(profile.value as ApiCustomerAIProfile | null);
+      if (suggestions.status === "fulfilled") setAiSuggestions(suggestions.value as ApiCustomerAISuggestion[]);
+      if (profile.status === "rejected" || suggestions.status === "rejected") setAiError("Não foi possível carregar a inteligência do cliente.");
     }).finally(() => setLoading(false));
   }, [id]);
+
+  async function refreshAISuggestions() {
+    if (!id) return;
+    const suggestions = await customersApi.getAISuggestions(id);
+    setAiSuggestions(suggestions);
+  }
+
+  async function handleAnalyzeProfile() {
+    if (!id) return;
+    setAiBusy(true);
+    setAiError(null);
+    try {
+      const result = await customersApi.analyzeProfile(id);
+      setAiProfile(result.profile);
+      setAiSuggestions(result.suggestions);
+      const [nextEvents, nextSummary] = await Promise.allSettled([
+        customersApi.getEvents(id),
+        customersApi.getSummary(id),
+      ]);
+      if (nextEvents.status === "fulfilled") setEvents(nextEvents.value);
+      if (nextSummary.status === "fulfilled") setSummary(nextSummary.value);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "Falha ao analisar o cliente.");
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  async function handleSuggestionAction(suggestionId: string, action: "accept" | "reject") {
+    setAiBusy(true);
+    setAiError(null);
+    try {
+      if (action === "accept") await customersApi.acceptSuggestion(suggestionId);
+      else await customersApi.rejectSuggestion(suggestionId);
+      await refreshAISuggestions();
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "Falha ao atualizar sugestão.");
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   const filteredEvents = eventFilter
     ? events.filter(ev => getEventCategory(ev.event_type) === eventFilter)
@@ -264,6 +354,8 @@ export default function ClienteDetalhe() {
   const campaignEvents = events.filter((event) => getEventCategory(event.event_type) === "campaign").length;
   const couponEvents = events.filter((event) => getEventCategory(event.event_type) === "coupon").length;
   const cancelledOrders = summary?.orders.cancelled ?? 0;
+  const aiRisk = aiRiskConfig(aiProfile?.churn_risk);
+  const repurchasePercent = Math.round((aiProfile?.repurchase_probability ?? 0) * 100);
 
   return (
     <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
@@ -351,6 +443,128 @@ export default function ClienteDetalhe() {
               </div>
             </div>
           )}
+          <div className="bg-surface-02 rounded-xl border border-surface-03 p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Brain size={18} className="text-gold" />
+                <div>
+                  <h3 className="text-parchment font-medium">Perfil Inteligente do Cliente</h3>
+                  <p className="text-stone/50 text-xs">
+                    {aiProfile?.generated_at
+                      ? `Última análise: ${new Date(aiProfile.generated_at).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`
+                      : "Cliente ainda não analisado"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleAnalyzeProfile}
+                disabled={aiBusy}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-3 py-2 text-sm font-semibold text-brand-dark transition-colors hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {aiBusy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                {aiProfile ? "Reanalisar perfil" : "Analisar perfil do cliente"}
+              </button>
+            </div>
+            {aiError && (
+              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+                {aiError}
+              </div>
+            )}
+            {aiProfile ? (
+              <div className="space-y-4">
+                <p className="text-stone/70 text-sm leading-relaxed">{aiProfile.profile_summary}</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-lg bg-surface-01 p-3 border border-surface-03">
+                    <p className="text-stone/50 text-xs">Segmento</p>
+                    <p className="text-parchment font-semibold">{aiSegmentLabel(aiProfile.segment)}</p>
+                  </div>
+                  <div className="rounded-lg bg-surface-01 p-3 border border-surface-03">
+                    <p className="text-stone/50 text-xs">Risco de churn</p>
+                    <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${aiRisk.color}`}>{aiRisk.label}</span>
+                  </div>
+                  <div className="rounded-lg bg-surface-01 p-3 border border-surface-03">
+                    <p className="text-stone/50 text-xs">Recompra</p>
+                    <p className="text-parchment font-semibold">{repurchasePercent}%</p>
+                  </div>
+                  <div className="rounded-lg bg-surface-01 p-3 border border-surface-03">
+                    <p className="text-stone/50 text-xs">Melhor contato</p>
+                    <p className="text-parchment font-semibold">
+                      {[aiProfile.best_contact_day, aiProfile.best_contact_hour].filter(Boolean).join(" às ") || "Sem padrão"}
+                    </p>
+                  </div>
+                </div>
+                <div className="grid md:grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-lg bg-surface-01 p-3 border border-surface-03">
+                    <p className="text-stone/50 text-xs mb-1">Preferências</p>
+                    <p className="text-parchment">Produtos: {compactList(aiProfile.preferences.favorite_products)}</p>
+                    <p className="text-stone/60">Sabores: {compactList(aiProfile.preferences.favorite_flavors)}</p>
+                  </div>
+                  <div className="rounded-lg bg-surface-01 p-3 border border-surface-03">
+                    <p className="text-stone/50 text-xs mb-1">Próxima melhor ação</p>
+                    <p className="text-parchment">{aiProfile.next_best_action ?? "Sem ação recomendada"}</p>
+                    {aiProfile.recommended_offer && <p className="text-stone/60 mt-1">{aiProfile.recommended_offer}</p>}
+                  </div>
+                </div>
+                {aiProfile.recommended_message && (
+                  <div className="rounded-lg bg-gold/10 border border-gold/20 p-3">
+                    <p className="text-gold/80 text-xs mb-1">Mensagem recomendada</p>
+                    <p className="text-parchment text-sm">{aiProfile.recommended_message}</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-surface-03 p-4 text-sm text-stone/60">
+                Clique em analisar para gerar segmento, preferências, risco de churn, melhor horário de contato e próxima ação.
+              </div>
+            )}
+          </div>
+          <div className="bg-surface-02 rounded-xl border border-surface-03 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Sparkles size={16} className="text-gold" />
+              <h3 className="text-parchment font-medium">Sugestões da IA</h3>
+            </div>
+            {aiSuggestions.length === 0 ? (
+              <p className="text-stone/50 text-sm">Nenhuma sugestão pendente.</p>
+            ) : (
+              <div className="space-y-2">
+                {aiSuggestions.map((suggestion) => (
+                  <div key={suggestion.id} className="rounded-lg bg-surface-01 border border-surface-03 p-3">
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="rounded-full bg-brand-mid/60 px-2 py-0.5 text-xs font-medium text-parchment">
+                            {suggestion.suggestion_type === "tag" ? "Tag" : "Grupo"}
+                          </span>
+                          <span className="text-parchment font-medium">{suggestion.name}</span>
+                          <span className="text-stone/50 text-xs">Confiança {confidenceLabel(suggestion.confidence)}</span>
+                        </div>
+                        <p className="text-stone/60 text-sm mt-1">{suggestion.reason}</p>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleSuggestionAction(suggestion.id, "accept")}
+                          disabled={aiBusy}
+                          className="inline-flex items-center gap-1 rounded-lg border border-green-500/30 px-2.5 py-1.5 text-xs font-medium text-green-300 hover:bg-green-500/10 disabled:opacity-60"
+                        >
+                          <CheckCircle2 size={13} /> Aceitar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSuggestionAction(suggestion.id, "reject")}
+                          disabled={aiBusy}
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 px-2.5 py-1.5 text-xs font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-60"
+                        >
+                          <XCircle size={13} /> Rejeitar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           {summary && (
             <div className="bg-surface-02 rounded-xl border border-surface-03 p-4 space-y-3">
               <h3 className="text-parchment font-medium">Resumo de Atividade</h3>

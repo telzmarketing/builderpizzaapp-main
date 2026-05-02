@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, String, Text, UniqueConstraint
 
 from backend.database import Base
 
@@ -64,3 +64,56 @@ class CustomerSegment(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+
+class CustomerAIProfile(Base):
+    __tablename__ = "customer_ai_profiles"
+
+    id = Column(String, primary_key=True)
+    customer_id = Column(String, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, unique=True)
+    profile_summary = Column(Text, nullable=False, default="")
+    segment = Column(String(80), nullable=False, default="lead")
+    preferences_json = Column(Text, nullable=False, default="{}")
+    behavior_json = Column(Text, nullable=False, default="{}")
+    churn_risk = Column(String(20), nullable=False, default="low")
+    repurchase_probability = Column(Float, nullable=False, default=0.0)
+    average_ticket = Column(Float, nullable=False, default=0.0)
+    best_contact_day = Column(String(20), nullable=True)
+    best_contact_hour = Column(String(20), nullable=True)
+    next_best_action = Column(Text, nullable=True)
+    recommended_offer = Column(Text, nullable=True)
+    recommended_message = Column(Text, nullable=True)
+    analysis_source = Column(String(40), nullable=False, default="rules")
+    model_version = Column(String(40), nullable=False, default="rules_v1")
+    generated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class CustomerAISuggestion(Base):
+    __tablename__ = "customer_ai_suggestions"
+    __table_args__ = (
+        UniqueConstraint("customer_id", "suggestion_type", "slug", "status", name="uq_customer_ai_suggestion_status"),
+    )
+
+    id = Column(String, primary_key=True)
+    customer_id = Column(String, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
+    suggestion_type = Column(String(20), nullable=False)
+    name = Column(String(160), nullable=False)
+    slug = Column(String(180), nullable=False)
+    reason = Column(Text, nullable=False, default="")
+    confidence = Column(String(20), nullable=False, default="medium")
+    status = Column(String(20), nullable=False, default="pending")
+    target_id = Column(String, nullable=True)
+    source = Column(String(40), nullable=False, default="rules")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
