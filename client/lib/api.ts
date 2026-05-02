@@ -1532,6 +1532,60 @@ export interface ApiCustomerSummary {
   };
 }
 
+export interface ApiCustomerTag {
+  id: string;
+  tenant_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  color: string;
+  status: string;
+  source: string;
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  member_count?: number;
+  assignment_id?: string;
+  assignment_source?: string;
+  assigned_at?: string | null;
+}
+
+export interface ApiCustomerSegmentRule {
+  field: string;
+  operator: string;
+  value: string;
+}
+
+export interface ApiCustomerSegment {
+  id: string;
+  tenant_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  rules: ApiCustomerSegmentRule[];
+  status: string;
+  source: string;
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ApiSegmentPreview {
+  total: number;
+  customers: Array<{
+    id: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+    crm_status: string | null;
+    total_orders: number;
+    total_spent: number;
+    avg_ticket: number;
+    last_order_at: string | null;
+  }>;
+  message?: string;
+}
+
 // ─── Customers ────────────────────────────────────────────────────────────────
 
 export const customersApi = {
@@ -1552,6 +1606,31 @@ export const customersApi = {
   getEvents: (id: string, event_type?: string) =>
     get<ApiCustomerEvent[]>(`/customers/${id}/events${event_type ? `?event_type=${event_type}` : ""}`),
   getSummary: (id: string) => get<ApiCustomerSummary>(`/customers/${id}/summary`),
+};
+
+export const crmApi = {
+  listTags: (status = "active", search?: string) =>
+    get<ApiCustomerTag[]>(`/crm/tags?status=${encodeURIComponent(status)}${search ? `&search=${encodeURIComponent(search)}` : ""}`),
+  createTag: (data: { name: string; description?: string | null; color?: string; source?: string }) =>
+    post<ApiCustomerTag>("/crm/tags", data),
+  updateTag: (id: string, data: { name?: string; description?: string | null; color?: string; status?: string }) =>
+    request<ApiCustomerTag>("PATCH", `/crm/tags/${id}`, data),
+  inactiveTag: (id: string) => del<void>(`/crm/tags/${id}`),
+  listCustomerTags: (customerId: string) =>
+    get<ApiCustomerTag[]>(`/crm/customers/${customerId}/tags`),
+  assignCustomerTag: (customerId: string, tagId: string) =>
+    post<ApiCustomerTag>(`/crm/customers/${customerId}/tags/${tagId}`, {}),
+  removeCustomerTag: (customerId: string, tagId: string) =>
+    del<void>(`/crm/customers/${customerId}/tags/${tagId}`),
+  listSegments: (status = "active") =>
+    get<ApiCustomerSegment[]>(`/crm/segments?status=${encodeURIComponent(status)}`),
+  createSegment: (data: { name: string; description?: string | null; rules?: ApiCustomerSegmentRule[]; source?: string }) =>
+    post<ApiCustomerSegment>("/crm/segments", data),
+  updateSegment: (id: string, data: { name?: string; description?: string | null; rules?: ApiCustomerSegmentRule[]; status?: string }) =>
+    request<ApiCustomerSegment>("PATCH", `/crm/segments/${id}`, data),
+  inactiveSegment: (id: string) => del<void>(`/crm/segments/${id}`),
+  previewSegment: (id: string, limit = 50) =>
+    post<ApiSegmentPreview>(`/crm/segments/${id}/preview?limit=${limit}`, {}),
 };
 
 // ─── Customer Events ──────────────────────────────────────────────────────────

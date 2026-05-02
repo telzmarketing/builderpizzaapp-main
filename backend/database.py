@@ -32,6 +32,6 @@ def create_all_tables():
         product, order, customer, payment, payment_config,
         shipping, shipping_v2, coupon, loyalty, promotion, delivery, admin, campaign,
         chatbot, theme, home_config, paid_traffic, product_promotion, store_operation,
-        customer_event, rbac,
+        customer_event, rbac, crm,
     )
     Base.metadata.create_all(bind=engine)

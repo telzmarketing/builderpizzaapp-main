@@ -1,13 +1,17 @@
 """CRM — Pipelines, Stages, Cards, Tasks, Customer Groups, Timeline."""
 from __future__ import annotations
+import json
+import re
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, Date, ForeignKey, text
+from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, Date, ForeignKey, func, text
 from sqlalchemy.orm import Session
 
 from backend.database import get_db, Base
+from backend.models.crm import CustomerSegment, CustomerTag, CustomerTagAssignment
 from backend.routes.admin_auth import get_current_admin
 from backend.core.response import ok, created
 
@@ -205,10 +209,84 @@ class GroupCreate(BaseModel):
     rules: list[dict] = []
 
 
+class TagCreate(BaseModel):
+    name: str
+    description: str | None = None
+    color: str = "#f97316"
+    source: str = "manual"
+
+
+class TagUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    color: str | None = None
+    status: str | None = None
+
+
+class SegmentCreate(BaseModel):
+    name: str
+    description: str | None = None
+    rules: list[dict] = []
+    source: str = "manual"
+
+
+class SegmentUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    rules: list[dict] | None = None
+    status: str | None = None
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _now():
     return datetime.now(timezone.utc)
+
+
+def _slugify(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.strip().lower())
+    ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_value).strip("-")
+    return slug or uuid.uuid4().hex[:12]
+
+
+def _tag_to_dict(tag: CustomerTag, member_count: int | None = None) -> dict:
+    data = {
+        "id": tag.id,
+        "tenant_id": tag.tenant_id,
+        "name": tag.name,
+        "slug": tag.slug,
+        "description": tag.description,
+        "color": tag.color,
+        "status": tag.status,
+        "source": tag.source,
+        "created_by": tag.created_by,
+        "created_at": tag.created_at.isoformat() if tag.created_at else None,
+        "updated_at": tag.updated_at.isoformat() if tag.updated_at else None,
+    }
+    if member_count is not None:
+        data["member_count"] = member_count
+    return data
+
+
+def _segment_to_dict(segment: CustomerSegment) -> dict:
+    try:
+        rules = json.loads(segment.rules_json or "[]")
+    except json.JSONDecodeError:
+        rules = []
+    return {
+        "id": segment.id,
+        "tenant_id": segment.tenant_id,
+        "name": segment.name,
+        "slug": segment.slug,
+        "description": segment.description,
+        "rules": rules,
+        "status": segment.status,
+        "source": segment.source,
+        "created_by": segment.created_by,
+        "created_at": segment.created_at.isoformat() if segment.created_at else None,
+        "updated_at": segment.updated_at.isoformat() if segment.updated_at else None,
+    }
 
 
 def _card_to_dict(card: CrmCard, db: Session) -> dict:
@@ -448,6 +526,310 @@ def delete_task(task_id: str, db: Session = Depends(get_db), _=Depends(get_curre
     db.delete(task)
     db.commit()
     return ok(None, "Tarefa removida.")
+
+
+# ── Tags ──────────────────────────────────────────────────────────────────────
+
+@router.get("/tags")
+def list_tags(
+    status: str | None = Query(default="active"),
+    search: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    q = db.query(CustomerTag)
+    if status:
+        q = q.filter(CustomerTag.status == status)
+    if search:
+        term = f"%{search.strip().lower()}%"
+        q = q.filter(func.lower(CustomerTag.name).like(term))
+    tags = q.order_by(CustomerTag.name.asc()).all()
+
+    counts = dict(
+        db.query(CustomerTagAssignment.tag_id, func.count(CustomerTagAssignment.id))
+        .group_by(CustomerTagAssignment.tag_id)
+        .all()
+    )
+    return ok([_tag_to_dict(tag, int(counts.get(tag.id, 0))) for tag in tags])
+
+
+@router.post("/tags")
+def create_tag(body: TagCreate, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Nome da tag é obrigatório.")
+
+    slug = _slugify(name)
+    exists = (
+        db.query(CustomerTag)
+        .filter(CustomerTag.tenant_id == "default", CustomerTag.slug == slug)
+        .first()
+    )
+    if exists:
+        raise HTTPException(409, "Já existe uma tag com esse nome.")
+
+    tag = CustomerTag(
+        id=f"tag-{uuid.uuid4().hex[:10]}",
+        tenant_id="default",
+        name=name,
+        slug=slug,
+        description=body.description,
+        color=body.color or "#f97316",
+        source=body.source or "manual",
+        created_by=getattr(admin, "name", None) or getattr(admin, "email", None),
+    )
+    db.add(tag)
+    db.commit()
+    db.refresh(tag)
+    return created(_tag_to_dict(tag, 0), "Tag criada.")
+
+
+@router.patch("/tags/{tag_id}")
+def update_tag(tag_id: str, body: TagUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    tag = db.query(CustomerTag).filter(CustomerTag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(404, "Tag não encontrada.")
+
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(400, "Nome da tag é obrigatório.")
+        slug = _slugify(name)
+        exists = (
+            db.query(CustomerTag)
+            .filter(CustomerTag.tenant_id == tag.tenant_id, CustomerTag.slug == slug, CustomerTag.id != tag.id)
+            .first()
+        )
+        if exists:
+            raise HTTPException(409, "Já existe uma tag com esse nome.")
+        tag.name = name
+        tag.slug = slug
+    if body.description is not None:
+        tag.description = body.description
+    if body.color is not None:
+        tag.color = body.color
+    if body.status is not None:
+        tag.status = body.status
+    tag.updated_at = _now()
+    db.commit()
+    return ok(_tag_to_dict(tag), "Tag atualizada.")
+
+
+@router.delete("/tags/{tag_id}")
+def inactive_tag(tag_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    tag = db.query(CustomerTag).filter(CustomerTag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(404, "Tag não encontrada.")
+    tag.status = "inactive"
+    tag.updated_at = _now()
+    db.commit()
+    return ok(None, "Tag inativada.")
+
+
+@router.get("/customers/{customer_id}/tags")
+def list_customer_tags(customer_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    rows = (
+        db.query(CustomerTag, CustomerTagAssignment)
+        .join(CustomerTagAssignment, CustomerTagAssignment.tag_id == CustomerTag.id)
+        .filter(CustomerTagAssignment.customer_id == customer_id)
+        .order_by(CustomerTag.name.asc())
+        .all()
+    )
+    return ok([
+        {
+            **_tag_to_dict(tag),
+            "assignment_id": assignment.id,
+            "assignment_source": assignment.source,
+            "assigned_at": assignment.created_at.isoformat() if assignment.created_at else None,
+        }
+        for tag, assignment in rows
+    ])
+
+
+@router.post("/customers/{customer_id}/tags/{tag_id}")
+def assign_tag(customer_id: str, tag_id: str, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    tag = db.query(CustomerTag).filter(CustomerTag.id == tag_id, CustomerTag.status == "active").first()
+    if not tag:
+        raise HTTPException(404, "Tag ativa não encontrada.")
+
+    customer_exists = db.execute(text("SELECT 1 FROM customers WHERE id = :id"), {"id": customer_id}).first()
+    if not customer_exists:
+        raise HTTPException(404, "Cliente não encontrado.")
+
+    assignment = CustomerTagAssignment(
+        id=f"cta-{uuid.uuid4().hex[:12]}",
+        tenant_id=tag.tenant_id,
+        customer_id=customer_id,
+        tag_id=tag.id,
+        source="manual",
+        created_by=getattr(admin, "name", None) or getattr(admin, "email", None),
+    )
+    db.add(assignment)
+    try:
+        db.flush()
+        db.add(CustomerTimeline(
+            id=str(uuid.uuid4()),
+            customer_id=customer_id,
+            event_type="tag_added",
+            title=f"Tag adicionada: {tag.name}",
+            description=f"Tag adicionada manualmente no CRM.",
+            metadata_json=json.dumps({"tag_id": tag.id, "tag_name": tag.name}, ensure_ascii=False),
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        return ok(_tag_to_dict(tag), "Cliente já possui esta tag.")
+
+    return created(_tag_to_dict(tag), "Tag adicionada ao cliente.")
+
+
+@router.delete("/customers/{customer_id}/tags/{tag_id}")
+def remove_customer_tag(customer_id: str, tag_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    tag = db.query(CustomerTag).filter(CustomerTag.id == tag_id).first()
+    deleted = (
+        db.query(CustomerTagAssignment)
+        .filter(CustomerTagAssignment.customer_id == customer_id, CustomerTagAssignment.tag_id == tag_id)
+        .delete()
+    )
+    if deleted and tag:
+        db.add(CustomerTimeline(
+            id=str(uuid.uuid4()),
+            customer_id=customer_id,
+            event_type="tag_removed",
+            title=f"Tag removida: {tag.name}",
+            description="Tag removida manualmente no CRM.",
+            metadata_json=json.dumps({"tag_id": tag.id, "tag_name": tag.name}, ensure_ascii=False),
+        ))
+    db.commit()
+    return ok(None, "Tag removida do cliente.")
+
+
+# ── Segments ─────────────────────────────────────────────────────────────────
+
+@router.get("/segments")
+def list_segments(
+    status: str | None = Query(default="active"),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    q = db.query(CustomerSegment)
+    if status:
+        q = q.filter(CustomerSegment.status == status)
+    return ok([_segment_to_dict(segment) for segment in q.order_by(CustomerSegment.name.asc()).all()])
+
+
+@router.post("/segments")
+def create_segment(body: SegmentCreate, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Nome do segmento é obrigatório.")
+    slug = _slugify(name)
+    exists = (
+        db.query(CustomerSegment)
+        .filter(CustomerSegment.tenant_id == "default", CustomerSegment.slug == slug)
+        .first()
+    )
+    if exists:
+        raise HTTPException(409, "Já existe um segmento com esse nome.")
+
+    segment = CustomerSegment(
+        id=f"seg-{uuid.uuid4().hex[:10]}",
+        tenant_id="default",
+        name=name,
+        slug=slug,
+        description=body.description,
+        rules_json=json.dumps(body.rules or [], ensure_ascii=False),
+        source=body.source or "manual",
+        created_by=getattr(admin, "name", None) or getattr(admin, "email", None),
+    )
+    db.add(segment)
+    db.commit()
+    db.refresh(segment)
+    return created(_segment_to_dict(segment), "Segmento criado.")
+
+
+@router.patch("/segments/{segment_id}")
+def update_segment(segment_id: str, body: SegmentUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    segment = db.query(CustomerSegment).filter(CustomerSegment.id == segment_id).first()
+    if not segment:
+        raise HTTPException(404, "Segmento não encontrado.")
+
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(400, "Nome do segmento é obrigatório.")
+        slug = _slugify(name)
+        exists = (
+            db.query(CustomerSegment)
+            .filter(CustomerSegment.tenant_id == segment.tenant_id, CustomerSegment.slug == slug, CustomerSegment.id != segment.id)
+            .first()
+        )
+        if exists:
+            raise HTTPException(409, "Já existe um segmento com esse nome.")
+        segment.name = name
+        segment.slug = slug
+    if body.description is not None:
+        segment.description = body.description
+    if body.rules is not None:
+        segment.rules_json = json.dumps(body.rules, ensure_ascii=False)
+    if body.status is not None:
+        segment.status = body.status
+    segment.updated_at = _now()
+    db.commit()
+    return ok(_segment_to_dict(segment), "Segmento atualizado.")
+
+
+@router.delete("/segments/{segment_id}")
+def inactive_segment(segment_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    segment = db.query(CustomerSegment).filter(CustomerSegment.id == segment_id).first()
+    if not segment:
+        raise HTTPException(404, "Segmento não encontrado.")
+    segment.status = "inactive"
+    segment.updated_at = _now()
+    db.commit()
+    return ok(None, "Segmento inativado.")
+
+
+@router.post("/segments/{segment_id}/preview")
+def preview_segment(segment_id: str, limit: int = Query(default=50, ge=1, le=200), db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    segment = db.query(CustomerSegment).filter(CustomerSegment.id == segment_id).first()
+    if not segment:
+        raise HTTPException(404, "Segmento não encontrado.")
+    try:
+        rules = json.loads(segment.rules_json or "[]")
+    except json.JSONDecodeError:
+        rules = []
+    normalized_rules = [(rule.get("field"), rule.get("operator"), str(rule.get("value", ""))) for rule in rules]
+    where_clause, valid = _build_evaluate_sql(normalized_rules)
+    if not valid:
+        return ok({"total": 0, "customers": [], "message": "Nenhuma condição válida para avaliar."})
+
+    total = db.execute(text(f"SELECT COUNT(*) FROM customers WHERE {where_clause}")).scalar() or 0  # noqa: S608
+    rows = db.execute(text(f"""
+        SELECT id, name, email, phone, crm_status, total_orders, total_spent, avg_ticket, last_order_at
+        FROM customers
+        WHERE {where_clause}
+        ORDER BY total_spent DESC NULLS LAST, name ASC
+        LIMIT :limit
+    """), {"limit": limit}).fetchall()  # noqa: S608
+
+    return ok({
+        "total": total,
+        "customers": [
+            {
+                "id": row[0],
+                "name": row[1],
+                "email": row[2],
+                "phone": row[3],
+                "crm_status": row[4],
+                "total_orders": row[5],
+                "total_spent": row[6],
+                "avg_ticket": row[7],
+                "last_order_at": row[8],
+            }
+            for row in rows
+        ],
+    })
 
 
 # ── Customer Groups ───────────────────────────────────────────────────────────
