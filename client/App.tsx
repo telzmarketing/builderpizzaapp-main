@@ -191,7 +191,6 @@ export default function App() {
 
               {/* ── Admin routes (protected by JWT guard) ── */}
               <Route element={<AdminGuard />}>
-                <Route element={<AppLayout />}>
                 <Route path="/painel" element={<AdminDashboard />} />
                 <Route path="/painel/products" element={<AdminProducts />} />
                 <Route path="/painel/orders" element={<AdminOrders />} />
@@ -233,7 +232,6 @@ export default function App() {
                 <Route path="/painel/crm/tarefas" element={<CrmTarefas />} />
                 {/* ── Logistics routes ── */}
                 <Route path="/painel/logistica" element={<AdminLogistica />} />
-                </Route>
               </Route>
 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

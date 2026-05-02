@@ -26,7 +26,7 @@ export default function AppHeader({ actions }: { actions?: ReactNode }) {
       </div>
       <div className="flex flex-wrap items-center gap-3 lg:justify-end">
         {actions}
-        <AdminTopActions force />
+        <AdminTopActions />
       </div>
     </header>
   );
