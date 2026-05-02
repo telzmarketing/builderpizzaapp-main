@@ -5,7 +5,7 @@ import {
   CreditCard, Truck, LogOut, Sparkles, MessageCircle, Palette,
   LayoutDashboard, User, Users, Clock, Shield, Printer, Tag, LogIn,
   TrendingUp, Eye, Plug, KanbanSquare, UserCheck, ClipboardList,
-  Mail, Zap, MousePointerClick, CheckSquare, ChefHat, Route,
+  Mail, Zap, MousePointerClick, CheckSquare, ChefHat, Route, Brain,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
@@ -40,6 +40,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/painel/crm", icon: BarChart3, label: "Dashboard CRM" },
       { to: "/painel/clientes", icon: User, label: "Clientes" },
+      { to: "/painel/crm/inteligencia", icon: Brain, label: "Inteligencia de Clientes" },
       { to: "/painel/crm/pipeline", icon: KanbanSquare, label: "Pipeline" },
       { to: "/painel/crm/grupos", icon: UserCheck, label: "Grupos & Segmentações" },
       { to: "/painel/crm/tarefas", icon: ClipboardList, label: "Tarefas" },

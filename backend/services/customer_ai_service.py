@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.models.crm import (
+    CustomerAIAnalysisJob,
     CustomerAIProfile,
     CustomerAISuggestion,
     CustomerTag,
@@ -473,6 +474,185 @@ def reject_customer_ai_suggestion(db: Session, suggestion_id: str) -> dict[str, 
     db.commit()
     db.refresh(suggestion)
     return _suggestion_to_dict(suggestion)
+
+
+def _job_to_dict(job: CustomerAIAnalysisJob | None) -> dict[str, Any] | None:
+    if not job:
+        return None
+    return {
+        "id": job.id,
+        "status": job.status,
+        "total_customers": job.total_customers,
+        "processed_customers": job.processed_customers,
+        "failed_customers": job.failed_customers,
+        "started_at": job.started_at,
+        "finished_at": job.finished_at,
+        "error_message": job.error_message,
+        "created_by": job.created_by,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+    }
+
+
+def create_customer_ai_analysis_job(db: Session, created_by: str | None = None) -> tuple[dict[str, Any], bool]:
+    existing = (
+        db.query(CustomerAIAnalysisJob)
+        .filter(CustomerAIAnalysisJob.status.in_(["pending", "running"]))
+        .order_by(CustomerAIAnalysisJob.created_at.desc())
+        .first()
+    )
+    if existing:
+        return _job_to_dict(existing) or {}, False
+
+    total = db.query(Customer).count()
+    job = CustomerAIAnalysisJob(
+        id=str(uuid.uuid4()),
+        status="pending",
+        total_customers=total,
+        processed_customers=0,
+        failed_customers=0,
+        created_by=created_by,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return _job_to_dict(job) or {}, True
+
+
+def run_customer_ai_analysis_job(job_id: str) -> None:
+    from backend.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        job = db.query(CustomerAIAnalysisJob).filter(CustomerAIAnalysisJob.id == job_id).first()
+        if not job:
+            return
+
+        customer_ids = [row[0] for row in db.query(Customer.id).order_by(Customer.created_at.asc()).all()]
+        job.status = "running"
+        job.total_customers = len(customer_ids)
+        job.processed_customers = 0
+        job.failed_customers = 0
+        job.started_at = _now()
+        job.updated_at = _now()
+        db.commit()
+
+        processed = 0
+        failed = 0
+        for customer_id in customer_ids:
+            try:
+                analyze_customer_profile(db, customer_id)
+                processed += 1
+            except Exception as exc:  # noqa: BLE001 - job must continue per customer
+                db.rollback()
+                failed += 1
+                job = db.query(CustomerAIAnalysisJob).filter(CustomerAIAnalysisJob.id == job_id).first()
+                if job:
+                    job.error_message = str(exc)[:1000]
+            job = db.query(CustomerAIAnalysisJob).filter(CustomerAIAnalysisJob.id == job_id).first()
+            if job:
+                job.processed_customers = processed
+                job.failed_customers = failed
+                job.updated_at = _now()
+                db.commit()
+
+        job = db.query(CustomerAIAnalysisJob).filter(CustomerAIAnalysisJob.id == job_id).first()
+        if job:
+            job.status = "completed" if failed == 0 else "completed_with_errors"
+            job.processed_customers = processed
+            job.failed_customers = failed
+            job.finished_at = _now()
+            job.updated_at = _now()
+            db.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        job = db.query(CustomerAIAnalysisJob).filter(CustomerAIAnalysisJob.id == job_id).first()
+        if job:
+            job.status = "failed"
+            job.error_message = str(exc)[:1000]
+            job.finished_at = _now()
+            job.updated_at = _now()
+            db.commit()
+    finally:
+        db.close()
+
+
+def get_customer_ai_analysis_status(db: Session, limit: int = 100) -> dict[str, Any]:
+    latest_job = (
+        db.query(CustomerAIAnalysisJob)
+        .order_by(CustomerAIAnalysisJob.created_at.desc())
+        .first()
+    )
+
+    analyzed_total = db.query(CustomerAIProfile).count()
+    tags_suggested = db.query(CustomerAISuggestion).filter(
+        CustomerAISuggestion.status == "pending",
+        CustomerAISuggestion.suggestion_type == "tag",
+    ).count()
+    groups_suggested = db.query(CustomerAISuggestion).filter(
+        CustomerAISuggestion.status == "pending",
+        CustomerAISuggestion.suggestion_type == "group",
+    ).count()
+    vip_total = db.query(CustomerAIProfile).filter(CustomerAIProfile.segment == "vip").count()
+    inactive_total = db.query(CustomerAIProfile).filter(CustomerAIProfile.segment == "inativo").count()
+    risk_total = db.query(CustomerAIProfile).filter(
+        CustomerAIProfile.churn_risk.in_(["medium", "high"])
+    ).count()
+    high_repurchase_total = db.query(CustomerAIProfile).filter(
+        CustomerAIProfile.repurchase_probability >= 0.7
+    ).count()
+
+    rows = (
+        db.query(CustomerAIProfile, Customer)
+        .join(Customer, Customer.id == CustomerAIProfile.customer_id)
+        .order_by(CustomerAIProfile.generated_at.desc())
+        .limit(limit)
+        .all()
+    )
+    customers: list[dict[str, Any]] = []
+    for profile, customer in rows:
+        suggestions = db.query(CustomerAISuggestion).filter(
+            CustomerAISuggestion.customer_id == customer.id,
+            CustomerAISuggestion.status == "pending",
+        ).all()
+        tag_names = [suggestion.name for suggestion in suggestions if suggestion.suggestion_type == "tag"]
+        group_names = [suggestion.name for suggestion in suggestions if suggestion.suggestion_type == "group"]
+        confidence_order = {"high": 3, "medium": 2, "low": 1}
+        confidence = "low"
+        if suggestions:
+            confidence = max(
+                (suggestion.confidence for suggestion in suggestions),
+                key=lambda value: confidence_order.get(value, 0),
+            )
+        customers.append({
+            "customer_id": customer.id,
+            "customer_name": customer.name,
+            "email": customer.email,
+            "phone": customer.phone,
+            "segment": profile.segment,
+            "churn_risk": profile.churn_risk,
+            "repurchase_probability": profile.repurchase_probability,
+            "average_ticket": profile.average_ticket,
+            "tags_suggested": tag_names,
+            "groups_suggested": group_names,
+            "confidence": confidence,
+            "next_best_action": profile.next_best_action,
+            "generated_at": profile.generated_at,
+        })
+
+    return {
+        "job": _job_to_dict(latest_job),
+        "summary": {
+            "total_analyzed": analyzed_total,
+            "tags_suggested": tags_suggested,
+            "groups_suggested": groups_suggested,
+            "vip_customers": vip_total,
+            "inactive_customers": inactive_total,
+            "risk_customers": risk_total,
+            "high_repurchase_customers": high_repurchase_total,
+        },
+        "customers": customers,
+    }
 
 
 def _accept_tag_suggestion(db: Session, suggestion: CustomerAISuggestion, admin_name: str | None) -> str:

@@ -1645,6 +1645,48 @@ export interface ApiCustomerAISuggestion {
   resolved_at: string | null;
 }
 
+export interface ApiCRMAnalysisJob {
+  id: string;
+  status: string;
+  total_customers: number;
+  processed_customers: number;
+  failed_customers: number;
+  started_at: string | null;
+  finished_at: string | null;
+  error_message: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ApiCRMAnalysisStatus {
+  job: ApiCRMAnalysisJob | null;
+  summary: {
+    total_analyzed: number;
+    tags_suggested: number;
+    groups_suggested: number;
+    vip_customers: number;
+    inactive_customers: number;
+    risk_customers: number;
+    high_repurchase_customers: number;
+  };
+  customers: Array<{
+    customer_id: string;
+    customer_name: string;
+    email: string | null;
+    phone: string | null;
+    segment: string;
+    churn_risk: string;
+    repurchase_probability: number;
+    average_ticket: number;
+    tags_suggested: string[];
+    groups_suggested: string[];
+    confidence: string;
+    next_best_action: string | null;
+    generated_at: string | null;
+  }>;
+}
+
 // ─── Customers ────────────────────────────────────────────────────────────────
 
 export const customersApi = {
@@ -1677,6 +1719,8 @@ export const customersApi = {
 };
 
 export const crmApi = {
+  analyzeAllCustomers: () => post<ApiCRMAnalysisJob>("/crm/analyze-all", {}),
+  getAnalysisStatus: (limit = 100) => get<ApiCRMAnalysisStatus>(`/crm/analysis/status?limit=${limit}`),
   listTags: (status = "active", search?: string) =>
     get<ApiCustomerTag[]>(`/crm/tags?status=${encodeURIComponent(status)}${search ? `&search=${encodeURIComponent(search)}` : ""}`),
   createTag: (data: { name: string; description?: string | null; color?: string; source?: string }) =>

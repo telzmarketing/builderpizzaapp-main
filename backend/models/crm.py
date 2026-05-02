@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 
 from backend.database import Base
 
@@ -117,3 +117,23 @@ class CustomerAISuggestion(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
     resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class CustomerAIAnalysisJob(Base):
+    __tablename__ = "customer_ai_analysis_jobs"
+
+    id = Column(String, primary_key=True)
+    status = Column(String(20), nullable=False, default="pending")
+    total_customers = Column(Integer, nullable=False, default=0)
+    processed_customers = Column(Integer, nullable=False, default=0)
+    failed_customers = Column(Integer, nullable=False, default=0)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_by = Column(String(200), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )

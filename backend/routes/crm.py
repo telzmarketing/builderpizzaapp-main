@@ -5,7 +5,7 @@ import re
 import unicodedata
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, Date, ForeignKey, func, text
 from sqlalchemy.orm import Session
@@ -14,6 +14,11 @@ from backend.database import get_db, Base
 from backend.models.crm import CustomerSegment, CustomerTag, CustomerTagAssignment
 from backend.routes.admin_auth import get_current_admin
 from backend.core.response import ok, created
+from backend.services.customer_ai_service import (
+    create_customer_ai_analysis_job,
+    get_customer_ai_analysis_status,
+    run_customer_ai_analysis_job,
+)
 
 router = APIRouter(prefix="/crm", tags=["crm"])
 
@@ -1193,6 +1198,31 @@ def crm_dashboard(period: str = "30d", db: Session = Depends(get_db), _=Depends(
         "clients_by_neighborhood": clients_by_neighborhood,
         "clients_by_origin": clients_by_origin,
     })
+
+
+# ── Customer Intelligence ─────────────────────────────────────────────────────
+
+@router.post("/analyze-all")
+def analyze_all_customers(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin),
+):
+    admin_name = getattr(admin, "name", None) or getattr(admin, "email", None)
+    job, created_job = create_customer_ai_analysis_job(db, created_by=admin_name)
+    if created_job:
+        background_tasks.add_task(run_customer_ai_analysis_job, job["id"])
+        return ok(job, "Analise em massa iniciada.")
+    return ok(job, "Ja existe uma analise em massa em andamento.")
+
+
+@router.get("/analysis/status")
+def customer_intelligence_status(
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _admin=Depends(get_current_admin),
+):
+    return ok(get_customer_ai_analysis_status(db, limit=limit))
 
 
 # ── Pipeline PATCH / DELETE ───────────────────────────────────────────────────

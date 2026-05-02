@@ -125,6 +125,7 @@ import CrmDashboard from "./pages/admin/crm/CrmDashboard";
 import CrmPipeline from "./pages/admin/crm/CrmPipeline";
 import CrmGrupos from "./pages/admin/crm/CrmGrupos";
 import CrmTarefas from "./pages/admin/crm/CrmTarefas";
+import CrmInteligencia from "./pages/admin/crm/CrmInteligencia";
 import AdminLogistica from "./pages/admin/logistica/AdminLogistica";
 import Motoboy from "./pages/Motoboy";
 import Campanha from "./pages/Campanha";
@@ -207,6 +208,7 @@ export default function App() {
                 <Route path="/painel/marketing/cupons" element={<MarketingCupons />} />
                 {/* ── CRM routes ── */}
                 <Route path="/painel/crm" element={<CrmDashboard />} />
+                <Route path="/painel/crm/inteligencia" element={<CrmInteligencia />} />
                 <Route path="/painel/crm/pipeline" element={<CrmPipeline />} />
                 <Route path="/painel/crm/grupos" element={<CrmGrupos />} />
                 <Route path="/painel/crm/tarefas" element={<CrmTarefas />} />
