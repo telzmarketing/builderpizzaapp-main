@@ -1734,6 +1734,15 @@ export interface DeliveryPerson {
   created_at: string;
 }
 
+export interface OrderAddress {
+  id: string;
+  delivery_name?: string;
+  delivery_phone?: string;
+  delivery_street?: string;
+  delivery_city?: string;
+  delivery_complement?: string;
+}
+
 export interface DeliveryRecord {
   id: string;
   order_id: string;
@@ -1749,6 +1758,17 @@ export interface DeliveryRecord {
   rating_comment?: string;
   created_at: string;
   updated_at: string;
+  order?: OrderAddress;
+}
+
+export interface PersonOnDuty {
+  person: DeliveryPerson;
+  active_deliveries: DeliveryRecord[];
+}
+
+export interface LogisticsOverview {
+  persons_on_duty: PersonOnDuty[];
+  total_active: number;
 }
 
 export interface LogisticsSettings {
@@ -1799,6 +1819,10 @@ export const deliveryApi = {
   updateSettings: (body: Partial<LogisticsSettings>) =>
     put<LogisticsSettings>("/delivery/settings", body),
 
+  // Admin — map overview
+  getOverview: () =>
+    get<LogisticsOverview>("/delivery/overview"),
+
   // Driver app
   driverLogin: (email: string, password: string) =>
     driverRequest<{ token: string; person: DeliveryPerson }>("POST", "/delivery/driver/login", { email, password }),
@@ -1806,6 +1830,8 @@ export const deliveryApi = {
     driverRequest<DeliveryPerson>("GET", "/delivery/driver/me"),
   driverDeliveries: () =>
     driverRequest<DeliveryRecord[]>("GET", "/delivery/driver/deliveries"),
+  driverUpdateLocation: (lat: number, lng: number) =>
+    driverRequest<DeliveryPerson>("PUT", "/delivery/driver/location", { lat, lng }),
 
   // Confirm delivery (public — no auth needed)
   confirmCode: (deliveryId: string, code: string) =>

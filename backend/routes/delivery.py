@@ -242,13 +242,42 @@ def driver_deliveries(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    """Return active + recent deliveries for the logged-in driver."""
+    """Return active + recent deliveries for the logged-in driver (includes order address)."""
     try:
         person_id = _decode_driver_token(authorization)
         deliveries = DeliveryService(db).get_driver_deliveries(person_id)
         return ok(deliveries)
     except (ValueError, DomainError) as exc:
         return err_msg(str(exc), code="Unauthorized", status_code=401)
+
+
+@router.put("/driver/location")
+def driver_update_location(
+    body: DeliveryPersonLocationUpdate,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Driver app updates own GPS coordinates. Uses driver bearer token (no admin required)."""
+    try:
+        person_id = _decode_driver_token(authorization)
+        person = DeliveryService(db).update_location(person_id, body.lat, body.lng)
+        return ok(person)
+    except (ValueError, DomainError) as exc:
+        return err_msg(str(exc), code="Unauthorized", status_code=401)
+
+
+# ── Logistics Map Overview ────────────────────────────────────────────────────
+
+@router.get("/overview")
+def logistics_overview(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    """
+    Returns all motoboys on duty with their active deliveries and order addresses.
+    Used by the admin logistics map to show real-time positions.
+    """
+    try:
+        return ok(DeliveryService(db).get_logistics_overview())
+    except DomainError as exc:
+        return err(exc)
 
 
 # ── Logistics Settings ────────────────────────────────────────────────────────

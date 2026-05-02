@@ -122,6 +122,35 @@ class DeliveryOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Delivery with embedded order address (for map / driver app) ───────────────
+
+class OrderAddressOut(BaseModel):
+    id: str
+    delivery_name: Optional[str] = None
+    delivery_phone: Optional[str] = None
+    delivery_street: Optional[str] = None
+    delivery_city: Optional[str] = None
+    delivery_complement: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class DeliveryWithAddressOut(DeliveryOut):
+    order: Optional[OrderAddressOut] = None
+
+
+# ── Logistics map overview ────────────────────────────────────────────────────
+
+class PersonOnDutyOut(BaseModel):
+    person: DeliveryPersonOut
+    active_deliveries: list[DeliveryWithAddressOut]
+
+
+class LogisticsOverviewOut(BaseModel):
+    persons_on_duty: list[PersonOnDutyOut]
+    total_active: int
+
+
 # ── Logistics Settings ────────────────────────────────────────────────────────
 
 class LogisticsSettingsOut(BaseModel):

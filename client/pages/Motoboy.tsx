@@ -1,6 +1,29 @@
-import { useCallback, useEffect, useState } from "react";
-import { Loader2, LogOut, Package, CheckCircle, Clock, Bike } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Loader2, LogOut, Package, CheckCircle, Clock, Bike, Navigation, NavigationOff, MapPin } from "lucide-react";
 import { deliveryApi, type DeliveryPerson, type DeliveryRecord } from "@/lib/api";
+
+function etaText(assignedAt?: string, estimatedMinutes?: number): { text: string; urgent: boolean } | null {
+  if (!assignedAt || !estimatedMinutes) return null;
+  const deadline = new Date(assignedAt).getTime() + estimatedMinutes * 60_000;
+  const remaining = Math.round((deadline - Date.now()) / 60_000);
+  if (remaining < 0) return { text: `${Math.abs(remaining)}min de atraso`, urgent: true };
+  return { text: `${remaining}min restantes`, urgent: remaining <= 5 };
+}
+
+function EtaLine({ assignedAt, estimatedMinutes }: { assignedAt?: string; estimatedMinutes?: number }) {
+  const [eta, setEta] = useState(() => etaText(assignedAt, estimatedMinutes));
+  useEffect(() => {
+    const id = setInterval(() => setEta(etaText(assignedAt, estimatedMinutes)), 30_000);
+    return () => clearInterval(id);
+  }, [assignedAt, estimatedMinutes]);
+  if (!eta) return null;
+  return (
+    <div className={`flex items-center gap-1.5 text-xs font-medium ${eta.urgent ? "text-orange-300" : "text-green-300"}`}>
+      <Clock size={11} />
+      {eta.text}
+    </div>
+  );
+}
 
 const VEHICLE_EMOJI: Record<string, string> = {
   motorcycle: "🏍️",
@@ -46,6 +69,12 @@ export default function Motoboy() {
   const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
   const [loadingDriver, setLoadingDriver] = useState(false);
   const [loadingDeliveries, setLoadingDeliveries] = useState(false);
+
+  // Geolocation
+  const [gpsActive, setGpsActive] = useState(false);
+  const [gpsError, setGpsError] = useState("");
+  const gpsWatchRef = useRef<number | null>(null);
+  const gpsIntervalRef = useRef<number | null>(null);
 
   // Login state
   const [email, setEmail] = useState("");
@@ -116,7 +145,59 @@ export default function Motoboy() {
     }
   }
 
+  // ── Geolocation ───────────────────────────────────────────────────────────
+
+  const sendLocation = useCallback((lat: number, lng: number) => {
+    deliveryApi.driverUpdateLocation(lat, lng).catch(() => {});
+  }, []);
+
+  const startGps = useCallback(() => {
+    if (!navigator.geolocation) {
+      setGpsError("Geolocalização não suportada neste dispositivo.");
+      return;
+    }
+    setGpsError("");
+
+    // Watch position continuously
+    gpsWatchRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        sendLocation(pos.coords.latitude, pos.coords.longitude);
+        setGpsActive(true);
+        setGpsError("");
+      },
+      (err) => {
+        setGpsError(`GPS: ${err.message}`);
+        setGpsActive(false);
+      },
+      { enableHighAccuracy: true, maximumAge: 10_000 },
+    );
+
+    // Also send every 30s as fallback for browsers that throttle watchPosition
+    gpsIntervalRef.current = window.setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
+        () => {},
+      );
+    }, 30_000);
+  }, [sendLocation]);
+
+  const stopGps = useCallback(() => {
+    if (gpsWatchRef.current !== null) {
+      navigator.geolocation.clearWatch(gpsWatchRef.current);
+      gpsWatchRef.current = null;
+    }
+    if (gpsIntervalRef.current !== null) {
+      window.clearInterval(gpsIntervalRef.current);
+      gpsIntervalRef.current = null;
+    }
+    setGpsActive(false);
+  }, []);
+
+  // Clean up GPS on unmount / logout
+  useEffect(() => () => stopGps(), [stopGps]);
+
   function handleLogout() {
+    stopGps();
     localStorage.removeItem("driver_token");
     setToken(null);
     setDriver(null);
@@ -234,13 +315,27 @@ export default function Motoboy() {
               </p>
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 rounded-xl border border-surface-03 px-3 py-2 text-stone text-sm hover:text-cream transition-colors"
-          >
-            <LogOut size={14} />
-            Sair
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={gpsActive ? stopGps : startGps}
+              className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                gpsActive
+                  ? "border-green-500/40 bg-green-500/10 text-green-300 hover:bg-green-500/20"
+                  : "border-surface-03 bg-surface-03/40 text-stone hover:text-cream"
+              }`}
+              title={gpsActive ? "Parar compartilhamento de localização" : "Compartilhar localização"}
+            >
+              {gpsActive ? <Navigation size={14} /> : <NavigationOff size={14} />}
+              <span className="hidden sm:inline">{gpsActive ? "GPS ativo" : "GPS"}</span>
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 rounded-xl border border-surface-03 px-3 py-2 text-stone text-sm hover:text-cream transition-colors"
+            >
+              <LogOut size={14} />
+              Sair
+            </button>
+          </div>
         </div>
       </header>
 
@@ -257,6 +352,15 @@ export default function Motoboy() {
           </p>
         </div>
       </div>
+
+      {/* GPS error */}
+      {gpsError && (
+        <div className="max-w-lg mx-auto px-4 mt-3">
+          <div className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-2.5 text-sm text-orange-300">
+            {gpsError}
+          </div>
+        </div>
+      )}
 
       {/* Active deliveries */}
       <div className="max-w-lg mx-auto px-4 mt-6">
@@ -282,7 +386,7 @@ export default function Motoboy() {
               const statusCls = STATUS_CLS[d.status] ?? "bg-stone/20 text-stone";
               return (
                 <div key={d.id} className="rounded-2xl border border-surface-03 bg-surface-02 p-5">
-                  <div className="flex items-start justify-between gap-2 mb-4">
+                  <div className="flex items-start justify-between gap-2 mb-3">
                     <p className="text-cream font-mono font-bold">
                       Pedido #{d.order_id.slice(0, 8).toUpperCase()}
                     </p>
@@ -291,10 +395,30 @@ export default function Motoboy() {
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-4 text-xs text-stone mb-4">
-                    <span className="flex items-center gap-1">
-                      <Clock size={11} />
-                      Previsão: {d.estimated_minutes} min
+                  {/* Endereço de entrega */}
+                  {d.order && (
+                    <div className="rounded-xl bg-surface-03/60 px-3 py-2.5 mb-3">
+                      {d.order.delivery_name && (
+                        <p className="text-parchment text-sm font-medium">{d.order.delivery_name}</p>
+                      )}
+                      {d.order.delivery_street && (
+                        <div className="flex items-start gap-1.5 mt-1">
+                          <MapPin size={12} className="text-gold flex-shrink-0 mt-0.5" />
+                          <p className="text-stone text-xs">
+                            {d.order.delivery_street}
+                            {d.order.delivery_complement ? `, ${d.order.delivery_complement}` : ""}
+                            {d.order.delivery_city ? ` — ${d.order.delivery_city}` : ""}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-4 mb-3">
+                    <EtaLine assignedAt={d.assigned_at} estimatedMinutes={d.estimated_minutes} />
+                    <span className="text-stone text-xs">
+                      <Clock size={11} className="inline mr-1" />
+                      {d.estimated_minutes} min estimado
                     </span>
                   </div>
 

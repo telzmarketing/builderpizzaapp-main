@@ -450,9 +450,11 @@ class DeliveryService:
         return person
 
     def get_driver_deliveries(self, person_id: str) -> list[Delivery]:
-        """Return active + recent deliveries for a specific driver."""
+        """Return active + recent deliveries for a specific driver (with order eagerly loaded)."""
+        from sqlalchemy.orm import joinedload
         return (
             self._db.query(Delivery)
+            .options(joinedload(Delivery.order))
             .filter(
                 Delivery.delivery_person_id == person_id,
                 Delivery.status.notin_(["failed", "cancelled"]),
@@ -461,6 +463,65 @@ class DeliveryService:
             .limit(20)
             .all()
         )
+
+    def get_logistics_overview(self) -> dict:
+        """Return all motoboys on duty with their active deliveries + order addresses."""
+        from sqlalchemy.orm import joinedload
+        active_statuses = [
+            DeliveryStatus.assigned,
+            DeliveryStatus.picked_up,
+            DeliveryStatus.on_the_way,
+        ]
+        active_deliveries = (
+            self._db.query(Delivery)
+            .options(joinedload(Delivery.order))
+            .filter(Delivery.status.in_(active_statuses))
+            .all()
+        )
+        # Group by delivery_person_id
+        from collections import defaultdict
+        by_person: dict[str, list] = defaultdict(list)
+        person_ids = set()
+        for d in active_deliveries:
+            if d.delivery_person_id:
+                by_person[d.delivery_person_id].append(d)
+                person_ids.add(d.delivery_person_id)
+
+        # Fetch all busy persons (include those with no active delivery but status=busy)
+        busy_persons = (
+            self._db.query(DeliveryPerson)
+            .filter(
+                DeliveryPerson.active == True,  # noqa: E712
+                DeliveryPerson.status == DeliveryPersonStatus.busy,
+            )
+            .all()
+        )
+        all_person_ids = person_ids | {p.id for p in busy_persons}
+        all_persons_map = {p.id: p for p in busy_persons}
+        # Also fetch persons referenced in active deliveries but not in busy list
+        missing_ids = person_ids - set(all_persons_map.keys())
+        if missing_ids:
+            extra = (
+                self._db.query(DeliveryPerson)
+                .filter(DeliveryPerson.id.in_(list(missing_ids)))
+                .all()
+            )
+            for p in extra:
+                all_persons_map[p.id] = p
+
+        persons_on_duty = []
+        for pid in all_person_ids:
+            person = all_persons_map.get(pid)
+            if person:
+                persons_on_duty.append({
+                    "person": person,
+                    "active_deliveries": by_person.get(pid, []),
+                })
+
+        return {
+            "persons_on_duty": persons_on_duty,
+            "total_active": len(active_deliveries),
+        }
 
     def confirm_delivery_code(self, delivery_id: str, code: str) -> Delivery:
         """Driver submits 4-digit code to confirm delivery completion."""

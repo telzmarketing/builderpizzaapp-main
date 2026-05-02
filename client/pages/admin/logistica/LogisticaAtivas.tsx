@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, MapPin, RefreshCw, Route } from "lucide-react";
+import { Loader2, MapPin, RefreshCw, Route, Clock } from "lucide-react";
 import { deliveryApi, type DeliveryRecord } from "@/lib/api";
+
+function etaText(assignedAt?: string, estimatedMinutes?: number): { text: string; urgent: boolean } | null {
+  if (!assignedAt || !estimatedMinutes) return null;
+  const deadline = new Date(assignedAt).getTime() + estimatedMinutes * 60_000;
+  const remaining = Math.round((deadline - Date.now()) / 60_000);
+  if (remaining < 0) return { text: `${Math.abs(remaining)}min atrasado`, urgent: true };
+  return { text: `${remaining}min restantes`, urgent: remaining <= 5 };
+}
 
 const STATUS_LABELS: Record<string, string> = {
   pending_assignment: "Aguardando motoboy",
@@ -102,21 +110,39 @@ export default function LogisticaAtivas() {
                   </span>
                 </div>
 
+                {/* Endereço de entrega */}
+                {d.order?.delivery_street && (
+                  <div className="flex items-start gap-1.5 text-xs text-stone mb-3">
+                    <MapPin size={11} className="flex-shrink-0 mt-0.5" />
+                    <span className="line-clamp-2">
+                      {d.order.delivery_street}
+                      {d.order.delivery_complement ? `, ${d.order.delivery_complement}` : ""}
+                      {d.order.delivery_city ? ` — ${d.order.delivery_city}` : ""}
+                    </span>
+                  </div>
+                )}
+
                 <div className="space-y-1.5 text-xs text-stone">
                   <div className="flex items-center gap-2">
-                    <MapPin size={11} className="flex-shrink-0" />
+                    <Clock size={11} className="flex-shrink-0" />
                     <span>Atribuído: {formatTime(d.assigned_at)}</span>
                   </div>
                   {d.picked_up_at && (
                     <div className="flex items-center gap-2">
-                      <MapPin size={11} className="flex-shrink-0" />
+                      <Route size={11} className="flex-shrink-0" />
                       <span>Coletado: {formatTime(d.picked_up_at)}</span>
                     </div>
                   )}
-                  <div className="flex items-center gap-2">
-                    <Route size={11} className="flex-shrink-0" />
-                    <span>Previsão: {d.estimated_minutes} min</span>
-                  </div>
+                  {(() => {
+                    const eta = etaText(d.assigned_at, d.estimated_minutes);
+                    if (!eta) return null;
+                    return (
+                      <div className={`flex items-center gap-2 font-medium ${eta.urgent ? "text-orange-300" : "text-green-300"}`}>
+                        <Clock size={11} className="flex-shrink-0" />
+                        <span>{eta.text}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {d.confirmation_code && (
