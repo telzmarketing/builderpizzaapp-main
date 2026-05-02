@@ -1,26 +1,30 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { X, Tag, Copy, Check } from "lucide-react";
 import { exitPopupApi, type ApiExitPopupConfig as ExitPopupConfig } from "@/lib/api";
 
 const SESSION_KEY = "exit_popup_shown";
 
 export default function ExitPopup() {
+  const { pathname } = useLocation();
   const [config, setConfig] = useState<ExitPopupConfig | null>(null);
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState(false);
   const triggered = useRef(false);
+  const isAdmin = pathname.startsWith("/painel");
 
   useEffect(() => {
+    if (isAdmin) return;
     exitPopupApi.get().then(setConfig).catch(() => {});
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
+    if (isAdmin) return;
     if (!config?.enabled) return;
     if (config.show_once_per_session && sessionStorage.getItem(SESSION_KEY)) return;
 
     const handleMouseLeave = (e: MouseEvent) => {
       if (triggered.current) return;
-      // Trigger only when mouse moves towards the top of the viewport (leaving to browser chrome)
       if (e.clientY <= 5) {
         triggered.current = true;
         if (config.show_once_per_session) sessionStorage.setItem(SESSION_KEY, "1");
@@ -30,7 +34,7 @@ export default function ExitPopup() {
 
     document.addEventListener("mouseleave", handleMouseLeave);
     return () => document.removeEventListener("mouseleave", handleMouseLeave);
-  }, [config]);
+  }, [config, isAdmin]);
 
   const handleCopy = () => {
     if (!config?.coupon_code) return;
@@ -40,7 +44,7 @@ export default function ExitPopup() {
     });
   };
 
-  if (!visible || !config) return null;
+  if (isAdmin || !visible || !config) return null;
 
   return (
     <div

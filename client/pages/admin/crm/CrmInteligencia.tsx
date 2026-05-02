@@ -14,6 +14,7 @@ import {
   Users,
 } from "lucide-react";
 import { crmApi, type ApiCRMAnalysisStatus } from "@/lib/api";
+import AdminSidebar from "@/components/AdminSidebar";
 
 function segmentLabel(segment: string) {
   const labels: Record<string, string> = {
@@ -121,16 +122,19 @@ export default function CrmInteligencia() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-brand-dark p-6">
-        <div className="flex h-64 items-center justify-center">
+      <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-surface-00 overflow-hidden">
+        <AdminSidebar />
+        <main className="flex-1 flex items-center justify-center">
           <Loader2 className="animate-spin text-gold" size={30} />
-        </div>
-      </main>
+        </main>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-brand-dark p-4 md:p-6">
+    <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-surface-00 overflow-hidden">
+      <AdminSidebar />
+      <main className="flex-1 overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -249,6 +253,7 @@ export default function CrmInteligencia() {
           )}
         </section>
       </div>
-    </main>
+      </main>
+    </div>
   );
 }
