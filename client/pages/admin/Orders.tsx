@@ -4,6 +4,7 @@ import {
   PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Truck, Utensils, Volume2, VolumeX,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import { ordersApi, deliveryApi, type ApiOrder, type OrderStatus, type DeliveryPerson } from "@/lib/api";
 import { printOrder } from "@/lib/printing";
 import OrderTimer from "@/components/OrderTimer";
@@ -335,6 +336,7 @@ export default function AdminOrders() {
               <RefreshCw size={16} className={loading || refreshing ? "animate-spin" : ""} />
               Atualizar
             </button>
+            <AdminTopActions />
           </div>
         </header>
 

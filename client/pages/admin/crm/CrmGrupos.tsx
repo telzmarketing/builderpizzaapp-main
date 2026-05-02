@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import {
   crmApi,
   type ApiCustomerSegment,
@@ -584,13 +585,16 @@ export default function CrmGrupos() {
             <p className="text-xs font-semibold uppercase tracking-widest text-gold mb-1">CRM</p>
             <h1 className="text-2xl font-bold text-cream">Grupos, Tags e Segmentos</h1>
           </div>
-          <button
-            onClick={activeTab === "groups" ? openCreateGroup : activeTab === "tags" ? openCreateTag : openCreateSegment}
-            className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-black font-semibold px-4 py-2 rounded-xl text-sm transition-colors"
-          >
-            <Plus size={16} />
-            {activeTab === "groups" ? "Novo grupo" : activeTab === "tags" ? "Nova tag" : "Novo segmento"}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={activeTab === "groups" ? openCreateGroup : activeTab === "tags" ? openCreateTag : openCreateSegment}
+              className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-black font-semibold px-4 py-2 rounded-xl text-sm transition-colors"
+            >
+              <Plus size={16} />
+              {activeTab === "groups" ? "Novo grupo" : activeTab === "tags" ? "Nova tag" : "Novo segmento"}
+            </button>
+            <AdminTopActions />
+          </div>
         </div>
 
         <SectionTabs active={activeTab} onChange={setActiveTab} />

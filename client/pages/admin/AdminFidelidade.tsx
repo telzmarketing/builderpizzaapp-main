@@ -5,6 +5,7 @@ import {
   Layers, Coins, Power, Settings2,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import {
   loyaltyApi,
   ApiLoyaltyLevel, ApiLoyaltyBenefit, ApiLoyaltyReward,
@@ -241,12 +242,15 @@ export default function AdminFidelidade() {
         <div className="flex-1 flex flex-col overflow-hidden">
 
           {/* Header */}
-          <div className="bg-surface-02 px-4 md:px-8 py-4 border-b border-surface-03 flex items-center gap-3 flex-shrink-0">
-            <Trophy size={22} className="text-gold" />
-            <div>
-              <h2 className="text-xl font-bold text-cream">Fidelidade — Retention Engine Pro</h2>
-              <p className="text-stone text-xs">Níveis, benefícios, ciclos mensais e clientes</p>
+          <div className="bg-surface-02 px-4 md:px-8 py-4 border-b border-surface-03 flex items-center justify-between gap-3 flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <Trophy size={22} className="text-gold" />
+              <div>
+                <h2 className="text-xl font-bold text-cream">Fidelidade — Retention Engine Pro</h2>
+                <p className="text-stone text-xs">Níveis, benefícios, ciclos mensais e clientes</p>
+              </div>
             </div>
+            <AdminTopActions />
           </div>
 
           {/* Tabs */}

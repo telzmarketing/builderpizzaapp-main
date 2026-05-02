@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import {
   AlertCircle, CalendarDays, Check, Clock, Loader2, Plus, Save, Store,
   Trash2, X,
@@ -180,14 +181,17 @@ export default function StoreOperation() {
             <h1 className="text-cream text-2xl font-bold">Funcionamento da Loja Online</h1>
             <p className="text-stone text-sm mt-1">Controle dias, horarios, excecoes e agendamento de pedidos.</p>
           </div>
-          <button
-            onClick={saveAll}
-            disabled={saving}
-            className="inline-flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 disabled:opacity-60 text-cream font-bold px-5 py-3 rounded-xl transition-colors"
-          >
-            {saving ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
-            Salvar alteracoes
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={saveAll}
+              disabled={saving}
+              className="inline-flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 disabled:opacity-60 text-cream font-bold px-5 py-3 rounded-xl transition-colors"
+            >
+              {saving ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
+              Salvar alteracoes
+            </button>
+            <AdminTopActions />
+          </div>
         </header>
 
         <div className="p-6 space-y-6">

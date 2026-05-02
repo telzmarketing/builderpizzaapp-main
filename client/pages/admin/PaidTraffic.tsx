@@ -22,6 +22,7 @@ import {
   XCircle,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import {
   couponsApi,
   paidTrafficApi,
@@ -386,6 +387,7 @@ export default function AdminPaidTraffic() {
             <button onClick={() => setActiveTab("campanhas")} className="inline-flex items-center gap-2 rounded-xl bg-gold px-4 py-2 text-sm font-bold text-cream hover:bg-gold/90">
               <Plus size={16} /> Nova campanha
             </button>
+            <AdminTopActions />
           </div>
         </header>
 

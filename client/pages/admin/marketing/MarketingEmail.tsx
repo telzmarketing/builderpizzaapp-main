@@ -5,6 +5,7 @@ import {
   RefreshCw, Play, Pause, MessageSquare, Megaphone,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -291,9 +292,12 @@ export default function MarketingEmail() {
       <main className="flex-1 overflow-y-auto p-6 space-y-6">
 
         {/* Header */}
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-gold mb-1">Marketing</p>
-          <h1 className="text-2xl font-bold text-cream">Disparador de Email</h1>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-gold mb-1">Marketing</p>
+            <h1 className="text-2xl font-bold text-cream">Disparador de Email</h1>
+          </div>
+          <AdminTopActions />
         </div>
 
         {/* Tabs */}

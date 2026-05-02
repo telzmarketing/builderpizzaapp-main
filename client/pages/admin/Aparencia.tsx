@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ElementType } from "react";
 import { Palette, Save, RotateCcw, Check, ShoppingBag, Megaphone, LayoutDashboard } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import { themeApi, applyTheme, DEFAULT_THEME, type ThemeSettings } from "@/lib/themeApi";
 
 type Field = keyof Omit<ThemeSettings, "id" | "updated_at">;
@@ -146,6 +147,7 @@ export default function AdminAparencia() {
                 {saveOk ? <Check size={15} /> : <Save size={15} />}
                 {saving ? "Salvando..." : saveOk ? "Salvo!" : "Salvar"}
               </button>
+              <AdminTopActions />
             </div>
           </div>
 

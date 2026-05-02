@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import { apiRequest } from "@/lib/api";
 import {
   Truck, Settings, MapPin, Hash, Ruler, DollarSign, Sparkles, Zap,
@@ -227,9 +228,12 @@ export default function AdminFrete() {
       <AdminSidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="bg-surface-02 border-b border-surface-03 px-6 py-4 flex items-center gap-3">
-          <Truck size={24} className="text-gold" />
-          <h1 className="text-cream font-bold text-xl">Gestão de Frete</h1>
+        <div className="bg-surface-02 border-b border-surface-03 px-6 py-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Truck size={24} className="text-gold" />
+            <h1 className="text-cream font-bold text-xl">Gestão de Frete</h1>
+          </div>
+          <AdminTopActions />
         </div>
 
         {/* Tab bar */}

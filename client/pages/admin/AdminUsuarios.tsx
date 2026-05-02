@@ -5,6 +5,7 @@ import {
   Loader2, Key, ToggleLeft, ToggleRight, User, Clock,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import {
   adminUsersApi, rbacApi,
   type ApiAdminUser, type ApiRole, type ApiModule,
@@ -515,18 +516,21 @@ export default function AdminUsuarios() {
               <p className="text-stone text-xs">Controle de acesso baseado em perfis (RBAC)</p>
             </div>
           </div>
-          {tab === "usuarios" && (
-            <button onClick={() => setUserModal("new")}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gold text-cream font-semibold text-sm hover:bg-gold/90 transition-colors">
-              <Plus size={15} /> Novo Usuário
-            </button>
-          )}
-          {tab === "perfis" && (
-            <button onClick={() => setRoleModal("new")}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gold text-cream font-semibold text-sm hover:bg-gold/90 transition-colors">
-              <Plus size={15} /> Novo Perfil
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            {tab === "usuarios" && (
+              <button onClick={() => setUserModal("new")}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gold text-cream font-semibold text-sm hover:bg-gold/90 transition-colors">
+                <Plus size={15} /> Novo Usuário
+              </button>
+            )}
+            {tab === "perfis" && (
+              <button onClick={() => setRoleModal("new")}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gold text-cream font-semibold text-sm hover:bg-gold/90 transition-colors">
+                <Plus size={15} /> Novo Perfil
+              </button>
+            )}
+            <AdminTopActions />
+          </div>
         </div>
 
         {/* Tabs */}

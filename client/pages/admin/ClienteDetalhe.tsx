@@ -1,5 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import {
   ArrowLeft, User, ShoppingBag, Clock, BarChart2, Phone,
   MapPin, Star, ShoppingCart, Eye, MessageSquare, Tag, Gift,
@@ -458,6 +460,16 @@ export default function ClienteDetalhe() {
   const availableGroups = allGroups.filter((group) => !customerGroups.some((assigned) => assigned.id === group.id));
 
   return (
+    <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-surface-00 overflow-hidden">
+      <AdminSidebar />
+      <main className="flex-1 overflow-y-auto">
+      <header className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 py-4 flex items-center justify-between gap-4 flex-shrink-0">
+        <div>
+          <p className="text-gold text-[11px] font-bold uppercase tracking-[0.22em] mb-1">CRM</p>
+          <h1 className="text-cream text-xl font-black leading-tight">Detalhe do Cliente</h1>
+        </div>
+        <AdminTopActions />
+      </header>
     <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
       <div>
         <button
@@ -927,6 +939,8 @@ export default function ClienteDetalhe() {
           )}
         </div>
       )}
+    </div>
+      </main>
     </div>
   );
 }

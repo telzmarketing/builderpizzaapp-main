@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Plus, Trash2, Edit2, Tag } from "lucide-react";
 import { useApp, Coupon } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 
 const emptyForm: Partial<Coupon> = { code: "", description: "", discount: "", expiry: "", icon: "🎟️", type: "percentage", used: false };
 
@@ -68,13 +69,16 @@ export default function AdminCupons() {
               <h2 className="text-2xl font-bold text-cream">Gerenciar Cupons</h2>
               <p className="text-stone text-sm">{coupons.filter((c) => !c.used).length} disponíveis · {coupons.filter((c) => c.used).length} usados</p>
             </div>
-            <button
-              onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData(emptyForm); }}
-              className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
-            >
-              <Plus size={20} />
-              Novo Cupom
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData(emptyForm); }}
+                className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
+              >
+                <Plus size={20} />
+                Novo Cupom
+              </button>
+              <AdminTopActions />
+            </div>
           </div>
 
           <div className="p-8">

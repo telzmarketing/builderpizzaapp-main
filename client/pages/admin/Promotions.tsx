@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Plus, Trash2, Edit2 } from "lucide-react";
 import { useApp, Promotion } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import ImageUpload from "@/components/admin/ImageUpload";
 
 export default function AdminPromotions() {
@@ -65,13 +66,16 @@ export default function AdminPromotions() {
         <div className="flex-1 overflow-auto">
           <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 flex justify-between items-center sticky top-0 z-20">
             <h2 className="text-2xl font-bold text-cream">Campanhas e Promoções</h2>
-            <button
-              onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ title: "", subtitle: "", icon: "🍕", active: true }); }}
-              className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
-            >
-              <Plus size={20} />
-              Nova Campanha
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ title: "", subtitle: "", icon: "🍕", active: true }); }}
+                className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
+              >
+                <Plus size={20} />
+                Nova Campanha
+              </button>
+              <AdminTopActions />
+            </div>
           </div>
 
           <div className="p-8">

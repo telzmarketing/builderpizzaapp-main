@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, ChevronDown, ChevronUp, CheckCircle2, XCircle, RefreshCw, ExternalLink } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -203,12 +204,15 @@ export default function MarketingIntegracoes() {
             <p className="text-xs font-semibold uppercase tracking-widest text-gold mb-1">Marketing</p>
             <h1 className="text-2xl font-bold text-cream">Integrações</h1>
           </div>
-          <button
-            onClick={fetchIntegrations}
-            className="p-2 rounded-xl bg-surface-02 border border-surface-03 text-stone hover:text-cream transition-colors"
-          >
-            <RefreshCw size={16} />
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={fetchIntegrations}
+              className="p-2 rounded-xl bg-surface-02 border border-surface-03 text-stone hover:text-cream transition-colors"
+            >
+              <RefreshCw size={16} />
+            </button>
+            <AdminTopActions />
+          </div>
         </div>
 
         {loading && (

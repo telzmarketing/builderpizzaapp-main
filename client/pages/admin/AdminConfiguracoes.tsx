@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bell, BellOff, Check, Printer, Eye, Settings2, Volume2 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import {
   loadPrinterSettings, savePrinterSettings,
   buildCompletoHtml, buildCozinhaHtml, buildEtiquetaHtml,
@@ -143,7 +144,7 @@ export default function AdminConfiguracoes() {
 
         <div className="flex-1 overflow-auto">
           {/* Header */}
-          <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 sticky top-0 z-20">
+          <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 sticky top-0 z-20 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Settings2 size={22} className="text-gold" />
               <div>
@@ -151,6 +152,7 @@ export default function AdminConfiguracoes() {
                 <p className="text-stone text-sm">Preferências do sistema</p>
               </div>
             </div>
+            <AdminTopActions />
           </div>
 
           {/* Tabs */}

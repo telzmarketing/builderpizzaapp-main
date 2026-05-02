@@ -1,5 +1,6 @@
 import type { ElementType, ReactNode } from "react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 
 export type AdminPageTab<T extends string> = {
   id: T;
@@ -55,11 +56,10 @@ export function AdminPageHeader({
           )}
         </div>
       </div>
-      {actions && (
-        <div className="flex flex-wrap items-center gap-3 lg:justify-end">
-          {actions}
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-3 lg:justify-end">
+        {actions}
+        <AdminTopActions />
+      </div>
     </header>
   );
 }

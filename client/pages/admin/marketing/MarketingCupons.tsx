@@ -4,6 +4,7 @@ import {
   XCircle, Clock, RefreshCw, BarChart2, List,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -250,18 +251,21 @@ export default function MarketingCupons() {
             <p className="text-xs font-semibold uppercase tracking-widest text-gold mb-1">Marketing</p>
             <h1 className="text-2xl font-bold text-cream">Cupons de Desconto</h1>
           </div>
-          {tab === "cupons" && (
-            <button onClick={openCreate}
-              className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-black font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
-              <Plus size={16} /> Novo Cupom
-            </button>
-          )}
-          {tab === "uso" && (
-            <button onClick={fetchUsage}
-              className="p-2 rounded-xl bg-surface-02 border border-surface-03 text-stone hover:text-cream transition-colors">
-              <RefreshCw size={16} />
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            {tab === "cupons" && (
+              <button onClick={openCreate}
+                className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-black font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
+                <Plus size={16} /> Novo Cupom
+              </button>
+            )}
+            {tab === "uso" && (
+              <button onClick={fetchUsage}
+                className="p-2 rounded-xl bg-surface-02 border border-surface-03 text-stone hover:text-cream transition-colors">
+                <RefreshCw size={16} />
+              </button>
+            )}
+            <AdminTopActions />
+          </div>
         </div>
 
         {/* Tabs */}

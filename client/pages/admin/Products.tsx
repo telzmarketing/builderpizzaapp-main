@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat, Droplets } from "lucide-react";
 import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import ImageUpload from "@/components/admin/ImageUpload";
 import { sizesApi, crustApi, drinkVariantApi, categoriesApi, productPromotionsApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, ApiProductPromotion, ApiProductPromotionCombination, ProductPromotionDiscountType, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { pizzaSizeDescription, pizzaSizeLabel } from "@/lib/pizzaSizes";
@@ -696,15 +697,18 @@ export default function AdminProducts() {
               <h2 className="text-2xl font-bold text-cream">Produtos</h2>
               <p className="text-stone text-sm">{products.length} produtos · {sortedCatalogCategories.length} categorias cadastradas</p>
             </div>
-            {activeTab === "produtos" && (
-              <button
-                onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5, product_type: "pizza" }); }}
-                className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
-              >
-                <Plus size={20} />
-                Novo Produto
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {activeTab === "produtos" && (
+                <button
+                  onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5, product_type: "pizza" }); }}
+                  className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  <Plus size={20} />
+                  Novo Produto
+                </button>
+              )}
+              <AdminTopActions />
+            </div>
           </div>
 
           {/* Tabs */}

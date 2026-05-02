@@ -127,7 +127,6 @@ import ClienteDetalhe from "./pages/admin/ClienteDetalhe";
 import AdminExitPopup from "./pages/admin/AdminExitPopup";
 import AdminUsuarios from "./pages/admin/AdminUsuarios";
 import ExitPopup from "./components/ExitPopup";
-import AdminTopBar from "./components/admin/AdminTopBar";
 import MarketingDashboard from "./pages/admin/marketing/MarketingDashboard";
 import MarketingCampanhas from "./pages/admin/marketing/MarketingCampanhas";
 import MarketingVisitantes from "./pages/admin/marketing/MarketingVisitantes";
@@ -170,7 +169,6 @@ export default function App() {
             <StoreWidget />
             <TrackingInjector />
             <ExitPopup />
-            <AdminTopBar />
             <Routes>
               {/* ── Customer routes ── */}
               <Route path="/" element={<Index />} />

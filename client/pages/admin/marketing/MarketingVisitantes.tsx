@@ -4,6 +4,7 @@ import {
   Tablet, BarChart2, ArrowRight, MapPin, MousePointer, ShoppingCart,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -125,6 +126,7 @@ export default function MarketingVisitantes() {
             <button onClick={() => fetchData(period)} className="p-2 rounded-xl bg-surface-02 border border-surface-03 text-stone hover:text-cream transition-colors">
               <RefreshCw size={16} />
             </button>
+            <AdminTopActions />
           </div>
         </div>
 

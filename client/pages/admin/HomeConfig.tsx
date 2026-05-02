@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Home, Save, Loader2, Check, List, Tag, Package, Eye, EyeOff } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import { homeCatalogApi, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { useApp } from "@/context/AppContext";
 
@@ -101,20 +102,23 @@ export default function AdminHomeConfig() {
               <h2 className="text-2xl font-bold text-cream">Catálogo da Home</h2>
               <p className="text-stone text-sm">Controle o que é exibido na vitrine principal da loja</p>
             </div>
-            <button
-              onClick={handleSave}
-              disabled={saving || loading}
-              className={`flex items-center gap-2 font-bold py-2 px-5 rounded-lg transition-colors ${
-                saved
-                  ? "bg-green-500 text-white"
-                  : saving
-                  ? "bg-gold/50 text-cream cursor-not-allowed"
-                  : "bg-gold hover:bg-gold/90 text-cream"
-              }`}
-            >
-              {saving ? <Loader2 size={16} className="animate-spin" /> : saved ? <Check size={16} /> : <Save size={16} />}
-              {saved ? "Salvo!" : saving ? "Salvando..." : "Salvar Configuração"}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSave}
+                disabled={saving || loading}
+                className={`flex items-center gap-2 font-bold py-2 px-5 rounded-lg transition-colors ${
+                  saved
+                    ? "bg-green-500 text-white"
+                    : saving
+                    ? "bg-gold/50 text-cream cursor-not-allowed"
+                    : "bg-gold hover:bg-gold/90 text-cream"
+                }`}
+              >
+                {saving ? <Loader2 size={16} className="animate-spin" /> : saved ? <Check size={16} /> : <Save size={16} />}
+                {saved ? "Salvo!" : saving ? "Salvando..." : "Salvar Configuração"}
+              </button>
+              <AdminTopActions />
+            </div>
           </div>
 
           <div className="p-8 max-w-3xl space-y-6">

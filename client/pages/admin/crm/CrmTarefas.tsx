@@ -6,6 +6,7 @@ import {
   Filter, ChevronDown,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -174,10 +175,13 @@ export default function CrmTarefas() {
             <p className="text-xs font-semibold uppercase tracking-widest text-gold mb-1">CRM</p>
             <h1 className="text-2xl font-bold text-cream">Tarefas</h1>
           </div>
-          <button onClick={openCreate}
-            className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-black font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
-            <Plus size={16} /> Nova Tarefa
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={openCreate}
+              className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-black font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
+              <Plus size={16} /> Nova Tarefa
+            </button>
+            <AdminTopActions />
+          </div>
         </div>
 
         {/* Status pills */}

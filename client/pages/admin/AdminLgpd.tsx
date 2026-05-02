@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Shield, Plus, Trash2, Check, Eye, Edit2, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import { lgpdApi, type ApiLgpdPolicy } from "@/lib/api";
 
 type PolicyForm = Omit<ApiLgpdPolicy, "id" | "created_at" | "updated_at">;
@@ -234,14 +235,17 @@ export default function AdminLgpd() {
                 Gerencie os textos da Política de Privacidade exibidos no cadastro de clientes.
               </p>
             </div>
-            <button
-              onClick={handleNew}
-              disabled={saving}
-              className="flex items-center gap-2 px-4 py-2.5 bg-gold text-cream rounded-xl font-semibold text-sm hover:bg-gold/90 transition-colors disabled:opacity-60"
-            >
-              <Plus size={16} />
-              {policies.length === 0 ? "Criar Política Padrão" : "Nova Versão"}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleNew}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2.5 bg-gold text-cream rounded-xl font-semibold text-sm hover:bg-gold/90 transition-colors disabled:opacity-60"
+              >
+                <Plus size={16} />
+                {policies.length === 0 ? "Criar Política Padrão" : "Nova Versão"}
+              </button>
+              <AdminTopActions />
+            </div>
           </div>
 
           {/* Toast */}

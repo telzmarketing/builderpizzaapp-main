@@ -5,6 +5,7 @@ import {
   ChevronDown, ChevronUp, GripVertical, LayoutList,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -293,6 +294,7 @@ export default function CrmPipeline() {
                 <Settings size={14} /> Etapas
               </button>
             )}
+            <AdminTopActions />
           </div>
         </div>
 

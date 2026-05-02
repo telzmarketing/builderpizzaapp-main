@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Users, MapPin, Phone, Mail, Calendar, ShieldCheck, ShieldOff, Loader2, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import { customersApi, type ApiCustomer } from "@/lib/api";
 
 function formatDate(s: string) {
@@ -152,15 +153,18 @@ export default function AdminClientes() {
             </p>
           </div>
 
-          {/* Search */}
-          <div className="flex items-center gap-2 bg-surface-03/60 border border-surface-03 rounded-xl px-4 py-2.5 w-full md:w-72">
-            <Search size={15} className="text-stone flex-shrink-0" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nome, e-mail ou telefone..."
-              className="bg-transparent text-cream placeholder-stone/60 text-sm outline-none flex-1 min-w-0"
-            />
+          {/* Search + actions */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2 bg-surface-03/60 border border-surface-03 rounded-xl px-4 py-2.5 w-full md:w-72">
+              <Search size={15} className="text-stone flex-shrink-0" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar por nome, e-mail ou telefone..."
+                className="bg-transparent text-cream placeholder-stone/60 text-sm outline-none flex-1 min-w-0"
+              />
+            </div>
+            <AdminTopActions />
           </div>
         </header>
 

@@ -4,6 +4,7 @@ import {
   X, ExternalLink,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import ImageUpload from "@/components/admin/ImageUpload";
 import MediaUpload from "@/components/admin/MediaUpload";
 import {
@@ -491,9 +492,12 @@ export default function AdminCampanhas() {
 
         <div className="flex-1 overflow-auto">
           {/* Header */}
-          <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 sticky top-0 z-20">
-            <h2 className="text-2xl font-bold text-cream">Campanhas</h2>
-            <p className="text-stone text-sm">{campaigns.length} campanhas · {couponsList.length} cupons · {kits.length} kits</p>
+          <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 sticky top-0 z-20 flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-cream">Campanhas</h2>
+              <p className="text-stone text-sm">{campaigns.length} campanhas · {couponsList.length} cupons · {kits.length} kits</p>
+            </div>
+            <AdminTopActions />
           </div>
 
           {/* Tabs */}

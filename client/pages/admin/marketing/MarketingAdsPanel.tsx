@@ -5,6 +5,7 @@ import {
   Link2, Users, Target, PieChart, Plus, Trash2, Copy,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -221,18 +222,21 @@ export default function MarketingAdsPanel() {
             <p className="text-xs font-semibold uppercase tracking-widest text-gold mb-1">Marketing</p>
             <h1 className="text-2xl font-bold text-cream">Tráfego Pago</h1>
           </div>
-          {tab === "campanhas" && (
-            <div className="flex items-center gap-2">
-              <button onClick={() => syncPlatform("all")} disabled={!!syncing}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gold hover:bg-gold/90 text-black font-semibold text-sm transition-colors disabled:opacity-60">
-                {syncing === "all" ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                Sincronizar tudo
-              </button>
-              <button onClick={fetchCampaigns} className="p-2 rounded-xl bg-surface-02 border border-surface-03 text-stone hover:text-cream transition-colors">
-                <RefreshCw size={16} />
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {tab === "campanhas" && (
+              <>
+                <button onClick={() => syncPlatform("all")} disabled={!!syncing}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gold hover:bg-gold/90 text-black font-semibold text-sm transition-colors disabled:opacity-60">
+                  {syncing === "all" ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                  Sincronizar tudo
+                </button>
+                <button onClick={fetchCampaigns} className="p-2 rounded-xl bg-surface-02 border border-surface-03 text-stone hover:text-cream transition-colors">
+                  <RefreshCw size={16} />
+                </button>
+              </>
+            )}
+            <AdminTopActions />
+          </div>
         </div>
 
         {/* Tabs */}

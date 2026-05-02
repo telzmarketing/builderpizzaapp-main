@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Save, Eye, EyeOff, CheckCircle, AlertCircle, Loader2, CreditCard, QrCode, Wallet, Banknote } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import {
   adminApi,
   type ApiPaymentGatewayConfig,
@@ -127,14 +128,17 @@ export default function AdminPagamentos() {
                 Configure o processador de pagamentos da loja
               </p>
             </div>
-            <button
-              onClick={handleSave}
-              disabled={saving || loading}
-              className="flex items-center gap-2 bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold py-2 px-5 rounded-lg transition-colors"
-            >
-              {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-              {saving ? "Salvando..." : "Salvar"}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSave}
+                disabled={saving || loading}
+                className="flex items-center gap-2 bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold py-2 px-5 rounded-lg transition-colors"
+              >
+                {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                {saving ? "Salvando..." : "Salvar"}
+              </button>
+              <AdminTopActions />
+            </div>
           </div>
 
           <div className="p-8 space-y-8">

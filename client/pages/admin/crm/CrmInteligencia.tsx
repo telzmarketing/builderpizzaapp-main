@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { crmApi, type ApiCRMAnalysisStatus } from "@/lib/api";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 
 function segmentLabel(segment: string) {
   const labels: Record<string, string> = {
@@ -159,6 +160,7 @@ export default function CrmInteligencia() {
               {running || isProcessing ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
               Analisar todos os clientes
             </button>
+            <AdminTopActions />
           </div>
         </div>
 

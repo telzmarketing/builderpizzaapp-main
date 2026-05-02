@@ -5,6 +5,7 @@ import {
   RefreshCw, Send, User,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -220,6 +221,7 @@ export default function MarketingWorkflow() {
             >
               <Plus size={16} /> Nova Solicitação
             </button>
+            <AdminTopActions />
           </div>
         </div>
 

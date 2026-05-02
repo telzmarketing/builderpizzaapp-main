@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { useApp, SiteContent, defaultSiteContent } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import ImageUpload from "@/components/admin/ImageUpload";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -192,6 +193,7 @@ export default function AdminConteudo() {
                 <Save size={16} />
                 {saved ? "Salvo!" : "Salvar alterações"}
               </button>
+              <AdminTopActions />
             </div>
           </div>
 
