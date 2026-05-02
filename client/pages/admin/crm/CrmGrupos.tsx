@@ -1,11 +1,31 @@
 import { useEffect, useState } from "react";
-import { Loader2, Plus, Trash2, Pencil, X, FolderOpen, PlusCircle, MinusCircle, PlayCircle } from "lucide-react";
+import {
+  FolderOpen,
+  Hash,
+  Layers3,
+  Loader2,
+  MinusCircle,
+  Pencil,
+  PlayCircle,
+  Plus,
+  PlusCircle,
+  Tags,
+  Trash2,
+  X,
+} from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import {
+  crmApi,
+  type ApiCustomerSegment,
+  type ApiCustomerSegmentRule,
+  type ApiCustomerTag,
+} from "@/lib/api";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const unwrap = (json: any) => json?.data ?? json;
 
+type Tab = "groups" | "tags" | "segments";
 type GroupType = "manual" | "dynamic";
 
 interface DynamicRule {
@@ -25,122 +45,263 @@ interface Group {
   rules?: DynamicRule[];
 }
 
-const emptyForm = (): Partial<Group> => ({
-  name: "",
-  group_type: "manual",
-  color: "#f97316",
-  icon: "👥",
-  description: "",
-  rules: [],
-});
-
 const COLORS = [
   "#f97316", "#ef4444", "#8b5cf6", "#3b82f6",
   "#10b981", "#f59e0b", "#ec4899", "#06b6d4",
 ];
 
 const FIELD_OPTIONS = [
-  // Comportamento de pedidos
-  { value: "last_order_days",   label: "Dias desde último pedido" },
-  { value: "total_orders",      label: "Total de pedidos" },
-  { value: "total_spent",       label: "Total gasto (R$)" },
-  { value: "avg_ticket",        label: "Ticket médio (R$)" },
-  { value: "days_without_order",label: "Dias sem pedido" },
-  // Localização
-  { value: "city",              label: "Cidade" },
-  { value: "neighborhood",      label: "Bairro" },
-  // Fidelidade
-  { value: "loyalty_points",    label: "Pontos de fidelidade" },
-  { value: "loyalty_tier",      label: "Nível de fidelidade" },
-  // Perfil
-  { value: "birth_month",       label: "Mês de aniversário" },
-  { value: "customer_status",   label: "Status do cliente (novo/recorrente/inativo/VIP)" },
-  // Produto & histórico
-  { value: "product_ordered",   label: "Produto já pedido (nome)" },
-  { value: "category_ordered",  label: "Categoria já pedida" },
-  // Cupons & campanhas
-  { value: "coupon_used",       label: "Usou cupom (código)" },
-  { value: "campaign_origin",   label: "Origem de campanha (UTM source)" },
-  // Engajamento digital
-  { value: "opened_email",      label: "Abriu email (template)" },
-  { value: "clicked_email",     label: "Clicou em email" },
-  { value: "responded_whatsapp",label: "Respondeu WhatsApp" },
-  { value: "whatsapp_sent",     label: "Recebeu WhatsApp (contagem)" },
-  // Financeiro
-  { value: "has_unpaid_order",  label: "Tem pedido não pago" },
-  { value: "payment_method",    label: "Método de pagamento preferido" },
+  { value: "last_order_days", label: "Dias desde ultimo pedido" },
+  { value: "total_orders", label: "Total de pedidos" },
+  { value: "total_spent", label: "Total gasto" },
+  { value: "avg_ticket", label: "Ticket medio" },
+  { value: "days_without_order", label: "Dias sem pedido" },
+  { value: "city", label: "Cidade" },
+  { value: "neighborhood", label: "Bairro" },
+  { value: "birth_month", label: "Mes de aniversario" },
+  { value: "customer_status", label: "Status do cliente" },
+  { value: "coupon_used", label: "Cupom usado" },
+  { value: "campaign_origin", label: "Origem de campanha" },
 ];
 
 const OPERATOR_OPTIONS = [
-  { value: ">",        label: "maior que" },
-  { value: "<",        label: "menor que" },
-  { value: "=",        label: "igual a" },
-  { value: "!=",       label: "diferente de" },
-  { value: ">=",       label: "maior ou igual" },
-  { value: "<=",       label: "menor ou igual" },
-  { value: "contains", label: "contém" },
-  { value: "in",       label: "está em (lista separada por vírgula)" },
+  { value: ">", label: "maior que" },
+  { value: "<", label: "menor que" },
+  { value: "=", label: "igual a" },
+  { value: "!=", label: "diferente de" },
+  { value: ">=", label: "maior ou igual" },
+  { value: "<=", label: "menor ou igual" },
+  { value: "contains", label: "contem" },
 ];
 
+const emptyGroupForm = (): Partial<Group> => ({
+  name: "",
+  group_type: "manual",
+  color: "#f97316",
+  icon: "G",
+  description: "",
+  rules: [],
+});
+
+const emptyTagForm = () => ({
+  name: "",
+  description: "",
+  color: "#f97316",
+});
+
+const emptySegmentForm = () => ({
+  name: "",
+  description: "",
+  rules: [] as ApiCustomerSegmentRule[],
+});
+
+function SectionTabs({ active, onChange }: { active: Tab; onChange: (tab: Tab) => void }) {
+  const tabs: Array<{ key: Tab; label: string; icon: typeof FolderOpen }> = [
+    { key: "groups", label: "Grupos", icon: FolderOpen },
+    { key: "tags", label: "Tags", icon: Tags },
+    { key: "segments", label: "Segmentos", icon: Layers3 },
+  ];
+
+  return (
+    <div className="flex flex-wrap gap-2 border-b border-surface-03 pb-3">
+      {tabs.map(({ key, label, icon: Icon }) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => onChange(key)}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+            active === key
+              ? "bg-gold text-black"
+              : "bg-surface-02 border border-surface-03 text-stone hover:text-cream"
+          }`}
+        >
+          <Icon size={15} /> {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RuleEditor({
+  rules,
+  onChange,
+}: {
+  rules: DynamicRule[];
+  onChange: (rules: DynamicRule[]) => void;
+}) {
+  const addRule = () => {
+    onChange([...rules, { field: "last_order_days", operator: ">", value: "30" }]);
+  };
+  const updateRule = (idx: number, key: keyof DynamicRule, value: string) => {
+    onChange(rules.map((rule, i) => (i === idx ? { ...rule, [key]: value } : rule)));
+  };
+  const removeRule = (idx: number) => {
+    onChange(rules.filter((_, i) => i !== idx));
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <label className="text-xs text-stone font-medium">Regras</label>
+        <button
+          type="button"
+          onClick={addRule}
+          className="flex items-center gap-1 text-xs text-gold hover:text-gold/80 transition-colors"
+        >
+          <PlusCircle size={14} /> Adicionar regra
+        </button>
+      </div>
+      {rules.length === 0 && (
+        <p className="text-stone text-xs text-center py-3 border border-dashed border-surface-03 rounded-xl">
+          Nenhuma regra configurada.
+        </p>
+      )}
+      {rules.map((rule, idx) => (
+        <div key={idx} className="grid grid-cols-[1fr_120px_100px_24px] gap-2 items-center">
+          <select
+            value={rule.field}
+            onChange={(event) => updateRule(idx, "field", event.target.value)}
+            className="bg-surface-03 border border-surface-03 rounded-xl px-2 py-2 text-cream text-xs focus:outline-none focus:border-gold min-w-0"
+          >
+            {FIELD_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <select
+            value={rule.operator}
+            onChange={(event) => updateRule(idx, "operator", event.target.value)}
+            className="bg-surface-03 border border-surface-03 rounded-xl px-2 py-2 text-cream text-xs focus:outline-none focus:border-gold"
+          >
+            {OPERATOR_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <input
+            value={rule.value}
+            onChange={(event) => updateRule(idx, "value", event.target.value)}
+            placeholder="valor"
+            className="bg-surface-03 border border-surface-03 rounded-xl px-2 py-2 text-cream text-xs focus:outline-none focus:border-gold min-w-0"
+          />
+          <button
+            type="button"
+            onClick={() => removeRule(idx)}
+            className="text-stone hover:text-red-400 transition-colors"
+          >
+            <MinusCircle size={16} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function CrmGrupos() {
+  const [activeTab, setActiveTab] = useState<Tab>("groups");
+
   const [groups, setGroups] = useState<Group[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [showModal, setShowModal] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<Partial<Group>>(emptyForm());
+  const [groupsLoading, setGroupsLoading] = useState(true);
+  const [groupsError, setGroupsError] = useState("");
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [groupForm, setGroupForm] = useState<Partial<Group>>(emptyGroupForm());
+
+  const [tags, setTags] = useState<ApiCustomerTag[]>([]);
+  const [tagsLoading, setTagsLoading] = useState(true);
+  const [tagsError, setTagsError] = useState("");
+  const [showTagModal, setShowTagModal] = useState(false);
+  const [editingTagId, setEditingTagId] = useState<string | null>(null);
+  const [tagForm, setTagForm] = useState(emptyTagForm());
+
+  const [segments, setSegments] = useState<ApiCustomerSegment[]>([]);
+  const [segmentsLoading, setSegmentsLoading] = useState(true);
+  const [segmentsError, setSegmentsError] = useState("");
+  const [showSegmentModal, setShowSegmentModal] = useState(false);
+  const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
+  const [segmentForm, setSegmentForm] = useState(emptySegmentForm());
+  const [previewCounts, setPreviewCounts] = useState<Record<string, number>>({});
+
   const [saving, setSaving] = useState(false);
 
   const token = localStorage.getItem("admin_token");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const inputCls = "w-full bg-surface-03 border border-surface-03 rounded-xl px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold";
 
   const fetchGroups = () => {
-    setLoading(true);
-    setError("");
+    setGroupsLoading(true);
+    setGroupsError("");
     fetch(`${BASE}/crm/groups`, { headers })
-      .then((r) => { if (!r.ok) throw new Error("Falha ao carregar grupos."); return r.json(); })
+      .then((response) => {
+        if (!response.ok) throw new Error("Falha ao carregar grupos.");
+        return response.json();
+      })
       .then(unwrap)
       .then(setGroups)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((error) => setGroupsError(error.message))
+      .finally(() => setGroupsLoading(false));
   };
 
-  useEffect(() => { fetchGroups(); }, []);
-
-  const openCreate = () => {
-    setEditingId(null);
-    setForm(emptyForm());
-    setShowModal(true);
+  const fetchTags = () => {
+    setTagsLoading(true);
+    setTagsError("");
+    crmApi.listTags()
+      .then(setTags)
+      .catch((error) => setTagsError(error.message))
+      .finally(() => setTagsLoading(false));
   };
 
-  const openEdit = (g: Group) => {
-    setEditingId(g.id);
-    setForm({ ...g, rules: g.rules ? [...g.rules] : [] });
-    setShowModal(true);
+  const fetchSegments = () => {
+    setSegmentsLoading(true);
+    setSegmentsError("");
+    crmApi.listSegments()
+      .then(setSegments)
+      .catch((error) => setSegmentsError(error.message))
+      .finally(() => setSegmentsLoading(false));
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.name?.trim()) { alert("Nome obrigatório."); return; }
+  useEffect(() => {
+    fetchGroups();
+    fetchTags();
+    fetchSegments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const openCreateGroup = () => {
+    setEditingGroupId(null);
+    setGroupForm(emptyGroupForm());
+    setShowGroupModal(true);
+  };
+
+  const openEditGroup = (group: Group) => {
+    setEditingGroupId(group.id);
+    setGroupForm({ ...group, rules: group.rules ? [...group.rules] : [] });
+    setShowGroupModal(true);
+  };
+
+  const saveGroup = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!groupForm.name?.trim()) {
+      alert("Nome obrigatorio.");
+      return;
+    }
     setSaving(true);
     try {
-      const r = editingId
-        ? await fetch(`${BASE}/crm/groups/${editingId}`, {
+      const response = editingGroupId
+        ? await fetch(`${BASE}/crm/groups/${editingGroupId}`, {
             method: "PATCH",
             headers,
-            body: JSON.stringify(form),
+            body: JSON.stringify(groupForm),
           })
         : await fetch(`${BASE}/crm/groups`, {
             method: "POST",
             headers,
-            body: JSON.stringify(form),
+            body: JSON.stringify(groupForm),
           });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        alert(err?.error?.message ?? "Erro ao salvar grupo.");
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        alert(payload?.error?.message ?? "Erro ao salvar grupo.");
         return;
       }
-      setShowModal(false);
+      setShowGroupModal(false);
       fetchGroups();
     } catch {
       alert("Erro ao salvar grupo.");
@@ -149,296 +310,525 @@ export default function CrmGrupos() {
     }
   };
 
-  const handleEvaluate = async (id: string) => {
-    const r = await fetch(`${BASE}/crm/groups/${id}/evaluate`, { method: "POST", headers });
-    const json = await r.json().catch(() => ({}));
-    const msg = json?.data?.message ?? (r.ok ? "Avaliação concluída." : "Erro ao avaliar.");
-    alert(msg);
+  const evaluateGroup = async (id: string) => {
+    const response = await fetch(`${BASE}/crm/groups/${id}/evaluate`, { method: "POST", headers });
+    const payload = await response.json().catch(() => ({}));
+    alert(payload?.data?.message ?? (response.ok ? "Avaliacao concluida." : "Erro ao avaliar."));
     fetchGroups();
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Excluir grupo?")) return;
+  const deleteGroup = async (id: string) => {
+    if (!confirm("Inativar grupo?")) return;
     await fetch(`${BASE}/crm/groups/${id}`, { method: "DELETE", headers });
     fetchGroups();
   };
 
-  const addRule = () => {
-    setForm((f) => ({
-      ...f,
-      rules: [...(f.rules ?? []), { field: "last_order_days", operator: ">", value: "30" }],
-    }));
+  const openCreateTag = () => {
+    setEditingTagId(null);
+    setTagForm(emptyTagForm());
+    setShowTagModal(true);
   };
 
-  const removeRule = (idx: number) => {
-    setForm((f) => ({
-      ...f,
-      rules: (f.rules ?? []).filter((_, i) => i !== idx),
-    }));
+  const openEditTag = (tag: ApiCustomerTag) => {
+    setEditingTagId(tag.id);
+    setTagForm({
+      name: tag.name,
+      description: tag.description ?? "",
+      color: tag.color,
+    });
+    setShowTagModal(true);
   };
 
-  const updateRule = (idx: number, key: keyof DynamicRule, val: string) => {
-    setForm((f) => ({
-      ...f,
-      rules: (f.rules ?? []).map((r, i) => (i === idx ? { ...r, [key]: val } : r)),
-    }));
+  const saveTag = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!tagForm.name.trim()) {
+      alert("Nome obrigatorio.");
+      return;
+    }
+    setSaving(true);
+    try {
+      if (editingTagId) {
+        await crmApi.updateTag(editingTagId, tagForm);
+      } else {
+        await crmApi.createTag(tagForm);
+      }
+      setShowTagModal(false);
+      fetchTags();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Erro ao salvar tag.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const inputCls = "w-full bg-surface-03 border border-surface-03 rounded-xl px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold";
+  const inactiveTag = async (id: string) => {
+    if (!confirm("Inativar tag?")) return;
+    await crmApi.inactiveTag(id);
+    fetchTags();
+  };
+
+  const openCreateSegment = () => {
+    setEditingSegmentId(null);
+    setSegmentForm(emptySegmentForm());
+    setShowSegmentModal(true);
+  };
+
+  const openEditSegment = (segment: ApiCustomerSegment) => {
+    setEditingSegmentId(segment.id);
+    setSegmentForm({
+      name: segment.name,
+      description: segment.description ?? "",
+      rules: segment.rules ?? [],
+    });
+    setShowSegmentModal(true);
+  };
+
+  const saveSegment = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!segmentForm.name.trim()) {
+      alert("Nome obrigatorio.");
+      return;
+    }
+    setSaving(true);
+    try {
+      if (editingSegmentId) {
+        await crmApi.updateSegment(editingSegmentId, segmentForm);
+      } else {
+        await crmApi.createSegment(segmentForm);
+      }
+      setShowSegmentModal(false);
+      fetchSegments();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Erro ao salvar segmento.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inactiveSegment = async (id: string) => {
+    if (!confirm("Inativar segmento?")) return;
+    await crmApi.inactiveSegment(id);
+    fetchSegments();
+  };
+
+  const previewSegment = async (id: string) => {
+    try {
+      const preview = await crmApi.previewSegment(id, 10);
+      setPreviewCounts((prev) => ({ ...prev, [id]: preview.total }));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Erro ao calcular segmento.");
+    }
+  };
+
+  const renderGroups = () => {
+    if (groupsLoading) return <LoadingBlock />;
+    if (groupsError) return <ErrorBlock message={groupsError} />;
+    if (groups.length === 0) {
+      return (
+        <EmptyBlock
+          icon={FolderOpen}
+          title="Nenhum grupo criado ainda."
+          action="Criar primeiro grupo"
+          onAction={openCreateGroup}
+        />
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        {groups.map((group) => (
+          <div key={group.id} className="bg-surface-02 border border-surface-03 rounded-2xl p-4 space-y-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-3 min-w-0">
+                <span
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black shrink-0"
+                  style={{ backgroundColor: `${group.color}20`, color: group.color }}
+                >
+                  {group.icon || "G"}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-cream font-semibold text-sm truncate">{group.name}</p>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                    group.group_type === "dynamic"
+                      ? "bg-purple-500/20 text-purple-400"
+                      : "bg-surface-03 text-stone"
+                  }`}>
+                    {group.group_type === "dynamic" ? "Dinamico" : "Manual"}
+                  </span>
+                </div>
+              </div>
+              <CardActions
+                onEdit={() => openEditGroup(group)}
+                onDelete={() => deleteGroup(group.id)}
+                extra={group.group_type === "dynamic" ? (
+                  <button
+                    onClick={() => evaluateGroup(group.id)}
+                    className="p-1.5 rounded-lg hover:bg-purple-500/10 text-stone hover:text-purple-400 transition-colors"
+                    title="Avaliar regras"
+                  >
+                    <PlayCircle size={13} />
+                  </button>
+                ) : null}
+              />
+            </div>
+            {group.description && <p className="text-stone text-xs leading-relaxed">{group.description}</p>}
+            <div className="flex items-center justify-between text-xs border-t border-surface-03 pt-3">
+              <span className="text-stone">{group.member_count} membros</span>
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: group.color }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderTags = () => {
+    if (tagsLoading) return <LoadingBlock />;
+    if (tagsError) return <ErrorBlock message={tagsError} />;
+    if (tags.length === 0) {
+      return <EmptyBlock icon={Tags} title="Nenhuma tag criada ainda." action="Criar primeira tag" onAction={openCreateTag} />;
+    }
+
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        {tags.map((tag) => (
+          <div key={tag.id} className="bg-surface-02 border border-surface-03 rounded-2xl p-4 space-y-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-3 min-w-0">
+                <span
+                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
+                >
+                  <Hash size={18} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-cream font-semibold text-sm truncate">{tag.name}</p>
+                  <p className="text-stone/60 text-xs truncate">{tag.slug}</p>
+                </div>
+              </div>
+              <CardActions onEdit={() => openEditTag(tag)} onDelete={() => inactiveTag(tag.id)} />
+            </div>
+            {tag.description && <p className="text-stone text-xs leading-relaxed">{tag.description}</p>}
+            <div className="flex items-center justify-between text-xs border-t border-surface-03 pt-3">
+              <span className="text-stone">{tag.member_count ?? 0} clientes</span>
+              <span className="text-stone/60">{tag.source}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderSegments = () => {
+    if (segmentsLoading) return <LoadingBlock />;
+    if (segmentsError) return <ErrorBlock message={segmentsError} />;
+    if (segments.length === 0) {
+      return <EmptyBlock icon={Layers3} title="Nenhum segmento criado ainda." action="Criar primeiro segmento" onAction={openCreateSegment} />;
+    }
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {segments.map((segment) => (
+          <div key={segment.id} className="bg-surface-02 border border-surface-03 rounded-2xl p-4 space-y-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-cream font-semibold text-sm truncate">{segment.name}</p>
+                <p className="text-stone/60 text-xs truncate">{segment.slug}</p>
+              </div>
+              <CardActions
+                onEdit={() => openEditSegment(segment)}
+                onDelete={() => inactiveSegment(segment.id)}
+                extra={(
+                  <button
+                    onClick={() => previewSegment(segment.id)}
+                    className="p-1.5 rounded-lg hover:bg-gold/10 text-stone hover:text-gold transition-colors"
+                    title="Calcular segmento"
+                  >
+                    <PlayCircle size={13} />
+                  </button>
+                )}
+              />
+            </div>
+            {segment.description && <p className="text-stone text-xs leading-relaxed">{segment.description}</p>}
+            <div className="space-y-2">
+              {segment.rules.length === 0 ? (
+                <p className="text-stone/60 text-xs">Sem regras configuradas.</p>
+              ) : (
+                segment.rules.map((rule, idx) => (
+                  <div key={idx} className="flex flex-wrap gap-2 text-xs">
+                    <span className="px-2 py-1 rounded-lg bg-surface-03 text-stone">{rule.field}</span>
+                    <span className="px-2 py-1 rounded-lg bg-surface-03 text-stone">{rule.operator}</span>
+                    <span className="px-2 py-1 rounded-lg bg-surface-03 text-cream">{rule.value}</span>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="flex items-center justify-between text-xs border-t border-surface-03 pt-3">
+              <span className="text-stone">
+                {previewCounts[segment.id] == null ? "Nao calculado" : `${previewCounts[segment.id]} clientes`}
+              </span>
+              <span className="text-stone/60">{segment.source}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-surface-00 overflow-hidden">
       <AdminSidebar />
       <main className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-gold mb-1">CRM</p>
-            <h1 className="text-2xl font-bold text-cream">Grupos & Segmentações</h1>
+            <h1 className="text-2xl font-bold text-cream">Grupos, Tags e Segmentos</h1>
           </div>
           <button
-            onClick={openCreate}
+            onClick={activeTab === "groups" ? openCreateGroup : activeTab === "tags" ? openCreateTag : openCreateSegment}
             className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-black font-semibold px-4 py-2 rounded-xl text-sm transition-colors"
           >
-            <Plus size={16} /> Novo Grupo
+            <Plus size={16} />
+            {activeTab === "groups" ? "Novo grupo" : activeTab === "tags" ? "Nova tag" : "Novo segmento"}
           </button>
         </div>
 
-        {loading && (
-          <div className="flex items-center justify-center h-48">
-            <Loader2 className="animate-spin text-gold" size={28} />
-          </div>
-        )}
-        {error && !loading && (
-          <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-4 text-red-400 text-sm">{error}</div>
-        )}
+        <SectionTabs active={activeTab} onChange={setActiveTab} />
 
-        {!loading && !error && (
-          <>
-            {groups.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center bg-surface-02 border border-surface-03 rounded-2xl">
-                <FolderOpen size={40} className="text-surface-03 mb-3" />
-                <p className="text-stone text-sm">Nenhum grupo criado ainda.</p>
-                <button onClick={openCreate} className="mt-4 text-gold text-sm hover:underline">
-                  Criar primeiro grupo
-                </button>
+        {activeTab === "groups" && renderGroups()}
+        {activeTab === "tags" && renderTags()}
+        {activeTab === "segments" && renderSegments()}
+
+        {showGroupModal && (
+          <FormModal
+            title={editingGroupId ? "Editar grupo" : "Novo grupo"}
+            onClose={() => setShowGroupModal(false)}
+            onSubmit={saveGroup}
+            saving={saving}
+          >
+            <TextField label="Nome" value={groupForm.name ?? ""} onChange={(value) => setGroupForm((prev) => ({ ...prev, name: value }))} inputCls={inputCls} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-stone">Tipo</label>
+                <select
+                  value={groupForm.group_type ?? "manual"}
+                  onChange={(event) => setGroupForm((prev) => ({ ...prev, group_type: event.target.value as GroupType }))}
+                  className={inputCls}
+                >
+                  <option value="manual">Manual</option>
+                  <option value="dynamic">Dinamico</option>
+                </select>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {groups.map((g) => (
-                  <div
-                    key={g.id}
-                    className="bg-surface-02 border border-surface-03 rounded-2xl p-4 space-y-3"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-3">
-                        <span
-                          className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
-                          style={{ backgroundColor: `${g.color}20` }}
-                        >
-                          {g.icon}
-                        </span>
-                        <div>
-                          <p className="text-cream font-semibold text-sm">{g.name}</p>
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full ${
-                              g.group_type === "dynamic"
-                                ? "bg-purple-500/20 text-purple-400"
-                                : "bg-surface-03 text-stone"
-                            }`}
-                          >
-                            {g.group_type === "dynamic" ? "Dinâmico" : "Manual"}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex gap-1 shrink-0">
-                        {g.group_type === "dynamic" && (
-                          <button
-                            onClick={() => handleEvaluate(g.id)}
-                            className="p-1.5 rounded-lg hover:bg-purple-500/10 text-stone hover:text-purple-400 transition-colors"
-                            title="Avaliar regras e atualizar membros"
-                          >
-                            <PlayCircle size={13} />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => openEdit(g)}
-                          className="p-1.5 rounded-lg hover:bg-surface-03 text-stone hover:text-cream transition-colors"
-                        >
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(g.id)}
-                          className="p-1.5 rounded-lg hover:bg-red-500/10 text-stone hover:text-red-400 transition-colors"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </div>
-                    {g.description && <p className="text-stone text-xs leading-relaxed">{g.description}</p>}
-                    <div className="flex items-center justify-between text-xs border-t border-surface-03 pt-3">
-                      <span className="text-stone">{g.member_count} membros</span>
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: g.color }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Modal */}
-        {showModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-            <div className="bg-surface-02 border border-surface-03 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between p-5 border-b border-surface-03">
-                <h2 className="text-cream font-semibold">
-                  {editingId ? "Editar Grupo" : "Novo Grupo"}
-                </h2>
-                <button onClick={() => setShowModal(false)} className="text-stone hover:text-cream">
-                  <X size={18} />
-                </button>
-              </div>
-              <form onSubmit={handleSave} className="p-5 space-y-4">
-                <div className="space-y-1">
-                  <label className="text-xs text-stone">Nome *</label>
-                  <input
-                    type="text"
-                    value={form.name ?? ""}
-                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                    placeholder="Ex: Clientes VIP"
-                    className={inputCls}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs text-stone">Tipo</label>
-                    <select
-                      value={form.group_type ?? "manual"}
-                      onChange={(e) => setForm((f) => ({ ...f, group_type: e.target.value as GroupType }))}
-                      className={inputCls}
-                    >
-                      <option value="manual">Manual</option>
-                      <option value="dynamic">Dinâmico</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-stone">Ícone (emoji)</label>
-                    <input
-                      type="text"
-                      value={form.icon ?? "👥"}
-                      onChange={(e) => setForm((f) => ({ ...f, icon: e.target.value }))}
-                      placeholder="👥"
-                      className={inputCls}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs text-stone">Cor</label>
-                  <div className="flex flex-wrap gap-2">
-                    {COLORS.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={() => setForm((f) => ({ ...f, color: c }))}
-                        className={`w-7 h-7 rounded-full transition-transform hover:scale-110 ${form.color === c ? "ring-2 ring-white ring-offset-2 ring-offset-surface-02 scale-110" : ""}`}
-                        style={{ backgroundColor: c }}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs text-stone">Descrição</label>
-                  <textarea
-                    value={form.description ?? ""}
-                    onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                    rows={2}
-                    className={`${inputCls} resize-none`}
-                  />
-                </div>
-
-                {/* Dynamic rules */}
-                {form.group_type === "dynamic" && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs text-stone font-medium">Regras de Segmentação</label>
-                      <button
-                        type="button"
-                        onClick={addRule}
-                        className="flex items-center gap-1 text-xs text-gold hover:text-gold/80 transition-colors"
-                      >
-                        <PlusCircle size={14} /> Adicionar regra
-                      </button>
-                    </div>
-                    {(form.rules ?? []).length === 0 && (
-                      <p className="text-stone text-xs text-center py-3 border border-dashed border-surface-03 rounded-xl">
-                        Nenhuma regra. Clique em "Adicionar regra".
-                      </p>
-                    )}
-                    {(form.rules ?? []).map((rule, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <select
-                          value={rule.field}
-                          onChange={(e) => updateRule(idx, "field", e.target.value)}
-                          className="flex-1 bg-surface-03 border border-surface-03 rounded-xl px-2 py-1.5 text-cream text-xs focus:outline-none focus:border-gold"
-                        >
-                          {FIELD_OPTIONS.map((o) => (
-                            <option key={o.value} value={o.value}>{o.label}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={rule.operator}
-                          onChange={(e) => updateRule(idx, "operator", e.target.value)}
-                          className="w-24 bg-surface-03 border border-surface-03 rounded-xl px-2 py-1.5 text-cream text-xs focus:outline-none focus:border-gold"
-                        >
-                          {OPERATOR_OPTIONS.map((o) => (
-                            <option key={o.value} value={o.value}>{o.label}</option>
-                          ))}
-                        </select>
-                        <input
-                          type="text"
-                          value={rule.value}
-                          onChange={(e) => updateRule(idx, "value", e.target.value)}
-                          placeholder="valor"
-                          className="w-20 bg-surface-03 border border-surface-03 rounded-xl px-2 py-1.5 text-cream text-xs focus:outline-none focus:border-gold"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeRule(idx)}
-                          className="text-stone hover:text-red-400 transition-colors"
-                        >
-                          <MinusCircle size={16} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="flex-1 py-2 rounded-xl border border-surface-03 text-stone hover:text-cream text-sm transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="flex-1 py-2 rounded-xl bg-gold hover:bg-gold/90 text-black font-semibold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-                  >
-                    {saving && <Loader2 size={14} className="animate-spin" />}
-                    {editingId ? "Salvar" : "Criar"}
-                  </button>
-                </div>
-              </form>
+              <TextField label="Icone" value={groupForm.icon ?? "G"} onChange={(value) => setGroupForm((prev) => ({ ...prev, icon: value }))} inputCls={inputCls} />
             </div>
-          </div>
+            <ColorPicker value={groupForm.color ?? "#f97316"} onChange={(value) => setGroupForm((prev) => ({ ...prev, color: value }))} />
+            <TextArea label="Descricao" value={groupForm.description ?? ""} onChange={(value) => setGroupForm((prev) => ({ ...prev, description: value }))} inputCls={inputCls} />
+            {groupForm.group_type === "dynamic" && (
+              <RuleEditor
+                rules={(groupForm.rules ?? []) as DynamicRule[]}
+                onChange={(rules) => setGroupForm((prev) => ({ ...prev, rules }))}
+              />
+            )}
+          </FormModal>
+        )}
+
+        {showTagModal && (
+          <FormModal
+            title={editingTagId ? "Editar tag" : "Nova tag"}
+            onClose={() => setShowTagModal(false)}
+            onSubmit={saveTag}
+            saving={saving}
+          >
+            <TextField label="Nome" value={tagForm.name} onChange={(value) => setTagForm((prev) => ({ ...prev, name: value }))} inputCls={inputCls} />
+            <ColorPicker value={tagForm.color} onChange={(value) => setTagForm((prev) => ({ ...prev, color: value }))} />
+            <TextArea label="Descricao" value={tagForm.description} onChange={(value) => setTagForm((prev) => ({ ...prev, description: value }))} inputCls={inputCls} />
+          </FormModal>
+        )}
+
+        {showSegmentModal && (
+          <FormModal
+            title={editingSegmentId ? "Editar segmento" : "Novo segmento"}
+            onClose={() => setShowSegmentModal(false)}
+            onSubmit={saveSegment}
+            saving={saving}
+          >
+            <TextField label="Nome" value={segmentForm.name} onChange={(value) => setSegmentForm((prev) => ({ ...prev, name: value }))} inputCls={inputCls} />
+            <TextArea label="Descricao" value={segmentForm.description} onChange={(value) => setSegmentForm((prev) => ({ ...prev, description: value }))} inputCls={inputCls} />
+            <RuleEditor
+              rules={segmentForm.rules}
+              onChange={(rules) => setSegmentForm((prev) => ({ ...prev, rules }))}
+            />
+          </FormModal>
         )}
       </main>
+    </div>
+  );
+}
+
+function LoadingBlock() {
+  return (
+    <div className="flex items-center justify-center h-48">
+      <Loader2 className="animate-spin text-gold" size={28} />
+    </div>
+  );
+}
+
+function ErrorBlock({ message }: { message: string }) {
+  return <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-4 text-red-400 text-sm">{message}</div>;
+}
+
+function EmptyBlock({
+  icon: Icon,
+  title,
+  action,
+  onAction,
+}: {
+  icon: typeof FolderOpen;
+  title: string;
+  action: string;
+  onAction: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center bg-surface-02 border border-surface-03 rounded-2xl">
+      <Icon size={40} className="text-surface-03 mb-3" />
+      <p className="text-stone text-sm">{title}</p>
+      <button onClick={onAction} className="mt-4 text-gold text-sm hover:underline">
+        {action}
+      </button>
+    </div>
+  );
+}
+
+function CardActions({
+  onEdit,
+  onDelete,
+  extra,
+}: {
+  onEdit: () => void;
+  onDelete: () => void;
+  extra?: React.ReactNode;
+}) {
+  return (
+    <div className="flex gap-1 shrink-0">
+      {extra}
+      <button
+        onClick={onEdit}
+        className="p-1.5 rounded-lg hover:bg-surface-03 text-stone hover:text-cream transition-colors"
+      >
+        <Pencil size={13} />
+      </button>
+      <button
+        onClick={onDelete}
+        className="p-1.5 rounded-lg hover:bg-red-500/10 text-stone hover:text-red-400 transition-colors"
+      >
+        <Trash2 size={13} />
+      </button>
+    </div>
+  );
+}
+
+function FormModal({
+  title,
+  children,
+  onClose,
+  onSubmit,
+  saving,
+}: {
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent) => void;
+  saving: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="bg-surface-02 border border-surface-03 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-surface-03">
+          <h2 className="text-cream font-semibold">{title}</h2>
+          <button onClick={onClose} className="text-stone hover:text-cream">
+            <X size={18} />
+          </button>
+        </div>
+        <form onSubmit={onSubmit} className="p-5 space-y-4">
+          {children}
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2 rounded-xl border border-surface-03 text-stone hover:text-cream text-sm transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 py-2 rounded-xl bg-gold hover:bg-gold/90 text-black font-semibold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              {saving && <Loader2 size={14} className="animate-spin" />}
+              Salvar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function TextField({
+  label,
+  value,
+  onChange,
+  inputCls,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  inputCls: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs text-stone">{label}</label>
+      <input value={value} onChange={(event) => onChange(event.target.value)} className={inputCls} />
+    </div>
+  );
+}
+
+function TextArea({
+  label,
+  value,
+  onChange,
+  inputCls,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  inputCls: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs text-stone">{label}</label>
+      <textarea value={value} onChange={(event) => onChange(event.target.value)} rows={2} className={`${inputCls} resize-none`} />
+    </div>
+  );
+}
+
+function ColorPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <div className="space-y-2">
+      <label className="text-xs text-stone">Cor</label>
+      <div className="flex flex-wrap gap-2">
+        {COLORS.map((color) => (
+          <button
+            key={color}
+            type="button"
+            onClick={() => onChange(color)}
+            className={`w-7 h-7 rounded-full transition-transform hover:scale-110 ${
+              value === color ? "ring-2 ring-white ring-offset-2 ring-offset-surface-02 scale-110" : ""
+            }`}
+            style={{ backgroundColor: color }}
+          />
+        ))}
+      </div>
     </div>
   );
 }
