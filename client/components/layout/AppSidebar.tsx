@@ -1,9 +1,9 @@
-import { useEffect, useRef } from "react";
-import { ArrowLeft, LogOut, User } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, ChevronDown, LogOut, User } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
-import { adminNavigationGroups } from "@/config/navigation";
+import { adminNavigationGroups } from "@/config/adminNavigation";
 
 function getInitials(name: string): string {
   return name
@@ -35,6 +35,36 @@ export default function AppSidebar() {
 
   const isActive = (path: string, exact?: boolean) =>
     exact ? pathname === path : pathname === path || pathname.startsWith(`${path}/`);
+
+  const activeGroups = useMemo(
+    () =>
+      adminNavigationGroups
+        .filter((group) => group.children.some((item) => isActive(item.path, item.exact)))
+        .map((group) => group.label),
+    [pathname],
+  );
+
+  const [openGroups, setOpenGroups] = useState<Set<string>>(
+    () => new Set(activeGroups.length ? activeGroups : adminNavigationGroups.map((group) => group.label)),
+  );
+
+  useEffect(() => {
+    if (!activeGroups.length) return;
+    setOpenGroups((current) => {
+      const next = new Set(current);
+      activeGroups.forEach((group) => next.add(group));
+      return next;
+    });
+  }, [activeGroups]);
+
+  const toggleGroup = (label: string) => {
+    setOpenGroups((current) => {
+      const next = new Set(current);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
 
   useEffect(() => {
     const nav = navRef.current;
@@ -111,13 +141,27 @@ export default function AppSidebar() {
       </div>
 
       <nav ref={navRef} className="flex-1 overflow-y-auto py-3 px-3">
-        {adminNavigationGroups.map((group, groupIndex) => (
+        {adminNavigationGroups.map((group, groupIndex) => {
+          const groupActive = activeGroups.includes(group.label);
+          const groupOpen = openGroups.has(group.label);
+          return (
           <div key={group.label} className={groupIndex > 0 ? "mt-4" : ""}>
-            <p className="px-3 mb-1 text-[10px] font-bold uppercase tracking-[0.15em] text-stone/50 select-none">
-              {group.label}
-            </p>
-            <div className="space-y-0.5">
-              {group.items.map(({ path, icon: Icon, label, exact }) => {
+            <button
+              type="button"
+              onClick={() => toggleGroup(group.label)}
+              className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.15em] transition-colors ${
+                groupActive ? "text-gold bg-gold/10" : "text-stone/60 hover:bg-surface-03/60 hover:text-stone"
+              }`}
+            >
+              <span>{group.label}</span>
+              <ChevronDown
+                size={13}
+                className={`transition-transform ${groupOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            {groupOpen && (
+              <div className="space-y-0.5">
+                {group.children.map(({ path, icon: Icon, label, exact }) => {
                 const active = isActive(path, exact);
                 return (
                   <Link
@@ -140,10 +184,12 @@ export default function AppSidebar() {
                     )}
                   </Link>
                 );
-              })}
-            </div>
+                })}
+              </div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </nav>
 
       <div className="hidden md:block px-3 py-3 border-t border-surface-03 space-y-0.5 flex-shrink-0">

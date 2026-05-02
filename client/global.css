@@ -195,6 +195,53 @@
     border-color: color-mix(in srgb, var(--border-color) 72%, transparent);
     box-shadow: 0 14px 38px rgb(0 0 0 / 0.16);
   }
+
+  .admin-layout-content > :where(.min-h-screen, .flex, .flex-col):has([data-admin-sidebar-placeholder]) {
+    min-height: 0 !important;
+    height: auto !important;
+    background: transparent !important;
+    overflow: visible !important;
+  }
+
+  .admin-layout-content > :where(.min-h-screen, .flex, .flex-col):has([data-admin-sidebar-placeholder]) > :where(.flex, .flex-col, .flex-1, main),
+  .admin-layout-content > :where(.min-h-screen, .flex, .flex-col):has([data-admin-sidebar-placeholder]) :where(main.flex-1, div.flex-1) {
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .admin-layout-content :where(header, div.bg-surface-02.border-b, div.flex.items-center.justify-between):has([data-admin-top-actions-placeholder]) {
+    position: static !important;
+    top: auto !important;
+    z-index: auto !important;
+    margin: 0 0 1rem !important;
+    border: 0 !important;
+    background: transparent !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .admin-layout-content :where(header, div.bg-surface-02.border-b, div.flex.items-center.justify-between):has([data-admin-top-actions-placeholder]) > :first-child {
+    display: none !important;
+  }
+
+  .admin-layout-content :where(header, div.bg-surface-02.border-b, div.flex.items-center.justify-between):has([data-admin-top-actions-placeholder]) > :last-child {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .admin-local-tabs,
+  .admin-layout-content :where(.px-8.pt-4.flex.gap-2, .flex.flex-wrap.gap-1.bg-surface-02.border.border-surface-03.rounded-xl.p-1) {
+    border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--bg-card) 86%, transparent);
+    padding: 0.25rem !important;
+  }
+
+  .admin-legacy-toolbar {
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+    padding-bottom: 0.75rem;
+  }
 }
 
 @media (max-width: 900px) {

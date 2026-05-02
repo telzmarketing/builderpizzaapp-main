@@ -1,6 +1,7 @@
 import type { ElementType, ReactNode } from "react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
+import { useAdminLayout } from "@/components/layout/AdminLayoutContext";
 
 export type AdminPageTab<T extends string> = {
   id: T;
@@ -9,6 +10,9 @@ export type AdminPageTab<T extends string> = {
 };
 
 export function AdminPageShell({ children }: { children: ReactNode }) {
+  const insideGlobalLayout = useAdminLayout();
+  if (insideGlobalLayout) return <>{children}</>;
+
   return (
     <div className="min-h-screen bg-surface-00 flex flex-col md:flex-row md:h-screen overflow-hidden">
       <AdminSidebar />
@@ -32,6 +36,15 @@ export function AdminPageHeader({
   icon?: ReactNode;
   actions?: ReactNode;
 }) {
+  const insideGlobalLayout = useAdminLayout();
+  if (insideGlobalLayout) {
+    return actions ? (
+      <div className="admin-legacy-toolbar flex flex-wrap items-center justify-end gap-3">
+        {actions}
+      </div>
+    ) : null;
+  }
+
   return (
     <header className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 py-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between flex-shrink-0">
       <div className="flex min-w-0 items-center gap-3">
@@ -74,7 +87,7 @@ export function AdminPageTabs<T extends string>({
   onChange: (tab: T) => void;
 }) {
   return (
-    <div className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 flex-shrink-0">
+    <div className="admin-local-tabs bg-surface-02 border-b border-surface-03 px-4 md:px-8 flex-shrink-0">
       <div className="flex gap-1 overflow-x-auto pt-3">
         {tabs.map((tab) => {
           const selected = active === tab.id;
@@ -107,6 +120,11 @@ export function AdminPageContent({
   children: ReactNode;
   className?: string;
 }) {
+  const insideGlobalLayout = useAdminLayout();
+  if (insideGlobalLayout) {
+    return <div className={`space-y-6 ${className}`}>{children}</div>;
+  }
+
   return (
     <div className={`flex-1 overflow-y-auto bg-surface-01 p-4 md:p-6 ${className}`}>
       {children}

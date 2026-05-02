@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, RefreshCw, Search, X, ShoppingBag } from "lucide-react";
 import { ordersApi, type ApiOrder } from "@/lib/api";
+import { useAdminLayout } from "@/components/layout/AdminLayoutContext";
 
 function timeAgo(iso: string): string {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
@@ -12,7 +13,7 @@ function timeAgo(iso: string): string {
 
 const ACTIVE_STATUSES = new Set(["pending", "confirmed", "preparing", "ready_for_pickup"]);
 
-export default function AdminTopActions() {
+function AdminTopActionsContent() {
   const navigate = useNavigate();
   const [pendingOrders, setPendingOrders] = useState<ApiOrder[]>([]);
   const [bellOpen, setBellOpen] = useState(false);
@@ -169,4 +170,14 @@ export default function AdminTopActions() {
       </div>
     </div>
   );
+}
+
+export default function AdminTopActions({ force = false }: { force?: boolean }) {
+  const insideGlobalLayout = useAdminLayout();
+
+  if (insideGlobalLayout && !force) {
+    return <span data-admin-top-actions-placeholder className="hidden" />;
+  }
+
+  return <AdminTopActionsContent />;
 }
