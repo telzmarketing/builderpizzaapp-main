@@ -162,7 +162,7 @@
       linear-gradient(135deg, color-mix(in srgb, var(--bg-main) 92%, #000 8%), color-mix(in srgb, var(--bg-alt) 88%, #000 12%));
   }
 
-  .admin-shell .flex.h-screen {
+  .admin-shell > :has(> .admin-sidebar) {
     height: 100dvh;
     min-height: 100dvh;
     padding: 1rem;
@@ -184,10 +184,11 @@
     box-shadow: 0 24px 70px rgb(0 0 0 / 0.22);
   }
 
-  .admin-shell .admin-sidebar + .flex-1 > .bg-surface-02:first-child {
+  .admin-shell .admin-sidebar + .flex-1 > :where(.bg-surface-02, header.bg-surface-02):first-child {
     background: color-mix(in srgb, var(--bg-card) 78%, transparent);
     border-bottom-color: color-mix(in srgb, var(--border-color) 72%, transparent);
     backdrop-filter: blur(12px);
+    min-height: 4.5rem;
   }
 
   .admin-shell :where(.bg-surface-02.rounded-xl, .bg-surface-02.rounded-2xl) {
@@ -197,7 +198,7 @@
 }
 
 @media (max-width: 900px) {
-  .admin-shell .flex.h-screen {
+  .admin-shell > :has(> .admin-sidebar) {
     padding: 0;
   }
 
@@ -212,11 +213,11 @@
     border-bottom: 0;
   }
 
-  .admin-shell .flex.h-screen {
+  .admin-shell > :has(> .admin-sidebar) {
     min-height: 100dvh;
   }
 
-  .admin-shell .flex.h-screen > .flex-1 {
+  .admin-shell > :has(> .admin-sidebar) > .flex-1 {
     min-width: 0;
   }
 

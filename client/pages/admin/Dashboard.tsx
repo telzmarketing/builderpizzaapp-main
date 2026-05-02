@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ShoppingBag, Package, BarChart3, Clock, Users,
-  Bell, Search, TrendingUp, ArrowUpRight, Loader2,
+  TrendingUp, ArrowUpRight, Loader2,
   CircleDollarSign,
 } from "lucide-react";
 import {
@@ -90,17 +90,6 @@ export default function AdminDashboard() {
           title={`Dashboard - ${adminName}`}
           description="Resumo operacional da loja em tempo real"
           actions={(
-            <>
-            <div className="hidden md:flex items-center gap-2 bg-surface-03/60 border border-surface-03 rounded-lg px-3 py-2 text-stone min-w-[220px]">
-              <Search size={15} />
-              <span className="text-sm">Buscar...</span>
-            </div>
-            <button className="relative p-2 rounded-lg bg-surface-03/60 border border-surface-03 text-stone hover:text-cream transition-colors">
-              <Bell size={18} />
-              {(stats?.pending_orders ?? 0) > 0 && (
-                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-gold" />
-              )}
-            </button>
             <Link
               to="/painel/orders"
               className="flex items-center gap-2 px-4 py-2 bg-gold hover:bg-gold/90 text-cream text-sm font-semibold rounded-lg transition-colors"
@@ -108,7 +97,6 @@ export default function AdminDashboard() {
               Pedidos
               <ArrowUpRight size={15} />
             </Link>
-            </>
           )}
         />
 

@@ -148,7 +148,7 @@ export default function AdminSidebar() {
   }, [pathname]);
 
   return (
-    <div className="w-full md:w-64 bg-surface-02 border-b md:border-b-0 md:border-r border-surface-03 flex flex-col flex-shrink-0 h-auto md:h-screen max-h-[52vh] md:max-h-none">
+    <div className="admin-sidebar w-full md:w-64 bg-surface-02 border-b md:border-b-0 md:border-r border-surface-03 flex flex-col flex-shrink-0 h-auto md:h-screen max-h-[52vh] md:max-h-none">
 
       {/* ── Brand header ─────────────────────────────────────────────── */}
       <div className="px-4 md:px-5 pt-5 pb-4 border-b border-surface-03 flex-shrink-0">

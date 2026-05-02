@@ -4,6 +4,7 @@ import {
   Maximize2, Minimize2, RefreshCw, Route, UtensilsCrossed,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminTopActions from "@/components/admin/AdminTopActions";
 import { ordersApi, type ApiOrder, type ApiOrderItem, type OrderStatus } from "@/lib/api";
 import OrderTimer from "@/components/OrderTimer";
 import { playOrderAlert, loadSoundType } from "@/lib/orderSound";
@@ -207,12 +208,17 @@ export default function AdminCozinha() {
       <div className="flex-1 flex flex-col overflow-hidden">
 
         {/* Header */}
-        <div className="bg-surface-02 border-b border-surface-03 px-6 py-3 flex items-center justify-between flex-shrink-0">
+        <div className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 py-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
-            <ChefHat size={22} className="text-gold" />
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-gold/25 bg-gold/10 text-gold">
+              <ChefHat size={20} />
+            </div>
             <div>
-              <h2 className="text-xl font-bold text-cream">Cozinha</h2>
-              <p className="text-stone text-xs">
+              <p className="text-gold text-[11px] font-bold uppercase tracking-[0.22em] mb-1">
+                Operacao
+              </p>
+              <h2 className="text-xl md:text-2xl font-black leading-tight text-cream">Cozinha</h2>
+              <p className="text-stone text-xs md:text-sm mt-1 leading-snug">
                 Atualizado às{" "}
                 {lastRefresh.toLocaleTimeString("pt-BR", {
                   hour: "2-digit",
@@ -223,7 +229,7 @@ export default function AdminCozinha() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
             <button
               onClick={() => setSoundOn((s) => !s)}
               title={soundOn ? "Silenciar alertas" : "Ativar alertas sonoros"}
@@ -251,6 +257,7 @@ export default function AdminCozinha() {
             >
               {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
+            <AdminTopActions />
           </div>
         </div>
 

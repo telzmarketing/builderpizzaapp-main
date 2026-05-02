@@ -62,12 +62,12 @@ export default function AdminTopActions() {
   const count = pendingOrders.length;
 
   return (
-    <div className="flex items-center gap-1.5 flex-shrink-0">
+    <div className="flex items-center gap-1.5 flex-shrink-0 rounded-xl border border-surface-03 bg-surface-01/70 p-1 shadow-sm">
       {/* Search */}
       {searchOpen ? (
         <form
           onSubmit={handleSearch}
-          className="flex items-center gap-1.5 bg-surface-01 border border-surface-03 rounded-xl px-3 py-1.5"
+          className="flex items-center gap-1.5 rounded-lg bg-surface-02 border border-surface-03 px-3 py-1.5"
         >
           <Search size={14} className="text-stone flex-shrink-0" />
           <input
@@ -75,7 +75,7 @@ export default function AdminTopActions() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar pedido..."
-            className="bg-transparent text-cream text-sm w-40 outline-none placeholder:text-stone/50"
+            className="bg-transparent text-cream text-sm w-32 sm:w-40 outline-none placeholder:text-stone/50"
           />
           <button
             type="button"
