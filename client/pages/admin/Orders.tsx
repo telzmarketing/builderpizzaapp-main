@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle, CheckCircle2, ChevronRight, Clock3, Loader2,
-  PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Truck, Utensils, Volume2, VolumeX,
+  AlertTriangle, Bell, BellOff, CheckCircle2, ChevronRight, Clock3, Loader2,
+  PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Truck, Utensils,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
@@ -304,54 +304,61 @@ export default function AdminOrders() {
 
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 py-4 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-          <div>
-            <p className="text-gold text-xs font-bold uppercase tracking-[0.24em]">Kanban operacional</p>
-            <h1 className="text-cream text-2xl font-black mt-1">Pedidos</h1>
-            <p className="text-stone text-sm mt-1">
-              Arraste os cards entre colunas ou use os botões para avançar o status.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className={`rounded-xl border px-3 py-2 transition-colors ${newOrderFlash ? "border-gold bg-gold/20" : "border-surface-03 bg-surface-03/60"}`}>
-              <p className="text-stone text-[11px] uppercase tracking-widest">Ativos</p>
-              <p className="text-cream text-sm font-black">{activeOrders}</p>
+        <header className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 py-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-gold/25 bg-gold/10 text-gold">
+              <ShoppingBag size={20} />
             </div>
-            <div className="rounded-xl border border-surface-03 bg-surface-03/60 px-3 py-2">
-              <p className="text-stone text-[11px] uppercase tracking-widest">Total carregado</p>
-              <p className="text-cream text-sm font-black">{orders.length}</p>
+            <div>
+              <p className="text-gold text-[11px] font-bold uppercase tracking-[0.22em] mb-1">
+                Operacao
+              </p>
+              <h2 className="text-xl md:text-2xl font-black leading-tight text-cream">Pedidos</h2>
+              <p className="text-stone text-xs md:text-sm mt-1 leading-snug">
+                {lastUpdated
+                  ? `Atualizado as ${lastUpdated.toLocaleTimeString("pt-BR", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                    })}`
+                  : "Carregando pedidos..."}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <div className={`rounded-lg border px-3 py-2 transition-colors ${newOrderFlash ? "border-gold bg-gold/20" : "border-surface-03 bg-surface-03/60"}`}>
+              <p className="text-stone text-[10px] uppercase tracking-widest leading-none">Ativos</p>
+              <p className="text-cream text-sm font-black leading-none mt-1">{activeOrders}</p>
+            </div>
+            <div className="rounded-lg border border-surface-03 bg-surface-03/60 px-3 py-2">
+              <p className="text-stone text-[10px] uppercase tracking-widest leading-none">Total</p>
+              <p className="text-cream text-sm font-black leading-none mt-1">{orders.length}</p>
             </div>
             <button
               onClick={() => setSoundEnabled((v) => !v)}
-              title={soundEnabled ? "Desativar alerta sonoro" : "Ativar alerta sonoro"}
-              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-bold transition-colors ${soundEnabled ? "border-gold/40 bg-gold/10 text-gold hover:bg-gold/20" : "border-surface-03 bg-surface-03/60 text-stone hover:text-cream"}`}
+              title={soundEnabled ? "Silenciar alertas" : "Ativar alertas sonoros"}
+              className={`p-2 rounded-lg border transition-colors ${
+                soundEnabled
+                  ? "border-gold/40 text-gold bg-gold/10"
+                  : "border-surface-03 text-stone hover:text-cream"
+              }`}
             >
-              {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+              {soundEnabled ? <Bell size={16} /> : <BellOff size={16} />}
             </button>
             <button
               onClick={() => fetchOrders(true)}
               disabled={loading || refreshing}
-              className="inline-flex items-center gap-2 rounded-xl bg-gold px-4 py-2.5 text-sm font-bold text-cream transition hover:bg-gold/90 disabled:opacity-60"
+              title="Atualizar agora"
+              className="p-2 rounded-lg border border-surface-03 text-stone hover:text-cream transition-colors disabled:opacity-60"
             >
               <RefreshCw size={16} className={loading || refreshing ? "animate-spin" : ""} />
-              Atualizar
             </button>
             <AdminTopActions />
           </div>
         </header>
 
-        {/* Sub-header */}
-        <section className="border-b border-surface-03 bg-surface-00 px-4 md:px-8 py-2 flex items-center justify-between gap-2">
-          <p className="text-stone text-xs">Atualização automática a cada 15s · Arraste ou clique <ChevronRight size={11} className="inline" /> para avançar status</p>
-          {lastUpdated && (
-            <p className="text-stone text-xs">
-              {lastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-            </p>
-          )}
-        </section>
-
         {/* Body */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden flex flex-col">
           {error && (
             <div className="mx-4 md:mx-8 mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
               {error}
