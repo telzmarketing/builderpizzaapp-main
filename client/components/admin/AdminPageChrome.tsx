@@ -1,6 +1,7 @@
 import type { ElementType, ReactNode } from "react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
+import { useAdminLayout } from "@/components/layout/AdminLayoutContext";
 
 export type AdminPageTab<T extends string> = {
   id: T;
@@ -9,6 +10,9 @@ export type AdminPageTab<T extends string> = {
 };
 
 export function AdminPageShell({ children }: { children: ReactNode }) {
+  const insideGlobalLayout = useAdminLayout();
+  if (insideGlobalLayout) return <>{children}</>;
+
   return (
     <div className="min-h-screen bg-surface-00 flex flex-col md:flex-row md:h-screen overflow-hidden">
       <AdminSidebar />
@@ -32,6 +36,17 @@ export function AdminPageHeader({
   icon?: ReactNode;
   actions?: ReactNode;
 }) {
+  const insideGlobalLayout = useAdminLayout();
+
+  if (insideGlobalLayout) {
+    if (!actions) return null;
+    return (
+      <div className="flex flex-wrap items-center justify-end gap-3 border-b border-surface-03 bg-surface-02 px-4 md:px-8 py-3">
+        {actions}
+      </div>
+    );
+  }
+
   return (
     <header className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 py-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between flex-shrink-0">
       <div className="flex min-w-0 items-center gap-3">

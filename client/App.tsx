@@ -99,6 +99,7 @@ function DocumentHead() {
   return null;
 }
 import AdminGuard from "./components/AdminGuard";
+import AppLayout from "./components/layout/AppLayout";
 import Index from "./pages/Index";
 import Product from "./pages/Product";
 import Cart from "./pages/Cart";
@@ -190,6 +191,7 @@ export default function App() {
 
               {/* ── Admin routes (protected by JWT guard) ── */}
               <Route element={<AdminGuard />}>
+                <Route element={<AppLayout />}>
                 <Route path="/painel" element={<AdminDashboard />} />
                 <Route path="/painel/products" element={<AdminProducts />} />
                 <Route path="/painel/orders" element={<AdminOrders />} />
@@ -231,6 +233,7 @@ export default function App() {
                 <Route path="/painel/crm/tarefas" element={<CrmTarefas />} />
                 {/* ── Logistics routes ── */}
                 <Route path="/painel/logistica" element={<AdminLogistica />} />
+                </Route>
               </Route>
 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
