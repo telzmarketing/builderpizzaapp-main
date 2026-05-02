@@ -151,20 +151,21 @@ export default function AdminSidebar() {
     <div className="w-full md:w-64 bg-surface-02 border-b md:border-b-0 md:border-r border-surface-03 flex flex-col flex-shrink-0 h-auto md:h-screen max-h-[52vh] md:max-h-none">
 
       {/* ── Brand header ─────────────────────────────────────────────── */}
-      <div className="px-4 md:px-5 pt-4 md:pt-5 pb-3 md:pb-4 border-b border-surface-03 flex-shrink-0">
-        <div className="flex items-center gap-3">
+      <div className="px-4 md:px-5 pt-5 pb-4 border-b border-surface-03 flex-shrink-0">
+        <div className="flex min-h-[66px] flex-col items-center justify-center text-center">
           {brand.logo && (brand.logo.startsWith("http") || brand.logo.startsWith("data:")) ? (
             <img
               src={brand.logo}
               alt="logo"
-              className="w-8 h-8 object-contain rounded-lg flex-shrink-0 border border-surface-03"
+              className="mb-1 h-10 max-w-[8.75rem] object-contain"
             />
           ) : brand.logo ? (
-            <span className="text-xl flex-shrink-0">{brand.logo}</span>
-          ) : null}
-          <div className="min-w-0">
-            <MoschettieriLogo className="text-gold text-sm leading-tight" />
-            <p className="text-stone text-[10px] truncate mt-0.5">Painel administrativo</p>
+            <span className="mb-1 text-xl leading-none">{brand.logo}</span>
+          ) : (
+            <MoschettieriLogo className="text-gold text-[1.15rem] leading-tight" />
+          )}
+          <div className="mt-1 w-full">
+            <p className="text-stone text-[10px] leading-none">Painel administrativo</p>
           </div>
         </div>
       </div>

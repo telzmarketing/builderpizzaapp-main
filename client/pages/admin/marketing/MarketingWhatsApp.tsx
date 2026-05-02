@@ -4,7 +4,13 @@ import {
   XCircle, Clock, AlertCircle, BarChart2, Settings, Eye, Zap,
   RefreshCw, Play, Pause, Users, MessageSquare, Megaphone,
 } from "lucide-react";
-import AdminSidebar from "@/components/AdminSidebar";
+import {
+  AdminPageContent,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminPageTabs,
+  type AdminPageTab,
+} from "@/components/admin/AdminPageChrome";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -12,12 +18,12 @@ const unwrap = (j: any) => j?.data ?? j;
 
 type Tab = "dashboard" | "templates" | "campanhas" | "disparo" | "monitoramento" | "configuracoes";
 
-const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: "dashboard",     label: "Dashboard",      icon: BarChart2 },
-  { id: "templates",     label: "Templates",       icon: MessageSquare },
-  { id: "campanhas",     label: "Campanhas",       icon: Megaphone },
-  { id: "disparo",       label: "Disparo Imediato",icon: Send },
-  { id: "monitoramento", label: "Monitoramento",   icon: Eye },
+const TABS: AdminPageTab<Tab>[] = [
+  { id: "dashboard",     label: "Dashboard",      icon: <BarChart2 size={15} /> },
+  { id: "templates",     label: "Templates",       icon: <MessageSquare size={15} /> },
+  { id: "campanhas",     label: "Campanhas",       icon: <Megaphone size={15} /> },
+  { id: "disparo",       label: "Disparo Imediato",icon: <Send size={15} /> },
+  { id: "monitoramento", label: "Monitoramento",   icon: <Eye size={15} /> },
   { id: "configuracoes", label: "Configurações",   icon: Settings },
 ];
 
@@ -199,25 +205,15 @@ export default function MarketingWhatsApp() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-surface-00 overflow-hidden">
-      <AdminSidebar />
-      <main className="flex-1 overflow-y-auto p-6 space-y-6">
-
-        {/* Header */}
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-gold mb-1">Marketing</p>
-          <h1 className="text-2xl font-bold text-cream">Disparador WhatsApp</h1>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex flex-wrap gap-1 bg-surface-02 border border-surface-03 rounded-xl p-1">
-          {TABS.map(({ id, label, icon: Icon }) => (
-            <button key={id} onClick={() => setTab(id)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${tab === id ? "bg-gold text-black" : "text-stone hover:text-cream hover:bg-surface-03"}`}>
-              <Icon size={14} /> {label}
-            </button>
-          ))}
-        </div>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Marketing"
+        icon={<MessageCircle size={20} />}
+        title="Disparador WhatsApp"
+        description="Templates, campanhas, disparos e monitoramento em um unico lugar"
+      />
+      <AdminPageTabs tabs={TABS} active={tab} onChange={(next) => setTab(next as Tab)} />
+      <AdminPageContent className="space-y-6">
 
         {/* ═══ DASHBOARD ═══ */}
         {tab === "dashboard" && (
@@ -552,7 +548,7 @@ export default function MarketingWhatsApp() {
             </form>
           </div>
         )}
-      </main>
+      </AdminPageContent>
 
       {/* ── Template modal ── */}
       {showTplModal && (
@@ -642,6 +638,6 @@ export default function MarketingWhatsApp() {
           </div>
         </div>
       )}
-    </div>
+      </AdminPageShell>
   );
 }

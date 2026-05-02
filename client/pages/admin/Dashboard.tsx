@@ -10,6 +10,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
 import AdminSidebar from "@/components/AdminSidebar";
+import { AdminPageHeader } from "@/components/admin/AdminPageChrome";
 import { adminApi, type ApiDashboard, type ApiOrder } from "@/lib/api";
 import { ordersApi } from "@/lib/api";
 
@@ -83,13 +84,13 @@ export default function AdminDashboard() {
 
       <div className="flex-1 flex flex-col overflow-hidden">
 
-        {/* Top bar */}
-        <header className="bg-surface-02 border-b border-surface-03 px-7 py-4 flex items-center justify-between gap-4 flex-shrink-0">
-          <div>
-            <p className="text-stone text-xs">Bem-vindo de volta,</p>
-            <h2 className="text-cream text-xl font-bold">{adminName}!</h2>
-          </div>
-          <div className="flex items-center gap-3">
+        <AdminPageHeader
+          eyebrow="Visao geral"
+          icon={<BarChart3 size={20} />}
+          title={`Dashboard - ${adminName}`}
+          description="Resumo operacional da loja em tempo real"
+          actions={(
+            <>
             <div className="hidden md:flex items-center gap-2 bg-surface-03/60 border border-surface-03 rounded-lg px-3 py-2 text-stone min-w-[220px]">
               <Search size={15} />
               <span className="text-sm">Buscar...</span>
@@ -107,8 +108,9 @@ export default function AdminDashboard() {
               Pedidos
               <ArrowUpRight size={15} />
             </Link>
-          </div>
-        </header>
+            </>
+          )}
+        />
 
         {/* Main scrollable area */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5">

@@ -1,75 +1,49 @@
 import { useState } from "react";
+import { BarChart3, FileText, HelpCircle, MessageCircle, MessagesSquare, Settings, Zap } from "lucide-react";
 import {
-  MessageCircle, BarChart3, Settings, HelpCircle,
-  MessagesSquare, Zap, FileText,
-} from "lucide-react";
-import AdminSidebar       from "@/components/AdminSidebar";
-import ChatbotDashboard   from "./chatbot/ChatbotDashboard";
-import ChatbotConfig      from "./chatbot/ChatbotConfig";
-import ChatbotFAQ         from "./chatbot/ChatbotFAQ";
+  AdminPageContent,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminPageTabs,
+  type AdminPageTab,
+} from "@/components/admin/AdminPageChrome";
+import ChatbotDashboard from "./chatbot/ChatbotDashboard";
+import ChatbotConfig from "./chatbot/ChatbotConfig";
+import ChatbotFAQ from "./chatbot/ChatbotFAQ";
 import ChatbotConversations from "./chatbot/ChatbotConversations";
 import ChatbotAutomations from "./chatbot/ChatbotAutomations";
-import ChatbotReports     from "./chatbot/ChatbotReports";
+import ChatbotReports from "./chatbot/ChatbotReports";
 
 type Tab = "dashboard" | "config" | "faq" | "conversations" | "automations" | "reports";
 
-const TABS: { id: Tab; icon: React.ReactNode; label: string }[] = [
-  { id: "dashboard",     icon: <BarChart3 size={15} />,      label: "Dashboard" },
-  { id: "config",        icon: <Settings size={15} />,       label: "Configurações" },
-  { id: "faq",           icon: <HelpCircle size={15} />,     label: "Base FAQ" },
-  { id: "automations",   icon: <Zap size={15} />,            label: "Automações" },
+const TABS: AdminPageTab<Tab>[] = [
+  { id: "dashboard", icon: <BarChart3 size={15} />, label: "Dashboard" },
+  { id: "config", icon: <Settings size={15} />, label: "Configuracoes" },
+  { id: "faq", icon: <HelpCircle size={15} />, label: "Base FAQ" },
+  { id: "automations", icon: <Zap size={15} />, label: "Automacoes" },
   { id: "conversations", icon: <MessagesSquare size={15} />, label: "Conversas" },
-  { id: "reports",       icon: <FileText size={15} />,       label: "Relatórios" },
+  { id: "reports", icon: <FileText size={15} />, label: "Relatorios" },
 ];
 
 export default function AdminChatbot() {
   const [tab, setTab] = useState<Tab>("dashboard");
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
-      <div className="flex flex-col md:flex-row min-h-screen md:h-screen">
-        <AdminSidebar />
-        <div className="flex-1 flex flex-col overflow-hidden">
-
-          {/* Top bar */}
-          <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 flex items-center gap-3 flex-shrink-0">
-            <MessageCircle size={22} className="text-gold" />
-            <div>
-              <h2 className="text-xl font-bold text-cream">Chatbot</h2>
-              <p className="text-stone text-xs">Atendimento inteligente integrado ao site</p>
-            </div>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex gap-1 px-6 pt-4 border-b border-surface-03 overflow-x-auto flex-shrink-0 bg-surface-02">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-t-lg text-xs font-medium whitespace-nowrap transition-colors ${
-                  tab === t.id
-                    ? "bg-surface-01 text-gold border border-b-0 border-surface-03"
-                    : "text-stone hover:text-parchment"
-                }`}
-              >
-                {t.icon}
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto bg-surface-01 p-6">
-            {tab === "dashboard"     && <ChatbotDashboard />}
-            {tab === "config"        && <ChatbotConfig />}
-            {tab === "faq"           && <ChatbotFAQ />}
-            {tab === "automations"   && <ChatbotAutomations />}
-            {tab === "conversations" && <ChatbotConversations />}
-            {tab === "reports"       && <ChatbotReports />}
-          </div>
-
-        </div>
-      </div>
-    </div>
+    <AdminPageShell>
+      <AdminPageHeader
+        icon={<MessageCircle size={20} />}
+        title="Chatbot"
+        description="Atendimento inteligente integrado ao site"
+      />
+      <AdminPageTabs tabs={TABS} active={tab} onChange={(next) => setTab(next as Tab)} />
+      <AdminPageContent>
+        {tab === "dashboard" && <ChatbotDashboard />}
+        {tab === "config" && <ChatbotConfig />}
+        {tab === "faq" && <ChatbotFAQ />}
+        {tab === "automations" && <ChatbotAutomations />}
+        {tab === "conversations" && <ChatbotConversations />}
+        {tab === "reports" && <ChatbotReports />}
+      </AdminPageContent>
+    </AdminPageShell>
   );
 }
