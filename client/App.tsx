@@ -7,7 +7,7 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { themeApi, applyTheme, DEFAULT_THEME } from "./lib/themeApi";
 import { captureTrackingFromUrl, trackEvent, getTrackingData } from "./lib/tracking";
-import { customerEventsApi } from "./lib/api";
+import { customerEventsApi, resolveAssetUrl } from "./lib/api";
 
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
 
@@ -66,19 +66,36 @@ function TrackingInjector() {
 function DocumentHead() {
   const { siteContent } = useApp();
   const { pageTitle, faviconUrl, name } = siteContent.brand;
+
+  const resolvedFavicon = faviconUrl ? resolveAssetUrl(faviconUrl) : "";
+
   useEffect(() => {
     document.title = pageTitle || name || "Pizza Delivery App";
   }, [pageTitle, name]);
+
   useEffect(() => {
-    if (!faviconUrl) return;
-    let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
-    if (!link) {
-      link = document.createElement("link");
-      link.rel = "icon";
-      document.head.appendChild(link);
-    }
-    link.href = faviconUrl;
-  }, [faviconUrl]);
+    if (!resolvedFavicon) return;
+
+    document
+      .querySelectorAll<HTMLLinkElement>("link[rel~='icon'], link[rel='apple-touch-icon']")
+      .forEach((link) => link.remove());
+
+    const separator = resolvedFavicon.includes("?") ? "&" : "?";
+    const href = resolvedFavicon.startsWith("data:")
+      ? resolvedFavicon
+      : `${resolvedFavicon}${separator}v=${Date.now()}`;
+
+    const icon = document.createElement("link");
+    icon.rel = "icon";
+    icon.type = "image/png";
+    icon.href = href;
+    document.head.appendChild(icon);
+
+    const shortcut = document.createElement("link");
+    shortcut.rel = "shortcut icon";
+    shortcut.href = href;
+    document.head.appendChild(shortcut);
+  }, [resolvedFavicon]);
   return null;
 }
 import AdminGuard from "./components/AdminGuard";
