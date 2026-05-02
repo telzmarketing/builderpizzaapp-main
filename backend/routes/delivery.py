@@ -48,6 +48,7 @@ from backend.schemas.delivery import (
     DeliveryPersonCreate,
     DeliveryPersonUpdate,
     DeliveryPersonStatusUpdate,
+    DeliveryPersonAccessUpdate,
     DeliveryPersonLocationUpdate,
     DeliveryAssignIn,
     DeliveryStatusUpdate,
@@ -90,6 +91,7 @@ def create_person(
 @router.get("/persons")
 def list_persons(
     available_only: bool = Query(default=False),
+    include_inactive: bool = Query(default=False),
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
@@ -98,7 +100,10 @@ def list_persons(
     Pass ?available_only=true to see only those ready to receive deliveries.
     """
     try:
-        persons = DeliveryService(db).list_persons(available_only=available_only)
+        persons = DeliveryService(db).list_persons(
+            available_only=available_only,
+            include_inactive=include_inactive,
+        )
         return ok(persons)
     except DomainError as exc:
         return err(exc)
@@ -165,6 +170,25 @@ def update_person_location(
     try:
         person = DeliveryService(db).update_location(person_id, body.lat, body.lng)
         return ok(person)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.put("/persons/{person_id}/access")
+def update_person_access(
+    person_id: str,
+    body: DeliveryPersonAccessUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    """
+    Enable or disable access to the motoboy app.
+    When disabled, the motoboy cannot log in or keep using driver endpoints.
+    """
+    try:
+        person = DeliveryService(db).set_person_access(person_id, body.active)
+        message = "Acesso do motoboy ativado." if body.active else "Acesso do motoboy desativado."
+        return ok(person, message)
     except DomainError as exc:
         return err(exc)
 
@@ -247,6 +271,7 @@ def driver_deliveries(
     """Return active + recent deliveries for the logged-in driver (includes order address)."""
     try:
         person_id = _decode_driver_token(authorization)
+        DeliveryService(db).get_person(person_id)
         deliveries = DeliveryService(db).get_driver_deliveries(person_id)
         return ok(deliveries)
     except (ValueError, DomainError) as exc:

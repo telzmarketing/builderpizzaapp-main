@@ -61,6 +61,12 @@ class DeliveryService:
             raise DeliveryPersonNotFound(person_id)
         return p
 
+    def _get_any_delivery_person(self, person_id: str) -> DeliveryPerson:
+        p = self._db.query(DeliveryPerson).filter(DeliveryPerson.id == person_id).first()
+        if not p:
+            raise DeliveryPersonNotFound(person_id)
+        return p
+
     def _get_order(self, order_id: str) -> Order:
         o = self._db.query(Order).filter(Order.id == order_id).first()
         if not o:
@@ -338,13 +344,7 @@ class DeliveryService:
         lng: float,
     ) -> DeliveryPerson:
         """Update real-time GPS coordinates for a delivery person."""
-        person = (
-            self._db.query(DeliveryPerson)
-            .filter(DeliveryPerson.id == delivery_person_id)
-            .first()
-        )
-        if not person:
-            raise DeliveryPersonNotFound(delivery_person_id)
+        person = self._get_delivery_person(delivery_person_id)
 
         person.location_lat = lat
         person.location_lng = lng
@@ -380,10 +380,15 @@ class DeliveryService:
 
     # ── Delivery Person CRUD ──────────────────────────────────────────────────
 
-    def list_persons(self, *, available_only: bool = False) -> list[DeliveryPerson]:
-        q = self._db.query(DeliveryPerson).filter(DeliveryPerson.active == True)  # noqa: E712
+    def list_persons(self, *, available_only: bool = False, include_inactive: bool = False) -> list[DeliveryPerson]:
+        q = self._db.query(DeliveryPerson)
+        if not include_inactive:
+            q = q.filter(DeliveryPerson.active == True)  # noqa: E712
         if available_only:
-            q = q.filter(DeliveryPerson.status == DeliveryPersonStatus.available)
+            q = q.filter(
+                DeliveryPerson.active == True,  # noqa: E712
+                DeliveryPerson.status == DeliveryPersonStatus.available,
+            )
         return q.order_by(DeliveryPerson.name).all()
 
     def get_person(self, person_id: str) -> DeliveryPerson:
@@ -422,7 +427,7 @@ class DeliveryService:
 
     def update_person(self, person_id: str, **kwargs) -> DeliveryPerson:
         """Update mutable fields on a delivery person."""
-        person = self._get_delivery_person(person_id)
+        person = self._get_any_delivery_person(person_id)
         for key, value in kwargs.items():
             if value is None:
                 continue
@@ -433,6 +438,16 @@ class DeliveryService:
                 person.vehicle_type = VehicleType(value) if isinstance(value, str) else value
             elif hasattr(person, key):
                 setattr(person, key, value)
+        self._db.commit()
+        self._db.refresh(person)
+        return person
+
+    def set_person_access(self, person_id: str, active: bool) -> DeliveryPerson:
+        """Enable or disable access to the motoboy app."""
+        person = self._get_any_delivery_person(person_id)
+        person.active = active
+        if not active:
+            person.status = DeliveryPersonStatus.offline
         self._db.commit()
         self._db.refresh(person)
         return person
@@ -449,9 +464,7 @@ class DeliveryService:
 
     def deactivate_person(self, person_id: str) -> None:
         """Soft-delete a delivery person."""
-        person = self._get_delivery_person(person_id)
-        person.active = False
-        self._db.commit()
+        self.set_person_access(person_id, False)
 
     # ── Driver App ────────────────────────────────────────────────────────────
 

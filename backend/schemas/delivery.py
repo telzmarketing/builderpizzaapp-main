@@ -35,6 +35,10 @@ class DeliveryPersonStatusUpdate(BaseModel):
     status: str = Field(..., pattern="^(available|offline)$")
 
 
+class DeliveryPersonAccessUpdate(BaseModel):
+    active: bool
+
+
 class DeliveryPersonLocationUpdate(BaseModel):
     lat: float
     lng: float

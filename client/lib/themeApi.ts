@@ -57,13 +57,56 @@ export const DEFAULT_THEME: ThemeSettings = {
   home_banner_background: "#1f2937",
 };
 
+const THEME_CACHE_KEY = "moschettieri_theme_settings";
+
+function isThemeSettings(value: unknown): value is ThemeSettings {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<Record<keyof ThemeSettings, unknown>>;
+  return (
+    typeof candidate.primary === "string" &&
+    typeof candidate.secondary === "string" &&
+    typeof candidate.background_main === "string" &&
+    typeof candidate.background_alt === "string" &&
+    typeof candidate.background_card === "string" &&
+    typeof candidate.text_primary === "string" &&
+    typeof candidate.text_secondary === "string" &&
+    typeof candidate.text_muted === "string"
+  );
+}
+
+export function readCachedTheme(): ThemeSettings | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(THEME_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!isThemeSettings(parsed)) return null;
+    return { ...DEFAULT_THEME, ...parsed };
+  } catch {
+    return null;
+  }
+}
+
+export function cacheTheme(t: ThemeSettings): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(t));
+  } catch {
+    // localStorage can be unavailable in privacy modes; theme still applies in-memory.
+  }
+}
+
 export const themeApi = {
   async get(): Promise<ThemeSettings> {
-    return apiRequest<ThemeSettings>("GET", "/theme");
+    const theme = await apiRequest<ThemeSettings>("GET", "/theme");
+    cacheTheme(theme);
+    return theme;
   },
 
   async update(token: string, data: Partial<Omit<ThemeSettings, "id" | "updated_at">>): Promise<ThemeSettings> {
-    return apiRequest<ThemeSettings>("PUT", "/theme", data, { Authorization: `Bearer ${token}` });
+    const theme = await apiRequest<ThemeSettings>("PUT", "/theme", data, { Authorization: `Bearer ${token}` });
+    cacheTheme(theme);
+    return theme;
   },
 };
 

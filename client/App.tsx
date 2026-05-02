@@ -5,7 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
-import { themeApi, applyTheme, DEFAULT_THEME } from "./lib/themeApi";
+import { themeApi, applyTheme, DEFAULT_THEME, readCachedTheme } from "./lib/themeApi";
 import { captureTrackingFromUrl, trackEvent, getTrackingData } from "./lib/tracking";
 import { customerEventsApi, resolveAssetUrl } from "./lib/api";
 
@@ -23,7 +23,7 @@ function StoreWidget() {
 
 function ThemeInjector() {
   useEffect(() => {
-    applyTheme(DEFAULT_THEME);
+    applyTheme(readCachedTheme() ?? DEFAULT_THEME);
     themeApi.get().then(applyTheme).catch(() => {});
 
     const handler = () => themeApi.get().then(applyTheme).catch(() => {});

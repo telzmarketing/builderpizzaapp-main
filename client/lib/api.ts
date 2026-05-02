@@ -2054,14 +2054,23 @@ async function driverRequest<T>(method: string, path: string, body?: unknown): P
 
 export const deliveryApi = {
   // Admin — delivery persons
-  listPersons: (availableOnly = false) =>
-    get<DeliveryPerson[]>(`/delivery/persons${availableOnly ? "?available_only=true" : ""}`),
+  listPersons: (options: boolean | { availableOnly?: boolean; includeInactive?: boolean } = false) => {
+    const availableOnly = typeof options === "boolean" ? options : !!options.availableOnly;
+    const includeInactive = typeof options === "boolean" ? false : !!options.includeInactive;
+    const qs = new URLSearchParams();
+    if (availableOnly) qs.set("available_only", "true");
+    if (includeInactive) qs.set("include_inactive", "true");
+    const q = qs.toString();
+    return get<DeliveryPerson[]>(`/delivery/persons${q ? `?${q}` : ""}`);
+  },
   createPerson: (body: Record<string, unknown>) =>
     post<DeliveryPerson>("/delivery/persons", body),
   updatePerson: (id: string, body: Record<string, unknown>) =>
     put<DeliveryPerson>(`/delivery/persons/${id}`, body),
   setPersonStatus: (id: string, status: "available" | "offline") =>
     put<DeliveryPerson>(`/delivery/persons/${id}/status`, { status }),
+  setPersonAccess: (id: string, active: boolean) =>
+    put<DeliveryPerson>(`/delivery/persons/${id}/access`, { active }),
   deactivatePerson: (id: string) =>
     del<void>(`/delivery/persons/${id}`),
 
