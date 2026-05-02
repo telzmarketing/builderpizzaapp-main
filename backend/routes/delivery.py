@@ -8,9 +8,19 @@ Delivery Person endpoints (admin / ERP):
   GET    /delivery/persons                  → list active motoboys (?available_only=true)
   GET    /delivery/persons/available        → shortcut: only available
   GET    /delivery/persons/{id}             → motoboy detail
+  PUT    /delivery/persons/{id}             → update motoboy details
   PUT    /delivery/persons/{id}/status      → set available | offline
   PUT    /delivery/persons/{id}/location    → update GPS (mobile app)
   DELETE /delivery/persons/{id}             → deactivate (soft delete)
+
+Driver App endpoints (token-based, public):
+  POST /delivery/driver/login               → email+password → token
+  GET  /delivery/driver/me                  → driver identity
+  GET  /delivery/driver/deliveries          → driver's active deliveries
+
+Logistics settings:
+  GET  /delivery/settings                   → get settings
+  PUT  /delivery/settings                   → update settings
 
 Delivery endpoints:
   POST /delivery/assign             → assign motoboy to order
@@ -19,24 +29,32 @@ Delivery endpoints:
   GET  /delivery/{id}               → delivery detail
   PUT  /delivery/{id}/status        → advance delivery status
   POST /delivery/{id}/complete      → finalize + proof of delivery
+  POST /delivery/{id}/confirm-code  → confirm delivery with 4-digit code
   POST /delivery/{id}/rate          → customer rates delivery (1–5)
 """
-from fastapi import APIRouter, Depends, Query
+import base64
+
+from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
-from backend.core.response import ok, created, no_content, err
+from backend.core.response import ok, created, no_content, err, err_msg
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
+from backend.routes.order_access import require_order_or_admin
 from backend.services.delivery_service import DeliveryService
 from backend.schemas.delivery import (
     DeliveryPersonCreate,
+    DeliveryPersonUpdate,
     DeliveryPersonStatusUpdate,
     DeliveryPersonLocationUpdate,
     DeliveryAssignIn,
     DeliveryStatusUpdate,
     DeliveryCompleteIn,
+    DeliveryConfirmIn,
     DeliveryRateIn,
+    DriverLoginIn,
+    LogisticsSettingsUpdate,
 )
 
 router = APIRouter(prefix="/delivery", tags=["delivery"])
@@ -53,7 +71,14 @@ def create_person(
     """Register a new delivery person (motoboy)."""
     try:
         person = DeliveryService(db).create_person(
-            body.name, body.phone, body.vehicle_type.value
+            body.name,
+            body.phone,
+            body.vehicle_type.value,
+            email=body.email,
+            cpf=body.cpf,
+            cnh=body.cnh,
+            pix_key=body.pix_key,
+            password=body.password,
         )
         return created(person, "Motoboy cadastrado.")
     except DomainError as exc:
@@ -142,6 +167,21 @@ def update_person_location(
         return err(exc)
 
 
+@router.put("/persons/{person_id}")
+def update_person(
+    person_id: str,
+    body: DeliveryPersonUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    """Update motoboy details (name, phone, documents, credentials, etc.)."""
+    try:
+        person = DeliveryService(db).update_person(person_id, **body.model_dump(exclude_none=True))
+        return ok(person, "Motoboy atualizado.")
+    except DomainError as exc:
+        return err(exc)
+
+
 @router.delete("/persons/{person_id}", status_code=204)
 def deactivate_person(
     person_id: str,
@@ -152,6 +192,86 @@ def deactivate_person(
     try:
         DeliveryService(db).deactivate_person(person_id)
         return no_content()
+    except DomainError as exc:
+        return err(exc)
+
+
+# ── Driver App ────────────────────────────────────────────────────────────────
+
+def _decode_driver_token(authorization: str | None) -> str:
+    """Extract person_id from Bearer token. Raises ValueError on failure."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise ValueError("Token necessário.")
+    try:
+        raw = base64.b64decode(authorization[7:]).decode()
+        prefix, person_id = raw.split(":", 1)
+        if prefix != "driver":
+            raise ValueError()
+        return person_id
+    except Exception:
+        raise ValueError("Token inválido.")
+
+
+@router.post("/driver/login")
+def driver_login(body: DriverLoginIn, db: Session = Depends(get_db)):
+    """Driver app login — returns a bearer token containing the driver's ID."""
+    try:
+        person = DeliveryService(db).driver_login(body.email, body.password)
+        token = base64.b64encode(f"driver:{person.id}".encode()).decode()
+        return ok({"token": token, "person": person})
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.get("/driver/me")
+def driver_me(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Return driver profile from bearer token."""
+    try:
+        person_id = _decode_driver_token(authorization)
+        person = DeliveryService(db).get_person(person_id)
+        return ok(person)
+    except (ValueError, DomainError) as exc:
+        return err_msg(str(exc), code="Unauthorized", status_code=401)
+
+
+@router.get("/driver/deliveries")
+def driver_deliveries(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Return active + recent deliveries for the logged-in driver."""
+    try:
+        person_id = _decode_driver_token(authorization)
+        deliveries = DeliveryService(db).get_driver_deliveries(person_id)
+        return ok(deliveries)
+    except (ValueError, DomainError) as exc:
+        return err_msg(str(exc), code="Unauthorized", status_code=401)
+
+
+# ── Logistics Settings ────────────────────────────────────────────────────────
+
+@router.get("/settings")
+def get_logistics_settings(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    """Get logistics configuration."""
+    try:
+        return ok(DeliveryService(db).get_logistics_settings())
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.put("/settings")
+def update_logistics_settings(
+    body: LogisticsSettingsUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    """Update logistics configuration."""
+    try:
+        settings = DeliveryService(db).update_logistics_settings(**body.model_dump(exclude_none=True))
+        return ok(settings, "Configurações salvas.")
     except DomainError as exc:
         return err(exc)
 
@@ -279,18 +399,48 @@ def complete_delivery(
         return err(exc)
 
 
+@router.post("/{delivery_id}/confirm-code")
+def confirm_delivery_code(
+    delivery_id: str,
+    body: DeliveryConfirmIn,
+    db: Session = Depends(get_db),
+):
+    """
+    Confirm a delivery using the 4-digit code shown to the customer.
+    The driver submits this code at the customer's door.
+    No authentication required — the code itself acts as proof.
+    """
+    try:
+        delivery = DeliveryService(db).confirm_delivery_code(delivery_id, body.code)
+        return ok(delivery, "Entrega confirmada com sucesso!")
+    except DomainError as exc:
+        return err(exc)
+
+
 @router.post("/{delivery_id}/rate")
 def rate_delivery(
     delivery_id: str,
     body: DeliveryRateIn,
     db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_customer_phone: str | None = Header(default=None),
+    x_customer_email: str | None = Header(default=None),
 ):
     """
     Customer rates the delivery (1–5 stars).
     Updates the motoboy's weighted average rating automatically.
     """
     try:
-        delivery = DeliveryService(db).rate(delivery_id, body.rating, body.comment)
+        service = DeliveryService(db)
+        existing_delivery = service.get(delivery_id)
+        require_order_or_admin(
+            existing_delivery.order,
+            db,
+            authorization,
+            x_customer_phone,
+            x_customer_email,
+        )
+        delivery = service.rate(delivery_id, body.rating, body.comment)
         return ok(delivery, "Avaliação registrada. Obrigado!")
     except DomainError as exc:
         return err(exc)

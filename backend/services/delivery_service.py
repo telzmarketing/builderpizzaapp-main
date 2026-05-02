@@ -8,22 +8,29 @@ RULE: no route or ERP integration may change delivery.status or
 """
 from __future__ import annotations
 
+import random
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
+from sqlalchemy import text
+from passlib.context import CryptContext
 
 from backend.core.exceptions import (
     DeliveryNotFound, DeliveryPersonNotFound, DeliveryPersonUnavailable,
     OrderNotReadyForDelivery, DeliveryAlreadyAssigned, OrderNotFound,
+    DomainError,
 )
 from backend.core.state_machine import delivery_sm, order_sm
 from backend.core.events import (
     bus, DeliveryAssigned, DeliveryStatusChanged, DeliveryCompleted,
 )
 from backend.models.delivery import (
-    Delivery, DeliveryPerson, DeliveryStatus, DeliveryPersonStatus,
+    Delivery, DeliveryEvent, DeliveryPerson, DeliveryStatus,
+    DeliveryPersonStatus, LogisticsSettings,
 )
 from backend.models.order import Order, OrderStatus
+
+_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class DeliveryService:
@@ -110,6 +117,9 @@ class DeliveryService:
 
         now = datetime.now(timezone.utc)
 
+        # Generate confirmation code
+        code = "".join(random.choices("0123456789", k=4))
+
         # Create or reuse delivery record
         if existing:
             delivery = existing
@@ -117,6 +127,8 @@ class DeliveryService:
             delivery.status = DeliveryStatus.assigned
             delivery.assigned_at = now
             delivery.estimated_minutes = estimated_minutes
+            delivery.confirmation_code = code
+            delivery.confirmed_by_code_at = None
         else:
             delivery = Delivery(
                 id=str(uuid.uuid4()),
@@ -125,6 +137,7 @@ class DeliveryService:
                 status=DeliveryStatus.assigned,
                 assigned_at=now,
                 estimated_minutes=estimated_minutes,
+                confirmation_code=code,
             )
             self._db.add(delivery)
 
@@ -135,6 +148,17 @@ class DeliveryService:
         order_sm.transition(order_id, order.status.value, "on_the_way")
         order.status = OrderStatus.on_the_way
         order.updated_at = now
+
+        self._db.flush()
+
+        # Record assignment event
+        event = DeliveryEvent(
+            id=str(uuid.uuid4()),
+            delivery_id=delivery.id,
+            event_type="assigned",
+            description=f"Motoboy {person.name} atribuído. Código de confirmação: {code}.",
+        )
+        self._db.add(event)
 
         self._db.commit()
         self._db.refresh(delivery)
@@ -351,6 +375,12 @@ class DeliveryService:
         name: str,
         phone: str,
         vehicle_type: str = "motorcycle",
+        *,
+        email: str | None = None,
+        cpf: str | None = None,
+        cnh: str | None = None,
+        pix_key: str | None = None,
+        password: str | None = None,
     ) -> DeliveryPerson:
         from backend.models.delivery import VehicleType
         person = DeliveryPerson(
@@ -360,8 +390,30 @@ class DeliveryService:
             vehicle_type=VehicleType(vehicle_type),
             status=DeliveryPersonStatus.offline,
             active=True,
+            email=email,
+            cpf=cpf,
+            cnh=cnh,
+            pix_key=pix_key,
+            password_hash=_pwd_ctx.hash(password) if password else None,
         )
         self._db.add(person)
+        self._db.commit()
+        self._db.refresh(person)
+        return person
+
+    def update_person(self, person_id: str, **kwargs) -> DeliveryPerson:
+        """Update mutable fields on a delivery person."""
+        person = self._get_delivery_person(person_id)
+        for key, value in kwargs.items():
+            if value is None:
+                continue
+            if key == "password":
+                person.password_hash = _pwd_ctx.hash(value)
+            elif key == "vehicle_type":
+                from backend.models.delivery import VehicleType
+                person.vehicle_type = VehicleType(value) if isinstance(value, str) else value
+            elif hasattr(person, key):
+                setattr(person, key, value)
         self._db.commit()
         self._db.refresh(person)
         return person
@@ -381,3 +433,93 @@ class DeliveryService:
         person = self._get_delivery_person(person_id)
         person.active = False
         self._db.commit()
+
+    # ── Driver App ────────────────────────────────────────────────────────────
+
+    def driver_login(self, email: str, password: str) -> DeliveryPerson:
+        """Authenticate a driver by email + password."""
+        person = (
+            self._db.query(DeliveryPerson)
+            .filter(DeliveryPerson.email == email, DeliveryPerson.active == True)  # noqa: E712
+            .first()
+        )
+        if not person or not person.password_hash:
+            raise DomainError("Credenciais inválidas.", code="InvalidCredentials")
+        if not _pwd_ctx.verify(password, person.password_hash):
+            raise DomainError("Credenciais inválidas.", code="InvalidCredentials")
+        return person
+
+    def get_driver_deliveries(self, person_id: str) -> list[Delivery]:
+        """Return active + recent deliveries for a specific driver."""
+        return (
+            self._db.query(Delivery)
+            .filter(
+                Delivery.delivery_person_id == person_id,
+                Delivery.status.notin_(["failed", "cancelled"]),
+            )
+            .order_by(Delivery.created_at.desc())
+            .limit(20)
+            .all()
+        )
+
+    def confirm_delivery_code(self, delivery_id: str, code: str) -> Delivery:
+        """Driver submits 4-digit code to confirm delivery completion."""
+        delivery = self._get_delivery(delivery_id)
+        if delivery.confirmation_code != code:
+            raise DomainError("Código de confirmação inválido.", code="InvalidCode")
+        if delivery.confirmed_by_code_at:
+            return delivery  # already confirmed — idempotent
+        now = datetime.now(timezone.utc)
+        delivery.confirmed_by_code_at = now
+
+        event = DeliveryEvent(
+            id=str(uuid.uuid4()),
+            delivery_id=delivery_id,
+            event_type="confirmed_by_code",
+            description="Entrega confirmada pelo código de confirmação.",
+        )
+        self._db.add(event)
+
+        # Add to customer_timeline if customer exists
+        try:
+            order = self._get_order(delivery.order_id)
+            if order.customer_id:
+                self._db.execute(
+                    text(
+                        "INSERT INTO customer_timeline (id, customer_id, event_type, title, description, created_at)"
+                        " VALUES (:id, :cid, :et, :t, :d, NOW())"
+                    ),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "cid": order.customer_id,
+                        "et": "delivery_confirmed",
+                        "t": "Entrega confirmada",
+                        "d": f"Entrega do pedido #{delivery.order_id[:8].upper()} confirmada.",
+                    },
+                )
+        except Exception:
+            pass
+
+        self._db.commit()
+        self._db.refresh(delivery)
+        return delivery
+
+    # ── Logistics Settings ────────────────────────────────────────────────────
+
+    def get_logistics_settings(self) -> LogisticsSettings:
+        settings = self._db.query(LogisticsSettings).filter(LogisticsSettings.id == "default").first()
+        if not settings:
+            settings = LogisticsSettings(id="default")
+            self._db.add(settings)
+            self._db.commit()
+            self._db.refresh(settings)
+        return settings
+
+    def update_logistics_settings(self, **kwargs) -> LogisticsSettings:
+        settings = self.get_logistics_settings()
+        for key, value in kwargs.items():
+            if value is not None and hasattr(settings, key):
+                setattr(settings, key, value)
+        self._db.commit()
+        self._db.refresh(settings)
+        return settings

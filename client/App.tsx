@@ -125,6 +125,8 @@ import CrmDashboard from "./pages/admin/crm/CrmDashboard";
 import CrmPipeline from "./pages/admin/crm/CrmPipeline";
 import CrmGrupos from "./pages/admin/crm/CrmGrupos";
 import CrmTarefas from "./pages/admin/crm/CrmTarefas";
+import AdminLogistica from "./pages/admin/logistica/AdminLogistica";
+import Motoboy from "./pages/Motoboy";
 import Campanha from "./pages/Campanha";
 import Fidelidade from "./pages/Fidelidade";
 import Cupons from "./pages/Cupons";
@@ -166,6 +168,7 @@ export default function App() {
 
               {/* ── Admin login (public) ── */}
               <Route path="/painel/login" element={<AdminLogin />} />
+              <Route path="/motoboy" element={<Motoboy />} />
 
               {/* ── Admin routes (protected by JWT guard) ── */}
               <Route element={<AdminGuard />}>
@@ -207,6 +210,8 @@ export default function App() {
                 <Route path="/painel/crm/pipeline" element={<CrmPipeline />} />
                 <Route path="/painel/crm/grupos" element={<CrmGrupos />} />
                 <Route path="/painel/crm/tarefas" element={<CrmTarefas />} />
+                {/* ── Logistics routes ── */}
+                <Route path="/painel/logistica" element={<AdminLogistica />} />
               </Route>
 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

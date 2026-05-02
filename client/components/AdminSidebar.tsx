@@ -5,7 +5,7 @@ import {
   CreditCard, Truck, LogOut, Sparkles, MessageCircle, Palette,
   LayoutDashboard, User, Users, Clock, Shield, Printer, Tag, LogIn,
   TrendingUp, Eye, Plug, KanbanSquare, UserCheck, ClipboardList,
-  Mail, Zap, MousePointerClick, CheckSquare, ChefHat,
+  Mail, Zap, MousePointerClick, CheckSquare, ChefHat, Route,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
@@ -30,8 +30,9 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Operações",
     items: [
-      { to: "/painel/orders",   icon: ShoppingBag, label: "Pedidos" },
-      { to: "/painel/cozinha",  icon: ChefHat,     label: "Cozinha" },
+      { to: "/painel/orders",    icon: ShoppingBag, label: "Pedidos" },
+      { to: "/painel/cozinha",   icon: ChefHat,     label: "Cozinha" },
+      { to: "/painel/logistica", icon: Route,       label: "Logística" },
     ],
   },
   {

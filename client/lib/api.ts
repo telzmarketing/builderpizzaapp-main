@@ -91,6 +91,57 @@ const put = <T>(path: string, body: unknown) => request<T>("PUT", path, body);
 const patch = <T>(path: string, body: unknown) => request<T>("PATCH", path, body);
 const del = <T>(path: string) => request<T>("DELETE", path);
 
+function rememberOrderAccess(order: { id: string; delivery_phone?: string | null; customer_id?: string | null }) {
+  try {
+    sessionStorage.setItem(
+      `order_access:${order.id}`,
+      JSON.stringify({
+        phone: order.delivery_phone ?? null,
+        customer_id: order.customer_id ?? null,
+      }),
+    );
+  } catch {
+    /* ignore storage errors */
+  }
+}
+
+function orderAccessHeaders(orderId: string): HeadersInit {
+  const headers: Record<string, string> = {};
+  try {
+    const raw = sessionStorage.getItem(`order_access:${orderId}`);
+    if (raw) {
+      const access = JSON.parse(raw) as { phone?: string | null; customer_id?: string | null };
+      Object.assign(headers, customerAccessHeaders(access.customer_id ?? undefined));
+      if (access.phone) headers["X-Customer-Phone"] = access.phone;
+    } else {
+      Object.assign(headers, customerAccessHeaders());
+    }
+  } catch {
+    Object.assign(headers, customerAccessHeaders());
+  }
+  return headers;
+}
+
+function customerAccessHeaders(customerId?: string): HeadersInit {
+  try {
+    const raw = localStorage.getItem("customer");
+    if (!raw) return {};
+    const customer = JSON.parse(raw) as {
+      id?: string;
+      phone?: string | null;
+      email?: string | null;
+    };
+    if (customerId && customer.id !== customerId) return {};
+
+    const headers: Record<string, string> = {};
+    if (customer.phone) headers["X-Customer-Phone"] = customer.phone;
+    if (customer.email) headers["X-Customer-Email"] = customer.email;
+    return headers;
+  } catch {
+    return {};
+  }
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface ApiProductSize {
@@ -755,6 +806,13 @@ export interface ApiCustomer {
   lgpd_policy_version: string | null;
   marketing_email_consent: boolean;
   marketing_whatsapp_consent: boolean;
+  crm_status?: string | null;
+  source?: string | null;
+  notes?: string | null;
+  tags?: string | null;
+  last_contact_at?: string | null;
+  utm_source?: string | null;
+  utm_campaign?: string | null;
   created_at: string;
   addresses: ApiAddress[];
 }
@@ -1095,8 +1153,8 @@ export const categoriesApi = {
 // ─── Product Sizes ────────────────────────────────────────────────────────────
 
 export const sizesApi = {
-  list: (productId: string) =>
-    get<ApiProductSize[]>(`/products/${productId}/sizes`),
+  list: (productId: string, activeOnly = true) =>
+    get<ApiProductSize[]>(`/products/${productId}/sizes${activeOnly ? "" : "?active_only=false"}`),
 
   create: (productId: string, data: Omit<ApiProductSize, "id" | "product_id" | "created_at">) =>
     post<ApiProductSize>(`/products/${productId}/sizes`, data),
@@ -1111,8 +1169,8 @@ export const sizesApi = {
 // ─── Crust Types ──────────────────────────────────────────────────────────────
 
 export const crustApi = {
-  list: (productId: string) =>
-    get<ApiProductCrustType[]>(`/products/${productId}/crusts`),
+  list: (productId: string, activeOnly = true) =>
+    get<ApiProductCrustType[]>(`/products/${productId}/crusts${activeOnly ? "" : "?active_only=false"}`),
 
   create: (productId: string, data: Omit<ApiProductCrustType, "id" | "product_id" | "created_at">) =>
     post<ApiProductCrustType>(`/products/${productId}/crusts`, data),
@@ -1151,8 +1209,8 @@ export const productPromotionsApi = {
 };
 
 export const drinkVariantApi = {
-  list: (productId: string) =>
-    get<ApiProductDrinkVariant[]>(`/products/${productId}/drink-variants`),
+  list: (productId: string, activeOnly = true) =>
+    get<ApiProductDrinkVariant[]>(`/products/${productId}/drink-variants${activeOnly ? "" : "?active_only=false"}`),
 
   create: (productId: string, data: Omit<ApiProductDrinkVariant, "id" | "product_id" | "created_at">) =>
     post<ApiProductDrinkVariant>(`/products/${productId}/drink-variants`, data),
@@ -1194,7 +1252,11 @@ export const promotionsApi = {
 // ─── Orders ───────────────────────────────────────────────────────────────────
 
 export const ordersApi = {
-  checkout: (data: CheckoutIn) => post<ApiOrder>("/orders", data),
+  checkout: async (data: CheckoutIn) => {
+    const order = await post<ApiOrder>("/orders", data);
+    rememberOrderAccess(order);
+    return order;
+  },
 
   list: (params?: { status?: OrderStatus; customer_id?: string; limit?: number }) => {
     const qs = new URLSearchParams();
@@ -1202,13 +1264,19 @@ export const ordersApi = {
     if (params?.customer_id) qs.set("customer_id", params.customer_id);
     if (params?.limit) qs.set("limit", String(params.limit));
     const q = qs.toString();
-    return get<ApiOrder[]>(`/orders${q ? `?${q}` : ""}`);
+    return request<ApiOrder[]>(
+      "GET",
+      `/orders${q ? `?${q}` : ""}`,
+      undefined,
+      params?.customer_id ? customerAccessHeaders(params.customer_id) : undefined,
+    );
   },
 
-  get: (id: string) => get<ApiOrder>(`/orders/${id}`),
+  get: (id: string) =>
+    request<ApiOrder>("GET", `/orders/${id}`, undefined, orderAccessHeaders(id)),
 
   paymentStatus: (id: string) =>
-    get<ApiPaymentStatus>(`/orders/${id}/payment-status`),
+    request<ApiPaymentStatus>("GET", `/orders/${id}/payment-status`, undefined, orderAccessHeaders(id)),
 
   updateStatus: (id: string, status: OrderStatus) =>
     put<ApiOrder>(`/orders/${id}/status`, { status }),
@@ -1235,12 +1303,23 @@ export const storeOperationApi = {
 
 export const paymentsApi = {
   create: (order_id: string, amount: number, payment_method: ApiPayment["method"]) =>
-    post<ApiPayment>("/payments/create", { order_id, amount, payment_method }),
+    request<ApiPayment>(
+      "POST",
+      "/payments/create",
+      { order_id, amount, payment_method },
+      orderAccessHeaders(order_id),
+    ),
 
   createFromBrick: (order_id: string, formData: Record<string, unknown>) =>
-    post<ApiPayment>("/payments/create", { order_id, formData }),
+    request<ApiPayment>(
+      "POST",
+      "/payments/create",
+      { order_id, formData },
+      orderAccessHeaders(order_id),
+    ),
 
-  getByOrder: (order_id: string) => get<ApiPayment>(`/payments/${order_id}`),
+  getByOrder: (order_id: string) =>
+    request<ApiPayment>("GET", `/payments/${order_id}`, undefined, orderAccessHeaders(order_id)),
 
   publicKey: () => get<{ public_key: string }>("/payments/public-key"),
 };
@@ -1249,6 +1328,8 @@ export const paymentsApi = {
 
 export const couponsApi = {
   list: () => get<ApiCoupon[]>("/coupons"),
+
+  publicList: () => get<ApiCoupon[]>("/coupons/public"),
 
   create: (data: ApiCouponInput & { code: string; discount_value: number }) =>
     post<ApiCoupon>("/coupons", data),
@@ -1298,13 +1379,28 @@ export const loyaltyApi = {
     put<ApiLoyaltyBenefit>(`/loyalty/benefits/${id}`, data),
   deleteBenefit: (id: string) => del<void>(`/loyalty/benefits/${id}`),
   redeemBenefit: (customer_id: string, benefit_id: string, order_id?: string) =>
-    post<{ message: string }>("/loyalty/benefits/redeem", { customer_id, benefit_id, order_id }),
+    request<{ message: string }>(
+      "POST",
+      "/loyalty/benefits/redeem",
+      { customer_id, benefit_id, order_id },
+      customerAccessHeaders(customer_id),
+    ),
 
   account: (customer_id: string) =>
-    get<ApiCustomerLoyalty>(`/loyalty/account/${customer_id}`),
+    request<ApiCustomerLoyalty>(
+      "GET",
+      `/loyalty/account/${customer_id}`,
+      undefined,
+      customerAccessHeaders(customer_id),
+    ),
 
   redeem: (customer_id: string, reward_id: string) =>
-    post<{ message: string }>("/loyalty/redeem", { customer_id, reward_id }),
+    request<{ message: string }>(
+      "POST",
+      "/loyalty/redeem",
+      { customer_id, reward_id },
+      customerAccessHeaders(customer_id),
+    ),
 
   // Admin
   adminCustomers: (level_id?: string) =>
@@ -1318,9 +1414,19 @@ export const loyaltyApi = {
 
   // Referrals
   getReferral: (customer_id: string) =>
-    get<ApiReferral>(`/loyalty/referral/${customer_id}`),
+    request<ApiReferral>(
+      "GET",
+      `/loyalty/referral/${customer_id}`,
+      undefined,
+      customerAccessHeaders(customer_id),
+    ),
   completeReferral: (referral_code: string, customer_id: string) =>
-    post<{ message: string }>("/loyalty/referral/complete", { referral_code, customer_id }),
+    request<{ message: string }>(
+      "POST",
+      "/loyalty/referral/complete",
+      { referral_code, customer_id },
+      customerAccessHeaders(customer_id),
+    ),
 };
 
 // ─── Shipping ─────────────────────────────────────────────────────────────────
@@ -1432,15 +1538,17 @@ export const customersApi = {
   list: () => get<ApiCustomer[]>("/customers"),
   get: (id: string) => get<ApiCustomer>(`/customers/${id}`),
   update: (id: string, data: { name?: string; phone?: string }) =>
-    put<ApiCustomer>(`/customers/${id}`, data),
+    request<ApiCustomer>("PUT", `/customers/${id}`, data, customerAccessHeaders(id)),
   addAddress: (
     id: string,
     data: { label?: string; street: string; number?: string; complement?: string; neighborhood?: string; city: string; state?: string; zip_code?: string; is_default?: boolean }
-  ) => post<ApiAddress>(`/customers/${id}/addresses`, data),
+  ) => request<ApiAddress>("POST", `/customers/${id}/addresses`, data, customerAccessHeaders(id)),
   deleteAddress: (customerId: string, addressId: string) =>
-    del<void>(`/customers/${customerId}/addresses/${addressId}`),
-  listAddresses: (id: string) => get<ApiAddress[]>(`/customers/${id}/addresses`),
-  getOrders: (id: string) => get<ApiCustomerOrder[]>(`/customers/${id}/orders`),
+    request<void>("DELETE", `/customers/${customerId}/addresses/${addressId}`, undefined, customerAccessHeaders(customerId)),
+  listAddresses: (id: string) =>
+    request<ApiAddress[]>("GET", `/customers/${id}/addresses`, undefined, customerAccessHeaders(id)),
+  getOrders: (id: string) =>
+    request<ApiCustomerOrder[]>("GET", `/customers/${id}/orders`, undefined, customerAccessHeaders(id)),
   getEvents: (id: string, event_type?: string) =>
     get<ApiCustomerEvent[]>(`/customers/${id}/events${event_type ? `?event_type=${event_type}` : ""}`),
   getSummary: (id: string) => get<ApiCustomerSummary>(`/customers/${id}/summary`),
@@ -1467,9 +1575,19 @@ export const customerEventsApi = {
     browser?: string | null;
     page_url?: string | null;
     referrer_url?: string | null;
-  }) => post<{ id: string }>("/customer-events", data),
+  }) => request<{ id: string }>(
+    "POST",
+    "/customer-events",
+    data,
+    data.customer_id ? customerAccessHeaders(data.customer_id) : undefined,
+  ),
   identify: (session_id: string, customer_id: string) =>
-    post<{ updated_events: number }>("/customer-events/identify", { session_id, customer_id }),
+    request<{ updated_events: number }>(
+      "POST",
+      "/customer-events/identify",
+      { session_id, customer_id },
+      customerAccessHeaders(customer_id),
+    ),
 };
 
 // ─── Campaigns ───────────────────────────────────────────────────────────────
@@ -1593,4 +1711,103 @@ export const siteConfigApi = {
   },
   save: (content: unknown): Promise<unknown> =>
     put("/admin/site-config", content),
+};
+
+// ─── Delivery / Logistics ─────────────────────────────────────────────────────
+
+export interface DeliveryPerson {
+  id: string;
+  name: string;
+  phone: string;
+  vehicle_type: "motorcycle" | "bicycle" | "car" | "walking";
+  status: "available" | "busy" | "offline";
+  active: boolean;
+  email?: string;
+  cpf?: string;
+  cnh?: string;
+  pix_key?: string;
+  total_deliveries: number;
+  average_rating: number;
+  location_lat?: number;
+  location_lng?: number;
+  location_updated_at?: string;
+  created_at: string;
+}
+
+export interface DeliveryRecord {
+  id: string;
+  order_id: string;
+  delivery_person_id?: string;
+  status: string;
+  assigned_at?: string;
+  picked_up_at?: string;
+  delivered_at?: string;
+  estimated_minutes: number;
+  confirmation_code?: string;
+  confirmed_by_code_at?: string;
+  rating?: number;
+  rating_comment?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LogisticsSettings {
+  id: string;
+  auto_assign: boolean;
+  max_concurrent_deliveries: number;
+  default_estimated_minutes: number;
+  confirmation_code_enabled: boolean;
+}
+
+function driverAuthHeaders(): HeadersInit {
+  const token = localStorage.getItem("driver_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function driverRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: { "Content-Type": "application/json", ...driverAuthHeaders() },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+  const json = await res.json();
+  return ("data" in json ? json.data : json) as T;
+}
+
+export const deliveryApi = {
+  // Admin — delivery persons
+  listPersons: (availableOnly = false) =>
+    get<DeliveryPerson[]>(`/delivery/persons${availableOnly ? "?available_only=true" : ""}`),
+  createPerson: (body: Record<string, unknown>) =>
+    post<DeliveryPerson>("/delivery/persons", body),
+  updatePerson: (id: string, body: Record<string, unknown>) =>
+    put<DeliveryPerson>(`/delivery/persons/${id}`, body),
+  setPersonStatus: (id: string, status: "available" | "offline") =>
+    put<DeliveryPerson>(`/delivery/persons/${id}/status`, { status }),
+  deactivatePerson: (id: string) =>
+    del<void>(`/delivery/persons/${id}`),
+
+  // Admin — deliveries
+  assign: (order_id: string, delivery_person_id: string, estimated_minutes = 40) =>
+    post<DeliveryRecord>("/delivery/assign", { order_id, delivery_person_id, estimated_minutes }),
+  listActive: () =>
+    get<DeliveryRecord[]>("/delivery/active"),
+
+  // Admin — settings
+  getSettings: () =>
+    get<LogisticsSettings>("/delivery/settings"),
+  updateSettings: (body: Partial<LogisticsSettings>) =>
+    put<LogisticsSettings>("/delivery/settings", body),
+
+  // Driver app
+  driverLogin: (email: string, password: string) =>
+    driverRequest<{ token: string; person: DeliveryPerson }>("POST", "/delivery/driver/login", { email, password }),
+  driverMe: () =>
+    driverRequest<DeliveryPerson>("GET", "/delivery/driver/me"),
+  driverDeliveries: () =>
+    driverRequest<DeliveryRecord[]>("GET", "/delivery/driver/deliveries"),
+
+  // Confirm delivery (public — no auth needed)
+  confirmCode: (deliveryId: string, code: string) =>
+    driverRequest<DeliveryRecord>("POST", `/delivery/${deliveryId}/confirm-code`, { code }),
 };

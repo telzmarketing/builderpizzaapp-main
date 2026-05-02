@@ -450,6 +450,22 @@ def _run_migrations():
         # ── Site config (CMS persistence) ─────────────────────────────────────
         "CREATE TABLE IF NOT EXISTS site_config (id VARCHAR PRIMARY KEY DEFAULT 'default', content TEXT NOT NULL DEFAULT '{}', updated_at TIMESTAMPTZ DEFAULT NOW())",
         "INSERT INTO site_config (id, content) VALUES ('default', '{}') ON CONFLICT DO NOTHING",
+
+        # ══════════════════════════════════════════════════════════════════════
+        # MÓDULO LOGÍSTICA — Fase 1
+        # ══════════════════════════════════════════════════════════════════════
+        "ALTER TABLE delivery_persons ADD COLUMN IF NOT EXISTS email VARCHAR(200)",
+        "ALTER TABLE delivery_persons ADD COLUMN IF NOT EXISTS password_hash TEXT",
+        "ALTER TABLE delivery_persons ADD COLUMN IF NOT EXISTS cpf VARCHAR(14)",
+        "ALTER TABLE delivery_persons ADD COLUMN IF NOT EXISTS cnh VARCHAR(20)",
+        "ALTER TABLE delivery_persons ADD COLUMN IF NOT EXISTS pix_key VARCHAR(200)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_delivery_persons_email ON delivery_persons(email) WHERE email IS NOT NULL",
+        "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS confirmation_code VARCHAR(4)",
+        "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS confirmed_by_code_at TIMESTAMPTZ",
+        "CREATE TABLE IF NOT EXISTS delivery_events (id VARCHAR PRIMARY KEY, delivery_id VARCHAR NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE, event_type VARCHAR(80) NOT NULL, description TEXT, metadata_json TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_delivery_events_delivery_id ON delivery_events(delivery_id)",
+        "CREATE TABLE IF NOT EXISTS logistics_settings (id VARCHAR PRIMARY KEY DEFAULT 'default', auto_assign BOOLEAN DEFAULT FALSE, max_concurrent_deliveries INTEGER DEFAULT 3, default_estimated_minutes INTEGER DEFAULT 40, confirmation_code_enabled BOOLEAN DEFAULT TRUE, updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "INSERT INTO logistics_settings (id) VALUES ('default') ON CONFLICT DO NOTHING",
     ]
     for stmt in stmts:
         try:

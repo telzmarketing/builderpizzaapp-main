@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, CheckCircle2, ChevronRight, Clock3, Loader2,
-  PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Utensils, Volume2, VolumeX,
+  PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Truck, Utensils, Volume2, VolumeX,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
-import { ordersApi, type ApiOrder, type OrderStatus } from "@/lib/api";
+import { ordersApi, deliveryApi, type ApiOrder, type OrderStatus, type DeliveryPerson } from "@/lib/api";
 import { printOrder } from "@/lib/printing";
 import OrderTimer from "@/components/OrderTimer";
 import { playOrderAlert, loadSoundType } from "@/lib/orderSound";
@@ -171,6 +171,13 @@ export default function AdminOrders() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [newOrderFlash, setNewOrderFlash] = useState(false);
 
+  // Motoboy assignment modal
+  const [assignModal, setAssignModal] = useState<{ order: ApiOrder } | null>(null);
+  const [availablePersons, setAvailablePersons] = useState<DeliveryPerson[]>([]);
+  const [selectedPersonId, setSelectedPersonId] = useState("");
+  const [estimatedMinutes, setEstimatedMinutes] = useState(40);
+  const [assigning, setAssigning] = useState(false);
+
   // paidIds tracks orders already alerted — fires sound only once per order when it first becomes paid
   const paidIds = useRef<Set<string>>(new Set());
   const isFirstFetch = useRef(true);
@@ -250,6 +257,33 @@ export default function AdminOrders() {
     handleStatusChange(id, column.targetStatus);
     setDragOverColumn(null);
   }, [orders, handleStatusChange]);
+
+  const openAssignModal = useCallback(async (order: ApiOrder) => {
+    setSelectedPersonId("");
+    setEstimatedMinutes(40);
+    setAssignModal({ order });
+    try {
+      const persons = await deliveryApi.listPersons(true);
+      setAvailablePersons(persons ?? []);
+    } catch {
+      setAvailablePersons([]);
+    }
+  }, []);
+
+  const handleAssign = useCallback(async () => {
+    if (!assignModal || !selectedPersonId) return;
+    setAssigning(true);
+    try {
+      await deliveryApi.assign(assignModal.order.id, selectedPersonId, estimatedMinutes);
+      setAssignModal(null);
+      setSelectedPersonId("");
+      await fetchOrders(true);
+    } catch {
+      alert("Erro ao atribuir motoboy. Verifique se o motoboy está disponível.");
+    } finally {
+      setAssigning(false);
+    }
+  }, [assignModal, selectedPersonId, estimatedMinutes, fetchOrders]);
 
   const groupedOrders = useMemo(() => {
     const grouped = new Map<string, ApiOrder[]>();
@@ -389,6 +423,7 @@ export default function AdminOrders() {
                                 const next = NEXT_STATUS[order.status];
                                 if (next) handleStatusChange(order.id, next);
                               }}
+                              onAssignMotoboy={() => openAssignModal(order)}
                               onPrint={() => printOrder(order)}
                               onDragStart={() => handleDragStart(order.id)}
                               onDragEnd={handleDragEnd}
@@ -404,6 +439,75 @@ export default function AdminOrders() {
           )}
         </div>
       </main>
+
+      {/* Motoboy assignment modal */}
+      {assignModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-surface-02 rounded-2xl border border-surface-03 p-6 w-full max-w-md">
+            <h3 className="text-cream font-bold text-lg mb-1">Atribuir Motoboy</h3>
+            <p className="text-stone text-sm mb-5">
+              Pedido #{assignModal.order.id.slice(0, 8).toUpperCase()} · {assignModal.order.delivery_name}
+            </p>
+
+            {availablePersons.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-surface-03 p-6 text-center mb-5">
+                <Truck size={28} className="text-stone mx-auto mb-2" />
+                <p className="text-stone text-sm">Nenhum motoboy disponível no momento.</p>
+                <p className="text-stone/70 text-xs mt-1">Aguarde um motoboy ficar disponível.</p>
+              </div>
+            ) : (
+              <div className="space-y-2 mb-5 max-h-56 overflow-y-auto pr-1">
+                {availablePersons.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => setSelectedPersonId(p.id)}
+                    className={`w-full text-left px-4 py-3 rounded-xl border transition-colors ${
+                      selectedPersonId === p.id
+                        ? "border-gold bg-gold/10 text-cream"
+                        : "border-surface-03 bg-surface-03/40 text-parchment hover:border-gold/50"
+                    }`}
+                  >
+                    <p className="font-bold text-sm">{p.name}</p>
+                    <p className="text-xs text-stone mt-0.5">
+                      {p.phone} · {p.vehicle_type} · {p.total_deliveries} entregas · ⭐ {p.average_rating.toFixed(1)}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <label className="flex flex-col gap-1.5 mb-5">
+              <span className="text-stone text-xs font-medium">Tempo estimado de entrega</span>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range" min={10} max={120} step={5}
+                  value={estimatedMinutes}
+                  onChange={(e) => setEstimatedMinutes(Number(e.target.value))}
+                  className="flex-1 accent-gold"
+                />
+                <span className="text-gold font-bold text-sm w-14 text-right">{estimatedMinutes} min</span>
+              </div>
+            </label>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setAssignModal(null)}
+                className="flex-1 rounded-xl border border-surface-03 py-2.5 text-stone text-sm hover:text-cream transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                disabled={!selectedPersonId || assigning}
+                onClick={handleAssign}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gold py-2.5 text-cream text-sm font-bold hover:bg-gold/90 disabled:opacity-50 transition-colors"
+              >
+                {assigning && <Loader2 size={14} className="animate-spin" />}
+                {assigning ? "Atribuindo..." : "Atribuir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -414,13 +518,15 @@ interface OrderCardProps {
   order: ApiOrder;
   updating: boolean;
   onAdvance: () => void;
+  onAssignMotoboy?: () => void;
   onPrint: () => void;
   onDragStart: () => void;
   onDragEnd: () => void;
 }
 
-function OrderCard({ order, updating, onAdvance, onPrint, onDragStart, onDragEnd }: OrderCardProps) {
-  const nextLabel = NEXT_LABEL[order.status];
+function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDragStart, onDragEnd }: OrderCardProps) {
+  const isReadyForPickup = order.status === "ready_for_pickup";
+  const nextLabel = isReadyForPickup ? null : NEXT_LABEL[order.status];
 
   const itemSummary = order.items.slice(0, 2).map((item) => {
     const isMulti = item.flavor_division > 1;
@@ -493,6 +599,18 @@ function OrderCard({ order, updating, onAdvance, onPrint, onDragStart, onDragEnd
 
       {/* Action buttons */}
       <div className="mt-3 flex gap-2">
+        {/* Assign motoboy — for ready_for_pickup orders */}
+        {isReadyForPickup && (
+          <button
+            onClick={onAssignMotoboy}
+            disabled={updating}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs font-bold py-2 px-3 transition-colors disabled:opacity-50"
+          >
+            <Truck size={13} />
+            Atribuir Motoboy
+          </button>
+        )}
+
         {/* Advance status */}
         {nextLabel && (
           <button
