@@ -19,6 +19,10 @@ VALID_TRIGGERS = {
     "order_cancelled", "abandoned_cart", "reactivation", "birthday",
     "birthday_week", "low_points", "level_up", "no_engagement",
     "coupon_unused", "vip_milestone", "product_back", "high_value_order",
+    "days_after_last_order", "same_weekday_last_order", "preferred_purchase_time",
+    "product_purchased", "category_purchased", "registered_no_order",
+    "inactive_customer", "recurring_customer", "vip_customer", "tag_match",
+    "group_match", "segment_match",
 }
 VALID_CHANNELS = {"whatsapp", "email"}
 
@@ -197,6 +201,10 @@ def _get_eligible_customers(automation: MarketingAutomation, db: Session) -> lis
 
 
 def _run_automation(automation_id: str, db: Session) -> dict:
+    from backend.services.automation_service import run_automation_now
+
+    return run_automation_now(db, automation_id)
+
     automation = db.query(MarketingAutomation).filter(
         MarketingAutomation.id == automation_id
     ).first()
@@ -239,8 +247,8 @@ def _run_automation(automation_id: str, db: Session) -> dict:
 
                 if body:
                     try:
-                        from backend.routes.whatsapp_marketing import _send_whatsapp
-                        _wamid, status, error_msg = _send_whatsapp(phone, body, [], db)
+                        from backend.routes.whatsapp_marketing import _send_whatsapp_api
+                        _wamid, status, error_msg = _send_whatsapp_api(phone, body, db)
                     except Exception as exc:
                         status = "failed"
                         error_msg = str(exc)
@@ -431,6 +439,43 @@ def list_automations(db: Session = Depends(get_db), _=Depends(get_current_admin)
             "created_at": a.created_at.isoformat(),
         })
     return ok(result)
+
+
+@router.post("/queue/enqueue-due")
+def enqueue_due_automation_queue(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    from backend.services.automation_service import enqueue_due_automations
+
+    return ok(enqueue_due_automations(db, limit=limit), "Fila de automacoes atualizada.")
+
+
+@router.post("/queue/process")
+def process_automation_queue(
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    from backend.services.automation_service import process_pending_executions
+
+    return ok(process_pending_executions(db, limit=limit), "Fila de automacoes processada.")
+
+
+@router.post("/queue/run-due")
+def run_due_automation_queue(
+    automation_limit: int = 50,
+    execution_limit: int = 100,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    from backend.services.automation_service import run_due_automation_worker
+
+    return ok(
+        run_due_automation_worker(db, automation_limit=automation_limit, execution_limit=execution_limit),
+        "Worker de automacoes executado.",
+    )
 
 
 @router.post("")

@@ -1702,6 +1702,128 @@ export interface ApiCRMAnalysisStatus {
   }>;
 }
 
+export interface ApiMarketingAutomation {
+  id: string;
+  name: string;
+  trigger: string;
+  trigger_value?: string | null;
+  trigger_delay_hours?: number;
+  channel: string;
+  template_id?: string | null;
+  message_body?: string | null;
+  active: boolean;
+  runs_total: number;
+  last_run_at?: string | null;
+  total_logs?: number;
+  created_at: string;
+}
+
+export interface ApiMarketingAutomationPayload {
+  name?: string;
+  trigger?: string;
+  trigger_value?: string | null;
+  trigger_delay_hours?: number;
+  channel?: string;
+  template_id?: string | null;
+  message_body?: string | null;
+  active?: boolean;
+}
+
+export interface ApiAutomationTemplate {
+  id: string;
+  name: string;
+  channel: string;
+  subject?: string | null;
+  body: string;
+  variables?: string | null;
+  category: string;
+  created_at: string;
+}
+
+export interface ApiAutomationTemplatePayload {
+  name?: string;
+  channel?: string;
+  subject?: string | null;
+  body?: string;
+  variables?: string | null;
+  category?: string;
+}
+
+export interface ApiAutomationLog {
+  id: string;
+  automation_name?: string | null;
+  customer_id?: string | null;
+  customer_name?: string | null;
+  channel: string;
+  status: string;
+  error?: string | null;
+  created_at: string | null;
+}
+
+export interface ApiAutomationEvent {
+  event_name: string;
+  count: number;
+  unique_customers: number;
+  last_triggered: string;
+}
+
+export interface ApiAutomationRunResult {
+  sent: number;
+  failed: number;
+  skipped: number;
+}
+
+export interface ApiAutomationQueueEnqueueResult {
+  automations: number;
+  queued: number;
+  failed: number;
+  skipped: number;
+}
+
+export interface ApiAutomationQueueProcessResult {
+  processed: number;
+  sent: number;
+  failed: number;
+  retried: number;
+  skipped: number;
+}
+
+export interface ApiAutomationQueueWorkerResult {
+  queued: ApiAutomationQueueEnqueueResult;
+  processed: ApiAutomationQueueProcessResult;
+}
+
+// ─── Marketing Automations ───────────────────────────────────────────────────
+
+export const marketingAutomationsApi = {
+  list: () => get<ApiMarketingAutomation[]>("/automations"),
+  create: (data: ApiMarketingAutomationPayload) =>
+    post<Partial<ApiMarketingAutomation>>("/automations", data),
+  update: (id: string, data: ApiMarketingAutomationPayload) =>
+    patch<Partial<ApiMarketingAutomation>>(`/automations/${id}`, data),
+  remove: (id: string) => del<void>(`/automations/${id}`),
+  toggle: (id: string) => post<{ id: string; active: boolean }>(`/automations/${id}/toggle`, {}),
+  run: (id: string) => post<ApiAutomationRunResult>(`/automations/${id}/run`, {}),
+  logs: () => get<ApiAutomationLog[]>("/automations/logs"),
+  automationLogs: (id: string) => get<ApiAutomationLog[]>(`/automations/${id}/logs`),
+  events: () => get<ApiAutomationEvent[]>("/automations/events"),
+  templates: () => get<ApiAutomationTemplate[]>("/automations/templates"),
+  createTemplate: (data: ApiAutomationTemplatePayload) =>
+    post<Partial<ApiAutomationTemplate>>("/automations/templates", data),
+  updateTemplate: (id: string, data: ApiAutomationTemplatePayload) =>
+    patch<Partial<ApiAutomationTemplate>>(`/automations/templates/${id}`, data),
+  removeTemplate: (id: string) => del<void>(`/automations/templates/${id}`),
+  enqueueDue: (limit = 50) =>
+    post<ApiAutomationQueueEnqueueResult>(`/automations/queue/enqueue-due?limit=${limit}`, {}),
+  processQueue: (limit = 100) =>
+    post<ApiAutomationQueueProcessResult>(`/automations/queue/process?limit=${limit}`, {}),
+  runDue: (automationLimit = 50, executionLimit = 100) =>
+    post<ApiAutomationQueueWorkerResult>(
+      `/automations/queue/run-due?automation_limit=${automationLimit}&execution_limit=${executionLimit}`,
+      {},
+    ),
+};
+
 // ─── Customers ────────────────────────────────────────────────────────────────
 
 export const customersApi = {

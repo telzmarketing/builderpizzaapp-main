@@ -6,31 +6,22 @@ import {
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
-
-const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const unwrap = (json: any) => json?.data ?? json;
+import {
+  marketingAutomationsApi,
+  type ApiAutomationEvent,
+  type ApiAutomationLog,
+  type ApiAutomationTemplate,
+  type ApiMarketingAutomation,
+} from "@/lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 type Tab = "eventos" | "automacoes" | "templates" | "monitoramento";
-
-interface Automation {
-  id: string; name: string; trigger: string; trigger_value?: string;
-  trigger_delay_hours?: number;
-  channel: string; template_id?: string; message_body?: string;
-  active: boolean; runs_total: number; last_run_at?: string; created_at: string;
-}
-interface AutomationTemplate {
-  id: string; name: string; channel: string; subject?: string;
-  body: string; variables?: string; category: string; created_at: string;
-}
-interface AutomationLog {
-  id: string; automation_name?: string; customer_id?: string; channel: string;
-  status: string; error?: string; created_at: string;
-}
-interface EventRow {
-  event_name: string; count: number; unique_customers: number; last_triggered: string;
-}
+type Automation = ApiMarketingAutomation;
+type AutomationTemplate = ApiAutomationTemplate;
+type AutomationLog = ApiAutomationLog;
+type EventRow = ApiAutomationEvent;
+type QueueBusy = "enqueue" | "process" | "worker";
+type QueueResult = { label: string; data: Record<string, unknown> };
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const TRIGGER_LABELS: Record<string, string> = {
@@ -50,6 +41,18 @@ const TRIGGER_LABELS: Record<string, string> = {
   vip_milestone:      "Cliente atingiu status VIP",
   product_back:       "Produto voltou ao cardápio",
   high_value_order:   "Pedido de alto valor (acima de R$X)",
+  days_after_last_order: "Apos X dias da ultima compra",
+  same_weekday_last_order: "Mesmo dia da semana da ultima compra",
+  preferred_purchase_time: "Horario habitual de compra",
+  product_purchased: "Produto comprado anteriormente",
+  category_purchased: "Categoria comprada anteriormente",
+  registered_no_order: "Cadastro sem pedido",
+  inactive_customer: "Cliente inativo",
+  recurring_customer: "Cliente recorrente",
+  vip_customer: "Cliente VIP",
+  tag_match: "Cliente com tag especifica",
+  group_match: "Cliente em grupo especifico",
+  segment_match: "Cliente em segmento especifico",
 };
 
 const TRIGGER_VALUE_LABEL: Record<string, string> = {
@@ -58,6 +61,16 @@ const TRIGGER_VALUE_LABEL: Record<string, string> = {
   coupon_unused:   "Dias antes do vencimento",
   high_value_order:"Valor mínimo (R$)",
   abandoned_cart:  "Minutos após abandono",
+  days_after_last_order: "Dias apos ultima compra",
+  inactive_customer: "Dias sem pedido",
+  recurring_customer: "Minimo de pedidos",
+  vip_customer: "Total gasto minimo (R$)",
+  product_purchased: "ID ou nome do produto",
+  category_purchased: "Nome da categoria",
+  registered_no_order: "Horas apos cadastro",
+  tag_match: "ID, slug ou nome da tag",
+  group_match: "ID do grupo",
+  segment_match: "Nome do segmento",
 };
 
 const CHANNEL_LABELS: Record<string, string> = { whatsapp: "WhatsApp", email: "E-mail" };
@@ -72,6 +85,19 @@ const LOG_STATUS_CFG: Record<string, { label: string; cls: string; icon: React.E
 function fmtDate(s?: string) {
   if (!s) return "—";
   return new Date(s).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function queueStats(result: QueueResult | null) {
+  if (!result) return [];
+  return Object.entries(result.data).flatMap(([key, value]) => {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => ({
+        label: `${key}.${childKey}`,
+        value: String(childValue ?? 0),
+      }));
+    }
+    return [{ label: key, value: String(value ?? 0) }];
+  });
 }
 
 const TABS_CFG: { id: Tab; label: string; icon: React.ElementType }[] = [
@@ -93,8 +119,6 @@ const emptyTplForm = (): Partial<AutomationTemplate> => ({
 // ══════════════════════════════════════════════════════════════════════════
 export default function MarketingAutomacoes() {
   const [tab, setTab] = useState<Tab>("automacoes");
-  const token = localStorage.getItem("admin_token");
-  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
   // ── Automações ──
   const [automations, setAutomations] = useState<Automation[]>([]);
@@ -117,6 +141,8 @@ export default function MarketingAutomacoes() {
   // ── Monitoramento ──
   const [logs, setLogs] = useState<AutomationLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [queueBusy, setQueueBusy] = useState<QueueBusy | null>(null);
+  const [queueResult, setQueueResult] = useState<QueueResult | null>(null);
   const monitorRef = useRef<ReturnType<typeof setInterval>>(null);
 
   // ── Eventos ──
@@ -126,29 +152,29 @@ export default function MarketingAutomacoes() {
   // ── Fetchers ──
   const fetchAutomations = () => {
     setAutoLoading(true); setAutoError("");
-    fetch(`${BASE}/automations`, { headers })
-      .then(r => r.json()).then(d => setAutomations(unwrap(d) ?? []))
+    marketingAutomationsApi.list()
+      .then(d => setAutomations(d ?? []))
       .catch(() => setAutoError("Falha ao carregar automações."))
       .finally(() => setAutoLoading(false));
   };
   const fetchTemplates = () => {
     setTplLoading(true);
-    fetch(`${BASE}/automations/templates`, { headers })
-      .then(r => r.json()).then(d => setTemplates(unwrap(d) ?? []))
+    marketingAutomationsApi.templates()
+      .then(d => setTemplates(d ?? []))
       .catch(() => setTemplates([]))
       .finally(() => setTplLoading(false));
   };
   const fetchLogs = () => {
     setLogsLoading(true);
-    fetch(`${BASE}/automations/logs`, { headers })
-      .then(r => r.json()).then(d => setLogs(unwrap(d) ?? []))
+    marketingAutomationsApi.logs()
+      .then(d => setLogs(d ?? []))
       .catch(() => setLogs([]))
       .finally(() => setLogsLoading(false));
   };
   const fetchEvents = () => {
     setEventsLoading(true);
-    fetch(`${BASE}/automations/events`, { headers })
-      .then(r => r.json()).then(d => setEvents(unwrap(d) ?? []))
+    marketingAutomationsApi.events()
+      .then(d => setEvents(d ?? []))
       .catch(() => setEvents([]))
       .finally(() => setEventsLoading(false));
   };
@@ -177,9 +203,9 @@ export default function MarketingAutomacoes() {
     setSaving(true);
     try {
       if (editingAutoId) {
-        await fetch(`${BASE}/automations/${editingAutoId}`, { method: "PATCH", headers, body: JSON.stringify(autoForm) });
+        await marketingAutomationsApi.update(editingAutoId, autoForm);
       } else {
-        await fetch(`${BASE}/automations`, { method: "POST", headers, body: JSON.stringify(autoForm) });
+        await marketingAutomationsApi.create(autoForm);
       }
       setShowAutoModal(false);
       fetchAutomations();
@@ -187,18 +213,43 @@ export default function MarketingAutomacoes() {
   };
   const deleteAutomation = async (id: string) => {
     if (!confirm("Excluir automação?")) return;
-    await fetch(`${BASE}/automations/${id}`, { method: "DELETE", headers });
+    await marketingAutomationsApi.remove(id);
     fetchAutomations();
   };
   const toggleAutomation = async (id: string) => {
-    const d = unwrap(await (await fetch(`${BASE}/automations/${id}/toggle`, { method: "POST", headers })).json());
+    const d = await marketingAutomationsApi.toggle(id);
     setAutomations(prev => prev.map(a => a.id === id ? { ...a, active: d.active ?? !a.active } : a));
   };
   const runAutomation = async (id: string) => {
     setRunning(id);
-    const d = unwrap(await (await fetch(`${BASE}/automations/${id}/run`, { method: "POST", headers })).json());
-    setRunResult(prev => ({ ...prev, [id]: { sent: d.sent ?? 0, failed: d.failed ?? 0, skipped: d.skipped ?? 0 } }));
-    setRunning(null);
+    try {
+      const d = await marketingAutomationsApi.run(id);
+      setRunResult(prev => ({ ...prev, [id]: { sent: d.sent ?? 0, failed: d.failed ?? 0, skipped: d.skipped ?? 0 } }));
+    } catch {
+      alert("Erro ao executar automacao.");
+    } finally {
+      setRunning(null);
+    }
+  };
+
+  const runQueueAction = async (action: QueueBusy) => {
+    setQueueBusy(action);
+    try {
+      const data = action === "enqueue"
+        ? await marketingAutomationsApi.enqueueDue()
+        : action === "process"
+          ? await marketingAutomationsApi.processQueue()
+          : await marketingAutomationsApi.runDue();
+      const label = action === "enqueue" ? "Enfileiramento" : action === "process" ? "Processamento" : "Worker completo";
+      setQueueResult({ label, data: data as unknown as Record<string, unknown> });
+      fetchLogs();
+      fetchEvents();
+      fetchAutomations();
+    } catch {
+      alert("Erro ao executar acao da fila.");
+    } finally {
+      setQueueBusy(null);
+    }
   };
 
   // ── Template CRUD ──
@@ -208,9 +259,9 @@ export default function MarketingAutomacoes() {
     setSaving(true);
     try {
       if (editingTplId) {
-        await fetch(`${BASE}/automations/templates/${editingTplId}`, { method: "PATCH", headers, body: JSON.stringify(tplForm) });
+        await marketingAutomationsApi.updateTemplate(editingTplId, tplForm);
       } else {
-        await fetch(`${BASE}/automations/templates`, { method: "POST", headers, body: JSON.stringify(tplForm) });
+        await marketingAutomationsApi.createTemplate(tplForm);
       }
       setShowTplModal(false);
       fetchTemplates();
@@ -218,7 +269,7 @@ export default function MarketingAutomacoes() {
   };
   const deleteTpl = async (id: string) => {
     if (!confirm("Excluir template?")) return;
-    await fetch(`${BASE}/automations/templates/${id}`, { method: "DELETE", headers });
+    await marketingAutomationsApi.removeTemplate(id);
     fetchTemplates();
   };
 
@@ -438,15 +489,45 @@ export default function MarketingAutomacoes() {
         {/* ═══ MONITORAMENTO ═══ */}
         {tab === "monitoramento" && (
           <>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 <p className="text-stone text-sm">Atualização automática a cada 15s</p>
               </div>
-              <button onClick={fetchLogs} className="p-2 rounded-xl bg-surface-02 border border-surface-03 text-stone hover:text-cream transition-colors">
-                <RefreshCw size={16} />
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={() => runQueueAction("enqueue")} disabled={!!queueBusy}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-02 border border-surface-03 text-stone hover:text-cream text-xs font-medium transition-colors disabled:opacity-60">
+                  {queueBusy === "enqueue" ? <Loader2 size={14} className="animate-spin" /> : <List size={14} />} Enfileirar
+                </button>
+                <button onClick={() => runQueueAction("process")} disabled={!!queueBusy}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-02 border border-surface-03 text-stone hover:text-cream text-xs font-medium transition-colors disabled:opacity-60">
+                  {queueBusy === "process" ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} Processar
+                </button>
+                <button onClick={() => runQueueAction("worker")} disabled={!!queueBusy}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gold hover:bg-gold/90 text-black text-xs font-semibold transition-colors disabled:opacity-60">
+                  {queueBusy === "worker" ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />} Rodar worker
+                </button>
+                <button onClick={fetchLogs} className="p-2 rounded-xl bg-surface-02 border border-surface-03 text-stone hover:text-cream transition-colors">
+                  <RefreshCw size={16} />
+                </button>
+              </div>
             </div>
+            {queueResult && (
+              <div className="bg-surface-02 border border-surface-03 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-cream font-semibold text-sm">{queueResult.label}</h3>
+                  <button onClick={() => setQueueResult(null)} className="text-stone hover:text-cream"><X size={14} /></button>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                  {queueStats(queueResult).map(({ label, value }) => (
+                    <div key={label} className="rounded-xl bg-surface-03 px-3 py-2">
+                      <p className="text-stone/70 text-[11px] uppercase">{label}</p>
+                      <p className="text-cream font-semibold text-sm">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {logsLoading ? (
               <div className="flex justify-center py-12"><Loader2 className="animate-spin text-gold" size={28} /></div>
             ) : (
