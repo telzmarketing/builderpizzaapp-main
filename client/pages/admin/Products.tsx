@@ -255,7 +255,7 @@ export default function AdminProducts() {
     setSizesModalProduct(product);
     setSizesLoading(true);
     try {
-      const sizes = await sizesApi.list(product.id);
+      const sizes = await sizesApi.list(product.id, false);
       setProductSizes(sizes);
     } catch {
       setProductSizes([]);
@@ -344,7 +344,7 @@ export default function AdminProducts() {
     setCrustModalProduct(product);
     setCrustsLoading(true);
     try {
-      const crusts = await crustApi.list(product.id);
+      const crusts = await crustApi.list(product.id, false);
       setProductCrusts(crusts);
     } catch {
       setProductCrusts([]);
@@ -461,8 +461,8 @@ export default function AdminProducts() {
     try {
       const [promotions, sizes, crusts] = await Promise.all([
         productPromotionsApi.list(product.id),
-        sizesApi.list(product.id),
-        crustApi.list(product.id),
+        sizesApi.list(product.id, false),
+        crustApi.list(product.id, false),
       ]);
       setProductPromotions(promotions);
       setPromoSizes(sizes);
@@ -596,7 +596,7 @@ export default function AdminProducts() {
     setDrinkModalProduct(product);
     setDrinkLoading(true);
     try {
-      const variants = await drinkVariantApi.list(product.id);
+      const variants = await drinkVariantApi.list(product.id, false);
       setProductDrinkVariants(variants);
     } catch {
       setProductDrinkVariants([]);

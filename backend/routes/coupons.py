@@ -1,4 +1,6 @@
 import uuid
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -15,8 +17,21 @@ router = APIRouter(prefix="/coupons", tags=["coupons"])
 
 
 @router.get("", response_model=list[CouponOut])
-def list_coupons(db: Session = Depends(get_db)):
+def list_coupons(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     return db.query(Coupon).order_by(Coupon.created_at.desc()).all()
+
+
+@router.get("/public", response_model=list[CouponOut])
+def list_public_coupons(db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    return (
+        db.query(Coupon)
+        .filter(Coupon.active == True)  # noqa: E712
+        .filter((Coupon.expiry_date.is_(None)) | (Coupon.expiry_date >= now))
+        .filter((Coupon.max_uses.is_(None)) | (Coupon.used_count < Coupon.max_uses))
+        .order_by(Coupon.created_at.desc())
+        .all()
+    )
 
 
 @router.get("/usage", response_model=list[CouponUsageOut])
@@ -25,7 +40,7 @@ def list_all_usage(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 
 
 @router.get("/{coupon_id}", response_model=CouponOut)
-def get_coupon(coupon_id: str, db: Session = Depends(get_db)):
+def get_coupon(coupon_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     coupon = db.query(Coupon).filter(Coupon.id == coupon_id).first()
     if not coupon:
         raise HTTPException(404, "Cupom não encontrado.")

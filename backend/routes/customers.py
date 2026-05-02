@@ -1,12 +1,13 @@
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
+from backend.routes.customer_access import require_customer_or_admin
 from backend.models.admin import AdminUser
 from backend.models.customer import Customer, Address
 from backend.models.order import Order
@@ -53,10 +54,18 @@ def create_customer(body: CustomerCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{customer_id}", response_model=CustomerOut)
-def update_customer(customer_id: str, body: CustomerUpdate, db: Session = Depends(get_db)):
+def update_customer(
+    customer_id: str,
+    body: CustomerUpdate,
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_customer_phone: str | None = Header(default=None),
+    x_customer_email: str | None = Header(default=None),
+):
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
+    require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
     for key, value in body.model_dump(exclude_none=True).items():
         setattr(customer, key, value)
     db.commit()
@@ -67,15 +76,33 @@ def update_customer(customer_id: str, body: CustomerUpdate, db: Session = Depend
 # ── Addresses ─────────────────────────────────────────────────────────────────
 
 @router.get("/{customer_id}/addresses", response_model=list[AddressOut])
-def list_addresses(customer_id: str, db: Session = Depends(get_db)):
+def list_addresses(
+    customer_id: str,
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_customer_phone: str | None = Header(default=None),
+    x_customer_email: str | None = Header(default=None),
+):
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(404, "Cliente não encontrado.")
+    require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
     return db.query(Address).filter(Address.customer_id == customer_id).all()
 
 
 @router.post("/{customer_id}/addresses", response_model=AddressOut, status_code=201)
-def add_address(customer_id: str, body: AddressCreate, db: Session = Depends(get_db)):
+def add_address(
+    customer_id: str,
+    body: AddressCreate,
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_customer_phone: str | None = Header(default=None),
+    x_customer_email: str | None = Header(default=None),
+):
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
+    require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
     if body.is_default:
         db.query(Address).filter(Address.customer_id == customer_id).update({"is_default": False})
     address = Address(id=str(uuid.uuid4()), customer_id=customer_id, **body.model_dump())
@@ -86,7 +113,18 @@ def add_address(customer_id: str, body: AddressCreate, db: Session = Depends(get
 
 
 @router.delete("/{customer_id}/addresses/{address_id}", status_code=204)
-def delete_address(customer_id: str, address_id: str, db: Session = Depends(get_db)):
+def delete_address(
+    customer_id: str,
+    address_id: str,
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_customer_phone: str | None = Header(default=None),
+    x_customer_email: str | None = Header(default=None),
+):
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(404, "Cliente não encontrado.")
+    require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
     address = db.query(Address).filter(
         Address.id == address_id, Address.customer_id == customer_id
     ).first()
@@ -103,10 +141,14 @@ def get_customer_orders(
     customer_id: str,
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_customer_phone: str | None = Header(default=None),
+    x_customer_email: str | None = Header(default=None),
 ):
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
+    require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
 
     orders = (
         db.query(Order)

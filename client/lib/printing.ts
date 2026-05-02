@@ -262,6 +262,14 @@ export const SAMPLE_ORDER: ApiOrder = {
   estimated_time: 45,
   loyalty_points_earned: 0,
   coupon_id: null,
+  paid_at: null,
+  preparation_started_at: null,
+  out_for_delivery_at: null,
+  delivered_at: null,
+  target_delivery_minutes: 45,
+  total_time_minutes: null,
+  preparation_time_minutes: null,
+  delivery_time_minutes: null,
   items: [
     {
       id: "i1", product_id: "p1", product_name: "Pizza Pepperoni",

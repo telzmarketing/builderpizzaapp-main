@@ -159,7 +159,8 @@ def _get_config(db: Session) -> EmailConfig:
 def _cfg_to_dict(cfg: EmailConfig) -> dict:
     return {
         "provider": cfg.provider, "smtp_host": cfg.smtp_host, "smtp_port": cfg.smtp_port,
-        "smtp_user": cfg.smtp_user, "smtp_password": cfg.smtp_password,
+        "smtp_user": cfg.smtp_user, "smtp_password": "",
+        "smtp_password_configured": bool(cfg.smtp_password),
         "from_name": cfg.from_name, "from_email": cfg.from_email, "reply_to": cfg.reply_to,
         "status": cfg.status, "daily_limit": cfg.daily_limit, "rate_per_hour": cfg.rate_per_hour,
     }
@@ -503,7 +504,8 @@ def update_config(body: ConfigUpdate, db: Session = Depends(get_db),
     if body.smtp_host is not None:     cfg.smtp_host = body.smtp_host
     if body.smtp_port is not None:     cfg.smtp_port = body.smtp_port
     if body.smtp_user is not None:     cfg.smtp_user = body.smtp_user
-    if body.smtp_password is not None: cfg.smtp_password = body.smtp_password
+    if body.smtp_password is not None and body.smtp_password.strip():
+        cfg.smtp_password = body.smtp_password
     if body.from_name is not None:     cfg.from_name = body.from_name
     if body.from_email is not None:    cfg.from_email = body.from_email
     if body.reply_to is not None:      cfg.reply_to = body.reply_to

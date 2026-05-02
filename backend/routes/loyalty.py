@@ -1,6 +1,6 @@
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
@@ -9,6 +9,7 @@ from backend.models.loyalty import (
     LoyaltyBenefit, LoyaltyCycle, Referral,
 )
 from backend.routes.admin_auth import get_current_admin
+from backend.routes.customer_access import require_customer_id_or_admin
 from backend.schemas.loyalty import (
     LoyaltyLevelCreate, LoyaltyLevelOut,
     LoyaltyRewardCreate, LoyaltyRewardOut,
@@ -126,9 +127,22 @@ def delete_benefit(benefit_id: str, db: Session = Depends(get_db), _=Depends(get
 
 
 @router.post("/benefits/redeem")
-def use_benefit(body: RedeemBenefitIn, db: Session = Depends(get_db)):
+def use_benefit(
+    body: RedeemBenefitIn,
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_customer_phone: str | None = Header(default=None),
+    x_customer_email: str | None = Header(default=None),
+):
     if not get_loyalty_settings(db).enabled:
         raise HTTPException(403, "Programa de fidelidade desativado.")
+    require_customer_id_or_admin(
+        body.customer_id,
+        db,
+        authorization,
+        x_customer_phone,
+        x_customer_email,
+    )
     result = redeem_benefit(body.customer_id, body.benefit_id, body.order_id, db)
     if not result["success"]:
         raise HTTPException(400, result["message"])
@@ -200,9 +214,22 @@ def delete_rule(rule_id: str, db: Session = Depends(get_db), _=Depends(get_curre
 # ── Customer account ──────────────────────────────────────────────────────────
 
 @router.get("/account/{customer_id}", response_model=CustomerLoyaltyOut)
-def get_account(customer_id: str, db: Session = Depends(get_db)):
+def get_account(
+    customer_id: str,
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_customer_phone: str | None = Header(default=None),
+    x_customer_email: str | None = Header(default=None),
+):
     if not get_loyalty_settings(db).enabled:
         raise HTTPException(403, "Programa de fidelidade desativado.")
+    require_customer_id_or_admin(
+        customer_id,
+        db,
+        authorization,
+        x_customer_phone,
+        x_customer_email,
+    )
     account = get_customer_account(customer_id, db)
     if not account:
         raise HTTPException(404, "Conta de fidelidade não encontrada.")
@@ -219,9 +246,22 @@ def get_account(customer_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/redeem", status_code=200)
-def redeem(body: RedeemRewardIn, db: Session = Depends(get_db)):
+def redeem(
+    body: RedeemRewardIn,
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_customer_phone: str | None = Header(default=None),
+    x_customer_email: str | None = Header(default=None),
+):
     if not get_loyalty_settings(db).enabled:
         raise HTTPException(403, "Programa de fidelidade desativado.")
+    require_customer_id_or_admin(
+        body.customer_id,
+        db,
+        authorization,
+        x_customer_phone,
+        x_customer_email,
+    )
     result = redeem_reward(body.customer_id, body.reward_id, db)
     if not result["success"]:
         raise HTTPException(400, result["message"])
@@ -276,21 +316,47 @@ def list_cycles(customer_id: str, db: Session = Depends(get_db), _=Depends(get_c
 # ── Referrals ─────────────────────────────────────────────────────────────────
 
 @router.get("/referral/{customer_id}", response_model=ReferralOut)
-def get_referral(customer_id: str, db: Session = Depends(get_db)):
+def get_referral(
+    customer_id: str,
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_customer_phone: str | None = Header(default=None),
+    x_customer_email: str | None = Header(default=None),
+):
     if not get_loyalty_settings(db).enabled:
         raise HTTPException(403, "Programa de fidelidade desativado.")
+    require_customer_id_or_admin(
+        customer_id,
+        db,
+        authorization,
+        x_customer_phone,
+        x_customer_email,
+    )
     ref = get_or_create_referral_code(customer_id, db)
     return ref
 
 
 @router.post("/referral/complete")
-def complete_ref(body: dict, db: Session = Depends(get_db)):
+def complete_ref(
+    body: dict,
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_customer_phone: str | None = Header(default=None),
+    x_customer_email: str | None = Header(default=None),
+):
     if not get_loyalty_settings(db).enabled:
         raise HTTPException(403, "Programa de fidelidade desativado.")
     code = body.get("referral_code")
     referred_id = body.get("customer_id")
     if not code or not referred_id:
         raise HTTPException(422, "referral_code e customer_id obrigatórios.")
+    require_customer_id_or_admin(
+        referred_id,
+        db,
+        authorization,
+        x_customer_phone,
+        x_customer_email,
+    )
     result = complete_referral(code, referred_id, db)
     if not result["success"]:
         raise HTTPException(400, result["message"])

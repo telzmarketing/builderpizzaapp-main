@@ -47,6 +47,18 @@ def _log(db: Session, actor: AdminUser, action: str, target_id: str,
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
+def _is_master(user: AdminUser, db: Session) -> bool:
+    if not user.role_id:
+        return True
+    role = db.query(Role).filter(Role.id == user.role_id).first()
+    return role is not None and role.name.lower() == "master"
+
+
+def _require_master(user: AdminUser, db: Session) -> None:
+    if not _is_master(user, db):
+        raise HTTPException(403, "Acesso restrito a usuarios master.")
+
+
 class AdminUserCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=200)
     email: EmailStr
@@ -74,7 +86,11 @@ class ResetPasswordIn(BaseModel):
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("")
-def list_admin_users(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def list_admin_users(
+    db: Session = Depends(get_db),
+    current: AdminUser = Depends(get_current_admin),
+):
+    _require_master(current, db)
     users = db.query(AdminUser).order_by(AdminUser.created_at).all()
     result = []
     for u in users:
@@ -96,6 +112,7 @@ def create_admin_user(
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
+    _require_master(current, db)
     if db.query(AdminUser).filter(AdminUser.email == body.email.lower().strip()).first():
         raise HTTPException(400, "E-mail já cadastrado.")
     if body.role_id and not db.query(Role).filter(Role.id == body.role_id).first():
@@ -128,6 +145,7 @@ def update_admin_user(
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
+    _require_master(current, db)
     user = db.query(AdminUser).filter(AdminUser.id == user_id).first()
     if not user:
         raise HTTPException(404, "Usuário não encontrado.")
@@ -171,6 +189,7 @@ def toggle_user_status(
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
+    _require_master(current, db)
     user = db.query(AdminUser).filter(AdminUser.id == user_id).first()
     if not user:
         raise HTTPException(404, "Usuário não encontrado.")
@@ -194,6 +213,7 @@ def reset_password(
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
+    _require_master(current, db)
     user = db.query(AdminUser).filter(AdminUser.id == user_id).first()
     if not user:
         raise HTTPException(404, "Usuário não encontrado.")
@@ -211,6 +231,7 @@ def delete_admin_user(
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
+    _require_master(current, db)
     if user_id == current.id:
         raise HTTPException(400, "Você não pode excluir sua própria conta.")
     user = db.query(AdminUser).filter(AdminUser.id == user_id).first()

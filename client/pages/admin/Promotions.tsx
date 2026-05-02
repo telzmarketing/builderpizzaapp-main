@@ -1,14 +1,33 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Trash2, Edit2 } from "lucide-react";
 import { useApp, Promotion } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import ImageUpload from "@/components/admin/ImageUpload";
 
 export default function AdminPromotions() {
-  const { promotions, addPromotion, updatePromotion, deletePromotion } = useApp();
+  const { promotions, loadAdminPromotions, addPromotion, updatePromotion, deletePromotion } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [loadingPromotions, setLoadingPromotions] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<Promotion>>({ title: "", subtitle: "", icon: "🍕", active: true });
+
+  useEffect(() => {
+    let mounted = true;
+    setLoadingPromotions(true);
+    setLoadError(null);
+    loadAdminPromotions()
+      .catch((err: unknown) => {
+        if (!mounted) return;
+        setLoadError(err instanceof Error ? err.message : "Erro ao carregar promocoes.");
+      })
+      .finally(() => {
+        if (mounted) setLoadingPromotions(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [loadAdminPromotions]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,6 +123,19 @@ export default function AdminPromotions() {
               </div>
             )}
 
+            {loadingPromotions && (
+              <div className="text-center py-12">
+                <p className="text-stone text-lg">Carregando promocoes...</p>
+              </div>
+            )}
+
+            {loadError && !loadingPromotions && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-red-200">
+                {loadError}
+              </div>
+            )}
+
+            {!loadingPromotions && !loadError && (
             <div className="space-y-4">
               {promotions.map((promotion) => (
                 <div key={promotion.id} className="bg-surface-02 rounded-xl p-6 border border-surface-03 flex items-center justify-between">
@@ -142,8 +174,9 @@ export default function AdminPromotions() {
                 </div>
               ))}
             </div>
+            )}
 
-            {promotions.length === 0 && (
+            {!loadingPromotions && !loadError && promotions.length === 0 && (
               <div className="text-center py-12">
                 <p className="text-stone text-lg">Nenhuma campanha cadastrada</p>
                 <button onClick={() => setShowForm(true)} className="mt-4 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-6 rounded-lg transition-colors inline-flex items-center gap-2">

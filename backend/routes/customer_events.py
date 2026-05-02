@@ -5,13 +5,16 @@ Endpoints públicos para receber eventos da loja.
 from __future__ import annotations
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
+from backend.models.admin import AdminUser
 from backend.models.customer_event import CustomerEvent
 from backend.schemas.customer_event import CustomerEventCreate, IdentifySessionRequest
 from backend.core.response import ok, created
+from backend.routes.admin_auth import get_current_admin
+from backend.routes.customer_access import require_customer_id_or_admin
 
 router = APIRouter(prefix="/customer-events", tags=["customer-events"])
 
@@ -50,7 +53,21 @@ EVENT_FRIENDLY_NAMES: dict[str, str] = {
 
 
 @router.post("", status_code=201)
-def register_event(body: CustomerEventCreate, db: Session = Depends(get_db)):
+def register_event(
+    body: CustomerEventCreate,
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_customer_phone: str | None = Header(default=None),
+    x_customer_email: str | None = Header(default=None),
+):
+    if body.customer_id:
+        require_customer_id_or_admin(
+            body.customer_id,
+            db,
+            authorization,
+            x_customer_phone,
+            x_customer_email,
+        )
     event = CustomerEvent(
         id=str(uuid.uuid4()),
         customer_id=body.customer_id,
@@ -82,7 +99,11 @@ def register_event(body: CustomerEventCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/by-session/{session_id}")
-def events_by_session(session_id: str, db: Session = Depends(get_db)):
+def events_by_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
     events = (
         db.query(CustomerEvent)
         .filter(CustomerEvent.session_id == session_id)
@@ -94,8 +115,21 @@ def events_by_session(session_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/identify")
-def identify_session(body: IdentifySessionRequest, db: Session = Depends(get_db)):
+def identify_session(
+    body: IdentifySessionRequest,
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_customer_phone: str | None = Header(default=None),
+    x_customer_email: str | None = Header(default=None),
+):
     """Vincula todos os eventos anônimos de uma session_id ao customer_id."""
+    require_customer_id_or_admin(
+        body.customer_id,
+        db,
+        authorization,
+        x_customer_phone,
+        x_customer_email,
+    )
     updated = (
         db.query(CustomerEvent)
         .filter(

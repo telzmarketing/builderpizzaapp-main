@@ -173,7 +173,7 @@ export default function ChatbotAI() {
         </div>
 
         <p className="text-stone text-xs">
-          As chaves são salvas no banco de dados. Por segurança, o painel mostra apenas uma prévia mascarada.
+          As chaves são salvas no banco de dados e no backend/.env. Por segurança, o painel mostra apenas uma prévia mascarada.
         </p>
       </div>
 

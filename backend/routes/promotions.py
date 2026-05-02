@@ -9,11 +9,12 @@ DELETE /promotions/{id}  → delete (ERP / admin)
 """
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from backend.core.response import ok, created, no_content, err_msg
 from backend.database import get_db
+from backend.models.admin import AdminUser
 from backend.models.promotion import Promotion
 from backend.routes.admin_auth import get_current_admin
 from backend.schemas.promotion import PromotionCreate, PromotionUpdate, PromotionOut
@@ -21,8 +22,16 @@ from backend.schemas.promotion import PromotionCreate, PromotionUpdate, Promotio
 router = APIRouter(prefix="/promotions", tags=["promotions"])
 
 
+def _require_admin(request: Request, db: Session) -> AdminUser:
+    return get_current_admin(
+        authorization=request.headers.get("authorization"),
+        db=db,
+    )
+
+
 @router.get("")
 def list_promotions(
+    request: Request,
     active_only: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
@@ -30,6 +39,9 @@ def list_promotions(
     List promotions. Pass ?active_only=true for the loja home banner.
     ERP/admin uses the full list (active_only=false).
     """
+    if not active_only:
+        _require_admin(request, db)
+
     q = db.query(Promotion)
     if active_only:
         q = q.filter(Promotion.active == True)  # noqa: E712
@@ -38,10 +50,12 @@ def list_promotions(
 
 
 @router.get("/{promo_id}")
-def get_promotion(promo_id: str, db: Session = Depends(get_db)):
+def get_promotion(promo_id: str, request: Request, db: Session = Depends(get_db)):
     promo = db.query(Promotion).filter(Promotion.id == promo_id).first()
     if not promo:
         return err_msg(f"Promoção '{promo_id}' não encontrada.", code="PromotionNotFound", status_code=404)
+    if not promo.active:
+        _require_admin(request, db)
     return ok(promo)
 
 

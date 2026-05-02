@@ -153,7 +153,11 @@ def me_permissions(
 # ── Roles ─────────────────────────────────────────────────────────────────────
 
 @router.get("/roles")
-def list_roles(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def list_roles(
+    db: Session = Depends(get_db),
+    current: AdminUser = Depends(get_current_admin),
+):
+    _require_master(current, db)
     roles = db.query(Role).order_by(Role.created_at).all()
     # Enrich with user count
     result = []
@@ -272,13 +276,21 @@ def duplicate_role(
 # ── Modules & Permissions ──────────────────────────────────────────────────────
 
 @router.get("/modules")
-def list_modules(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def list_modules(
+    db: Session = Depends(get_db),
+    current: AdminUser = Depends(get_current_admin),
+):
+    _require_master(current, db)
     mods = db.query(RbacModule).order_by(RbacModule.order_index).all()
     return ok([ModuleOut.model_validate(m) for m in mods])
 
 
 @router.get("/permissions")
-def list_permissions(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def list_permissions(
+    db: Session = Depends(get_db),
+    current: AdminUser = Depends(get_current_admin),
+):
+    _require_master(current, db)
     perms = db.query(RbacPermission).all()
     return ok([PermissionOut.model_validate(p) for p in perms])
 
@@ -289,8 +301,9 @@ def list_permissions(db: Session = Depends(get_db), _=Depends(get_current_admin)
 def get_role_permissions(
     role_id: str,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    current: AdminUser = Depends(get_current_admin),
 ):
+    _require_master(current, db)
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
         raise HTTPException(404, "Perfil não encontrado.")
@@ -335,8 +348,9 @@ def update_role_permissions(
 def get_user_permissions(
     user_id: str,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    current: AdminUser = Depends(get_current_admin),
 ):
+    _require_master(current, db)
     user = db.query(AdminUser).filter(AdminUser.id == user_id).first()
     if not user:
         raise HTTPException(404, "Usuário não encontrado.")
@@ -382,8 +396,9 @@ def list_audit_logs(
     limit: int = Query(100, le=500),
     offset: int = Query(0),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    current: AdminUser = Depends(get_current_admin),
 ):
+    _require_master(current, db)
     q = db.query(AdminAuditLog)
     if user_id:
         q = q.filter(AdminAuditLog.user_id == user_id)

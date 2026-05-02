@@ -290,7 +290,7 @@ def get_dashboard(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 
     # Pedidos com utm_medium = 'whatsapp' como proxy de pedidos gerados
     orders_gen = _q("SELECT COUNT(*) FROM orders WHERE utm_medium = 'whatsapp'")
-    revenue_gen = _qf("SELECT COALESCE(SUM(total_amount),0) FROM orders WHERE utm_medium = 'whatsapp'")
+    revenue_gen = _qf("SELECT COALESCE(SUM(total),0) FROM orders WHERE utm_medium = 'whatsapp'")
 
     return ok({
         "sent": sent,

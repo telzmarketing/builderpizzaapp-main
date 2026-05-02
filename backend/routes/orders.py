@@ -15,6 +15,8 @@ from backend.core.exceptions import DomainError
 from backend.core.response import ok, created, err
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
+from backend.routes.customer_access import require_customer_id_or_admin
+from backend.routes.order_access import require_order_or_admin
 from backend.models.order import Order, OrderStatus
 from backend.models.admin import AdminUser
 from backend.models.product import Product
@@ -160,7 +162,15 @@ def list_orders(
     db: Session = Depends(get_db),
 ):
     try:
-        if not customer_id:
+        if customer_id:
+            require_customer_id_or_admin(
+                customer_id,
+                db,
+                request.headers.get("authorization"),
+                request.headers.get("x-customer-phone"),
+                request.headers.get("x-customer-email"),
+            )
+        else:
             _require_admin(request, db)
         orders = OrderService(db).list(
             status=status.value if status else None,
@@ -227,17 +237,32 @@ def operational_report(
 
 
 @router.get("/{order_id}")
-def get_order(order_id: str, db: Session = Depends(get_db)):
+def get_order(order_id: str, request: Request, db: Session = Depends(get_db)):
     try:
         order = OrderService(db).get(order_id)
+        require_order_or_admin(
+            order,
+            db,
+            request.headers.get("authorization"),
+            request.headers.get("x-customer-phone"),
+            request.headers.get("x-customer-email"),
+        )
         return ok(_serialize_orders(db, [order])[0])
     except DomainError as exc:
         return err(exc)
 
 
 @router.get("/{order_id}/payment-status")
-def get_order_payment_status(order_id: str, db: Session = Depends(get_db)):
+def get_order_payment_status(order_id: str, request: Request, db: Session = Depends(get_db)):
     try:
+        order = OrderService(db).get(order_id)
+        require_order_or_admin(
+            order,
+            db,
+            request.headers.get("authorization"),
+            request.headers.get("x-customer-phone"),
+            request.headers.get("x-customer-email"),
+        )
         return ok(PaymentService(db).payment_status(order_id))
     except DomainError as exc:
         return err(exc)

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X, Send, Minimize2, UserCheck } from "lucide-react";
+import { MessageCircle, X, Send, Minimize2, UserCheck } from "lucide-react";
 import {
   chatbotPublicApi,
   type ChatbotSettings,
@@ -265,7 +265,9 @@ export default function ChatbotWidget() {
           <div className="flex items-center justify-between px-4 py-3 flex-shrink-0"
             style={{ background: config.cor_primaria }}>
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-sm flex-shrink-0">💬</div>
+              <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-sm flex-shrink-0">
+                <MessageCircle size={15} className="text-white" />
+              </div>
               <div>
                 <p className="text-white text-sm font-bold leading-tight">{config.nome_bot}</p>
                 {awaiting
@@ -366,7 +368,7 @@ export default function ChatbotWidget() {
           style={{ background: config.cor_primaria }}
           aria-label={`Abrir chat com ${config.nome_bot}`}
         >
-          💬
+          <MessageCircle size={22} className="text-white" />
         </button>
       ) : (
         <button

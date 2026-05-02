@@ -5,12 +5,13 @@ import {
   MapPin, Star, ShoppingCart, Eye, MessageSquare, Tag, Gift,
   CreditCard, Package, ChevronDown, ChevronUp, Loader2, AlertCircle,
   TrendingUp, Calendar, DollarSign, Repeat,
+  type LucideIcon,
 } from "lucide-react";
 import { customersApi, ApiCustomer, ApiCustomerOrder, ApiCustomerEvent, ApiCustomerSummary } from "@/lib/api";
 
 type Tab = "overview" | "orders" | "timeline" | "behavior";
 
-const EVENT_CATEGORIES: Record<string, { label: string; icon: React.FC<{ size?: number; className?: string }>; color: string }> = {
+const EVENT_CATEGORIES: Record<string, { label: string; icon: LucideIcon; color: string }> = {
   order: { label: "Pedido", icon: ShoppingBag, color: "text-green-400" },
   cart: { label: "Carrinho", icon: ShoppingCart, color: "text-yellow-400" },
   checkout: { label: "Checkout", icon: CreditCard, color: "text-blue-400" },
@@ -45,7 +46,7 @@ function EventIcon({ eventType, size = 16 }: { eventType: string; size?: number 
 
 function StatCard({ label, value, sub, icon: Icon, color = "text-gold" }: {
   label: string; value: string | number; sub?: string;
-  icon: React.FC<{ size?: number; className?: string }>; color?: string;
+  icon: LucideIcon; color?: string;
 }) {
   return (
     <div className="bg-surface-02 rounded-xl p-4 border border-surface-03 flex items-start gap-3">
@@ -79,6 +80,9 @@ function OrderCard({ order }: { order: ApiCustomerOrder }) {
   const date = new Date(order.created_at);
   const dateStr = date.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
   const timeStr = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const deliveryAddress = [order.delivery_street, order.delivery_complement, order.delivery_city]
+    .filter(Boolean)
+    .join(" - ");
 
   return (
     <div className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
@@ -129,19 +133,19 @@ function OrderCard({ order }: { order: ApiCustomerOrder }) {
             </div>
           )}
           <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1 border-t border-surface-03/50 text-xs text-stone/50">
-            {order.delivery_address && (
+            {deliveryAddress && (
               <span className="flex items-center gap-1">
-                <MapPin size={11} /> {order.delivery_address}
+                <MapPin size={11} /> {deliveryAddress}
               </span>
             )}
-            {order.payment_method && (
+            {order.payment_status && (
               <span className="flex items-center gap-1">
-                <CreditCard size={11} /> {order.payment_method}
+                <CreditCard size={11} /> {order.payment_status}
               </span>
             )}
-            {order.coupon_code && (
+            {order.coupon_id && (
               <span className="flex items-center gap-1">
-                <Tag size={11} /> Cupom: {order.coupon_code}
+                <Tag size={11} /> Cupom aplicado
               </span>
             )}
           </div>
@@ -211,7 +215,7 @@ export default function ClienteDetalhe() {
     ? events.filter(ev => getEventCategory(ev.event_type) === eventFilter)
     : events;
 
-  const tabs: { key: Tab; label: string; icon: React.FC<{ size?: number; className?: string }> }[] = [
+  const tabs: { key: Tab; label: string; icon: LucideIcon }[] = [
     { key: "overview", label: "Visão Geral", icon: BarChart2 },
     { key: "orders", label: "Pedidos", icon: ShoppingBag },
     { key: "timeline", label: "Linha do Tempo", icon: Clock },
@@ -240,8 +244,26 @@ export default function ClienteDetalhe() {
     );
   }
 
-  const bsConfig = behaviorStatusConfig(summary?.behavior_status ?? "visitante");
+  const behaviorStatus = summary?.behavior.status ?? "visitante";
+  const bsConfig = behaviorStatusConfig(behaviorStatus);
   const joinDate = new Date(customer.created_at ?? "").toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  const defaultAddress = customer.addresses?.find((address) => address.is_default) ?? customer.addresses?.[0];
+  const addressText = defaultAddress
+    ? [defaultAddress.street, defaultAddress.number, defaultAddress.neighborhood, defaultAddress.city]
+        .filter(Boolean)
+        .join(", ")
+    : null;
+  const loyaltyPoints = (customer as ApiCustomer & { loyalty_points?: number | null }).loyalty_points;
+  const totalOrders = summary?.orders.total ?? 0;
+  const totalSpent = summary?.orders.total_spent ?? 0;
+  const averageTicket = summary?.orders.avg_ticket ?? 0;
+  const lastOrderAt = summary?.orders.last_order_at ?? null;
+  const productViews = summary?.behavior.products_viewed ?? 0;
+  const cartEvents = summary?.behavior.cart_abandonments ?? 0;
+  const checkoutEvents = summary?.behavior.checkout_abandonments ?? 0;
+  const campaignEvents = events.filter((event) => getEventCategory(event.event_type) === "campaign").length;
+  const couponEvents = events.filter((event) => getEventCategory(event.event_type) === "coupon").length;
+  const cancelledOrders = summary?.orders.cancelled ?? 0;
 
   return (
     <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
@@ -271,9 +293,9 @@ export default function ClienteDetalhe() {
                 <Phone size={13} /> {customer.phone}
               </span>
             )}
-            {customer.address && (
+            {addressText && (
               <span className="flex items-center gap-1.5 text-stone/60 text-sm">
-                <MapPin size={13} /> {customer.address}
+                <MapPin size={13} /> {addressText}
               </span>
             )}
             <span className="flex items-center gap-1.5 text-stone/50 text-xs">
@@ -281,11 +303,11 @@ export default function ClienteDetalhe() {
             </span>
           </div>
         </div>
-        {customer.loyalty_points !== undefined && customer.loyalty_points !== null && (
+        {loyaltyPoints !== undefined && loyaltyPoints !== null && (
           <div className="flex items-center gap-2 bg-gold/10 px-4 py-2 rounded-xl border border-gold/20">
             <Gift size={16} className="text-gold" />
             <div>
-              <p className="text-gold font-bold text-lg leading-tight">{customer.loyalty_points}</p>
+              <p className="text-gold font-bold text-lg leading-tight">{loyaltyPoints}</p>
               <p className="text-gold/70 text-xs">pontos</p>
             </div>
           </div>
@@ -310,17 +332,17 @@ export default function ClienteDetalhe() {
       {tab === "overview" && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard label="Total de pedidos" value={summary?.total_orders ?? 0} icon={ShoppingBag} color="text-green-400" />
-            <StatCard label="Ticket médio" value={`R$ ${((summary?.average_ticket ?? 0)).toFixed(2).replace(".", ",")}`} icon={DollarSign} color="text-gold" />
-            <StatCard label="Total gasto" value={`R$ ${((summary?.total_spent ?? 0)).toFixed(2).replace(".", ",")}`} icon={TrendingUp} color="text-blue-400" />
+            <StatCard label="Total de pedidos" value={totalOrders} icon={ShoppingBag} color="text-green-400" />
+            <StatCard label="Ticket médio" value={`R$ ${averageTicket.toFixed(2).replace(".", ",")}`} icon={DollarSign} color="text-gold" />
+            <StatCard label="Total gasto" value={`R$ ${totalSpent.toFixed(2).replace(".", ",")}`} icon={TrendingUp} color="text-blue-400" />
             <StatCard
               label="Último pedido"
-              value={summary?.last_order_at ? new Date(summary.last_order_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) : "—"}
+              value={lastOrderAt ? new Date(lastOrderAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) : "—"}
               icon={Calendar}
               color="text-purple-400"
             />
           </div>
-          {summary?.behavior_status && (
+          {summary && (
             <div className="bg-surface-02 rounded-xl border border-surface-03 p-4">
               <h3 className="text-parchment font-medium mb-3">Status Comportamental</h3>
               <div className="flex items-start gap-3">
@@ -334,12 +356,12 @@ export default function ClienteDetalhe() {
               <h3 className="text-parchment font-medium">Resumo de Atividade</h3>
               <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                 {[
-                  { label: "Visualizações de produto", value: summary.product_views ?? 0 },
-                  { label: "Carrinhos iniciados", value: summary.cart_events ?? 0 },
-                  { label: "Checkouts iniciados", value: summary.checkout_events ?? 0 },
-                  { label: "Interações com campanhas", value: summary.campaign_events ?? 0 },
-                  { label: "Cupons utilizados", value: summary.coupon_events ?? 0 },
-                  { label: "Pedidos cancelados", value: summary.cancelled_orders ?? 0 },
+                  { label: "Visualizações de produto", value: productViews },
+                  { label: "Carrinhos abandonados", value: cartEvents },
+                  { label: "Checkouts abandonados", value: checkoutEvents },
+                  { label: "Interações com campanhas", value: campaignEvents },
+                  { label: "Eventos de cupom", value: couponEvents },
+                  { label: "Pedidos cancelados", value: cancelledOrders },
                 ].map(({ label, value }) => (
                   <div key={label} className="flex justify-between items-center">
                     <span className="text-stone/60">{label}</span>
@@ -427,48 +449,48 @@ export default function ClienteDetalhe() {
         <div className="space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {[
-              { label: "Visualizações", value: summary?.product_views ?? 0, icon: Eye, color: "text-purple-400" },
-              { label: "Carrinhos", value: summary?.cart_events ?? 0, icon: ShoppingCart, color: "text-yellow-400" },
-              { label: "Checkouts", value: summary?.checkout_events ?? 0, icon: CreditCard, color: "text-blue-400" },
-              { label: "Campanhas", value: summary?.campaign_events ?? 0, icon: Star, color: "text-orange-400" },
-              { label: "Cupons", value: summary?.coupon_events ?? 0, icon: Tag, color: "text-pink-400" },
+              { label: "Visualizações", value: productViews, icon: Eye, color: "text-purple-400" },
+              { label: "Carrinhos", value: cartEvents, icon: ShoppingCart, color: "text-yellow-400" },
+              { label: "Checkouts", value: checkoutEvents, icon: CreditCard, color: "text-blue-400" },
+              { label: "Campanhas", value: campaignEvents, icon: Star, color: "text-orange-400" },
+              { label: "Cupons", value: couponEvents, icon: Tag, color: "text-pink-400" },
               { label: "Total de eventos", value: events.length, icon: Repeat, color: "text-gold" },
             ].map(stat => (
               <StatCard key={stat.label} label={stat.label} value={stat.value} icon={stat.icon} color={stat.color} />
             ))}
           </div>
-          {summary && summary.total_orders > 0 && (
+          {summary && totalOrders > 0 && (
             <div className="bg-surface-02 rounded-xl border border-surface-03 p-4 space-y-3">
               <h3 className="text-parchment font-medium">Taxa de Conversão</h3>
-              {summary.cart_events > 0 && (
+              {cartEvents > 0 && (
                 <div>
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-stone/60">Carrinho → Pedido</span>
-                    <span className="text-parchment font-medium">{Math.min(100, Math.round((summary.total_orders / summary.cart_events) * 100))}%</span>
+                    <span className="text-parchment font-medium">{Math.min(100, Math.round((totalOrders / cartEvents) * 100))}%</span>
                   </div>
                   <div className="h-1.5 bg-surface-03 rounded-full overflow-hidden">
-                    <div className="h-full bg-green-500 rounded-full" style={{ width: `${Math.min(100, Math.round((summary.total_orders / summary.cart_events) * 100))}%` }} />
+                    <div className="h-full bg-green-500 rounded-full" style={{ width: `${Math.min(100, Math.round((totalOrders / cartEvents) * 100))}%` }} />
                   </div>
                 </div>
               )}
-              {summary.checkout_events > 0 && (
+              {checkoutEvents > 0 && (
                 <div>
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-stone/60">Checkout → Pedido</span>
-                    <span className="text-parchment font-medium">{Math.min(100, Math.round((summary.total_orders / summary.checkout_events) * 100))}%</span>
+                    <span className="text-parchment font-medium">{Math.min(100, Math.round((totalOrders / checkoutEvents) * 100))}%</span>
                   </div>
                   <div className="h-1.5 bg-surface-03 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.min(100, Math.round((summary.total_orders / summary.checkout_events) * 100))}%` }} />
+                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.min(100, Math.round((totalOrders / checkoutEvents) * 100))}%` }} />
                   </div>
                 </div>
               )}
             </div>
           )}
-          {customer.loyalty_points !== undefined && customer.loyalty_points !== null && (
+          {loyaltyPoints !== undefined && loyaltyPoints !== null && (
             <div className="bg-gold/10 rounded-xl border border-gold/20 p-4 flex items-center gap-4">
               <Gift size={24} className="text-gold flex-shrink-0" />
               <div>
-                <p className="text-parchment font-semibold">{customer.loyalty_points} pontos de fidelidade</p>
+                <p className="text-parchment font-semibold">{loyaltyPoints} pontos de fidelidade</p>
                 <p className="text-gold/70 text-sm">Acumulados no programa de fidelidade</p>
               </div>
             </div>

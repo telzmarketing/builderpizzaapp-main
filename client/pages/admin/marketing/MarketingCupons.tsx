@@ -28,6 +28,19 @@ interface Coupon {
   created_at: string;
 }
 
+type CouponForm = {
+  code: string;
+  description: string;
+  icon: string;
+  coupon_type: Coupon["coupon_type"];
+  discount_value: number;
+  min_order_value: number;
+  max_uses: string | number;
+  max_uses_per_customer: string | number;
+  expiry_date: string;
+  active: boolean;
+};
+
 interface UsageRow {
   id: string;
   coupon_id: string;
@@ -39,11 +52,11 @@ interface UsageRow {
 
 const IC = "w-full bg-surface-03 border border-surface-03 rounded-xl px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold";
 
-const emptyForm = () => ({
+const emptyForm = (): CouponForm => ({
   code: "",
   description: "",
   icon: "🎟️",
-  coupon_type: "percentage" as const,
+  coupon_type: "percentage",
   discount_value: 10,
   min_order_value: 0,
   max_uses: "" as string | number,

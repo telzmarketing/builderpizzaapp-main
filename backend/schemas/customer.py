@@ -48,6 +48,13 @@ class CustomerOut(CustomerBase):
     lgpd_policy_version: Optional[str] = None
     marketing_email_consent: bool = False
     marketing_whatsapp_consent: bool = False
+    crm_status: Optional[str] = None
+    source: Optional[str] = None
+    notes: Optional[str] = None
+    tags: Optional[str] = None
+    last_contact_at: Optional[datetime] = None
+    utm_source: Optional[str] = None
+    utm_campaign: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     addresses: list[AddressOut] = []

@@ -21,7 +21,9 @@ from backend.core.exceptions import DomainError
 from backend.core.response import ok, created, err, err_msg
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
+from backend.routes.order_access import require_order_or_admin
 from backend.models.admin import AdminUser
+from backend.models.order import Order
 from backend.schemas.payment import PaymentCreate, WebhookPayload
 from backend.services.payment_service import PaymentService
 
@@ -31,7 +33,7 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 # ── Create payment ────────────────────────────────────────────────────────────
 
 @router.post("/create", status_code=201)
-def create_payment(body: PaymentCreate, db: Session = Depends(get_db)):
+def create_payment(body: PaymentCreate, request: Request, db: Session = Depends(get_db)):
     """
     Initiate a payment for a pending order.
 
@@ -46,6 +48,15 @@ def create_payment(body: PaymentCreate, db: Session = Depends(get_db)):
       - Card: payment_url (checkout link)
     """
     try:
+        order = db.query(Order).filter(Order.id == body.order_id).first()
+        if order:
+            require_order_or_admin(
+                order,
+                db,
+                request.headers.get("authorization"),
+                request.headers.get("x-customer-phone"),
+                request.headers.get("x-customer-email"),
+            )
         payment = PaymentService(db).create(body)
         return created(payment, "Pagamento iniciado. Aguardando confirmação.")
     except DomainError as exc:
@@ -60,9 +71,18 @@ def get_public_key(db: Session = Depends(get_db)):
 # ── Get payment ───────────────────────────────────────────────────────────────
 
 @router.get("/{order_id}")
-def get_payment(order_id: str, db: Session = Depends(get_db)):
+def get_payment(order_id: str, request: Request, db: Session = Depends(get_db)):
     """Return the payment record associated with an order."""
     try:
+        order = db.query(Order).filter(Order.id == order_id).first()
+        if order:
+            require_order_or_admin(
+                order,
+                db,
+                request.headers.get("authorization"),
+                request.headers.get("x-customer-phone"),
+                request.headers.get("x-customer-email"),
+            )
         return ok(PaymentService(db).get_by_order(order_id))
     except DomainError as exc:
         return err(exc)

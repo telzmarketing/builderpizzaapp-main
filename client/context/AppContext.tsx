@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { getTrackingData } from "@/lib/tracking";
 import {
   productsApi,
@@ -270,6 +270,7 @@ interface AppContextType {
 
   // Promotions
   promotions: Promotion[];
+  loadAdminPromotions: () => Promise<void>;
   addPromotion: (promotion: Omit<Promotion, "id">) => Promise<void>;
   updatePromotion: (id: string, data: Partial<Promotion>) => Promise<void>;
   deletePromotion: (id: string) => Promise<void>;
@@ -486,7 +487,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           productsApi.list(true),
           promotionsApi.list(true),
           productsApi.getMultiFlavorsConfig(),
-          couponsApi.list(),
+          couponsApi.publicList(),
           loyaltyApi.settings(),
           loyaltyApi.levels(),
           loyaltyApi.rewards(),
@@ -707,6 +708,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Promotions ────────────────────────────────────────────────────────────
 
+  const loadAdminPromotions = useCallback(async () => {
+    const allPromotions = await promotionsApi.list(false);
+    setPromotions(allPromotions.map(apiPromotionToPromotion));
+  }, []);
+
   const addPromotion = async (data: Omit<Promotion, "id">) => {
     const created = await promotionsApi.create({
       title: data.title,
@@ -807,7 +813,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     products, addProduct, updateProduct, deleteProduct,
     cart, addToCart, updateCartItem, removeFromCart, clearCart,
     cartSubtotal, cartDeliveryFee, cartTotal,
-    promotions, addPromotion, updatePromotion, deletePromotion,
+    promotions, loadAdminPromotions, addPromotion, updatePromotion, deletePromotion,
     campaignBanners,
     orders, setOrders, updateOrderStatus,
     coupons, addCoupon, updateCoupon, deleteCoupon,

@@ -23,7 +23,6 @@ _IMAGE_TYPES = {
     "image/png",
     "image/gif",
     "image/webp",
-    "image/svg+xml",
 }
 _VIDEO_TYPES = {
     "video/mp4",
@@ -40,7 +39,6 @@ _EXT_MAP = {
     "image/png":      "png",
     "image/gif":      "gif",
     "image/webp":     "webp",
-    "image/svg+xml":  "svg",
     "video/mp4":      "mp4",
     "video/webm":     "webm",
     "video/quicktime": "mov",
@@ -55,7 +53,7 @@ async def upload_image(
     """
     Upload an image and save it permanently under the project-root ``uploads/`` directory.
 
-    - Accepts: jpeg, png, gif, webp, svg+xml
+    - Accepts: jpeg, png, gif, webp, mp4, webm, mov
     - Maximum file size: 5 MB
     - Returns: ``{ "url": "/uploads/<uuid>.<ext>" }``
     """
@@ -63,7 +61,7 @@ async def upload_image(
     content_type = (file.content_type or "").lower()
     if content_type not in _ALLOWED_TYPES:
         return err_msg(
-            "Tipo de arquivo não permitido. Use JPEG, PNG, GIF, WebP ou SVG para imagens, ou MP4, WebM, MOV para vídeos.",
+            "Tipo de arquivo nao permitido. Use JPEG, PNG, GIF ou WebP para imagens, ou MP4, WebM, MOV para videos.",
             code="InvalidFileType",
             status_code=400,
         )

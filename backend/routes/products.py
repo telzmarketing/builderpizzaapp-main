@@ -1,9 +1,10 @@
 import json
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
+from backend.models.admin import AdminUser
 from backend.models.product import Product, MultiFlavorsConfig, ProductSize, ProductCrustType, ProductDrinkVariant
 from backend.models.product_promotion import ProductPromotion, ProductPromotionCombination
 from backend.schemas.product import (
@@ -21,6 +22,13 @@ from backend.services import product_category_service
 from backend.services.product_pricing_service import ProductPricingService
 
 router = APIRouter(prefix="/products", tags=["products"])
+
+
+def _require_admin(request: Request, db: Session) -> AdminUser:
+    return get_current_admin(
+        authorization=request.headers.get("authorization"),
+        db=db,
+    )
 
 
 def _ensure_weekdays(days: list[int] | None) -> list[int]:
@@ -128,7 +136,13 @@ def update_multi_flavors_config(body: MultiFlavorsConfigUpdate, db: Session = De
 
 
 @router.get("/categories", response_model=list[ProductCategoryOut])
-def list_categories(active_only: bool = False, db: Session = Depends(get_db)):
+def list_categories(
+    request: Request,
+    active_only: bool = False,
+    db: Session = Depends(get_db),
+):
+    if not active_only:
+        _require_admin(request, db)
     return product_category_service.list_categories(db, active_only=active_only)
 
 
@@ -148,7 +162,13 @@ def delete_category(category_id: str, db: Session = Depends(get_db), _=Depends(g
 
 
 @router.get("", response_model=list[ProductOut])
-def list_products(active_only: bool = True, db: Session = Depends(get_db)):
+def list_products(
+    request: Request,
+    active_only: bool = True,
+    db: Session = Depends(get_db),
+):
+    if not active_only:
+        _require_admin(request, db)
     q = db.query(Product)
     if active_only:
         q = q.filter(Product.active == True)  # noqa: E712
@@ -157,10 +177,12 @@ def list_products(active_only: bool = True, db: Session = Depends(get_db)):
 
 
 @router.get("/{product_id}", response_model=ProductOut)
-def get_product(product_id: str, db: Session = Depends(get_db)):
+def get_product(product_id: str, request: Request, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
+    if not product.active:
+        _require_admin(request, db)
     return _product_payload(product, db)
 
 
@@ -329,11 +351,21 @@ def delete_product(product_id: str, db: Session = Depends(get_db), _=Depends(get
 
 
 @router.get("/{product_id}/sizes", response_model=list[ProductSizeOut])
-def list_sizes(product_id: str, db: Session = Depends(get_db)):
+def list_sizes(
+    product_id: str,
+    request: Request,
+    active_only: bool = True,
+    db: Session = Depends(get_db),
+):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
-    return db.query(ProductSize).filter(ProductSize.product_id == product_id).order_by(ProductSize.sort_order).all()
+    if not active_only or not product.active:
+        _require_admin(request, db)
+    q = db.query(ProductSize).filter(ProductSize.product_id == product_id)
+    if active_only:
+        q = q.filter(ProductSize.active == True)  # noqa: E712
+    return q.order_by(ProductSize.sort_order).all()
 
 
 @router.post("/{product_id}/sizes", response_model=ProductSizeOut, status_code=201)
@@ -370,16 +402,21 @@ def delete_size(product_id: str, size_id: str, db: Session = Depends(get_db), _=
 
 
 @router.get("/{product_id}/crusts", response_model=list[ProductCrustTypeOut])
-def list_crusts(product_id: str, db: Session = Depends(get_db)):
+def list_crusts(
+    product_id: str,
+    request: Request,
+    active_only: bool = True,
+    db: Session = Depends(get_db),
+):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
-    return (
-        db.query(ProductCrustType)
-        .filter(ProductCrustType.product_id == product_id)
-        .order_by(ProductCrustType.sort_order)
-        .all()
-    )
+    if not active_only or not product.active:
+        _require_admin(request, db)
+    q = db.query(ProductCrustType).filter(ProductCrustType.product_id == product_id)
+    if active_only:
+        q = q.filter(ProductCrustType.active == True)  # noqa: E712
+    return q.order_by(ProductCrustType.sort_order).all()
 
 
 @router.post("/{product_id}/crusts", response_model=ProductCrustTypeOut, status_code=201)
@@ -416,16 +453,21 @@ def delete_crust(product_id: str, crust_id: str, db: Session = Depends(get_db), 
 
 
 @router.get("/{product_id}/drink-variants", response_model=list[ProductDrinkVariantOut])
-def list_drink_variants(product_id: str, db: Session = Depends(get_db)):
+def list_drink_variants(
+    product_id: str,
+    request: Request,
+    active_only: bool = True,
+    db: Session = Depends(get_db),
+):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
-    return (
-        db.query(ProductDrinkVariant)
-        .filter(ProductDrinkVariant.product_id == product_id)
-        .order_by(ProductDrinkVariant.sort_order)
-        .all()
-    )
+    if not active_only or not product.active:
+        _require_admin(request, db)
+    q = db.query(ProductDrinkVariant).filter(ProductDrinkVariant.product_id == product_id)
+    if active_only:
+        q = q.filter(ProductDrinkVariant.active == True)  # noqa: E712
+    return q.order_by(ProductDrinkVariant.sort_order).all()
 
 
 @router.post("/{product_id}/drink-variants", response_model=ProductDrinkVariantOut, status_code=201)

@@ -17,6 +17,13 @@ class Customer(Base):
     lgpd_policy_version = Column(String(20), nullable=True)
     marketing_email_consent = Column(Boolean, default=False)
     marketing_whatsapp_consent = Column(Boolean, default=False)
+    crm_status = Column(String(50), default="lead")
+    source = Column(String(100), nullable=True)
+    notes = Column(Text, nullable=True)
+    tags = Column(Text, default="[]")
+    last_contact_at = Column(DateTime(timezone=True), nullable=True)
+    utm_source = Column(String(100), nullable=True)
+    utm_campaign = Column(String(200), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))

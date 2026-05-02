@@ -12,6 +12,8 @@ dist
 dist-ssr
 *.local
 .tools/
+.venv/
+backend/.venv/
 __pycache__/
 *.py[cod]
 
