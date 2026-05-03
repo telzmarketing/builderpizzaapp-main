@@ -2048,6 +2048,122 @@ export const siteConfigApi = {
     put("/admin/site-config", content),
 };
 
+export type ApiBIPeriod = "today" | "7d" | "30d" | "90d" | "month" | "previous_month";
+
+export interface ApiBIKpi {
+  key: string;
+  label: string;
+  value: number;
+  unit: "number" | "currency" | "percent" | string;
+  helper?: string | null;
+}
+
+export interface ApiBITimePoint {
+  label: string;
+  date?: string | null;
+  revenue: number;
+  orders: number;
+  average_ticket: number;
+}
+
+export interface ApiBIProduct {
+  product_id?: string | null;
+  name: string;
+  category?: string | null;
+  total_orders: number;
+  quantity_sold: number;
+  total_revenue: number;
+  share_pct: number;
+  is_top_20_percent: boolean;
+}
+
+export interface ApiBICustomerSegment {
+  key: string;
+  name: string;
+  description: string;
+  total_customers: number;
+}
+
+export interface ApiBITopCustomer {
+  customer_id: string;
+  name: string;
+  total_orders: number;
+  total_spent: number;
+  avg_ticket: number;
+  last_order_at?: string | null;
+}
+
+export interface ApiBIFunnelStep {
+  key: string;
+  label: string;
+  value: number;
+  conversion_pct: number;
+}
+
+export interface ApiBIInsight {
+  id: string;
+  insight_type: string;
+  title: string;
+  description: string;
+  impact_level: "low" | "medium" | "high" | "critical";
+  recommendation: string;
+  actionable: boolean;
+  status: "active" | "resolved" | "ignored" | "postponed" | string;
+  persisted: boolean;
+}
+
+export interface ApiBIRecommendation {
+  id: string;
+  insight_id: string;
+  title: string;
+  priority: "low" | "medium" | "high" | "critical";
+  action: string;
+  reason: string;
+  expected_impact: string;
+  target_module: string;
+  persisted: boolean;
+}
+
+export interface ApiBIDashboard {
+  period: string;
+  date_from: string;
+  date_to: string;
+  generated_at: string;
+  kpis: ApiBIKpi[];
+  sales: ApiBITimePoint[];
+  products: ApiBIProduct[];
+  customer_segments: ApiBICustomerSegment[];
+  top_customers: ApiBITopCustomer[];
+  funnel: ApiBIFunnelStep[];
+  insights: ApiBIInsight[];
+  recommendations: ApiBIRecommendation[];
+}
+
+export interface ApiBIRunAnalysis {
+  status: string;
+  message: string;
+  insights: ApiBIInsight[];
+  recommendations: ApiBIRecommendation[];
+}
+
+function biQuery(params?: { period?: ApiBIPeriod; date_from?: string; date_to?: string }) {
+  const qs = new URLSearchParams();
+  if (params?.period) qs.set("period", params.period);
+  if (params?.date_from) qs.set("date_from", params.date_from);
+  if (params?.date_to) qs.set("date_to", params.date_to);
+  const query = qs.toString();
+  return query ? `?${query}` : "";
+}
+
+export const biApi = {
+  dashboard: (params?: { period?: ApiBIPeriod; date_from?: string; date_to?: string }) =>
+    get<ApiBIDashboard>(`/bi/dashboard${biQuery(params)}`),
+  runAnalysis: (params?: { period?: ApiBIPeriod; date_from?: string; date_to?: string }) =>
+    post<ApiBIRunAnalysis>(`/bi/run-analysis${biQuery(params)}`, {}),
+  updateInsightStatus: (insightId: string, status: "resolved" | "ignored" | "postponed" | "active") =>
+    patch<ApiBIInsight>(`/bi/insights/${insightId}/status`, { status }),
+};
+
 // ─── Delivery / Logistics ─────────────────────────────────────────────────────
 
 export interface DeliveryPerson {

@@ -57,6 +57,12 @@ class CustomerSegment(Base):
     rules_json = Column(Text, nullable=False, default="[]")
     status = Column(String(20), nullable=False, default="active")
     source = Column(String(40), nullable=False, default="manual")
+    segment_type = Column(String(40), nullable=True)
+    refresh_mode = Column(String(30), nullable=False, default="manual")
+    last_computed_at = Column(DateTime(timezone=True), nullable=True)
+    member_count = Column(Integer, nullable=False, default=0)
+    definition_version = Column(Integer, nullable=False, default=1)
+    metric_snapshot_json = Column(Text, nullable=False, default="{}")
     created_by = Column(String(200), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(

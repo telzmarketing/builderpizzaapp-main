@@ -13,6 +13,7 @@ from backend.models import (  # noqa: F401
     admin,
     campaign,
     chatbot,
+    business_intelligence,
     coupon,
     customer,
     customer_event,

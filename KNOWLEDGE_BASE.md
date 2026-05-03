@@ -1,6 +1,6 @@
 # Base de Conhecimento — PizzaApp
 > Documento técnico completo: telas, funcionalidades, banco de dados, endpoints e integrações.
-> Gerado em: 2026-04-13 | **Atualizado em: 2026-04-24** | Versao: 2.6.0
+> Gerado em: 2026-04-13 | **Atualizado em: 2026-05-03** | Versao: 2.7.0
 
 ---
 
@@ -35,6 +35,7 @@
 13. [Fluxo Completo de um Pedido](#13-fluxo-completo-de-um-pedido)
 14. [Atualizacao 2026-04-23 - Mercado Pago Payment Brick](#14-atualizacao-2026-04-23---mercado-pago-payment-brick)
 15. [Atualizacao 2026-04-24 - Estado Atual Consolidado](#15-atualizacao-2026-04-24---estado-atual-consolidado)
+16. [Atualizacao 2026-05-03 - Estado Atual do Admin SaaS](#16-atualizacao-2026-05-03---estado-atual-do-admin-saas)
 
 ---
 
@@ -1751,3 +1752,204 @@ Validoes recentes ja executadas neste ciclo:
 Pendencias controladas:
 - A integracao Saipos real ainda e stub em `backend/services/saipos_service.py`.
 - Documentacao antiga acima desta secao ainda pode conter referencias legadas; esta secao 15 e a referencia consolidada mais atual ate a limpeza completa linha a linha.
+
+---
+
+## 16. Atualizacao 2026-05-03 - Estado Atual do Admin SaaS
+
+Esta secao consolida a leitura atual do sistema feita em 2026-05-03. Ela deve ser usada como referencia mais recente para rotas, shell administrativo, modulos, backend e lacunas ainda pendentes de revisao manual.
+
+### 16.1 Inventario atual de rotas do frontend
+
+Rotas da loja:
+- `/`
+- `/product/:id`
+- `/cart`
+- `/checkout`
+- `/order-tracking`
+- `/fidelidade`
+- `/cupons`
+- `/pedidos`
+- `/conta`
+- `/localizacao`
+- `/cardapio`
+- `/campanha/:slug`
+- `/motoboy`
+
+Rotas publicas do painel:
+- `/painel/login`
+
+Rotas administrativas protegidas por `AdminGuard` e renderizadas dentro de `AdminLayout`:
+- `/painel`
+- `/painel/products`
+- `/painel/orders`
+- `/painel/cozinha`
+- `/painel/fidelidade`
+- `/painel/conteudo`
+- `/painel/pagamentos`
+- `/painel/frete`
+- `/painel/funcionamento`
+- `/painel/campanhas`
+- `/painel/trafego-pago`
+- `/painel/chatbot`
+- `/painel/aparencia`
+- `/painel/home-config`
+- `/painel/lgpd`
+- `/painel/configuracoes`
+- `/painel/cupons`
+- `/painel/clientes`
+- `/painel/clientes/:id`
+- `/painel/popup-saida`
+- `/painel/usuarios`
+
+Rotas de Marketing:
+- `/painel/marketing`
+- `/painel/marketing/campanhas`
+- `/painel/marketing/visitantes`
+- `/painel/marketing/links`
+- `/painel/marketing/integracoes`
+- `/painel/marketing/whatsapp`
+- `/painel/marketing/email`
+- `/painel/marketing/automacoes`
+- `/painel/marketing/ads`
+- `/painel/marketing/workflow`
+- `/painel/marketing/cupons`
+
+Rotas de CRM:
+- `/painel/crm`
+- `/painel/crm/inteligencia`
+- `/painel/crm/pipeline`
+- `/painel/crm/grupos`
+- `/painel/crm/tarefas`
+
+Rotas de Operacoes:
+- `/painel/logistica`
+- `/painel/cozinha`
+- `/painel/orders`
+
+### 16.2 Padrao atual do painel administrativo
+
+Shell principal:
+- `client/components/layout/AdminLayout.tsx` e a fonte unica de composicao para rotas protegidas do painel.
+- `client/components/layout/AppSidebar.tsx` renderiza a sidebar fixa, grupos, submodulos e estado ativo.
+- `client/components/layout/AdminHeader.tsx` renderiza o header visual unico da pagina usando metadados centralizados.
+- `client/components/layout/PageContainer.tsx` controla area principal e espacamento.
+- `client/components/layout/AdminPageChrome.tsx` e usado por paginas que precisam de conteudo interno com tabs/acoes, sem criar segundo header de pagina.
+
+Metadados e navegacao:
+- `client/config/adminNavigation.ts` e a fonte atual para grupos, itens, aliases e icones da sidebar.
+- `client/config/adminPageMeta.ts` e a fonte atual para eyebrow, titulo e subtitulo do header global.
+- Submodulos devem existir na sidebar. Eles nao devem ser duplicados como abas no header.
+
+Compatibilidade e componentes legados:
+- `client/components/AdminSidebar.tsx` atua como wrapper de compatibilidade para evitar segunda sidebar dentro do shell global.
+- Acoes globais antigas foram neutralizadas para nao duplicar header, busca ou toolbar em paginas que ja estao dentro do `AdminLayout`.
+- Novas paginas administrativas devem entrar pelo shell global e nao devem montar `AppHeader`, `AdminHeader` ou sidebar propria.
+
+Tokens visuais:
+- O padrao visual do painel esta concentrado em `client/global.css`, principalmente sob `.admin-shell`.
+- A paleta do admin usa verde escuro como fundo principal e dourado como cor de acao/ativo.
+- Cards, tabs, botoes, bordas, sombras e estados hover/focus devem reutilizar as classes/tokens ja existentes em vez de recriar estilos por pagina.
+
+### 16.3 Estado visual dos principais modulos administrativos
+
+Dashboard:
+- Pagina: `client/pages/admin/Dashboard.tsx`.
+- O bloco interno usa "Visao Geral" alinhado com a acao "Pedidos".
+- O titulo principal vem do header global; nao deve haver titulo duplicado no corpo.
+
+Produtos:
+- Pagina: `client/pages/admin/Products.tsx`.
+- Tabs internas `Produtos`, `Categorias` e `Configuracoes` representam secoes da mesma pagina.
+- As tabs ficam alinhadas com o botao `Novo Produto`, sem caixa/borda envolvendo o grupo inteiro.
+
+Pedidos:
+- Pagina: `client/pages/admin/Orders.tsx`.
+- O painel de controles `Ativos`, `Total`, `Alertas`, `Atualizar` e horario de atualizacao fica fixo como sub-header horizontal acima do pipeline.
+- Somente a area dos pipelines/colunas de pedidos deve possuir rolagem horizontal.
+- A rolagem horizontal deve ficar no wrapper do pipeline, mantendo os controles sem deslocamento lateral.
+
+CRM:
+- Paginas: `client/pages/admin/crm/*`.
+- Rotas cobertas: Dashboard CRM, Inteligencia de Clientes, Pipeline, Grupos & Segmentacoes e Tarefas.
+- `Grupos & Segmentacoes` pode ter tabs internas `Grupos`, `Tags` e `Segmentos`, pois representam conteudo interno da mesma pagina.
+- Itens como Dashboard CRM, Clientes, Inteligencia, Pipeline e Tarefas devem continuar apenas na sidebar.
+
+Marketing:
+- Paginas: `client/pages/admin/marketing/*`.
+- Inclui dashboard, campanhas, visitantes, links, integracoes, WhatsApp, Email, automacoes, Ads, workflow e cupons.
+- Submodulos de marketing devem permanecer na sidebar e nao no header.
+
+Configuracoes e operacao:
+- Paginas cobertas incluem conteudo, pagamentos, frete, funcionamento da loja, chatbot, aparencia, usuarios, LGPD, impressora/modelos, cozinha e logistica.
+- Cada pagina deve manter apenas um header visual e usar titulos internos somente quando forem complementares ao contexto.
+
+### 16.4 Inventario atual do backend
+
+Rotas backend existentes em `backend/routes/`:
+- Admin e autenticacao: `admin.py`, `admin_auth.py`, `admin_users.py`, `auth.py`, `rbac.py`.
+- Loja e catalogo: `products.py`, `home_config.py`, `theme.py`, `site_config.py`, `upload.py`.
+- Pedidos e operacao: `orders.py`, `payments.py`, `shipping.py`, `delivery.py`, `store_operation.py`, `webhooks.py`.
+- Clientes e relacionamento: `customers.py`, `customer_access.py`, `customer_events.py`, `crm.py`, `order_access.py`.
+- Marketing: `marketing.py`, `whatsapp_marketing.py`, `email_marketing.py`, `automations.py`, `marketing_workflow.py`, `paid_traffic.py`, `ads_oauth.py`, `campaigns.py`, `promotions.py`, `coupons.py`, `exit_popup.py`, `loyalty.py`.
+- Chatbot e privacidade: `chatbot.py`, `admin_chatbot.py`, `lgpd.py`.
+
+Modelos atuais em `backend/models/`:
+- `admin.py`, `campaign.py`, `chatbot.py`, `coupon.py`, `crm.py`, `customer.py`, `customer_event.py`, `delivery.py`, `home_config.py`, `loyalty.py`, `order.py`, `paid_traffic.py`, `payment.py`, `payment_config.py`, `product.py`, `product_promotion.py`, `promotion.py`, `rbac.py`, `shipping.py`, `shipping_v2.py`, `store_operation.py`, `theme.py`.
+
+Services atuais em `backend/services/`:
+- Core de negocio: `order_service.py`, `payment_service.py`, `shipping_service.py`, `delivery_service.py`, `coupon_service.py`, `loyalty_service.py`, `store_operation_service.py`.
+- Catalogo e preco: `product_category_service.py`, `product_pricing_service.py`.
+- Marketing e CRM: `campaign_service.py`, `paid_traffic_service.py`, `automation_service.py`, `customer_ai_service.py`, `customer_metrics_service.py`.
+- Atendimento e contexto: `chatbot_service.py`, `context_builder.py`.
+- Integracoes/IA: `saipos_service.py`, `ai/base.py`, `ai/factory.py`, `ai/openai_provider.py`, `ai/claude_provider.py`.
+
+Observacoes de startup:
+- `backend/main.py` inclui routers diretos e aliases `/api` para grande parte das rotas.
+- O startup executa `create_all_tables()`, `_run_migrations()` e `seed_all(db)`.
+- Eventos de pedido, pagamento e entrega sao conectados via `backend/core/events.py`.
+- Mudancas de schema devem continuar usando Alembic; os fallbacks idempotentes de startup nao substituem migration.
+
+### 16.5 Migrations atuais relevantes
+
+Migrations presentes em `backend/migrations/versions/`:
+- `20260423_payment_brick.py`
+- `20260424_paid_traffic.py`
+- `20260424_pizza_size_descriptions.py`
+- `20260424_product_categories.py`
+- `20260425_loyalty_settings.py`
+- `20260425_product_promotions.py`
+- `20260425_product_subcategories.py`
+- `20260425_store_operation.py`
+- `20260426_runtime_schema_backfill_core.py`
+- `20260501_chatbot_modes.py`
+- `20260501_crm_tags_segments.py`
+- `20260501_customer_ai_profiles.py`
+- `20260501_customer_crm_metrics.py`
+- `20260502_customer_ai_analysis_jobs.py`
+- `20260502_marketing_automation_queue.py`
+
+### 16.6 Scripts de validacao do frontend
+
+Scripts atuais em `package.json`:
+- `npm run dev`
+- `npm run build`
+- `npm run build:client`
+- `npm run build:server`
+- `npm run start`
+- `npm run test`
+- `npm run format.fix`
+- `npm run typecheck`
+
+Observacao:
+- Nao existe script `lint` declarado no `package.json` nesta leitura.
+- Para mudancas de frontend, a validacao minima recomendada e `npm run typecheck` e `npm run build`.
+- Para mudancas apenas documentais, validar diff e consistencia do Markdown e suficiente.
+
+### 16.7 Lacunas que ainda precisam de revisao manual
+
+- A documentacao historica antes das secoes 15 e 16 ainda possui trechos legados e pode citar rotas/modulos antigos incompletos.
+- O inventario de aliases `/api` no backend deve ser revisado quando alguma integracao externa depender de prefixo especifico, pois nem todos os routers novos aparecem necessariamente com alias `/api` no mesmo bloco de inclusao.
+- A integracao Saipos continua indicada como stub em `backend/services/saipos_service.py`.
+- A padronizacao visual deve ser conferida manualmente em navegador nas rotas administrativas principais, principalmente paginas densas de Marketing, CRM, Logistica, Configuracoes e Pedidos.
+- O estado local contem uma alteracao pendente em `client/pages/admin/Orders.tsx`; esta base documenta o comportamento esperado do workspace atual, mas o historico remoto so refletira isso apos commit e push.

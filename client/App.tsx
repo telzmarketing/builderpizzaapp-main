@@ -127,6 +127,7 @@ import AdminClientes from "./pages/admin/AdminClientes";
 import ClienteDetalhe from "./pages/admin/ClienteDetalhe";
 import AdminExitPopup from "./pages/admin/AdminExitPopup";
 import AdminUsuarios from "./pages/admin/AdminUsuarios";
+import AdminBI from "./pages/admin/bi/BiDashboard";
 import ExitPopup from "./components/ExitPopup";
 import MarketingDashboard from "./pages/admin/marketing/MarketingDashboard";
 import MarketingCampanhas from "./pages/admin/marketing/MarketingCampanhas";
@@ -213,6 +214,7 @@ export default function App() {
                 <Route path="/painel/clientes/:id" element={<ClienteDetalhe />} />
                 <Route path="/painel/popup-saida" element={<AdminExitPopup />} />
                 <Route path="/painel/usuarios" element={<AdminUsuarios />} />
+                <Route path="/painel/bi" element={<AdminBI />} />
                 {/* ── Marketing routes ── */}
                 <Route path="/painel/marketing" element={<MarketingDashboard />} />
                 <Route path="/painel/marketing/campanhas" element={<MarketingCampanhas />} />

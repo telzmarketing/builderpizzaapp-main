@@ -331,15 +331,15 @@ export default function AdminOrders() {
         </header>
 
         {/* Body */}
-        <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {error && (
             <div className="mx-4 md:mx-8 mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
               {error}
             </div>
           )}
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="sticky top-0 z-20 flex flex-shrink-0 flex-nowrap items-center gap-2 overflow-hidden border-b border-surface-03 bg-surface-01/95 px-4 py-4 backdrop-blur md:px-6">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="relative z-20 grid w-full flex-shrink-0 grid-cols-[auto_auto_auto_auto_minmax(0,1fr)] items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-4 py-4 md:px-6">
               <div className={`flex h-11 shrink-0 items-center gap-2 rounded-xl border px-4 transition-colors ${newOrderFlash ? "border-gold bg-gold/20" : "border-surface-03 bg-surface-02"}`}>
                 <span className="text-stone text-[10px] uppercase tracking-widest">Ativos</span>
                 <span className="text-cream text-sm font-black">{activeOrders}</span>
@@ -369,7 +369,7 @@ export default function AdminOrders() {
                 <RefreshCw size={16} className={loading || refreshing ? "animate-spin" : ""} />
                 Atualizar
               </button>
-              <p className="shrink-0 whitespace-nowrap text-[11px] text-stone">
+              <p className="min-w-0 truncate text-right text-[11px] text-stone">
                 {lastUpdated
                   ? `Atualizado as ${lastUpdated.toLocaleTimeString("pt-BR", {
                       hour: "2-digit",
@@ -391,7 +391,7 @@ export default function AdminOrders() {
                 <p className="text-stone text-sm mt-2">Os pedidos aparecem aqui automaticamente.</p>
               </div>
             ) : (
-              <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden px-4 pb-4 pt-4 md:px-6 md:pb-6">
+              <div className="w-full min-w-0 flex-1 overflow-x-auto overflow-y-hidden px-4 pb-4 pt-4 md:px-6 md:pb-6">
                 <div className="flex h-full gap-4 min-w-max">
                   {KANBAN_COLUMNS.map((column) => {
                     const Icon = column.icon;

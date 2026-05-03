@@ -56,6 +56,12 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     ],
   },
   {
+    label: "BI & Relatorios",
+    children: [
+      { path: "/painel/bi", icon: TrendingUp, label: "Inteligencia BI", exact: true },
+    ],
+  },
+  {
     label: "Catalogo",
     children: [
       { path: "/painel/products", icon: Package, label: "Produtos" },

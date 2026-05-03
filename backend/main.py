@@ -36,6 +36,7 @@ from backend.routes import ads_oauth as ads_oauth_routes
 from backend.routes import marketing_workflow as marketing_workflow_routes
 from backend.routes import rbac as rbac_routes
 from backend.routes import customer_events as customer_events_routes
+from backend.routes import bi as bi_routes
 
 settings = get_settings()
 
@@ -272,6 +273,21 @@ def _run_migrations():
         "CREATE TABLE IF NOT EXISTS customer_groups (id VARCHAR PRIMARY KEY, name VARCHAR(200) NOT NULL, description TEXT, group_type VARCHAR(20) NOT NULL DEFAULT 'manual', color VARCHAR(20) DEFAULT '#f97316', icon VARCHAR(50), active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE TABLE IF NOT EXISTS customer_group_rules (id VARCHAR PRIMARY KEY, group_id VARCHAR NOT NULL REFERENCES customer_groups(id) ON DELETE CASCADE, field VARCHAR(100) NOT NULL, operator VARCHAR(30) NOT NULL, value TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE TABLE IF NOT EXISTS customer_group_members (id VARCHAR PRIMARY KEY, group_id VARCHAR NOT NULL REFERENCES customer_groups(id) ON DELETE CASCADE, customer_id VARCHAR NOT NULL REFERENCES customers(id) ON DELETE CASCADE, added_at TIMESTAMPTZ DEFAULT NOW(), CONSTRAINT uq_group_member UNIQUE(group_id, customer_id))",
+        "ALTER TABLE customer_segments ADD COLUMN IF NOT EXISTS segment_type VARCHAR(40)",
+        "ALTER TABLE customer_segments ADD COLUMN IF NOT EXISTS refresh_mode VARCHAR(30) NOT NULL DEFAULT 'manual'",
+        "ALTER TABLE customer_segments ADD COLUMN IF NOT EXISTS last_computed_at TIMESTAMPTZ",
+        "ALTER TABLE customer_segments ADD COLUMN IF NOT EXISTS member_count INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE customer_segments ADD COLUMN IF NOT EXISTS definition_version INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE customer_segments ADD COLUMN IF NOT EXISTS metric_snapshot_json TEXT NOT NULL DEFAULT '{}'",
+        "CREATE INDEX IF NOT EXISTS ix_customer_segments_type_status ON customer_segments(segment_type, status)",
+        "CREATE TABLE IF NOT EXISTS business_insights (id VARCHAR PRIMARY KEY, dedupe_key VARCHAR(300) NOT NULL UNIQUE, insight_type VARCHAR(40) NOT NULL, title VARCHAR(300) NOT NULL, description TEXT NOT NULL, impact_level VARCHAR(20) NOT NULL DEFAULT 'medium', recommendation TEXT NOT NULL, actionable BOOLEAN NOT NULL DEFAULT TRUE, status VARCHAR(20) NOT NULL DEFAULT 'active', period VARCHAR(30) NOT NULL DEFAULT '30d', date_from DATE, date_to DATE, source VARCHAR(40) NOT NULL DEFAULT 'rules', metadata_json TEXT NOT NULL DEFAULT '{}', created_by VARCHAR(200), created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), resolved_at TIMESTAMPTZ)",
+        "CREATE INDEX IF NOT EXISTS ix_business_insights_period ON business_insights(period, date_from, date_to)",
+        "CREATE INDEX IF NOT EXISTS ix_business_insights_status_created ON business_insights(status, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_business_insights_type_impact ON business_insights(insight_type, impact_level)",
+        "CREATE TABLE IF NOT EXISTS product_performance (id VARCHAR PRIMARY KEY, metric_date DATE NOT NULL, product_id VARCHAR REFERENCES products(id) ON DELETE SET NULL, product_name_snapshot VARCHAR(200) NOT NULL, category_snapshot VARCHAR(100), total_orders INTEGER NOT NULL DEFAULT 0, quantity_sold INTEGER NOT NULL DEFAULT 0, total_revenue FLOAT NOT NULL DEFAULT 0, margin_estimate FLOAT, is_top_20_percent BOOLEAN NOT NULL DEFAULT FALSE, last_updated TIMESTAMPTZ DEFAULT NOW(), CONSTRAINT uq_product_performance_date_product UNIQUE (metric_date, product_id))",
+        "CREATE INDEX IF NOT EXISTS ix_product_performance_metric_date ON product_performance(metric_date DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_product_performance_product ON product_performance(product_id)",
+        "CREATE INDEX IF NOT EXISTS ix_product_performance_top20 ON product_performance(metric_date DESC, is_top_20_percent)",
 
         # ── Customer timeline / events ────────────────────────────────────────
         "CREATE TABLE IF NOT EXISTS customer_timeline (id VARCHAR PRIMARY KEY, customer_id VARCHAR NOT NULL REFERENCES customers(id) ON DELETE CASCADE, event_type VARCHAR(80) NOT NULL, title VARCHAR(300) NOT NULL, description TEXT, metadata_json TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
@@ -602,6 +618,7 @@ app.include_router(ads_oauth_routes.router)
 app.include_router(marketing_workflow_routes.router)
 app.include_router(rbac_routes.router)
 app.include_router(customer_events_routes.router)
+app.include_router(bi_routes.router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")
@@ -629,6 +646,7 @@ app.include_router(paid_traffic_routes.admin_router, prefix="/api")
 app.include_router(store_operation.router, prefix="/api")
 app.include_router(lgpd_routes.router, prefix="/api")
 app.include_router(lgpd_routes.admin_router, prefix="/api")
+app.include_router(bi_routes.router, prefix="/api")
 
 # ── Static files (uploaded images) ───────────────────────────────────────────
 # Must be mounted AFTER all route registrations.
