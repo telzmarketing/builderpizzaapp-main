@@ -257,7 +257,7 @@ export default function AdminPagamentos() {
                     fields={[
                       { key: "mp_public_key", label: "Public Key", placeholder: "APP_USR-...", secret: false },
                       { key: "mp_access_token", label: "Access Token", placeholder: config?.mp_access_token_masked || "Não configurado — cole o novo valor", secret: true },
-                      { key: "mp_webhook_secret", label: "Webhook Secret", placeholder: "Cole o segredo do webhook", secret: true },
+                      { key: "mp_webhook_secret", label: "Webhook Secret", placeholder: config?.mp_webhook_secret_masked || "Não configurado — cole o novo valor", secret: true },
                     ]}
                     form={form}
                     showSecrets={showSecrets}

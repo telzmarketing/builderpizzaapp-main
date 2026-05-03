@@ -134,6 +134,7 @@ def _to_out(config: PaymentGatewayConfig) -> PaymentGatewayConfigOut:
         accept_cash=config.accept_cash,
         mp_public_key=config.mp_public_key,
         mp_access_token_masked=_mask(config.mp_access_token),
+        mp_webhook_secret_masked=_mask(config.mp_webhook_secret),
         stripe_publishable_key=config.stripe_publishable_key,
         stripe_secret_key_masked=_mask(config.stripe_secret_key),
         pagseguro_email=config.pagseguro_email,

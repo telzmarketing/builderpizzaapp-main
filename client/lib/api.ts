@@ -1020,6 +1020,7 @@ export interface ApiPaymentGatewayConfig {
   pix_beneficiary_city: string | null;
   mp_public_key: string | null;
   mp_access_token_masked: string | null;
+  mp_webhook_secret_masked: string | null;
   stripe_publishable_key: string | null;
   stripe_secret_key_masked: string | null;
   pagseguro_email: string | null;

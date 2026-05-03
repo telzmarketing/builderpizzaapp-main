@@ -18,6 +18,7 @@ class PaymentGatewayConfigOut(BaseModel):
     # Mercado Pago
     mp_public_key: Optional[str] = None
     mp_access_token_masked: Optional[str] = None      # last 4 chars only
+    mp_webhook_secret_masked: Optional[str] = None    # last 4 chars only
 
     # Stripe
     stripe_publishable_key: Optional[str] = None
