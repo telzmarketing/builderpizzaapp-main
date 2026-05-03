@@ -338,49 +338,47 @@ export default function AdminOrders() {
             </div>
           )}
 
-          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-            <aside className="flex-shrink-0 border-b border-surface-03 p-4 lg:w-56 lg:border-b-0 lg:border-r lg:p-5">
-              <div className="grid grid-cols-2 gap-2 lg:sticky lg:top-4 lg:grid-cols-1">
-                <div className={`rounded-xl border px-4 py-3 transition-colors ${newOrderFlash ? "border-gold bg-gold/20" : "border-surface-03 bg-surface-02"}`}>
-                  <p className="text-stone text-[10px] uppercase tracking-widest leading-none">Ativos</p>
-                  <p className="text-cream text-2xl font-black leading-none mt-2">{activeOrders}</p>
-                </div>
-                <div className="rounded-xl border border-surface-03 bg-surface-02 px-4 py-3">
-                  <p className="text-stone text-[10px] uppercase tracking-widest leading-none">Total</p>
-                  <p className="text-cream text-2xl font-black leading-none mt-2">{orders.length}</p>
-                </div>
-                <button
-                  onClick={() => setSoundEnabled((v) => !v)}
-                  title={soundEnabled ? "Silenciar alertas de novo pedido" : "Ativar alertas de novo pedido"}
-                  className={`col-span-2 flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-colors lg:col-span-1 ${
-                    soundEnabled
-                      ? "border-gold/40 text-gold bg-gold/10"
-                      : "border-surface-03 bg-surface-02 text-stone hover:text-cream"
-                  }`}
-                >
-                  {soundEnabled ? <Bell size={16} /> : <BellOff size={16} />}
-                  Alertas
-                </button>
-                <button
-                  onClick={() => fetchOrders(true)}
-                  disabled={loading || refreshing}
-                  title="Atualizar agora"
-                  className="col-span-2 flex items-center justify-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4 py-3 text-sm font-semibold text-stone transition-colors hover:text-cream disabled:opacity-60 lg:col-span-1"
-                >
-                  <RefreshCw size={16} className={loading || refreshing ? "animate-spin" : ""} />
-                  Atualizar
-                </button>
-                <p className="col-span-2 text-center text-[11px] text-stone lg:col-span-1">
-                  {lastUpdated
-                    ? `Atualizado as ${lastUpdated.toLocaleTimeString("pt-BR", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                      })}`
-                    : "Carregando pedidos..."}
-                </p>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex flex-shrink-0 flex-wrap items-center gap-2 px-4 py-4 md:px-6">
+              <div className={`rounded-xl border px-4 py-3 transition-colors ${newOrderFlash ? "border-gold bg-gold/20" : "border-surface-03 bg-surface-02"}`}>
+                <p className="text-stone text-[10px] uppercase tracking-widest leading-none">Ativos</p>
+                <p className="text-cream text-lg font-black leading-none mt-2">{activeOrders}</p>
               </div>
-            </aside>
+              <div className="rounded-xl border border-surface-03 bg-surface-02 px-4 py-3">
+                <p className="text-stone text-[10px] uppercase tracking-widest leading-none">Total</p>
+                <p className="text-cream text-lg font-black leading-none mt-2">{orders.length}</p>
+              </div>
+              <button
+                onClick={() => setSoundEnabled((v) => !v)}
+                title={soundEnabled ? "Silenciar alertas de novo pedido" : "Ativar alertas de novo pedido"}
+                className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-colors ${
+                  soundEnabled
+                    ? "border-gold/40 text-gold bg-gold/10"
+                    : "border-surface-03 bg-surface-02 text-stone hover:text-cream"
+                }`}
+              >
+                {soundEnabled ? <Bell size={16} /> : <BellOff size={16} />}
+                Alertas
+              </button>
+              <button
+                onClick={() => fetchOrders(true)}
+                disabled={loading || refreshing}
+                title="Atualizar agora"
+                className="flex items-center justify-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4 py-3 text-sm font-semibold text-stone transition-colors hover:text-cream disabled:opacity-60"
+              >
+                <RefreshCw size={16} className={loading || refreshing ? "animate-spin" : ""} />
+                Atualizar
+              </button>
+              <p className="text-[11px] text-stone">
+                {lastUpdated
+                  ? `Atualizado as ${lastUpdated.toLocaleTimeString("pt-BR", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                    })}`
+                  : "Carregando pedidos..."}
+              </p>
+            </div>
 
             {loading ? (
               <div className="flex h-full flex-1 items-center justify-center">
@@ -393,7 +391,7 @@ export default function AdminOrders() {
                 <p className="text-stone text-sm mt-2">Os pedidos aparecem aqui automaticamente.</p>
               </div>
             ) : (
-              <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden p-4 md:p-6">
+              <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden px-4 pb-4 md:px-6 md:pb-6">
                 <div className="flex h-full gap-4 min-w-max">
                   {KANBAN_COLUMNS.map((column) => {
                     const Icon = column.icon;
