@@ -340,18 +340,18 @@ export default function AdminOrders() {
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div className="sticky top-0 z-20 flex flex-shrink-0 flex-nowrap items-center gap-2 overflow-hidden border-b border-surface-03 bg-surface-01/95 px-4 py-4 backdrop-blur md:px-6">
-              <div className={`shrink-0 rounded-xl border px-4 py-3 transition-colors ${newOrderFlash ? "border-gold bg-gold/20" : "border-surface-03 bg-surface-02"}`}>
-                <p className="text-stone text-[10px] uppercase tracking-widest leading-none">Ativos</p>
-                <p className="text-cream text-lg font-black leading-none mt-2">{activeOrders}</p>
+              <div className={`flex h-11 shrink-0 items-center gap-2 rounded-xl border px-4 transition-colors ${newOrderFlash ? "border-gold bg-gold/20" : "border-surface-03 bg-surface-02"}`}>
+                <span className="text-stone text-[10px] uppercase tracking-widest">Ativos</span>
+                <span className="text-cream text-sm font-black">{activeOrders}</span>
               </div>
-              <div className="shrink-0 rounded-xl border border-surface-03 bg-surface-02 px-4 py-3">
-                <p className="text-stone text-[10px] uppercase tracking-widest leading-none">Total</p>
-                <p className="text-cream text-lg font-black leading-none mt-2">{orders.length}</p>
+              <div className="flex h-11 shrink-0 items-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4">
+                <span className="text-stone text-[10px] uppercase tracking-widest">Total</span>
+                <span className="text-cream text-sm font-black">{orders.length}</span>
               </div>
               <button
                 onClick={() => setSoundEnabled((v) => !v)}
                 title={soundEnabled ? "Silenciar alertas de novo pedido" : "Ativar alertas de novo pedido"}
-                className={`flex shrink-0 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-colors ${
+                className={`flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold transition-colors ${
                   soundEnabled
                     ? "border-gold/40 text-gold bg-gold/10"
                     : "border-surface-03 bg-surface-02 text-stone hover:text-cream"
@@ -364,7 +364,7 @@ export default function AdminOrders() {
                 onClick={() => fetchOrders(true)}
                 disabled={loading || refreshing}
                 title="Atualizar agora"
-                className="flex shrink-0 items-center justify-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4 py-3 text-sm font-semibold text-stone transition-colors hover:text-cream disabled:opacity-60"
+                className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4 text-sm font-semibold text-stone transition-colors hover:text-cream disabled:opacity-60"
               >
                 <RefreshCw size={16} className={loading || refreshing ? "animate-spin" : ""} />
                 Atualizar
