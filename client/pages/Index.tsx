@@ -75,18 +75,21 @@ export default function Home() {
     : [];
   // (search always spans full product list, not filtered by homeConfig — intentional)
 
+  const PROMO_LABEL = "Promoções";
+
   // Apply home catalog config filter on top of all active products
   const catalogProducts = useMemo(() => {
     if (homeConfig.mode === "categories" && homeConfig.selectedCategories.length > 0) {
-      return products.filter(p => homeConfig.selectedCategories.includes(p.category ?? ""));
+      return products.filter(p => {
+        if (homeConfig.selectedCategories.includes(PROMO_LABEL) && p.promotion_applied) return true;
+        return homeConfig.selectedCategories.includes(p.category ?? "");
+      });
     }
     if (homeConfig.mode === "products" && homeConfig.selectedProductIds.length > 0) {
       return products.filter(p => homeConfig.selectedProductIds.includes(p.id));
     }
     return products;
   }, [products, homeConfig]);
-
-  const PROMO_LABEL = "Promoções";
 
   // Categories derived from catalogProducts (respect home config)
   const productCats = [...new Set(

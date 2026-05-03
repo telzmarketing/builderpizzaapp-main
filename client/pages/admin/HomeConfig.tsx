@@ -19,9 +19,12 @@ export default function AdminHomeConfig() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
 
-  const allCategories = [...new Set(
-    products.filter(p => p.active && p.category).map(p => p.category as string)
-  )].sort();
+  const PROMO_LABEL = "Promoções";
+  const hasPromos = products.some(p => p.active && p.promotion_applied);
+  const allCategories = [
+    ...(hasPromos ? [PROMO_LABEL] : []),
+    ...[...new Set(products.filter(p => p.active && p.category).map(p => p.category as string))].sort(),
+  ];
 
   const activeProducts = products.filter(p => p.active);
 
