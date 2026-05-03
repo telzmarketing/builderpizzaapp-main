@@ -338,8 +338,8 @@ export default function AdminOrders() {
             </div>
           )}
 
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex flex-shrink-0 flex-wrap items-center gap-2 px-4 py-4 md:px-6">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="sticky top-0 z-20 flex flex-shrink-0 flex-wrap items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-4 py-4 backdrop-blur md:px-6">
               <div className={`rounded-xl border px-4 py-3 transition-colors ${newOrderFlash ? "border-gold bg-gold/20" : "border-surface-03 bg-surface-02"}`}>
                 <p className="text-stone text-[10px] uppercase tracking-widest leading-none">Ativos</p>
                 <p className="text-cream text-lg font-black leading-none mt-2">{activeOrders}</p>
@@ -391,7 +391,7 @@ export default function AdminOrders() {
                 <p className="text-stone text-sm mt-2">Os pedidos aparecem aqui automaticamente.</p>
               </div>
             ) : (
-              <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden px-4 pb-4 md:px-6 md:pb-6">
+              <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden px-4 pb-4 pt-4 md:px-6 md:pb-6">
                 <div className="flex h-full gap-4 min-w-max">
                   {KANBAN_COLUMNS.map((column) => {
                     const Icon = column.icon;
