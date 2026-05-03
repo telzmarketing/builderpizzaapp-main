@@ -55,6 +55,8 @@ from backend.schemas.delivery import (
     DeliveryCompleteIn,
     DeliveryConfirmIn,
     DeliveryRateIn,
+    DriverDeliveryActionIn,
+    DriverDeliveryProblemIn,
     DriverLoginIn,
     LogisticsSettingsUpdate,
     BulkPayIn,
@@ -274,6 +276,100 @@ def driver_deliveries(
         DeliveryService(db).get_person(person_id)
         deliveries = DeliveryService(db).get_driver_deliveries(person_id)
         return ok(deliveries)
+    except (ValueError, DomainError) as exc:
+        return err_msg(str(exc), code="Unauthorized", status_code=401)
+
+
+@router.get("/driver/dashboard")
+def driver_dashboard(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Return the logged-in driver's mobile dashboard, queue and finance summary."""
+    try:
+        person_id = _decode_driver_token(authorization)
+        return ok(DeliveryService(db).get_driver_dashboard(person_id))
+    except (ValueError, DomainError) as exc:
+        return err_msg(str(exc), code="Unauthorized", status_code=401)
+
+
+@router.get("/driver/earnings")
+def driver_earnings(
+    status: Optional[str] = Query(default=None),
+    period_from: Optional[str] = Query(default=None),
+    period_to: Optional[str] = Query(default=None),
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Return earnings for the logged-in driver only."""
+    try:
+        person_id = _decode_driver_token(authorization)
+        return ok(DeliveryService(db).list_driver_earnings(
+            person_id,
+            status=status,
+            period_from=period_from,
+            period_to=period_to,
+        ))
+    except (ValueError, DomainError) as exc:
+        return err_msg(str(exc), code="Unauthorized", status_code=401)
+
+
+@router.post("/driver/deliveries/{delivery_id}/start")
+def driver_start_delivery(
+    delivery_id: str,
+    body: DriverDeliveryActionIn | None = None,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Driver starts only a delivery assigned to them."""
+    try:
+        person_id = _decode_driver_token(authorization)
+        delivery = DeliveryService(db).start_driver_delivery(person_id, delivery_id, notes=body.notes if body else None)
+        return ok(delivery, "Entrega iniciada.")
+    except (ValueError, DomainError) as exc:
+        return err_msg(str(exc), code="Unauthorized", status_code=401)
+
+
+@router.post("/driver/deliveries/{delivery_id}/complete")
+def driver_complete_delivery(
+    delivery_id: str,
+    body: DeliveryCompleteIn | None = None,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Driver marks their own delivery as delivered and records payout."""
+    try:
+        person_id = _decode_driver_token(authorization)
+        payload = body or DeliveryCompleteIn()
+        delivery = DeliveryService(db).complete_driver_delivery(
+            person_id,
+            delivery_id,
+            recipient_name=payload.recipient_name,
+            delivery_photo_url=payload.delivery_photo_url,
+            notes=payload.notes,
+        )
+        return ok(delivery, "Entrega marcada como entregue.")
+    except (ValueError, DomainError) as exc:
+        return err_msg(str(exc), code="Unauthorized", status_code=401)
+
+
+@router.post("/driver/deliveries/{delivery_id}/problem")
+def driver_report_problem(
+    delivery_id: str,
+    body: DriverDeliveryProblemIn,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Driver reports a problem for their own delivery only."""
+    try:
+        person_id = _decode_driver_token(authorization)
+        delivery = DeliveryService(db).report_driver_problem(
+            person_id,
+            delivery_id,
+            reason=body.reason,
+            description=body.description,
+        )
+        return ok(delivery, "Problema registrado.")
     except (ValueError, DomainError) as exc:
         return err_msg(str(exc), code="Unauthorized", status_code=401)
 
@@ -569,6 +665,7 @@ def complete_delivery(
 def confirm_delivery_code(
     delivery_id: str,
     body: DeliveryConfirmIn,
+    authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
     """
@@ -577,8 +674,13 @@ def confirm_delivery_code(
     No authentication required — the code itself acts as proof.
     """
     try:
-        delivery = DeliveryService(db).confirm_delivery_code(delivery_id, body.code)
+        person_id = _decode_driver_token(authorization)
+        service = DeliveryService(db)
+        service._get_driver_delivery(person_id, delivery_id)
+        delivery = service.confirm_delivery_code(delivery_id, body.code)
         return ok(delivery, "Entrega confirmada com sucesso!")
+    except ValueError as exc:
+        return err_msg(str(exc), code="Unauthorized", status_code=401)
     except DomainError as exc:
         return err(exc)
 

@@ -622,10 +622,29 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
         />
       )}
 
+      {order.delivery && (
+        <div className="mt-3 rounded-xl border border-blue-500/20 bg-blue-500/10 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-blue-200">Motoboy</p>
+              <p className="mt-1 truncate text-sm font-black text-cream">
+                {order.delivery.delivery_person_name || "Atribuido"}
+              </p>
+              {order.delivery.assigned_at && (
+                <p className="mt-0.5 text-xs text-stone">Atribuido em {formatDateTime(order.delivery.assigned_at)}</p>
+              )}
+            </div>
+            <span className="shrink-0 rounded-full border border-blue-500/30 bg-blue-500/15 px-2 py-1 text-[10px] font-bold text-blue-200">
+              {STATUS_LABELS[order.delivery.status] ?? order.delivery.status}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Action buttons */}
       <div className="mt-3 flex gap-2">
         {/* Assign motoboy — for ready_for_pickup orders */}
-        {isReadyForPickup && (
+        {isReadyForPickup && !order.delivery && (
           <button
             onClick={onAssignMotoboy}
             disabled={updating}

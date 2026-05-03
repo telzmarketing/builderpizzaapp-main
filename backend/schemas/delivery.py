@@ -44,6 +44,15 @@ class DeliveryPersonLocationUpdate(BaseModel):
     lng: float
 
 
+class DriverDeliveryActionIn(BaseModel):
+    notes: Optional[str] = None
+
+
+class DriverDeliveryProblemIn(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=80)
+    description: Optional[str] = Field(default=None, max_length=500)
+
+
 class DeliveryPersonOut(BaseModel):
     id: str
     name: str
@@ -118,6 +127,8 @@ class DeliveryOut(BaseModel):
     delivery_photo_url: Optional[str] = None
     recipient_name: Optional[str] = None
     notes: Optional[str] = None
+    problem_report: Optional[str] = None
+    problem_reported_at: Optional[datetime] = None
     rating: Optional[int] = None
     rating_comment: Optional[str] = None
     created_at: datetime
@@ -141,6 +152,16 @@ class OrderAddressOut(BaseModel):
 
 class DeliveryWithAddressOut(DeliveryOut):
     order: Optional[OrderAddressOut] = None
+
+
+class DriverDashboardOut(BaseModel):
+    person: DeliveryPersonOut
+    queue: list[DeliveryWithAddressOut]
+    active_delivery: Optional[DeliveryWithAddressOut] = None
+    pending_earnings: float
+    paid_earnings: float
+    cancelled_earnings: float
+    total_deliveries: int
 
 
 # ── Logistics map overview ────────────────────────────────────────────────────

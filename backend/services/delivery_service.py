@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import random
 import uuid
+import json
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -72,6 +73,57 @@ class DeliveryService:
         if not o:
             raise OrderNotFound(order_id)
         return o
+
+    def _add_event(
+        self,
+        delivery_id: str,
+        event_type: str,
+        *,
+        description: str | None = None,
+        actor_type: str | None = None,
+        actor_id: str | None = None,
+        metadata: dict | None = None,
+    ) -> DeliveryEvent:
+        event = DeliveryEvent(
+            id=str(uuid.uuid4()),
+            delivery_id=delivery_id,
+            event_type=event_type,
+            description=description,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            metadata_json=json.dumps(metadata or {}, ensure_ascii=False),
+        )
+        self._db.add(event)
+        return event
+
+    def _get_driver_delivery(self, person_id: str, delivery_id: str) -> Delivery:
+        from sqlalchemy.orm import joinedload
+
+        delivery = (
+            self._db.query(Delivery)
+            .options(joinedload(Delivery.order))
+            .filter(
+                Delivery.id == delivery_id,
+                Delivery.delivery_person_id == person_id,
+            )
+            .first()
+        )
+        if not delivery:
+            raise DomainError("Entrega nao encontrada para este motoboy.", code="DeliveryOwnershipDenied")
+        return delivery
+
+    def _cancel_pending_earning(self, delivery_id: str, notes: str | None = None) -> None:
+        earnings = (
+            self._db.query(DeliveryEarning)
+            .filter(
+                DeliveryEarning.delivery_id == delivery_id,
+                DeliveryEarning.status == "pending",
+            )
+            .all()
+        )
+        for earning in earnings:
+            earning.status = "cancelled"
+            earning.notes = notes or earning.notes
 
     # ── Assign ────────────────────────────────────────────────────────────────
 
@@ -150,22 +202,15 @@ class DeliveryService:
         # Mark motoboy as busy
         person.status = DeliveryPersonStatus.busy
 
-        # Advance order to 'on_the_way'
-        order_sm.transition(order_id, order.status.value, "on_the_way")
-        order.status = OrderStatus.on_the_way
-        order.updated_at = now
-
         self._db.flush()
 
-        # Record assignment event
-        event = DeliveryEvent(
-            id=str(uuid.uuid4()),
-            delivery_id=delivery.id,
-            event_type="assigned",
-            description=f"Motoboy {person.name} atribuído. Código de confirmação: {code}.",
+        self._add_event(
+            delivery.id,
+            "assigned",
+            description=f"Motoboy {person.name} atribuido.",
+            actor_type="admin",
+            metadata={"delivery_person_id": delivery_person_id, "estimated_minutes": estimated_minutes},
         )
-        self._db.add(event)
-
         self._db.commit()
         self._db.refresh(delivery)
 
@@ -200,13 +245,28 @@ class DeliveryService:
         if new_status == "picked_up":
             delivery.picked_up_at = now
 
+        elif new_status == "on_the_way":
+            if not delivery.picked_up_at:
+                delivery.picked_up_at = now
+            order = self._get_order(delivery.order_id)
+            if order.status != OrderStatus.on_the_way:
+                order_sm.transition(delivery.order_id, order.status.value, "on_the_way")
+                order.status = OrderStatus.on_the_way
+                order.out_for_delivery_at = order.out_for_delivery_at or now
+                order.updated_at = now
+
         elif new_status == "delivered":
             delivery.delivered_at = now
             # Order advances to 'delivered'
             order = self._get_order(delivery.order_id)
             if order:
+                if order.status != OrderStatus.on_the_way:
+                    order_sm.transition(delivery.order_id, order.status.value, "on_the_way")
+                    order.status = OrderStatus.on_the_way
+                    order.out_for_delivery_at = order.out_for_delivery_at or now
                 order_sm.transition(delivery.order_id, order.status.value, "delivered")
                 order.status = OrderStatus.delivered
+                order.delivered_at = order.delivered_at or now
                 order.updated_at = now
 
                 # Award loyalty points
@@ -229,6 +289,16 @@ class DeliveryService:
                 )
                 if person:
                     person.status = DeliveryPersonStatus.available
+            self._cancel_pending_earning(delivery_id, notes=f"Delivery moved to {new_status}.")
+
+        self._add_event(
+            delivery_id,
+            "status_changed",
+            description=f"Entrega alterada de {old_status} para {new_status}.",
+            actor_type="system",
+            actor_id="delivery_service",
+            metadata={"from_status": old_status, "to_status": new_status},
+        )
 
         self._db.commit()
         self._db.refresh(delivery)
@@ -297,6 +367,15 @@ class DeliveryService:
                 self._db.add(earning)
         except Exception:
             pass  # never fail completion due to earnings issue
+
+        self._add_event(
+            delivery_id,
+            "completed",
+            description="Entrega finalizada.",
+            actor_type="system",
+            actor_id="delivery_service",
+            metadata={"duration_minutes": duration_minutes},
+        )
 
         self._db.commit()
         self._db.refresh(delivery)
@@ -483,17 +562,230 @@ class DeliveryService:
 
     def get_driver_deliveries(self, person_id: str) -> list[Delivery]:
         """Return active + recent deliveries for a specific driver (with order eagerly loaded)."""
+        from sqlalchemy import func
         from sqlalchemy.orm import joinedload
         return (
             self._db.query(Delivery)
             .options(joinedload(Delivery.order))
+            .join(Order, Order.id == Delivery.order_id)
             .filter(
                 Delivery.delivery_person_id == person_id,
                 Delivery.status.notin_(["failed", "cancelled"]),
             )
-            .order_by(Delivery.created_at.desc())
+            .order_by(func.coalesce(Order.paid_at, Order.created_at).asc(), Delivery.created_at.asc())
             .limit(20)
             .all()
+        )
+
+    def get_driver_dashboard(self, person_id: str) -> dict:
+        """Driver dashboard with own queue and finance summary."""
+        person = self._get_delivery_person(person_id)
+        queue = self.get_driver_deliveries(person_id)
+        active = next(
+            (
+                d for d in queue
+                if d.status in (
+                    DeliveryStatus.assigned,
+                    DeliveryStatus.picked_up,
+                    DeliveryStatus.on_the_way,
+                )
+            ),
+            None,
+        )
+        earnings = self.list_earnings(person_id=person_id)
+        return {
+            "person": person,
+            "queue": queue,
+            "active_delivery": active,
+            "pending_earnings": round(sum(e["amount"] for e in earnings if e["status"] == "pending"), 2),
+            "paid_earnings": round(sum(e["amount"] for e in earnings if e["status"] == "paid"), 2),
+            "cancelled_earnings": round(sum(e["amount"] for e in earnings if e["status"] == "cancelled"), 2),
+            "total_deliveries": person.total_deliveries or 0,
+        }
+
+    def start_driver_delivery(self, person_id: str, delivery_id: str, notes: str | None = None) -> Delivery:
+        """Driver starts own delivery route from assigned to picked_up."""
+        self._get_delivery_person(person_id)
+        delivery = self._get_driver_delivery(person_id, delivery_id)
+        old_status = delivery.status.value
+        now = datetime.now(timezone.utc)
+        if old_status == "assigned":
+            delivery_sm.transition(delivery_id, old_status, "picked_up")
+            delivery.picked_up_at = now
+            delivery_sm.transition(delivery_id, "picked_up", "on_the_way")
+        elif old_status == "picked_up":
+            delivery_sm.transition(delivery_id, old_status, "on_the_way")
+        else:
+            delivery_sm.transition(delivery_id, old_status, "on_the_way")
+        delivery.status = DeliveryStatus.on_the_way
+        order = self._get_order(delivery.order_id)
+        if order.status != OrderStatus.on_the_way:
+            order_sm.transition(delivery.order_id, order.status.value, "on_the_way")
+            order.status = OrderStatus.on_the_way
+            order.out_for_delivery_at = order.out_for_delivery_at or now
+            order.updated_at = now
+        if notes:
+            delivery.notes = notes
+        self._add_event(
+            delivery_id,
+            "driver_started",
+            description="Motoboy iniciou a entrega pelo app.",
+            actor_type="driver",
+            actor_id=person_id,
+            metadata={"from_status": old_status, "to_status": "on_the_way", "notes": notes},
+        )
+        self._db.commit()
+        self._db.refresh(delivery)
+        bus.publish(DeliveryStatusChanged(
+            delivery_id=delivery_id,
+            order_id=delivery.order_id,
+            from_status=old_status,
+            to_status="on_the_way",
+        ))
+        return delivery
+
+    def mark_driver_delivered(self, person_id: str, delivery_id: str, notes: str | None = None) -> Delivery:
+        """Driver marks own delivery as delivered."""
+        self._get_delivery_person(person_id)
+        delivery = self._get_driver_delivery(person_id, delivery_id)
+        if delivery.status != DeliveryStatus.on_the_way:
+            delivery = self.start_driver_delivery(person_id, delivery_id, notes=notes)
+        old_status = delivery.status.value
+        delivery_sm.transition(delivery_id, old_status, "delivered")
+        now = datetime.now(timezone.utc)
+        delivery.status = DeliveryStatus.delivered
+        delivery.delivered_at = now
+        if notes:
+            delivery.notes = notes
+
+        order = self._get_order(delivery.order_id)
+        if order.status != OrderStatus.on_the_way:
+            order_sm.transition(delivery.order_id, order.status.value, "on_the_way")
+            order.status = OrderStatus.on_the_way
+            order.out_for_delivery_at = order.out_for_delivery_at or now
+        order_sm.transition(delivery.order_id, order.status.value, "delivered")
+        order.status = OrderStatus.delivered
+        order.delivered_at = order.delivered_at or now
+        order.updated_at = now
+        if order.out_for_delivery_at:
+            order.delivery_time_minutes = int((now - order.out_for_delivery_at).total_seconds() / 60)
+
+        if order.customer_id:
+            from backend.services.loyalty_service import award_points_for_order
+            from backend.services.customer_metrics_service import sync_customer_order_metrics
+            points = award_points_for_order(order.customer_id, delivery.order_id, order.total, self._db)
+            order.loyalty_points_earned = points
+            sync_customer_order_metrics(self._db, order.customer_id)
+
+        self._add_event(
+            delivery_id,
+            "driver_delivered",
+            description="Motoboy marcou a entrega como entregue pelo app.",
+            actor_type="driver",
+            actor_id=person_id,
+            metadata={"from_status": old_status, "to_status": "delivered", "notes": notes},
+        )
+        self._db.commit()
+        self._db.refresh(delivery)
+
+        bus.publish(DeliveryStatusChanged(
+            delivery_id=delivery_id,
+            order_id=delivery.order_id,
+            from_status=old_status,
+            to_status="delivered",
+        ))
+        return delivery
+
+    def complete_driver_delivery(
+        self,
+        person_id: str,
+        delivery_id: str,
+        *,
+        recipient_name: str | None = None,
+        delivery_photo_url: str | None = None,
+        notes: str | None = None,
+    ) -> Delivery:
+        """Driver completes own delivered delivery with proof fields."""
+        self._get_delivery_person(person_id)
+        owned = self._get_driver_delivery(person_id, delivery_id)
+        if owned.status == DeliveryStatus.completed:
+            return owned
+        if owned.status != DeliveryStatus.delivered:
+            owned = self.mark_driver_delivered(person_id, delivery_id, notes=notes)
+        delivery = self.complete(
+            delivery_id,
+            recipient_name=recipient_name,
+            delivery_photo_url=delivery_photo_url,
+            notes=notes,
+        )
+        self._add_event(
+            delivery_id,
+            "driver_completed",
+            description="Motoboy concluiu a entrega pelo app.",
+            actor_type="driver",
+            actor_id=person_id,
+            metadata={"recipient_name": recipient_name, "has_photo": bool(delivery_photo_url), "notes": notes},
+        )
+        self._db.commit()
+        self._db.refresh(delivery)
+        return delivery
+
+    def report_driver_problem(
+        self,
+        person_id: str,
+        delivery_id: str,
+        *,
+        reason: str,
+        description: str | None = None,
+    ) -> Delivery:
+        """Driver reports a problem on own delivery and moves it to failed."""
+        self._get_delivery_person(person_id)
+        delivery = self._get_driver_delivery(person_id, delivery_id)
+        old_status = delivery.status.value
+        delivery_sm.transition(delivery_id, old_status, "failed")
+        delivery.status = DeliveryStatus.failed
+        delivery.problem_report = description or reason
+        delivery.problem_reported_at = datetime.now(timezone.utc)
+        if description:
+            delivery.notes = description
+
+        person = self._db.query(DeliveryPerson).filter(DeliveryPerson.id == person_id).first()
+        if person:
+            person.status = DeliveryPersonStatus.available
+
+        self._cancel_pending_earning(delivery_id, notes=f"Cancelled after driver problem: {reason}")
+        self._add_event(
+            delivery_id,
+            "driver_problem_reported",
+            description=description or reason,
+            actor_type="driver",
+            actor_id=person_id,
+            metadata={"from_status": old_status, "to_status": "failed", "reason": reason},
+        )
+        self._db.commit()
+        self._db.refresh(delivery)
+
+        bus.publish(DeliveryStatusChanged(
+            delivery_id=delivery_id,
+            order_id=delivery.order_id,
+            from_status=old_status,
+            to_status="failed",
+        ))
+        return delivery
+
+    def list_driver_earnings(
+        self,
+        person_id: str,
+        status: str | None = None,
+        period_from=None,
+        period_to=None,
+    ) -> list[dict]:
+        self._get_delivery_person(person_id)
+        return self.list_earnings(
+            person_id=person_id,
+            status=status,
+            period_from=period_from,
+            period_to=period_to,
         )
 
     def get_logistics_overview(self) -> dict:
@@ -559,7 +851,7 @@ class DeliveryService:
         """Driver submits 4-digit code to confirm delivery completion."""
         delivery = self._get_delivery(delivery_id)
         if delivery.confirmation_code != code:
-            raise DomainError("Código de confirmação inválido.", code="InvalidCode")
+            raise DomainError("Codigo de confirmacao invalido.", code="InvalidCode")
         if delivery.confirmed_by_code_at:
             return delivery  # already confirmed — idempotent
         now = datetime.now(timezone.utc)
@@ -569,7 +861,8 @@ class DeliveryService:
             id=str(uuid.uuid4()),
             delivery_id=delivery_id,
             event_type="confirmed_by_code",
-            description="Entrega confirmada pelo código de confirmação.",
+            description="Entrega confirmada pelo codigo de confirmacao.",
+            actor_type="driver",
         )
         self._db.add(event)
 

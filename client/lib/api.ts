@@ -544,6 +544,15 @@ export interface ApiOrder {
   total_time_minutes: number | null;
   preparation_time_minutes: number | null;
   delivery_time_minutes: number | null;
+  delivery?: {
+    id: string;
+    status: string;
+    delivery_person_id?: string | null;
+    delivery_person_name?: string | null;
+    assigned_at?: string | null;
+    picked_up_at?: string | null;
+    delivered_at?: string | null;
+  } | null;
 }
 
 export interface CheckoutItemIn {
@@ -2198,6 +2207,15 @@ export interface OrderAddress {
   delivery_street?: string;
   delivery_city?: string;
   delivery_complement?: string;
+  status?: string;
+  payment_status?: string;
+  subtotal?: number;
+  shipping_fee?: number;
+  total?: number;
+  notes?: string;
+  created_at?: string;
+  paid_at?: string;
+  payment?: { method?: string; status?: string };
 }
 
 export interface DeliveryRecord {
@@ -2216,6 +2234,16 @@ export interface DeliveryRecord {
   created_at: string;
   updated_at: string;
   order?: OrderAddress;
+}
+
+export interface DriverDashboard {
+  person: DeliveryPerson;
+  queue: DeliveryRecord[];
+  active_delivery?: DeliveryRecord | null;
+  pending_earnings: number;
+  paid_earnings: number;
+  cancelled_earnings: number;
+  total_deliveries: number;
 }
 
 export interface PersonOnDuty {
@@ -2247,7 +2275,7 @@ export interface DeliveryEarning {
   person_name?: string;
   person_phone?: string;
   amount: number;
-  status: "pending" | "paid";
+  status: "pending" | "paid" | "cancelled";
   period_date?: string;
   paid_at?: string;
   paid_by?: string;
@@ -2293,6 +2321,10 @@ async function driverRequest<T>(method: string, path: string, body?: unknown): P
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   const json = await res.json();
+  if (!res.ok || json?.success === false) {
+    const message = json?.error?.message || json?.detail || "Erro na operação do entregador.";
+    throw new Error(message);
+  }
   return ("data" in json ? json.data : json) as T;
 }
 
@@ -2341,8 +2373,24 @@ export const deliveryApi = {
     driverRequest<DeliveryPerson>("GET", "/delivery/driver/me"),
   driverDeliveries: () =>
     driverRequest<DeliveryRecord[]>("GET", "/delivery/driver/deliveries"),
+  driverDashboard: () =>
+    driverRequest<DriverDashboard>("GET", "/delivery/driver/dashboard"),
+  driverEarnings: (params?: { status?: string; period_from?: string; period_to?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.period_from) qs.set("period_from", params.period_from);
+    if (params?.period_to) qs.set("period_to", params.period_to);
+    const q = qs.toString();
+    return driverRequest<DeliveryEarning[]>("GET", `/delivery/driver/earnings${q ? `?${q}` : ""}`);
+  },
   driverUpdateLocation: (lat: number, lng: number) =>
     driverRequest<DeliveryPerson>("PUT", "/delivery/driver/location", { lat, lng }),
+  driverStartDelivery: (deliveryId: string, notes?: string) =>
+    driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/start`, { notes }),
+  driverCompleteDelivery: (deliveryId: string, notes?: string) =>
+    driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/complete`, { notes }),
+  driverReportProblem: (deliveryId: string, reason: string, description?: string) =>
+    driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/problem`, { reason, description }),
 
   // Confirm delivery (public — no auth needed)
   confirmCode: (deliveryId: string, code: string) =>

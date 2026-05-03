@@ -99,6 +99,8 @@ class Delivery(Base):
     delivery_photo_url = Column(String(500), nullable=True)
     recipient_name     = Column(String(200), nullable=True)
     notes              = Column(Text, nullable=True)
+    problem_report     = Column(Text, nullable=True)
+    problem_reported_at = Column(DateTime(timezone=True), nullable=True)
 
     # Confirmation code (shown to customer, driver confirms via code)
     confirmation_code      = Column(String(4), nullable=True)
@@ -128,6 +130,8 @@ class DeliveryEvent(Base):
     event_type    = Column(String(80), nullable=False)
     description   = Column(Text, nullable=True)
     metadata_json = Column(Text, nullable=True)
+    actor_type    = Column(String(40), nullable=True)
+    actor_id      = Column(String, nullable=True)
     created_at    = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     delivery = relationship("Delivery", back_populates="events")
@@ -140,7 +144,7 @@ class DeliveryEarning(Base):
     delivery_id        = Column(String, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False)
     delivery_person_id = Column(String, ForeignKey("delivery_persons.id", ondelete="CASCADE"), nullable=False)
     amount             = Column(Float, default=0.0, nullable=False)
-    status             = Column(String(20), default="pending", nullable=False)  # pending | paid
+    status             = Column(String(20), default="pending", nullable=False)  # pending | paid | cancelled
     period_date        = Column(Date, nullable=False)
     paid_at            = Column(DateTime(timezone=True), nullable=True)
     paid_by            = Column(String(200), nullable=True)

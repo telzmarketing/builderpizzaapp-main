@@ -43,8 +43,8 @@ ORDER_TRANSITIONS: dict[str, list[str]] = {
 
 DELIVERY_TRANSITIONS: dict[str, list[str]] = {
     "pending_assignment": ["assigned", "cancelled"],
-    "assigned":           ["picked_up", "cancelled"],
-    "picked_up":          ["on_the_way"],
+    "assigned":           ["picked_up", "on_the_way", "failed", "cancelled"],
+    "picked_up":          ["on_the_way", "failed"],
     "on_the_way":         ["delivered", "failed"],
     "delivered":          ["completed"],
     "completed":          [],         # terminal
