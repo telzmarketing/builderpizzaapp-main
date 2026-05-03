@@ -46,6 +46,7 @@ export const adminPageMeta: Record<string, PageMeta> = {
   "/painel/marketing/ads": { eyebrow: "Marketing", title: "Ads", subtitle: "Campanhas pagas, pixels e ROI" },
   "/painel/marketing/workflow": { eyebrow: "Marketing", title: "Workflow de Aprovacao", subtitle: "Aprovacao antes de disparar campanhas" },
   "/painel/marketing/cupons": { eyebrow: "Marketing", title: "Cupons de Desconto", subtitle: "Cupons e uso em campanhas" },
+  "/painel/trafego-pago": { eyebrow: "Marketing", title: "Trafego Pago", subtitle: "Campanhas pagas, pixels e ROI" },
   "/painel/campanhas": { eyebrow: "Marketing", title: "Promocoes & Banners", subtitle: "Ofertas, banners e campanhas promocionais" },
   "/painel/fidelidade": { eyebrow: "Marketing", title: "Fidelidade", subtitle: "Regras, beneficios e pontos dos clientes" },
   "/painel/popup-saida": { eyebrow: "Marketing", title: "Popup de Saida", subtitle: "Captura e retencao no site" },

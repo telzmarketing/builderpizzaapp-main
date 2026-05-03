@@ -18,7 +18,6 @@ export default function AppSidebar() {
   const navigate = useNavigate();
   const { siteContent } = useApp();
   const navRef = useRef<HTMLElement>(null);
-  const activeLinkRef = useRef<HTMLAnchorElement>(null);
 
   const adminUserRaw = localStorage.getItem("admin_user");
   const adminUser = adminUserRaw ? JSON.parse(adminUserRaw) : null;
@@ -36,10 +35,14 @@ export default function AppSidebar() {
   const isActive = (path: string, exact?: boolean) =>
     exact ? pathname === path : pathname === path || pathname.startsWith(`${path}/`);
 
+  const isItemActive = (item: { path: string; exact?: boolean; aliases?: string[] }) =>
+    isActive(item.path, item.exact) ||
+    (item.aliases ?? []).some((alias) => isActive(alias, item.exact));
+
   const activeGroups = useMemo(
     () =>
       adminNavigationGroups
-        .filter((group) => group.children.some((item) => isActive(item.path, item.exact)))
+        .filter((group) => group.children.some((item) => isItemActive(item)))
         .map((group) => group.label),
     [pathname],
   );
@@ -81,17 +84,6 @@ export default function AppSidebar() {
     nav.addEventListener("scroll", onScroll, { passive: true });
     return () => nav.removeEventListener("scroll", onScroll);
   }, []);
-
-  useEffect(() => {
-    const link = activeLinkRef.current;
-    const nav = navRef.current;
-    if (!link || !nav) return;
-    const navRect = nav.getBoundingClientRect();
-    const linkRect = link.getBoundingClientRect();
-    if (linkRect.top < navRect.top || linkRect.bottom > navRect.bottom) {
-      link.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }
-  }, [pathname]);
 
   return (
     <aside className="app-sidebar admin-sidebar w-full md:w-64 bg-surface-02 border-b md:border-b-0 md:border-r border-surface-03 flex flex-col flex-shrink-0 h-auto md:h-full max-h-[52vh] md:max-h-none">
@@ -161,13 +153,13 @@ export default function AppSidebar() {
             </button>
             {groupOpen && (
               <div className="space-y-0.5">
-                {group.children.map(({ path, icon: Icon, label, exact }) => {
-                const active = isActive(path, exact);
+                {group.children.map((item) => {
+                const { path, icon: Icon, label } = item;
+                const active = isItemActive(item);
                 return (
                   <Link
                     key={path}
                     to={path}
-                    ref={active ? (activeLinkRef as React.RefObject<HTMLAnchorElement>) : undefined}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                       active
                         ? "bg-gold text-cream shadow-sm shadow-gold/20"

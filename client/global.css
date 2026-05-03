@@ -156,10 +156,47 @@
 
 @layer components {
   .admin-shell {
+    --color-primary: #d2a13a;
+    --interaction-hover: #e1b652;
+    --interaction-active: #bd8426;
+    --interaction-focus: #d2a13a;
+    --bg-main: #082f2a;
+    --bg-alt: #16352e;
+    --bg-card: #0f342e;
+    --border-color: #234f45;
+    --text-primary: #f7f1df;
+    --text-secondary: #efe4c8;
+    --text-muted: #b7c1b5;
+    --navbar-bg: #0b2d28;
+    --sidebar-bg: #0b2d28;
+    --modal-bg: #123832;
+    --background: 169 71% 11%;
+    --foreground: 44 62% 92%;
+    --card: 168 55% 13%;
+    --card-foreground: 44 62% 92%;
+    --popover: 168 55% 13%;
+    --popover-foreground: 44 62% 92%;
+    --primary: 40 63% 53%;
+    --primary-foreground: 168 71% 8%;
+    --secondary: 166 41% 18%;
+    --secondary-foreground: 44 62% 92%;
+    --muted: 166 35% 20%;
+    --muted-foreground: 111 10% 73%;
+    --accent: 40 63% 53%;
+    --accent-foreground: 168 71% 8%;
+    --border: 166 39% 22%;
+    --input: 166 39% 22%;
+    --ring: 40 63% 53%;
+    --sidebar-background: 169 59% 11%;
+    --sidebar-foreground: 44 62% 92%;
+    --sidebar-primary: 40 63% 53%;
+    --sidebar-primary-foreground: 168 71% 8%;
+    --sidebar-accent: 166 41% 18%;
+    --sidebar-accent-foreground: 44 62% 92%;
+    --sidebar-border: 166 39% 22%;
+    --sidebar-ring: 40 63% 53%;
     min-height: 100dvh;
-    background:
-      radial-gradient(circle at 18% 10%, color-mix(in srgb, var(--color-primary) 14%, transparent), transparent 28rem),
-      linear-gradient(135deg, color-mix(in srgb, var(--bg-main) 92%, #000 8%), color-mix(in srgb, var(--bg-alt) 88%, #000 12%));
+    background: linear-gradient(135deg, #082f2a 0%, #0b2d28 52%, #06231f 100%);
   }
 
   .admin-shell > :has(> .admin-sidebar) {
@@ -191,23 +228,46 @@
     min-height: 4.5rem;
   }
 
+  .admin-shell .app-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+
+  .admin-layout-content :where(button[class~="bg-gold"], a[class~="bg-gold"]),
+  .admin-page-actions :where(button[class~="bg-gold"], a[class~="bg-gold"]) {
+    color: #071f1b;
+  }
+
+  .admin-shell .admin-sidebar :where(a[class~="bg-gold"], a[class~="bg-gold"] svg) {
+    color: var(--text-primary);
+  }
+
   .admin-shell :where(.bg-surface-02.rounded-xl, .bg-surface-02.rounded-2xl) {
     border-color: color-mix(in srgb, var(--border-color) 72%, transparent);
     box-shadow: 0 14px 38px rgb(0 0 0 / 0.16);
   }
 
-  .admin-layout-content > :where(.min-h-screen, .flex, .flex-col):has([data-admin-sidebar-placeholder]) {
+  .admin-layout-content {
+    background: color-mix(in srgb, var(--bg-alt) 92%, #000 8%);
+  }
+
+  .admin-layout-content :where(.min-h-screen, .flex, .flex-col):has([data-admin-sidebar-placeholder]) {
     min-height: 0 !important;
     height: auto !important;
     background: transparent !important;
     overflow: visible !important;
   }
 
-  .admin-layout-content > :where(.min-h-screen, .flex, .flex-col):has([data-admin-sidebar-placeholder]) > :where(.flex, .flex-col, .flex-1, main),
-  .admin-layout-content > :where(.min-h-screen, .flex, .flex-col):has([data-admin-sidebar-placeholder]) :where(main.flex-1, div.flex-1) {
+  .admin-layout-content :where(.min-h-screen, .flex, .flex-col):has([data-admin-sidebar-placeholder]) > :where(.flex, .flex-col, .flex-1, main),
+  .admin-layout-content :where(.min-h-screen, .flex, .flex-col):has([data-admin-sidebar-placeholder]) :where(main.flex-1, div.flex-1) {
     min-height: 0 !important;
     height: auto !important;
     overflow: visible !important;
+  }
+
+  .admin-layout-content :where([data-admin-sidebar-placeholder], [data-admin-top-actions-placeholder]) {
+    display: none !important;
   }
 
   .admin-layout-content :where(header, div.bg-surface-02.border-b, div.flex.items-center.justify-between):has([data-admin-top-actions-placeholder]) {
@@ -221,11 +281,24 @@
     box-shadow: none !important;
   }
 
-  .admin-layout-content :where(header, div.bg-surface-02.border-b, div.flex.items-center.justify-between):has([data-admin-top-actions-placeholder]) > :first-child {
+  .admin-layout-content :where(main, div.flex-1, div.overflow-auto) > :where(header, div):has([data-admin-top-actions-placeholder]) {
+    position: static !important;
+    top: auto !important;
+    z-index: auto !important;
+    margin: 0 0 1rem !important;
+    border: 0 !important;
+    background: transparent !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .admin-layout-content :where(header, div.bg-surface-02.border-b, div.flex.items-center.justify-between):has([data-admin-top-actions-placeholder]) > :first-child,
+  .admin-layout-content :where(main, div.flex-1, div.overflow-auto) > :where(header, div):has([data-admin-top-actions-placeholder]) > :first-child {
     display: none !important;
   }
 
-  .admin-layout-content :where(header, div.bg-surface-02.border-b, div.flex.items-center.justify-between):has([data-admin-top-actions-placeholder]) > :last-child {
+  .admin-layout-content :where(header, div.bg-surface-02.border-b, div.flex.items-center.justify-between):has([data-admin-top-actions-placeholder]) > :last-child,
+  .admin-layout-content :where(main, div.flex-1, div.overflow-auto) > :where(header, div):has([data-admin-top-actions-placeholder]) > :last-child {
     width: 100%;
     justify-content: flex-end;
   }
@@ -238,9 +311,20 @@
     padding: 0.25rem !important;
   }
 
+  .admin-page-actions,
   .admin-legacy-toolbar {
     border-bottom: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
     padding-bottom: 0.75rem;
+  }
+
+  .admin-local-tabs :where(button, a),
+  .admin-layout-content :where(.px-8.pt-4.flex.gap-2, .flex.flex-wrap.gap-1.bg-surface-02.border.border-surface-03.rounded-xl.p-1) :where(button, a) {
+    border-radius: 0.625rem !important;
+  }
+
+  .admin-layout-content :where(input, select, textarea) {
+    background: color-mix(in srgb, var(--bg-card) 70%, #000 10%);
+    border-color: color-mix(in srgb, var(--border-color) 78%, transparent);
   }
 }
 

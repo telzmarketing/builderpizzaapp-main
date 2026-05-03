@@ -3,8 +3,6 @@ import { AdminLayoutContext } from "@/components/layout/AdminLayoutContext";
 import AdminHeader from "@/components/layout/AdminHeader";
 import AppSidebar from "@/components/layout/AppSidebar";
 import PageContainer from "@/components/layout/PageContainer";
-import PageTabs from "@/components/layout/PageTabs";
-import PageToolbar from "@/components/layout/PageToolbar";
 
 export default function AdminLayout() {
   return (
@@ -14,8 +12,6 @@ export default function AdminLayout() {
           <AppSidebar />
           <main className="flex-1 flex flex-col overflow-hidden min-w-0">
             <AdminHeader />
-            <PageTabs />
-            <PageToolbar />
             <PageContainer>
               <Outlet />
             </PageContainer>
@@ -25,4 +21,3 @@ export default function AdminLayout() {
     </AdminLayoutContext.Provider>
   );
 }
-

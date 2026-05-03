@@ -37,6 +37,7 @@ export type AdminNavigationItem = {
   label: string;
   path: string;
   icon: ElementType;
+  aliases?: string[];
   permissions?: string[];
   exact?: boolean;
 };
@@ -84,10 +85,12 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     label: "Marketing",
     children: [
       { path: "/painel/marketing", icon: TrendingUp, label: "Dashboard Marketing", exact: true },
+      { path: "/painel/marketing/campanhas", icon: Sparkles, label: "Campanhas" },
       { path: "/painel/marketing/visitantes", icon: Eye, label: "Analise de Visitantes" },
+      { path: "/painel/marketing/links", icon: MousePointerClick, label: "Links Rastreaveis" },
       { path: "/painel/marketing/whatsapp", icon: MessageCircle, label: "Disparador WhatsApp" },
       { path: "/painel/marketing/email", icon: Mail, label: "Disparador de Email" },
-      { path: "/painel/trafego-pago", icon: MousePointerClick, label: "Trafego Pago" },
+      { path: "/painel/trafego-pago", icon: MousePointerClick, label: "Trafego Pago", aliases: ["/painel/marketing/ads"] },
       { path: "/painel/marketing/automacoes", icon: Zap, label: "Automacao de Marketing" },
       { path: "/painel/marketing/workflow", icon: CheckSquare, label: "Workflow de Aprovacao" },
       { path: "/painel/marketing/cupons", icon: Tag, label: "Cupons de Desconto" },
@@ -121,4 +124,3 @@ export const adminNavigationGroups: AdminNavigationGroup[] = groups.map((group) 
 export const adminNavigation = adminNavigationGroups.flatMap((group) =>
   group.children.map((item) => ({ ...item, group: group.label })),
 );
-

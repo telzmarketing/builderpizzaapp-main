@@ -39,7 +39,7 @@ export function AdminPageHeader({
   const insideGlobalLayout = useAdminLayout();
   if (insideGlobalLayout) {
     return actions ? (
-      <div className="admin-legacy-toolbar flex flex-wrap items-center justify-end gap-3">
+      <div className="admin-page-actions flex flex-wrap items-center justify-end gap-3">
         {actions}
       </div>
     ) : null;
@@ -87,8 +87,7 @@ export function AdminPageTabs<T extends string>({
   onChange: (tab: T) => void;
 }) {
   return (
-    <div className="admin-local-tabs bg-surface-02 border-b border-surface-03 px-4 md:px-8 flex-shrink-0">
-      <div className="flex gap-1 overflow-x-auto pt-3">
+    <div className="admin-local-tabs flex max-w-full gap-1 overflow-x-auto rounded-xl border border-surface-03 bg-surface-02/80 p-1">
         {tabs.map((tab) => {
           const selected = active === tab.id;
           const Icon = tab.icon;
@@ -97,9 +96,9 @@ export function AdminPageTabs<T extends string>({
               key={tab.id}
               type="button"
               onClick={() => onChange(tab.id)}
-              className={`flex items-center gap-2 whitespace-nowrap rounded-t-xl border px-4 py-2.5 text-xs md:text-sm font-semibold transition-colors ${
+              className={`flex items-center gap-2 whitespace-nowrap rounded-lg border px-3 py-2 text-xs md:text-sm font-semibold transition-colors ${
                 selected
-                  ? "border-surface-03 border-b-surface-01 bg-surface-01 text-gold"
+                  ? "border-gold/40 bg-gold text-black"
                   : "border-transparent text-stone hover:bg-surface-03/60 hover:text-cream"
               }`}
             >
@@ -108,7 +107,6 @@ export function AdminPageTabs<T extends string>({
             </button>
           );
         })}
-      </div>
     </div>
   );
 }
