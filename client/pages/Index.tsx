@@ -86,16 +86,21 @@ export default function Home() {
     return products;
   }, [products, homeConfig]);
 
+  const PROMO_LABEL = "Promoções";
+
   // Categories derived from catalogProducts (respect home config)
   const productCats = [...new Set(
     catalogProducts.filter(p => p.active && (p.subcategory || p.category)).map(p => (p.subcategory || p.category) as string)
   )].sort();
-  const effectiveCategories = [ALL_LABEL, ...productCats];
+  const hasPromos = catalogProducts.some(p => p.active && p.promotion_applied);
+  const effectiveCategories = [ALL_LABEL, ...(hasPromos ? [PROMO_LABEL] : []), ...productCats];
 
   const categoryProducts =
     activeCategory === ALL_LABEL || !activeCategory
       ? catalogProducts
-      : catalogProducts.filter((p) => ((p.subcategory || p.category) ?? "").toLowerCase() === activeCategory.toLowerCase());
+      : activeCategory === PROMO_LABEL
+        ? catalogProducts.filter((p) => p.active && p.promotion_applied)
+        : catalogProducts.filter((p) => ((p.subcategory || p.category) ?? "").toLowerCase() === activeCategory.toLowerCase());
 
   const { home, media } = siteContent;
 

@@ -11,6 +11,7 @@ export default function Cardapio() {
   const navigate = useNavigate();
   const { products, addToCart } = useApp();
   const ALL_LABEL = "Todos";
+  const PROMO_LABEL = "Promoções";
   const [activeCategory, setActiveCategory] = useState(ALL_LABEL);
   const [search, setSearch] = useState("");
   const [justAdded, setJustAdded] = useState<string | null>(null);
@@ -19,13 +20,15 @@ export default function Cardapio() {
   const productCats = [...new Set(
     products.filter(p => p.active && (p.subcategory || p.category)).map(p => (p.subcategory || p.category) as string)
   )].sort();
-  const effectiveCategories = [ALL_LABEL, ...productCats];
+  const hasPromos = products.some(p => p.active && p.promotion_applied);
+  const effectiveCategories = [ALL_LABEL, ...(hasPromos ? [PROMO_LABEL] : []), ...productCats];
 
   const filtered = products.filter((p) => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.description.toLowerCase().includes(search.toLowerCase());
-    const matchCat = activeCategory === ALL_LABEL ||
-      ((p.subcategory || p.category) ?? "").toLowerCase() === activeCategory.toLowerCase();
+    const matchCat =
+      activeCategory === ALL_LABEL ||
+      (activeCategory === PROMO_LABEL ? p.promotion_applied : ((p.subcategory || p.category) ?? "").toLowerCase() === activeCategory.toLowerCase());
     return matchSearch && matchCat && p.active;
   });
 
