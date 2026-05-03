@@ -45,6 +45,23 @@ function addressQuery(order: { delivery_street?: string | null; delivery_city?: 
   return parts.join(", ");
 }
 
+function hasGps(person: { location_lat?: number | null; location_lng?: number | null }): person is {
+  location_lat: number;
+  location_lng: number;
+} {
+  return typeof person.location_lat === "number" && typeof person.location_lng === "number";
+}
+
+function googleMapsRouteUrl(origin: { lat: number; lng: number }, destination: { lat: number; lng: number }): string {
+  const params = new URLSearchParams({
+    api: "1",
+    origin: `${origin.lat},${origin.lng}`,
+    destination: `${destination.lat},${destination.lng}`,
+    travelmode: "driving",
+  });
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function EtaBadge({ assignedAt, estimatedMinutes }: { assignedAt?: string; estimatedMinutes?: number }) {
@@ -172,7 +189,7 @@ export default function LogisticaMapa() {
     const bounds: [number, number][] = [];
 
     overview.persons_on_duty.forEach(({ person, active_deliveries }) => {
-      if (!person.location_lat || !person.location_lng) return;
+      if (!hasGps(person)) return;
 
       const icon = L!.divIcon({
         html: `<div style="background:#3b82f6;border:2px solid white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 6px rgba(0,0,0,0.4)">${VEHICLE_EMOJI[person.vehicle_type] ?? "🏍️"}</div>`,
@@ -329,7 +346,7 @@ export default function LogisticaMapa() {
               const q = addressQuery(d.order);
               const geo = q ? geocodedAddrs[q] : undefined;
               const dist =
-                person.location_lat && person.location_lng && geo
+                hasGps(person) && geo
                   ? haversineKm(person.location_lat, person.location_lng, geo.lat, geo.lng)
                   : null;
               return { d, geo, dist };
@@ -352,7 +369,7 @@ export default function LogisticaMapa() {
                     <p className="text-cream font-bold text-sm">{person.name}</p>
                     <p className="text-stone text-xs">{person.phone}</p>
                   </div>
-                  {person.location_lat ? (
+                  {hasGps(person) ? (
                     <span className="ml-auto flex items-center gap-1 text-green-300 text-xs">
                       <MapPin size={11} /> GPS ativo
                     </span>
@@ -371,7 +388,14 @@ export default function LogisticaMapa() {
                         <span>Rota sugerida por distância</span>
                       </div>
                     )}
-                    {sorted.map(({ d, dist }, idx) => (
+                    {sorted.map(({ d, geo, dist }, idx) => {
+                      const mapsUrl = hasGps(person) && geo
+                        ? googleMapsRouteUrl(
+                            { lat: person.location_lat, lng: person.location_lng },
+                            { lat: geo.lat, lng: geo.lng },
+                          )
+                        : null;
+                      return (
                       <div key={d.id} className="rounded-xl bg-surface-03/50 px-3 py-2">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
@@ -401,8 +425,19 @@ export default function LogisticaMapa() {
                         <p className="text-stone/70 text-[10px] mt-0.5 ml-7">
                           {STATUS_LABEL[d.status] ?? d.status}
                         </p>
+                        {mapsUrl && (
+                          <a
+                            href={mapsUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-1 ml-7 inline-flex text-[10px] font-bold text-green-300 hover:text-green-200"
+                          >
+                            Google Maps
+                          </a>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Loader2, LogOut, Package, CheckCircle, Clock, Bike,
-  Navigation, NavigationOff, MapPin, Star, RotateCcw, X,
+  Navigation, NavigationOff, MapPin, Star, RotateCcw, X, Route,
 } from "lucide-react";
 import { deliveryApi, type DeliveryPerson, type DeliveryRecord } from "@/lib/api";
+
+let L: typeof import("leaflet") | null = null;
 
 function etaText(assignedAt?: string, estimatedMinutes?: number): { text: string; urgent: boolean } | null {
   if (!assignedAt || !estimatedMinutes) return null;
@@ -57,6 +59,108 @@ const DRIVER_STATUS_LABELS: Record<string, string> = {
 
 const ACTIVE_STATUSES = new Set(["assigned", "picked_up", "on_the_way"]);
 
+function deliveryAddress(delivery: DeliveryRecord): string | null {
+  const order = delivery.order;
+  if (!order?.delivery_street) return null;
+  return [order.delivery_street, order.delivery_complement, order.delivery_city, "Brasil"]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function googleMapsRouteUrl(
+  destination: string,
+  origin?: { lat: number; lng: number } | null,
+  waypoints: string[] = [],
+): string {
+  const params = new URLSearchParams({
+    api: "1",
+    destination,
+    travelmode: "driving",
+  });
+  if (origin) params.set("origin", `${origin.lat},${origin.lng}`);
+  if (waypoints.length > 0) params.set("waypoints", waypoints.join("|"));
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
+function buildFullRouteUrl(
+  deliveries: DeliveryRecord[],
+  origin?: { lat: number; lng: number } | null,
+): string | null {
+  const addresses = deliveries.map(deliveryAddress).filter((address): address is string => !!address);
+  if (addresses.length === 0) return null;
+  return googleMapsRouteUrl(addresses[addresses.length - 1], origin, addresses.slice(0, -1));
+}
+
+function DriverLocationMap({ location }: { location: { lat: number; lng: number } | null }) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<import("leaflet").Map | null>(null);
+  const markerRef = useRef<import("leaflet").Marker | null>(null);
+  const [leafletReady, setLeafletReady] = useState(false);
+
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    document.head.appendChild(link);
+
+    import("leaflet").then((mod) => {
+      L = mod.default ?? mod;
+      setLeafletReady(true);
+    });
+
+    return () => {
+      document.head.removeChild(link);
+      mapInstanceRef.current?.remove();
+      mapInstanceRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!leafletReady || !L || !mapRef.current || mapInstanceRef.current) return;
+    const center: [number, number] = location ? [location.lat, location.lng] : [-23.55, -46.63];
+    const map = L.map(mapRef.current, { center, zoom: location ? 16 : 12, zoomControl: false });
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap",
+      maxZoom: 19,
+    }).addTo(map);
+    mapInstanceRef.current = map;
+  }, [leafletReady, location]);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !L || !location) return;
+
+    markerRef.current?.remove();
+    const icon = L.divIcon({
+      html: `<div style="background:#d9a441;border:3px solid white;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.45)"><div style="background:#111827;border-radius:50%;width:10px;height:10px"></div></div>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+      className: "",
+    });
+    markerRef.current = L.marker([location.lat, location.lng], { icon })
+      .addTo(map)
+      .bindPopup("Sua localização");
+    map.setView([location.lat, location.lng], 16);
+  }, [location]);
+
+  return (
+    <div className="relative h-52 overflow-hidden rounded-2xl border border-surface-03 bg-surface-02">
+      {!leafletReady && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center">
+          <Loader2 size={24} className="animate-spin text-gold" />
+        </div>
+      )}
+      {!location && leafletReady && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-surface-02/90 px-6 text-center">
+          <NavigationOff size={24} className="text-stone mb-2" />
+          <p className="text-stone text-sm">Ative o GPS para ver seu pin no mapa</p>
+        </div>
+      )}
+      <div ref={mapRef} className="h-full w-full" />
+    </div>
+  );
+}
+
 export default function Motoboy() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem("driver_token"));
   const [driver, setDriver] = useState<DeliveryPerson | null>(null);
@@ -66,6 +170,7 @@ export default function Motoboy() {
 
   const [gpsActive, setGpsActive] = useState(false);
   const [gpsError, setGpsError] = useState("");
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const gpsWatchRef = useRef<number | null>(null);
   const gpsIntervalRef = useRef<number | null>(null);
 
@@ -131,7 +236,8 @@ export default function Motoboy() {
   }
 
   const sendLocation = useCallback((lat: number, lng: number) => {
-    deliveryApi.driverUpdateLocation(lat, lng).catch(() => {});
+    setCurrentLocation({ lat, lng });
+    deliveryApi.driverUpdateLocation(lat, lng).then(setDriver).catch(() => {});
   }, []);
 
   const startGps = useCallback(() => {
@@ -164,6 +270,7 @@ export default function Motoboy() {
     setToken(null);
     setDriver(null);
     setDeliveries([]);
+    setCurrentLocation(null);
   }
 
   async function handleConfirm() {
@@ -262,6 +369,11 @@ export default function Motoboy() {
   const activeDeliveries = deliveries.filter((d) => ACTIVE_STATUSES.has(d.status));
   const pastDeliveries   = deliveries.filter((d) => !ACTIVE_STATUSES.has(d.status));
   const initials = driver?.name.split(" ").map((n) => n[0]).slice(0, 2).join("") ?? "—";
+  const mapLocation = currentLocation ??
+    (driver?.location_lat && driver?.location_lng
+      ? { lat: driver.location_lat, lng: driver.location_lng }
+      : null);
+  const fullRouteUrl = buildFullRouteUrl(activeDeliveries, mapLocation);
 
   return (
     <div className="h-screen bg-surface-00 flex flex-col overflow-hidden">
@@ -340,6 +452,10 @@ export default function Motoboy() {
           </div>
         </div>
 
+        <div className="px-4 mt-4">
+          <DriverLocationMap location={mapLocation} />
+        </div>
+
         {/* Em andamento */}
         <div className="px-4 mt-6">
           <div className="flex items-center justify-between mb-3">
@@ -362,8 +478,21 @@ export default function Motoboy() {
             </div>
           ) : (
             <div className="space-y-4">
+              {fullRouteUrl && (
+                <a
+                  href={fullRouteUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-center gap-2 rounded-2xl bg-green-500/15 border border-green-500/25 px-4 py-3 text-green-300 text-sm font-bold"
+                >
+                  <Route size={16} />
+                  Abrir rota sugerida no Google Maps
+                </a>
+              )}
               {activeDeliveries.map((d) => {
                 const statusCls = STATUS_CLS[d.status] ?? "bg-stone/20 text-stone border-stone/20";
+                const address = deliveryAddress(d);
+                const mapsUrl = address ? googleMapsRouteUrl(address, mapLocation) : null;
                 return (
                   <div key={d.id} className="rounded-2xl bg-surface-02 border border-surface-03 overflow-hidden">
 
@@ -435,6 +564,17 @@ export default function Motoboy() {
                       >
                         {d.confirmed_by_code_at ? "Entrega confirmada ✓" : "Confirmar entrega"}
                       </button>
+                      {mapsUrl && (
+                        <a
+                          href={mapsUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-surface-03 bg-surface-03 py-3 text-parchment text-sm font-bold"
+                        >
+                          <Navigation size={15} />
+                          Abrir rota desta entrega
+                        </a>
+                      )}
                     </div>
                   </div>
                 );

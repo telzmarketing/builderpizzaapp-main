@@ -3,7 +3,8 @@ import { ArrowLeft, ChevronDown, LogOut, User } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
-import { adminNavigationGroups } from "@/config/adminNavigation";
+import { filterAdminNavigation } from "@/lib/adminAccess";
+import type { ApiEffectivePermissions } from "@/lib/api";
 
 function getInitials(name: string): string {
   return name
@@ -21,14 +22,19 @@ export default function AppSidebar() {
 
   const adminUserRaw = localStorage.getItem("admin_user");
   const adminUser = adminUserRaw ? JSON.parse(adminUserRaw) : null;
+  const permissionsRaw = localStorage.getItem("admin_permissions");
+  const permissions: ApiEffectivePermissions | null = permissionsRaw ? JSON.parse(permissionsRaw) : null;
+  const navigationGroups = useMemo(() => filterAdminNavigation(permissions), [permissionsRaw]);
   const adminName: string = adminUser?.name ?? "Administrador";
   const adminEmail: string = adminUser?.email ?? "";
+  const adminRole: string = adminUser?.role_name ?? permissions?.role_name ?? "Admin";
   const initials = getInitials(adminName);
   const { brand } = siteContent;
 
   const handleLogout = () => {
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_user");
+    localStorage.removeItem("admin_permissions");
     navigate("/painel/login");
   };
 
@@ -41,14 +47,14 @@ export default function AppSidebar() {
 
   const activeGroups = useMemo(
     () =>
-      adminNavigationGroups
+      navigationGroups
         .filter((group) => group.children.some((item) => isItemActive(item)))
         .map((group) => group.label),
-    [pathname],
+    [pathname, navigationGroups],
   );
 
   const [openGroups, setOpenGroups] = useState<Set<string>>(
-    () => new Set(adminNavigationGroups.map((group) => group.label)),
+    () => new Set(navigationGroups.map((group) => group.label)),
   );
 
   useEffect(() => {
@@ -122,7 +128,7 @@ export default function AppSidebar() {
             <div className="flex items-center gap-1.5">
               <p className="text-cream text-xs font-semibold truncate leading-none">{adminName}</p>
               <span className="flex-shrink-0 text-[9px] font-bold text-gold bg-gold/15 border border-gold/25 rounded px-1 py-0.5 leading-none">
-                Admin
+                {adminRole}
               </span>
             </div>
             {adminEmail && (
@@ -133,7 +139,7 @@ export default function AppSidebar() {
       </div>
 
       <nav ref={navRef} className="flex-1 overflow-y-auto py-3 px-3">
-        {adminNavigationGroups.map((group, groupIndex) => {
+        {navigationGroups.map((group, groupIndex) => {
           const groupActive = activeGroups.includes(group.label);
           const groupOpen = openGroups.has(group.label);
           return (
