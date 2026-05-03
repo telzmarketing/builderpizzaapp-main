@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, LogOut, Package, CheckCircle, Clock, Bike, Navigation, NavigationOff, MapPin } from "lucide-react";
+import {
+  Loader2, LogOut, Package, CheckCircle, Clock, Bike,
+  Navigation, NavigationOff, MapPin, Star, RotateCcw, X,
+} from "lucide-react";
 import { deliveryApi, type DeliveryPerson, type DeliveryRecord } from "@/lib/api";
 
 function etaText(assignedAt?: string, estimatedMinutes?: number): { text: string; urgent: boolean } | null {
@@ -18,47 +21,38 @@ function EtaLine({ assignedAt, estimatedMinutes }: { assignedAt?: string; estima
   }, [assignedAt, estimatedMinutes]);
   if (!eta) return null;
   return (
-    <div className={`flex items-center gap-1.5 text-xs font-medium ${eta.urgent ? "text-orange-300" : "text-green-300"}`}>
+    <span className={`text-xs font-semibold flex items-center gap-1 ${eta.urgent ? "text-orange-400" : "text-green-400"}`}>
       <Clock size={11} />
       {eta.text}
-    </div>
+    </span>
   );
 }
 
 const VEHICLE_EMOJI: Record<string, string> = {
-  motorcycle: "🏍️",
-  bicycle:    "🚲",
-  car:        "🚗",
-  walking:    "🚶",
+  motorcycle: "🏍️", bicycle: "🚲", car: "🚗", walking: "🚶",
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  assigned:           "Designado",
-  picked_up:          "Coletado",
-  on_the_way:         "A caminho",
-  delivered:          "Entregue",
-  completed:          "Finalizado",
-  pending_assignment: "Aguardando",
+  assigned: "Designado", picked_up: "Coletado", on_the_way: "A caminho",
+  delivered: "Entregue", completed: "Finalizado", pending_assignment: "Aguardando",
 };
 
 const STATUS_CLS: Record<string, string> = {
-  assigned:   "bg-blue-500/15 text-blue-300",
-  picked_up:  "bg-gold/15 text-gold",
-  on_the_way: "bg-violet-500/15 text-violet-300",
-  delivered:  "bg-green-500/15 text-green-300",
-  completed:  "bg-green-500/15 text-green-300",
+  assigned:   "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  picked_up:  "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  on_the_way: "bg-violet-500/20 text-violet-300 border-violet-500/30",
+  delivered:  "bg-green-500/20 text-green-300 border-green-500/30",
+  completed:  "bg-green-500/20 text-green-300 border-green-500/30",
 };
 
 const DRIVER_STATUS_CLS: Record<string, string> = {
-  available: "text-green-300",
-  busy:      "text-gold",
-  offline:   "text-stone",
+  available: "bg-green-500/20 text-green-400",
+  busy:      "bg-amber-500/20 text-amber-400",
+  offline:   "bg-stone/20 text-stone",
 };
 
 const DRIVER_STATUS_LABELS: Record<string, string> = {
-  available: "Disponível",
-  busy:      "Em rota",
-  offline:   "Offline",
+  available: "Disponível", busy: "Em rota", offline: "Offline",
 };
 
 const ACTIVE_STATUSES = new Set(["assigned", "picked_up", "on_the_way"]);
@@ -70,19 +64,16 @@ export default function Motoboy() {
   const [loadingDriver, setLoadingDriver] = useState(false);
   const [loadingDeliveries, setLoadingDeliveries] = useState(false);
 
-  // Geolocation
   const [gpsActive, setGpsActive] = useState(false);
   const [gpsError, setGpsError] = useState("");
   const gpsWatchRef = useRef<number | null>(null);
   const gpsIntervalRef = useRef<number | null>(null);
 
-  // Login state
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
 
-  // Confirm modal
   const [confirmModal, setConfirmModal] = useState<{ deliveryId: string } | null>(null);
   const [code, setCode] = useState("");
   const [confirmLoading, setConfirmLoading] = useState(false);
@@ -109,18 +100,12 @@ export default function Motoboy() {
     try {
       const data = await deliveryApi.driverDeliveries();
       setDeliveries(data ?? []);
-    } catch {
-      /* ignore */
-    } finally {
-      setLoadingDeliveries(false);
-    }
+    } catch { /* ignore */ }
+    finally { setLoadingDeliveries(false); }
   }, [token]);
 
   useEffect(() => {
-    if (token) {
-      loadDriver();
-      loadDeliveries();
-    }
+    if (token) { loadDriver(); loadDeliveries(); }
   }, [token, loadDriver, loadDeliveries]);
 
   useEffect(() => {
@@ -145,34 +130,18 @@ export default function Motoboy() {
     }
   }
 
-  // ── Geolocation ───────────────────────────────────────────────────────────
-
   const sendLocation = useCallback((lat: number, lng: number) => {
     deliveryApi.driverUpdateLocation(lat, lng).catch(() => {});
   }, []);
 
   const startGps = useCallback(() => {
-    if (!navigator.geolocation) {
-      setGpsError("Geolocalização não suportada neste dispositivo.");
-      return;
-    }
+    if (!navigator.geolocation) { setGpsError("GPS não suportado neste dispositivo."); return; }
     setGpsError("");
-
-    // Watch position continuously
     gpsWatchRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        sendLocation(pos.coords.latitude, pos.coords.longitude);
-        setGpsActive(true);
-        setGpsError("");
-      },
-      (err) => {
-        setGpsError(`GPS: ${err.message}`);
-        setGpsActive(false);
-      },
+      (pos) => { sendLocation(pos.coords.latitude, pos.coords.longitude); setGpsActive(true); setGpsError(""); },
+      (err) => { setGpsError(`GPS: ${err.message}`); setGpsActive(false); },
       { enableHighAccuracy: true, maximumAge: 10_000 },
     );
-
-    // Also send every 30s as fallback for browsers that throttle watchPosition
     gpsIntervalRef.current = window.setInterval(() => {
       navigator.geolocation.getCurrentPosition(
         (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
@@ -182,18 +151,11 @@ export default function Motoboy() {
   }, [sendLocation]);
 
   const stopGps = useCallback(() => {
-    if (gpsWatchRef.current !== null) {
-      navigator.geolocation.clearWatch(gpsWatchRef.current);
-      gpsWatchRef.current = null;
-    }
-    if (gpsIntervalRef.current !== null) {
-      window.clearInterval(gpsIntervalRef.current);
-      gpsIntervalRef.current = null;
-    }
+    if (gpsWatchRef.current !== null) { navigator.geolocation.clearWatch(gpsWatchRef.current); gpsWatchRef.current = null; }
+    if (gpsIntervalRef.current !== null) { window.clearInterval(gpsIntervalRef.current); gpsIntervalRef.current = null; }
     setGpsActive(false);
   }, []);
 
-  // Clean up GPS on unmount / logout
   useEffect(() => () => stopGps(), [stopGps]);
 
   function handleLogout() {
@@ -224,55 +186,59 @@ export default function Motoboy() {
     }
   }
 
-  // ── Login screen ───────────────────────────────────────────────────────────
+  // ── Login ─────────────────────────────────────────────────────────────────
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-surface-00 flex flex-col items-center justify-center px-4">
-        <div className="w-full max-w-sm">
-          <div className="text-center mb-8">
-            <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gold/15 mb-4">
-              <Bike size={32} className="text-gold" />
+      <div className="min-h-screen bg-surface-00 flex flex-col items-center justify-center p-6">
+        <div className="w-full max-w-xs">
+          <div className="text-center mb-10">
+            <div className="inline-flex h-20 w-20 items-center justify-center rounded-3xl bg-gold/15 mb-5 shadow-lg shadow-gold/10">
+              <Bike size={36} className="text-gold" />
             </div>
-            <h1 className="text-cream text-2xl font-black">App do Motoboy</h1>
-            <p className="text-stone text-sm mt-1">Acesso exclusivo para entregadores</p>
+            <h1 className="text-cream text-2xl font-black tracking-tight">App do Entregador</h1>
+            <p className="text-stone text-sm mt-1.5">Acesso exclusivo para entregadores</p>
           </div>
 
-          <form onSubmit={handleLogin} className="bg-surface-02 rounded-2xl border border-surface-03 p-6 space-y-4">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-stone text-xs font-medium">Email</span>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="flex flex-col gap-1.5">
+              <span className="text-stone text-xs font-semibold uppercase tracking-wider">Email</span>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                autoComplete="email"
                 placeholder="seu@email.com"
-                className="rounded-xl bg-surface-03 border border-surface-03 text-cream px-4 py-3 text-sm focus:outline-none focus:border-gold/50 placeholder:text-stone/50"
+                className="rounded-2xl bg-surface-02 border border-surface-03 text-cream px-4 py-4 text-base focus:outline-none focus:border-gold/60 placeholder:text-stone/40"
               />
-            </label>
+            </div>
 
-            <label className="flex flex-col gap-1.5">
-              <span className="text-stone text-xs font-medium">Senha</span>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-stone text-xs font-semibold uppercase tracking-wider">Senha</span>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                autoComplete="current-password"
                 placeholder="••••••••"
-                className="rounded-xl bg-surface-03 border border-surface-03 text-cream px-4 py-3 text-sm focus:outline-none focus:border-gold/50"
+                className="rounded-2xl bg-surface-02 border border-surface-03 text-cream px-4 py-4 text-base focus:outline-none focus:border-gold/60"
               />
-            </label>
+            </div>
 
             {loginError && (
-              <p className="text-sm text-red-300">{loginError}</p>
+              <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-sm text-red-300">
+                {loginError}
+              </div>
             )}
 
             <button
               type="submit"
               disabled={loginLoading}
-              className="w-full flex items-center justify-center gap-2 rounded-xl bg-gold py-3 text-cream font-bold hover:bg-gold/90 disabled:opacity-50 transition-colors"
+              className="w-full flex items-center justify-center gap-2 rounded-2xl bg-gold py-4 text-cream font-bold text-base hover:bg-gold/90 active:scale-[0.98] disabled:opacity-50 transition-all mt-2"
             >
-              {loginLoading && <Loader2 size={16} className="animate-spin" />}
+              {loginLoading && <Loader2 size={18} className="animate-spin" />}
               Entrar
             </button>
           </form>
@@ -281,7 +247,7 @@ export default function Motoboy() {
     );
   }
 
-  // ── Loading ────────────────────────────────────────────────────────────────
+  // ── Loading ───────────────────────────────────────────────────────────────
 
   if (loadingDriver) {
     return (
@@ -291,207 +257,234 @@ export default function Motoboy() {
     );
   }
 
-  // ── Driver app ─────────────────────────────────────────────────────────────
+  // ── App ───────────────────────────────────────────────────────────────────
 
   const activeDeliveries = deliveries.filter((d) => ACTIVE_STATUSES.has(d.status));
   const pastDeliveries   = deliveries.filter((d) => !ACTIVE_STATUSES.has(d.status));
+  const initials = driver?.name.split(" ").map((n) => n[0]).slice(0, 2).join("") ?? "—";
 
   return (
-    <div className="min-h-screen bg-surface-00 pb-8">
-      {/* Header */}
-      <header className="bg-surface-02 border-b border-surface-03 px-4 py-4">
-        <div className="max-w-lg mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-gold/20 flex items-center justify-center">
-              <span className="text-gold font-bold text-sm">
-                {driver?.name.split(" ").map((n) => n[0]).slice(0, 2).join("") ?? "—"}
-              </span>
+    <div className="h-screen bg-surface-00 flex flex-col overflow-hidden">
+
+      {/* ── Header fixo ── */}
+      <header className="flex-shrink-0 bg-surface-02 border-b border-surface-03 px-4 pt-safe-top">
+        <div className="flex items-center justify-between h-16">
+          {/* Driver info */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-10 w-10 flex-shrink-0 rounded-full bg-gold/20 flex items-center justify-center">
+              <span className="text-gold font-black text-sm">{initials}</span>
             </div>
-            <div>
-              <p className="text-cream font-bold text-sm">{driver?.name}</p>
-              <p className={`text-xs font-medium ${DRIVER_STATUS_CLS[driver?.status ?? "offline"]}`}>
-                {VEHICLE_EMOJI[driver?.vehicle_type ?? "motorcycle"]}{" "}
-                {DRIVER_STATUS_LABELS[driver?.status ?? "offline"]}
-              </p>
+            <div className="min-w-0">
+              <p className="text-cream font-bold text-sm leading-tight truncate">{driver?.name}</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-base leading-none">{VEHICLE_EMOJI[driver?.vehicle_type ?? "motorcycle"]}</span>
+                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${DRIVER_STATUS_CLS[driver?.status ?? "offline"]}`}>
+                  {DRIVER_STATUS_LABELS[driver?.status ?? "offline"]}
+                </span>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={gpsActive ? stopGps : startGps}
-              className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+              className={`h-10 w-10 flex items-center justify-center rounded-full transition-colors ${
                 gpsActive
-                  ? "border-green-500/40 bg-green-500/10 text-green-300 hover:bg-green-500/20"
-                  : "border-surface-03 bg-surface-03/40 text-stone hover:text-cream"
+                  ? "bg-green-500/15 text-green-400"
+                  : "bg-surface-03 text-stone"
               }`}
-              title={gpsActive ? "Parar compartilhamento de localização" : "Compartilhar localização"}
+              title={gpsActive ? "Parar GPS" : "Ativar GPS"}
             >
-              {gpsActive ? <Navigation size={14} /> : <NavigationOff size={14} />}
-              <span className="hidden sm:inline">{gpsActive ? "GPS ativo" : "GPS"}</span>
+              {gpsActive ? <Navigation size={18} /> : <NavigationOff size={18} />}
             </button>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1.5 rounded-xl border border-surface-03 px-3 py-2 text-stone text-sm hover:text-cream transition-colors"
+              className="h-10 w-10 flex items-center justify-center rounded-full bg-surface-03 text-stone hover:text-cream transition-colors"
+              title="Sair"
             >
-              <LogOut size={14} />
-              Sair
+              <LogOut size={18} />
             </button>
           </div>
         </div>
+
+        {/* GPS error inline */}
+        {gpsError && (
+          <div className="pb-3">
+            <div className="rounded-xl bg-orange-500/10 border border-orange-500/20 px-3 py-2 text-xs text-orange-300 flex items-center gap-2">
+              <NavigationOff size={12} className="flex-shrink-0" />
+              {gpsError}
+            </div>
+          </div>
+        )}
       </header>
 
-      {/* Stats */}
-      <div className="max-w-lg mx-auto px-4 mt-4 grid grid-cols-2 gap-3">
-        <div className="rounded-2xl border border-surface-03 bg-surface-02 p-4 text-center">
-          <p className="text-stone text-xs uppercase tracking-widest">Total entregas</p>
-          <p className="text-gold text-2xl font-black mt-1">{driver?.total_deliveries ?? 0}</p>
-        </div>
-        <div className="rounded-2xl border border-surface-03 bg-surface-02 p-4 text-center">
-          <p className="text-stone text-xs uppercase tracking-widest">Avaliação</p>
-          <p className="text-gold text-2xl font-black mt-1">
-            ⭐ {(driver?.average_rating ?? 5).toFixed(1)}
-          </p>
-        </div>
-      </div>
+      {/* ── Conteúdo scrollável ── */}
+      <main className="flex-1 overflow-y-auto pb-safe-bottom">
 
-      {/* GPS error */}
-      {gpsError && (
-        <div className="max-w-lg mx-auto px-4 mt-3">
-          <div className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-2.5 text-sm text-orange-300">
-            {gpsError}
+        {/* Stats */}
+        <div className="grid grid-cols-2 gap-3 px-4 pt-4">
+          <div className="rounded-2xl bg-surface-02 border border-surface-03 p-4 text-center">
+            <div className="flex items-center justify-center gap-1 mb-1">
+              <Package size={13} className="text-stone" />
+              <p className="text-stone text-[10px] uppercase tracking-widest font-semibold">Entregas</p>
+            </div>
+            <p className="text-gold text-3xl font-black">{driver?.total_deliveries ?? 0}</p>
+          </div>
+          <div className="rounded-2xl bg-surface-02 border border-surface-03 p-4 text-center">
+            <div className="flex items-center justify-center gap-1 mb-1">
+              <Star size={13} className="text-stone" />
+              <p className="text-stone text-[10px] uppercase tracking-widest font-semibold">Avaliação</p>
+            </div>
+            <p className="text-gold text-3xl font-black">{(driver?.average_rating ?? 5).toFixed(1)}</p>
           </div>
         </div>
-      )}
 
-      {/* Active deliveries */}
-      <div className="max-w-lg mx-auto px-4 mt-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-cream font-bold">Em andamento</h2>
-          <button
-            onClick={loadDeliveries}
-            disabled={loadingDeliveries}
-            className="text-stone text-xs hover:text-cream transition-colors"
-          >
-            {loadingDeliveries ? <Loader2 size={13} className="animate-spin" /> : "Atualizar"}
-          </button>
-        </div>
-
-        {activeDeliveries.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-surface-03 p-8 text-center">
-            <Package size={32} className="text-stone mx-auto mb-2" />
-            <p className="text-stone text-sm">Nenhuma entrega ativa</p>
+        {/* Em andamento */}
+        <div className="px-4 mt-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-cream font-bold text-base">Em andamento</h2>
+            <button
+              onClick={loadDeliveries}
+              disabled={loadingDeliveries}
+              className="h-8 w-8 flex items-center justify-center rounded-full bg-surface-02 border border-surface-03 text-stone disabled:opacity-40 transition-opacity"
+              title="Atualizar"
+            >
+              <RotateCcw size={14} className={loadingDeliveries ? "animate-spin" : ""} />
+            </button>
           </div>
-        ) : (
-          <div className="space-y-4">
-            {activeDeliveries.map((d) => {
-              const statusCls = STATUS_CLS[d.status] ?? "bg-stone/20 text-stone";
-              return (
-                <div key={d.id} className="rounded-2xl border border-surface-03 bg-surface-02 p-5">
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <p className="text-cream font-mono font-bold">
-                      Pedido #{d.order_id.slice(0, 8).toUpperCase()}
-                    </p>
-                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${statusCls}`}>
-                      {STATUS_LABELS[d.status] ?? d.status}
-                    </span>
-                  </div>
 
-                  {/* Endereço de entrega */}
-                  {d.order && (
-                    <div className="rounded-xl bg-surface-03/60 px-3 py-2.5 mb-3">
-                      {d.order.delivery_name && (
-                        <p className="text-parchment text-sm font-medium">{d.order.delivery_name}</p>
-                      )}
-                      {d.order.delivery_street && (
-                        <div className="flex items-start gap-1.5 mt-1">
-                          <MapPin size={12} className="text-gold flex-shrink-0 mt-0.5" />
-                          <p className="text-stone text-xs">
-                            {d.order.delivery_street}
-                            {d.order.delivery_complement ? `, ${d.order.delivery_complement}` : ""}
-                            {d.order.delivery_city ? ` — ${d.order.delivery_city}` : ""}
+          {activeDeliveries.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-surface-03 py-12 text-center">
+              <Package size={36} className="text-stone mx-auto mb-3" />
+              <p className="text-stone text-sm font-medium">Nenhuma entrega ativa</p>
+              <p className="text-stone/60 text-xs mt-1">Aguarde a atribuição pelo painel</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {activeDeliveries.map((d) => {
+                const statusCls = STATUS_CLS[d.status] ?? "bg-stone/20 text-stone border-stone/20";
+                return (
+                  <div key={d.id} className="rounded-2xl bg-surface-02 border border-surface-03 overflow-hidden">
+
+                    {/* Card header */}
+                    <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-surface-03">
+                      <p className="text-cream font-mono font-bold text-base tracking-wide">
+                        #{d.order_id.slice(0, 8).toUpperCase()}
+                      </p>
+                      <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${statusCls}`}>
+                        {STATUS_LABELS[d.status] ?? d.status}
+                      </span>
+                    </div>
+
+                    {/* Endereço */}
+                    {d.order && (d.order.delivery_name || d.order.delivery_street) && (
+                      <div className="px-4 py-3 border-b border-surface-03">
+                        {d.order.delivery_name && (
+                          <p className="text-parchment text-sm font-semibold mb-1">{d.order.delivery_name}</p>
+                        )}
+                        {d.order.delivery_street && (
+                          <div className="flex items-start gap-2">
+                            <MapPin size={14} className="text-gold flex-shrink-0 mt-0.5" />
+                            <p className="text-stone text-sm leading-snug">
+                              {d.order.delivery_street}
+                              {d.order.delivery_complement ? `, ${d.order.delivery_complement}` : ""}
+                              {d.order.delivery_city ? ` — ${d.order.delivery_city}` : ""}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ETA */}
+                    <div className="px-4 py-2.5 flex items-center gap-3 border-b border-surface-03">
+                      <EtaLine assignedAt={d.assigned_at} estimatedMinutes={d.estimated_minutes} />
+                      <span className="text-stone text-xs">{d.estimated_minutes}min estimado</span>
+                    </div>
+
+                    {/* Código de confirmação */}
+                    <div className="px-4 pt-4 pb-4">
+                      {d.confirmation_code && !d.confirmed_by_code_at && (
+                        <div className="rounded-2xl bg-gold/10 border border-gold/30 p-4 mb-4">
+                          <p className="text-gold text-[10px] uppercase tracking-widest text-center mb-2 font-bold">
+                            Código de confirmação
+                          </p>
+                          <p className="text-gold font-mono text-4xl font-black text-center tracking-[0.5em]">
+                            {d.confirmation_code}
+                          </p>
+                          <p className="text-stone text-xs text-center mt-2">
+                            Mostre ao cliente para confirmar a entrega
                           </p>
                         </div>
                       )}
-                    </div>
-                  )}
 
-                  <div className="flex items-center gap-4 mb-3">
-                    <EtaLine assignedAt={d.assigned_at} estimatedMinutes={d.estimated_minutes} />
-                    <span className="text-stone text-xs">
-                      <Clock size={11} className="inline mr-1" />
-                      {d.estimated_minutes} min estimado
+                      {d.confirmed_by_code_at && (
+                        <div className="flex items-center gap-2 text-green-400 text-sm mb-4 bg-green-500/10 rounded-xl px-3 py-2.5">
+                          <CheckCircle size={16} />
+                          <span className="font-medium">Confirmado pelo cliente</span>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => {
+                          setCode(""); setConfirmError(""); setConfirmSuccess(false);
+                          setConfirmModal({ deliveryId: d.id });
+                        }}
+                        disabled={!!d.confirmed_by_code_at}
+                        className="w-full rounded-2xl bg-gold py-4 text-cream text-base font-bold active:scale-[0.98] hover:bg-gold/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                      >
+                        {d.confirmed_by_code_at ? "Entrega confirmada ✓" : "Confirmar entrega"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Histórico */}
+        {pastDeliveries.length > 0 && (
+          <div className="px-4 mt-8 mb-4">
+            <h2 className="text-cream font-bold text-base mb-3">Histórico recente</h2>
+            <div className="rounded-2xl bg-surface-02 border border-surface-03 divide-y divide-surface-03 overflow-hidden">
+              {pastDeliveries.map((d) => {
+                const statusCls = STATUS_CLS[d.status] ?? "bg-stone/20 text-stone border-stone/20";
+                return (
+                  <div key={d.id} className="flex items-center justify-between px-4 py-3.5">
+                    <p className="text-parchment font-mono text-sm font-semibold">
+                      #{d.order_id.slice(0, 8).toUpperCase()}
+                    </p>
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${statusCls}`}>
+                      {STATUS_LABELS[d.status] ?? d.status}
                     </span>
                   </div>
-
-                  {/* Confirmation code — shown prominently */}
-                  {d.confirmation_code && !d.confirmed_by_code_at && (
-                    <div className="rounded-xl bg-gold/10 border border-gold/30 p-4 mb-4">
-                      <p className="text-gold text-[10px] uppercase tracking-widest text-center mb-1">
-                        Código de confirmação
-                      </p>
-                      <p className="text-gold font-mono text-3xl font-black text-center tracking-[0.4em]">
-                        {d.confirmation_code}
-                      </p>
-                      <p className="text-stone text-xs text-center mt-2">
-                        Mostre este código ao cliente para confirmar a entrega
-                      </p>
-                    </div>
-                  )}
-
-                  {d.confirmed_by_code_at && (
-                    <div className="flex items-center gap-2 text-green-300 text-sm mb-4">
-                      <CheckCircle size={15} />
-                      <span>Confirmado pelo cliente</span>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => {
-                      setCode("");
-                      setConfirmError("");
-                      setConfirmSuccess(false);
-                      setConfirmModal({ deliveryId: d.id });
-                    }}
-                    disabled={!!d.confirmed_by_code_at}
-                    className="w-full rounded-xl bg-gold py-3 text-cream text-sm font-bold hover:bg-gold/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {d.confirmed_by_code_at ? "Entrega confirmada" : "Confirmar entrega com código"}
-                  </button>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
-      </div>
+      </main>
 
-      {/* Past deliveries */}
-      {pastDeliveries.length > 0 && (
-        <div className="max-w-lg mx-auto px-4 mt-6">
-          <h2 className="text-cream font-bold mb-3">Histórico recente</h2>
-          <div className="space-y-2">
-            {pastDeliveries.map((d) => {
-              const statusCls = STATUS_CLS[d.status] ?? "bg-stone/20 text-stone";
-              return (
-                <div key={d.id} className="rounded-xl border border-surface-03 bg-surface-02 px-4 py-3 flex items-center justify-between">
-                  <p className="text-parchment font-mono text-sm">
-                    #{d.order_id.slice(0, 8).toUpperCase()}
-                  </p>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${statusCls}`}>
-                    {STATUS_LABELS[d.status] ?? d.status}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Confirm modal */}
+      {/* ── Modal: confirmar entrega (bottom sheet) ── */}
       {confirmModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-4">
-          <div className="bg-surface-02 rounded-2xl border border-surface-03 p-6 w-full max-w-sm">
-            <h3 className="text-cream font-bold text-lg mb-2">Confirmar entrega</h3>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70">
+          <div className="bg-surface-02 rounded-t-3xl border-t border-x border-surface-03 w-full max-w-lg p-6 pb-safe-bottom">
+            {/* Handle */}
+            <div className="w-10 h-1 rounded-full bg-surface-03 mx-auto mb-6" />
+
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-cream font-bold text-lg">Confirmar entrega</h3>
+              <button
+                onClick={() => setConfirmModal(null)}
+                className="h-9 w-9 flex items-center justify-center rounded-full bg-surface-03 text-stone"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
             <p className="text-stone text-sm mb-5">
-              Digite o código de 4 dígitos fornecido pelo cliente para confirmar a entrega.
+              Digite o código de 4 dígitos que o cliente vai mostrar para você.
             </p>
 
             <input
@@ -500,33 +493,32 @@ export default function Motoboy() {
               onChange={(e) => setCode(e.target.value.slice(0, 4))}
               placeholder="0000"
               maxLength={4}
-              className="w-full text-center rounded-xl bg-surface-03 border border-surface-03 text-cream text-3xl font-mono font-black py-4 tracking-[0.4em] focus:outline-none focus:border-gold/50 placeholder:text-stone/40"
+              autoFocus
+              inputMode="numeric"
+              pattern="[0-9]*"
+              className="w-full text-center rounded-2xl bg-surface-03 border border-surface-03 text-cream text-4xl font-mono font-black py-5 tracking-[0.5em] focus:outline-none focus:border-gold/60 placeholder:text-stone/40"
             />
 
-            {confirmError && <p className="mt-3 text-sm text-red-300">{confirmError}</p>}
+            {confirmError && (
+              <div className="mt-3 rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-sm text-red-300">
+                {confirmError}
+              </div>
+            )}
             {confirmSuccess && (
-              <div className="mt-3 flex items-center gap-2 text-green-300 text-sm">
-                <CheckCircle size={15} />
-                <span>Entrega confirmada com sucesso!</span>
+              <div className="mt-3 flex items-center gap-2 text-green-400 text-sm bg-green-500/10 rounded-xl px-4 py-3">
+                <CheckCircle size={16} />
+                <span className="font-medium">Entrega confirmada com sucesso!</span>
               </div>
             )}
 
-            <div className="mt-5 flex gap-3">
-              <button
-                onClick={() => setConfirmModal(null)}
-                className="flex-1 rounded-xl border border-surface-03 py-3 text-stone text-sm hover:text-cream transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleConfirm}
-                disabled={code.length !== 4 || confirmLoading || confirmSuccess}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gold py-3 text-cream text-sm font-bold hover:bg-gold/90 disabled:opacity-50 transition-colors"
-              >
-                {confirmLoading && <Loader2 size={14} className="animate-spin" />}
-                Confirmar
-              </button>
-            </div>
+            <button
+              onClick={handleConfirm}
+              disabled={code.length !== 4 || confirmLoading || confirmSuccess}
+              className="w-full flex items-center justify-center gap-2 rounded-2xl bg-gold py-4 text-cream text-base font-bold mt-5 active:scale-[0.98] hover:bg-gold/90 disabled:opacity-50 transition-all"
+            >
+              {confirmLoading && <Loader2 size={18} className="animate-spin" />}
+              {confirmSuccess ? "Confirmado!" : "Confirmar"}
+            </button>
           </div>
         </div>
       )}
