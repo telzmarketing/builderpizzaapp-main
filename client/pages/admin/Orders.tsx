@@ -326,33 +326,6 @@ export default function AdminOrders() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <div className={`rounded-lg border px-3 py-2 transition-colors ${newOrderFlash ? "border-gold bg-gold/20" : "border-surface-03 bg-surface-03/60"}`}>
-              <p className="text-stone text-[10px] uppercase tracking-widest leading-none">Ativos</p>
-              <p className="text-cream text-sm font-black leading-none mt-1">{activeOrders}</p>
-            </div>
-            <div className="rounded-lg border border-surface-03 bg-surface-03/60 px-3 py-2">
-              <p className="text-stone text-[10px] uppercase tracking-widest leading-none">Total</p>
-              <p className="text-cream text-sm font-black leading-none mt-1">{orders.length}</p>
-            </div>
-            <button
-              onClick={() => setSoundEnabled((v) => !v)}
-              title={soundEnabled ? "Silenciar alertas" : "Ativar alertas sonoros"}
-              className={`p-2 rounded-lg border transition-colors ${
-                soundEnabled
-                  ? "border-gold/40 text-gold bg-gold/10"
-                  : "border-surface-03 text-stone hover:text-cream"
-              }`}
-            >
-              {soundEnabled ? <Bell size={16} /> : <BellOff size={16} />}
-            </button>
-            <button
-              onClick={() => fetchOrders(true)}
-              disabled={loading || refreshing}
-              title="Atualizar agora"
-              className="p-2 rounded-lg border border-surface-03 text-stone hover:text-cream transition-colors disabled:opacity-60"
-            >
-              <RefreshCw size={16} className={loading || refreshing ? "animate-spin" : ""} />
-            </button>
             <AdminTopActions />
           </div>
         </header>
@@ -365,87 +338,132 @@ export default function AdminOrders() {
             </div>
           )}
 
-          {loading ? (
-            <div className="flex h-full items-center justify-center">
-              <Loader2 size={40} className="animate-spin text-gold" />
-            </div>
-          ) : orders.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-              <ShoppingBag size={54} className="mb-4 text-gold" />
-              <p className="text-cream text-xl font-bold">Nenhum pedido ainda</p>
-              <p className="text-stone text-sm mt-2">Os pedidos aparecem aqui automaticamente.</p>
-            </div>
-          ) : (
-            <div className="h-full overflow-x-auto overflow-y-hidden p-4 md:p-6">
-              <div className="flex h-full gap-4 min-w-max">
-                {KANBAN_COLUMNS.map((column) => {
-                  const Icon = column.icon;
-                  const columnOrders = groupedOrders.get(column.id) ?? [];
-                  const isDragOver = dragOverColumn === column.id;
-                  return (
-                    <section
-                      key={column.id}
-                      className={`flex h-full w-[300px] flex-col rounded-2xl border transition-colors ${
-                        isDragOver
-                          ? "border-gold bg-gold/5"
-                          : "border-surface-03 bg-surface-02"
-                      }`}
-                      onDragOver={(e) => { e.preventDefault(); setDragOverColumn(column.id); }}
-                      onDragLeave={(e) => {
-                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                          setDragOverColumn(null);
-                        }
-                      }}
-                      onDrop={() => handleDrop(column)}
-                    >
-                      {/* Column header */}
-                      <header className="border-b border-surface-03 p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border ${column.accent}`}>
-                                <Icon size={16} />
-                              </span>
-                              <h2 className="text-cream text-sm font-black truncate">{column.title}</h2>
-                            </div>
-                            <p className="text-stone text-xs mt-2 leading-snug">{column.description}</p>
-                          </div>
-                          <span className="rounded-full bg-surface-03 px-2.5 py-1 text-xs font-bold text-parchment flex-shrink-0">
-                            {columnOrders.length}
-                          </span>
-                        </div>
-                      </header>
-
-                      {/* Cards */}
-                      <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                        {columnOrders.length === 0 ? (
-                          <div className={`rounded-xl border border-dashed p-6 text-center text-xs text-stone transition-colors ${isDragOver ? "border-gold/50 bg-gold/5 text-gold" : "border-surface-03"}`}>
-                            {isDragOver ? "Soltar aqui" : "Sem pedidos"}
-                          </div>
-                        ) : (
-                          columnOrders.map((order) => (
-                            <OrderCard
-                              key={order.id}
-                              order={order}
-                              updating={updatingId === order.id}
-                              onAdvance={() => {
-                                const next = NEXT_STATUS[order.status];
-                                if (next) handleStatusChange(order.id, next);
-                              }}
-                              onAssignMotoboy={() => openAssignModal(order)}
-                              onPrint={() => printOrder(order)}
-                              onDragStart={() => handleDragStart(order.id)}
-                              onDragEnd={handleDragEnd}
-                            />
-                          ))
-                        )}
-                      </div>
-                    </section>
-                  );
-                })}
+          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+            <aside className="flex-shrink-0 border-b border-surface-03 p-4 lg:w-56 lg:border-b-0 lg:border-r lg:p-5">
+              <div className="grid grid-cols-2 gap-2 lg:sticky lg:top-4 lg:grid-cols-1">
+                <div className={`rounded-xl border px-4 py-3 transition-colors ${newOrderFlash ? "border-gold bg-gold/20" : "border-surface-03 bg-surface-02"}`}>
+                  <p className="text-stone text-[10px] uppercase tracking-widest leading-none">Ativos</p>
+                  <p className="text-cream text-2xl font-black leading-none mt-2">{activeOrders}</p>
+                </div>
+                <div className="rounded-xl border border-surface-03 bg-surface-02 px-4 py-3">
+                  <p className="text-stone text-[10px] uppercase tracking-widest leading-none">Total</p>
+                  <p className="text-cream text-2xl font-black leading-none mt-2">{orders.length}</p>
+                </div>
+                <button
+                  onClick={() => setSoundEnabled((v) => !v)}
+                  title={soundEnabled ? "Silenciar alertas de novo pedido" : "Ativar alertas de novo pedido"}
+                  className={`col-span-2 flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-colors lg:col-span-1 ${
+                    soundEnabled
+                      ? "border-gold/40 text-gold bg-gold/10"
+                      : "border-surface-03 bg-surface-02 text-stone hover:text-cream"
+                  }`}
+                >
+                  {soundEnabled ? <Bell size={16} /> : <BellOff size={16} />}
+                  Alertas
+                </button>
+                <button
+                  onClick={() => fetchOrders(true)}
+                  disabled={loading || refreshing}
+                  title="Atualizar agora"
+                  className="col-span-2 flex items-center justify-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4 py-3 text-sm font-semibold text-stone transition-colors hover:text-cream disabled:opacity-60 lg:col-span-1"
+                >
+                  <RefreshCw size={16} className={loading || refreshing ? "animate-spin" : ""} />
+                  Atualizar
+                </button>
+                <p className="col-span-2 text-center text-[11px] text-stone lg:col-span-1">
+                  {lastUpdated
+                    ? `Atualizado as ${lastUpdated.toLocaleTimeString("pt-BR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                      })}`
+                    : "Carregando pedidos..."}
+                </p>
               </div>
-            </div>
-          )}
+            </aside>
+
+            {loading ? (
+              <div className="flex h-full flex-1 items-center justify-center">
+                <Loader2 size={40} className="animate-spin text-gold" />
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="flex h-full flex-1 flex-col items-center justify-center px-6 text-center">
+                <ShoppingBag size={54} className="mb-4 text-gold" />
+                <p className="text-cream text-xl font-bold">Nenhum pedido ainda</p>
+                <p className="text-stone text-sm mt-2">Os pedidos aparecem aqui automaticamente.</p>
+              </div>
+            ) : (
+              <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden p-4 md:p-6">
+                <div className="flex h-full gap-4 min-w-max">
+                  {KANBAN_COLUMNS.map((column) => {
+                    const Icon = column.icon;
+                    const columnOrders = groupedOrders.get(column.id) ?? [];
+                    const isDragOver = dragOverColumn === column.id;
+                    return (
+                      <section
+                        key={column.id}
+                        className={`flex h-full w-[300px] flex-col rounded-2xl border transition-colors ${
+                          isDragOver
+                            ? "border-gold bg-gold/5"
+                            : "border-surface-03 bg-surface-02"
+                        }`}
+                        onDragOver={(e) => { e.preventDefault(); setDragOverColumn(column.id); }}
+                        onDragLeave={(e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                            setDragOverColumn(null);
+                          }
+                        }}
+                        onDrop={() => handleDrop(column)}
+                      >
+                        {/* Column header */}
+                        <header className="border-b border-surface-03 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border ${column.accent}`}>
+                                  <Icon size={16} />
+                                </span>
+                                <h2 className="text-cream text-sm font-black truncate">{column.title}</h2>
+                              </div>
+                              <p className="text-stone text-xs mt-2 leading-snug">{column.description}</p>
+                            </div>
+                            <span className="rounded-full bg-surface-03 px-2.5 py-1 text-xs font-bold text-parchment flex-shrink-0">
+                              {columnOrders.length}
+                            </span>
+                          </div>
+                        </header>
+
+                        {/* Cards */}
+                        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                          {columnOrders.length === 0 ? (
+                            <div className={`rounded-xl border border-dashed p-6 text-center text-xs text-stone transition-colors ${isDragOver ? "border-gold/50 bg-gold/5 text-gold" : "border-surface-03"}`}>
+                              {isDragOver ? "Soltar aqui" : "Sem pedidos"}
+                            </div>
+                          ) : (
+                            columnOrders.map((order) => (
+                              <OrderCard
+                                key={order.id}
+                                order={order}
+                                updating={updatingId === order.id}
+                                onAdvance={() => {
+                                  const next = NEXT_STATUS[order.status];
+                                  if (next) handleStatusChange(order.id, next);
+                                }}
+                                onAssignMotoboy={() => openAssignModal(order)}
+                                onPrint={() => printOrder(order)}
+                                onDragStart={() => handleDragStart(order.id)}
+                                onDragEnd={handleDragEnd}
+                              />
+                            ))
+                          )}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </main>
 
