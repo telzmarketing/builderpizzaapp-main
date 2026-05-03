@@ -10,7 +10,6 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
 import AdminSidebar from "@/components/AdminSidebar";
-import { AdminPageHeader } from "@/components/admin/AdminPageChrome";
 import { adminApi, type ApiDashboard, type ApiOrder } from "@/lib/api";
 import { ordersApi } from "@/lib/api";
 
@@ -39,10 +38,6 @@ export default function AdminDashboard() {
   const [recentOrders, setRecentOrders] = useState<ApiOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
-  const adminUserRaw = localStorage.getItem("admin_user");
-  const adminUser = adminUserRaw ? JSON.parse(adminUserRaw) : null;
-  const adminName: string = adminUser?.name?.split(" ")[0] ?? "Admin";
 
   useEffect(() => {
     Promise.allSettled([
@@ -84,24 +79,21 @@ export default function AdminDashboard() {
 
       <div className="flex-1 flex flex-col overflow-hidden">
 
-        <AdminPageHeader
-          eyebrow="Visao geral"
-          icon={<BarChart3 size={20} />}
-          title={`Dashboard - ${adminName}`}
-          description="Resumo operacional da loja em tempo real"
-          actions={(
+        {/* Main scrollable area */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-parchment text-xs font-semibold uppercase tracking-widest">
+              Visão Geral
+            </p>
             <Link
               to="/painel/orders"
-              className="flex items-center gap-2 px-4 py-2 bg-gold hover:bg-gold/90 text-cream text-sm font-semibold rounded-lg transition-colors"
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-gold hover:bg-gold/90 text-cream text-sm font-semibold rounded-lg transition-colors"
             >
               Pedidos
               <ArrowUpRight size={15} />
             </Link>
-          )}
-        />
+          </div>
 
-        {/* Main scrollable area */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-5">
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-400 text-sm">{error}</div>
           )}
@@ -114,7 +106,6 @@ export default function AdminDashboard() {
             <>
               {/* ── Overview cards ─────────────────────────────────────── */}
               <section>
-                <p className="text-parchment text-xs font-semibold uppercase tracking-widest mb-3">Visão Geral</p>
                 <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
                   <OverviewCard
                     label="Pedidos Confirmados"
