@@ -692,7 +692,7 @@ export default function AdminProducts() {
         <div className="flex-1 overflow-auto">
 
           {/* Header */}
-          <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 flex justify-between items-center sticky top-0 z-20">
+          <div className="hidden">
             <div>
               <h2 className="text-2xl font-bold text-cream">Produtos</h2>
               <p className="text-stone text-sm">{products.length} produtos · {sortedCatalogCategories.length} categorias cadastradas</p>
@@ -712,7 +712,8 @@ export default function AdminProducts() {
           </div>
 
           {/* Tabs */}
-          <div className="px-8 pt-4 flex gap-2">
+          <div className="px-8 pt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap gap-2">
             {([
               { key: "produtos", label: "Produtos" },
               { key: "categorias", label: "Categorias" },
@@ -724,9 +725,19 @@ export default function AdminProducts() {
                 {label}
               </button>
             ))}
+            </div>
+            {activeTab === "produtos" && (
+              <button
+                onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: "ðŸ•", category: "", rating: 4.5, product_type: "pizza" }); }}
+                className="flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
+              >
+                <Plus size={20} />
+                Novo Produto
+              </button>
+            )}
           </div>
 
-          <div className="p-8">
+          <div className="p-8 pt-6">
 
             {/* ── TAB: PRODUTOS ── */}
             {activeTab === "produtos" && (
