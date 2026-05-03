@@ -326,7 +326,7 @@ def create_product(body: ProductCreate, db: Session = Depends(get_db), _=Depends
     db.add(product)
     db.commit()
     db.refresh(product)
-    return product
+    return _product_payload(product, db)
 
 
 @router.put("/{product_id}", response_model=ProductOut)
@@ -338,7 +338,7 @@ def update_product(product_id: str, body: ProductUpdate, db: Session = Depends(g
         setattr(product, key, value)
     db.commit()
     db.refresh(product)
-    return product
+    return _product_payload(product, db)
 
 
 @router.delete("/{product_id}", status_code=204)
