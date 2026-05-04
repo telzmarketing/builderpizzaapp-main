@@ -278,13 +278,13 @@ export default function Home() {
 
       {homeConfig.showPromotions && activeBanners.length > 0 && (
         <div className="px-4 lg:px-8 pt-4 pb-3">
-          <div className="max-w-[27.6rem] lg:max-w-[64.4rem] mx-auto">
+          <div className="max-w-sm lg:max-w-4xl mx-auto">
             <button
               className="w-full text-left focus:outline-none"
               onClick={() => displayBanner?.slug && navigate(`/campanha/${displayBanner.slug}`)}
             >
               <div
-                className="rounded-2xl overflow-hidden relative h-36 lg:h-56"
+                className="rounded-2xl overflow-hidden relative h-[10.35rem] lg:h-[16.1rem]"
                 style={
                   displayBanner?.card_bg_color
                     ? { background: displayBanner.card_bg_color }
