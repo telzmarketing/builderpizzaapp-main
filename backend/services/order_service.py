@@ -483,14 +483,7 @@ class OrderService:
         customer_id: str | None = None,
         limit: int = 50,
     ) -> list[Order]:
-        from backend.models.delivery import Delivery, DeliveryPerson
-        q = (
-            self._db.query(Order)
-            .options(
-                joinedload(Order.items).joinedload(OrderItem.flavors),
-                joinedload(Order.delivery).joinedload(Delivery.delivery_person),
-            )
-        )
+        q = self._db.query(Order).options(joinedload(Order.items).joinedload(OrderItem.flavors))
         if status:
             q = q.filter(Order.status == OrderStatus(status))
         if customer_id:
