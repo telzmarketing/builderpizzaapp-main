@@ -306,7 +306,7 @@ export default function Home() {
                 ) : (displayBanner?.banner || media.heroBannerImage) ? (
                   <img
                     src={resolveAssetUrl((displayBanner?.banner || media.heroBannerImage)!)}
-                    alt={displayBanner?.name ?? "Banner"}
+                    alt="Banner promocional"
                     className="absolute inset-0 w-full h-full object-cover object-center"
                     loading="eager"
                     decoding="async"
@@ -317,9 +317,9 @@ export default function Home() {
 
                 {/* Text */}
                 <div className="absolute inset-0 flex flex-col justify-end px-5 pb-5 lg:px-10 lg:pb-8">
-                  {(displayBanner?.display_title || displayBanner?.name) && (
+                  {displayBanner?.display_title && (
                     <p className="text-xs lg:text-sm text-parchment/80 truncate mb-0.5">
-                      {displayBanner.display_title || displayBanner.name}
+                      {displayBanner.display_title}
                     </p>
                   )}
                   {displayBanner?.display_subtitle && (

@@ -104,9 +104,9 @@ export default function Campanha() {
       {campaign.banner && (
         <div className="w-full h-48 overflow-hidden">
           {isAssetUrl(campaign.banner) ? (
-            <img src={resolveAssetUrl(campaign.banner)} alt={campaign.name} className="w-full h-full object-cover" />
+            <img src={resolveAssetUrl(campaign.banner)} alt="Banner promocional" className="w-full h-full object-cover" />
           ) : campaign.banner.startsWith("http") || campaign.banner.startsWith("data:") ? (
-            <img src={campaign.banner} alt={campaign.name} className="w-full h-full object-cover" />
+            <img src={campaign.banner} alt="Banner promocional" className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-gold/20 to-gold/5 flex items-center justify-center text-7xl">
               {campaign.banner}
@@ -118,9 +118,11 @@ export default function Campanha() {
       <div className="px-4 pt-6">
         {/* Campaign Info */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-cream mb-1">
-            {campaign.display_title || campaign.name}
-          </h1>
+          {campaign.display_title && (
+            <h1 className="text-2xl font-bold text-cream mb-1">
+              {campaign.display_title}
+            </h1>
+          )}
           {campaign.display_subtitle && (
             <p className="text-gold font-medium mb-2">{campaign.display_subtitle}</p>
           )}

@@ -950,7 +950,7 @@ export default function AdminCampanhas() {
         <Modal title={editingCampaignId ? "Editar Campanha" : "Nova Campanha"} onClose={() => setShowCampaignModal(false)}>
           <form onSubmit={handleSaveCampaign} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <Inp label="Nome da Campanha *" value={campaignForm.name} onChange={(e) => setCampaignForm({ ...campaignForm, name: e.target.value })} placeholder="Ex: Promoção de Verão" />
+              <Inp label="Nome interno da Campanha *" value={campaignForm.name} onChange={(e) => setCampaignForm({ ...campaignForm, name: e.target.value })} placeholder="Ex: Promoção de Verão" />
               <Inp label="Slug / URL *" value={campaignForm.slug} onChange={(e) => setCampaignForm({ ...campaignForm, slug: e.target.value.toLowerCase().replace(/\s+/g, "-") })} placeholder="promocao-verao" />
             </div>
 
@@ -1115,7 +1115,7 @@ export default function AdminCampanhas() {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <Inp label="Título de Exibição" value={campaignForm.display_title} onChange={(e) => setCampaignForm({ ...campaignForm, display_title: e.target.value })} placeholder="Título na página pública" />
+              <Inp label="Título de Exibição" value={campaignForm.display_title} onChange={(e) => setCampaignForm({ ...campaignForm, display_title: e.target.value })} placeholder="Texto opcional exibido na loja" />
               <Inp label="Subtítulo de Exibição" value={campaignForm.display_subtitle} onChange={(e) => setCampaignForm({ ...campaignForm, display_subtitle: e.target.value })} placeholder="Subtítulo" />
             </div>
 
