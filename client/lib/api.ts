@@ -587,7 +587,7 @@ export interface CheckoutIn {
   };
   coupon_code?: string;
   customer_id?: string;
-  payment_method: "pix" | "credit_card" | "cash";
+  payment_method: "pix" | "credit_card" | "debit_card" | "cash";
   campaign_id?: string | null;
   utm_source?: string | null;
   utm_medium?: string | null;
@@ -695,6 +695,17 @@ export interface ApiPaymentStatus {
   payment_status: ApiPayment["status"] | "pending";
   mercado_pago_payment_id: string | null;
   external_reference: string | null;
+  qr_code?: string | null;
+  qr_code_text?: string | null;
+  payment_url?: string | null;
+}
+
+export interface ApiPaymentMethods {
+  gateway: "mercadopago";
+  accept_pix: boolean;
+  accept_credit_card: boolean;
+  accept_debit_card: boolean;
+  accept_cash: boolean;
 }
 
 export interface ApiLoyaltyLevel {
@@ -1325,6 +1336,14 @@ export const paymentsApi = {
       orderAccessHeaders(order_id),
     ),
 
+  createPix: (order_id: string, amount: number) =>
+    request<ApiPayment>(
+      "POST",
+      "/payments/create",
+      { order_id, amount, payment_method: "pix", formData: { payment_method_id: "pix" } },
+      orderAccessHeaders(order_id),
+    ),
+
   createFromBrick: (order_id: string, formData: Record<string, unknown>) =>
     request<ApiPayment>(
       "POST",
@@ -1337,6 +1356,8 @@ export const paymentsApi = {
     request<ApiPayment>("GET", `/payments/${order_id}`, undefined, orderAccessHeaders(order_id)),
 
   publicKey: () => get<{ public_key: string }>("/payments/public-key"),
+
+  methods: () => get<ApiPaymentMethods>("/payments/methods"),
 };
 
 // ─── Coupons ──────────────────────────────────────────────────────────────────

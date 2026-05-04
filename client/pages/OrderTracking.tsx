@@ -7,9 +7,10 @@ import { ordersApi, paymentsApi, type ApiOrder, type ApiPayment, type OrderStatu
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 
 const PROGRESS_STEPS: OrderStatus[] = ["preparing", "on_the_way", "delivered"];
+const WAITING_PAYMENT_STATUSES: OrderStatus[] = ["pending", "waiting_payment", "aguardando_pagamento"];
 
 function stepIndex(status: OrderStatus): number {
-  if (["pending", "waiting_payment", "paid"].includes(status)) return -1;
+  if ([...WAITING_PAYMENT_STATUSES, "paid", "pago", "pagamento_recusado", "pagamento_expirado"].includes(status)) return -1;
   return PROGRESS_STEPS.indexOf(status as OrderStatus);
 }
 
@@ -59,7 +60,7 @@ export default function OrderTracking() {
   const estimatedText = order
     ? t.estimatedTimeText.replace("{time}", String(order.estimated_time))
     : "";
-  const canShowPayment = !!payment && !!order && ["pending", "waiting_payment"].includes(order.status);
+  const canShowPayment = !!payment && !!order && WAITING_PAYMENT_STATUSES.includes(order.status);
 
   if (!orderId || notFound) {
     return (
@@ -201,7 +202,7 @@ export default function OrderTracking() {
           </div>
         )}
 
-        {!payment && ["pending", "waiting_payment"].includes(order.status) && (
+        {!payment && WAITING_PAYMENT_STATUSES.includes(order.status) && (
           <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl px-4 py-3 mb-6">
             <p className="text-yellow-400 text-sm text-center">
               O pagamento ainda não foi iniciado para este pedido.

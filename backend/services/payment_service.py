@@ -1,11 +1,14 @@
 """
-PaymentService - Mercado Pago Payment Brick flow.
+PaymentService - Mercado Pago hybrid flow.
 
 Rules:
+- Mercado Pago is the only active gateway for customer checkout.
+- PIX is generated directly by the backend so the checkout can show QR Code
+  and copia-e-cola without using the Payment Brick.
+- Card payments keep using Mercado Pago Payment Brick.
 - The frontend never marks an order as paid.
 - Payment approval is applied only after webhook processing re-fetches the
   payment from Mercado Pago.
-- Existing cash/manual flow remains available for ERP/backoffice use.
 """
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ from sqlalchemy.orm import Session
 from backend.config import get_settings
 from backend.core.events import bus, PaymentConfirmed, PaymentCreated, PaymentFailed
 from backend.core.exceptions import (
+    DomainError,
     GatewayError,
     GatewayNotConfigured,
     OrderNotFound,
@@ -58,6 +62,8 @@ def _load_config(db: Session) -> PaymentGatewayConfig:
         db.flush()
 
     provider = _provider_name(settings.PAYMENT_PROVIDER or settings.PAYMENT_GATEWAY or config.gateway)
+    if provider == "mock":
+        provider = "mercado_pago"
     if provider == "mercado_pago":
         config.gateway = "mercadopago"
         config.mp_access_token = settings.MERCADO_PAGO_ACCESS_TOKEN or config.mp_access_token
@@ -141,6 +147,34 @@ def _allowed_order_transition(order: Order, to_status: OrderStatus) -> bool:
     return order_sm.can_transition(current, to_status.value)
 
 
+def _ensure_method_enabled(config: PaymentGatewayConfig, method: PaymentMethod) -> None:
+    enabled_by_method = {
+        PaymentMethod.pix: config.accept_pix,
+        PaymentMethod.credit_card: config.accept_credit_card,
+        PaymentMethod.debit_card: config.accept_debit_card,
+    }
+    if method == PaymentMethod.cash or not enabled_by_method.get(method, False):
+        raise DomainError(
+            "Forma de pagamento indisponivel. Configure os metodos aceitos em Admin > Pagamentos.",
+            code="PaymentMethodDisabled",
+        )
+
+
+def _store_mp_payment_data(payment: Payment, response: dict[str, Any]) -> None:
+    transaction_data = ((response.get("point_of_interaction") or {}).get("transaction_data") or {})
+    qr_code_text = transaction_data.get("qr_code")
+    qr_code_base64 = transaction_data.get("qr_code_base64")
+    ticket_url = transaction_data.get("ticket_url")
+
+    if qr_code_text:
+        payment.qr_code_text = qr_code_text
+    if qr_code_base64:
+        qr_code = str(qr_code_base64)
+        payment.qr_code = qr_code if qr_code.startswith("data:image") else f"data:image/png;base64,{qr_code}"
+    if ticket_url:
+        payment.payment_url = ticket_url
+
+
 class PaymentService:
     def __init__(self, db: Session):
         self._db = db
@@ -154,6 +188,16 @@ class PaymentService:
     def public_key(self) -> dict[str, str]:
         cfg = self._cfg()
         return {"public_key": settings.MERCADO_PAGO_PUBLIC_KEY or cfg.mp_public_key or ""}
+
+    def accepted_methods(self) -> dict[str, bool | str]:
+        cfg = self._cfg()
+        return {
+            "gateway": "mercadopago",
+            "accept_pix": bool(cfg.accept_pix),
+            "accept_credit_card": bool(cfg.accept_credit_card),
+            "accept_debit_card": bool(cfg.accept_debit_card),
+            "accept_cash": False,
+        }
 
     def _get_order(self, order_id: str) -> Order:
         order = self._db.query(Order).filter(Order.id == order_id).first()
@@ -205,10 +249,24 @@ class PaymentService:
             raise PaymentAmountMismatch(order.total, amount)
 
         cfg = self._cfg()
-        provider = _provider_name(settings.PAYMENT_PROVIDER or cfg.gateway)
-        method = _payment_method(form_data, payload.payment_method)
+        provider = _provider_name(settings.PAYMENT_PROVIDER or settings.PAYMENT_GATEWAY or cfg.gateway)
         if provider != "mercado_pago":
-            provider = "mock"
+            provider = "mercado_pago"
+        method = _payment_method(form_data, payload.payment_method)
+        _ensure_method_enabled(cfg, method)
+
+        if order.payment and order.payment.status == PaymentStatus.pending and order.payment.mercado_pago_payment_id:
+            same_attempt = (
+                order.payment.provider == "mercado_pago"
+                and order.payment.method == method
+                and abs(order.payment.amount - amount) <= 0.01
+            )
+            if same_attempt:
+                return PaymentOut.model_validate(order.payment)
+            raise DomainError(
+                "Este pedido ja possui um pagamento Mercado Pago em andamento. Aguarde a confirmacao ou crie um novo pedido.",
+                code="PaymentAlreadyInProgress",
+            )
 
         if not order.external_reference:
             order.external_reference = f"order-{order.id}"
@@ -220,12 +278,6 @@ class PaymentService:
 
         payment = self._pending_payment(order, payload, amount, method, provider)
 
-        if provider == "mock":
-            payment.transaction_id = payment.transaction_id or f"MOCK-{uuid.uuid4().hex[:12].upper()}"
-            self._db.commit()
-            self._db.refresh(payment)
-            return PaymentOut.model_validate(payment)
-
         body = self._build_mp_payment_body(order, payment, form_data, amount)
         idempotency_key = hashlib.sha256(f"{order.id}:{method.value}:{amount}:{json.dumps(form_data, sort_keys=True, default=str)}".encode()).hexdigest()
         response = _mp_request("POST", "/v1/payments", _mp_token(cfg), body, idempotency_key=idempotency_key)
@@ -236,6 +288,7 @@ class PaymentService:
         payment.external_reference = response.get("external_reference") or payment.external_reference
         payment.raw_response = json.dumps(response, ensure_ascii=False)
         payment.webhook_data = payment.raw_response
+        _store_mp_payment_data(payment, response)
         response_status = _mp_status_to_payment(response.get("status", ""), response.get("status_detail"))
 
         # Approved payments are only finalized by webhook. Immediate failures can be shown to the customer.
@@ -275,20 +328,34 @@ class PaymentService:
             return False
 
         previous = payment.status
-        if payment_sm.can_transition(previous.value, status.value):
-            payment_sm.transition(payment.id, previous.value, status.value)
+        if not payment_sm.can_transition(previous.value, status.value):
+            return False
+        payment_sm.transition(payment.id, previous.value, status.value)
         payment.status = status
-        payment.updated_at = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        payment.updated_at = now
         if status == PaymentStatus.approved:
-            payment.paid_at = datetime.now(timezone.utc)
+            payment.paid_at = payment.paid_at or now
 
         order = self._db.query(Order).filter(Order.id == payment.order_id).first()
         target_order_status = _order_status_for_payment(status)
         if order and target_order_status and order.status != target_order_status:
-            if _allowed_order_transition(order, target_order_status):
-                order_sm.transition(order.id, order.status.value, target_order_status.value)
-            order.status = target_order_status
-            order.updated_at = datetime.now(timezone.utc)
+            current_order_status = order.status.value if hasattr(order.status, "value") else str(order.status)
+            already_paid_flow = current_order_status in {"paid", "pago", "preparing", "ready_for_pickup", "on_the_way", "delivered"}
+            if status == PaymentStatus.approved and already_paid_flow:
+                order.paid_at = order.paid_at or now
+                order.updated_at = now
+            elif _allowed_order_transition(order, target_order_status):
+                order_sm.transition(order.id, current_order_status, target_order_status.value)
+                order.status = target_order_status
+                order.updated_at = now
+                if status == PaymentStatus.approved:
+                    order.paid_at = order.paid_at or now
+            else:
+                order.updated_at = now
+        elif order and status == PaymentStatus.approved:
+            order.paid_at = order.paid_at or now
+            order.updated_at = now
 
         if order:
             self._db.flush()
@@ -319,19 +386,55 @@ class PaymentService:
                     ))
                 except Exception:
                     pass
-            sendOrderToSaipos(payment.order_id)
-            bus.publish(PaymentConfirmed(payment_id=payment.id, order_id=payment.order_id, amount=payment.amount, gateway=payment.gateway, transaction_id=payment.transaction_id or ""))
+            try:
+                sendOrderToSaipos(payment.order_id)
+            except Exception:
+                pass
+            try:
+                bus.publish(PaymentConfirmed(payment_id=payment.id, order_id=payment.order_id, amount=payment.amount, gateway=payment.gateway, transaction_id=payment.transaction_id or ""))
+            except Exception:
+                pass
         elif status in {PaymentStatus.rejected, PaymentStatus.cancelled, PaymentStatus.expired}:
-            bus.publish(PaymentFailed(payment_id=payment.id, order_id=payment.order_id, reason=f"{source}:{status.value}"))
+            try:
+                bus.publish(PaymentFailed(payment_id=payment.id, order_id=payment.order_id, reason=f"{source}:{status.value}"))
+            except Exception:
+                pass
         return True
 
-    def process_webhook(self, payload: WebhookPayload, raw_body: bytes, signature: str | None, request_id: str | None = None) -> dict:
+    def process_webhook(
+        self,
+        payload: WebhookPayload,
+        raw_body: bytes,
+        signature: str | None,
+        request_id: str | None = None,
+        query_params: dict[str, str] | None = None,
+    ) -> dict:
         cfg = self._cfg()
         body = payload.model_dump()
-        if not self._verify_mercado_pago_signature(body, signature, request_id, cfg):
+        query_params = query_params or {}
+        if not self._verify_mercado_pago_signature(body, signature, request_id, cfg, query_params):
             raise WebhookSignatureInvalid()
 
-        mp_payment_id = payload.transaction_id or (str(payload.data.get("id")) if payload.data else "")
+        event_type = payload.type or query_params.get("type") or "payment"
+        action = payload.action or ""
+        if event_type != "payment" and "payment" not in action:
+            event = PaymentEvent(
+                id=str(uuid.uuid4()),
+                provider="mercado_pago",
+                event_type=action or event_type,
+                mercado_pago_payment_id=None,
+                raw_payload=raw_body.decode("utf-8", errors="replace"),
+            )
+            event.processed_at = datetime.now(timezone.utc)
+            self._db.add(event)
+            self._db.commit()
+            return {"status": "ignored", "reason": f"unsupported_topic:{event_type}"}
+
+        mp_payment_id = (
+            payload.transaction_id
+            or query_params.get("data.id")
+            or (str(payload.data.get("id")) if payload.data else "")
+        )
         event = PaymentEvent(
             id=str(uuid.uuid4()),
             provider="mercado_pago",
@@ -369,6 +472,7 @@ class PaymentService:
         payment.external_reference = external_reference or payment.external_reference
         payment.raw_response = json.dumps(response, ensure_ascii=False)
         payment.webhook_data = event.raw_payload
+        _store_mp_payment_data(payment, response)
 
         new_status = _mp_status_to_payment(response.get("status", ""), response.get("status_detail"))
         changed = self._apply_status(payment, new_status, source="webhook")
@@ -376,25 +480,63 @@ class PaymentService:
         self._db.commit()
         return {"status": "ok", "payment_status": new_status.value, "changed": changed}
 
-    def _verify_mercado_pago_signature(self, payload: dict[str, Any], signature: str | None, request_id: str | None, config: PaymentGatewayConfig) -> bool:
+    def _verify_mercado_pago_signature(
+        self,
+        payload: dict[str, Any],
+        signature: str | None,
+        request_id: str | None,
+        config: PaymentGatewayConfig,
+        query_params: dict[str, str] | None = None,
+    ) -> bool:
         secret = settings.MERCADO_PAGO_WEBHOOK_SECRET or config.mp_webhook_secret
         if not secret:
             return True
         if not signature:
             return False
         try:
-            parts = dict(part.split("=", 1) for part in signature.split(","))
+            parts = {
+                key.strip(): value.strip()
+                for part in signature.split(",")
+                if "=" in part
+                for key, value in [part.split("=", 1)]
+            }
             ts = parts.get("ts", "")
             v1 = parts.get("v1", "")
-            data_id = str((payload.get("data") or {}).get("id", ""))
-            manifest = f"id:{data_id};request-id:{request_id or ''};ts:{ts};"
-            expected = hmac.new(secret.encode(), manifest.encode(), hashlib.sha256).hexdigest()
-            return hmac.compare_digest(expected, v1)
+            if not ts or not v1 or not request_id:
+                return False
+
+            query_params = query_params or {}
+            raw_data_ids = [
+                query_params.get("data.id"),
+                str((payload.get("data") or {}).get("id", "")),
+            ]
+            data_id_candidates: list[str] = []
+            for raw_data_id in raw_data_ids:
+                if not raw_data_id:
+                    continue
+                data_id = str(raw_data_id)
+                data_id_candidates.extend([data_id, data_id.lower()])
+
+            for data_id in dict.fromkeys(data_id_candidates):
+                manifest = f"id:{data_id};request-id:{request_id};ts:{ts};"
+                expected = hmac.new(secret.encode(), manifest.encode(), hashlib.sha256).hexdigest()
+                if hmac.compare_digest(expected, v1):
+                    return True
+            if not data_id_candidates:
+                manifest = f"request-id:{request_id};ts:{ts};"
+                expected = hmac.new(secret.encode(), manifest.encode(), hashlib.sha256).hexdigest()
+                if hmac.compare_digest(expected, v1):
+                    return True
+            return False
         except Exception:
             return False
 
     def confirm_cash(self, order_id: str) -> PaymentOut:
+        if not self._cfg().accept_cash:
+            raise DomainError("Pagamento em dinheiro esta desativado no painel de pagamentos.", code="PaymentMethodDisabled")
         order = self._get_order(order_id)
+        if order.payment and order.payment.method != PaymentMethod.cash:
+            raise DomainError("Este pedido ja possui pagamento Mercado Pago vinculado.", code="PaymentMethodMismatch")
         payment = order.payment or Payment(
             id=str(uuid.uuid4()),
             order_id=order.id,
@@ -424,6 +566,9 @@ class PaymentService:
             "payment_status": payment.status.value if payment else "pending",
             "mercado_pago_payment_id": payment.mercado_pago_payment_id if payment else None,
             "external_reference": order.external_reference,
+            "qr_code": payment.qr_code if payment else None,
+            "qr_code_text": payment.qr_code_text if payment else None,
+            "payment_url": payment.payment_url if payment else None,
         }
 
 
@@ -431,5 +576,12 @@ def create_payment(payload: PaymentCreate, db: Session) -> PaymentOut:
     return PaymentService(db).create(payload)
 
 
-def process_webhook(payload: WebhookPayload, raw_body: bytes, signature: str | None, db: Session) -> dict:
-    return PaymentService(db).process_webhook(payload, raw_body, signature)
+def process_webhook(
+    payload: WebhookPayload,
+    raw_body: bytes,
+    signature: str | None,
+    db: Session,
+    request_id: str | None = None,
+    query_params: dict[str, str] | None = None,
+) -> dict:
+    return PaymentService(db).process_webhook(payload, raw_body, signature, request_id, query_params)

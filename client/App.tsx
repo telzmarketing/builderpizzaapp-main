@@ -13,7 +13,24 @@ const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
 
 function StoreWidget() {
   const { pathname } = useLocation();
-  if (pathname.startsWith("/painel")) return null;
+  const storeRoutes = [
+    "/",
+    "/product",
+    "/cart",
+    "/checkout",
+    "/order-tracking",
+    "/fidelidade",
+    "/cupons",
+    "/pedidos",
+    "/conta",
+    "/localizacao",
+    "/cardapio",
+    "/campanha",
+  ];
+  const isStoreRoute = storeRoutes.some((route) => (
+    route === "/" ? pathname === "/" : pathname === route || pathname.startsWith(`${route}/`)
+  ));
+  if (!isStoreRoute) return null;
   return (
     <Suspense fallback={null}>
       <ChatbotWidget />

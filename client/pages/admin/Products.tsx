@@ -30,6 +30,14 @@ const DISCOUNT_LABELS: Record<ProductPromotionDiscountType, string> = {
   percent_off: "Desconto percentual",
 };
 
+const CATUPIRY_CRUST_NAME = "Borda com Catupiry";
+
+const isCatupiryCrust = (name?: string | null) =>
+  (name || "").trim().toLowerCase().includes("catupiry");
+
+const productHasCatupiryCrust = (product: Pizza) =>
+  (((product as any).crust_types ?? []) as ApiProductCrustType[]).some((crust) => crust.active && isCatupiryCrust(crust.name));
+
 type PromotionFormState = {
   name: string;
   active: boolean;
@@ -180,7 +188,7 @@ export default function AdminProducts() {
   // ── Products CRUD ────────────────────────────────────────────────────────────
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<Partial<Pizza> & { product_type?: string }>({
+  const [formData, setFormData] = useState<Partial<Pizza> & { product_type?: string; has_catupiry_border?: boolean; catupiry_border_price?: number | string }>({
     name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5, product_type: "pizza",
   });
 
@@ -205,10 +213,14 @@ export default function AdminProducts() {
     }
     try {
       if (editingId) {
-        await updateProduct(editingId, { ...formData, category: category || null, subcategory: subcategory || null } as any);
+        const { has_catupiry_border, catupiry_border_price, ...productData } = formData as any;
+        const updated = await updateProduct(editingId, { ...productData, category: category || null, subcategory: subcategory || null } as any);
+        if ((formData.product_type || "pizza") === "pizza") {
+          await syncCatupiryBorder(updated.id, !!has_catupiry_border, catupiry_border_price);
+        }
         setEditingId(null);
       } else {
-        await addProduct({
+        const created = await addProduct({
           name: formData.name!, description: formData.description!,
           price: formData.price!, icon: formData.icon || "🍕",
           category: category || null,
@@ -216,6 +228,9 @@ export default function AdminProducts() {
           product_type: formData.product_type || "pizza",
           rating: formData.rating || 4.5, active: true,
         } as any);
+        if ((formData.product_type || "pizza") === "pizza") {
+          await syncCatupiryBorder(created.id, !!(formData as any).has_catupiry_border, (formData as any).catupiry_border_price);
+        }
       }
       setFormData({ name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5, product_type: "pizza" });
       setShowForm(false);
@@ -230,6 +245,8 @@ export default function AdminProducts() {
       category: (product as any).category ?? "",
       subcategory: (product as any).subcategory ?? "",
       product_type: (product as any).product_type ?? "pizza",
+      has_catupiry_border: productHasCatupiryCrust(product),
+      catupiry_border_price: (((product as any).crust_types ?? []) as ApiProductCrustType[]).find((crust) => crust.active && isCatupiryCrust(crust.name))?.price_addition ?? 0,
     });
     setEditingId(product.id);
     setShowForm(true);
@@ -358,6 +375,32 @@ export default function AdminProducts() {
     setCrustModalProduct(null);
     setProductCrusts([]);
     setCrustForm({ name: "", price_addition: "" });
+  };
+
+  const syncCatupiryBorder = async (productId: string, enabled: boolean, priceValue?: number | string) => {
+    const priceAddition = parseFloat(String(priceValue ?? "0"));
+    const safePrice = isNaN(priceAddition) || priceAddition < 0 ? 0 : priceAddition;
+    const crusts = await crustApi.list(productId, false);
+    const current = crusts.find((crust) => isCatupiryCrust(crust.name));
+
+    if (enabled) {
+      if (current) {
+        await crustApi.update(productId, current.id, {
+          name: CATUPIRY_CRUST_NAME,
+          price_addition: safePrice,
+          active: true,
+        } as any);
+      } else {
+        await crustApi.create(productId, {
+          name: CATUPIRY_CRUST_NAME,
+          price_addition: safePrice,
+          active: true,
+          sort_order: crusts.length,
+        } as any);
+      }
+    } else if (current?.active) {
+      await crustApi.update(productId, current.id, { active: false } as any);
+    }
   };
 
   const handleAddCrust = async () => {
@@ -662,6 +705,7 @@ export default function AdminProducts() {
   const CRUST_PRESETS = [
     { name: "Napolitana", price_addition: "0" },
     { name: "Tradicional", price_addition: "0" },
+    { name: CATUPIRY_CRUST_NAME, price_addition: "0" },
   ];
 
   const DRINK_SIZE_PRESETS = [
@@ -806,6 +850,35 @@ export default function AdminProducts() {
                           )}
                         </select>
                       </div>
+                      {(formData.product_type || "pizza") === "pizza" && (
+                        <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-4">
+                          <label className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={!!(formData as any).has_catupiry_border}
+                              onChange={(e) => setFormData({ ...formData, has_catupiry_border: e.target.checked } as any)}
+                              className="mt-1 h-4 w-4 accent-amber-500"
+                            />
+                            <span className="flex-1">
+                              <span className="block text-sm font-bold text-cream">Adicionar borda com Catupiry</span>
+                              <span className="block text-xs text-stone">Cria ou ativa esta opcao de borda apenas para este produto.</span>
+                            </span>
+                          </label>
+                          {!!(formData as any).has_catupiry_border && (
+                            <div className="mt-3 max-w-xs">
+                              <label className="block text-parchment text-xs font-medium mb-1">Adicional da borda (R$)</label>
+                              <input
+                                type="number"
+                                value={(formData as any).catupiry_border_price ?? 0}
+                                onChange={(e) => setFormData({ ...formData, catupiry_border_price: e.target.value } as any)}
+                                className={cls}
+                                min="0"
+                                step="0.01"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div className="grid grid-cols-2 gap-4 items-start">
                         <ImageUpload
                           value={formData.icon || ""}
@@ -880,6 +953,11 @@ export default function AdminProducts() {
                               <span className="inline-flex items-center gap-1 text-xs bg-surface-03 text-stone border border-surface-03 px-2 py-0.5 rounded-full">
                                 {getTypeIcon(pType)} {pType === "drink" ? "Bebida" : pType === "other" ? "Outros" : "Pizza"}
                               </span>
+                              {isPizza && productHasCatupiryCrust(product) && (
+                                <span className="inline-flex items-center gap-1 text-xs bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                                  Borda Catupiry
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>

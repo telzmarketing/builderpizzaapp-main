@@ -28,6 +28,13 @@ CONFIRMED_STATUSES = [
     OrderStatus.delivered,
 ]
 
+PAID_PAYMENT_STATUSES = [PaymentStatus.approved, PaymentStatus.paid]
+WAITING_PAYMENT_STATUSES = [
+    OrderStatus.pending,
+    OrderStatus.waiting_payment,
+    OrderStatus.aguardando_pagamento,
+]
+
 
 @router.get("/dashboard")
 def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin)):
@@ -41,14 +48,14 @@ def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin))
     # Waiting payment — shown separately in dashboard
     waiting_payment_orders = (
         db.query(func.count(Order.id))
-        .filter(Order.status.in_([OrderStatus.pending, OrderStatus.waiting_payment]))
+        .filter(Order.status.in_(WAITING_PAYMENT_STATUSES))
         .scalar()
         or 0
     )
     total_revenue = (
         db.query(func.sum(Order.total))
         .join(Payment, Payment.order_id == Order.id)
-        .filter(Payment.status == PaymentStatus.paid)
+        .filter(Payment.status.in_(PAID_PAYMENT_STATUSES))
         .scalar()
         or 0.0
     )
@@ -70,7 +77,7 @@ def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin))
             func.sum(Order.total).label("revenue"),
         )
         .join(Payment, Payment.order_id == Order.id)
-        .filter(Payment.status == PaymentStatus.paid, Order.created_at >= seven_days_ago)
+        .filter(Payment.status.in_(PAID_PAYMENT_STATUSES), Order.created_at >= seven_days_ago)
         .group_by(func.date(Order.created_at))
         .all()
     )
@@ -115,6 +122,12 @@ def _get_or_create_config(db: Session) -> PaymentGatewayConfig:
         dirty = True
     if s.PAYMENT_GATEWAY not in ("", "mock") and not config.gateway:
         config.gateway = s.PAYMENT_GATEWAY
+        dirty = True
+    if config.gateway != "mercadopago":
+        config.gateway = "mercadopago"
+        dirty = True
+    if config.accept_cash:
+        config.accept_cash = False
         dirty = True
     if dirty:
         db.commit()
@@ -166,6 +179,8 @@ def update_payment_gateway_config(
     config = _get_or_create_config(db)
     for key, value in body.model_dump(exclude_none=True).items():
         setattr(config, key, value if value != "" else None)
+    config.gateway = "mercadopago"
+    config.accept_cash = False
     db.commit()
     db.refresh(config)
     return _to_out(config)

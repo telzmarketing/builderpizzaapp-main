@@ -133,6 +133,8 @@ const NEXT_LABEL: Partial<Record<string, string>> = {
   on_the_way: "Entregue",
 };
 
+const WAITING_PAYMENT_STATUSES = new Set(["pending", "waiting_payment", "aguardando_pagamento"]);
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 const statusColor = (status: string) => {
@@ -255,6 +257,10 @@ export default function AdminOrders() {
     if (!id || !column.targetStatus) return;
     const order = orders.find((o) => o.id === id);
     if (!order || order.status === column.targetStatus) return;
+    if (WAITING_PAYMENT_STATUSES.has(order.status)) {
+      setDragOverColumn(null);
+      return;
+    }
     handleStatusChange(id, column.targetStatus);
     setDragOverColumn(null);
   }, [orders, handleStatusChange]);
@@ -551,7 +557,8 @@ interface OrderCardProps {
 
 function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDragStart, onDragEnd }: OrderCardProps) {
   const isReadyForPickup = order.status === "ready_for_pickup";
-  const nextLabel = isReadyForPickup ? null : NEXT_LABEL[order.status];
+  const isWaitingPayment = WAITING_PAYMENT_STATUSES.has(order.status);
+  const nextLabel = isReadyForPickup || isWaitingPayment ? null : NEXT_LABEL[order.status];
 
   const itemSummary = order.items.slice(0, 2).map((item) => {
     const isMulti = item.flavor_division > 1;
@@ -562,7 +569,7 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
 
   return (
     <article
-      draggable
+      draggable={!isWaitingPayment}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       className={`rounded-2xl border border-surface-03 bg-surface-03/45 p-4 shadow-sm select-none transition-opacity cursor-grab active:cursor-grabbing ${updating ? "opacity-50 pointer-events-none" : ""}`}

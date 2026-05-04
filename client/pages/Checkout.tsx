@@ -5,11 +5,14 @@ import {
   Check,
   ChevronLeft,
   Clock,
+  Copy,
+  CreditCard,
   Hash,
   Home,
   Loader2,
   MapPin,
   Phone,
+  QrCode,
   Store,
   Tag,
   Truck,
@@ -32,12 +35,15 @@ import {
   resolveAssetUrl,
   type ApiAddress,
   type ApiOrder,
+  type ApiPayment,
+  type ApiPaymentMethods,
   type ApiShipping,
   type CheckoutIn,
   type StoreOperationStatus,
 } from "@/lib/api";
 
 type DeliveryMode = "delivery" | "pickup";
+type SelectedPaymentMethod = "pix" | "card";
 type PaymentState = "idle" | "loading" | "pending" | "approved" | "rejected" | "expired" | "error";
 
 declare global {
@@ -86,6 +92,9 @@ export default function Checkout() {
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
   const [createdOrder, setCreatedOrder] = useState<ApiOrder | null>(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<SelectedPaymentMethod>("pix");
+  const [paymentMethods, setPaymentMethods] = useState<ApiPaymentMethods | null>(null);
+  const [payment, setPayment] = useState<ApiPayment | null>(null);
   const [paymentState, setPaymentState] = useState<PaymentState>("idle");
   const [paymentMessage, setPaymentMessage] = useState("");
   const [storeStatus, setStoreStatus] = useState<StoreOperationStatus | null>(null);
@@ -183,6 +192,12 @@ export default function Checkout() {
 
   useEffect(() => {
     storeOperationApi.status().then(setStoreStatus).catch(() => setStoreStatus(null));
+    paymentsApi.methods().then((methods) => {
+      setPaymentMethods(methods);
+      if (!methods.accept_pix && (methods.accept_credit_card || methods.accept_debit_card)) {
+        setSelectedPaymentMethod("card");
+      }
+    }).catch(() => setPaymentMethods(null));
   }, []);
 
   useEffect(() => {
@@ -222,7 +237,7 @@ export default function Checkout() {
   }, [form.city, form.neighborhood, form.zip_code, cartSubtotal, deliveryMode]);
 
   useEffect(() => {
-    if (!createdOrder) return;
+    if (!createdOrder || selectedPaymentMethod !== "card") return;
     let cancelled = false;
 
     async function loadScript() {
@@ -269,9 +284,9 @@ export default function Checkout() {
           },
           customization: {
             paymentMethods: {
-              creditCard: "all",
-              debitCard: "all",
-              bankTransfer: "all",
+              creditCard: paymentMethods?.accept_credit_card === false ? "none" : "all",
+              debitCard: paymentMethods?.accept_debit_card ? "all" : "none",
+              bankTransfer: "none",
               maxInstallments: 6,
             },
           },
@@ -285,7 +300,13 @@ export default function Checkout() {
                 try {
                   setPaymentState("loading");
                   setPaymentMessage("Processando pagamento...");
-                  await paymentsApi.createFromBrick(createdOrder.id, formData);
+                  const methodId = String(formData.payment_method_id || "");
+                  const typeId = String(formData.payment_type_id || "");
+                  if (methodId === "pix" || typeId === "bank_transfer") {
+                    throw new Error("Use a opcao PIX para pagar com QR Code.");
+                  }
+                  const createdPayment = await paymentsApi.createFromBrick(createdOrder.id, formData);
+                  setPayment(createdPayment);
                   setPaymentState("pending");
                   setPaymentMessage("Pagamento enviado. Aguardando confirmacao do Mercado Pago.");
                   resolve();
@@ -315,7 +336,7 @@ export default function Checkout() {
         brickController.current = null;
       }
     };
-  }, [createdOrder]);
+  }, [createdOrder, selectedPaymentMethod, customer?.email, form.phone, paymentMethods]);
 
   useEffect(() => {
     if (!createdOrder) return;
@@ -329,7 +350,20 @@ export default function Checkout() {
       }
       try {
         const status = await ordersApi.paymentStatus(createdOrder.id);
-        if (status.payment_status === "approved" || status.pedido_status === "pago") {
+        if (status.qr_code || status.qr_code_text || status.payment_url) {
+          setPayment((prev) => prev ? {
+            ...prev,
+            qr_code: status.qr_code ?? prev.qr_code,
+            qr_code_text: status.qr_code_text ?? prev.qr_code_text,
+            payment_url: status.payment_url ?? prev.payment_url,
+          } : prev);
+        }
+        if (
+          status.payment_status === "approved" ||
+          status.payment_status === "paid" ||
+          status.pedido_status === "pago" ||
+          status.pedido_status === "paid"
+        ) {
           setPaymentState("approved");
           setPaymentMessage("Pagamento aprovado! Pedido enviado para preparo.");
           trackEvent("order_paid", createdOrder.total, { order_id: createdOrder.id });
@@ -418,6 +452,14 @@ export default function Checkout() {
       setApiError(shippingResult?.message || "Regiao nao atendida para delivery.");
       return;
     }
+    if (paymentMethods) {
+      const pixDisabled = selectedPaymentMethod === "pix" && !paymentMethods.accept_pix;
+      const cardDisabled = selectedPaymentMethod === "card" && !paymentMethods.accept_credit_card && !paymentMethods.accept_debit_card;
+      if (pixDisabled || cardDisabled) {
+        setApiError("Forma de pagamento indisponivel no momento.");
+        return;
+      }
+    }
     const newErrors = validate();
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -461,7 +503,7 @@ export default function Checkout() {
         is_scheduled: mustSchedule,
         scheduled_for: mustSchedule ? new Date(scheduledFor).toISOString() : null,
       },
-      payment_method: "pix",
+      payment_method: selectedPaymentMethod === "pix" ? "pix" : "credit_card",
       ...tracking,
       ...(couponApplied && couponCode ? { coupon_code: couponCode } : {}),
       ...(customer ? { customer_id: customer.id } : {}),
@@ -479,8 +521,22 @@ export default function Checkout() {
         session_id: _td.session_id,
       }).catch(() => {});
       setCreatedOrder(order);
-      setPaymentState("pending");
-      setPaymentMessage("Pedido criado. Conclua o pagamento abaixo.");
+      setPayment(null);
+      if (selectedPaymentMethod === "pix") {
+        setPaymentState("loading");
+        setPaymentMessage("Gerando PIX seguro...");
+        const pixPayment = await paymentsApi.createPix(order.id, order.total);
+        setPayment(pixPayment);
+        setPaymentState("pending");
+        setPaymentMessage(
+          pixPayment.qr_code_text
+            ? "PIX gerado. Pague pelo QR Code ou copia-e-cola."
+            : "PIX criado. Aguardando retorno do QR Code do Mercado Pago.",
+        );
+      } else {
+        setPaymentState("pending");
+        setPaymentMessage("Pedido criado. Conclua o pagamento com cartao abaixo.");
+      }
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
     } catch (err) {
       setApiError(err instanceof Error ? err.message : "Erro ao criar pedido. Tente novamente.");
@@ -662,6 +718,44 @@ export default function Checkout() {
           </section>
         )}
 
+        {!createdOrder && (
+          <section>
+            <h2 className="text-cream font-bold text-lg mb-3 flex items-center gap-2">
+              {selectedPaymentMethod === "pix" ? <QrCode size={20} className="text-gold" /> : <CreditCard size={20} className="text-gold" />}
+              Forma de pagamento
+            </h2>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { value: "pix", label: "PIX", icon: QrCode, helper: "QR Code na tela" },
+                { value: "card", label: "Cartao", icon: CreditCard, helper: "Credito ou debito" },
+              ] as { value: SelectedPaymentMethod; label: string; icon: LucideIcon; helper: string }[]).map(({ value, label, icon: Icon, helper }) => {
+                const disabled = value === "pix"
+                  ? paymentMethods?.accept_pix === false
+                  : paymentMethods ? !paymentMethods.accept_credit_card && !paymentMethods.accept_debit_card : false;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => !disabled && setSelectedPaymentMethod(value)}
+                    disabled={disabled}
+                    className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+                      selectedPaymentMethod === value
+                        ? "border-gold bg-gold/10 text-gold-light"
+                        : "border-surface-03 bg-surface-02 text-stone hover:border-brand-mid"
+                    }`}
+                  >
+                    <Icon size={20} className="flex-shrink-0" />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold">{label}</span>
+                      <span className="block text-xs opacity-80">{disabled ? "Indisponivel" : helper}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         <section>
           <h2 className="text-cream font-bold text-lg mb-4">{c.summaryTitle}</h2>
           <div className="space-y-3">
@@ -703,7 +797,41 @@ export default function Checkout() {
           <section className="bg-surface-02 rounded-xl p-4 border border-surface-03">
             <h2 className="text-cream font-bold text-lg mb-3">Pagamento Mercado Pago</h2>
             <p className={`text-sm mb-3 ${statusClass(paymentState)}`}>{paymentMessage || "Aguardando pagamento."}</p>
-            <div id="paymentBrick_container" className={paymentState === "approved" ? "hidden" : ""} />
+            {selectedPaymentMethod === "pix" ? (
+              <div className="space-y-4">
+                {payment?.qr_code && paymentState !== "approved" && (
+                  <div className="mx-auto w-full max-w-[260px] rounded-xl bg-white p-3">
+                    <img src={payment.qr_code} alt="QR Code PIX" className="h-auto w-full rounded-lg" />
+                  </div>
+                )}
+                {payment?.qr_code_text && paymentState !== "approved" && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-stone">Codigo copia-e-cola</label>
+                    <textarea
+                      readOnly
+                      value={payment.qr_code_text}
+                      rows={4}
+                      className="w-full resize-none rounded-xl border border-surface-03 bg-surface-03 px-3 py-2 text-xs text-cream outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard?.writeText(payment.qr_code_text || "")}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold px-4 py-3 text-sm font-bold text-cream transition-colors hover:bg-gold/90"
+                    >
+                      <Copy size={16} />
+                      Copiar codigo PIX
+                    </button>
+                  </div>
+                )}
+                {paymentState !== "loading" && !payment?.qr_code_text && paymentState !== "approved" && (
+                  <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
+                    O Mercado Pago ainda nao retornou o QR Code. A tela continua verificando o pagamento.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div id="paymentBrick_container" className={paymentState === "approved" ? "hidden" : ""} />
+            )}
             {paymentState === "loading" && (
               <div className="flex items-center justify-center py-4 text-stone gap-2">
                 <Loader2 size={18} className="animate-spin" />

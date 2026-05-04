@@ -242,8 +242,8 @@ interface AppContextType {
 
   // Products
   products: Pizza[];
-  addProduct: (product: Omit<Pizza, "id" | "created_at" | "updated_at">) => Promise<void>;
-  updateProduct: (id: string, data: Partial<Pizza>) => Promise<void>;
+  addProduct: (product: Omit<Pizza, "id" | "created_at" | "updated_at">) => Promise<Pizza>;
+  updateProduct: (id: string, data: Partial<Pizza>) => Promise<Pizza>;
   deleteProduct: (id: string) => Promise<void>;
 
   // Cart (local only — no backend cart endpoint)
@@ -620,11 +620,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addProduct = async (data: Omit<Pizza, "id" | "created_at" | "updated_at">) => {
     const created = await productsApi.create(data);
     setProducts((prev) => [...prev, created]);
+    return created;
   };
 
   const updateProduct = async (id: string, data: Partial<Pizza>) => {
     const updated = await productsApi.update(id, data);
     setProducts((prev) => prev.map((p) => (p.id === id ? updated : p)));
+    return updated;
   };
 
   const deleteProduct = async (id: string) => {

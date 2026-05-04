@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Save, Eye, EyeOff, CheckCircle, AlertCircle, Loader2, CreditCard, QrCode, Wallet, Banknote } from "lucide-react";
+import { Save, Eye, EyeOff, CheckCircle, AlertCircle, Loader2, CreditCard, QrCode, Wallet } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import {
@@ -58,20 +58,15 @@ export default function AdminPagamentos() {
         const gatewayData = data as GatewayConfig;
         setConfig(gatewayData);
         setForm({
-          gateway: gatewayData.gateway,
+          gateway: "mercadopago",
           sandbox: gatewayData.sandbox,
           accept_pix: gatewayData.accept_pix,
           accept_credit_card: gatewayData.accept_credit_card,
           accept_debit_card: gatewayData.accept_debit_card,
-          accept_cash: gatewayData.accept_cash,
+          accept_cash: false,
           mp_public_key: gatewayData.mp_public_key || "",
           mp_access_token: "",
           mp_webhook_secret: "",
-          stripe_publishable_key: gatewayData.stripe_publishable_key || "",
-          stripe_secret_key: "",
-          stripe_webhook_secret: "",
-          pagseguro_email: gatewayData.pagseguro_email || "",
-          pagseguro_token: "",
         });
       })
       .catch(() => setError("Não foi possível carregar a configuração. O backend está rodando?"))
@@ -91,13 +86,14 @@ export default function AdminPagamentos() {
       // Send only non-empty strings for secrets (empty = don't update)
       const payload: Record<string, string | boolean | null> = {};
       for (const [key, value] of Object.entries(form)) {
-        if (value === "" && ["mp_access_token", "mp_webhook_secret", "stripe_secret_key",
-          "stripe_webhook_secret", "pagseguro_token"].includes(key)) {
+        if (value === "" && ["mp_access_token", "mp_webhook_secret"].includes(key)) {
           continue; // skip blank secret fields
         }
         payload[key] = value;
       }
 
+      payload.gateway = "mercadopago";
+      payload.accept_cash = false;
       const updated = await adminApi.updatePaymentGateway(payload as ApiPaymentGatewayConfigUpdate) as GatewayConfig;
       setConfig(updated);
       setSaved(true);
@@ -109,10 +105,8 @@ export default function AdminPagamentos() {
     }
   };
 
-  const selectedGateway = (form.gateway as Gateway) || "mock";
-  const webhookUrl = selectedGateway === "mercadopago"
-    ? `${window.location.origin}/api/webhooks/mercadopago`
-    : `${window.location.origin}/api/payments/webhook`;
+  const selectedGateway = "mercadopago" as Gateway;
+  const webhookUrl = `${window.location.origin}/api/webhooks/mercadopago`;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-00 to-surface-00">
@@ -169,7 +163,7 @@ export default function AdminPagamentos() {
                     <p className="text-stone text-sm">Selecione o gateway ativo para a loja</p>
                   </div>
                   <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {GATEWAYS.map((gw) => (
+                    {GATEWAYS.filter((gw) => gw.id === "mercadopago").map((gw) => (
                       <button
                         key={gw.id}
                         onClick={() => set("gateway", gw.id)}
@@ -225,12 +219,11 @@ export default function AdminPagamentos() {
                   <div className="px-6 py-4 border-b border-surface-03">
                     <h3 className="text-lg font-bold text-cream">Métodos de Pagamento Aceitos</h3>
                   </div>
-                  <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                     {[
                       { key: "accept_pix", icon: QrCode, label: "PIX" },
                       { key: "accept_credit_card", icon: CreditCard, label: "Cartão de Crédito" },
                       { key: "accept_debit_card", icon: Wallet, label: "Cartão de Débito" },
-                      { key: "accept_cash", icon: Banknote, label: "Dinheiro" },
                     ].map(({ key, icon: Icon, label }) => (
                       <button
                         key={key}
