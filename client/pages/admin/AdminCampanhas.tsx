@@ -500,9 +500,7 @@ export default function AdminCampanhas() {
 
   const tabs: { key: Tab; icon: React.ReactNode; label: string }[] = [
     { key: "campanhas", icon: <Sparkles size={14} />, label: "Campanhas" },
-    { key: "cupons", icon: <Tag size={14} />, label: "Cupons" },
     { key: "kits", icon: <Package size={14} />, label: "Kits Promocionais" },
-    { key: "uso_cupons", icon: <BarChart2 size={14} />, label: "Uso de Cupons" },
   ];
 
   return (
@@ -521,7 +519,7 @@ export default function AdminCampanhas() {
           <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 sticky top-0 z-20 flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold text-cream">Campanhas</h2>
-              <p className="text-stone text-sm">{campaigns.length} campanhas · {couponsList.length} cupons · {kits.length} kits</p>
+              <p className="text-stone text-sm">{campaigns.length} campanhas · {kits.length} kits</p>
             </div>
             <AdminTopActions />
           </div>
