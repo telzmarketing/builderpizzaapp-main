@@ -99,17 +99,21 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
 
     status = order.status.value if hasattr(order.status, "value") else str(order.status)
     delivery_summary = None
-    if order.delivery:
-        delivery_person = order.delivery.delivery_person
-        delivery_summary = {
-            "id": order.delivery.id,
-            "status": order.delivery.status.value if hasattr(order.delivery.status, "value") else str(order.delivery.status),
-            "delivery_person_id": order.delivery.delivery_person_id,
-            "delivery_person_name": delivery_person.name if delivery_person else None,
-            "assigned_at": order.delivery.assigned_at,
-            "picked_up_at": order.delivery.picked_up_at,
-            "delivered_at": order.delivery.delivered_at,
-        }
+    try:
+        d = order.delivery
+        if d:
+            dp = d.delivery_person
+            delivery_summary = {
+                "id": d.id,
+                "status": d.status.value if hasattr(d.status, "value") else str(d.status),
+                "delivery_person_id": d.delivery_person_id,
+                "delivery_person_name": dp.name if dp else None,
+                "assigned_at": d.assigned_at,
+                "picked_up_at": d.picked_up_at,
+                "delivered_at": d.delivered_at,
+            }
+    except Exception:
+        pass
     return {
         "id": order.id,
         "customer_id": order.customer_id,
