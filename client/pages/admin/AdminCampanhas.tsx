@@ -540,8 +540,10 @@ export default function AdminCampanhas() {
                         return (
                           <div key={c.id} className={`bg-surface-02 rounded-xl border border-surface-03 overflow-hidden ${!c.active ? "opacity-60" : ""}`}>
                             <div className="flex items-center gap-4 p-4">
-                              <div className="w-12 h-12 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center text-2xl">
-                                {c.icon}
+                              <div className="w-12 h-12 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center text-2xl overflow-hidden">
+                                {isAssetUrl(c.icon)
+                                  ? <img src={resolveAssetUrl(c.icon)} className="w-full h-full object-cover" alt={c.code} />
+                                  : c.icon}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
@@ -631,8 +633,8 @@ export default function AdminCampanhas() {
                           <div className="flex items-center gap-4 p-4">
                             <div className="w-14 h-14 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center overflow-hidden">
                               {c.banner ? (
-                                c.banner.startsWith("http") || c.banner.startsWith("data:") ? (
-                                  <img src={c.banner} className="w-full h-full object-cover" alt={c.name} />
+                                isAssetUrl(c.banner) ? (
+                                  <img src={resolveAssetUrl(c.banner)} className="w-full h-full object-cover" alt={c.name} />
                                 ) : (
                                   <span className="text-2xl">{c.banner}</span>
                                 )
@@ -998,7 +1000,7 @@ export default function AdminCampanhas() {
                 onChange={(v) => setCampaignForm({ ...campaignForm, banner: v })}
                 mediaType="image"
                 label="Banner da Campanha"
-                sizeGuide="Recomendado: 800×300px, máx. 5MB"
+                sizeGuide="Recomendado: 800×345px, máx. 5MB"
                 hint="Imagem exibida na página pública da campanha."
               />
             ) : (
