@@ -1,10 +1,11 @@
 import { useEffect, useState, useRef } from "react";
 import {
   Loader2, Plus, Pencil, Trash2, X, Tag, CheckCircle,
-  XCircle, Clock, RefreshCw, BarChart2, List,
+  XCircle, Clock, RefreshCw, BarChart2, List, Truck, Gift,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
+import { productsApi, type ApiProduct } from "@/lib/api";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -23,7 +24,14 @@ interface Coupon {
   max_uses?: number;
   max_uses_per_customer?: number;
   used_count: number;
+  starts_at?: string;
+  ends_at?: string;
   expiry_date?: string;
+  free_shipping?: boolean;
+  gift_enabled?: boolean;
+  gift_product_id?: string | null;
+  gift_quantity?: number;
+  stackable?: boolean;
   active: boolean;
   campaign_id?: string;
   created_at: string;
@@ -38,7 +46,14 @@ type CouponForm = {
   min_order_value: number;
   max_uses: string | number;
   max_uses_per_customer: string | number;
+  starts_at: string;
+  ends_at: string;
   expiry_date: string;
+  free_shipping: boolean;
+  gift_enabled: boolean;
+  gift_product_id: string;
+  gift_quantity: number;
+  stackable: boolean;
   active: boolean;
 };
 
@@ -62,11 +77,19 @@ const emptyForm = (): CouponForm => ({
   min_order_value: 0,
   max_uses: "" as string | number,
   max_uses_per_customer: "" as string | number,
+  starts_at: "",
+  ends_at: "",
   expiry_date: "",
+  free_shipping: false,
+  gift_enabled: false,
+  gift_product_id: "",
+  gift_quantity: 1,
+  stackable: false,
   active: true,
 });
 
 function fmtDiscount(c: Coupon) {
+  if (!c.discount_value || c.discount_value <= 0) return "Sem desconto";
   return c.coupon_type === "percentage"
     ? `${c.discount_value}% OFF`
     : `R$ ${c.discount_value.toFixed(2).replace(".", ",")} OFF`;
@@ -97,6 +120,7 @@ export default function MarketingCupons() {
 
   // ── Cupons ──
   const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [products, setProducts] = useState<ApiProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "inactive" | "expired">("all");
@@ -137,6 +161,12 @@ export default function MarketingCupons() {
   }, [tab]); // eslint-disable-line
 
   useEffect(() => {
+    productsApi.list(false)
+      .then(setProducts)
+      .catch(() => setProducts([]));
+  }, []);
+
+  useEffect(() => {
     if (tab === "uso") {
       usageRef.current = setInterval(fetchUsage, 30000);
     } else {
@@ -171,7 +201,14 @@ export default function MarketingCupons() {
       min_order_value: c.min_order_value,
       max_uses: c.max_uses ?? "",
       max_uses_per_customer: c.max_uses_per_customer ?? "",
+      starts_at: c.starts_at ? c.starts_at.slice(0, 16) : "",
+      ends_at: c.ends_at ? c.ends_at.slice(0, 16) : "",
       expiry_date: c.expiry_date ? c.expiry_date.slice(0, 16) : "",
+      free_shipping: !!c.free_shipping,
+      gift_enabled: !!c.gift_enabled,
+      gift_product_id: c.gift_product_id ?? "",
+      gift_quantity: c.gift_quantity || 1,
+      stackable: !!c.stackable,
       active: c.active,
     });
     setShowModal(true);
@@ -180,7 +217,9 @@ export default function MarketingCupons() {
   const saveCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.code.trim()) { alert("Código obrigatório."); return; }
-    if (!form.discount_value || Number(form.discount_value) <= 0) { alert("Valor de desconto deve ser maior que zero."); return; }
+    const discountValue = Number(form.discount_value) || 0;
+    if (discountValue <= 0 && !form.free_shipping && !form.gift_enabled) { alert("Informe desconto, frete gratis ou produto brinde."); return; }
+    if (form.gift_enabled && !form.gift_product_id) { alert("Selecione o produto brinde."); return; }
 
     setSaving(true);
     try {
@@ -189,11 +228,18 @@ export default function MarketingCupons() {
         description: form.description || null,
         icon: form.icon || "🎟️",
         coupon_type: form.coupon_type,
-        discount_value: Number(form.discount_value),
+        discount_value: discountValue,
         min_order_value: Number(form.min_order_value) || 0,
         max_uses: form.max_uses !== "" ? Number(form.max_uses) : null,
         max_uses_per_customer: form.max_uses_per_customer !== "" ? Number(form.max_uses_per_customer) : null,
+        starts_at: form.starts_at ? new Date(form.starts_at).toISOString() : null,
+        ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
         expiry_date: form.expiry_date ? new Date(form.expiry_date).toISOString() : null,
+        free_shipping: form.free_shipping,
+        gift_enabled: form.gift_enabled,
+        gift_product_id: form.gift_enabled && form.gift_product_id ? form.gift_product_id : null,
+        gift_quantity: Math.max(1, Number(form.gift_quantity) || 1),
+        stackable: form.stackable,
         active: form.active,
       };
 
@@ -239,6 +285,8 @@ export default function MarketingCupons() {
     { id: "inactive" as const, label: "Inativos" },
     { id: "expired" as const,  label: "Expirados" },
   ];
+
+  const activeProducts = products.filter(p => p.active);
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-surface-00 overflow-hidden">
@@ -355,6 +403,24 @@ export default function MarketingCupons() {
                           )}
                         </div>
                       </div>
+
+                      {(c.free_shipping || c.gift_enabled || c.stackable) && (
+                        <div className="flex flex-wrap gap-1">
+                          {c.free_shipping && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/15 px-2 py-0.5 text-xs text-blue-300">
+                              <Truck size={11} /> Frete gratis
+                            </span>
+                          )}
+                          {c.gift_enabled && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-xs text-green-300">
+                              <Gift size={11} /> Brinde{c.gift_quantity ? ` x${c.gift_quantity}` : ""}
+                            </span>
+                          )}
+                          {c.stackable && (
+                            <span className="rounded-full bg-surface-03 px-2 py-0.5 text-xs text-stone">Combinavel</span>
+                          )}
+                        </div>
+                      )}
 
                       {/* Details */}
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-stone">
@@ -513,7 +579,7 @@ export default function MarketingCupons() {
                   <label className="text-xs text-stone">
                     {form.coupon_type === "percentage" ? "Desconto (%) *" : "Desconto (R$) *"}
                   </label>
-                  <input type="number" min="0.01" step="0.01" value={form.discount_value}
+                  <input type="number" min="0" step="0.01" value={form.discount_value}
                     onChange={e => setForm(f => ({ ...f, discount_value: +e.target.value }))}
                     className={IC} />
                 </div>
@@ -547,6 +613,74 @@ export default function MarketingCupons() {
                 <input type="datetime-local" value={form.expiry_date}
                   onChange={e => setForm(f => ({ ...f, expiry_date: e.target.value }))}
                   className={IC} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-stone">Inicio (opcional)</label>
+                  <input type="datetime-local" value={form.starts_at}
+                    onChange={e => setForm(f => ({ ...f, starts_at: e.target.value }))}
+                    className={IC} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-stone">Fim (opcional)</label>
+                  <input type="datetime-local" value={form.ends_at}
+                    onChange={e => setForm(f => ({ ...f, ends_at: e.target.value }))}
+                    className={IC} />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-surface-03 bg-surface-03/30 p-4 space-y-3">
+                <p className="text-sm font-semibold text-cream">Beneficios compostos</p>
+
+                <button type="button"
+                  onClick={() => setForm(f => ({ ...f, free_shipping: !f.free_shipping }))}
+                  className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm transition-colors ${
+                    form.free_shipping ? "border-gold bg-gold/10 text-gold" : "border-surface-03 bg-surface-02 text-stone hover:text-cream"}`}>
+                  <span className="flex items-center gap-2"><Truck size={16} /> Aplicar frete gratis</span>
+                  <span className={`h-5 w-9 rounded-full p-0.5 transition-colors ${form.free_shipping ? "bg-gold" : "bg-surface-03"}`}>
+                    <span className={`block h-4 w-4 rounded-full bg-white transition-transform ${form.free_shipping ? "translate-x-4" : ""}`} />
+                  </span>
+                </button>
+
+                <button type="button"
+                  onClick={() => setForm(f => ({ ...f, gift_enabled: !f.gift_enabled }))}
+                  className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm transition-colors ${
+                    form.gift_enabled ? "border-gold bg-gold/10 text-gold" : "border-surface-03 bg-surface-02 text-stone hover:text-cream"}`}>
+                  <span className="flex items-center gap-2"><Gift size={16} /> Adicionar produto brinde</span>
+                  <span className={`h-5 w-9 rounded-full p-0.5 transition-colors ${form.gift_enabled ? "bg-gold" : "bg-surface-03"}`}>
+                    <span className={`block h-4 w-4 rounded-full bg-white transition-transform ${form.gift_enabled ? "translate-x-4" : ""}`} />
+                  </span>
+                </button>
+
+                {form.gift_enabled && (
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-2 space-y-1">
+                      <label className="text-xs text-stone">Produto brinde *</label>
+                      <select value={form.gift_product_id}
+                        onChange={e => setForm(f => ({ ...f, gift_product_id: e.target.value }))}
+                        className={IC}>
+                        <option value="">Selecione</option>
+                        {activeProducts.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-stone">Qtd.</label>
+                      <input type="number" min="1" step="1" value={form.gift_quantity}
+                        onChange={e => setForm(f => ({ ...f, gift_quantity: Math.max(1, Number(e.target.value) || 1) }))}
+                        className={IC} />
+                    </div>
+                  </div>
+                )}
+
+                <label className="flex items-center gap-2 text-sm text-stone">
+                  <input type="checkbox" checked={form.stackable}
+                    onChange={e => setForm(f => ({ ...f, stackable: e.target.checked }))}
+                    className="h-4 w-4 accent-gold" />
+                  Permitir combinar com outros beneficios
+                </label>
               </div>
 
               {/* Ativo */}
