@@ -80,7 +80,14 @@ interface CouponForm {
   code: string; description: string; icon: string;
   coupon_type: "percentage" | "fixed";
   discount_value: number; min_order_value: number;
-  max_uses: string; expiry_date: string; active: boolean;
+  max_uses: string; max_uses_per_customer: string;
+  starts_at: string; ends_at: string; expiry_date: string;
+  free_shipping: boolean;
+  gift_enabled: boolean;
+  gift_product_id: string;
+  gift_quantity: number;
+  stackable: boolean;
+  active: boolean;
 }
 
 interface CampaignForm {
@@ -104,7 +111,9 @@ interface KitForm {
 const emptyCouponForm: CouponForm = {
   code: "", description: "", icon: "🎟️",
   coupon_type: "percentage", discount_value: 10, min_order_value: 0,
-  max_uses: "", expiry_date: "", active: true,
+  max_uses: "", max_uses_per_customer: "", starts_at: "", ends_at: "", expiry_date: "",
+  free_shipping: false, gift_enabled: false, gift_product_id: "", gift_quantity: 1,
+  stackable: false, active: true,
 };
 
 const WEEK_DAYS = [
@@ -210,7 +219,15 @@ export default function AdminCampanhas() {
       coupon_type: c.coupon_type, discount_value: c.discount_value,
       min_order_value: c.min_order_value,
       max_uses: c.max_uses !== null ? String(c.max_uses) : "",
+      max_uses_per_customer: c.max_uses_per_customer !== null ? String(c.max_uses_per_customer) : "",
+      starts_at: c.starts_at ? c.starts_at.slice(0, 16) : "",
+      ends_at: c.ends_at ? c.ends_at.slice(0, 16) : "",
       expiry_date: c.expiry_date ? c.expiry_date.slice(0, 16) : "",
+      free_shipping: !!c.free_shipping,
+      gift_enabled: !!c.gift_enabled,
+      gift_product_id: c.gift_product_id ?? "",
+      gift_quantity: c.gift_quantity || 1,
+      stackable: !!c.stackable,
       active: c.active,
     });
     setShowCouponModal(true);
@@ -219,6 +236,7 @@ export default function AdminCampanhas() {
   const handleSaveCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!couponForm.code.trim()) { showToast("Código é obrigatório."); return; }
+    if (couponForm.gift_enabled && !couponForm.gift_product_id) { showToast("Selecione o produto brinde."); return; }
     setCouponSaving(true);
     try {
       const payload = {
@@ -229,7 +247,15 @@ export default function AdminCampanhas() {
         discount_value: couponForm.discount_value,
         min_order_value: couponForm.min_order_value,
         max_uses: couponForm.max_uses ? parseInt(couponForm.max_uses) : null,
+        max_uses_per_customer: couponForm.max_uses_per_customer ? parseInt(couponForm.max_uses_per_customer) : null,
+        starts_at: couponForm.starts_at ? new Date(couponForm.starts_at).toISOString() : null,
+        ends_at: couponForm.ends_at ? new Date(couponForm.ends_at).toISOString() : null,
         expiry_date: couponForm.expiry_date ? new Date(couponForm.expiry_date).toISOString() : null,
+        free_shipping: couponForm.free_shipping,
+        gift_enabled: couponForm.gift_enabled,
+        gift_product_id: couponForm.gift_enabled && couponForm.gift_product_id ? couponForm.gift_product_id : null,
+        gift_quantity: Math.max(1, couponForm.gift_quantity || 1),
+        stackable: couponForm.stackable,
         active: couponForm.active,
       };
       if (editingCouponId) {
@@ -534,9 +560,14 @@ export default function AdminCampanhas() {
 
                     <div className="space-y-4">
                       {couponsList.map((c) => {
-                        const discountLabel =
-                          c.coupon_type === "percentage" ? `${c.discount_value}% OFF`
-                          : `R$ ${c.discount_value.toFixed(2)} OFF`;
+                        const benefits = [
+                          c.discount_value > 0
+                            ? (c.coupon_type === "percentage" ? `${c.discount_value}% OFF` : `R$ ${c.discount_value.toFixed(2)} OFF`)
+                            : null,
+                          c.free_shipping ? "Frete grátis" : null,
+                          c.gift_enabled ? "Brinde" : null,
+                        ].filter(Boolean);
+                        const discountLabel = benefits.join(" + ") || "Sem desconto financeiro";
                         return (
                           <div key={c.id} className={`bg-surface-02 rounded-xl border border-surface-03 overflow-hidden ${!c.active ? "opacity-60" : ""}`}>
                             <div className="flex items-center gap-4 p-4">
@@ -863,7 +894,43 @@ export default function AdminCampanhas() {
               <Inp label="Máx. de usos (deixe em branco = ilimitado)" type="number" min="1" value={couponForm.max_uses} onChange={(e) => setCouponForm({ ...couponForm, max_uses: e.target.value })} placeholder="Ilimitado" />
             </div>
 
+            <Inp label="Máx. por cliente (deixe em branco = ilimitado)" type="number" min="1" value={couponForm.max_uses_per_customer} onChange={(e) => setCouponForm({ ...couponForm, max_uses_per_customer: e.target.value })} placeholder="Ilimitado" />
+
+            <div className="grid grid-cols-2 gap-4">
+              <Inp label="Início de validade" type="datetime-local" value={couponForm.starts_at} onChange={(e) => setCouponForm({ ...couponForm, starts_at: e.target.value })} />
+              <Inp label="Fim de validade" type="datetime-local" value={couponForm.ends_at} onChange={(e) => setCouponForm({ ...couponForm, ends_at: e.target.value })} />
+            </div>
+
             <Inp label="Data de validade" type="datetime-local" value={couponForm.expiry_date} onChange={(e) => setCouponForm({ ...couponForm, expiry_date: e.target.value })} />
+
+            <div className="rounded-xl border border-surface-03 bg-surface-02/70 p-4 space-y-3">
+              <p className="text-gold text-[10px] font-bold uppercase tracking-widest">Benefícios compostos</p>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={couponForm.free_shipping} onChange={(e) => setCouponForm({ ...couponForm, free_shipping: e.target.checked })} className="w-4 h-4 accent-gold" />
+                <span className="text-parchment text-sm">Aplicar frete grátis</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={couponForm.gift_enabled} onChange={(e) => setCouponForm({ ...couponForm, gift_enabled: e.target.checked })} className="w-4 h-4 accent-gold" />
+                <span className="text-parchment text-sm">Adicionar produto brinde</span>
+              </label>
+              {couponForm.gift_enabled && (
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="col-span-2">
+                    <Sel label="Produto brinde" value={couponForm.gift_product_id} onChange={(e) => setCouponForm({ ...couponForm, gift_product_id: e.target.value })}>
+                      <option value="">Selecione</option>
+                      {products.filter((p) => p.active).map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </Sel>
+                  </div>
+                  <Inp label="Quantidade" type="number" min="1" value={couponForm.gift_quantity} onChange={(e) => setCouponForm({ ...couponForm, gift_quantity: Math.max(1, parseInt(e.target.value) || 1) })} />
+                </div>
+              )}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={couponForm.stackable} onChange={(e) => setCouponForm({ ...couponForm, stackable: e.target.checked })} className="w-4 h-4 accent-gold" />
+                <span className="text-parchment text-sm">Permitir combinar com outros benefícios</span>
+              </label>
+            </div>
 
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={couponForm.active} onChange={(e) => setCouponForm({ ...couponForm, active: e.target.checked })} className="w-4 h-4 accent-gold" />

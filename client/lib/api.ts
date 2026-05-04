@@ -297,7 +297,14 @@ export interface ApiCoupon {
   max_uses: number | null;
   max_uses_per_customer: number | null;
   used_count: number;
+  starts_at: string | null;
+  ends_at: string | null;
   expiry_date: string | null;
+  free_shipping: boolean;
+  gift_enabled: boolean;
+  gift_product_id: string | null;
+  gift_quantity: number;
+  stackable: boolean;
   active: boolean;
   campaign_id: string | null;
   created_at: string;
@@ -312,15 +319,42 @@ export interface ApiCouponInput {
   min_order_value?: number;
   max_uses?: number | null;
   max_uses_per_customer?: number | null;
+  starts_at?: string | null;
+  ends_at?: string | null;
   expiry_date?: string | null;
+  free_shipping?: boolean;
+  gift_enabled?: boolean;
+  gift_product_id?: string | null;
+  gift_quantity?: number;
+  stackable?: boolean;
   campaign_id?: string | null;
   active?: boolean;
+}
+
+export interface ApiCouponGift {
+  product_id: string;
+  name: string;
+  icon: string | null;
+  quantity: number;
+  unit_price: number;
+  original_price: number;
+  is_gift: boolean;
+  gift_reason: string;
+  coupon_id: string;
+  coupon_code: string;
 }
 
 export interface ApiCouponApply {
   valid: boolean;
   coupon_id: string | null;
+  coupon_code: string | null;
   discount_amount: number;
+  free_shipping: boolean;
+  delivery_fee_original: number;
+  delivery_fee_discount: number;
+  delivery_fee_final: number;
+  free_shipping_applied: boolean;
+  gift: ApiCouponGift | null;
   message: string;
 }
 
@@ -495,6 +529,11 @@ export interface ApiOrderItem {
   promotion_applied?: boolean;
   promotion_blocked?: boolean;
   promotion_block_reason?: string | null;
+  original_price?: number | null;
+  is_gift?: boolean;
+  gift_reason?: string | null;
+  coupon_id?: string | null;
+  coupon_code?: string | null;
 }
 
 export type OrderStatus =
@@ -523,6 +562,10 @@ export interface ApiOrder {
   status: OrderStatus;
   subtotal: number;
   shipping_fee: number;
+  delivery_fee_original?: number;
+  delivery_fee_discount?: number;
+  delivery_fee_final?: number;
+  free_shipping_applied?: boolean;
   discount: number;
   total: number;
   estimated_time: number;
@@ -1084,20 +1127,20 @@ export const authApi = {
       { phone }
     ),
 
-  login: (phone: string, name?: string) =>
+  login: (phone: string, password: string) =>
     post<{ customer: ApiCustomer; is_new: boolean }>("/auth/login", {
       phone,
-      name,
+      password,
     }),
 
   googleLogin: (credential: string) =>
     post<{ customer: ApiCustomer; is_new: boolean }>("/auth/google", { credential }),
 
-  emailLogin: (email: string) =>
-    post<{ customer: ApiCustomer; is_new: boolean }>("/auth/login-email", { email }),
+  emailLogin: (email: string, password: string) =>
+    post<{ customer: ApiCustomer; is_new: boolean }>("/auth/login-email", { email, password }),
 
   register: (data: {
-    name: string; email: string; phone: string;
+    name: string; email: string; password: string; phone: string;
     street: string; number: string; complement?: string;
     neighborhood: string; city: string; state?: string; zip_code: string;
     label?: string;
@@ -1375,8 +1418,8 @@ export const couponsApi = {
 
   remove: (id: string) => del<void>(`/coupons/${id}`),
 
-  apply: (code: string, order_subtotal: number, customer_id?: string, phone?: string) =>
-    post<ApiCouponApply>("/coupons/apply", { code, order_subtotal, customer_id, phone }),
+  apply: (code: string, order_subtotal: number, customer_id?: string, phone?: string, delivery_fee = 0) =>
+    post<ApiCouponApply>("/coupons/apply", { code, order_subtotal, customer_id, phone, delivery_fee }),
 
   listUsage: () => get<ApiCouponUsage[]>("/coupons/usage"),
 
@@ -2252,6 +2295,7 @@ export interface DeliveryRecord {
   confirmed_by_code_at?: string;
   rating?: number;
   rating_comment?: string;
+  notes?: string;
   created_at: string;
   updated_at: string;
   order?: OrderAddress;

@@ -231,12 +231,15 @@ export default function OrderTracking() {
                     {displayIcons || "🍕"}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-cream font-semibold text-sm leading-tight">{displayName}</h4>
+                    <h4 className="text-cream font-semibold text-sm leading-tight">
+                      {item.is_gift && <span className="text-green-300">[BRINDE] </span>}
+                      {displayName}
+                    </h4>
                     <p className="text-stone text-xs mt-0.5">
                       {item.quantity}x · {pizzaSizeLabel(item.selected_size)} · {divLabel}
                     </p>
                   </div>
-                  <p className="text-gold font-bold text-sm flex-shrink-0">
+                  <p className={`${item.is_gift ? "text-green-400" : "text-gold"} font-bold text-sm flex-shrink-0`}>
                     R$ {(item.final_price * item.quantity).toFixed(2)}
                   </p>
                 </div>
@@ -251,7 +254,7 @@ export default function OrderTracking() {
             </div>
             <div className="flex justify-between text-parchment text-sm">
               <span>Taxa de entrega:</span>
-              <span>R$ {order.shipping_fee.toFixed(2)}</span>
+              <span>{order.free_shipping_applied ? "Grátis" : `R$ ${order.shipping_fee.toFixed(2)}`}</span>
             </div>
             {order.discount > 0 && (
               <div className="flex justify-between text-green-400 text-sm">

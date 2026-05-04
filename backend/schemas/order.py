@@ -87,6 +87,11 @@ class OrderItemOut(BaseModel):
     total_price: float
     standard_unit_price: Optional[float] = None
     applied_unit_price: Optional[float] = None
+    original_price: Optional[float] = None
+    is_gift: bool = False
+    gift_reason: Optional[str] = None
+    coupon_id: Optional[str] = None
+    coupon_code: Optional[str] = None
     promotion_id: Optional[str] = None
     promotion_name: Optional[str] = None
     promotion_discount: float = 0.0
@@ -108,6 +113,10 @@ class OrderOut(BaseModel):
     status: OrderStatus
     subtotal: float
     shipping_fee: float
+    delivery_fee_original: float = 0.0
+    delivery_fee_discount: float = 0.0
+    delivery_fee_final: float = 0.0
+    free_shipping_applied: bool = False
     discount: float
     total: float
     estimated_time: int

@@ -563,7 +563,7 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
   const itemSummary = order.items.slice(0, 2).map((item) => {
     const isMulti = item.flavor_division > 1;
     const name = isMulti ? item.flavors.map((f) => f.name).join(" + ") : item.product_name;
-    return `${item.quantity}x ${name}`;
+    return `${item.quantity}x ${item.is_gift ? "[BRINDE] " : ""}${name}`;
   });
   const remaining = Math.max(order.items.length - 2, 0);
 

@@ -15,6 +15,13 @@ depends_on = None
 
 
 DDL = [
+    "ALTER TABLE IF EXISTS coupons ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ",
+    "ALTER TABLE IF EXISTS coupons ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ",
+    "ALTER TABLE IF EXISTS coupons ADD COLUMN IF NOT EXISTS free_shipping BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE IF EXISTS coupons ADD COLUMN IF NOT EXISTS gift_enabled BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE IF EXISTS coupons ADD COLUMN IF NOT EXISTS gift_product_id VARCHAR REFERENCES products(id) ON DELETE SET NULL",
+    "ALTER TABLE IF EXISTS coupons ADD COLUMN IF NOT EXISTS gift_quantity INTEGER DEFAULT 1",
+    "ALTER TABLE IF EXISTS coupons ADD COLUMN IF NOT EXISTS stackable BOOLEAN DEFAULT FALSE",
     # Chatbot schema currently bootstrapped by backend.main._run_migrations.
     "CREATE TABLE IF NOT EXISTS chatbot_settings (id VARCHAR PRIMARY KEY DEFAULT 'default', ativo BOOLEAN DEFAULT TRUE, nome_bot VARCHAR(100) DEFAULT 'Assistente', mensagem_inicial TEXT DEFAULT 'Ola! Como posso ajudar?', cor_primaria VARCHAR(20) DEFAULT '#f97316', posicao_widget VARCHAR(20) DEFAULT 'bottom-right', horario_funcionamento TEXT, mensagem_fora_horario TEXT DEFAULT 'Estamos fora do horario de atendimento.', tempo_disparo_auto INTEGER DEFAULT 0, fallback_humano_ativo BOOLEAN DEFAULT TRUE, provedor_ia VARCHAR(20) DEFAULT 'claude', modelo_ia VARCHAR(100) DEFAULT 'claude-sonnet-4-20250514', temperatura FLOAT DEFAULT 0.7, max_tokens INTEGER DEFAULT 1024, prompt_base TEXT DEFAULT '', regras_fixas TEXT DEFAULT '', tom_de_voz TEXT DEFAULT '', objetivo TEXT DEFAULT '', instrucoes_transferencia TEXT DEFAULT '', limitacoes_proibicoes TEXT DEFAULT '', updated_at TIMESTAMPTZ DEFAULT NOW())",
     """INSERT INTO chatbot_settings (
@@ -88,6 +95,7 @@ DDL = [
     "ALTER TABLE IF EXISTS exit_popup_config ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()",
     # Customer/account fields used by LGPD, CRM and attribution flows.
     "ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS google_id VARCHAR(200)",
+    "ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS password_hash TEXT",
     "ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS lgpd_consent BOOLEAN DEFAULT FALSE",
     "ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS lgpd_consent_at TIMESTAMPTZ",
     "ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS lgpd_policy_version VARCHAR(20)",
@@ -130,6 +138,15 @@ DDL = [
     "ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS total_time_minutes INTEGER",
     "ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS preparation_time_minutes INTEGER",
     "ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS delivery_time_minutes INTEGER",
+    "ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS delivery_fee_original FLOAT DEFAULT 0",
+    "ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS delivery_fee_discount FLOAT DEFAULT 0",
+    "ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS delivery_fee_final FLOAT DEFAULT 0",
+    "ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS free_shipping_applied BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE IF EXISTS order_items ADD COLUMN IF NOT EXISTS original_price FLOAT",
+    "ALTER TABLE IF EXISTS order_items ADD COLUMN IF NOT EXISTS is_gift BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE IF EXISTS order_items ADD COLUMN IF NOT EXISTS gift_reason VARCHAR(100)",
+    "ALTER TABLE IF EXISTS order_items ADD COLUMN IF NOT EXISTS coupon_id VARCHAR",
+    "ALTER TABLE IF EXISTS order_items ADD COLUMN IF NOT EXISTS coupon_code VARCHAR(50)",
     "ALTER TABLE IF EXISTS campaigns ADD COLUMN IF NOT EXISTS active_days VARCHAR(20)",
     "ALTER TABLE IF EXISTS campaigns ADD COLUMN IF NOT EXISTS card_bg_color VARCHAR(20)",
     "ALTER TABLE IF EXISTS campaigns ADD COLUMN IF NOT EXISTS media_type VARCHAR(10) DEFAULT 'image'",

@@ -232,10 +232,10 @@ interface AppContextType {
 
   // Customer auth
   customer: ApiCustomer | null;
-  customerLogin: (phone: string, name?: string) => Promise<void>;
+  customerLogin: (phone: string, password: string) => Promise<void>;
   googleLogin: (credential: string) => Promise<void>;
-  emailLogin: (email: string) => Promise<void>;
-  registerCustomer: (data: { name: string; email: string; phone: string; street: string; number: string; complement?: string; neighborhood: string; city: string; state?: string; zip_code: string; label?: string; lgpd_consent: boolean; lgpd_policy_version?: string; marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean }) => Promise<void>;
+  emailLogin: (email: string, password: string) => Promise<void>;
+  registerCustomer: (data: { name: string; email: string; password: string; phone: string; street: string; number: string; complement?: string; neighborhood: string; city: string; state?: string; zip_code: string; label?: string; lgpd_consent: boolean; lgpd_policy_version?: string; marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean }) => Promise<void>;
   customerLogout: () => void;
   updateCustomer: (data: { name?: string; phone?: string }) => Promise<void>;
   addCustomerAddress: (data: { street: string; number?: string; complement?: string; neighborhood?: string; city: string; zip_code?: string }) => Promise<void>;
@@ -567,8 +567,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     customerEventsApi.identify(td.session_id, customerId).catch(() => {});
   };
 
-  const customerLogin = async (phone: string, name?: string) => {
-    const { customer: c } = await authApi.login(phone, name);
+  const customerLogin = async (phone: string, password: string) => {
+    const { customer: c } = await authApi.login(phone, password);
     setCustomer(c);
     localStorage.setItem("customer", JSON.stringify(c));
     _linkSession(c.id);
@@ -581,14 +581,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     _linkSession(c.id);
   };
 
-  const emailLogin = async (email: string) => {
-    const { customer: c } = await authApi.emailLogin(email);
+  const emailLogin = async (email: string, password: string) => {
+    const { customer: c } = await authApi.emailLogin(email, password);
     setCustomer(c);
     localStorage.setItem("customer", JSON.stringify(c));
     _linkSession(c.id);
   };
 
-  const registerCustomer = async (data: { name: string; email: string; phone: string; street: string; number: string; complement?: string; neighborhood: string; city: string; state?: string; zip_code: string; label?: string; lgpd_consent: boolean; lgpd_policy_version?: string; marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean }) => {
+  const registerCustomer = async (data: { name: string; email: string; password: string; phone: string; street: string; number: string; complement?: string; neighborhood: string; city: string; state?: string; zip_code: string; label?: string; lgpd_consent: boolean; lgpd_policy_version?: string; marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean }) => {
     const { customer: c } = await authApi.register(data);
     setCustomer(c);
     localStorage.setItem("customer", JSON.stringify(c));

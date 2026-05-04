@@ -252,6 +252,12 @@ class OrderService:
         # 3. Coupon
         discount = 0.0
         resolved_coupon_id: str | None = None
+        coupon_code: str | None = None
+        gift_result = None
+        delivery_fee_original = round(shipping_fee, 2)
+        delivery_fee_discount = 0.0
+        delivery_fee_final = round(shipping_fee, 2)
+        free_shipping_applied = False
         if payload.coupon_code:
             from backend.services.coupon_service import CouponService
             from backend.schemas.coupon import CouponApplyIn
@@ -259,15 +265,24 @@ class OrderService:
                 CouponApplyIn(
                     code=payload.coupon_code,
                     order_subtotal=subtotal,
+                    delivery_fee=shipping_fee,
                     customer_id=payload.customer_id,
                     phone=payload.delivery.phone if payload.delivery else None,
                 )
             )
+            if not coupon_result.valid:
+                raise DomainError(coupon_result.message, code="InvalidCoupon")
             discount = coupon_result.discount_amount
             resolved_coupon_id = coupon_result.coupon_id
+            coupon_code = coupon_result.coupon_code
+            gift_result = coupon_result.gift
+            delivery_fee_original = coupon_result.delivery_fee_original
+            delivery_fee_discount = coupon_result.delivery_fee_discount
+            delivery_fee_final = coupon_result.delivery_fee_final
+            free_shipping_applied = coupon_result.free_shipping_applied
 
         # 4. Build order
-        total = round(subtotal + shipping_fee - discount, 2)
+        total = round(subtotal + delivery_fee_final - discount, 2)
         order_id = f"order-{uuid.uuid4().hex[:8]}"
         external_reference = order_id
         order = Order(
@@ -291,7 +306,11 @@ class OrderService:
             landing_page=payload.landing_page,
             referrer=payload.referrer,
             subtotal=subtotal,
-            shipping_fee=shipping_fee,
+            shipping_fee=delivery_fee_final,
+            delivery_fee_original=delivery_fee_original,
+            delivery_fee_discount=delivery_fee_discount,
+            delivery_fee_final=delivery_fee_final,
+            free_shipping_applied=free_shipping_applied,
             discount=discount,
             total=total,
             estimated_time=shipping_result.estimated_time,
@@ -333,6 +352,8 @@ class OrderService:
                 total_price=round(unit_price * item.quantity, 2),
                 standard_unit_price=pricing.standard_price,
                 applied_unit_price=pricing.final_price,
+                original_price=pricing.standard_price,
+                is_gift=False,
                 promotion_id=pricing.promotion_id,
                 promotion_name=pricing.promotion_name,
                 promotion_discount=pricing.discount_amount,
@@ -350,6 +371,29 @@ class OrderService:
                     flavor_price=product.price,
                     position=idx,
                 ))
+
+        if gift_result:
+            gift_item = OrderItem(
+                id=str(uuid.uuid4()),
+                order_id=order.id,
+                product_id=gift_result.product_id,
+                quantity=gift_result.quantity,
+                selected_size="Brinde",
+                selected_size_id=None,
+                flavor_division=1,
+                flavor_count=1,
+                unit_price=0.0,
+                total_price=0.0,
+                standard_unit_price=gift_result.original_price,
+                applied_unit_price=0.0,
+                original_price=gift_result.original_price,
+                is_gift=True,
+                gift_reason="coupon",
+                coupon_id=resolved_coupon_id,
+                coupon_code=coupon_code,
+                notes=f"Brinde do cupom {coupon_code}" if coupon_code else "Brinde do cupom",
+            )
+            self._db.add(gift_item)
 
         # 6. Record coupon usage
         if resolved_coupon_id:
@@ -393,7 +437,7 @@ class OrderService:
             order_id=order.id,
             customer_name=payload.delivery.name,
             total=order.total,
-            items_count=sum(i.quantity for i in payload.items),
+            items_count=sum(i.quantity for i in payload.items) + (gift_result.quantity if gift_result else 0),
             delivery_city=payload.delivery.city,
         ))
 

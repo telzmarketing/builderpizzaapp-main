@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Plus, Minus, Trash2, UtensilsCrossed, ShoppingCart, Tag, Check, X } from "lucide-react";
 import { useApp, CartItem } from "@/context/AppContext";
-import { couponsApi, isAssetUrl, resolveAssetUrl, storeOperationApi, type StoreOperationStatus } from "@/lib/api";
+import { couponsApi, isAssetUrl, resolveAssetUrl, storeOperationApi, type ApiCouponGift, type StoreOperationStatus } from "@/lib/api";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
@@ -103,6 +103,8 @@ export default function Cart() {
 
   const [couponCode, setCouponCode] = useState("");
   const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponFreeShipping, setCouponFreeShipping] = useState(false);
+  const [couponGift, setCouponGift] = useState<ApiCouponGift | null>(null);
   const [couponMsg, setCouponMsg] = useState("");
   const [couponApplied, setCouponApplied] = useState(false);
   const [couponLoading, setCouponLoading] = useState(false);
@@ -122,13 +124,18 @@ export default function Cart() {
         cartSubtotal,
         customer?.id,
         customer?.phone ?? undefined,
+        cartDeliveryFee,
       );
       if (result.valid) {
         setCouponDiscount(result.discount_amount);
+        setCouponFreeShipping(result.free_shipping_applied);
+        setCouponGift(result.gift);
         setCouponApplied(true);
         setCouponMsg(result.message);
       } else {
         setCouponDiscount(0);
+        setCouponFreeShipping(false);
+        setCouponGift(null);
         setCouponApplied(false);
         setCouponMsg(result.message);
       }
@@ -142,11 +149,14 @@ export default function Cart() {
   const handleRemoveCoupon = () => {
     setCouponCode("");
     setCouponDiscount(0);
+    setCouponFreeShipping(false);
+    setCouponGift(null);
     setCouponApplied(false);
     setCouponMsg("");
   };
 
-  const finalTotal = cartSubtotal + cartDeliveryFee - couponDiscount;
+  const deliveryFeeFinal = couponFreeShipping ? 0 : cartDeliveryFee;
+  const finalTotal = cartSubtotal + deliveryFeeFinal - couponDiscount;
 
   if (cart.length === 0) {
     return (
@@ -196,6 +206,21 @@ export default function Cart() {
               onUpdate={(qty) => updateCartItem(item.cartItemId, qty, item.selectedSize, item.selectedAddOns)}
             />
           ))}
+          {couponGift && (
+            <div className="bg-green-500/10 rounded-2xl p-4 border border-green-500/30">
+              <div className="flex items-center gap-3">
+                <CartProductIcon icons={[couponGift.icon || "🎁"]} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-cream font-semibold text-sm leading-tight truncate">{couponGift.name}</h3>
+                    <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold text-green-300">Brinde</span>
+                  </div>
+                  <p className="text-stone text-xs mt-1">{couponGift.quantity}x - Cupom {couponGift.coupon_code}</p>
+                  <p className="text-green-400 font-bold text-sm mt-1">R$ 0,00</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Action Buttons */}
@@ -263,7 +288,7 @@ export default function Cart() {
           </div>
           <div className="flex justify-between text-parchment text-sm">
             <span>Taxa de entrega:</span>
-            <span>R$ {cartDeliveryFee.toFixed(2)}</span>
+            <span>{couponFreeShipping ? "Grátis" : `R$ ${cartDeliveryFee.toFixed(2)}`}</span>
           </div>
           {couponDiscount > 0 && (
             <div className="flex justify-between text-sm">

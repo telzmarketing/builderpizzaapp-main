@@ -27,6 +27,8 @@ def list_public_coupons(db: Session = Depends(get_db)):
     return (
         db.query(Coupon)
         .filter(Coupon.active == True)  # noqa: E712
+        .filter((Coupon.starts_at.is_(None)) | (Coupon.starts_at <= now))
+        .filter((Coupon.ends_at.is_(None)) | (Coupon.ends_at >= now))
         .filter((Coupon.expiry_date.is_(None)) | (Coupon.expiry_date >= now))
         .filter((Coupon.max_uses.is_(None)) | (Coupon.used_count < Coupon.max_uses))
         .order_by(Coupon.created_at.desc())
@@ -69,7 +71,7 @@ def update_coupon(coupon_id: str, body: CouponUpdate, db: Session = Depends(get_
     coupon = db.query(Coupon).filter(Coupon.id == coupon_id).first()
     if not coupon:
         raise HTTPException(404, "Cupom não encontrado.")
-    data = body.model_dump(exclude_none=True)
+    data = body.model_dump(exclude_unset=True)
     if "code" in data:
         data["code"] = data["code"].upper()
         existing = db.query(Coupon).filter(Coupon.code == data["code"], Coupon.id != coupon_id).first()

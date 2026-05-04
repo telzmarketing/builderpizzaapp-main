@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ChevronLeft, ChevronRight, Edit2, Check, User, Mail, Phone,
-  MapPin, Home, Hash, Eye, EyeOff, LogOut, Plus, Trash2, Shield,
+  MapPin, Home, Hash, Eye, EyeOff, LogOut, Plus, Trash2, Shield, Lock,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import BottomNav from "@/components/BottomNav";
@@ -210,10 +210,11 @@ export default function Conta() {
 
   // Login tab
   const [loginIdentifier, setLoginIdentifier] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
 
   // Register tab
   const [reg, setReg] = useState({
-    name: "", email: "", phone: "",
+    name: "", email: "", password: "", password_confirm: "", phone: "",
     street: "", number: "", complement: "",
     neighborhood: "", city: "", zip_code: "",
     label: "",
@@ -270,9 +271,9 @@ export default function Conta() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleLogin = async () => {
-    if (!loginIdentifier.trim()) return;
+    if (!loginIdentifier.trim() || !loginPassword) return;
     setLoading(true); setError("");
-    try { await emailLogin(loginIdentifier.trim()); }
+    try { await emailLogin(loginIdentifier.trim(), loginPassword); }
     catch (e) { setError(e instanceof Error ? e.message : "Erro ao entrar."); }
     finally { setLoading(false); }
   };
@@ -281,6 +282,8 @@ export default function Conta() {
     const errs: Partial<Record<keyof typeof reg, string>> = {};
     if (!reg.name.trim()) errs.name = "Nome completo obrigatório";
     if (!reg.email.trim() || !reg.email.includes("@")) errs.email = "E-mail inválido";
+    if (reg.password.length < 8) errs.password = "Senha obrigatória (mínimo 8 caracteres)";
+    if (reg.password_confirm !== reg.password) errs.password_confirm = "As senhas não conferem";
     if (!reg.phone.trim() || reg.phone.replace(/\D/g, "").length < 10) errs.phone = "Telefone obrigatório (mínimo 10 dígitos)";
     if (!reg.street.trim()) errs.street = "Rua obrigatória";
     if (!reg.number.trim()) errs.number = "Número obrigatório";
@@ -300,7 +303,17 @@ export default function Conta() {
     setLoading(true); setError("");
     try {
       await registerCustomer({
-        ...reg,
+        name: reg.name,
+        email: reg.email,
+        password: reg.password,
+        phone: reg.phone,
+        street: reg.street,
+        number: reg.number,
+        complement: reg.complement,
+        neighborhood: reg.neighborhood,
+        city: reg.city,
+        zip_code: reg.zip_code,
+        label: reg.label,
         lgpd_consent: true,
         lgpd_policy_version: lgpdPolicy?.version,
         marketing_email_consent: marketingEmail,
@@ -433,10 +446,14 @@ export default function Conta() {
                   icon={Mail} label="E-mail ou Telefone" placeholder="seu@email.com ou (00) 00000-0000"
                   value={loginIdentifier} onChange={setLoginIdentifier}
                 />
+                <Field
+                  icon={Lock} label="Senha" placeholder="Digite sua senha" type="password"
+                  value={loginPassword} onChange={setLoginPassword}
+                />
                 {error && <p className="text-red-400 text-sm text-center">{error}</p>}
                 <button
                   onClick={handleLogin}
-                  disabled={loading || !loginIdentifier.trim()}
+                  disabled={loading || !loginIdentifier.trim() || !loginPassword}
                   className="w-full py-3 rounded-full bg-gold text-cream font-bold disabled:opacity-60 hover:bg-gold/90 transition-colors"
                 >
                   {loading ? "Entrando..." : "Entrar"}
@@ -465,6 +482,10 @@ export default function Conta() {
                     value={reg.name} onChange={(v) => setReg((p) => ({ ...p, name: v }))} error={regErrors.name} />
                   <Field icon={Mail} label="E-mail" placeholder="seu@email.com" type="email" required
                     value={reg.email} onChange={(v) => setReg((p) => ({ ...p, email: v }))} error={regErrors.email} />
+                  <Field icon={Lock} label="Senha" placeholder="Mínimo 8 caracteres" type="password" required
+                    value={reg.password} onChange={(v) => setReg((p) => ({ ...p, password: v }))} error={regErrors.password} />
+                  <Field icon={Lock} label="Confirmar senha" placeholder="Digite a senha novamente" type="password" required
+                    value={reg.password_confirm} onChange={(v) => setReg((p) => ({ ...p, password_confirm: v }))} error={regErrors.password_confirm} />
                   <Field icon={Phone} label="Telefone / WhatsApp" placeholder="(00) 00000-0000" type="tel" required
                     value={reg.phone} onChange={(v) => setReg((p) => ({ ...p, phone: v }))} error={regErrors.phone} />
                 </div>

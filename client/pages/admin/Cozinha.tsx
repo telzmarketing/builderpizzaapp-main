@@ -28,6 +28,7 @@ function elapsedMinutes(dateStr: string): number {
 
 function itemDescription(item: ApiOrderItem): string {
   const nameParts: string[] = [];
+  if (item.is_gift) nameParts.push("[BRINDE]");
   if (item.flavors && item.flavors.length > 0) {
     nameParts.push(item.flavors.map((f) => f.name).join(" / "));
   } else {
@@ -343,7 +344,7 @@ export default function AdminCozinha() {
                                   <span className="text-gold font-extrabold text-lg min-w-[2rem] text-center leading-none">
                                     {item.quantity}×
                                   </span>
-                                  <span className="text-cream font-semibold text-sm leading-snug">
+                                  <span className={`font-semibold text-sm leading-snug ${item.is_gift ? "text-green-300" : "text-cream"}`}>
                                     {itemDescription(item)}
                                   </span>
                                 </div>

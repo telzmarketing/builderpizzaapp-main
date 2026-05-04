@@ -50,6 +50,10 @@ class Order(Base):
 
     subtotal = Column(Float, nullable=False)
     shipping_fee = Column(Float, default=0.0)
+    delivery_fee_original = Column(Float, default=0.0)
+    delivery_fee_discount = Column(Float, default=0.0)
+    delivery_fee_final = Column(Float, default=0.0)
+    free_shipping_applied = Column(Boolean, default=False)
     discount = Column(Float, default=0.0)
     total = Column(Float, nullable=False)
 
@@ -100,6 +104,11 @@ class OrderItem(Base):
     total_price = Column(Float, nullable=False)
     standard_unit_price = Column(Float, nullable=True)
     applied_unit_price = Column(Float, nullable=True)
+    original_price = Column(Float, nullable=True)
+    is_gift = Column(Boolean, default=False)
+    gift_reason = Column(String(100), nullable=True)
+    coupon_id = Column(String, nullable=True)
+    coupon_code = Column(String(50), nullable=True)
     promotion_id = Column(String, nullable=True)
     promotion_name = Column(String(200), nullable=True)
     promotion_discount = Column(Float, default=0.0)

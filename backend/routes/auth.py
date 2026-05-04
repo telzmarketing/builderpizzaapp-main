@@ -1,54 +1,49 @@
-"""
-Auth endpoints — phone-based identification (no JWT required for v1).
-
-Used by the loja to link orders to customer accounts.
-
-Flow:
-  1. Loja calls POST /auth/check-phone with the customer's phone.
-  2. If customer exists → return their profile.
-  3. If not          → loja prompts for name, then calls POST /auth/login.
-  4. /auth/login creates the customer (if new) or returns the existing one.
-
-Both endpoints are idempotent — safe to call multiple times.
-"""
 from __future__ import annotations
 
-import uuid
-import re
 import json
-import urllib.request
+import re
 import urllib.error
+import urllib.request
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from backend.core.response import ok, created, err_msg
+from backend.core.response import created, err_msg, ok
+from backend.core.security import hash_password, verify_password
 from backend.database import get_db
-from backend.models.customer import Customer, Address
+from backend.models.customer import Address, Customer
 from backend.schemas.customer import CustomerOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
 def _normalize_phone(phone: str) -> str:
-    """Strip everything except digits and leading +."""
-    digits = re.sub(r"[^\d+]", "", phone)
-    return digits
+    return re.sub(r"[^\d+]", "", phone)
 
 
 def _find_by_phone(phone: str, db: Session) -> Customer | None:
     normalized = _normalize_phone(phone)
-    return (
-        db.query(Customer)
-        .filter(Customer.phone == normalized)
-        .first()
-    )
+    return db.query(Customer).filter(Customer.phone == normalized).first()
 
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
+def _verify_or_activate_password(customer: Customer, password: str, db: Session) -> tuple[bool, bool]:
+    """
+    Return (authenticated, password_was_created).
+
+    Legacy customers may exist without password_hash because older checkout
+    login only asked for email/phone. On their first password login, the
+    submitted password becomes their account password.
+    """
+    if customer.password_hash:
+        return verify_password(password, customer.password_hash), False
+
+    customer.password_hash = hash_password(password)
+    db.commit()
+    db.refresh(customer)
+    return True, True
+
 
 class CheckPhoneIn(BaseModel):
     phone: str = Field(..., min_length=8, description="Customer phone number")
@@ -62,15 +57,12 @@ class CheckPhoneOut(BaseModel):
 
 class LoginIn(BaseModel):
     phone: str = Field(..., min_length=8)
-    name: str | None = Field(
-        default=None,
-        description="Required when creating a new account (customer not found by phone)"
-    )
+    password: str = Field(..., min_length=8)
 
 
 class LoginOut(BaseModel):
     customer: CustomerOut
-    is_new: bool = False   # True if account was just created in this call
+    is_new: bool = False
 
 
 class GoogleLoginIn(BaseModel):
@@ -78,12 +70,14 @@ class GoogleLoginIn(BaseModel):
 
 
 class EmailLoginIn(BaseModel):
-    email: str = Field(..., min_length=5, description="Customer email address")
+    email: str = Field(..., min_length=5, description="Customer email or phone")
+    password: str = Field(..., min_length=8, description="Customer password")
 
 
 class RegisterIn(BaseModel):
     name: str = Field(..., min_length=2)
     email: str = Field(..., min_length=5)
+    password: str = Field(..., min_length=8)
     phone: str = Field(..., min_length=8)
     street: str = Field(..., min_length=3)
     number: str = Field(..., min_length=1)
@@ -99,121 +93,68 @@ class RegisterIn(BaseModel):
     marketing_whatsapp_consent: bool = False
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
-
 @router.post("/check-phone")
 def check_phone(body: CheckPhoneIn, db: Session = Depends(get_db)):
-    """
-    Check whether a phone number belongs to a registered customer.
-
-    Used by the loja checkout to decide:
-      - exists=true  → greet the customer by name, skip registration form
-      - exists=false → show name input, then call POST /auth/login
-
-    Does NOT create any record. Safe to call at any time.
-
-    Response:
-      { "success": true, "data": { "exists": bool, "customer_id": "...", "name": "..." } }
-    """
     customer = _find_by_phone(body.phone, db)
     if customer:
-        result = CheckPhoneOut(
-            exists=True,
-            customer_id=customer.id,
-            name=customer.name,
-        )
-    else:
-        result = CheckPhoneOut(exists=False)
-
-    return ok(result)
+        return ok(CheckPhoneOut(exists=True, customer_id=customer.id, name=customer.name))
+    return ok(CheckPhoneOut(exists=False))
 
 
 @router.post("/login")
 def login(body: LoginIn, db: Session = Depends(get_db)):
-    """
-    Find or create a customer account by phone number.
-
-    - If a customer with this phone already exists → return their profile.
-    - If not → create a new customer (requires `name` in the body).
-
-    This is a simplified auth suitable for delivery apps where the phone
-    is the primary identifier. Add JWT / OTP in a future version.
-
-    Response:
-      {
-        "success": true,
-        "data": {
-          "customer": { ...CustomerOut... },
-          "is_new": false
-        },
-        "message": "Bem-vindo de volta, João!"
-      }
-    """
-    normalized = _normalize_phone(body.phone)
-    customer = _find_by_phone(normalized, db)
-
-    if customer:
-        result = LoginOut(customer=CustomerOut.model_validate(customer), is_new=False)
-        return ok(result, f"Bem-vindo de volta, {customer.name}!")
-
-    # New customer — name is required
-    if not body.name or not body.name.strip():
+    """Authenticate a customer account by phone number + password."""
+    customer = _find_by_phone(body.phone, db)
+    if not customer:
         return err_msg(
-            "Número não cadastrado. Informe seu nome para criar a conta.",
-            code="NameRequired",
-            status_code=422,
+            "Telefone nao encontrado. Crie sua conta primeiro.",
+            code="PhoneNotFound",
+            status_code=404,
         )
 
-    new_customer = Customer(
-        id=str(uuid.uuid4()),
-        name=body.name.strip(),
-        email=f"{normalized}@phone.pizzaapp",   # placeholder — not used for auth
-        phone=normalized,
-    )
-    db.add(new_customer)
-    db.commit()
-    db.refresh(new_customer)
+    authenticated, created_password = _verify_or_activate_password(customer, body.password, db)
+    if not authenticated:
+        return err_msg("Telefone ou senha invalidos.", code="InvalidCredentials", status_code=401)
 
-    result = LoginOut(
-        customer=CustomerOut.model_validate(new_customer),
-        is_new=True,
-    )
-    return created(result, f"Conta criada! Bem-vindo, {new_customer.name}!")
+    message = "Senha cadastrada com sucesso. Bem-vindo!" if created_password else f"Bem-vindo de volta, {customer.name}!"
+    return ok(LoginOut(customer=CustomerOut.model_validate(customer), is_new=False), message)
 
 
 @router.post("/login-email")
 def login_email(body: EmailLoginIn, db: Session = Depends(get_db)):
-    """Login by email or phone for registered customers."""
+    """Login by email or phone + password for registered customers."""
     identifier = body.email.strip()
-    # Detect phone vs email
     if "@" in identifier:
-        email = identifier.lower()
-        customer = db.query(Customer).filter(Customer.email == email).first()
+        customer = db.query(Customer).filter(Customer.email == identifier.lower()).first()
         if not customer:
             return err_msg(
-                "E-mail não encontrado. Crie sua conta primeiro.",
+                "E-mail nao encontrado. Crie sua conta primeiro.",
                 code="EmailNotFound",
                 status_code=404,
             )
     else:
-        phone = _normalize_phone(identifier)
-        customer = _find_by_phone(phone, db)
+        customer = _find_by_phone(identifier, db)
         if not customer:
             return err_msg(
-                "Telefone não encontrado. Crie sua conta primeiro.",
+                "Telefone nao encontrado. Crie sua conta primeiro.",
                 code="PhoneNotFound",
                 status_code=404,
             )
-    return ok(LoginOut(customer=CustomerOut.model_validate(customer), is_new=False),
-              f"Bem-vindo de volta, {customer.name}!")
+
+    authenticated, created_password = _verify_or_activate_password(customer, body.password, db)
+    if not authenticated:
+        return err_msg("E-mail/telefone ou senha invalidos.", code="InvalidCredentials", status_code=401)
+
+    message = "Senha cadastrada com sucesso. Bem-vindo!" if created_password else f"Bem-vindo de volta, {customer.name}!"
+    return ok(LoginOut(customer=CustomerOut.model_validate(customer), is_new=False), message)
 
 
 @router.post("/register")
 def register(body: RegisterIn, db: Session = Depends(get_db)):
-    """Full registration: name, email, phone + delivery address + LGPD consent."""
+    """Full registration: name, email, password, phone, address and LGPD consent."""
     if not body.lgpd_consent:
         return err_msg(
-            "É necessário aceitar os Termos de Privacidade para criar a conta.",
+            "E necessario aceitar os Termos de Privacidade para criar a conta.",
             code="LgpdRequired",
             status_code=422,
         )
@@ -223,24 +164,25 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
 
     if db.query(Customer).filter(Customer.email == email).first():
         return err_msg(
-            "E-mail já cadastrado. Tente fazer login.",
+            "E-mail ja cadastrado. Tente fazer login.",
             code="EmailTaken",
             status_code=409,
         )
     if phone and db.query(Customer).filter(Customer.phone == phone).first():
         return err_msg(
-            "Telefone já cadastrado. Tente fazer login.",
+            "Telefone ja cadastrado. Tente fazer login.",
             code="PhoneTaken",
             status_code=409,
         )
 
     from datetime import datetime, timezone as tz
-    now = datetime.now(tz.utc)
 
+    now = datetime.now(tz.utc)
     new_customer = Customer(
         id=str(uuid.uuid4()),
         name=body.name.strip(),
         email=email,
+        password_hash=hash_password(body.password),
         phone=phone,
         lgpd_consent=True,
         lgpd_consent_at=now,
@@ -280,37 +222,35 @@ def google_login(body: GoogleLoginIn, db: Session = Depends(get_db)):
     Verify a Google ID token from the GSI client and return (or create) a customer.
     The token is verified by calling Google's tokeninfo endpoint.
     """
-    # Verify token with Google
     try:
         url = f"https://oauth2.googleapis.com/tokeninfo?id_token={body.credential}"
         with urllib.request.urlopen(url, timeout=10) as resp:
             payload = json.loads(resp.read())
     except (urllib.error.URLError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=401, detail="Token Google inválido ou expirado.") from exc
+        raise HTTPException(status_code=401, detail="Token Google invalido ou expirado.") from exc
 
     google_sub = payload.get("sub")
     email = payload.get("email")
     name = payload.get("name") or payload.get("given_name") or "Cliente"
 
     if not google_sub or not email:
-        raise HTTPException(status_code=401, detail="Token Google não contém dados suficientes.")
+        raise HTTPException(status_code=401, detail="Token Google nao contem dados suficientes.")
 
-    # Find existing customer by google_id first, then by email
     customer = (
         db.query(Customer).filter(Customer.google_id == google_sub).first()
         or db.query(Customer).filter(Customer.email == email).first()
     )
 
     if customer:
-        # Link google_id if not set yet (first Google login on phone-created account)
         if not customer.google_id:
             customer.google_id = google_sub
             db.commit()
             db.refresh(customer)
-        result = LoginOut(customer=CustomerOut.model_validate(customer), is_new=False)
-        return ok(result, f"Bem-vindo de volta, {customer.name}!")
+        return ok(
+            LoginOut(customer=CustomerOut.model_validate(customer), is_new=False),
+            f"Bem-vindo de volta, {customer.name}!",
+        )
 
-    # Create new customer from Google
     new_customer = Customer(
         id=str(uuid.uuid4()),
         name=name,
@@ -321,5 +261,7 @@ def google_login(body: GoogleLoginIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_customer)
 
-    result = LoginOut(customer=CustomerOut.model_validate(new_customer), is_new=True)
-    return created(result, f"Bem-vindo, {new_customer.name}!")
+    return created(
+        LoginOut(customer=CustomerOut.model_validate(new_customer), is_new=True),
+        f"Bem-vindo, {new_customer.name}!",
+    )

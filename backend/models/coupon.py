@@ -23,13 +23,21 @@ class Coupon(Base):
     max_uses = Column(Integer, nullable=True)            # None = ilimitado
     max_uses_per_customer = Column(Integer, nullable=True)  # None = ilimitado por cliente
     used_count = Column(Integer, default=0)
+    starts_at = Column(DateTime(timezone=True), nullable=True)
+    ends_at = Column(DateTime(timezone=True), nullable=True)
     expiry_date = Column(DateTime(timezone=True), nullable=True)
+    free_shipping = Column(Boolean, default=False)
+    gift_enabled = Column(Boolean, default=False)
+    gift_product_id = Column(String, ForeignKey("products.id"), nullable=True)
+    gift_quantity = Column(Integer, default=1)
+    stackable = Column(Boolean, default=False)
     active = Column(Boolean, default=True)
     campaign_id = Column(String, ForeignKey("campaigns.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     orders = relationship("Order", back_populates="coupon")
     usages = relationship("CouponUsage", back_populates="coupon", cascade="all, delete-orphan")
+    gift_product = relationship("Product")
 
 
 class CouponUsage(Base):

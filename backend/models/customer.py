@@ -11,6 +11,7 @@ class Customer(Base):
     name = Column(String(200), nullable=False)
     email = Column(String(200), unique=True, nullable=False)
     phone = Column(String(30))
+    password_hash = Column(Text, nullable=True)
     google_id = Column(String(200), unique=True, nullable=True)
     lgpd_consent = Column(Boolean, default=False)
     lgpd_consent_at = Column(DateTime(timezone=True), nullable=True)
