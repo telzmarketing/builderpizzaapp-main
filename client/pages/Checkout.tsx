@@ -354,14 +354,28 @@ export default function Checkout() {
                   setPaymentMessage("Pagamento enviado. Aguardando confirmacao do Mercado Pago.");
                   resolve();
                 } catch (err) {
+                  console.error("[PaymentBrick] onSubmit error:", err);
+                  const rawMsg = err instanceof Error ? err.message : "";
+                  // Surface domain messages from the API (already user-friendly in Portuguese);
+                  // hide internal or unexpected messages behind a generic fallback.
+                  const isSafeMsg = rawMsg && (
+                    rawMsg.includes("já foi pago") ||
+                    rawMsg.includes("Mercado Pago") ||
+                    rawMsg.includes("pagamento") ||
+                    rawMsg.includes("PIX") ||
+                    rawMsg.includes("cartão") ||
+                    rawMsg.includes("valor") ||
+                    rawMsg.includes("método")
+                  );
                   setPaymentState("error");
-                  setPaymentMessage(err instanceof Error ? err.message : "Erro ao processar pagamento.");
+                  setPaymentMessage(isSafeMsg ? rawMsg : "Erro ao processar pagamento. Tente novamente.");
                   reject(err);
                 }
               }),
-            onError: () => {
+            onError: (error: unknown) => {
+              console.error("[PaymentBrick] onError:", error);
               setPaymentState("error");
-              setPaymentMessage("Erro ao carregar o Payment Brick.");
+              setPaymentMessage("Erro ao carregar o pagamento seguro. Verifique sua conexão e tente novamente.");
             },
           },
         });
@@ -610,7 +624,7 @@ export default function Checkout() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
       <div className="bg-brand-dark px-4 py-3 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
+        <button onClick={() => navigate("/")} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
         <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />

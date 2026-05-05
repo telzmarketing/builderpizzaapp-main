@@ -15,6 +15,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
+import random
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -45,6 +48,7 @@ from backend.services.saipos_service import sendOrderToSaipos
 
 settings = get_settings()
 MP_API_BASE = "https://api.mercadopago.com"
+_logger = logging.getLogger(__name__)
 
 
 def _provider_name(value: str | None) -> str:
@@ -82,7 +86,15 @@ def _mp_token(config: PaymentGatewayConfig) -> str:
     return token
 
 
-def _mp_request(method: str, path: str, token: str, body: dict[str, Any] | None = None, *, idempotency_key: str | None = None) -> dict[str, Any]:
+def _mp_request(
+    method: str,
+    path: str,
+    token: str,
+    body: dict[str, Any] | None = None,
+    *,
+    idempotency_key: str | None = None,
+    _max_retries: int = 2,
+) -> dict[str, Any]:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {
         "Authorization": f"Bearer {token}",
@@ -93,15 +105,29 @@ def _mp_request(method: str, path: str, token: str, body: dict[str, Any] | None 
         headers["X-Idempotency-Key"] = idempotency_key
 
     req = Request(f"{MP_API_BASE}{path}", data=data, headers=headers, method=method)
-    try:
-        with urlopen(req, timeout=30) as response:
-            payload = response.read().decode("utf-8")
-            return json.loads(payload) if payload else {}
-    except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise GatewayError("mercado_pago", detail or f"HTTP {exc.code}") from exc
-    except URLError as exc:
-        raise GatewayError("mercado_pago", str(exc.reason)) from exc
+    last_url_error: URLError | None = None
+    for attempt in range(_max_retries + 1):
+        try:
+            with urlopen(req, timeout=30) as response:
+                payload = response.read().decode("utf-8")
+                return json.loads(payload) if payload else {}
+        except HTTPError as exc:
+            # HTTP errors from MP (4xx/5xx) are deterministic — do not retry.
+            detail = exc.read().decode("utf-8", errors="replace")
+            _logger.error("Mercado Pago HTTP error %s %s → %s: %s", method, path, exc.code, detail[:500])
+            raise GatewayError("mercado_pago", detail or f"HTTP {exc.code}") from exc
+        except URLError as exc:
+            last_url_error = exc
+            if attempt < _max_retries:
+                wait = min(2 ** attempt + random.random(), 8)
+                _logger.warning(
+                    "Mercado Pago rede inacessível (tentativa %d/%d) %s %s: %s. Aguardando %.1fs...",
+                    attempt + 1, _max_retries + 1, method, path, exc.reason, wait,
+                )
+                time.sleep(wait)
+            else:
+                _logger.error("Mercado Pago rede inacessível após %d tentativas %s %s: %s", _max_retries + 1, method, path, exc.reason)
+    raise GatewayError("mercado_pago", str(last_url_error.reason) if last_url_error else "network error") from last_url_error
 
 
 def _payment_method(form_data: dict[str, Any], fallback: PaymentMethod | None) -> PaymentMethod:
@@ -286,9 +312,11 @@ class PaymentService:
 
         body = self._build_mp_payment_body(order, payment, form_data, amount)
         idempotency_key = hashlib.sha256(f"{order.id}:{method.value}:{amount}:{json.dumps(form_data, sort_keys=True, default=str)}".encode()).hexdigest()
+        _logger.info("Criando pagamento MP: order_id=%s method=%s amount=%.2f idempotency_key=%s", order.id, method.value, amount, idempotency_key[:16])
         response = _mp_request("POST", "/v1/payments", _mp_token(cfg), body, idempotency_key=idempotency_key)
 
         mp_id = str(response.get("id", ""))
+        _logger.info("Resposta MP: mp_payment_id=%s status=%s order_id=%s", mp_id, response.get("status"), order.id)
         payment.mercado_pago_payment_id = mp_id or payment.mercado_pago_payment_id
         payment.transaction_id = mp_id or payment.transaction_id
         payment.external_reference = response.get("external_reference") or payment.external_reference
@@ -370,6 +398,10 @@ class PaymentService:
         self._db.commit()
 
         if status == PaymentStatus.approved and previous != PaymentStatus.approved:
+            _logger.info(
+                "Pagamento aprovado: payment_id=%s order_id=%s amount=%.2f gateway=%s source=%s",
+                payment.id, payment.order_id, payment.amount, payment.gateway, source,
+            )
             if order and order.session_id:
                 try:
                     from backend.schemas.paid_traffic import TrackingEventIn
@@ -390,21 +422,25 @@ class PaymentService:
                         utm_term=order.utm_term,
                         metadata={"order_id": order.id, "payment_id": payment.id},
                     ))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    _logger.warning("Falha ao registrar evento de tráfego pago: order_id=%s error=%s", payment.order_id, exc)
             try:
                 sendOrderToSaipos(payment.order_id)
-            except Exception:
-                pass
+            except Exception as exc:
+                _logger.error("Falha ao enviar pedido ao SaiPOS: order_id=%s error=%s", payment.order_id, exc)
             try:
                 bus.publish(PaymentConfirmed(payment_id=payment.id, order_id=payment.order_id, amount=payment.amount, gateway=payment.gateway, transaction_id=payment.transaction_id or ""))
-            except Exception:
-                pass
+            except Exception as exc:
+                _logger.warning("Falha ao publicar evento PaymentConfirmed: payment_id=%s error=%s", payment.id, exc)
         elif status in {PaymentStatus.rejected, PaymentStatus.cancelled, PaymentStatus.expired}:
+            _logger.info(
+                "Pagamento %s: payment_id=%s order_id=%s source=%s",
+                status.value, payment.id, payment.order_id, source,
+            )
             try:
                 bus.publish(PaymentFailed(payment_id=payment.id, order_id=payment.order_id, reason=f"{source}:{status.value}"))
-            except Exception:
-                pass
+            except Exception as exc:
+                _logger.warning("Falha ao publicar evento PaymentFailed: payment_id=%s error=%s", payment.id, exc)
         return True
 
     def process_webhook(
@@ -469,9 +505,18 @@ class PaymentService:
             if order:
                 payment = order.payment
         if not payment:
+            _logger.warning("Webhook MP: pagamento não encontrado no banco — mp_payment_id=%s external_reference=%s", mp_payment_id, external_reference)
             event.processed_at = datetime.now(timezone.utc)
             self._db.commit()
             return {"status": "ignored", "reason": f"payment '{mp_payment_id}' not found"}
+
+        # Validate that the amount from MP matches what we have stored.
+        mp_amount = response.get("transaction_amount")
+        if mp_amount is not None and abs(float(mp_amount) - payment.amount) > 0.05:
+            _logger.error(
+                "ALERTA: Discrepância de valor no webhook — payment_id=%s payment.amount=%.2f mp_amount=%.2f mp_payment_id=%s",
+                payment.id, payment.amount, mp_amount, mp_payment_id,
+            )
 
         payment.mercado_pago_payment_id = mp_payment_id
         payment.transaction_id = mp_payment_id
@@ -496,7 +541,16 @@ class PaymentService:
     ) -> bool:
         secret = settings.MERCADO_PAGO_WEBHOOK_SECRET or config.mp_webhook_secret
         if not secret:
-            return True
+            if settings.DEBUG:
+                _logger.warning(
+                    "MERCADO_PAGO_WEBHOOK_SECRET não configurado — aceitando webhook sem validação de assinatura (somente em modo DEBUG)"
+                )
+                return True
+            _logger.error(
+                "MERCADO_PAGO_WEBHOOK_SECRET não configurado em modo produção — webhook rejeitado por segurança. "
+                "Configure a variável de ambiente MERCADO_PAGO_WEBHOOK_SECRET."
+            )
+            return False
         if not signature:
             return False
         try:
