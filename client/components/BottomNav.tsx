@@ -16,11 +16,11 @@ export default function BottomNav() {
       <div className="bg-surface-02 rounded-full py-3 px-3 sm:px-4 flex justify-around items-center shadow-2xl border border-surface-03 max-w-md mx-auto">
         <button onClick={() => navigate("/")} className={`flex flex-col items-center gap-1 transition-colors ${active("/")}`}>
           <Home size={18} />
-          <span className="text-[10px] font-medium">{nav.home}</span>
+          <span className="text-[10px] font-medium uppercase">{nav.home}</span>
         </button>
         <button onClick={() => navigate("/cardapio")} className={`flex flex-col items-center gap-1 transition-colors ${active("/cardapio")}`}>
           <UtensilsCrossed size={18} />
-          <span className="text-[10px] font-medium">Cardápio</span>
+          <span className="text-[10px] font-medium uppercase">Cardápio</span>
         </button>
         <button onClick={() => navigate("/cart")} className={`flex flex-col items-center gap-1 transition-colors relative ${active("/cart")}`}>
           <ShoppingCart size={18} />
@@ -29,15 +29,15 @@ export default function BottomNav() {
               {cart.length}
             </span>
           )}
-          <span className="text-[10px] font-medium">{nav.cart}</span>
+          <span className="text-[10px] font-medium uppercase">{nav.cart}</span>
         </button>
         <button onClick={() => navigate("/pedidos")} className={`flex flex-col items-center gap-1 transition-colors ${active("/pedidos")}`}>
           <Bell size={18} />
-          <span className="text-[10px] font-medium">{nav.orders}</span>
+          <span className="text-[10px] font-medium uppercase">{nav.orders}</span>
         </button>
         <button onClick={() => navigate("/conta")} className={`flex flex-col items-center gap-1 transition-colors ${active("/conta")}`}>
           <User size={18} />
-          <span className="text-[10px] font-medium">{nav.account}</span>
+          <span className="text-[10px] font-medium uppercase">{nav.account}</span>
         </button>
       </div>
     </div>
