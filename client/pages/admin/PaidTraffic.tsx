@@ -50,6 +50,8 @@ type CampaignForm = {
   coupon_id: string;
   destination_url: string;
   notes: string;
+  // Selected weekday indices as a Set. Empty = all days.
+  active_weekdays: Set<number>;
 };
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof BarChart3 }> = [
@@ -68,6 +70,33 @@ const platforms = [
   { value: "manual", label: "Manual" },
 ];
 
+const WEEKDAYS = [
+  { index: 0, short: "Dom", long: "Domingo" },
+  { index: 1, short: "Seg", long: "Segunda" },
+  { index: 2, short: "Ter", long: "Terça" },
+  { index: 3, short: "Qua", long: "Quarta" },
+  { index: 4, short: "Qui", long: "Quinta" },
+  { index: 5, short: "Sex", long: "Sexta" },
+  { index: 6, short: "Sáb", long: "Sábado" },
+];
+
+function parseWeekdays(raw: string | null | undefined): Set<number> {
+  if (!raw) return new Set();
+  return new Set(raw.split(",").map(Number).filter((n) => n >= 0 && n <= 6));
+}
+
+function serializeWeekdays(days: Set<number>): string | null {
+  if (days.size === 0) return null;
+  return [...days].sort((a, b) => a - b).join(",");
+}
+
+function weekdaysLabel(raw: string | null | undefined): string {
+  if (!raw) return "Todos os dias";
+  const days = raw.split(",").map(Number).sort((a, b) => a - b);
+  if (days.length === 7) return "Todos os dias";
+  return days.map((d) => WEEKDAYS[d]?.short ?? d).join(" · ");
+}
+
 const initialCampaignForm: CampaignForm = {
   name: "",
   platform: "manual",
@@ -80,6 +109,7 @@ const initialCampaignForm: CampaignForm = {
   coupon_id: "",
   destination_url: "",
   notes: "",
+  active_weekdays: new Set(),
 };
 
 const formatCurrency = (value: number | null | undefined) =>
@@ -113,6 +143,7 @@ function campaignToForm(campaign: TrafficCampaign): CampaignForm {
     coupon_id: campaign.coupon_id ?? "",
     destination_url: campaign.destination_url ?? "",
     notes: campaign.notes ?? "",
+    active_weekdays: parseWeekdays(campaign.active_weekdays),
   };
 }
 
@@ -227,6 +258,7 @@ export default function AdminPaidTraffic() {
       coupon_id: campaignForm.coupon_id || null,
       destination_url: campaignForm.destination_url || null,
       notes: campaignForm.notes || null,
+      active_weekdays: serializeWeekdays(campaignForm.active_weekdays),
     };
     try {
       const saved = editingId
@@ -485,6 +517,38 @@ export default function AdminPaidTraffic() {
                           <input type="date" className={fieldBase} value={campaignForm.end_date} onChange={(e) => setCampaignForm((prev) => ({ ...prev, end_date: e.target.value }))} />
                         </Field>
                       </div>
+                      <Field label="Dias de veiculação">
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {WEEKDAYS.map(({ index, short, long }) => {
+                            const active = campaignForm.active_weekdays.has(index);
+                            return (
+                              <button
+                                key={index}
+                                type="button"
+                                title={long}
+                                onClick={() => setCampaignForm((prev) => {
+                                  const next = new Set(prev.active_weekdays);
+                                  if (next.has(index)) next.delete(index);
+                                  else next.add(index);
+                                  return { ...prev, active_weekdays: next };
+                                })}
+                                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors select-none ${
+                                  active
+                                    ? "bg-gold text-cream"
+                                    : "bg-surface-03 text-stone hover:text-cream"
+                                }`}
+                              >
+                                {short}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-stone text-[11px] mt-1.5">
+                          {campaignForm.active_weekdays.size === 0
+                            ? "Nenhum dia selecionado = veicular todos os dias"
+                            : `Selecionado: ${weekdaysLabel(serializeWeekdays(campaignForm.active_weekdays))}`}
+                        </p>
+                      </Field>
                       <Field label="Produto vinculado">
                         <select className={fieldBase} value={campaignForm.product_id} onChange={(e) => setCampaignForm((prev) => ({ ...prev, product_id: e.target.value }))}>
                           <option value="">Nenhum produto</option>
@@ -527,7 +591,17 @@ export default function AdminPaidTraffic() {
                             </div>
                             <StatusBadge status={campaign.status} />
                           </div>
-                          <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                          <div className="mt-3 flex flex-wrap gap-1">
+                            {campaign.active_weekdays
+                              ? campaign.active_weekdays.split(",").map(Number).sort((a, b) => a - b).map((d) => (
+                                  <span key={d} className="rounded-md bg-gold/15 px-2 py-0.5 text-[10px] font-bold text-gold">
+                                    {WEEKDAYS[d]?.short ?? d}
+                                  </span>
+                                ))
+                              : <span className="text-stone text-[10px]">Todos os dias</span>
+                            }
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
                             <Info label="Diario" value={formatCurrency(campaign.daily_budget)} />
                             <Info label="Total" value={formatCurrency(campaign.total_budget)} />
                             <Info label="Produto" value={campaign.product_id ? productById.get(campaign.product_id)?.name ?? "Produto" : "Nao vinculado"} />

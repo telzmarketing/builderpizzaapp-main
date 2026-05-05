@@ -16,6 +16,8 @@ class TrafficCampaignBase(BaseModel):
     coupon_id: Optional[str] = None
     destination_url: Optional[str] = None
     notes: Optional[str] = None
+    # Comma-separated weekday numbers (0=Sun,1=Mon,...,6=Sat). None = all days.
+    active_weekdays: Optional[str] = None
 
 
 class TrafficCampaignCreate(TrafficCampaignBase):
@@ -34,6 +36,7 @@ class TrafficCampaignUpdate(BaseModel):
     coupon_id: Optional[str] = None
     destination_url: Optional[str] = None
     notes: Optional[str] = None
+    active_weekdays: Optional[str] = None
 
 
 class TrafficCampaignOut(TrafficCampaignBase):

@@ -573,6 +573,8 @@ def _run_migrations():
         # ── Order display code (ORDER-XXXX) ───────────────────────────────────
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_code VARCHAR(10)",
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_order_code ON orders(order_code) WHERE order_code IS NOT NULL",
+        # ── Campaign weekday schedule ─────────────────────────────────────────
+        "ALTER TABLE traffic_campaigns ADD COLUMN IF NOT EXISTS active_weekdays VARCHAR(20)",
     ]
     for stmt in stmts:
         try:

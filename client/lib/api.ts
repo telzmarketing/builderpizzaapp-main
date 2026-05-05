@@ -382,6 +382,8 @@ export interface TrafficCampaign {
   coupon_id: string | null;
   destination_url: string | null;
   notes: string | null;
+  // Comma-separated weekday numbers "0"=Sun … "6"=Sat. null = every day.
+  active_weekdays: string | null;
   created_at: string;
   updated_at: string;
 }
