@@ -188,7 +188,7 @@ export default function AdminProducts() {
   // ── Products CRUD ────────────────────────────────────────────────────────────
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<Partial<Pizza> & { product_type?: string; has_catupiry_border?: boolean; catupiry_border_price?: number | string }>({
+  const [formData, setFormData] = useState<Partial<Pizza> & { product_type?: string }>({
     name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5, product_type: "pizza",
   });
 
@@ -199,6 +199,11 @@ export default function AdminProducts() {
     e.preventDefault();
     if (!formData.name || !formData.description) {
       alert("Preencha todos os campos obrigatórios");
+      return;
+    }
+    const price = Number(formData.price || 0);
+    if (!Number.isFinite(price) || price <= 0) {
+      alert("Informe um preco base maior que zero.");
       return;
     }
     const category = ((formData as any).category || "").trim();
@@ -213,24 +218,17 @@ export default function AdminProducts() {
     }
     try {
       if (editingId) {
-        const { has_catupiry_border, catupiry_border_price, ...productData } = formData as any;
-        const updated = await updateProduct(editingId, { ...productData, category: category || null, subcategory: subcategory || null } as any);
-        if ((formData.product_type || "pizza") === "pizza") {
-          await syncCatupiryBorder(updated.id, !!has_catupiry_border, catupiry_border_price);
-        }
+        await updateProduct(editingId, { ...formData, price, category: category || null, subcategory: subcategory || null } as any);
         setEditingId(null);
       } else {
-        const created = await addProduct({
+        await addProduct({
           name: formData.name!, description: formData.description!,
-          price: formData.price!, icon: formData.icon || "🍕",
+          price, icon: formData.icon || "🍕",
           category: category || null,
           subcategory: subcategory || null,
           product_type: formData.product_type || "pizza",
           rating: formData.rating || 4.5, active: true,
         } as any);
-        if ((formData.product_type || "pizza") === "pizza") {
-          await syncCatupiryBorder(created.id, !!(formData as any).has_catupiry_border, (formData as any).catupiry_border_price);
-        }
       }
       setFormData({ name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5, product_type: "pizza" });
       setShowForm(false);
@@ -245,8 +243,6 @@ export default function AdminProducts() {
       category: (product as any).category ?? "",
       subcategory: (product as any).subcategory ?? "",
       product_type: (product as any).product_type ?? "pizza",
-      has_catupiry_border: productHasCatupiryCrust(product),
-      catupiry_border_price: (((product as any).crust_types ?? []) as ApiProductCrustType[]).find((crust) => crust.active && isCatupiryCrust(crust.name))?.price_addition ?? 0,
     });
     setEditingId(product.id);
     setShowForm(true);
@@ -363,7 +359,7 @@ export default function AdminProducts() {
     setCrustsLoading(true);
     try {
       const crusts = await crustApi.list(product.id, false);
-      setProductCrusts(crusts);
+      setProductCrusts(crusts.filter((crust) => !isCatupiryCrust(crust.name)));
     } catch {
       setProductCrusts([]);
     } finally {
@@ -377,34 +373,109 @@ export default function AdminProducts() {
     setCrustForm({ name: "", price_addition: "" });
   };
 
-  const syncCatupiryBorder = async (productId: string, enabled: boolean, priceValue?: number | string) => {
-    const priceAddition = parseFloat(String(priceValue ?? "0"));
-    const safePrice = isNaN(priceAddition) || priceAddition < 0 ? 0 : priceAddition;
-    const crusts = await crustApi.list(productId, false);
-    const current = crusts.find((crust) => isCatupiryCrust(crust.name));
+  const [borderModalProduct, setBorderModalProduct] = useState<Pizza | null>(null);
+  const [productBorders, setProductBorders] = useState<ApiProductCrustType[]>([]);
+  const [bordersLoading, setBordersLoading] = useState(false);
+  const [borderForm, setBorderForm] = useState({ price_addition: "" });
+  const [savingBorderId, setSavingBorderId] = useState<string | null>(null);
 
-    if (enabled) {
-      if (current) {
-        await crustApi.update(productId, current.id, {
+  const openBorderModal = useCallback(async (product: Pizza) => {
+    setBorderModalProduct(product);
+    setBordersLoading(true);
+    try {
+      const crusts = await crustApi.list(product.id, false);
+      setProductBorders(crusts.filter((crust) => isCatupiryCrust(crust.name)));
+    } catch {
+      setProductBorders([]);
+    } finally {
+      setBordersLoading(false);
+    }
+  }, []);
+
+  const closeBorderModal = () => {
+    setBorderModalProduct(null);
+    setProductBorders([]);
+    setBorderForm({ price_addition: "" });
+  };
+
+  const handleAddCatupiryBorder = async () => {
+    if (!borderModalProduct) return;
+    const priceAdd = parseFloat(borderForm.price_addition || "0");
+    const priceAddition = isNaN(priceAdd) || priceAdd < 0 ? 0 : priceAdd;
+    const existing = productBorders.find((border) => isCatupiryCrust(border.name));
+    try {
+      if (existing) {
+        const updated = await crustApi.update(borderModalProduct.id, existing.id, {
           name: CATUPIRY_CRUST_NAME,
-          price_addition: safePrice,
+          price_addition: priceAddition,
           active: true,
         } as any);
+        setProductBorders((prev) => prev.map((border) => border.id === updated.id ? updated : border));
       } else {
-        await crustApi.create(productId, {
+        const allCrusts = await crustApi.list(borderModalProduct.id, false);
+        const created = await crustApi.create(borderModalProduct.id, {
           name: CATUPIRY_CRUST_NAME,
-          price_addition: safePrice,
+          price_addition: priceAddition,
           active: true,
-          sort_order: crusts.length,
+          sort_order: allCrusts.length,
         } as any);
+        setProductBorders((prev) => [...prev, created]);
       }
-    } else if (current?.active) {
-      await crustApi.update(productId, current.id, { active: false } as any);
+      setBorderForm({ price_addition: "" });
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao adicionar borda.");
+    }
+  };
+
+  const handleToggleBorderActive = async (border: ApiProductCrustType) => {
+    if (!borderModalProduct) return;
+    setSavingBorderId(border.id);
+    try {
+      const updated = await crustApi.update(borderModalProduct.id, border.id, { active: !border.active });
+      setProductBorders((prev) => prev.map((item) => item.id === border.id ? updated : item));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao atualizar borda.");
+    } finally {
+      setSavingBorderId(null);
+    }
+  };
+
+  const handleUpdateBorderPrice = async (border: ApiProductCrustType, value: string) => {
+    if (!borderModalProduct) return;
+    const priceAddition = parseFloat(value || "0");
+    if (isNaN(priceAddition) || priceAddition < 0) {
+      alert("Preco invalido.");
+      return;
+    }
+    if (Math.abs(priceAddition - border.price_addition) < 0.001) return;
+    setSavingBorderId(border.id);
+    try {
+      const updated = await crustApi.update(borderModalProduct.id, border.id, { price_addition: priceAddition });
+      setProductBorders((prev) => prev.map((item) => item.id === border.id ? updated : item));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao atualizar adicional da borda.");
+    } finally {
+      setSavingBorderId(null);
+    }
+  };
+
+  const handleDeleteBorder = async (borderId: string) => {
+    if (!borderModalProduct) return;
+    if (!confirm("Remover esta borda?")) return;
+    try {
+      await crustApi.remove(borderModalProduct.id, borderId);
+      setProductBorders((prev) => prev.filter((border) => border.id !== borderId));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao remover borda.");
     }
   };
 
   const handleAddCrust = async () => {
     if (!crustModalProduct || !crustForm.name.trim()) return;
+    if (isCatupiryCrust(crustForm.name)) {
+      alert("Use o botao Gerenciar Bordas para adicionar borda com Catupiry.");
+      return;
+    }
     const priceAdd = parseFloat(crustForm.price_addition || "0");
     try {
       const created = await crustApi.create(crustModalProduct.id, {
@@ -705,7 +776,6 @@ export default function AdminProducts() {
   const CRUST_PRESETS = [
     { name: "Napolitana", price_addition: "0" },
     { name: "Tradicional", price_addition: "0" },
-    { name: CATUPIRY_CRUST_NAME, price_addition: "0" },
   ];
 
   const DRINK_SIZE_PRESETS = [
@@ -799,6 +869,19 @@ export default function AdminProducts() {
                         <textarea value={formData.description || ""} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className={`${cls} resize-none`} placeholder="Descreva o produto..." rows={3} />
                       </div>
                       <div>
+                        <label className="block text-parchment text-sm font-medium mb-2">Preco base *</label>
+                        <input
+                          type="number"
+                          value={formData.price ?? ""}
+                          onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
+                          className={cls}
+                          placeholder="Ex: 39.90"
+                          min="0.01"
+                          step="0.01"
+                        />
+                        <p className="text-stone text-xs mt-1">Usado como preco inicial e fallback. Tamanhos podem ser configurados depois no card do produto.</p>
+                      </div>
+                      <div>
                         <div className="flex items-center justify-between gap-3 mb-2">
                           <label className="block text-parchment text-sm font-medium">Categoria</label>
                           <button
@@ -850,35 +933,6 @@ export default function AdminProducts() {
                           )}
                         </select>
                       </div>
-                      {(formData.product_type || "pizza") === "pizza" && (
-                        <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-4">
-                          <label className="flex items-start gap-3">
-                            <input
-                              type="checkbox"
-                              checked={!!(formData as any).has_catupiry_border}
-                              onChange={(e) => setFormData({ ...formData, has_catupiry_border: e.target.checked } as any)}
-                              className="mt-1 h-4 w-4 accent-amber-500"
-                            />
-                            <span className="flex-1">
-                              <span className="block text-sm font-bold text-cream">Adicionar borda com Catupiry</span>
-                              <span className="block text-xs text-stone">Cria ou ativa esta opcao de borda apenas para este produto.</span>
-                            </span>
-                          </label>
-                          {!!(formData as any).has_catupiry_border && (
-                            <div className="mt-3 max-w-xs">
-                              <label className="block text-parchment text-xs font-medium mb-1">Adicional da borda (R$)</label>
-                              <input
-                                type="number"
-                                value={(formData as any).catupiry_border_price ?? 0}
-                                onChange={(e) => setFormData({ ...formData, catupiry_border_price: e.target.value } as any)}
-                                className={cls}
-                                min="0"
-                                step="0.01"
-                              />
-                            </div>
-                          )}
-                        </div>
-                      )}
                       <div className="grid grid-cols-2 gap-4 items-start">
                         <ImageUpload
                           value={formData.icon || ""}
@@ -898,7 +952,7 @@ export default function AdminProducts() {
                       {!editingId && (
                         <div className="bg-surface-03/60 rounded-lg p-3 text-stone text-xs">
                           {(formData.product_type || "pizza") === "pizza" && (
-                            <span>💡 Após criar a pizza, use <strong className="text-parchment">Gerenciar Tamanhos</strong> e <strong className="text-parchment">Gerenciar Massas</strong> no card do produto.</span>
+                            <span>💡 Após criar a pizza, use <strong className="text-parchment">Gerenciar Tamanhos</strong>, <strong className="text-parchment">Gerenciar Massas</strong> e <strong className="text-parchment">Gerenciar Bordas</strong> no card do produto.</span>
                           )}
                           {formData.product_type === "drink" && (
                             <span>💡 Após criar a bebida, use <strong className="text-parchment">Gerenciar Tamanhos</strong> e <strong className="text-parchment">Gerenciar Variantes</strong> no card do produto.</span>
@@ -989,8 +1043,20 @@ export default function AdminProducts() {
                           <button onClick={() => openCrustModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-amber-500/10 hover:border-amber-500/40 text-parchment hover:text-amber-400 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                             <ChefHat size={15} />
                             Gerenciar Massas
-                            {(product as any).crust_types && (product as any).crust_types.length > 0 && (
-                              <span className="ml-auto text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full">{(product as any).crust_types.length}</span>
+                            {(((product as any).crust_types ?? []) as ApiProductCrustType[]).filter((crust) => !isCatupiryCrust(crust.name)).length > 0 && (
+                              <span className="ml-auto text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full">
+                                {(((product as any).crust_types ?? []) as ApiProductCrustType[]).filter((crust) => !isCatupiryCrust(crust.name)).length}
+                              </span>
+                            )}
+                          </button>
+                        )}
+
+                        {isPizza && (
+                          <button onClick={() => openBorderModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-orange-500/10 hover:border-orange-500/40 text-parchment hover:text-orange-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
+                            <Tag size={15} />
+                            Gerenciar Bordas
+                            {productHasCatupiryCrust(product) && (
+                              <span className="ml-auto text-xs bg-orange-500/20 text-orange-300 px-1.5 py-0.5 rounded-full">1</span>
                             )}
                           </button>
                         )}
@@ -1689,6 +1755,91 @@ export default function AdminProducts() {
       )}
 
       {/* ── Drink Variants Modal ─────────────────────────────────────────────── */}
+      {borderModalProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03 sticky top-0 bg-surface-02 z-10">
+              <div className="flex items-center gap-3">
+                <Tag size={18} className="text-orange-300" />
+                <div>
+                  <h3 className="text-cream font-bold">Bordas</h3>
+                  <p className="text-stone text-xs">{borderModalProduct.name}</p>
+                </div>
+              </div>
+              <button onClick={closeBorderModal} className="text-stone hover:text-cream transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div>
+                <h4 className="text-parchment text-sm font-semibold mb-3">Bordas cadastradas</h4>
+                {bordersLoading ? (
+                  <div className="flex items-center justify-center py-6 text-stone gap-2">
+                    <Loader2 size={16} className="animate-spin" />
+                    <span className="text-sm">Carregando...</span>
+                  </div>
+                ) : productBorders.length === 0 ? (
+                  <p className="text-stone text-sm text-center py-4">Nenhuma borda cadastrada para esta pizza.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {productBorders.map((border) => (
+                      <div key={border.id} className="flex items-center gap-3 bg-surface-03 rounded-xl px-4 py-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-cream font-bold text-sm">{CATUPIRY_CRUST_NAME}</span>
+                            {!border.active && <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-full">inativa</span>}
+                          </div>
+                        </div>
+                        <input
+                          type="number"
+                          defaultValue={border.price_addition.toFixed(2)}
+                          onBlur={(e) => handleUpdateBorderPrice(border, e.target.value)}
+                          disabled={savingBorderId === border.id}
+                          className="w-24 bg-surface-02 border border-surface-03 rounded-lg px-2 py-1 text-orange-300 font-bold text-sm outline-none focus:border-orange-300"
+                          step="0.01"
+                          min="0"
+                          title="Adicional da borda"
+                        />
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button onClick={() => handleToggleBorderActive(border)} disabled={savingBorderId === border.id} title={border.active ? "Desativar" : "Ativar"} className={`p-1.5 rounded-lg transition-colors ${border.active ? "text-green-400 hover:text-red-400" : "text-red-400 hover:text-green-400"}`}>
+                            {savingBorderId === border.id ? <Loader2 size={13} className="animate-spin" /> : <Settings2 size={13} />}
+                          </button>
+                          <button onClick={() => handleDeleteBorder(border.id)} className="p-1.5 rounded-lg text-stone hover:text-red-400 transition-colors">
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-surface-03 pt-5">
+                <h4 className="text-parchment text-sm font-semibold mb-3">Adicionar Borda com Catupiry</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-parchment text-xs font-medium mb-1">Adicional da borda (R$)</label>
+                    <input
+                      type="number"
+                      value={borderForm.price_addition}
+                      onChange={(e) => setBorderForm({ price_addition: e.target.value })}
+                      className={cls}
+                      placeholder="0.00"
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
+                  <button onClick={handleAddCatupiryBorder} className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-500/90 text-white font-bold py-2.5 rounded-xl transition-colors text-sm">
+                    <Plus size={15} /> Adicionar Borda
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {drinkModalProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
