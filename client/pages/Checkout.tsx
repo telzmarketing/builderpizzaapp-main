@@ -320,10 +320,7 @@ export default function Checkout() {
         brickController.current = await mp.bricks().create("payment", "paymentBrick_container", {
           initialization: {
             amount: createdOrder.total,
-            payer: {
-              entityType: "individual",
-              ...(payerEmail ? { email: payerEmail } : {}),
-            },
+            ...(payerEmail ? { payer: { email: payerEmail } } : {}),
           },
           customization: {
             paymentMethods: {
