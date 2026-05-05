@@ -641,11 +641,39 @@ class PaymentService:
         order = self._get_order(order_id)
         cfg = self._cfg()
         token = _mp_token(cfg)
+        if not (cfg.accept_credit_card or cfg.accept_debit_card):
+            raise DomainError(
+                "Forma de pagamento indisponivel. Configure os metodos aceitos em Admin > Pagamentos.",
+                code="PaymentMethodDisabled",
+            )
+
+        current_order_status = order.status.value if hasattr(order.status, "value") else str(order.status)
+        if current_order_status not in {"pending", "waiting_payment", "aguardando_pagamento", "pagamento_recusado", "pagamento_expirado"}:
+            raise PaymentOrderNotEligible(order.id, current_order_status)
 
         if not order.external_reference:
             order.external_reference = f"order-{order.id}"
-            self._db.flush()
-            self._db.commit()
+
+        method = PaymentMethod.credit_card if cfg.accept_credit_card else PaymentMethod.debit_card
+        payment = self._pending_payment(
+            order,
+            PaymentCreate(order_id=order.id, amount=order.total, payment_method=method),
+            float(order.total),
+            method,
+            "mercado_pago",
+        )
+
+        if current_order_status == "pending":
+            order_sm.transition(order.id, current_order_status, "aguardando_pagamento")
+            order.status = OrderStatus.aguardando_pagamento
+
+        self._db.flush()
+
+        excluded_payment_types = [{"id": "bank_transfer"}, {"id": "ticket"}]
+        if not cfg.accept_credit_card:
+            excluded_payment_types.append({"id": "credit_card"})
+        if not cfg.accept_debit_card:
+            excluded_payment_types.append({"id": "debit_card"})
 
         base_url = "https://delivery.moschettieri.com.br"
         body = {
@@ -655,9 +683,12 @@ class PaymentService:
                 "currency_id": "BRL",
                 "unit_price": round(float(order.total), 2),
             }],
-            "payer": {"name": order.delivery_name or "Cliente"},
+            "payer": {
+                "name": order.delivery_name or "Cliente",
+                "email": (order.customer.email if order.customer else None) or f"cliente.{order.id[:8].lower()}@delivery.moschettieri.com.br",
+            },
             "payment_methods": {
-                "excluded_payment_types": [{"id": "bank_transfer"}, {"id": "ticket"}],
+                "excluded_payment_types": excluded_payment_types,
                 "installments": 6,
             },
             "back_urls": {
@@ -668,13 +699,26 @@ class PaymentService:
             "notification_url": f"{base_url}/api/payments/webhook",
             "external_reference": order.external_reference or order.id,
             "auto_return": "all",
-            "metadata": {"order_id": order.id},
+            "metadata": {"order_id": order.id, "payment_id": payment.id},
         }
 
         response = _mp_request("POST", "/checkout/preferences", token, body)
+        init_point = response.get("init_point") or response.get("sandbox_init_point")
+        if not init_point:
+            raise GatewayError("mercado_pago", "Mercado Pago nao retornou link de pagamento para cartao.")
+
+        payment.payment_url = init_point
+        payment.raw_response = json.dumps(response, ensure_ascii=False)
+        payment.webhook_data = payment.raw_response
+        payment.external_reference = order.external_reference or order.id
+        payment.status = PaymentStatus.pending
+        self._db.commit()
+        self._db.refresh(payment)
+        bus.publish(PaymentCreated(payment_id=payment.id, order_id=payment.order_id, method=payment.method.value, amount=payment.amount, gateway=payment.gateway))
+
         return {
             "preference_id": response.get("id"),
-            "init_point": response.get("init_point"),
+            "init_point": init_point,
         }
 
     def confirm_cash(self, order_id: str) -> PaymentOut:
@@ -718,7 +762,7 @@ class PaymentService:
         blocking_statuses = {PaymentStatus.pending, PaymentStatus.approved}
         checkout_locked = bool(
             payment
-            and payment.mercado_pago_payment_id
+            and (payment.mercado_pago_payment_id or payment.payment_url)
             and payment.status in blocking_statuses
         )
         return {
