@@ -477,8 +477,8 @@ export default function Checkout() {
         setPaymentState("loading");
         setPaymentMessage("Preparando checkout de cartão...");
         try {
-          await paymentsApi.createPreference(order.id);
-          setCardInitPoint(paymentsApi.checkoutUrl(order.id));
+          const pref = await paymentsApi.createPreference(order.id);
+          setCardInitPoint(paymentsApi.checkoutUrl(order.id, pref.init_point));
           setPaymentState("pending");
           setPaymentMessage("Clique no botão abaixo para pagar com cartão.");
         } catch {

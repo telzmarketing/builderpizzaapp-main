@@ -719,7 +719,7 @@ class PaymentService:
         return {
             "preference_id": response.get("id"),
             "init_point": init_point,
-            "checkout_url": f"/payments/checkout/{order.id}",
+            "checkout_url": f"/payment-checkout?orderId={order.id}",
         }
 
     def card_checkout_url(self, order_id: str) -> str:

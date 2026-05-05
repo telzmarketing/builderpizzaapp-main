@@ -1400,15 +1400,18 @@ export const paymentsApi = {
     ),
 
   createPreference: (order_id: string) =>
-    request<{ preference_id: string; init_point: string; checkout_url: string }>(
+    request<{ preference_id: string; init_point: string; checkout_url?: string }>(
       "POST",
       `/payments/preference/${order_id}`,
       {},
       orderAccessHeaders(order_id),
     ),
 
-  checkoutUrl: (order_id: string) =>
-    `${BASE}/payments/checkout/${encodeURIComponent(order_id)}`,
+  checkoutUrl: (order_id: string, initPoint?: string | null) => {
+    const qs = new URLSearchParams({ orderId: order_id });
+    if (initPoint) qs.set("url", initPoint);
+    return `/payment-checkout?${qs.toString()}`;
+  },
 
   createFromBrick: (order_id: string, formData: Record<string, unknown>) =>
     request<ApiPayment>(

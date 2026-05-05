@@ -18,6 +18,7 @@ function StoreWidget() {
     "/product",
     "/cart",
     "/checkout",
+    "/payment-checkout",
     "/order-tracking",
     "/fidelidade",
     "/cupons",
@@ -121,6 +122,7 @@ import Index from "./pages/Index";
 import Product from "./pages/Product";
 import Cart from "./pages/Cart";
 import Checkout from "./pages/Checkout";
+import PaymentCheckout from "./pages/PaymentCheckout";
 import OrderTracking from "./pages/OrderTracking";
 import AdminLogin from "./pages/admin/Login";
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -193,6 +195,7 @@ export default function App() {
               <Route path="/product/:id" element={<Product />} />
               <Route path="/cart" element={<Cart />} />
               <Route path="/checkout" element={<Checkout />} />
+              <Route path="/payment-checkout" element={<PaymentCheckout />} />
               <Route path="/order-tracking" element={<OrderTracking />} />
               <Route path="/fidelidade" element={<Fidelidade />} />
               <Route path="/cupons" element={<Cupons />} />
