@@ -1246,7 +1246,9 @@ export default function AdminProducts() {
                         <ImageUpload
                           value={brindeForm.icon}
                           onChange={(url) => setBrindeForm((f) => ({ ...f, icon: url }))}
-                          rounded={false}
+                          label="Foto do Brinde"
+                          previewRounded={false}
+                          maxKB={2048}
                         />
                       </div>
                       <div className="flex items-center gap-3">
