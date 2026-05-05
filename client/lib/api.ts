@@ -305,6 +305,8 @@ export interface ApiCoupon {
   gift_product_id: string | null;
   gift_quantity: number;
   stackable: boolean;
+  public_profile: boolean;
+  used_by_customer?: boolean;
   active: boolean;
   campaign_id: string | null;
   trigger_automation_id: string | null;
@@ -328,6 +330,7 @@ export interface ApiCouponInput {
   gift_product_id?: string | null;
   gift_quantity?: number;
   stackable?: boolean;
+  public_profile?: boolean;
   campaign_id?: string | null;
   trigger_automation_id?: string | null;
   active?: boolean;
@@ -1415,7 +1418,17 @@ export const paymentsApi = {
 export const couponsApi = {
   list: () => get<ApiCoupon[]>("/coupons"),
 
-  publicList: () => get<ApiCoupon[]>("/coupons/public"),
+  publicList: (customer_id?: string) => {
+    const qs = new URLSearchParams();
+    if (customer_id) qs.set("customer_id", customer_id);
+    const query = qs.toString();
+    return request<ApiCoupon[]>(
+      "GET",
+      `/coupons/public${query ? `?${query}` : ""}`,
+      undefined,
+      customer_id ? customerAccessHeaders(customer_id) : undefined,
+    );
+  },
 
   create: (data: ApiCouponInput & { code: string; discount_value: number }) =>
     post<ApiCoupon>("/coupons", data),

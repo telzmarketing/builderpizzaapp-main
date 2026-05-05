@@ -31,6 +31,7 @@ class Coupon(Base):
     gift_product_id = Column(String, ForeignKey("products.id"), nullable=True)
     gift_quantity = Column(Integer, default=1)
     stackable = Column(Boolean, default=False)
+    public_profile = Column(Boolean, default=False)
     active = Column(Boolean, default=True)
     campaign_id = Column(String, ForeignKey("campaigns.id"), nullable=True)
     trigger_automation_id = Column(String, ForeignKey("marketing_automations.id", ondelete="SET NULL"), nullable=True)

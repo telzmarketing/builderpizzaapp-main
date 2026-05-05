@@ -21,6 +21,7 @@ class CouponCreate(BaseModel):
     gift_product_id: Optional[str] = None
     gift_quantity: int = Field(default=1, ge=1)
     stackable: bool = False
+    public_profile: bool = False
     campaign_id: Optional[str] = None
     trigger_automation_id: Optional[str] = None
     active: bool = True
@@ -52,6 +53,7 @@ class CouponUpdate(BaseModel):
     gift_product_id: Optional[str] = None
     gift_quantity: Optional[int] = Field(default=None, ge=1)
     stackable: Optional[bool] = None
+    public_profile: Optional[bool] = None
     campaign_id: Optional[str] = None
     trigger_automation_id: Optional[str] = None
     active: Optional[bool] = None
@@ -85,6 +87,8 @@ class CouponOut(BaseModel):
     gift_product_id: Optional[str] = None
     gift_quantity: int = 1
     stackable: bool = False
+    public_profile: bool = False
+    used_by_customer: bool = False
     active: bool
     campaign_id: Optional[str]
     trigger_automation_id: Optional[str] = None

@@ -422,7 +422,7 @@ function apiCouponToCoupon(c: ApiCoupon): Coupon {
       : "Sem validade",
     icon: c.icon,
     type: c.coupon_type,
-    used: c.max_uses != null && c.used_count >= c.max_uses,
+    used: !!c.used_by_customer,
   };
 }
 
@@ -487,7 +487,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           productsApi.list(true),
           promotionsApi.list(true),
           productsApi.getMultiFlavorsConfig(),
-          couponsApi.publicList(),
+          couponsApi.publicList(customer?.id),
           loyaltyApi.settings(),
           loyaltyApi.levels(),
           loyaltyApi.rewards(),
@@ -530,6 +530,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     bootstrap();
   }, []);
+
+  useEffect(() => {
+    if (window.location.pathname.startsWith("/painel")) return;
+    couponsApi.publicList(customer?.id)
+      .then((items) => setCoupons(items.map(apiCouponToCoupon)))
+      .catch(() => setCoupons([]));
+  }, [customer?.id]);
 
   // ── Store data polling (silent refresh every 30s for store pages) ─────────
   useEffect(() => {

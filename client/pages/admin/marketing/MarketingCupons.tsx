@@ -35,6 +35,7 @@ interface Coupon {
   gift_product_id?: string | null;
   gift_quantity?: number;
   stackable?: boolean;
+  public_profile?: boolean;
   active: boolean;
   campaign_id?: string;
   trigger_automation_id?: string | null;
@@ -58,6 +59,7 @@ type CouponForm = {
   gift_product_id: string;
   gift_quantity: number;
   stackable: boolean;
+  public_profile: boolean;
   trigger_automation_id: string;
   active: boolean;
 };
@@ -90,6 +92,7 @@ const emptyForm = (): CouponForm => ({
   gift_product_id: "",
   gift_quantity: 1,
   stackable: false,
+  public_profile: false,
   trigger_automation_id: "",
   active: true,
 });
@@ -219,6 +222,7 @@ export default function MarketingCupons() {
       gift_product_id: c.gift_product_id ?? "",
       gift_quantity: c.gift_quantity || 1,
       stackable: !!c.stackable,
+      public_profile: !!c.public_profile,
       trigger_automation_id: c.trigger_automation_id ?? "",
       active: c.active,
     });
@@ -251,6 +255,7 @@ export default function MarketingCupons() {
         gift_product_id: form.gift_enabled && form.gift_product_id ? form.gift_product_id : null,
         gift_quantity: Math.max(1, Number(form.gift_quantity) || 1),
         stackable: form.stackable,
+        public_profile: form.public_profile,
         trigger_automation_id: form.trigger_automation_id || null,
         active: form.active,
       };
@@ -412,8 +417,13 @@ export default function MarketingCupons() {
                         </div>
                       </div>
 
-                      {(c.free_shipping || c.gift_enabled || c.stackable) && (
+                      {(c.free_shipping || c.gift_enabled || c.stackable || c.public_profile) && (
                         <div className="flex flex-wrap gap-1">
+                          {c.public_profile && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-gold/15 px-2 py-0.5 text-xs text-gold">
+                              <Tag size={11} /> Perfil do cliente
+                            </span>
+                          )}
                           {c.free_shipping && (
                             <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/15 px-2 py-0.5 text-xs text-blue-300">
                               <Truck size={11} /> Frete gratis
@@ -712,6 +722,13 @@ export default function MarketingCupons() {
                     onChange={e => setForm(f => ({ ...f, stackable: e.target.checked }))}
                     className="h-4 w-4 accent-gold" />
                   Permitir combinar com outros beneficios
+                </label>
+
+                <label className="flex items-center gap-2 text-sm text-stone">
+                  <input type="checkbox" checked={form.public_profile}
+                    onChange={e => setForm(f => ({ ...f, public_profile: e.target.checked }))}
+                    className="h-4 w-4 accent-gold" />
+                  Aparecer no perfil dos clientes
                 </label>
               </div>
 
