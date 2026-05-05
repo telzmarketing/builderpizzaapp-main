@@ -11,7 +11,7 @@ import MoschettieriLogo from "@/components/MoschettieriLogo";
 export default function Cardapio() {
   const navigate = useNavigate();
   const { products, addToCart } = useApp();
-  const ALL_LABEL = "Todos";
+  const ALL_LABEL = "Todas";
   const PROMO_LABEL = "Promoções";
   const [activeCategory, setActiveCategory] = useState(ALL_LABEL);
   const [search, setSearch] = useState("");

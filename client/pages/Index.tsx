@@ -16,7 +16,7 @@ export default function Home() {
   const { products, campaignBanners, siteContent, loyaltySettings } = useApp();
   const { sectionSubtitle, sectionTitle, bannerRotationInterval } = siteContent.home;
   const rotationInterval = (bannerRotationInterval ?? 5) * 1000;
-  const ALL_LABEL = "Todos";
+  const ALL_LABEL = "Todas";
 
   const [activeCategory, setActiveCategory] = useState(ALL_LABEL);
   const [carouselPosition, setCarouselPosition] = useState(0);
