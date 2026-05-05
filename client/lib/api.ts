@@ -1399,6 +1399,14 @@ export const paymentsApi = {
       orderAccessHeaders(order_id),
     ),
 
+  createPreference: (order_id: string) =>
+    request<{ preference_id: string; init_point: string }>(
+      "POST",
+      `/payments/preference/${order_id}`,
+      {},
+      orderAccessHeaders(order_id),
+    ),
+
   createFromBrick: (order_id: string, formData: Record<string, unknown>) =>
     request<ApiPayment>(
       "POST",

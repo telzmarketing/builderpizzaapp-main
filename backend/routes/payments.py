@@ -75,6 +75,24 @@ def get_payment(order_id: str, request: Request, db: Session = Depends(get_db)):
         return err(exc)
 
 
+@router.post("/preference/{order_id}", status_code=201)
+def create_preference(order_id: str, request: Request, db: Session = Depends(get_db)):
+    try:
+        order = db.query(Order).filter(Order.id == order_id).first()
+        if order:
+            require_order_or_admin(
+                order,
+                db,
+                request.headers.get("authorization"),
+                request.headers.get("x-customer-phone"),
+                request.headers.get("x-customer-email"),
+            )
+        result = PaymentService(db).create_preference(order_id)
+        return created(result, "Preferencia de pagamento criada.")
+    except DomainError as exc:
+        return err(exc)
+
+
 @router.post("/cash/{order_id}")
 def confirm_cash(
     order_id: str,

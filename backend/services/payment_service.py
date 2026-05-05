@@ -637,6 +637,46 @@ class PaymentService:
         except Exception:
             return False
 
+    def create_preference(self, order_id: str) -> dict:
+        order = self._get_order(order_id)
+        cfg = self._cfg()
+        token = _mp_token(cfg)
+
+        if not order.external_reference:
+            order.external_reference = f"order-{order.id}"
+            self._db.flush()
+            self._db.commit()
+
+        base_url = "https://delivery.moschettieri.com.br"
+        body = {
+            "items": [{
+                "title": f"Moschettieri - Pedido #{order.id[:8].upper()}",
+                "quantity": 1,
+                "currency_id": "BRL",
+                "unit_price": round(float(order.total), 2),
+            }],
+            "payer": {"name": order.delivery_name or "Cliente"},
+            "payment_methods": {
+                "excluded_payment_types": [{"id": "bank_transfer"}, {"id": "ticket"}],
+                "installments": 6,
+            },
+            "back_urls": {
+                "success": f"{base_url}/order-tracking?orderId={order.id}",
+                "failure": f"{base_url}/order-tracking?orderId={order.id}",
+                "pending": f"{base_url}/order-tracking?orderId={order.id}",
+            },
+            "notification_url": f"{base_url}/api/payments/webhook",
+            "external_reference": order.external_reference or order.id,
+            "auto_return": "all",
+            "metadata": {"order_id": order.id},
+        }
+
+        response = _mp_request("POST", "/checkout/preferences", token, body)
+        return {
+            "preference_id": response.get("id"),
+            "init_point": response.get("init_point"),
+        }
+
     def confirm_cash(self, order_id: str) -> PaymentOut:
         if not self._cfg().accept_cash:
             raise DomainError("Pagamento em dinheiro esta desativado no painel de pagamentos.", code="PaymentMethodDisabled")

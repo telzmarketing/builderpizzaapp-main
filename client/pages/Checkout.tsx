@@ -47,19 +47,6 @@ type DeliveryMode = "delivery" | "pickup";
 type SelectedPaymentMethod = "pix" | "card";
 type PaymentState = "idle" | "loading" | "pending" | "approved" | "rejected" | "expired" | "error";
 
-declare global {
-  interface Window {
-    MercadoPago?: new (publicKey: string, options?: Record<string, unknown>) => {
-      bricks: () => {
-        create: (
-          type: string,
-          containerId: string,
-          settings: Record<string, unknown>
-        ) => Promise<{ unmount: () => void }>;
-      };
-    };
-  }
-}
 
 // sessionStorage key that persists the locked order across page refreshes and back-navigation
 const LOCKED_ORDER_KEY = "mo_locked_order_id";
@@ -103,11 +90,10 @@ export default function Checkout() {
   const [payment, setPayment] = useState<ApiPayment | null>(null);
   const [paymentState, setPaymentState] = useState<PaymentState>("idle");
   const [paymentMessage, setPaymentMessage] = useState("");
+  const [cardInitPoint, setCardInitPoint] = useState<string | null>(null);
   const [storeStatus, setStoreStatus] = useState<StoreOperationStatus | null>(null);
   const [scheduledFor, setScheduledFor] = useState("");
   const [checkoutAddresses, setCheckoutAddresses] = useState<ApiAddress[] | null>(null);
-  const brickController = useRef<{ unmount: () => void } | null>(null);
-  const mpInstanceRef = useRef<{ bricks: () => { create: (type: string, containerId: string, settings: Record<string, unknown>) => Promise<{ unmount: () => void }> } } | null>(null);
   const paymentMethodsRef = useRef<ApiPaymentMethods | null>(null);
 
   // Guard: if a payment was already initiated for a previous session, redirect to order tracking immediately.
@@ -272,125 +258,6 @@ export default function Checkout() {
     }, 600);
     return () => clearTimeout(tid);
   }, [form.city, form.neighborhood, form.zip_code, cartSubtotal, deliveryMode]);
-
-  useEffect(() => {
-    if (!createdOrder || selectedPaymentMethod !== "card") return;
-    let cancelled = false;
-
-    async function loadScript() {
-      if (window.MercadoPago) return;
-      await new Promise<void>((resolve, reject) => {
-        const existing = document.querySelector<HTMLScriptElement>("script[src='https://sdk.mercadopago.com/js/v2']");
-        if (existing) {
-          existing.addEventListener("load", () => resolve(), { once: true });
-          existing.addEventListener("error", () => reject(new Error("Mercado Pago indisponivel.")), { once: true });
-          return;
-        }
-        const script = document.createElement("script");
-        script.src = "https://sdk.mercadopago.com/js/v2";
-        script.async = true;
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error("Mercado Pago indisponivel."));
-        document.head.appendChild(script);
-      });
-    }
-
-    async function renderBrick() {
-      setPaymentState("loading");
-      setPaymentMessage("Carregando pagamento seguro...");
-      try {
-        const envKey = import.meta.env.VITE_MERCADO_PAGO_PUBLIC_KEY as string | undefined;
-        const publicKey = envKey || (await paymentsApi.publicKey()).public_key;
-        if (!publicKey) throw new Error("Chave publica do Mercado Pago nao configurada.");
-        await loadScript();
-        if (cancelled || !window.MercadoPago) return;
-        if (brickController.current) brickController.current.unmount();
-
-        if (!mpInstanceRef.current) {
-          mpInstanceRef.current = new window.MercadoPago(publicKey, { locale: "pt-BR" });
-        }
-        const mp = mpInstanceRef.current;
-
-        // Pré-preenche o email do pagador para não pedir ao usuário no brick.
-        // Usa email real se disponível, ou deriva do telefone (MP exige campo email mas não o valida de verdade para PIX).
-        const payerEmail =
-          customer?.email ||
-          (form.phone ? `${form.phone.replace(/\D/g, "")}@pix.moschettieri.com.br` : null);
-
-        brickController.current = await mp.bricks().create("payment", "paymentBrick_container", {
-          initialization: {
-            amount: createdOrder.total,
-            ...(payerEmail ? { payer: { email: payerEmail } } : {}),
-          },
-          customization: {
-            paymentMethods: {
-              creditCard: paymentMethodsRef.current?.accept_credit_card === false ? "none" : "all",
-              debitCard: paymentMethodsRef.current?.accept_debit_card ? "all" : "none",
-              bankTransfer: "none",
-              maxInstallments: 6,
-            },
-          },
-          callbacks: {
-            onReady: () => {
-              setPaymentState("pending");
-              setPaymentMessage("Aguardando pagamento.");
-            },
-            onSubmit: ({ formData }: { formData: Record<string, unknown> }) =>
-              new Promise<void>(async (resolve, reject) => {
-                try {
-                  setPaymentState("loading");
-                  setPaymentMessage("Processando pagamento...");
-                  const methodId = String(formData.payment_method_id || "");
-                  const typeId = String(formData.payment_type_id || "");
-                  if (methodId === "pix" || typeId === "bank_transfer") {
-                    throw new Error("Use a opcao PIX para pagar com QR Code.");
-                  }
-                  const createdPayment = await paymentsApi.createFromBrick(createdOrder.id, formData);
-                  setPayment(createdPayment);
-                  setPaymentState("pending");
-                  setPaymentMessage("Pagamento enviado. Aguardando confirmacao do Mercado Pago.");
-                  resolve();
-                } catch (err) {
-                  console.error("[PaymentBrick] onSubmit error:", err);
-                  const rawMsg = err instanceof Error ? err.message : "";
-                  // Surface domain messages from the API (already user-friendly in Portuguese);
-                  // hide internal or unexpected messages behind a generic fallback.
-                  const isSafeMsg = rawMsg && (
-                    rawMsg.includes("já foi pago") ||
-                    rawMsg.includes("Mercado Pago") ||
-                    rawMsg.includes("pagamento") ||
-                    rawMsg.includes("PIX") ||
-                    rawMsg.includes("cartão") ||
-                    rawMsg.includes("valor") ||
-                    rawMsg.includes("método")
-                  );
-                  setPaymentState("error");
-                  setPaymentMessage(isSafeMsg ? rawMsg : "Erro ao processar pagamento. Tente novamente.");
-                  reject(err);
-                }
-              }),
-            onError: (error: unknown) => {
-              console.error("[PaymentBrick] onError:", error);
-              setPaymentState("error");
-              setPaymentMessage("Erro ao carregar o pagamento seguro. Verifique sua conexão e tente novamente.");
-            },
-          },
-        });
-      } catch (err) {
-        setPaymentState("error");
-        setPaymentMessage(err instanceof Error ? err.message : "Erro ao carregar pagamento.");
-      }
-    }
-
-    renderBrick();
-    return () => {
-      cancelled = true;
-      if (brickController.current) {
-        brickController.current.unmount();
-        brickController.current = null;
-      }
-    };
-  }, [createdOrder, selectedPaymentMethod, customer?.email, form.phone]); // paymentMethods read via ref to avoid re-creating the MP instance
 
   useEffect(() => {
     if (!createdOrder) return;
@@ -607,8 +474,17 @@ export default function Checkout() {
             : "PIX criado. Aguardando retorno do QR Code do Mercado Pago.",
         );
       } else {
-        setPaymentState("pending");
-        setPaymentMessage("Pedido criado. Conclua o pagamento com cartao abaixo.");
+        setPaymentState("loading");
+        setPaymentMessage("Preparando checkout de cartão...");
+        try {
+          const pref = await paymentsApi.createPreference(order.id);
+          setCardInitPoint(pref.init_point);
+          setPaymentState("pending");
+          setPaymentMessage("Clique no botão abaixo para pagar com cartão.");
+        } catch {
+          setPaymentState("error");
+          setPaymentMessage("Não foi possível iniciar o pagamento com cartão. Tente usar PIX.");
+        }
       }
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
     } catch (err) {
@@ -927,7 +803,23 @@ export default function Checkout() {
                 )}
               </div>
             ) : (
-              <div id="paymentBrick_container" className={paymentState === "approved" ? "hidden" : ""} />
+              cardInitPoint && paymentState !== "approved" && (
+                <div className="space-y-3">
+                  <a
+                    href={cardInitPoint}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold py-4 transition-colors"
+                  >
+                    <CreditCard size={20} />
+                    Pagar com cartão no Mercado Pago
+                  </a>
+                  <p className="text-center text-stone text-xs leading-relaxed">
+                    Abrirá o checkout seguro do Mercado Pago em nova aba.<br />
+                    Esta página atualizará automaticamente após o pagamento.
+                  </p>
+                </div>
+              )
             )}
             {paymentState === "loading" && (
               <div className="flex items-center justify-center py-4 text-stone gap-2">
