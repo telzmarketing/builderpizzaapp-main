@@ -104,6 +104,7 @@ class OrderItemOut(BaseModel):
 
 class OrderOut(BaseModel):
     id: str
+    order_code: Optional[str] = None
     customer_id: Optional[str]
     delivery_name: Optional[str]
     delivery_phone: Optional[str]

@@ -570,6 +570,9 @@ def _run_migrations():
         # ══════════════════════════════════════════════════════════════════════
         "CREATE TABLE IF NOT EXISTS geocode_cache (id VARCHAR(32) PRIMARY KEY, query TEXT NOT NULL, lat FLOAT, lng FLOAT, created_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE INDEX IF NOT EXISTS ix_geocode_cache_created_at ON geocode_cache(created_at DESC)",
+        # ── Order display code (ORDER-XXXX) ───────────────────────────────────
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_code VARCHAR(10)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_order_code ON orders(order_code) WHERE order_code IS NOT NULL",
     ]
     for stmt in stmts:
         try:

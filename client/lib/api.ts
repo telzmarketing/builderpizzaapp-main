@@ -555,6 +555,7 @@ export type OrderStatus =
 
 export interface ApiOrder {
   id: string;
+  order_code: string | null;
   customer_id: string | null;
   delivery_name: string;
   delivery_phone: string;

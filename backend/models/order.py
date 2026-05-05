@@ -36,6 +36,7 @@ class Order(Base):
     delivery_complement = Column(String(100))
 
     status = Column(Enum(OrderStatus), default=OrderStatus.pending)
+    order_code = Column(String(10), nullable=True, unique=True)
     external_reference = Column(String(120), nullable=True, unique=True)
     coupon_id = Column(String, ForeignKey("coupons.id"), nullable=True)
     campaign_id = Column(String, ForeignKey("traffic_campaigns.id", ondelete="SET NULL"), nullable=True)

@@ -7,6 +7,8 @@ RULE: nothing outside this class may change an order's status or
 """
 from __future__ import annotations
 
+import random
+import string
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session, joinedload
@@ -63,6 +65,16 @@ class OrderService:
         self._db = db
 
     # ── Internal helpers ──────────────────────────────────────────────────────
+
+    _ORDER_CODE_CHARS = string.ascii_uppercase + string.digits  # A-Z + 0-9
+
+    def _generate_order_code(self) -> str:
+        for _ in range(20):
+            code = "".join(random.choices(self._ORDER_CODE_CHARS, k=4))
+            exists = self._db.query(Order).filter(Order.order_code == code).first()
+            if not exists:
+                return code
+        return "".join(random.choices(self._ORDER_CODE_CHARS, k=6))
 
     def _get_order(self, order_id: str) -> Order:
         order = (
@@ -285,8 +297,10 @@ class OrderService:
         total = round(subtotal + delivery_fee_final - discount, 2)
         order_id = f"order-{uuid.uuid4().hex[:8]}"
         external_reference = order_id
+        order_code = self._generate_order_code()
         order = Order(
             id=order_id,
+            order_code=order_code,
             external_reference=external_reference,
             customer_id=payload.customer_id,
             delivery_name=payload.delivery.name,
