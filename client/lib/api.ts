@@ -1413,6 +1413,14 @@ export const paymentsApi = {
   publicKey: () => get<{ public_key: string }>("/payments/public-key"),
 
   methods: () => get<ApiPaymentMethods>("/payments/methods"),
+
+  createPreference: (order_id: string) =>
+    request<{ preference_id: string; init_point: string }>(
+      "POST",
+      `/payments/preference/${order_id}`,
+      {},
+      orderAccessHeaders(order_id),
+    ),
 };
 
 // ─── Coupons ──────────────────────────────────────────────────────────────────

@@ -47,20 +47,6 @@ type DeliveryMode = "delivery" | "pickup";
 type SelectedPaymentMethod = "pix" | "card";
 type PaymentState = "idle" | "loading" | "pending" | "approved" | "rejected" | "expired" | "error";
 
-declare global {
-  interface Window {
-    MercadoPago?: new (publicKey: string, options?: Record<string, unknown>) => {
-      bricks: () => {
-        create: (
-          type: string,
-          containerId: string,
-          settings: Record<string, unknown>
-        ) => Promise<{ unmount: () => void }>;
-      };
-    };
-  }
-}
-
 // sessionStorage key that persists the locked order across page refreshes and back-navigation
 const LOCKED_ORDER_KEY = "mo_locked_order_id";
 
@@ -106,8 +92,7 @@ export default function Checkout() {
   const [storeStatus, setStoreStatus] = useState<StoreOperationStatus | null>(null);
   const [scheduledFor, setScheduledFor] = useState("");
   const [checkoutAddresses, setCheckoutAddresses] = useState<ApiAddress[] | null>(null);
-  const brickController = useRef<{ unmount: () => void } | null>(null);
-  const mpInstanceRef = useRef<{ bricks: () => { create: (type: string, containerId: string, settings: Record<string, unknown>) => Promise<{ unmount: () => void }> } } | null>(null);
+  const [cardInitPoint, setCardInitPoint] = useState<string | null>(null);
   const paymentMethodsRef = useRef<ApiPaymentMethods | null>(null);
 
   // Guard: if a payment was already initiated for a previous session, redirect to order tracking immediately.
@@ -272,103 +257,6 @@ export default function Checkout() {
     }, 600);
     return () => clearTimeout(tid);
   }, [form.city, form.neighborhood, form.zip_code, cartSubtotal, deliveryMode]);
-
-  useEffect(() => {
-    if (!createdOrder || selectedPaymentMethod !== "card") return;
-    let cancelled = false;
-
-    async function loadScript() {
-      if (window.MercadoPago) return;
-      await new Promise<void>((resolve, reject) => {
-        const existing = document.querySelector<HTMLScriptElement>("script[src='https://sdk.mercadopago.com/js/v2']");
-        if (existing) {
-          existing.addEventListener("load", () => resolve(), { once: true });
-          existing.addEventListener("error", () => reject(new Error("Mercado Pago indisponivel.")), { once: true });
-          return;
-        }
-        const script = document.createElement("script");
-        script.src = "https://sdk.mercadopago.com/js/v2";
-        script.async = true;
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error("Mercado Pago indisponivel."));
-        document.head.appendChild(script);
-      });
-    }
-
-    async function renderBrick() {
-      setPaymentState("loading");
-      setPaymentMessage("Carregando formulario de cartao...");
-      try {
-        const envKey = import.meta.env.VITE_MERCADO_PAGO_PUBLIC_KEY as string | undefined;
-        const publicKey = envKey || (await paymentsApi.publicKey()).public_key;
-        if (!publicKey) throw new Error("Chave publica do Mercado Pago nao configurada.");
-        await loadScript();
-        if (cancelled || !window.MercadoPago) return;
-        if (brickController.current) brickController.current.unmount();
-
-        if (!mpInstanceRef.current) {
-          mpInstanceRef.current = new window.MercadoPago(publicKey, { locale: "pt-BR" });
-        }
-        const mp = mpInstanceRef.current;
-        const payerEmail =
-          customer?.email ||
-          (form.phone ? `${form.phone.replace(/\D/g, "")}@delivery.moschettieri.com.br` : null);
-
-        brickController.current = await mp.bricks().create("cardPayment", "cardPaymentBrick_container", {
-          initialization: {
-            amount: createdOrder.total,
-            ...(payerEmail ? { payer: { email: payerEmail } } : {}),
-          },
-          callbacks: {
-            onReady: () => {
-              setPaymentState("pending");
-              setPaymentMessage("Preencha os dados do cartao para concluir.");
-            },
-            onSubmit: (data: unknown) =>
-              new Promise<void>(async (resolve, reject) => {
-                try {
-                  setPaymentState("loading");
-                  setPaymentMessage("Processando pagamento...");
-                  const candidate = (data && typeof data === "object" && "formData" in data)
-                    ? (data as { formData: Record<string, unknown> }).formData
-                    : data;
-                  const formData = {
-                    ...(candidate && typeof candidate === "object" ? candidate as Record<string, unknown> : {}),
-                    transaction_amount: createdOrder.total,
-                  };
-                  const createdPayment = await paymentsApi.createFromBrick(createdOrder.id, formData);
-                  setPayment(createdPayment);
-                  setPaymentState("pending");
-                  setPaymentMessage("Pagamento enviado. Aguardando confirmacao.");
-                  resolve();
-                } catch (err) {
-                  const rawMsg = err instanceof Error ? err.message : "";
-                  setPaymentState("error");
-                  setPaymentMessage(rawMsg || "Erro ao processar pagamento. Tente novamente.");
-                  reject(err);
-                }
-              }),
-            onError: () => {
-              setPaymentState("error");
-              setPaymentMessage("Erro ao carregar o formulario de cartao. Verifique sua conexao e tente novamente.");
-            },
-          },
-        });
-      } catch (err) {
-        setPaymentState("error");
-        setPaymentMessage(err instanceof Error ? err.message : "Erro ao carregar formulario de cartao.");
-      }
-    }
-
-    renderBrick();
-    return () => {
-      cancelled = true;
-      if (brickController.current) {
-        brickController.current.unmount();
-        brickController.current = null;
-      }
-    };
-  }, [createdOrder, selectedPaymentMethod, customer?.email, form.phone]);
 
   useEffect(() => {
     if (!createdOrder) return;
@@ -586,7 +474,16 @@ export default function Checkout() {
         );
       } else {
         setPaymentState("loading");
-        setPaymentMessage("Carregando formulario de cartao...");
+        setPaymentMessage("Preparando checkout de cartao...");
+        try {
+          const pref = await paymentsApi.createPreference(order.id);
+          setCardInitPoint(pref.init_point);
+          setPaymentState("pending");
+          setPaymentMessage("Clique no botao abaixo para pagar com cartao.");
+        } catch {
+          setPaymentState("error");
+          setPaymentMessage("Nao foi possivel iniciar o pagamento com cartao. Tente usar PIX.");
+        }
       }
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
     } catch (err) {
@@ -905,8 +802,22 @@ export default function Checkout() {
                 )}
               </div>
             ) : (
-              paymentState !== "approved" && (
-                <div id="cardPaymentBrick_container" className="min-h-[320px]" />
+              cardInitPoint && paymentState !== "approved" && (
+                <div className="space-y-3">
+                  <a
+                    href={cardInitPoint}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold py-4 transition-colors"
+                  >
+                    <CreditCard size={20} />
+                    Pagar com cartao no Mercado Pago
+                  </a>
+                  <p className="text-center text-stone text-xs leading-relaxed">
+                    Abrira o checkout seguro do Mercado Pago em nova aba.<br />
+                    Esta pagina atualizara automaticamente apos o pagamento.
+                  </p>
+                </div>
               )
             )}
             {paymentState === "loading" && (
