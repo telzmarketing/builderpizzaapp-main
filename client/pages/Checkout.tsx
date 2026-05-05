@@ -104,6 +104,8 @@ export default function Checkout() {
   const [scheduledFor, setScheduledFor] = useState("");
   const [checkoutAddresses, setCheckoutAddresses] = useState<ApiAddress[] | null>(null);
   const brickController = useRef<{ unmount: () => void } | null>(null);
+  const mpInstanceRef = useRef<{ bricks: () => { create: (type: string, containerId: string, settings: Record<string, unknown>) => Promise<{ unmount: () => void }> } } | null>(null);
+  const paymentMethodsRef = useRef<ApiPaymentMethods | null>(null);
 
   const savedAddresses = checkoutAddresses ?? customer?.addresses ?? [];
   const savedAddressSignature = savedAddresses
@@ -197,6 +199,7 @@ export default function Checkout() {
     storeOperationApi.status().then(setStoreStatus).catch(() => setStoreStatus(null));
     paymentsApi.methods().then((methods) => {
       setPaymentMethods(methods);
+      paymentMethodsRef.current = methods;
       if (!methods.accept_pix && (methods.accept_credit_card || methods.accept_debit_card)) {
         setSelectedPaymentMethod("card");
       }
@@ -272,7 +275,10 @@ export default function Checkout() {
         if (cancelled || !window.MercadoPago) return;
         if (brickController.current) brickController.current.unmount();
 
-        const mp = new window.MercadoPago(publicKey, { locale: "pt-BR" });
+        if (!mpInstanceRef.current) {
+          mpInstanceRef.current = new window.MercadoPago(publicKey, { locale: "pt-BR" });
+        }
+        const mp = mpInstanceRef.current;
 
         // Pré-preenche o email do pagador para não pedir ao usuário no brick.
         // Usa email real se disponível, ou deriva do telefone (MP exige campo email mas não o valida de verdade para PIX).
@@ -290,8 +296,8 @@ export default function Checkout() {
           },
           customization: {
             paymentMethods: {
-              creditCard: paymentMethods?.accept_credit_card === false ? "none" : "all",
-              debitCard: paymentMethods?.accept_debit_card ? "all" : "none",
+              creditCard: paymentMethodsRef.current?.accept_credit_card === false ? "none" : "all",
+              debitCard: paymentMethodsRef.current?.accept_debit_card ? "all" : "none",
               bankTransfer: "none",
               maxInstallments: 6,
             },
@@ -342,7 +348,7 @@ export default function Checkout() {
         brickController.current = null;
       }
     };
-  }, [createdOrder, selectedPaymentMethod, customer?.email, form.phone, paymentMethods]);
+  }, [createdOrder, selectedPaymentMethod, customer?.email, form.phone]); // paymentMethods read via ref to avoid re-creating the MP instance
 
   useEffect(() => {
     if (!createdOrder) return;
