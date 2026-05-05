@@ -12,6 +12,12 @@ import { trackEvent, getTrackingData } from "@/lib/tracking";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const isCatupiryCrust = (name?: string | null) =>
+  (name || "").trim().toLowerCase().includes("catupiry");
+
+const isNapolitanaCrust = (name?: string | null) =>
+  (name || "").trim().toLowerCase().includes("napolitana");
+
 const DIVISION_OPTIONS: { value: FlavorDivision; label: string; emoji: string }[] = [
   { value: 1, label: "Inteira", emoji: "🍕" },
   { value: 2, label: "Meio a Meio", emoji: "½" },
@@ -139,6 +145,7 @@ export default function Product() {
   // Crust types (pizza only)
   const [productCrusts, setProductCrusts] = useState<ApiProductCrustType[]>([]);
   const [selectedCrust, setSelectedCrust] = useState<ApiProductCrustType | null>(null);
+  const [selectedBorder, setSelectedBorder] = useState<ApiProductCrustType | null>(null);
   const [priceQuote, setPriceQuote] = useState<ApiProductPriceQuote | null>(null);
 
   // Drink variants (drink only)
@@ -170,6 +177,7 @@ export default function Product() {
     setActiveSlot(null);
     setCartError(false);
     setSelectedCrust(null);
+    setSelectedBorder(null);
     setSelectedDrinkVariant(null);
     setImageZoomOpen(false);
     setImageZoomScale(1);
@@ -211,7 +219,9 @@ export default function Product() {
       crustApi.list(product.id).then((crusts) => {
         const activeCrusts = crusts.filter((c) => c.active);
         setProductCrusts(activeCrusts);
-        if (activeCrusts.length > 0) setSelectedCrust(activeCrusts[0]);
+        const firstRegular = activeCrusts.find((c) => !isCatupiryCrust(c.name));
+        setSelectedCrust(firstRegular ?? activeCrusts[0] ?? null);
+        setSelectedBorder(null);
       }).catch(() => setProductCrusts([]));
     }
 
@@ -231,6 +241,11 @@ export default function Product() {
   const isPizzaBrotoSelected = isPizza && isPizzaBroto(selectedSize);
   const productPrice = product?.price ?? 0;
 
+  // Separar crusts regulares de bordas (catupiry)
+  const regularCrusts = productCrusts.filter((c) => !isCatupiryCrust(c.name));
+  const borderCrusts = productCrusts.filter((c) => isCatupiryCrust(c.name));
+  const borderAvailable = isPizza && borderCrusts.length > 0 && !isNapolitanaCrust(selectedCrust?.name);
+
   useEffect(() => {
     if (!isPizzaBrotoSelected || division === 1) return;
     setDivision(1);
@@ -240,6 +255,11 @@ export default function Product() {
   }, [isPizzaBrotoSelected, division, product?.id]);
 
   const selectedFlavorIdsKey = flavorSlots.slice(0, division).map((flavor) => flavor?.id ?? "").join("|");
+
+  // Resetar borda se napolitana for selecionada
+  useEffect(() => {
+    if (isNapolitanaCrust(selectedCrust?.name)) setSelectedBorder(null);
+  }, [selectedCrust?.id]);
 
   useEffect(() => {
     if (!product || !isPizza) {
@@ -293,8 +313,9 @@ export default function Product() {
     return 0;
   }, [isPizza, isDrink, selectedCrust, selectedDrinkVariant, productPrice]);
 
+  const borderAddition = isPizza && selectedBorder ? (selectedBorder.price_addition ?? 0) : 0;
   const localPricePerUnit = flavorPrice + variantPriceAddition;
-  const pricePerUnit = isPizza && priceQuote ? priceQuote.final_price : localPricePerUnit;
+  const pricePerUnit = (isPizza && priceQuote ? priceQuote.final_price : localPricePerUnit) + borderAddition;
   const totalPrice = pricePerUnit * quantity;
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -374,8 +395,13 @@ export default function Product() {
       }));
     }
 
+    const crustAddition = selectedCrust ? normalizeCrustPriceAddition(selectedCrust.price_addition, productPrice) : 0;
     const crustVariation: CartItemVariation | null = selectedCrust
-      ? { id: selectedCrust.id, name: selectedCrust.name, priceAddition: normalizeCrustPriceAddition(selectedCrust.price_addition, productPrice) }
+      ? {
+          id: selectedCrust.id,
+          name: selectedBorder ? `${selectedCrust.name} + ${selectedBorder.name}` : selectedCrust.name,
+          priceAddition: crustAddition + borderAddition,
+        }
       : null;
 
     const drinkVariation: CartItemVariation | null = selectedDrinkVariant
@@ -412,7 +438,7 @@ export default function Product() {
       return canBePizzaFlavor && !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id);
     });
 
-  const canAddToCart = isDrink ? true : (allFilled && (productCrusts.length === 0 || selectedCrust !== null));
+  const canAddToCart = isDrink ? true : (allFilled && (regularCrusts.length === 0 || selectedCrust !== null));
 
   if (appLoading && !product) {
     return (
@@ -496,32 +522,74 @@ export default function Product() {
         </div>
 
         {/* ── Pizza: Tipo de Massa ─────────────────────────────────────────── */}
-        {isPizza && productCrusts.length > 0 && (
+        {isPizza && regularCrusts.length > 0 && (
           <div className="mb-6">
             <h3 className="text-cream font-bold mb-3">Tipo de Massa</h3>
             <div className="flex gap-2 flex-wrap">
-              {productCrusts.map((crust) => {
+              {regularCrusts.map((crust) => {
                 const effectiveAddition = normalizeCrustPriceAddition(crust.price_addition, product.price);
                 return (
-                <button
-                  key={crust.id}
-                  onClick={() => setSelectedCrust(crust)}
-                  className={`flex-1 min-w-[80px] py-3 px-2 rounded-xl text-sm font-bold transition-all ${
-                    selectedCrust?.id === crust.id
-                      ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
-                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
-                  }`}
-                >
-                  <span className="block font-black text-xs">{crust.name}</span>
-                  <span className={`block text-[10px] mt-0.5 ${selectedCrust?.id === crust.id ? "text-white/80" : effectiveAddition > 0 ? "text-amber-400" : "opacity-70"}`}>
-                    {formatCrustAddition(effectiveAddition)}
-                  </span>
-                </button>
+                  <button
+                    key={crust.id}
+                    onClick={() => setSelectedCrust(crust)}
+                    className={`flex-1 min-w-[80px] py-3 px-2 rounded-xl text-sm font-bold transition-all ${
+                      selectedCrust?.id === crust.id
+                        ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
+                        : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                    }`}
+                  >
+                    <span className="block font-black text-xs">{crust.name}</span>
+                    <span className={`block text-[10px] mt-0.5 ${selectedCrust?.id === crust.id ? "text-white/80" : effectiveAddition > 0 ? "text-amber-400" : "opacity-70"}`}>
+                      {formatCrustAddition(effectiveAddition)}
+                    </span>
+                  </button>
                 );
               })}
             </div>
             {selectedCrust && (
               <p className="text-amber-400 text-xs mt-2">Massa {selectedCrust.name} selecionada - {formatCrustAddition(variantPriceAddition)}</p>
+            )}
+          </div>
+        )}
+
+        {/* ── Pizza: Borda ─────────────────────────────────────────────────── */}
+        {isPizza && borderCrusts.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-cream font-bold mb-3">Borda</h3>
+            {borderAvailable ? (
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => setSelectedBorder(null)}
+                  className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+                    selectedBorder === null
+                      ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
+                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                  }`}
+                >
+                  <span>Sem borda</span>
+                  <span className={`text-[10px] font-normal ${selectedBorder === null ? "text-white/70" : "opacity-60"}`}>Sem adicional</span>
+                </button>
+                {borderCrusts.map((border) => (
+                  <button
+                    key={border.id}
+                    onClick={() => setSelectedBorder(border)}
+                    className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+                      selectedBorder?.id === border.id
+                        ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
+                        : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
+                    }`}
+                  >
+                    <span>{border.name}</span>
+                    <span className={`text-[10px] font-normal ${selectedBorder?.id === border.id ? "text-white/70" : "text-amber-400"}`}>
+                      {border.price_addition > 0 ? `+ R$ ${border.price_addition.toFixed(2)}` : "Sem adicional"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-stone text-sm bg-surface-02 rounded-xl px-4 py-3 border border-surface-03">
+                Borda disponível apenas com Massa Tradicional
+              </p>
             )}
           </div>
         )}
