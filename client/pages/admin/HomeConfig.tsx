@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { Home, Save, Loader2, Check, List, Tag, Package, Eye, EyeOff } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
-import { homeCatalogApi, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { categoriesApi, homeCatalogApi, isAssetUrl, resolveAssetUrl, type ApiProductCategory } from "@/lib/api";
+import { sortCategoryNamesByCatalogOrder } from "@/lib/catalogOrdering";
 import { useApp } from "@/context/AppContext";
 
 type CatalogMode = "all" | "categories" | "products";
@@ -18,12 +19,16 @@ export default function AdminHomeConfig() {
   const [showPromotions, setShowPromotions] = useState(true);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
 
   const PROMO_LABEL = "Promoções";
   const hasPromos = products.some(p => p.active && p.promotion_applied);
   const allCategories = [
     ...(hasPromos ? [PROMO_LABEL] : []),
-    ...[...new Set(products.filter(p => p.active && p.category).map(p => p.category as string))].sort(),
+    ...sortCategoryNamesByCatalogOrder(
+      [...new Set(products.filter(p => p.active && p.category).map(p => p.category as string))],
+      catalogCategories,
+    ),
   ];
 
   const activeProducts = products.filter(p => p.active);
@@ -38,6 +43,12 @@ export default function AdminHomeConfig() {
       })
       .catch(() => setError("Erro ao carregar configuração."))
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    categoriesApi.list(true)
+      .then(setCatalogCategories)
+      .catch(() => setCatalogCategories([]));
   }, []);
 
   const handleSave = async () => {

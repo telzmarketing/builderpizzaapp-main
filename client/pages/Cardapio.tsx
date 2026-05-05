@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, Search, Star, Plus, Check } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { categoriesApi, isAssetUrl, resolveAssetUrl, type ApiProductCategory } from "@/lib/api";
+import { sortCategoryNamesByCatalogOrder } from "@/lib/catalogOrdering";
 import { trackEvent } from "@/lib/tracking";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
@@ -15,11 +16,21 @@ export default function Cardapio() {
   const [activeCategory, setActiveCategory] = useState(ALL_LABEL);
   const [search, setSearch] = useState("");
   const [justAdded, setJustAdded] = useState<string | null>(null);
+  const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
+
+  useEffect(() => {
+    categoriesApi.list(true)
+      .then(setCatalogCategories)
+      .catch(() => setCatalogCategories([]));
+  }, []);
 
   // Categories derived from backend products (source of truth)
-  const productCats = [...new Set(
-    products.filter(p => p.active && (p.subcategory || p.category)).map(p => (p.subcategory || p.category) as string)
-  )].sort();
+  const productCats = useMemo(() => {
+    const categoryNames = [...new Set(
+      products.filter(p => p.active && (p.subcategory || p.category)).map(p => (p.subcategory || p.category) as string)
+    )];
+    return sortCategoryNamesByCatalogOrder(categoryNames, catalogCategories);
+  }, [products, catalogCategories]);
   const hasPromos = products.some(p => p.active && p.promotion_applied);
   const effectiveCategories = [ALL_LABEL, ...(hasPromos ? [PROMO_LABEL] : []), ...productCats];
 

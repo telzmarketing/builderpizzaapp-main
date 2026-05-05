@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat, Droplets, Gift } from "lucide-react";
+import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat, Droplets, Gift, Search, ChevronUp, ChevronDown } from "lucide-react";
 import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
@@ -103,6 +103,7 @@ type PTab = "produtos" | "brindes" | "categorias" | "config";
 export default function AdminProducts() {
   const { products, addProduct, updateProduct, deleteProduct, multiFlavorsConfig, updateMultiFlavorsConfig } = useApp();
   const [activeTab, setActiveTab] = useState<PTab>("produtos");
+  const [tabSearch, setTabSearch] = useState("");
   const [configSaved, setConfigSaved] = useState(false);
   const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -112,6 +113,7 @@ export default function AdminProducts() {
   const [editingCategoryName, setEditingCategoryName] = useState("");
   const [editingCategoryParentId, setEditingCategoryParentId] = useState("");
   const [editingCategoryActive, setEditingCategoryActive] = useState(true);
+  const [categoryReorderingId, setCategoryReorderingId] = useState<string | null>(null);
 
   const sortedCatalogCategories = [...catalogCategories].sort((a, b) => {
     if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
@@ -182,6 +184,29 @@ export default function AdminProducts() {
       setCatalogCategories((prev) => prev.filter((cat) => cat.id !== category.id));
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao remover categoria.");
+    }
+  };
+
+  const handleMoveCategory = async (category: ApiProductCategory, direction: -1 | 1) => {
+    const siblings = category.parent_id ? getSubcategoriesForCategory(category.parent_id) : parentCategories;
+    const currentIndex = siblings.findIndex((item) => item.id === category.id);
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= siblings.length) return;
+
+    const reordered = [...siblings];
+    [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
+    setCategoryReorderingId(category.id);
+    try {
+      const updatedCategories = await Promise.all(
+        reordered.map((item, index) => categoriesApi.update(item.id, { sort_order: index }))
+      );
+      setCatalogCategories((prev) =>
+        prev.map((item) => updatedCategories.find((updated) => updated.id === item.id) ?? item)
+      );
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao alterar ordem da categoria.");
+    } finally {
+      setCategoryReorderingId(null);
     }
   };
 
@@ -918,6 +943,48 @@ export default function AdminProducts() {
     { name: "Sem Açúcar", price_addition: "0" },
   ];
 
+  const searchTerm = tabSearch.trim().toLowerCase();
+  const searchDisabled = activeTab === "config";
+  const searchPlaceholder: Record<PTab, string> = {
+    produtos: "Pesquisar produtos...",
+    brindes: "Pesquisar brindes...",
+    categorias: "Pesquisar categorias...",
+    config: "Busca indisponivel nesta aba",
+  };
+  const matchesSearch = (...values: Array<string | number | boolean | null | undefined>) => {
+    if (!searchTerm) return true;
+    return values.some((value) => String(value ?? "").toLowerCase().includes(searchTerm));
+  };
+  const filteredProducts = products.filter((product) =>
+    matchesSearch(
+      product.name,
+      product.description,
+      (product as any).category,
+      (product as any).subcategory,
+      (product as any).product_type,
+      product.price,
+      product.rating,
+    )
+  );
+  const filteredBrindes = brindes.filter((brinde) =>
+    matchesSearch(
+      brinde.name,
+      brinde.description,
+      (brinde as any).active ? "ativo" : "inativo",
+    )
+  );
+  const categoryMatchesSearch = (category: ApiProductCategory) =>
+    matchesSearch(category.name, category.active ? "ativa" : "inativa");
+  const filteredParentCategories = parentCategories.filter((category) => {
+    if (categoryMatchesSearch(category)) return true;
+    return getSubcategoriesForCategory(category.id).some((subcategory) => categoryMatchesSearch(subcategory));
+  });
+  const getVisibleSubcategoriesForCategory = (category: ApiProductCategory) => {
+    const children = getSubcategoriesForCategory(category.id);
+    if (!searchTerm || categoryMatchesSearch(category)) return children;
+    return children.filter((subcategory) => categoryMatchesSearch(subcategory));
+  };
+
   const cls = "w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream placeholder-stone focus:outline-none focus:border-gold text-sm";
 
   return (
@@ -948,7 +1015,8 @@ export default function AdminProducts() {
 
           {/* Tabs */}
           <div className="px-8 pt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:flex-1">
+              <div className="flex flex-wrap gap-2">
             {([
               { key: "produtos", label: "Produtos" },
               { key: "brindes", label: "Brindes" },
@@ -961,6 +1029,28 @@ export default function AdminProducts() {
                 {label}
               </button>
             ))}
+              </div>
+              <div className="relative w-full lg:max-w-xs">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone" />
+                <input
+                  type="search"
+                  value={tabSearch}
+                  onChange={(event) => setTabSearch(event.target.value)}
+                  disabled={searchDisabled}
+                  placeholder={searchPlaceholder[activeTab]}
+                  className="w-full bg-surface-02 border border-surface-03 rounded-full py-2 pl-9 pr-9 text-sm text-cream placeholder-stone focus:outline-none focus:border-gold disabled:cursor-not-allowed disabled:opacity-60"
+                />
+                {tabSearch && !searchDisabled && (
+                  <button
+                    type="button"
+                    onClick={() => setTabSearch("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-stone hover:text-gold transition-colors"
+                    title="Limpar busca"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
             </div>
             {activeTab === "produtos" && (
               <button
@@ -1107,7 +1197,7 @@ export default function AdminProducts() {
                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {products.map((product) => {
+                  {filteredProducts.map((product) => {
                     const pType = (product as any).product_type as string | null | undefined;
                     const isPizza = !pType || pType === "pizza";
                     const isDrink = pType === "drink";
@@ -1209,12 +1299,16 @@ export default function AdminProducts() {
                   })}
                 </div>
 
-                {products.length === 0 && (
+                {filteredProducts.length === 0 && (
                   <div className="text-center py-12">
-                    <p className="text-stone text-lg">Nenhum produto cadastrado</p>
-                    <button onClick={() => setShowForm(true)} className="mt-4 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-6 rounded-lg transition-colors inline-flex items-center gap-2">
-                      <Plus size={20} /> Adicionar Primeiro Produto
-                    </button>
+                    <p className="text-stone text-lg">
+                      {products.length === 0 ? "Nenhum produto cadastrado" : "Nenhum produto encontrado para esta busca"}
+                    </p>
+                    {products.length === 0 && (
+                      <button onClick={() => setShowForm(true)} className="mt-4 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-6 rounded-lg transition-colors inline-flex items-center gap-2">
+                        <Plus size={20} /> Adicionar Primeiro Produto
+                      </button>
+                    )}
                   </div>
                 )}
               </>
@@ -1295,15 +1389,17 @@ export default function AdminProducts() {
                   <div className="flex justify-center py-12">
                     <Loader2 size={32} className="animate-spin text-gold" />
                   </div>
-                ) : brindes.length === 0 ? (
+                ) : filteredBrindes.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
                     <Gift size={48} className="text-stone mb-4" />
-                    <p className="text-parchment font-semibold">Nenhum brinde cadastrado</p>
-                    <p className="text-stone text-sm mt-1">Clique em "Novo Brinde" para começar.</p>
+                    <p className="text-parchment font-semibold">{brindes.length === 0 ? "Nenhum brinde cadastrado" : "Nenhum brinde encontrado para esta busca"}</p>
+                    {brindes.length === 0 && (
+                      <p className="text-stone text-sm mt-1">Clique em "Novo Brinde" para começar.</p>
+                    )}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {brindes.map((b) => (
+                    {filteredBrindes.map((b) => (
                       <div key={b.id} className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden flex flex-col">
                         <div className="h-36 bg-surface-03 flex items-center justify-center overflow-hidden">
                           {(b as any).icon && isAssetUrl((b as any).icon) ? (
@@ -1442,15 +1538,17 @@ export default function AdminProducts() {
                     </div>
                   )}
 
-                  {parentCategories.length === 0 ? (
+                  {filteredParentCategories.length === 0 ? (
                     <p className="text-stone text-sm text-center py-4">
-                      Nenhuma categoria cadastrada.
+                      {parentCategories.length === 0 ? "Nenhuma categoria cadastrada." : "Nenhuma categoria encontrada para esta busca."}
                     </p>
                   ) : (
                     <div className="space-y-3">
-                      {parentCategories.map((category) => {
-                        const children = getSubcategoriesForCategory(category.id);
+                      {filteredParentCategories.map((category) => {
+                        const children = getVisibleSubcategoriesForCategory(category);
                         const draftName = newSubcategoryNames[category.id] || "";
+                        const categoryIndex = parentCategories.findIndex((item) => item.id === category.id);
+                        const categoryIsReordering = categoryReorderingId === category.id;
 
                         return (
                           <div key={category.id} className="rounded-xl border border-surface-03 bg-surface-01 p-4 space-y-3">
@@ -1461,6 +1559,26 @@ export default function AdminProducts() {
                                 <p className="text-stone text-xs">
                                   {category.active ? "Categoria ativa" : "Categoria inativa"} - {children.length} subcategoria{children.length === 1 ? "" : "s"}
                                 </p>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveCategory(category, -1)}
+                                  disabled={categoryIsReordering || categoryIndex <= 0}
+                                  className="text-stone hover:text-gold transition-colors p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                                  title="Mover categoria para cima"
+                                >
+                                  <ChevronUp size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveCategory(category, 1)}
+                                  disabled={categoryIsReordering || categoryIndex < 0 || categoryIndex >= parentCategories.length - 1}
+                                  className="text-stone hover:text-gold transition-colors p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                                  title="Mover categoria para baixo"
+                                >
+                                  <ChevronDown size={14} />
+                                </button>
                               </div>
                               <button
                                 type="button"
@@ -1486,33 +1604,59 @@ export default function AdminProducts() {
                                   Nenhuma subcategoria criada para esta categoria.
                                 </p>
                               ) : (
-                                children.map((subcategory) => (
-                                  <div key={subcategory.id} className="flex items-center gap-2 rounded-lg bg-surface-03 px-3 py-2">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-gold/70 flex-shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-parchment text-sm font-semibold">{subcategory.name}</p>
-                                      <p className="text-stone text-xs">
-                                        {subcategory.active ? "Ativa para selecao no produto" : "Inativa"}
-                                      </p>
+                                children.map((subcategory) => {
+                                  const subcategorySiblings = getSubcategoriesForCategory(category.id);
+                                  const subcategoryIndex = subcategorySiblings.findIndex((item) => item.id === subcategory.id);
+                                  const subcategoryIsReordering = categoryReorderingId === subcategory.id;
+
+                                  return (
+                                    <div key={subcategory.id} className="flex items-center gap-2 rounded-lg bg-surface-03 px-3 py-2">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-gold/70 flex-shrink-0" />
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-parchment text-sm font-semibold">{subcategory.name}</p>
+                                        <p className="text-stone text-xs">
+                                          {subcategory.active ? "Ativa para selecao no produto" : "Inativa"}
+                                        </p>
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleMoveCategory(subcategory, -1)}
+                                          disabled={subcategoryIsReordering || subcategoryIndex <= 0}
+                                          className="text-stone hover:text-gold transition-colors p-1 disabled:opacity-30 disabled:cursor-not-allowed"
+                                          title="Mover subcategoria para cima"
+                                        >
+                                          <ChevronUp size={13} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleMoveCategory(subcategory, 1)}
+                                          disabled={subcategoryIsReordering || subcategoryIndex < 0 || subcategoryIndex >= subcategorySiblings.length - 1}
+                                          className="text-stone hover:text-gold transition-colors p-1 disabled:opacity-30 disabled:cursor-not-allowed"
+                                          title="Mover subcategoria para baixo"
+                                        >
+                                          <ChevronDown size={13} />
+                                        </button>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => startEditCategory(subcategory)}
+                                        className="text-stone hover:text-gold transition-colors p-1.5"
+                                        title="Editar subcategoria"
+                                      >
+                                        <Edit2 size={13} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteCategory(subcategory)}
+                                        className="text-stone hover:text-red-400 transition-colors p-1.5"
+                                        title="Remover subcategoria"
+                                      >
+                                        <X size={13} />
+                                      </button>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => startEditCategory(subcategory)}
-                                      className="text-stone hover:text-gold transition-colors p-1.5"
-                                      title="Editar subcategoria"
-                                    >
-                                      <Edit2 size={13} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteCategory(subcategory)}
-                                      className="text-stone hover:text-red-400 transition-colors p-1.5"
-                                      title="Remover subcategoria"
-                                    >
-                                      <X size={13} />
-                                    </button>
-                                  </div>
-                                ))
+                                  );
+                                })
                               )}
 
                               <div className="grid grid-cols-1 md:grid-cols-[1fr,auto] gap-2 pt-1">

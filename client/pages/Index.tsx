@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Menu, Search, Star, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, Tag, Heart, UtensilsCrossed } from "lucide-react";
 
 import { useApp } from "@/context/AppContext";
-import { homeCatalogApi, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { categoriesApi, homeCatalogApi, isAssetUrl, resolveAssetUrl, type ApiProductCategory } from "@/lib/api";
+import { sortCategoryNamesByCatalogOrder } from "@/lib/catalogOrdering";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import StoreStatusBanner from "@/components/StoreStatusBanner";
@@ -25,6 +26,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
+  const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
 
   // Home catalog config
   const [homeConfig, setHomeConfig] = useState<{
@@ -45,6 +47,12 @@ export default function Home() {
         });
       } catch { /* use defaults on parse error */ }
     }).catch(() => { /* use defaults if backend unavailable */ });
+  }, []);
+
+  useEffect(() => {
+    categoriesApi.list(true)
+      .then(setCatalogCategories)
+      .catch(() => setCatalogCategories([]));
   }, []);
 
   const todayDay = new Date().getDay(); // 0=Dom … 6=Sáb
@@ -92,9 +100,12 @@ export default function Home() {
   }, [products, homeConfig]);
 
   // Categories derived from catalogProducts (respect home config)
-  const productCats = [...new Set(
-    catalogProducts.filter(p => p.active && (p.subcategory || p.category)).map(p => (p.subcategory || p.category) as string)
-  )].sort();
+  const productCats = useMemo(() => {
+    const categoryNames = [...new Set(
+      catalogProducts.filter(p => p.active && (p.subcategory || p.category)).map(p => (p.subcategory || p.category) as string)
+    )];
+    return sortCategoryNamesByCatalogOrder(categoryNames, catalogCategories);
+  }, [catalogProducts, catalogCategories]);
   const hasPromos = catalogProducts.some(p => p.active && p.promotion_applied);
   const effectiveCategories = [ALL_LABEL, ...(hasPromos ? [PROMO_LABEL] : []), ...productCats];
 
