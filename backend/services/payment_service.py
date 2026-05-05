@@ -255,18 +255,24 @@ class PaymentService:
         method = _payment_method(form_data, payload.payment_method)
         _ensure_method_enabled(cfg, method)
 
-        if order.payment and order.payment.status == PaymentStatus.pending and order.payment.mercado_pago_payment_id:
-            same_attempt = (
-                order.payment.provider == "mercado_pago"
-                and order.payment.method == method
-                and abs(order.payment.amount - amount) <= 0.01
-            )
-            if same_attempt:
-                return PaymentOut.model_validate(order.payment)
-            raise DomainError(
-                "Este pedido ja possui um pagamento Mercado Pago em andamento. Aguarde a confirmacao ou crie um novo pedido.",
-                code="PaymentAlreadyInProgress",
-            )
+        if order.payment and order.payment.mercado_pago_payment_id:
+            if order.payment.status == PaymentStatus.approved:
+                raise DomainError(
+                    "Este pedido ja foi pago. Acesse o acompanhamento do pedido.",
+                    code="PaymentAlreadyApproved",
+                )
+            if order.payment.status == PaymentStatus.pending:
+                same_attempt = (
+                    order.payment.provider == "mercado_pago"
+                    and order.payment.method == method
+                    and abs(order.payment.amount - amount) <= 0.01
+                )
+                if same_attempt:
+                    return PaymentOut.model_validate(order.payment)
+                raise DomainError(
+                    "Este pedido ja possui um pagamento Mercado Pago em andamento. Aguarde a confirmacao ou crie um novo pedido.",
+                    code="PaymentAlreadyInProgress",
+                )
 
         if not order.external_reference:
             order.external_reference = f"order-{order.id}"
@@ -560,6 +566,14 @@ class PaymentService:
     def payment_status(self, order_id: str) -> dict:
         order = self._get_order(order_id)
         payment = order.payment
+        # Checkout is locked when a payment was submitted to MP and is still active (pending or approved).
+        # Rejected/cancelled/expired payments allow a retry, so they don't lock.
+        blocking_statuses = {PaymentStatus.pending, PaymentStatus.approved}
+        checkout_locked = bool(
+            payment
+            and payment.mercado_pago_payment_id
+            and payment.status in blocking_statuses
+        )
         return {
             "order_id": order.id,
             "pedido_status": order.status.value,
@@ -569,6 +583,8 @@ class PaymentService:
             "qr_code": payment.qr_code if payment else None,
             "qr_code_text": payment.qr_code_text if payment else None,
             "payment_url": payment.payment_url if payment else None,
+            "checkout_locked": checkout_locked,
+            "payment_method": payment.method.value if payment else None,
         }
 
 

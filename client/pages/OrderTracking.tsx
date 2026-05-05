@@ -7,6 +7,7 @@ import { ordersApi, paymentsApi, type ApiOrder, type ApiPayment, type OrderStatu
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 
 const PROGRESS_STEPS: OrderStatus[] = ["preparing", "on_the_way", "delivered"];
+const LOCKED_ORDER_KEY = "mo_locked_order_id";
 const WAITING_PAYMENT_STATUSES: OrderStatus[] = ["pending", "waiting_payment", "aguardando_pagamento"];
 
 function stepIndex(status: OrderStatus): number {
@@ -46,6 +47,17 @@ export default function OrderTracking() {
   }, [orderId]);
 
   useEffect(() => { fetchOrder(); }, [fetchOrder]);
+
+  useEffect(() => {
+    // Clear checkout lock when the user reaches this page so future /checkout visits work normally.
+    const lockedId = sessionStorage.getItem(LOCKED_ORDER_KEY);
+    if (lockedId && orderId && lockedId === orderId) {
+      const terminal: OrderStatus[] = ["delivered", "cancelled", "refunded", "pago", "paid"];
+      if (!order || terminal.includes(order.status as OrderStatus)) {
+        sessionStorage.removeItem(LOCKED_ORDER_KEY);
+      }
+    }
+  }, [order?.status, orderId]);
 
   useEffect(() => {
     const terminal: OrderStatus[] = ["delivered", "cancelled", "refunded"];

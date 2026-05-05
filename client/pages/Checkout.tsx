@@ -61,6 +61,9 @@ declare global {
   }
 }
 
+// sessionStorage key that persists the locked order across page refreshes and back-navigation
+const LOCKED_ORDER_KEY = "mo_locked_order_id";
+
 function statusClass(state: PaymentState): string {
   if (state === "approved") return "text-green-400";
   if (["rejected", "expired", "error"].includes(state)) return "text-red-400";
@@ -106,6 +109,34 @@ export default function Checkout() {
   const brickController = useRef<{ unmount: () => void } | null>(null);
   const mpInstanceRef = useRef<{ bricks: () => { create: (type: string, containerId: string, settings: Record<string, unknown>) => Promise<{ unmount: () => void }> } } | null>(null);
   const paymentMethodsRef = useRef<ApiPaymentMethods | null>(null);
+
+  // Guard: if a payment was already initiated for a previous session, redirect to order tracking immediately.
+  useEffect(() => {
+    const lockedId = sessionStorage.getItem(LOCKED_ORDER_KEY);
+    if (!lockedId) return;
+    let cancelled = false;
+    ordersApi.paymentStatus(lockedId).then((status) => {
+      if (cancelled) return;
+      if (status.checkout_locked) {
+        navigate(`/order-tracking?orderId=${lockedId}`, { replace: true });
+      } else {
+        sessionStorage.removeItem(LOCKED_ORDER_KEY);
+      }
+    }).catch(() => { if (!cancelled) sessionStorage.removeItem(LOCKED_ORDER_KEY); });
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Intercept browser back-button once an order has been created and payment initiated.
+  useEffect(() => {
+    if (!createdOrder) return;
+    // Push an extra history entry so the first "back" press lands here and we can intercept it.
+    window.history.pushState({ moCheckoutLocked: true }, "");
+    const handlePop = () => {
+      navigate(`/order-tracking?orderId=${createdOrder.id}`, { replace: true });
+    };
+    window.addEventListener("popstate", handlePop);
+    return () => window.removeEventListener("popstate", handlePop);
+  }, [createdOrder?.id, navigate]);
 
   const savedAddresses = checkoutAddresses ?? customer?.addresses ?? [];
   const savedAddressSignature = savedAddresses
@@ -356,6 +387,7 @@ export default function Checkout() {
     const id = setInterval(async () => {
       if (Date.now() > deadline) {
         clearInterval(id);
+        sessionStorage.removeItem(LOCKED_ORDER_KEY);
         setPaymentState("expired");
         setPaymentMessage("Tempo de pagamento esgotado. Tente novamente.");
         return;
@@ -388,13 +420,16 @@ export default function Checkout() {
             session_id: _tdPaid.session_id,
           }).catch(() => {});
           clearCart();
+          sessionStorage.removeItem(LOCKED_ORDER_KEY);
           clearInterval(id);
           setTimeout(() => navigate(`/order-tracking?orderId=${createdOrder.id}`), 1200);
         } else if (status.payment_status === "rejected" || status.pedido_status === "pagamento_recusado") {
+          sessionStorage.removeItem(LOCKED_ORDER_KEY);
           setPaymentState("rejected");
           setPaymentMessage("Pagamento recusado. Tente novamente com outro metodo.");
           clearInterval(id);
         } else if (["cancelled", "expired"].includes(status.payment_status) || status.pedido_status === "pagamento_expirado") {
+          sessionStorage.removeItem(LOCKED_ORDER_KEY);
           setPaymentState("expired");
           setPaymentMessage("Pagamento expirado ou cancelado. Tente novamente.");
           clearInterval(id);
@@ -547,6 +582,7 @@ export default function Checkout() {
         session_id: _td.session_id,
       }).catch(() => {});
       setCreatedOrder(order);
+      sessionStorage.setItem(LOCKED_ORDER_KEY, order.id);
       setPayment(null);
       if (selectedPaymentMethod === "pix") {
         setPaymentState("loading");

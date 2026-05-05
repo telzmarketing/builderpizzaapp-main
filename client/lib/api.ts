@@ -743,6 +743,8 @@ export interface ApiPaymentStatus {
   qr_code?: string | null;
   qr_code_text?: string | null;
   payment_url?: string | null;
+  checkout_locked: boolean;
+  payment_method: string | null;
 }
 
 export interface ApiPaymentMethods {
