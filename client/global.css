@@ -12,10 +12,6 @@
 }
 
 @layer base {
-  html {
-    font-size: 115%;
-  }
-
   /**
    * Tailwind CSS theme - Dark Mode for Pizza Delivery App
    * tailwind.config.ts expects the following color variables to be expressed as HSL values.
