@@ -2,14 +2,17 @@ import { useEffect, useState, useRef } from "react";
 import {
   Loader2, Plus, Pencil, Trash2, X, Tag, CheckCircle,
   XCircle, Clock, RefreshCw, BarChart2, List, Truck, Gift,
+  Zap,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
-import { productsApi, type ApiProduct } from "@/lib/api";
-
-const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const unwrap = (j: any) => j?.data ?? j;
+import {
+  couponsApi,
+  marketingAutomationsApi,
+  productsApi,
+  type ApiMarketingAutomation,
+  type ApiProduct,
+} from "@/lib/api";
 
 type Tab = "cupons" | "uso";
 
@@ -34,6 +37,7 @@ interface Coupon {
   stackable?: boolean;
   active: boolean;
   campaign_id?: string;
+  trigger_automation_id?: string | null;
   created_at: string;
 }
 
@@ -54,6 +58,7 @@ type CouponForm = {
   gift_product_id: string;
   gift_quantity: number;
   stackable: boolean;
+  trigger_automation_id: string;
   active: boolean;
 };
 
@@ -85,6 +90,7 @@ const emptyForm = (): CouponForm => ({
   gift_product_id: "",
   gift_quantity: 1,
   stackable: false,
+  trigger_automation_id: "",
   active: true,
 });
 
@@ -113,14 +119,17 @@ function isExpired(c: Coupon) {
   return new Date(c.expiry_date) < new Date();
 }
 
+function automationLabel(a: ApiMarketingAutomation) {
+  const trigger = a.trigger_value ? `${a.trigger} (${a.trigger_value})` : a.trigger;
+  return `${a.name} - ${trigger}`;
+}
+
 export default function MarketingCupons() {
   const [tab, setTab] = useState<Tab>("cupons");
-  const token = localStorage.getItem("admin_token");
-  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-
   // ── Cupons ──
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [products, setProducts] = useState<ApiProduct[]>([]);
+  const [automations, setAutomations] = useState<ApiMarketingAutomation[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "inactive" | "expired">("all");
@@ -139,18 +148,16 @@ export default function MarketingCupons() {
   // ── Fetchers ──
   const fetchCoupons = () => {
     setLoading(true); setError("");
-    fetch(`${BASE}/coupons`, { headers })
-      .then(r => r.json())
-      .then(d => setCoupons(Array.isArray(d) ? d : (unwrap(d) ?? [])))
+    couponsApi.list()
+      .then(d => setCoupons(d ?? []))
       .catch(() => setError("Falha ao carregar cupons."))
       .finally(() => setLoading(false));
   };
 
   const fetchUsage = () => {
     setUsageLoading(true);
-    fetch(`${BASE}/coupons/usage`, { headers })
-      .then(r => r.json())
-      .then(d => setUsage(Array.isArray(d) ? d : (unwrap(d) ?? [])))
+    couponsApi.listUsage()
+      .then(d => setUsage(d ?? []))
       .catch(() => setUsage([]))
       .finally(() => setUsageLoading(false));
   };
@@ -164,6 +171,9 @@ export default function MarketingCupons() {
     productsApi.list(false)
       .then(setProducts)
       .catch(() => setProducts([]));
+    marketingAutomationsApi.list()
+      .then(setAutomations)
+      .catch(() => setAutomations([]));
   }, []);
 
   useEffect(() => {
@@ -209,6 +219,7 @@ export default function MarketingCupons() {
       gift_product_id: c.gift_product_id ?? "",
       gift_quantity: c.gift_quantity || 1,
       stackable: !!c.stackable,
+      trigger_automation_id: c.trigger_automation_id ?? "",
       active: c.active,
     });
     setShowModal(true);
@@ -240,16 +251,14 @@ export default function MarketingCupons() {
         gift_product_id: form.gift_enabled && form.gift_product_id ? form.gift_product_id : null,
         gift_quantity: Math.max(1, Number(form.gift_quantity) || 1),
         stackable: form.stackable,
+        trigger_automation_id: form.trigger_automation_id || null,
         active: form.active,
       };
 
-      const url = editingId ? `${BASE}/coupons/${editingId}` : `${BASE}/coupons`;
-      const method = editingId ? "PUT" : "POST";
-      const r = await fetch(url, { method, headers, body: JSON.stringify(payload) });
-
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error(err?.detail ?? "Erro ao salvar cupom.");
+      if (editingId) {
+        await couponsApi.update(editingId, payload);
+      } else {
+        await couponsApi.create(payload);
       }
       setShowModal(false);
       fetchCoupons();
@@ -261,16 +270,13 @@ export default function MarketingCupons() {
   };
 
   const toggleActive = async (c: Coupon) => {
-    await fetch(`${BASE}/coupons/${c.id}`, {
-      method: "PUT", headers,
-      body: JSON.stringify({ active: !c.active }),
-    });
+    await couponsApi.update(c.id, { active: !c.active });
     fetchCoupons();
   };
 
   const deleteCoupon = async (id: string) => {
     if (!confirm("Excluir este cupom?")) return;
-    await fetch(`${BASE}/coupons/${id}`, { method: "DELETE", headers });
+    await couponsApi.remove(id);
     fetchCoupons();
   };
 
@@ -287,6 +293,7 @@ export default function MarketingCupons() {
   ];
 
   const activeProducts = products.filter(p => p.active);
+  const automationById = new Map(automations.map(a => [a.id, a]));
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-surface-00 overflow-hidden">
@@ -375,6 +382,7 @@ export default function MarketingCupons() {
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filtered.map(c => {
                   const expired = isExpired(c);
+                  const triggerAutomation = c.trigger_automation_id ? automationById.get(c.trigger_automation_id) : null;
                   return (
                     <div key={c.id}
                       className={`bg-surface-02 border rounded-2xl p-4 space-y-3 flex flex-col transition-opacity ${
@@ -419,6 +427,15 @@ export default function MarketingCupons() {
                           {c.stackable && (
                             <span className="rounded-full bg-surface-03 px-2 py-0.5 text-xs text-stone">Combinavel</span>
                           )}
+                        </div>
+                      )}
+
+                      {c.trigger_automation_id && (
+                        <div className="inline-flex max-w-full items-center gap-1 rounded-full bg-purple-500/15 px-2 py-1 text-xs text-purple-300">
+                          <Zap size={11} />
+                          <span className="truncate">
+                            {triggerAutomation ? automationLabel(triggerAutomation) : "Gatilho vinculado"}
+                          </span>
                         </div>
                       )}
 
@@ -628,6 +645,18 @@ export default function MarketingCupons() {
                     onChange={e => setForm(f => ({ ...f, ends_at: e.target.value }))}
                     className={IC} />
                 </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-stone">Gatilho de cliente</label>
+                <select value={form.trigger_automation_id}
+                  onChange={e => setForm(f => ({ ...f, trigger_automation_id: e.target.value }))}
+                  className={IC}>
+                  <option value="">Sem gatilho</option>
+                  {automations.map(a => (
+                    <option key={a.id} value={a.id}>{automationLabel(a)}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="rounded-xl border border-surface-03 bg-surface-03/30 p-4 space-y-3">

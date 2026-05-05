@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
@@ -14,6 +15,17 @@ from backend.schemas.coupon import (
 from backend.services.coupon_service import CouponService
 
 router = APIRouter(prefix="/coupons", tags=["coupons"])
+
+
+def _validate_trigger_automation(trigger_automation_id: str | None, db: Session) -> None:
+    if not trigger_automation_id:
+        return
+    exists = db.execute(
+        text("SELECT 1 FROM marketing_automations WHERE id = :id"),
+        {"id": trigger_automation_id},
+    ).scalar()
+    if not exists:
+        raise HTTPException(400, "Gatilho selecionado nao encontrado.")
 
 
 @router.get("", response_model=list[CouponOut])
@@ -31,6 +43,7 @@ def list_public_coupons(db: Session = Depends(get_db)):
         .filter((Coupon.ends_at.is_(None)) | (Coupon.ends_at >= now))
         .filter((Coupon.expiry_date.is_(None)) | (Coupon.expiry_date >= now))
         .filter((Coupon.max_uses.is_(None)) | (Coupon.used_count < Coupon.max_uses))
+        .filter(Coupon.trigger_automation_id.is_(None))
         .order_by(Coupon.created_at.desc())
         .all()
     )
@@ -59,7 +72,10 @@ def create_coupon(body: CouponCreate, db: Session = Depends(get_db), _=Depends(g
     existing = db.query(Coupon).filter(Coupon.code == body.code.upper()).first()
     if existing:
         raise HTTPException(400, f"Código '{body.code}' já existe.")
-    coupon = Coupon(id=str(uuid.uuid4()), **{**body.model_dump(), "code": body.code.upper()})
+    data = body.model_dump()
+    data["trigger_automation_id"] = data.get("trigger_automation_id") or None
+    _validate_trigger_automation(data["trigger_automation_id"], db)
+    coupon = Coupon(id=str(uuid.uuid4()), **{**data, "code": body.code.upper()})
     db.add(coupon)
     db.commit()
     db.refresh(coupon)
@@ -77,6 +93,9 @@ def update_coupon(coupon_id: str, body: CouponUpdate, db: Session = Depends(get_
         existing = db.query(Coupon).filter(Coupon.code == data["code"], Coupon.id != coupon_id).first()
         if existing:
             raise HTTPException(400, f"Código '{data['code']}' já existe.")
+    if "trigger_automation_id" in data:
+        data["trigger_automation_id"] = data.get("trigger_automation_id") or None
+        _validate_trigger_automation(data["trigger_automation_id"], db)
     for key, value in data.items():
         setattr(coupon, key, value)
     db.commit()

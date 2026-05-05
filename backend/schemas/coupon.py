@@ -22,6 +22,7 @@ class CouponCreate(BaseModel):
     gift_quantity: int = Field(default=1, ge=1)
     stackable: bool = False
     campaign_id: Optional[str] = None
+    trigger_automation_id: Optional[str] = None
     active: bool = True
 
     @field_validator("coupon_type", mode="before")
@@ -52,6 +53,7 @@ class CouponUpdate(BaseModel):
     gift_quantity: Optional[int] = Field(default=None, ge=1)
     stackable: Optional[bool] = None
     campaign_id: Optional[str] = None
+    trigger_automation_id: Optional[str] = None
     active: Optional[bool] = None
 
     @field_validator("coupon_type", mode="before")
@@ -85,6 +87,7 @@ class CouponOut(BaseModel):
     stackable: bool = False
     active: bool
     campaign_id: Optional[str]
+    trigger_automation_id: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

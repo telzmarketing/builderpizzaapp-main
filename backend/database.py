@@ -34,4 +34,5 @@ def create_all_tables():
         chatbot, theme, home_config, paid_traffic, product_promotion, store_operation,
         customer_event, rbac, crm, business_intelligence,
     )
+    from backend.routes import automations as automations_routes  # noqa: F401
     Base.metadata.create_all(bind=engine)

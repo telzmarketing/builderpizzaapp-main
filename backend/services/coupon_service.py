@@ -4,8 +4,10 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from backend.models.coupon import Coupon, CouponType, CouponUsage
+from backend.models.customer import Customer
 from backend.models.product import Product
 from backend.schemas.coupon import CouponApplyIn, CouponApplyOut, CouponGiftOut
+from backend.services.automation_service import customer_matches_automation_trigger
 
 
 class CouponService:
@@ -33,6 +35,10 @@ class CouponService:
 
         if coupon.max_uses is not None and coupon.used_count >= coupon.max_uses:
             return CouponApplyOut(valid=False, discount_amount=0, message="Cupom esgotado.")
+
+        trigger_result = self._validate_trigger_eligibility(coupon, payload)
+        if trigger_result is not None:
+            return trigger_result
 
         if payload.order_subtotal < coupon.min_order_value:
             return CouponApplyOut(
@@ -106,6 +112,36 @@ class CouponService:
             coupon_id=coupon.id,
             coupon_code=coupon.code,
         )
+
+    def _validate_trigger_eligibility(self, coupon: Coupon, payload: CouponApplyIn) -> CouponApplyOut | None:
+        if not coupon.trigger_automation_id:
+            return None
+
+        customer_id = self._resolve_customer_id(payload)
+        if not customer_id:
+            return CouponApplyOut(
+                valid=False,
+                discount_amount=0,
+                message="Este cupom exige cliente identificado para validar o gatilho.",
+            )
+
+        if customer_matches_automation_trigger(self._db, coupon.trigger_automation_id, customer_id):
+            return None
+
+        return CouponApplyOut(
+            valid=False,
+            discount_amount=0,
+            message="Este cupom esta disponivel apenas para clientes elegiveis pelo gatilho configurado.",
+        )
+
+    def _resolve_customer_id(self, payload: CouponApplyIn) -> str | None:
+        if payload.customer_id:
+            return payload.customer_id
+        phone = (payload.phone or "").strip()
+        if not phone:
+            return None
+        customer = self._db.query(Customer).filter(Customer.phone == phone).first()
+        return customer.id if customer else None
 
     @staticmethod
     def _financial_discount(coupon: Coupon, subtotal: float) -> float:

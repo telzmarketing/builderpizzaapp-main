@@ -33,6 +33,7 @@ class Coupon(Base):
     stackable = Column(Boolean, default=False)
     active = Column(Boolean, default=True)
     campaign_id = Column(String, ForeignKey("campaigns.id"), nullable=True)
+    trigger_automation_id = Column(String, ForeignKey("marketing_automations.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     orders = relationship("Order", back_populates="coupon")

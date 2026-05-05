@@ -438,6 +438,8 @@ def _run_migrations():
         "ALTER TABLE marketing_automations ADD COLUMN IF NOT EXISTS last_evaluated_at TIMESTAMPTZ",
         "ALTER TABLE marketing_automations ADD COLUMN IF NOT EXISTS created_by VARCHAR(200)",
         "ALTER TABLE marketing_automations ADD COLUMN IF NOT EXISTS updated_by VARCHAR(200)",
+        "ALTER TABLE coupons ADD COLUMN IF NOT EXISTS trigger_automation_id VARCHAR REFERENCES marketing_automations(id) ON DELETE SET NULL",
+        "CREATE INDEX IF NOT EXISTS ix_coupons_trigger_automation_id ON coupons(trigger_automation_id)",
         "CREATE INDEX IF NOT EXISTS ix_marketing_automations_next_run_at ON marketing_automations(next_run_at)",
         "CREATE INDEX IF NOT EXISTS ix_marketing_automations_priority ON marketing_automations(priority)",
         "CREATE TABLE IF NOT EXISTS automation_conditions (id VARCHAR PRIMARY KEY, automation_id VARCHAR NOT NULL REFERENCES marketing_automations(id) ON DELETE CASCADE, condition_type VARCHAR(50) NOT NULL, field VARCHAR(100) NOT NULL, operator VARCHAR(40) NOT NULL, value_json TEXT NOT NULL DEFAULT '{}', sort_order INTEGER NOT NULL DEFAULT 0, active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",

@@ -38,6 +38,40 @@ const isCatupiryCrust = (name?: string | null) =>
 const productHasCatupiryCrust = (product: Pizza) =>
   (((product as any).crust_types ?? []) as ApiProductCrustType[]).some((crust) => crust.active && isCatupiryCrust(crust.name));
 
+const PIZZA_ICON = "\u{1F355}";
+const DRINK_ICON = "\u{1F964}";
+const OTHER_ICON = "\u{1F354}";
+
+const getTypeIcon = (type: string | null | undefined) => {
+  if (type === "drink") return DRINK_ICON;
+  if (type === "other") return OTHER_ICON;
+  return PIZZA_ICON;
+};
+
+const isBrokenIconValue = (value?: string | null) => {
+  const trimmed = (value || "").trim();
+  return !trimmed || trimmed.includes("ðŸ") || trimmed.includes("�");
+};
+
+function ProductIconPreview({ icon, name, type }: { icon?: string | null; name: string; type?: string | null }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const cleanIcon = (icon || "").trim();
+  const canRenderImage = cleanIcon && !isBrokenIconValue(cleanIcon) && isAssetUrl(cleanIcon) && !imageFailed;
+
+  if (canRenderImage) {
+    return (
+      <img
+        src={resolveAssetUrl(cleanIcon)}
+        alt={name}
+        className="w-full h-full object-contain"
+        onError={() => setImageFailed(true)}
+      />
+    );
+  }
+
+  return <span className="text-3xl">{isBrokenIconValue(cleanIcon) ? getTypeIcon(type) : cleanIcon}</span>;
+}
+
 type PromotionFormState = {
   name: string;
   active: boolean;
@@ -189,7 +223,7 @@ export default function AdminProducts() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<Pizza> & { product_type?: string }>({
-    name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5, product_type: "pizza",
+    name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza",
   });
 
   const selectedCategoryId = activeCatalogCategories.find((cat) => cat.name === ((formData as any).category || ""))?.id ?? "";
@@ -223,14 +257,14 @@ export default function AdminProducts() {
       } else {
         await addProduct({
           name: formData.name!, description: formData.description!,
-          price, icon: formData.icon || "🍕",
+          price, icon: formData.icon || PIZZA_ICON,
           category: category || null,
           subcategory: subcategory || null,
           product_type: formData.product_type || "pizza",
           rating: formData.rating || 4.5, active: true,
         } as any);
       }
-      setFormData({ name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5, product_type: "pizza" });
+      setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza" });
       setShowForm(false);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao salvar produto.");
@@ -793,12 +827,6 @@ export default function AdminProducts() {
 
   const cls = "w-full bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 text-cream placeholder-stone focus:outline-none focus:border-gold text-sm";
 
-  const getTypeIcon = (type: string | null | undefined) => {
-    if (type === "drink") return "🥤";
-    if (type === "other") return "🍔";
-    return "🍕";
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-00 to-surface-00">
       <div className="flex flex-col md:flex-row min-h-screen md:h-screen">
@@ -814,7 +842,7 @@ export default function AdminProducts() {
             <div className="flex items-center gap-3">
               {activeTab === "produtos" && (
                 <button
-                  onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: "🍕", category: "", rating: 4.5, product_type: "pizza" }); }}
+                  onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza" }); }}
                   className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
                 >
                   <Plus size={20} />
@@ -842,7 +870,7 @@ export default function AdminProducts() {
             </div>
             {activeTab === "produtos" && (
               <button
-                onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: "ðŸ•", category: "", rating: 4.5, product_type: "pizza" }); }}
+                onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza" }); }}
                 className="flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
               >
                 <Plus size={20} />
@@ -984,11 +1012,7 @@ export default function AdminProducts() {
                       <div key={product.id} className="bg-surface-02 rounded-xl p-6 border border-surface-03">
                         <div className="flex items-start gap-3 mb-3">
                           <div className="w-14 h-14 rounded-xl bg-surface-03 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                            {isAssetUrl(product.icon) ? (
-                              <img src={resolveAssetUrl(product.icon)} alt={product.name} className="w-full h-full object-contain" />
-                            ) : (
-                              <span className="text-3xl">{product.icon || getTypeIcon(pType)}</span>
-                            )}
+                            <ProductIconPreview icon={product.icon} name={product.name} type={pType} />
                           </div>
                           <div className="flex-1 min-w-0">
                             <h3 className="text-lg font-bold text-cream leading-tight">{product.name}</h3>

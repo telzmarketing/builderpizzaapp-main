@@ -307,6 +307,7 @@ export interface ApiCoupon {
   stackable: boolean;
   active: boolean;
   campaign_id: string | null;
+  trigger_automation_id: string | null;
   created_at: string;
 }
 
@@ -328,6 +329,7 @@ export interface ApiCouponInput {
   gift_quantity?: number;
   stackable?: boolean;
   campaign_id?: string | null;
+  trigger_automation_id?: string | null;
   active?: boolean;
 }
 

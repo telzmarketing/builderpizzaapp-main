@@ -8,10 +8,10 @@ import AdminTopActions from "@/components/admin/AdminTopActions";
 import ImageUpload from "@/components/admin/ImageUpload";
 import MediaUpload from "@/components/admin/MediaUpload";
 import {
-  campaignsApi, productsApi, couponsApi,
+  campaignsApi, productsApi, couponsApi, marketingAutomationsApi,
   isAssetUrl, resolveAssetUrl,
   type ApiCampaign, type ApiCampaignProduct, type ApiPromotionalKit,
-  type ApiProduct, type ApiCoupon, type ApiCouponUsage,
+  type ApiProduct, type ApiCoupon, type ApiCouponUsage, type ApiMarketingAutomation,
   type CampaignStatus, type CampaignType, type CpDiscountType, type KitType,
 } from "@/lib/api";
 
@@ -70,6 +70,11 @@ const STATUS_COLOR: Record<CampaignStatus, string> = {
   ended: "bg-red-500/20 text-red-400 border-red-500/30",
 };
 
+function automationLabel(a: ApiMarketingAutomation) {
+  const trigger = a.trigger_value ? `${a.trigger} (${a.trigger_value})` : a.trigger;
+  return `${a.name} - ${trigger}`;
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 type Tab = "cupons" | "campanhas" | "kits" | "uso_cupons";
@@ -87,6 +92,7 @@ interface CouponForm {
   gift_product_id: string;
   gift_quantity: number;
   stackable: boolean;
+  trigger_automation_id: string;
   active: boolean;
 }
 
@@ -113,7 +119,7 @@ const emptyCouponForm: CouponForm = {
   coupon_type: "percentage", discount_value: 10, min_order_value: 0,
   max_uses: "", max_uses_per_customer: "", starts_at: "", ends_at: "", expiry_date: "",
   free_shipping: false, gift_enabled: false, gift_product_id: "", gift_quantity: 1,
-  stackable: false, active: true,
+  stackable: false, trigger_automation_id: "", active: true,
 };
 
 const WEEK_DAYS = [
@@ -149,6 +155,7 @@ export default function AdminCampanhas() {
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [usage, setUsage] = useState<ApiCouponUsage[]>([]);
   const [couponsList, setCouponsList] = useState<ApiCoupon[]>([]);
+  const [automations, setAutomations] = useState<ApiMarketingAutomation[]>([]);
   const [loadingData, setLoadingData] = useState(true);
 
   // ── Coupon modal ───────────────────────────────────────────────────────────
@@ -187,18 +194,20 @@ export default function AdminCampanhas() {
 
   const loadAll = useCallback(async () => {
     setLoadingData(true);
-    const [c, k, p, u, cps] = await Promise.allSettled([
+    const [c, k, p, u, cps, autos] = await Promise.allSettled([
       campaignsApi.list(),
       campaignsApi.listKits(),
       productsApi.list(false),
       couponsApi.listUsage(),
       couponsApi.list(),
+      marketingAutomationsApi.list(),
     ]);
     if (c.status === "fulfilled") setCampaigns(c.value);
     if (k.status === "fulfilled") setKits(k.value);
     if (p.status === "fulfilled") setProducts(p.value);
     if (u.status === "fulfilled") setUsage(u.value);
     if (cps.status === "fulfilled") setCouponsList(cps.value);
+    if (autos.status === "fulfilled") setAutomations(autos.value);
     setLoadingData(false);
   }, []);
 
@@ -228,6 +237,7 @@ export default function AdminCampanhas() {
       gift_product_id: c.gift_product_id ?? "",
       gift_quantity: c.gift_quantity || 1,
       stackable: !!c.stackable,
+      trigger_automation_id: c.trigger_automation_id ?? "",
       active: c.active,
     });
     setShowCouponModal(true);
@@ -256,6 +266,7 @@ export default function AdminCampanhas() {
         gift_product_id: couponForm.gift_enabled && couponForm.gift_product_id ? couponForm.gift_product_id : null,
         gift_quantity: Math.max(1, couponForm.gift_quantity || 1),
         stackable: couponForm.stackable,
+        trigger_automation_id: couponForm.trigger_automation_id || null,
         active: couponForm.active,
       };
       if (editingCouponId) {
@@ -900,6 +911,13 @@ export default function AdminCampanhas() {
             </div>
 
             <Inp label="Data de validade" type="datetime-local" value={couponForm.expiry_date} onChange={(e) => setCouponForm({ ...couponForm, expiry_date: e.target.value })} />
+
+            <Sel label="Gatilho de cliente" value={couponForm.trigger_automation_id} onChange={(e) => setCouponForm({ ...couponForm, trigger_automation_id: e.target.value })}>
+              <option value="">Sem gatilho</option>
+              {automations.map((automation) => (
+                <option key={automation.id} value={automation.id}>{automationLabel(automation)}</option>
+              ))}
+            </Sel>
 
             <div className="rounded-xl border border-surface-03 bg-surface-02/70 p-4 space-y-3">
               <p className="text-gold text-[10px] font-bold uppercase tracking-widest">Benefícios compostos</p>

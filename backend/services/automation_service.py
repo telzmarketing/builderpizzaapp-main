@@ -329,6 +329,11 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
     return [_row_dict(row) for row in rows]
 
 
+def customer_matches_automation_trigger(db: Session, automation_id: str, customer_id: str) -> bool:
+    automation = load_automation(db, automation_id)
+    return any(customer.get("id") == customer_id for customer in get_eligible_customers(db, automation))
+
+
 def resolve_message(db: Session, automation: dict[str, Any]) -> tuple[str | None, str]:
     channel = automation["channel"]
     subject = "Mensagem da Pizzaria"
