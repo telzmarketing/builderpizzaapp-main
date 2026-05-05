@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { ChevronLeft, Loader2, ShoppingBag } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { ordersApi, type ApiOrder } from "@/lib/api";
+import { isAssetUrl, ordersApi, resolveAssetUrl, type ApiOrder } from "@/lib/api";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
@@ -102,14 +102,20 @@ export default function Pedidos() {
                 <div className="px-4 py-3 space-y-2">
                   {order.items.map((item) => {
                     const isMulti = item.flavor_division > 1;
-                    const displayIcons = item.flavors.map((f) => f.icon).join("");
+                    const imageIcon = item.flavors.map((f) => f.icon).find((icon) => isAssetUrl(icon)) ?? "";
+                    const displayIcons = item.flavors.map((f) => f.icon).filter((icon) => !isAssetUrl(icon)).join("");
                     const displayName = isMulti
                       ? item.flavors.map((f) => f.name).join(" + ")
                       : item.product_name;
+                    const hasImage = isAssetUrl(imageIcon);
                     return (
                       <div key={item.id} className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-surface-03 flex items-center justify-center text-sm flex-shrink-0">
-                          {displayIcons || "🍕"}
+                        <div className="w-9 h-9 rounded-full bg-surface-03 flex items-center justify-center text-sm flex-shrink-0 overflow-hidden">
+                          {hasImage ? (
+                            <img src={resolveAssetUrl(imageIcon)} alt={displayName} className="w-full h-full object-cover" />
+                          ) : (
+                            <span>{displayIcons || "🍕"}</span>
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-cream text-sm truncate">{displayName}</p>

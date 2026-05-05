@@ -248,6 +248,7 @@ export function printOrder(order: ApiOrder, template?: PrintTemplate): void {
 
 export const SAMPLE_ORDER: ApiOrder = {
   id: "abc12345-0000-0000-0000-000000000000",
+  order_code: null,
   customer_id: null,
   delivery_name: "João Silva",
   delivery_phone: "(11) 99999-9999",
