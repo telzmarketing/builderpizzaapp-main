@@ -47,6 +47,30 @@ type DeliveryMode = "delivery" | "pickup";
 type SelectedPaymentMethod = "pix" | "card";
 type PaymentState = "idle" | "loading" | "pending" | "approved" | "rejected" | "expired" | "error";
 
+declare global {
+  interface Window {
+    MercadoPago?: new (publicKey: string, options?: Record<string, unknown>) => {
+      createCardToken: (data: Record<string, string>) => Promise<{ id: string }>;
+      getPaymentMethods: (data: { bin: string }) => Promise<{ results: Array<{ id: string; payment_type_id: string }> }>;
+    };
+  }
+}
+
+function formatCardNumber(v: string) {
+  return v.replace(/\D/g, "").slice(0, 16).replace(/(.{4})/g, "$1 ").trim();
+}
+function formatExpiry(v: string) {
+  const d = v.replace(/\D/g, "").slice(0, 4);
+  return d.length >= 3 ? `${d.slice(0, 2)}/${d.slice(2)}` : d;
+}
+function formatCpf(v: string) {
+  const d = v.replace(/\D/g, "").slice(0, 11);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
+  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+}
+
 // sessionStorage key that persists the locked order across page refreshes and back-navigation
 const LOCKED_ORDER_KEY = "mo_locked_order_id";
 
@@ -92,7 +116,13 @@ export default function Checkout() {
   const [storeStatus, setStoreStatus] = useState<StoreOperationStatus | null>(null);
   const [scheduledFor, setScheduledFor] = useState("");
   const [checkoutAddresses, setCheckoutAddresses] = useState<ApiAddress[] | null>(null);
-  const [cardInitPoint, setCardInitPoint] = useState<string | null>(null);
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardName, setCardName] = useState("");
+  const [cardExpiry, setCardExpiry] = useState("");
+  const [cardCvv, setCardCvv] = useState("");
+  const [cardCpf, setCardCpf] = useState("");
+  const [cardSubmitting, setCardSubmitting] = useState(false);
+  const [cardError, setCardError] = useState("");
   const paymentMethodsRef = useRef<ApiPaymentMethods | null>(null);
 
   // Guard: if a payment was already initiated for a previous session, redirect to order tracking immediately.
@@ -473,23 +503,79 @@ export default function Checkout() {
             : "PIX criado. Aguardando retorno do QR Code do Mercado Pago.",
         );
       } else {
-        setPaymentState("loading");
-        setPaymentMessage("Preparando checkout de cartao...");
-        try {
-          const pref = await paymentsApi.createPreference(order.id);
-          setCardInitPoint(pref.init_point);
-          setPaymentState("pending");
-          setPaymentMessage("Clique no botao abaixo para pagar com cartao.");
-        } catch {
-          setPaymentState("error");
-          setPaymentMessage("Nao foi possivel iniciar o pagamento com cartao. Tente usar PIX.");
-        }
+        setPaymentState("pending");
+        setPaymentMessage("Preencha os dados do cartao para concluir.");
       }
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
     } catch (err) {
       setApiError(err instanceof Error ? err.message : "Erro ao criar pedido. Tente novamente.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCardPay = async () => {
+    if (!createdOrder) return;
+    setCardError("");
+    setCardSubmitting(true);
+    try {
+      if (!window.MercadoPago) {
+        await new Promise<void>((resolve, reject) => {
+          const existing = document.querySelector<HTMLScriptElement>("script[src='https://sdk.mercadopago.com/js/v2']");
+          if (existing) { existing.addEventListener("load", () => resolve(), { once: true }); return; }
+          const s = document.createElement("script");
+          s.src = "https://sdk.mercadopago.com/js/v2";
+          s.onload = () => resolve();
+          s.onerror = () => reject(new Error("SDK Mercado Pago indisponivel."));
+          document.head.appendChild(s);
+        });
+      }
+      const { public_key: publicKey } = await paymentsApi.publicKey();
+      if (!publicKey) throw new Error("Chave publica nao configurada.");
+      if (!window.MercadoPago) throw new Error("SDK nao carregado.");
+
+      const mp = new window.MercadoPago(publicKey, { locale: "pt-BR" });
+
+      const bin = cardNumber.replace(/\s/g, "").slice(0, 6);
+      let paymentMethodId = "credit_card";
+      try {
+        const methods = await mp.getPaymentMethods({ bin });
+        if (methods.results?.[0]) paymentMethodId = methods.results[0].id;
+      } catch { /* fallback */ }
+
+      const [expMonth, expYearShort] = cardExpiry.split("/");
+      const expYear = (expYearShort?.length === 2) ? `20${expYearShort}` : expYearShort;
+
+      const token = await mp.createCardToken({
+        cardNumber: cardNumber.replace(/\s/g, ""),
+        cardholderName: cardName.trim(),
+        cardExpirationMonth: expMonth,
+        cardExpirationYear: expYear,
+        securityCode: cardCvv,
+        identificationType: "CPF",
+        identificationNumber: cardCpf.replace(/\D/g, ""),
+      });
+
+      const cpfDigits = cardCpf.replace(/\D/g, "");
+      const createdPayment = await paymentsApi.createFromBrick(createdOrder.id, {
+        token: token.id,
+        payment_method_id: paymentMethodId,
+        installments: 1,
+        transaction_amount: createdOrder.total,
+        payer: {
+          email: `cliente.${createdOrder.id.slice(0, 8)}@delivery.moschettieri.com.br`,
+          ...(cpfDigits ? { identification: { type: "CPF", number: cpfDigits } } : {}),
+        },
+      });
+
+      setPayment(createdPayment);
+      setPaymentState("pending");
+      setPaymentMessage("Pagamento enviado. Aguardando confirmacao do banco.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      setCardError(msg || "Erro ao processar cartao. Verifique os dados e tente novamente.");
+    } finally {
+      setCardSubmitting(false);
     }
   };
 
@@ -802,20 +888,66 @@ export default function Checkout() {
                 )}
               </div>
             ) : (
-              cardInitPoint && paymentState !== "approved" && (
+              paymentState !== "approved" && (
                 <div className="space-y-3">
-                  <a
-                    href={cardInitPoint}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold py-4 transition-colors"
+                  <div className="flex flex-col gap-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="Numero do cartao"
+                      value={cardNumber}
+                      onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
+                      maxLength={19}
+                      className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm tracking-widest"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Nome no cartao (como no cartao)"
+                      value={cardName}
+                      onChange={(e) => setCardName(e.target.value.toUpperCase())}
+                      className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm uppercase"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Validade MM/AA"
+                        value={cardExpiry}
+                        onChange={(e) => setCardExpiry(formatExpiry(e.target.value))}
+                        maxLength={5}
+                        className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
+                      />
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="CVV"
+                        value={cardCvv}
+                        onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                        maxLength={4}
+                        className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="CPF do titular (opcional)"
+                      value={cardCpf}
+                      onChange={(e) => setCardCpf(formatCpf(e.target.value))}
+                      maxLength={14}
+                      className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
+                    />
+                  </div>
+                  {cardError && <p className="text-red-400 text-xs ml-1">{cardError}</p>}
+                  <button
+                    onClick={handleCardPay}
+                    disabled={cardSubmitting || !cardNumber || !cardName || !cardExpiry || !cardCvv}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold hover:bg-gold/90 active:scale-95 text-cream font-bold py-4 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <CreditCard size={20} />
-                    Pagar com cartao no Mercado Pago
-                  </a>
-                  <p className="text-center text-stone text-xs leading-relaxed">
-                    Abrira o checkout seguro do Mercado Pago em nova aba.<br />
-                    Esta pagina atualizara automaticamente apos o pagamento.
+                    {cardSubmitting ? <Loader2 size={20} className="animate-spin" /> : <CreditCard size={20} />}
+                    {cardSubmitting ? "Processando..." : "Pagar com cartao"}
+                  </button>
+                  <p className="text-center text-stone text-xs">
+                    Pagamento seguro via Mercado Pago. Seus dados de cartao nao sao armazenados.
                   </p>
                 </div>
               )
