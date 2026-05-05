@@ -292,7 +292,7 @@ export default function MarketingCupons() {
     { id: "expired" as const,  label: "Expirados" },
   ];
 
-  const activeProducts = products.filter(p => p.active);
+  const brindesDisponiveis = products.filter(p => (p as any).product_type === "brinde" && p.active);
   const automationById = new Map(automations.map(a => [a.id, a]));
 
   return (
@@ -685,12 +685,15 @@ export default function MarketingCupons() {
                 {form.gift_enabled && (
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-2 space-y-1">
-                      <label className="text-xs text-stone">Produto brinde *</label>
+                      <label className="text-xs text-stone">Brinde *</label>
                       <select value={form.gift_product_id}
                         onChange={e => setForm(f => ({ ...f, gift_product_id: e.target.value }))}
                         className={IC}>
-                        <option value="">Selecione</option>
-                        {activeProducts.map(p => (
+                        <option value="">Selecione um brinde</option>
+                        {brindesDisponiveis.length === 0 && (
+                          <option disabled value="">Nenhum brinde cadastrado</option>
+                        )}
+                        {brindesDisponiveis.map(p => (
                           <option key={p.id} value={p.id}>{p.name}</option>
                         ))}
                       </select>

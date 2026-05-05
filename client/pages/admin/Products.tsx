@@ -1,10 +1,10 @@
 import { useState, useCallback, useEffect } from "react";
-import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat, Droplets } from "lucide-react";
+import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat, Droplets, Gift } from "lucide-react";
 import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import ImageUpload from "@/components/admin/ImageUpload";
-import { sizesApi, crustApi, drinkVariantApi, categoriesApi, productPromotionsApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, ApiProductPromotion, ApiProductPromotionCombination, ProductPromotionDiscountType, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { productsApi, sizesApi, crustApi, drinkVariantApi, categoriesApi, productPromotionsApi, ApiProduct, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, ApiProductPromotion, ApiProductPromotionCombination, ProductPromotionDiscountType, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { pizzaSizeDescription, pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { normalizeCrustPriceAddition } from "@/lib/pricing";
 
@@ -98,7 +98,7 @@ const emptyPromotionForm = (): PromotionFormState => ({
   timezone: "America/Sao_Paulo",
 });
 
-type PTab = "produtos" | "categorias" | "config";
+type PTab = "produtos" | "brindes" | "categorias" | "config";
 
 export default function AdminProducts() {
   const { products, addProduct, updateProduct, deleteProduct, multiFlavorsConfig, updateMultiFlavorsConfig } = useApp();
@@ -216,6 +216,90 @@ export default function AdminProducts() {
       alert(err instanceof Error ? err.message : "Erro ao atualizar categoria.");
     } finally {
       setCategorySaving(false);
+    }
+  };
+
+  // ── Brindes CRUD ─────────────────────────────────────────────────────────────
+  const [brindes, setBrindes] = useState<ApiProduct[]>([]);
+  const [brindesLoading, setBrindesLoading] = useState(false);
+  const [showBrindeForm, setShowBrindeForm] = useState(false);
+  const [editingBrindeId, setEditingBrindeId] = useState<string | null>(null);
+  const [brindeForm, setBrindeForm] = useState({ name: "", description: "", icon: "🎁", active: true });
+  const [brindeSaving, setBrindeSaving] = useState(false);
+
+  const loadBrindes = useCallback(async () => {
+    setBrindesLoading(true);
+    try {
+      const all = await productsApi.list(false);
+      setBrindes(all.filter((p) => (p as any).product_type === "brinde"));
+    } catch {
+      setBrindes([]);
+    } finally {
+      setBrindesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "brindes") loadBrindes();
+  }, [activeTab, loadBrindes]);
+
+  const openNewBrindeForm = () => {
+    setEditingBrindeId(null);
+    setBrindeForm({ name: "", description: "", icon: "🎁", active: true });
+    setShowBrindeForm(true);
+  };
+
+  const openEditBrindeForm = (b: ApiProduct) => {
+    setEditingBrindeId(b.id);
+    setBrindeForm({ name: b.name, description: b.description, icon: (b as any).icon || "🎁", active: (b as any).active ?? true });
+    setShowBrindeForm(true);
+  };
+
+  const handleBrindeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!brindeForm.name.trim() || !brindeForm.description.trim()) {
+      alert("Preencha nome e descrição do brinde.");
+      return;
+    }
+    setBrindeSaving(true);
+    try {
+      if (editingBrindeId) {
+        const updated = await productsApi.update(editingBrindeId, {
+          name: brindeForm.name.trim(),
+          description: brindeForm.description.trim(),
+          icon: brindeForm.icon,
+          active: brindeForm.active,
+        } as any);
+        setBrindes((prev) => prev.map((b) => b.id === editingBrindeId ? updated : b));
+      } else {
+        const created = await productsApi.create({
+          name: brindeForm.name.trim(),
+          description: brindeForm.description.trim(),
+          icon: brindeForm.icon,
+          price: 0,
+          product_type: "brinde",
+          rating: 5.0,
+          active: brindeForm.active,
+        } as any);
+        setBrindes((prev) => [...prev, created]);
+      }
+      setShowBrindeForm(false);
+      setEditingBrindeId(null);
+      setBrindeForm({ name: "", description: "", icon: "🎁", active: true });
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao salvar brinde.");
+    } finally {
+      setBrindeSaving(false);
+    }
+  };
+
+  const handleDeleteBrinde = async (b: ApiProduct) => {
+    if (!confirm(`Remover o brinde "${b.name}"?`)) return;
+    try {
+      await productsApi.remove(b.id);
+      setBrindes((prev) => prev.filter((x) => x.id !== b.id));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao remover brinde.");
     }
   };
 
@@ -858,6 +942,7 @@ export default function AdminProducts() {
             <div className="flex flex-wrap gap-2">
             {([
               { key: "produtos", label: "Produtos" },
+              { key: "brindes", label: "Brindes" },
               { key: "categorias", label: "Categorias" },
               { key: "config", label: "Configurações" },
             ] as { key: PTab; label: string }[]).map(({ key, label }) => (
@@ -875,6 +960,15 @@ export default function AdminProducts() {
               >
                 <Plus size={20} />
                 Novo Produto
+              </button>
+            )}
+            {activeTab === "brindes" && (
+              <button
+                onClick={openNewBrindeForm}
+                className="flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
+              >
+                <Plus size={20} />
+                Novo Brinde
               </button>
             )}
           </div>
@@ -1115,6 +1209,132 @@ export default function AdminProducts() {
                   </div>
                 )}
               </>
+            )}
+
+            {/* ── TAB: BRINDES ── */}
+            {activeTab === "brindes" && (
+              <div className="space-y-6">
+                {showBrindeForm && (
+                  <div className="bg-surface-02 rounded-xl p-6 border border-surface-03">
+                    <h3 className="text-xl font-bold text-cream mb-4">
+                      {editingBrindeId ? "Editar Brinde" : "Novo Brinde"}
+                    </h3>
+                    <form onSubmit={handleBrindeSubmit} className="space-y-4">
+                      <div>
+                        <label className="block text-parchment text-sm font-medium mb-2">Nome do Brinde *</label>
+                        <input
+                          type="text"
+                          value={brindeForm.name}
+                          onChange={(e) => setBrindeForm((f) => ({ ...f, name: e.target.value }))}
+                          className={cls}
+                          placeholder="Ex: Refrigerante Lata, Sobremesa..."
+                          maxLength={200}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-parchment text-sm font-medium mb-2">Descrição *</label>
+                        <textarea
+                          value={brindeForm.description}
+                          onChange={(e) => setBrindeForm((f) => ({ ...f, description: e.target.value }))}
+                          className={`${cls} resize-none`}
+                          placeholder="Descreva o brinde..."
+                          rows={3}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-parchment text-sm font-medium mb-2">Foto do Brinde</label>
+                        <ImageUpload
+                          value={brindeForm.icon}
+                          onChange={(url) => setBrindeForm((f) => ({ ...f, icon: url }))}
+                          rounded={false}
+                        />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setBrindeForm((f) => ({ ...f, active: !f.active }))}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${brindeForm.active ? "bg-gold" : "bg-surface-03"}`}
+                        >
+                          <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${brindeForm.active ? "translate-x-6" : "translate-x-1"}`} />
+                        </button>
+                        <span className="text-parchment text-sm">{brindeForm.active ? "Ativo" : "Inativo"}</span>
+                      </div>
+                      <div className="flex gap-3 pt-2">
+                        <button
+                          type="submit"
+                          disabled={brindeSaving}
+                          className="flex items-center gap-2 bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold py-2 px-6 rounded-lg transition-colors"
+                        >
+                          {brindeSaving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                          {editingBrindeId ? "Salvar" : "Criar Brinde"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setShowBrindeForm(false); setEditingBrindeId(null); }}
+                          className="flex items-center gap-2 bg-surface-03 hover:bg-surface-03/80 text-parchment font-bold py-2 px-6 rounded-lg transition-colors"
+                        >
+                          <X size={16} /> Cancelar
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {brindesLoading ? (
+                  <div className="flex justify-center py-12">
+                    <Loader2 size={32} className="animate-spin text-gold" />
+                  </div>
+                ) : brindes.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <Gift size={48} className="text-stone mb-4" />
+                    <p className="text-parchment font-semibold">Nenhum brinde cadastrado</p>
+                    <p className="text-stone text-sm mt-1">Clique em "Novo Brinde" para começar.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {brindes.map((b) => (
+                      <div key={b.id} className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden flex flex-col">
+                        <div className="h-36 bg-surface-03 flex items-center justify-center overflow-hidden">
+                          {(b as any).icon && isAssetUrl((b as any).icon) ? (
+                            <img
+                              src={resolveAssetUrl((b as any).icon)}
+                              alt={b.name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span className="text-5xl">{(b as any).icon || "🎁"}</span>
+                          )}
+                        </div>
+                        <div className="p-4 flex flex-col gap-2 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-cream font-bold truncate">{b.name}</p>
+                              <p className="text-stone text-xs mt-0.5 line-clamp-2">{b.description}</p>
+                            </div>
+                            <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${(b as any).active ? "bg-green-500/15 text-green-400" : "bg-stone/15 text-stone"}`}>
+                              {(b as any).active ? "Ativo" : "Inativo"}
+                            </span>
+                          </div>
+                          <div className="flex gap-2 mt-auto pt-2">
+                            <button
+                              onClick={() => openEditBrindeForm(b)}
+                              className="flex-1 flex items-center justify-center gap-1.5 bg-surface-03 hover:bg-surface-03/70 text-parchment text-sm py-1.5 rounded-lg transition-colors"
+                            >
+                              <Edit2 size={14} /> Editar
+                            </button>
+                            <button
+                              onClick={() => handleDeleteBrinde(b)}
+                              className="flex items-center justify-center gap-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
 
             {/* ── TAB: CATEGORIAS ── */}

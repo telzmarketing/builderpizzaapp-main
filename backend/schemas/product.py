@@ -41,7 +41,7 @@ class ProductSizeCreate(BaseModel):
 class ProductSizeUpdate(BaseModel):
     label: Optional[str] = None
     description: Optional[str] = None
-    price: Optional[float] = Field(default=None, gt=0)
+    price: Optional[float] = Field(default=None, ge=0)
     is_default: Optional[bool] = None
     sort_order: Optional[int] = None
     active: Optional[bool] = None
@@ -119,11 +119,11 @@ class ProductDrinkVariantOut(BaseModel):
 class ProductBase(BaseModel):
     name: str
     description: str
-    price: float = Field(gt=0)
+    price: float = Field(ge=0)
     icon: str = "🍕"
     category: Optional[str] = None
     subcategory: Optional[str] = None
-    product_type: Optional[str] = None  # "pizza" | "drink" | "other"
+    product_type: Optional[str] = None  # "pizza" | "drink" | "other" | "brinde"
     rating: float = Field(default=4.5, ge=1.0, le=5.0)
     active: bool = True
 
@@ -135,7 +135,7 @@ class ProductCreate(ProductBase):
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    price: Optional[float] = Field(default=None, gt=0)
+    price: Optional[float] = Field(default=None, ge=0)
     icon: Optional[str] = None
     category: Optional[str] = None
     subcategory: Optional[str] = None
