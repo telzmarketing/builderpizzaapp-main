@@ -77,29 +77,17 @@ def get_payment(order_id: str, request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/preference/{order_id}", status_code=201)
-def create_preference(order_id: str, request: Request, db: Session = Depends(get_db)):
-    try:
-        order = db.query(Order).filter(Order.id == order_id).first()
-        if order:
-            require_order_or_admin(
-                order,
-                db,
-                request.headers.get("authorization"),
-                request.headers.get("x-customer-phone"),
-                request.headers.get("x-customer-email"),
-            )
-        result = PaymentService(db).create_preference(order_id)
-        return created(result, "Preferencia de pagamento criada.")
-    except DomainError as exc:
-        return err(exc)
+def create_preference(order_id: str):
+    return err_msg(
+        "Checkout Pro desativado. Atualize a pagina para pagar com cartao no formulario seguro.",
+        code="CheckoutProDisabled",
+        status_code=410,
+    )
 
 
 @router.get("/checkout/{order_id}")
-def open_card_checkout(order_id: str, db: Session = Depends(get_db)):
-    try:
-        return RedirectResponse(PaymentService(db).card_checkout_url(order_id), status_code=303)
-    except DomainError as exc:
-        return err(exc)
+def open_card_checkout(order_id: str):
+    return RedirectResponse(f"/order-tracking?orderId={order_id}", status_code=303)
 
 
 @router.post("/cash/{order_id}")

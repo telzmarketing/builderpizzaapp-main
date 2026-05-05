@@ -196,18 +196,10 @@ export default function OrderTracking() {
               </div>
             )}
 
-            {payment?.method === "credit_card" && payment.payment_url && (
-              <div className="space-y-3">
-                <p className="text-stone text-sm">
-                  Seu pagamento está aguardando confirmação. Abra o checkout do gateway para concluir.
-                </p>
-                <a
-                  href={paymentsApi.checkoutUrl(payment.order_id)}
-                  className="block w-full bg-gold hover:bg-gold/90 text-cream font-bold py-3 px-4 rounded-full transition-colors text-sm text-center"
-                >
-                  Abrir checkout de cartão
-                </a>
-              </div>
+            {payment?.method === "credit_card" && (
+              <p className="text-stone text-sm">
+                Seu pagamento de cartao esta aguardando confirmacao. Se ainda nao preencheu os dados, refaca o checkout.
+              </p>
             )}
           </div>
         )}
