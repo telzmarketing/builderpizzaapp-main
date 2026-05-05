@@ -366,6 +366,15 @@ export default function AdminProducts() {
     setShowForm(true);
   };
 
+  const handleDeleteProduct = async (product: Pizza) => {
+    if (!confirm(`Remover "${product.name}" do catalogo?`)) return;
+    try {
+      await deleteProduct(product.id);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao remover produto do catalogo.");
+    }
+  };
+
   const handleConfigSave = async () => {
     try {
       await updateMultiFlavorsConfig(multiFlavorsConfig);
@@ -1144,7 +1153,7 @@ export default function AdminProducts() {
                             <Edit2 size={16} />
                             Editar
                           </button>
-                          <button onClick={() => deleteProduct(product.id)} className="flex items-center justify-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 font-medium py-2 px-3 rounded-lg transition-colors">
+                          <button onClick={() => handleDeleteProduct(product)} className="flex items-center justify-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 font-medium py-2 px-3 rounded-lg transition-colors">
                             <Trash2 size={16} />
                           </button>
                         </div>

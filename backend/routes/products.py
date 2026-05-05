@@ -1,5 +1,6 @@
 import json
 import uuid
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -348,7 +349,8 @@ def delete_product(product_id: str, db: Session = Depends(get_db), _=Depends(get
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
-    db.delete(product)
+    product.active = False
+    product.updated_at = datetime.now(timezone.utc)
     db.commit()
 
 
