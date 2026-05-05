@@ -719,7 +719,22 @@ class PaymentService:
         return {
             "preference_id": response.get("id"),
             "init_point": init_point,
+            "checkout_url": f"/payments/checkout/{order.id}",
         }
+
+    def card_checkout_url(self, order_id: str) -> str:
+        payment = self._get_payment_by_order(order_id)
+        if payment.method not in {PaymentMethod.credit_card, PaymentMethod.debit_card} or not payment.payment_url:
+            raise DomainError(
+                "Checkout de cartao nao encontrado para este pedido.",
+                code="CardCheckoutNotFound",
+            )
+        if payment.status not in {PaymentStatus.pending, PaymentStatus.approved}:
+            raise DomainError(
+                "Este pagamento de cartao nao esta mais disponivel. Inicie um novo pedido.",
+                code="CardCheckoutUnavailable",
+            )
+        return payment.payment_url
 
     def confirm_cash(self, order_id: str) -> PaymentOut:
         if not self._cfg().accept_cash:

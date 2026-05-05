@@ -477,8 +477,8 @@ export default function Checkout() {
         setPaymentState("loading");
         setPaymentMessage("Preparando checkout de cartão...");
         try {
-          const pref = await paymentsApi.createPreference(order.id);
-          setCardInitPoint(pref.init_point);
+          await paymentsApi.createPreference(order.id);
+          setCardInitPoint(paymentsApi.checkoutUrl(order.id));
           setPaymentState("pending");
           setPaymentMessage("Clique no botão abaixo para pagar com cartão.");
         } catch {
@@ -807,16 +807,14 @@ export default function Checkout() {
                 <div className="space-y-3">
                   <a
                     href={cardInitPoint}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold py-4 transition-colors"
                   >
                     <CreditCard size={20} />
-                    Pagar com cartão no Mercado Pago
+                    Abrir checkout de cartão
                   </a>
                   <p className="text-center text-stone text-xs leading-relaxed">
-                    Abrirá o checkout seguro do Mercado Pago em nova aba.<br />
-                    Esta página atualizará automaticamente após o pagamento.
+                    O pagamento abre no checkout seguro pelo navegador.<br />
+                    Voce voltara para acompanhar o pedido apos finalizar.
                   </p>
                 </div>
               )

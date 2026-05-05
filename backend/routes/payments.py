@@ -4,6 +4,7 @@ Payment endpoints shared by loja online and ERP.
 All business logic lives in PaymentService.
 """
 from fastapi import APIRouter, Depends, Header, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
@@ -89,6 +90,14 @@ def create_preference(order_id: str, request: Request, db: Session = Depends(get
             )
         result = PaymentService(db).create_preference(order_id)
         return created(result, "Preferencia de pagamento criada.")
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.get("/checkout/{order_id}")
+def open_card_checkout(order_id: str, db: Session = Depends(get_db)):
+    try:
+        return RedirectResponse(PaymentService(db).card_checkout_url(order_id), status_code=303)
     except DomainError as exc:
         return err(exc)
 

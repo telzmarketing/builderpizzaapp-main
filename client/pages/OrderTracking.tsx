@@ -202,12 +202,10 @@ export default function OrderTracking() {
                   Seu pagamento está aguardando confirmação. Abra o checkout do gateway para concluir.
                 </p>
                 <a
-                  href={payment.payment_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={paymentsApi.checkoutUrl(payment.order_id)}
                   className="block w-full bg-gold hover:bg-gold/90 text-cream font-bold py-3 px-4 rounded-full transition-colors text-sm text-center"
                 >
-                  Abrir pagamento
+                  Abrir checkout de cartão
                 </a>
               </div>
             )}
