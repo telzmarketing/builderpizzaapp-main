@@ -6,7 +6,7 @@ import {
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import { ordersApi, deliveryApi, type ApiOrder, type OrderStatus, type DeliveryPerson } from "@/lib/api";
-import { printOrder } from "@/lib/printing";
+import { printOrder, type PrintTemplate } from "@/lib/printing";
 import OrderTimer from "@/components/OrderTimer";
 import { playOrderAlert, loadSoundType } from "@/lib/orderSound";
 
@@ -454,7 +454,7 @@ export default function AdminOrders() {
                                   if (next) handleStatusChange(order.id, next);
                                 }}
                                 onAssignMotoboy={() => openAssignModal(order)}
-                                onPrint={() => printOrder(order)}
+                                onPrint={(tpl) => printOrder(order, tpl)}
                                 onDragStart={() => handleDragStart(order.id)}
                                 onDragEnd={handleDragEnd}
                               />
@@ -550,12 +550,13 @@ interface OrderCardProps {
   updating: boolean;
   onAdvance: () => void;
   onAssignMotoboy?: () => void;
-  onPrint: () => void;
+  onPrint: (template: PrintTemplate) => void;
   onDragStart: () => void;
   onDragEnd: () => void;
 }
 
 function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDragStart, onDragEnd }: OrderCardProps) {
+  const [printMenuOpen, setPrintMenuOpen] = useState(false);
   const isReadyForPickup = order.status === "ready_for_pickup";
   const isWaitingPayment = WAITING_PAYMENT_STATUSES.has(order.status);
   const nextLabel = isReadyForPickup || isWaitingPayment ? null : NEXT_LABEL[order.status];
@@ -678,14 +679,39 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
           </button>
         )}
 
-        {/* Print */}
-        <button
-          onClick={onPrint}
-          title="Imprimir pedido"
-          className="flex items-center justify-center rounded-lg bg-surface-02 hover:bg-surface-03 text-parchment p-2 transition-colors"
-        >
-          <Printer size={14} />
-        </button>
+        {/* Print dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setPrintMenuOpen((v) => !v)}
+            title="Imprimir pedido"
+            className="flex items-center justify-center rounded-lg bg-surface-02 hover:bg-surface-03 text-parchment p-2 transition-colors"
+          >
+            <Printer size={14} />
+          </button>
+          {printMenuOpen && (
+            <div
+              className="absolute bottom-full right-0 mb-1 w-40 rounded-xl border border-surface-03 bg-surface-02 shadow-lg z-50 overflow-hidden"
+              onMouseLeave={() => setPrintMenuOpen(false)}
+            >
+              {(
+                [
+                  { tpl: "completo" as PrintTemplate, label: "Completo" },
+                  { tpl: "cozinha" as PrintTemplate, label: "Cozinha" },
+                  { tpl: "entrega" as PrintTemplate, label: "Entrega" },
+                ] as { tpl: PrintTemplate; label: string }[]
+              ).map(({ tpl, label }) => (
+                <button
+                  key={tpl}
+                  onClick={() => { onPrint(tpl); setPrintMenuOpen(false); }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-parchment hover:bg-surface-03 transition-colors"
+                >
+                  <Printer size={12} className="text-stone flex-shrink-0" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </article>
   );

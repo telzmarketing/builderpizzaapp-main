@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { ChevronLeft, Loader2, ShoppingBag } from "lucide-react";
+import { ChevronLeft, Loader2, ShoppingBag, Star } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { isAssetUrl, ordersApi, resolveAssetUrl, type ApiOrder } from "@/lib/api";
+import { deliveryApi, isAssetUrl, ordersApi, resolveAssetUrl, type ApiOrder } from "@/lib/api";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
@@ -19,10 +19,100 @@ const statusStyle: Record<string, string> = {
   refunded: "bg-slate-500/20 text-stone",
 };
 
+// ── Rating widget ──────────────────────────────────────────────────────────────
+
+interface RatingWidgetProps {
+  orderId: string;
+  deliveryId: string;
+  existingRating?: number;
+}
+
+function RatingWidget({ orderId: _orderId, deliveryId, existingRating }: RatingWidgetProps) {
+  const [hovered, setHovered] = useState(0);
+  const [selected, setSelected] = useState(existingRating ?? 0);
+  const [comment, setComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(!!existingRating);
+
+  if (submitted) {
+    return (
+      <div className="px-4 py-3 bg-green-500/10 border-t border-green-500/20 text-center">
+        <p className="text-green-400 text-xs font-semibold">Avaliação enviada. Obrigado!</p>
+        <div className="flex justify-center gap-0.5 mt-1">
+          {[1, 2, 3, 4, 5].map((s) => (
+            <Star
+              key={s}
+              size={14}
+              className={s <= selected ? "text-gold fill-gold" : "text-stone"}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const handleSubmit = async () => {
+    if (!selected) return;
+    setSubmitting(true);
+    try {
+      await deliveryApi.rateDelivery(deliveryId, selected, comment.trim() || undefined);
+      setSubmitted(true);
+    } catch {
+      // silently ignore — rating is optional
+      setSubmitted(true);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="px-4 py-3 border-t border-surface-03 bg-surface-01/60">
+      <p className="text-parchment text-xs font-bold mb-2">Avalie seu pedido e entrega</p>
+      <div className="flex gap-1 mb-2">
+        {[1, 2, 3, 4, 5].map((s) => (
+          <button
+            key={s}
+            onMouseEnter={() => setHovered(s)}
+            onMouseLeave={() => setHovered(0)}
+            onClick={() => setSelected(s)}
+            className="transition-transform hover:scale-110 active:scale-95"
+          >
+            <Star
+              size={22}
+              className={
+                s <= (hovered || selected)
+                  ? "text-gold fill-gold"
+                  : "text-stone/40"
+              }
+            />
+          </button>
+        ))}
+      </div>
+      <textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="Deixe um comentário (opcional)..."
+        rows={2}
+        className="w-full bg-surface-03 text-parchment text-xs rounded-lg px-3 py-2 resize-none placeholder:text-stone/50 focus:outline-none focus:ring-1 focus:ring-gold/40 mb-2"
+      />
+      <button
+        disabled={!selected || submitting}
+        onClick={handleSubmit}
+        className="w-full bg-gold hover:bg-gold/90 disabled:opacity-40 text-cream text-xs font-bold py-2 rounded-full transition-colors flex items-center justify-center gap-1.5"
+      >
+        {submitting && <Loader2 size={12} className="animate-spin" />}
+        {submitting ? "Enviando..." : "Enviar Avaliação"}
+      </button>
+    </div>
+  );
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────────
+
 export default function Pedidos() {
   const navigate = useNavigate();
   const { siteContent, customer } = useApp();
-  const { pages, nav } = siteContent;
+  const { pages } = siteContent;
   const c = pages.pedidos;
   const statusLabels = pages.tracking.statusLabels;
 
@@ -145,6 +235,15 @@ export default function Pedidos() {
                     Ver detalhes
                   </button>
                 </div>
+
+                {/* Post-sale rating — only for delivered orders with a delivery */}
+                {order.status === "delivered" && order.delivery?.id && (
+                  <RatingWidget
+                    orderId={order.id}
+                    deliveryId={order.delivery.id}
+                    existingRating={order.delivery.rating}
+                  />
+                )}
               </div>
             ))}
           </div>

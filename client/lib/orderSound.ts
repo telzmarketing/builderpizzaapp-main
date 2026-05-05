@@ -9,8 +9,8 @@ export interface SoundOption {
 export const SOUND_OPTIONS: SoundOption[] = [
   {
     id: "classic",
-    label: "Alerta Operacional",
-    description: "Três bipes agudos seguidos de voz \"Novo pedido!\" — padrão para cozinhas barulhentas.",
+    label: "Alarme de Pedido",
+    description: "Alarme alto repetido com voz forte dizendo PEDIDO — ideal para cozinhas barulhentas.",
   },
   {
     id: "bell",
@@ -42,30 +42,47 @@ export function playOrderAlert(type: OrderSoundType = "classic"): void {
     const ctx = new AudioContext();
 
     if (type === "classic") {
-      const beep = (freq: number, start: number, dur: number) => {
+      // High-volume alarm pattern: 5 loud bursts at 880→1320 Hz
+      const alarm = (freq: number, start: number, dur: number) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.frequency.value = freq;
-        osc.type = "sine";
-        gain.gain.setValueAtTime(0.35, ctx.currentTime + start);
+        osc.type = "square";
+        gain.gain.setValueAtTime(0.9, ctx.currentTime + start);
         gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
         osc.start(ctx.currentTime + start);
-        osc.stop(ctx.currentTime + start + dur + 0.05);
+        osc.stop(ctx.currentTime + start + dur + 0.02);
       };
-      beep(880, 0, 0.15);
-      beep(1100, 0.2, 0.15);
-      beep(880, 0.4, 0.25);
+      // Burst 1
+      alarm(880,  0.00, 0.12);
+      alarm(1320, 0.14, 0.12);
+      // Burst 2
+      alarm(880,  0.32, 0.12);
+      alarm(1320, 0.46, 0.12);
+      // Burst 3
+      alarm(880,  0.64, 0.12);
+      alarm(1320, 0.78, 0.18);
+
+      // Voice: "PEDIDO" spoken loudly, twice
       setTimeout(() => {
         if ("speechSynthesis" in window) {
-          const u = new SpeechSynthesisUtterance("Novo pedido!");
-          u.lang = "pt-BR";
-          u.rate = 0.95;
-          u.pitch = 1.1;
-          window.speechSynthesis.speak(u);
+          window.speechSynthesis.cancel();
+          const speak = (text: string, delay: number) => {
+            setTimeout(() => {
+              const u = new SpeechSynthesisUtterance(text);
+              u.lang = "pt-BR";
+              u.rate = 0.8;
+              u.pitch = 0.85;
+              u.volume = 1;
+              window.speechSynthesis.speak(u);
+            }, delay);
+          };
+          speak("PEDIDO!", 0);
+          speak("PEDIDO!", 900);
         }
-      }, 700);
+      }, 1050);
     }
 
     if (type === "bell") {

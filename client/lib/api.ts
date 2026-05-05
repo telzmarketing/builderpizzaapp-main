@@ -603,6 +603,8 @@ export interface ApiOrder {
     assigned_at?: string | null;
     picked_up_at?: string | null;
     delivered_at?: string | null;
+    rating?: number | null;
+    rating_comment?: string | null;
   } | null;
 }
 
@@ -2480,6 +2482,10 @@ export const deliveryApi = {
   // Confirm delivery (public — no auth needed)
   confirmCode: (deliveryId: string, code: string) =>
     driverRequest<DeliveryRecord>("POST", `/delivery/${deliveryId}/confirm-code`, { code }),
+
+  // Customer — rate a delivery
+  rateDelivery: (deliveryId: string, rating: number, comment?: string) =>
+    post<DeliveryRecord>(`/delivery/${deliveryId}/rate`, { rating, comment }),
 
   // Admin — Phase 3: earnings
   listEarnings: (params?: { person_id?: string; status?: string; period_from?: string; period_to?: string }) => {

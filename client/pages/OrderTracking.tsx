@@ -62,7 +62,7 @@ export default function OrderTracking() {
   useEffect(() => {
     const terminal: OrderStatus[] = ["delivered", "cancelled", "refunded"];
     if (!order || terminal.includes(order.status)) return;
-    const id = setInterval(fetchOrder, 15_000);
+    const id = setInterval(fetchOrder, 1_000);
     return () => clearInterval(id);
   }, [order, fetchOrder]);
 

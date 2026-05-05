@@ -116,6 +116,8 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
                 "assigned_at": d.assigned_at,
                 "picked_up_at": d.picked_up_at,
                 "delivered_at": d.delivered_at,
+                "rating": d.rating,
+                "rating_comment": d.rating_comment,
             }
     except Exception:
         pass

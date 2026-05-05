@@ -3,7 +3,7 @@ import type { ApiOrder } from "./api";
 // ── Printer settings (persisted in localStorage) ──────────────────────────────
 
 export type PaperWidth = "58mm" | "80mm" | "a4";
-export type PrintTemplate = "completo" | "cozinha" | "etiqueta";
+export type PrintTemplate = "completo" | "cozinha" | "entrega";
 
 export interface PrinterSettings {
   paperWidth: PaperWidth;
@@ -25,7 +25,7 @@ export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   storeAddress: "",
   storeCnpj: "",
   storeWebsite: "delivery.moschettieri.com.br",
-  defaultTemplate: "completo",
+  defaultTemplate: "completo" as PrintTemplate,
   autoPrint: false,
 };
 
@@ -178,9 +178,9 @@ export function buildCozinhaHtml(order: ApiOrder, settings: PrinterSettings): st
 </body></html>`;
 }
 
-// ── Template 3: Etiqueta de Entrega ───────────────────────────────────────────
+// ── Template 3: Via Entrega ────────────────────────────────────────────────────
 
-export function buildEtiquetaHtml(order: ApiOrder, settings: PrinterSettings): string {
+export function buildEntregaHtml(order: ApiOrder, settings: PrinterSettings): string {
   const items = itemLines(order);
   const rows = items.map((i) => `
     <tr>
@@ -193,36 +193,26 @@ export function buildEtiquetaHtml(order: ApiOrder, settings: PrinterSettings): s
       <td class="right" style="white-space:nowrap">${fmt(i.price)}</td>
     </tr>`).join("");
 
-  const headerLines = [
-    settings.storeName ? `<p class="center bold">${settings.storeName}</p>` : "",
-    settings.storeWebsite ? `<p class="center small">${settings.storeWebsite}</p>` : "",
-    settings.storeAddress ? `<p class="center small">${settings.storeAddress}</p>` : "",
-    settings.storePhone ? `<p class="center small">${settings.storePhone}</p>` : "",
-    settings.storeCnpj ? `<p class="center small">CNPJ: ${settings.storeCnpj}</p>` : "",
-  ].filter(Boolean).join("");
-
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-<title>Etiqueta #${orderNo(order)}</title>
+<title>Entrega #${orderNo(order)}</title>
 <style>${baseCss()}body{${paperCss(settings.paperWidth)}}</style>
 </head><body>
-${headerLines}
-<hr/>
-<p class="center bold">PEDIDO #${orderNo(order)}</p>
+<p class="center" style="font-size:11px;font-weight:bold;letter-spacing:2px">*** VIA ENTREGA ***</p>
+<p class="center bold" style="font-size:16px">PEDIDO #${orderNo(order)}</p>
 <p class="center small">${dt(order.created_at)}</p>
 <hr/>
+<p class="bold" style="font-size:13px">ENDEREÇO DE ENTREGA</p>
 <p class="bold">${order.delivery_name}</p>
+<p>${order.delivery_phone}</p>
 <p>${order.delivery_street}${order.delivery_complement ? ` — ${order.delivery_complement}` : ""}</p>
 <p>${order.delivery_city}</p>
 <hr/>
+<p class="bold small">ITENS DO PEDIDO</p>
 <table>${rows}</table>
 <hr/>
 ${order.shipping_fee > 0 ? `<p class="right">Frete: ${fmt(order.shipping_fee)}</p>` : ""}
 ${order.discount > 0 ? `<p class="right">Desconto: -${fmt(order.discount)}</p>` : ""}
 <p class="right big">TOTAL: ${fmt(order.total)}</p>
-<hr/>
-<p>Entrega estimada: <span class="bold">${order.estimated_time} min</span></p>
-<hr/>
-<p class="center small">Obrigado pela preferência!</p>
 </body></html>`;
 }
 
@@ -234,7 +224,7 @@ export function printOrder(order: ApiOrder, template?: PrintTemplate): void {
 
   let html: string;
   if (tpl === "cozinha") html = buildCozinhaHtml(order, settings);
-  else if (tpl === "etiqueta") html = buildEtiquetaHtml(order, settings);
+  else if (tpl === "entrega") html = buildEntregaHtml(order, settings);
   else html = buildCompletoHtml(order, settings);
 
   const w = window.open("", "_blank", "width=440,height=700,scrollbars=yes");
