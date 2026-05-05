@@ -537,11 +537,11 @@ export default function Checkout() {
       const mp = new window.MercadoPago(publicKey, { locale: "pt-BR" });
 
       const bin = cardNumber.replace(/\s/g, "").slice(0, 6);
-      let paymentMethodId = "credit_card";
+      let paymentMethodId = "";
       try {
         const methods = await mp.getPaymentMethods({ bin });
         if (methods.results?.[0]) paymentMethodId = methods.results[0].id;
-      } catch { /* fallback */ }
+      } catch { /* será omitido do body se vazio */ }
 
       const [expMonth, expYearShort] = cardExpiry.split("/");
       const expYear = (expYearShort?.length === 2) ? `20${expYearShort}` : expYearShort;
@@ -559,7 +559,7 @@ export default function Checkout() {
       const cpfDigits = cardCpf.replace(/\D/g, "");
       const createdPayment = await paymentsApi.createFromBrick(createdOrder.id, {
         token: token.id,
-        payment_method_id: paymentMethodId,
+        ...(paymentMethodId ? { payment_method_id: paymentMethodId } : {}),
         installments: 1,
         transaction_amount: createdOrder.total,
         payer: {
