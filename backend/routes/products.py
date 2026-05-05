@@ -1,6 +1,7 @@
 import json
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
@@ -172,7 +173,7 @@ def list_products(
     q = db.query(Product)
     if active_only:
         q = q.filter(Product.active == True)  # noqa: E712
-        q = q.filter(Product.product_type != "brinde")
+        q = q.filter(or_(Product.product_type == None, Product.product_type != "brinde"))  # noqa: E711
     products = q.order_by(Product.name).all()
     return [_product_payload(product, db) for product in products]
 
