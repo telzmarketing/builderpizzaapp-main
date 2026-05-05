@@ -3,7 +3,7 @@ import { ChevronLeft, Loader2 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
 import { useEffect, useState, useCallback } from "react";
-import { ordersApi, paymentsApi, type ApiOrder, type ApiPayment, type OrderStatus } from "@/lib/api";
+import { ordersApi, paymentsApi, isAssetUrl, resolveAssetUrl, type ApiOrder, type ApiPayment, type OrderStatus } from "@/lib/api";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 
 const PROGRESS_STEPS: OrderStatus[] = ["preparing", "on_the_way", "delivered"];
@@ -82,7 +82,7 @@ export default function OrderTracking() {
           <div className="flex gap-1"><span>📡</span><span>📶</span><span>🔋</span></div>
         </div>
         <div className="bg-brand-dark px-4 py-3 flex justify-between items-center sticky top-0 z-30">
-          <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
+          <button onClick={() => navigate("/")} className="text-parchment hover:text-cream transition-colors">
             <ChevronLeft size={24} />
           </button>
           <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />
@@ -113,7 +113,7 @@ export default function OrderTracking() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
       <div className="bg-brand-dark px-4 py-3 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
+        <button onClick={() => navigate("/")} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
         <h1 className="text-cream font-bold flex-1 text-center">{t.pageTitle}</h1>
@@ -124,7 +124,7 @@ export default function OrderTracking() {
         <div className="text-center mb-2">
           <p className="text-stone text-sm">{t.orderNumberLabel}</p>
           <p className="text-6xl font-bold text-cream mt-1">
-            {parseInt(order.id.slice(0, 8), 16) % 100}
+            {String(parseInt(order.id.replace(/-/g, "").slice(-4), 16) % 10000).padStart(4, "0")}
           </p>
           <p className="text-stone text-sm mt-2">{estimatedText}</p>
         </div>
@@ -227,7 +227,8 @@ export default function OrderTracking() {
           <div className="space-y-3">
             {order.items.map((item) => {
               const isMulti = item.flavor_division > 1;
-              const displayIcons = item.flavors.map((f) => f.icon).join("");
+              const primaryIcon = item.flavors[0]?.icon ?? "";
+              const displayEmoji = item.flavors.map((f) => f.icon).filter((ic) => !isAssetUrl(ic)).join("");
               const displayName = isMulti
                 ? item.flavors.map((f) => f.name).join(" + ")
                 : item.product_name;
@@ -237,10 +238,14 @@ export default function OrderTracking() {
                   : item.flavor_division === 3
                   ? "3 Sabores"
                   : "Inteira";
+              const hasImage = isAssetUrl(primaryIcon);
               return (
                 <div key={item.id} className="bg-surface-02 rounded-xl p-4 flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-full bg-surface-03 flex-shrink-0 flex items-center justify-center text-lg">
-                    {displayIcons || "🍕"}
+                  <div className="w-12 h-12 rounded-full bg-surface-03 flex-shrink-0 flex items-center justify-center text-lg overflow-hidden">
+                    {hasImage
+                      ? <img src={resolveAssetUrl(primaryIcon)} alt={displayName} className="w-full h-full object-cover" />
+                      : <span>{displayEmoji || "🍕"}</span>
+                    }
                   </div>
                   <div className="flex-1 min-w-0">
                     <h4 className="text-cream font-semibold text-sm leading-tight">
