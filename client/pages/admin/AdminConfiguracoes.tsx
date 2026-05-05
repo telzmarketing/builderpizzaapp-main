@@ -4,7 +4,7 @@ import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import {
   loadPrinterSettings, savePrinterSettings,
-  buildCompletoHtml, buildCozinhaHtml, buildEtiquetaHtml,
+  buildCompletoHtml, buildCozinhaHtml, buildEntregaHtml,
   SAMPLE_ORDER, DEFAULT_PRINTER_SETTINGS,
   type PrinterSettings, type PrintTemplate, type PaperWidth,
 } from "@/lib/printing";
@@ -135,7 +135,7 @@ export default function AdminConfiguracoes() {
   // Build preview HTMLs with current settings + sample order
   const htmlCompleto = buildCompletoHtml(SAMPLE_ORDER, settings);
   const htmlCozinha  = buildCozinhaHtml(SAMPLE_ORDER, settings);
-  const htmlEtiqueta = buildEtiquetaHtml(SAMPLE_ORDER, settings);
+  const htmlEtiqueta = buildEntregaHtml(SAMPLE_ORDER, settings);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-00 to-surface-00">
@@ -378,11 +378,11 @@ export default function AdminConfiguracoes() {
                       html={htmlCozinha}
                     />
                     <TemplateCard
-                      id="etiqueta"
-                      title="Etiqueta de Entrega"
-                      description="Etiqueta compacta com número do pedido em destaque, endereço completo e total. Colar na embalagem."
-                      selected={settings.defaultTemplate === "etiqueta"}
-                      onSelect={() => update({ defaultTemplate: "etiqueta" })}
+                      id="entrega"
+                      title="Via Entrega"
+                      description="Via focada em entrega: número do pedido, endereço completo, itens e total. Ideal para o motoboy."
+                      selected={settings.defaultTemplate === "entrega"}
+                      onSelect={() => update({ defaultTemplate: "entrega" })}
                       html={htmlEtiqueta}
                     />
                   </div>
