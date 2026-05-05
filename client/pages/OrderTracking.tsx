@@ -123,8 +123,8 @@ export default function OrderTracking() {
       <div className="px-4 pt-6 pb-32">
         <div className="text-center mb-2">
           <p className="text-stone text-sm">{t.orderNumberLabel}</p>
-          <p className="text-6xl font-bold text-cream mt-1">
-            {String(parseInt(order.id.replace(/-/g, "").slice(-4), 16) % 10000).padStart(4, "0")}
+          <p className="text-4xl font-bold text-cream mt-1">
+            {"Order-" + String(parseInt(order.id.replace(/-/g, "").slice(-4), 16) % 10000).padStart(4, "0")}
           </p>
           <p className="text-stone text-sm mt-2">{estimatedText}</p>
         </div>
