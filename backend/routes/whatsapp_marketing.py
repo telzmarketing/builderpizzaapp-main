@@ -1,19 +1,21 @@
 """WhatsApp Marketing — templates, campanhas, disparo, monitoramento, config."""
 from __future__ import annotations
 import json
+import time
 import uuid
 import requests
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import Column, String, Boolean, Text, DateTime, ForeignKey, Integer, Float, text
 from sqlalchemy.orm import Session
 
 from backend.database import get_db, Base
 from backend.routes.admin_auth import get_current_admin
-from backend.core.response import ok, created
+from backend.core.response import ok, created, err_msg
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp-marketing"])
 
@@ -137,47 +139,6 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _send_whatsapp_api(phone: str, body: str, db: Session) -> tuple[Optional[str], str, Optional[str]]:
-    """Envia via WhatsApp Cloud API. Retorna (wamid, status, error)."""
-    conn = db.execute(
-        text("SELECT credentials_json FROM integration_connections WHERE integration_type = 'whatsapp_cloud'")
-    ).fetchone()
-
-    if not conn or not conn[0]:
-        return None, "failed", "WhatsApp Cloud API não configurado."
-
-    try:
-        creds = json.loads(conn[0])
-    except Exception:
-        return None, "failed", "Credenciais WhatsApp inválidas."
-
-    phone_number_id = creds.get("phone_number_id")
-    access_token = creds.get("access_token")
-    if not phone_number_id or not access_token:
-        return None, "failed", "Credenciais incompletas (phone_number_id / access_token)."
-
-    clean_phone = "".join(c for c in phone if c.isdigit())
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": clean_phone,
-        "type": "text",
-        "text": {"body": body},
-    }
-    try:
-        resp = requests.post(
-            f"https://graph.facebook.com/v19.0/{phone_number_id}/messages",
-            headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
-            json=payload,
-            timeout=15,
-        )
-        data = resp.json()
-        if resp.status_code == 200 and "messages" in data:
-            return data["messages"][0].get("id"), "sent", None
-        return None, "failed", data.get("error", {}).get("message", resp.text)
-    except Exception as exc:
-        return None, "failed", str(exc)
-
-
 def _resolve_phones(body: SendRequest, db: Session) -> list[dict]:
     """Resolve lista de {phone, customer_id} a partir das diferentes fontes."""
     result = []
@@ -259,6 +220,117 @@ def _campaign_to_dict(c: WhatsAppCampaign) -> dict:
     }
 
 
+def _load_whatsapp_cloud_credentials(db: Session) -> tuple[dict, Optional[str]]:
+    conn = db.execute(
+        text("SELECT credentials_json FROM integration_connections WHERE integration_type = 'whatsapp_cloud'")
+    ).fetchone()
+    if not conn or not conn[0]:
+        return {}, "WhatsApp Cloud API nao configurado."
+    try:
+        creds = json.loads(conn[0])
+    except Exception:
+        return {}, "Credenciais WhatsApp invalidas."
+    if not creds.get("phone_number_id") or not creds.get("access_token"):
+        return {}, "Credenciais incompletas (phone_number_id / access_token)."
+    return creds, None
+
+
+def _load_whatsapp_verify_token(db: Session) -> Optional[str]:
+    conn = db.execute(
+        text("SELECT credentials_json FROM integration_connections WHERE integration_type = 'whatsapp_cloud'")
+    ).fetchone()
+    if not conn or not conn[0]:
+        return None
+    try:
+        creds = json.loads(conn[0])
+    except Exception:
+        return None
+    return creds.get("verify_token") or creds.get("webhook_verify_token")
+
+
+def _render_template_preview(template_body: str, variables: list[str]) -> str:
+    rendered = template_body
+    for i, val in enumerate(variables, start=1):
+        rendered = rendered.replace(f"{{{{{i}}}}}", val)
+    return rendered
+
+
+def _send_whatsapp_api(
+    phone: str,
+    body: str,
+    db: Session,
+    *,
+    template_name: str | None = None,
+    template_language: str = "pt_BR",
+    template_variables: list[str] | None = None,
+) -> tuple[Optional[str], str, Optional[str]]:
+    """Envia via WhatsApp Cloud API. Retorna (wamid, status, error)."""
+    cfg = _get_config(db)
+    if cfg.connection_type == "qr":
+        return None, "failed", "WhatsApp QR Code ainda nao possui servico de sessao implementado."
+    if cfg.status != "connected":
+        return None, "failed", "WhatsApp Cloud API nao esta conectada."
+
+    creds, error = _load_whatsapp_cloud_credentials(db)
+    if error:
+        return None, "failed", error
+
+    clean_phone = "".join(c for c in phone if c.isdigit())
+    if template_name:
+        template: dict = {
+            "name": template_name,
+            "language": {"code": template_language or "pt_BR"},
+        }
+        variables = template_variables or []
+        if variables:
+            template["components"] = [{
+                "type": "body",
+                "parameters": [{"type": "text", "text": str(value)} for value in variables],
+            }]
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": clean_phone,
+            "type": "template",
+            "template": template,
+        }
+    else:
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": clean_phone,
+            "type": "text",
+            "text": {"body": body},
+        }
+
+    try:
+        resp = requests.post(
+            f"https://graph.facebook.com/v19.0/{creds['phone_number_id']}/messages",
+            headers={"Authorization": f"Bearer {creds['access_token']}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=15,
+        )
+        data = resp.json()
+        if resp.status_code == 200 and "messages" in data:
+            return data["messages"][0].get("id"), "sent", None
+        return None, "failed", data.get("error", {}).get("message", resp.text)
+    except Exception as exc:
+        return None, "failed", str(exc)
+
+
+def _sent_today_count(db: Session) -> int:
+    row = db.execute(
+        text("SELECT COUNT(*) FROM whatsapp_messages WHERE status = 'sent' AND sent_at::date = CURRENT_DATE")
+    ).fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def _send_delay_seconds(cfg: WhatsAppConfig) -> float:
+    by_interval = max(0, int(cfg.interval_seconds or 0))
+    by_rate = 0.0
+    if cfg.messages_per_minute and cfg.messages_per_minute > 0:
+        by_rate = 60.0 / float(cfg.messages_per_minute)
+    return max(by_interval, by_rate)
+
+
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
 @router.get("/dashboard")
@@ -304,6 +376,57 @@ def get_dashboard(db: Session = Depends(get_db), _=Depends(get_current_admin)):
         "orders_generated": orders_gen,
         "revenue_generated": round(revenue_gen, 2),
     })
+
+
+# ── Webhook oficial Meta ──────────────────────────────────────────────────────
+
+@router.get("/webhook", include_in_schema=False)
+def verify_meta_webhook(request: Request, db: Session = Depends(get_db)):
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+    expected = _load_whatsapp_verify_token(db)
+
+    if mode == "subscribe" and expected and token == expected and challenge:
+        return PlainTextResponse(challenge)
+    return PlainTextResponse("Forbidden", status_code=403)
+
+
+@router.post("/webhook", include_in_schema=False)
+async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
+    try:
+        payload = await request.json()
+    except Exception:
+        return err_msg("Payload de webhook invalido.", code="WhatsAppWebhookInvalid")
+
+    updated = 0
+    for entry in payload.get("entry", []) or []:
+        for change in entry.get("changes", []) or []:
+            value = change.get("value") or {}
+            for item in value.get("statuses", []) or []:
+                wamid = item.get("id")
+                status = item.get("status")
+                if not wamid or not status:
+                    continue
+                errors = item.get("errors") or []
+                error_message = None
+                if errors:
+                    first_error = errors[0] or {}
+                    error_message = first_error.get("message") or first_error.get("title")
+                result = db.execute(
+                    text("""
+                        UPDATE whatsapp_messages
+                        SET status = :status,
+                            error = :error,
+                            sent_at = COALESCE(sent_at, CASE WHEN :status = 'sent' THEN NOW() ELSE sent_at END)
+                        WHERE wamid = :wamid
+                    """),
+                    {"status": status, "error": error_message, "wamid": wamid},
+                )
+                updated += int(result.rowcount or 0)
+
+    db.commit()
+    return ok({"updated": updated})
 
 
 # ── Templates ─────────────────────────────────────────────────────────────────
@@ -437,6 +560,18 @@ def delete_campaign(campaign_id: str, db: Session = Depends(get_db), _=Depends(g
 
 @router.post("/send")
 def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    cfg = _get_config(db)
+    if cfg.connection_type == "qr":
+        return err_msg(
+            "WhatsApp QR Code ainda nao possui servico de sessao implementado. Use WhatsApp Oficial (Cloud API).",
+            code="WhatsAppQrNotImplemented",
+            status_code=501,
+        )
+    if cfg.status != "connected":
+        return err_msg("WhatsApp Cloud API nao esta conectada. Configure e teste a integracao antes de disparar.", code="WhatsAppNotConnected")
+    if body.scheduled_at:
+        return err_msg("Agendamento ainda nao possui worker ativo. Faca disparo imediato por enquanto.", code="WhatsAppScheduleUnavailable")
+
     # Resolve o body final (template ou texto livre)
     template = None
     final_body_template: Optional[str] = None
@@ -448,9 +583,7 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
         ).first()
         if not template:
             raise HTTPException(404, "Template não encontrado ou inativo.")
-        final_body_template = template.body
-        for i, val in enumerate(body.variables, start=1):
-            final_body_template = final_body_template.replace(f"{{{{{i}}}}}", val)
+        final_body_template = _render_template_preview(template.body, body.variables)
 
     elif not body.free_text:
         raise HTTPException(400, "Informe template_id ou free_text.")
@@ -460,10 +593,20 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
     if not recipients:
         raise HTTPException(400, "Nenhum destinatário encontrado.")
 
+    sent_today = _sent_today_count(db)
+    if cfg.daily_limit and sent_today >= cfg.daily_limit:
+        return err_msg("Limite diario de mensagens atingido.", code="WhatsAppDailyLimitReached")
+
     sent_count = failed_count = 0
     results = []
+    delay_seconds = _send_delay_seconds(cfg)
 
-    for rec in recipients:
+    for index, rec in enumerate(recipients):
+        if cfg.daily_limit and sent_today + sent_count >= cfg.daily_limit:
+            failed_count += 1
+            results.append({"phone": rec["phone"], "status": "failed", "wamid": None, "error": "Limite diario atingido."})
+            continue
+
         phone = rec["phone"]
         msg_body = final_body_template if template else (body.free_text or "")
 
@@ -478,7 +621,14 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
         db.add(msg)
         db.flush()
 
-        wamid, status, error = _send_whatsapp_api(phone, msg_body, db)
+        wamid, status, error = _send_whatsapp_api(
+            phone,
+            msg_body,
+            db,
+            template_name=template.name if template else None,
+            template_language=template.language if template else "pt_BR",
+            template_variables=body.variables if template else None,
+        )
 
         msg.status = status
         msg.wamid = wamid
@@ -490,6 +640,8 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
             failed_count += 1
 
         results.append({"phone": phone, "status": status, "wamid": wamid, "error": error})
+        if index < len(recipients) - 1 and delay_seconds > 0:
+            time.sleep(min(delay_seconds, 30))
 
     db.commit()
     return ok({"sent": sent_count, "failed": failed_count, "messages": results})
@@ -541,6 +693,8 @@ def update_config(body: ConfigUpdate, db: Session = Depends(get_db), _=Depends(g
     cfg = _get_config(db)
     if body.connection_type is not None:
         cfg.connection_type = body.connection_type
+        if body.connection_type == "qr":
+            cfg.status = "disconnected"
     if body.messages_per_minute is not None:
         cfg.messages_per_minute = body.messages_per_minute
     if body.interval_seconds is not None:

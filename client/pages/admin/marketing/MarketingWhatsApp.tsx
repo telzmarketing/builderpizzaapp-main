@@ -76,7 +76,7 @@ export default function MarketingWhatsApp() {
   const [showCampModal, setShowCampModal] = useState(false);
   const [campForm, setCampForm] = useState({ name: "", template_id: "", group_id: "", scheduled_at: "" });
   // ── Disparo ──
-  const [dispForm, setDispForm] = useState({ template_id: "", phones: "", free_text: "", mode: "template", schedule: "" });
+  const [dispForm, setDispForm] = useState({ template_id: "", phones: "", free_text: "", template_variables: "", mode: "template", schedule: "" });
   const [dispResult, setDispResult] = useState<{ sent: number; failed: number } | null>(null);
   const [dispatching, setDispatching] = useState(false);
   // ── Monitoramento ──
@@ -185,13 +185,20 @@ export default function MarketingWhatsApp() {
     setDispResult(null);
     try {
       const phones = dispForm.phones.split(/[\n,]/).map(p => p.trim()).filter(Boolean);
+      const variables = dispForm.template_variables.split(/\n/).map(v => v.trim()).filter(Boolean);
       const body = dispForm.mode === "template"
-        ? JSON.stringify({ template_id: dispForm.template_id, phones, scheduled_at: dispForm.schedule || undefined })
-        : JSON.stringify({ free_text: dispForm.free_text, phones, scheduled_at: dispForm.schedule || undefined });
+        ? JSON.stringify({ template_id: dispForm.template_id, phones, variables })
+        : JSON.stringify({ free_text: dispForm.free_text, phones });
       const r = await fetch(`${BASE}/whatsapp/send`, { method: "POST", headers, body });
-      const d = unwrap(await r.json());
+      const json = await r.json();
+      if (!r.ok || json?.success === false) {
+        throw new Error(json?.error?.message ?? "Erro ao enviar.");
+      }
+      const d = unwrap(json);
       setDispResult({ sent: d.sent ?? 0, failed: d.failed ?? 0 });
-    } catch { alert("Erro ao enviar."); } finally { setDispatching(false); }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao enviar.");
+    } finally { setDispatching(false); }
   };
 
   // ── Config ──
@@ -199,9 +206,17 @@ export default function MarketingWhatsApp() {
     e.preventDefault();
     setCfgSaving(true);
     try {
-      await fetch(`${BASE}/whatsapp/config`, { method: "PATCH", headers, body: JSON.stringify(cfg) });
+      const nextCfg = { ...cfg, connection_type: cfg.connection_type === "qr" ? "official" : cfg.connection_type };
+      const response = await fetch(`${BASE}/whatsapp/config`, { method: "PATCH", headers, body: JSON.stringify(nextCfg) });
+      const json = await response.json();
+      if (!response.ok || json?.success === false) {
+        throw new Error(json?.error?.message ?? "Erro ao salvar.");
+      }
+      setCfg({ ...EMPTY_CFG, ...unwrap(json) });
       alert("Configurações salvas.");
-    } catch { alert("Erro ao salvar."); } finally { setCfgSaving(false); }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao salvar.");
+    } finally { setCfgSaving(false); }
   };
 
   return (
@@ -402,12 +417,25 @@ export default function MarketingWhatsApp() {
                   ))}
                 </div>
                 {dispForm.mode === "template" ? (
-                  <div className="space-y-1">
-                    <label className="text-xs text-stone">Template *</label>
-                    <select value={dispForm.template_id} onChange={e => setDispForm(f => ({ ...f, template_id: e.target.value }))} className={IC}>
-                      <option value="">Selecione...</option>
-                      {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-xs text-stone">Template aprovado na Meta *</label>
+                      <select value={dispForm.template_id} onChange={e => setDispForm(f => ({ ...f, template_id: e.target.value }))} className={IC}>
+                        <option value="">Selecione...</option>
+                        {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-stone">Variaveis do template</label>
+                      <textarea
+                        value={dispForm.template_variables}
+                        onChange={e => setDispForm(f => ({ ...f, template_variables: e.target.value }))}
+                        rows={3}
+                        placeholder={"Valor para {{1}}\nValor para {{2}}"}
+                        className={`${IC} resize-none font-mono text-xs`}
+                      />
+                      <p className="text-xs text-stone/60">Uma variavel por linha, na mesma ordem aprovada na Meta.</p>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-1">
@@ -431,10 +459,9 @@ export default function MarketingWhatsApp() {
                     {dispForm.phones.split(/[\n,]/).filter(p => p.trim()).length} número(s) informado(s)
                   </p>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-stone">Agendar para (opcional)</label>
-                  <input type="datetime-local" value={dispForm.schedule} onChange={e => setDispForm(f => ({ ...f, schedule: e.target.value }))} className={IC} />
-                </div>
+                <p className="text-xs text-stone/70">
+                  Disparos em producao sao enviados imediatamente. Agendamento exige worker de fila dedicado.
+                </p>
                 {dispResult && (
                   <div className="rounded-xl bg-surface-03 p-4 flex items-center justify-around">
                     <div className="text-center"><p className="text-2xl font-bold text-green-400">{dispResult.sent}</p><p className="text-xs text-stone mt-0.5">Enviadas</p></div>
@@ -444,7 +471,7 @@ export default function MarketingWhatsApp() {
                 <button type="submit" disabled={dispatching}
                   className="w-full py-3 rounded-xl bg-gold hover:bg-gold/90 text-black font-semibold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
                   {dispatching ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
-                  {dispForm.schedule ? "Agendar Disparo" : "Disparar Agora"}
+                  Disparar Agora
                 </button>
               </form>
             </div>
@@ -512,8 +539,11 @@ export default function MarketingWhatsApp() {
                 <label className="text-xs text-stone">Tipo de Conexão</label>
                 <select value={cfg.connection_type} onChange={e => setCfg(c => ({ ...c, connection_type: e.target.value }))} className={IC}>
                   <option value="official">WhatsApp Oficial (Cloud API)</option>
-                  <option value="qr">WhatsApp QR Code</option>
+                  <option value="qr" disabled>WhatsApp QR Code (indisponivel sem servico de sessao)</option>
                 </select>
+                <p className="text-xs text-stone/70">
+                  Para producao, use a API oficial. QR Code depende de um servico separado de sessao WhatsApp Web.
+                </p>
               </div>
               <div className="flex items-center gap-3 p-3 bg-surface-03 rounded-xl">
                 <span className={`w-3 h-3 rounded-full ${cfg.status === "connected" ? "bg-green-400" : "bg-red-400"}`} />
@@ -539,7 +569,10 @@ export default function MarketingWhatsApp() {
               <div className="space-y-1">
                 <label className="text-xs text-stone">Webhook URL (receber status)</label>
                 <input type="url" value={cfg.webhook_url} onChange={e => setCfg(c => ({ ...c, webhook_url: e.target.value }))}
-                  placeholder="https://seu-servidor.com/webhook" className={IC} />
+                  placeholder={`${BASE}/whatsapp/webhook`} className={IC} />
+                <p className="text-xs text-stone/70">
+                  Cadastre esta URL na Meta junto com o Verify Token configurado em Integracoes.
+                </p>
               </div>
               <button type="submit" disabled={cfgSaving}
                 className="w-full py-2.5 rounded-xl bg-gold hover:bg-gold/90 text-black font-semibold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
@@ -560,7 +593,7 @@ export default function MarketingWhatsApp() {
             </div>
             <form onSubmit={saveTpl} className="p-5 space-y-4">
               <div className="space-y-1">
-                <label className="text-xs text-stone">Nome *</label>
+                <label className="text-xs text-stone">Nome do template aprovado na Meta *</label>
                 <input type="text" value={tplForm.name} onChange={e => setTplForm(f => ({ ...f, name: e.target.value }))} placeholder="boas_vindas" className={IC} />
               </div>
               <div className="space-y-1">

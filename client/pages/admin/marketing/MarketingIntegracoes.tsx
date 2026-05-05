@@ -72,13 +72,14 @@ const INTEGRATIONS: IntegrationDef[] = [
       { key: "phone_number_id", label: "Phone Number ID", placeholder: "1234567890" },
       { key: "access_token", label: "Access Token", placeholder: "EAABsb...", secret: true },
       { key: "waba_id", label: "WABA ID", placeholder: "1234567890" },
+      { key: "verify_token", label: "Webhook Verify Token", placeholder: "token_criado_na_meta", secret: true },
     ],
   },
   {
     type: "whatsapp_qr",
-    label: "WhatsApp QR Code",
+    label: "WhatsApp QR Code (indisponivel)",
     emoji: "📱",
-    description: "Conecte via QR Code para enviar mensagens pelo WhatsApp pessoal ou Business.",
+    description: "Opcao reservada para um servico futuro de sessao WhatsApp Web. Em producao, use WhatsApp Cloud API.",
     fields: [
       { key: "session_name", label: "Nome da sessão", placeholder: "moschettieri" },
       { key: "webhook_url", label: "Webhook URL", placeholder: "https://..." },
@@ -136,14 +137,18 @@ export default function MarketingIntegracoes() {
   const handleSave = async (type: string) => {
     setSaving(type);
     try {
-      await fetch(`${BASE}/marketing/integrations/${type}`, {
+      const res = await fetch(`${BASE}/marketing/integrations/${type}`, {
         method: "PATCH",
         headers,
-        body: JSON.stringify({ config: configs[type] ?? {} }),
+        body: JSON.stringify({ credentials: configs[type] ?? {} }),
       });
+      const data = await res.json();
+      if (!res.ok || data?.success === false) {
+        throw new Error(data?.error?.message ?? "Erro ao salvar integracao.");
+      }
       fetchIntegrations();
-    } catch {
-      alert("Erro ao salvar integração.");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao salvar integracao.");
     } finally {
       setSaving(null);
     }
@@ -158,9 +163,11 @@ export default function MarketingIntegracoes() {
         headers,
       });
       const data = await res.json();
+      const payload = unwrap(data);
+      const message = data?.message ?? data?.error?.message ?? payload?.message;
       setTestResult((prev) => ({
         ...prev,
-        [type]: { ok: res.ok, message: data?.message ?? (res.ok ? "Conexão bem-sucedida!" : "Falha na conexão.") },
+        [type]: { ok: res.ok, message: message ?? (res.ok ? "Conexao bem-sucedida!" : "Falha na conexao.") },
       }));
     } catch {
       setTestResult((prev) => ({ ...prev, [type]: { ok: false, message: "Erro de rede." } }));

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+import requests
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from pydantic import BaseModel
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db, Base
 from backend.routes.admin_auth import get_current_admin
-from backend.core.response import ok, created
+from backend.core.response import ok, created, err_msg
 
 router = APIRouter(prefix="/marketing", tags=["marketing"])
 public_router = APIRouter(prefix="/marketing", tags=["marketing-public"])
@@ -141,6 +142,47 @@ class IntegrationConnection(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
+
+
+SECRET_KEYS = {"access_token", "client_secret", "app_secret", "password", "smtp_password"}
+MASKED_SECRET = "********"
+INTEGRATION_LABELS = {
+    "meta_ads": "Meta Ads",
+    "google_ads": "Google Ads",
+    "tiktok_ads": "TikTok Ads",
+    "whatsapp_cloud": "WhatsApp Cloud API",
+    "whatsapp_qr": "WhatsApp QR Code",
+    "smtp": "SMTP / E-mail",
+}
+
+
+def _load_credentials(conn: IntegrationConnection) -> dict:
+    if not conn.credentials_json:
+        return {}
+    try:
+        data = json.loads(conn.credentials_json)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _public_credentials(creds: dict) -> dict:
+    public = {}
+    for key, value in creds.items():
+        public[key] = MASKED_SECRET if key in SECRET_KEYS and value else value
+    return public
+
+
+def _merge_credentials(current: dict, incoming: dict) -> dict:
+    merged = dict(current)
+    for key, value in (incoming or {}).items():
+        if key in SECRET_KEYS and value == MASKED_SECRET:
+            continue
+        if value is None:
+            merged.pop(key, None)
+        else:
+            merged[key] = value
+    return merged
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -604,7 +646,13 @@ def list_visitors(
 def list_integrations(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     conns = db.query(IntegrationConnection).all()
     return ok([{
-        "id": c.id, "integration_type": c.integration_type, "status": c.status,
+        "id": c.id,
+        "name": INTEGRATION_LABELS.get(c.integration_type, c.integration_type),
+        "type": c.integration_type,
+        "integration_type": c.integration_type,
+        "status": c.status,
+        "connected": c.status == "connected",
+        "config": _public_credentials(_load_credentials(c)),
         "last_sync_at": c.last_sync_at.isoformat() if c.last_sync_at else None,
         "last_error": c.last_error,
     } for c in conns])
@@ -615,14 +663,97 @@ def update_integration(integration_type: str, body: dict, db: Session = Depends(
     conn = db.query(IntegrationConnection).filter(IntegrationConnection.integration_type == integration_type).first()
     if not conn:
         raise HTTPException(404, "Integração não encontrada.")
-    if "credentials" in body:
-        conn.credentials_json = json.dumps(body["credentials"])
-        conn.status = "connected"
+    incoming_credentials = body.get("credentials")
+    if incoming_credentials is None:
+        incoming_credentials = body.get("config")
+    if incoming_credentials is not None:
+        creds = _merge_credentials(_load_credentials(conn), incoming_credentials)
+        conn.credentials_json = json.dumps(creds, ensure_ascii=False)
+        conn.status = "connected" if any(v for v in creds.values()) else "disconnected"
     if "status" in body:
         conn.status = body["status"]
     conn.updated_at = datetime.now(timezone.utc)
     db.commit()
-    return ok({"integration_type": conn.integration_type, "status": conn.status})
+    return ok({
+        "integration_type": conn.integration_type,
+        "type": conn.integration_type,
+        "status": conn.status,
+        "connected": conn.status == "connected",
+        "config": _public_credentials(_load_credentials(conn)),
+    })
+
+
+@router.post("/integrations/{integration_type}/test")
+def test_integration(integration_type: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    conn = db.query(IntegrationConnection).filter(IntegrationConnection.integration_type == integration_type).first()
+    if not conn:
+        return err_msg("Integracao nao encontrada.", code="IntegrationNotFound", status_code=404)
+
+    creds = _load_credentials(conn)
+    now = datetime.now(timezone.utc)
+
+    if integration_type == "whatsapp_cloud":
+        phone_number_id = creds.get("phone_number_id")
+        access_token = creds.get("access_token")
+        if not phone_number_id or not access_token:
+            conn.status = "disconnected"
+            conn.last_error = "Informe phone_number_id e access_token."
+            conn.updated_at = now
+            db.commit()
+            return err_msg(conn.last_error, code="WhatsAppConfigMissing")
+        try:
+            resp = requests.get(
+                f"https://graph.facebook.com/v19.0/{phone_number_id}",
+                headers={"Authorization": f"Bearer {access_token}"},
+                params={"fields": "id,display_phone_number,verified_name"},
+                timeout=15,
+            )
+            data = resp.json()
+            if resp.status_code == 200 and data.get("id"):
+                conn.status = "connected"
+                conn.last_error = None
+                conn.last_sync_at = now
+                conn.updated_at = now
+                db.execute(text("INSERT INTO whatsapp_config (id) VALUES ('default') ON CONFLICT DO NOTHING"))
+                db.execute(
+                    text("UPDATE whatsapp_config SET status = 'connected', connection_type = 'official', updated_at = :now WHERE id = 'default'"),
+                    {"now": now},
+                )
+                db.commit()
+                return ok({"connected": True, "display_phone_number": data.get("display_phone_number")}, "WhatsApp Cloud API conectada.")
+            message = data.get("error", {}).get("message", resp.text)
+            conn.status = "disconnected"
+            conn.last_error = message
+            conn.updated_at = now
+            db.execute(text("INSERT INTO whatsapp_config (id) VALUES ('default') ON CONFLICT DO NOTHING"))
+            db.execute(text("UPDATE whatsapp_config SET status = 'disconnected', updated_at = :now WHERE id = 'default'"), {"now": now})
+            db.commit()
+            return err_msg(message, code="WhatsAppConnectionFailed")
+        except Exception as exc:
+            conn.status = "disconnected"
+            conn.last_error = str(exc)
+            conn.updated_at = now
+            db.execute(text("INSERT INTO whatsapp_config (id) VALUES ('default') ON CONFLICT DO NOTHING"))
+            db.execute(text("UPDATE whatsapp_config SET status = 'disconnected', updated_at = :now WHERE id = 'default'"), {"now": now})
+            db.commit()
+            return err_msg(str(exc), code="WhatsAppConnectionFailed")
+
+    if integration_type == "whatsapp_qr":
+        conn.status = "disconnected"
+        conn.last_error = "WhatsApp via QR Code ainda nao possui servico de sessao implementado."
+        conn.updated_at = now
+        db.commit()
+        return err_msg(conn.last_error, code="WhatsAppQrNotImplemented", status_code=501)
+
+    configured = bool(creds)
+    conn.status = "connected" if configured else "disconnected"
+    conn.last_error = None if configured else "Credenciais nao configuradas."
+    conn.last_sync_at = now if configured else conn.last_sync_at
+    conn.updated_at = now
+    db.commit()
+    if configured:
+        return ok({"connected": True}, "Integracao configurada.")
+    return err_msg(conn.last_error, code="IntegrationConfigMissing")
 
 
 # ── Marketing settings ────────────────────────────────────────────────────────
