@@ -160,7 +160,7 @@ def _mp_status_to_payment(mp_status: str, status_detail: str | None = None) -> P
 
 def _order_status_for_payment(status: PaymentStatus) -> OrderStatus | None:
     if status == PaymentStatus.approved:
-        return OrderStatus.pago
+        return OrderStatus.paid
     if status == PaymentStatus.rejected:
         return OrderStatus.pagamento_recusado
     if status in {PaymentStatus.cancelled, PaymentStatus.expired}:
@@ -358,17 +358,21 @@ class PaymentService:
         return {k: v for k, v in body.items() if v is not None}
 
     def _apply_status(self, payment: Payment, status: PaymentStatus, *, source: str) -> bool:
-        if payment.status == status:
-            return False
-
         previous = payment.status
-        if not payment_sm.can_transition(previous.value, status.value):
-            return False
-        payment_sm.transition(payment.id, previous.value, status.value)
-        payment.status = status
         now = datetime.now(timezone.utc)
-        payment.updated_at = now
-        if status == PaymentStatus.approved:
+        status_changed = previous != status
+        if status_changed:
+            if not payment_sm.can_transition(previous.value, status.value):
+                return False
+            payment_sm.transition(payment.id, previous.value, status.value)
+            payment.status = status
+            payment.updated_at = now
+            if status == PaymentStatus.approved:
+                payment.paid_at = payment.paid_at or now
+        elif status != PaymentStatus.approved:
+            return False
+        else:
+            payment.updated_at = now
             payment.paid_at = payment.paid_at or now
 
         order = self._db.query(Order).filter(Order.id == payment.order_id).first()
@@ -397,7 +401,7 @@ class PaymentService:
 
         self._db.commit()
 
-        if status == PaymentStatus.approved and previous != PaymentStatus.approved:
+        if status == PaymentStatus.approved and status_changed:
             _logger.info(
                 "Pagamento aprovado: payment_id=%s order_id=%s amount=%.2f gateway=%s source=%s",
                 payment.id, payment.order_id, payment.amount, payment.gateway, source,
@@ -442,6 +446,48 @@ class PaymentService:
             except Exception as exc:
                 _logger.warning("Falha ao publicar evento PaymentFailed: payment_id=%s error=%s", payment.id, exc)
         return True
+
+    def _sync_pending_mercado_pago_payment(self, payment: Payment, *, source: str) -> bool:
+        if not payment.mercado_pago_payment_id:
+            return False
+        if payment.provider != "mercado_pago" and payment.gateway != "mercadopago":
+            return False
+        if payment.status not in {PaymentStatus.pending, PaymentStatus.approved}:
+            return False
+        if payment.status == PaymentStatus.approved:
+            order = self._db.query(Order).filter(Order.id == payment.order_id).first()
+            current_order_status = order.status.value if order and hasattr(order.status, "value") else str(order.status) if order else ""
+            if current_order_status in {"paid", "pago", "preparing", "ready_for_pickup", "on_the_way", "delivered"}:
+                return False
+
+        try:
+            response = _mp_request("GET", f"/v1/payments/{payment.mercado_pago_payment_id}", _mp_token(self._cfg()))
+        except DomainError as exc:
+            _logger.warning(
+                "Nao foi possivel sincronizar pagamento Mercado Pago: payment_id=%s mp_payment_id=%s error=%s",
+                payment.id, payment.mercado_pago_payment_id, exc,
+            )
+            return False
+        except Exception as exc:
+            _logger.warning(
+                "Falha inesperada ao sincronizar pagamento Mercado Pago: payment_id=%s mp_payment_id=%s error=%s",
+                payment.id, payment.mercado_pago_payment_id, exc,
+            )
+            return False
+
+        mp_payment_id = str(response.get("id") or payment.mercado_pago_payment_id)
+        payment.mercado_pago_payment_id = mp_payment_id
+        payment.transaction_id = mp_payment_id
+        payment.external_reference = response.get("external_reference") or payment.external_reference
+        payment.raw_response = json.dumps(response, ensure_ascii=False)
+        _store_mp_payment_data(payment, response)
+
+        new_status = _mp_status_to_payment(response.get("status", ""), response.get("status_detail"))
+        changed = self._apply_status(payment, new_status, source=source)
+        if not changed:
+            payment.updated_at = datetime.now(timezone.utc)
+            self._db.commit()
+        return changed
 
     def process_webhook(
         self,
@@ -615,11 +661,18 @@ class PaymentService:
         return PaymentOut.model_validate(payment)
 
     def get_by_order(self, order_id: str) -> PaymentOut:
-        return PaymentOut.model_validate(self._get_payment_by_order(order_id))
+        payment = self._get_payment_by_order(order_id)
+        self._sync_pending_mercado_pago_payment(payment, source="status_poll")
+        self._db.refresh(payment)
+        return PaymentOut.model_validate(payment)
 
     def payment_status(self, order_id: str) -> dict:
         order = self._get_order(order_id)
         payment = order.payment
+        if payment:
+            self._sync_pending_mercado_pago_payment(payment, source="status_poll")
+            self._db.refresh(order)
+            payment = order.payment
         # Checkout is locked when a payment was submitted to MP and is still active (pending or approved).
         # Rejected/cancelled/expired payments allow a retry, so they don't lock.
         blocking_statuses = {PaymentStatus.pending, PaymentStatus.approved}
