@@ -238,7 +238,7 @@ interface AppContextType {
   registerCustomer: (data: { name: string; email: string; password: string; phone: string; street: string; number: string; complement?: string; neighborhood: string; city: string; state?: string; zip_code: string; label?: string; lgpd_consent: boolean; lgpd_policy_version?: string; marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean }) => Promise<void>;
   customerLogout: () => void;
   updateCustomer: (data: { name?: string; phone?: string }) => Promise<void>;
-  addCustomerAddress: (data: { street: string; number?: string; complement?: string; neighborhood?: string; city: string; zip_code?: string }) => Promise<void>;
+  addCustomerAddress: (data: { label?: string; street: string; number?: string; complement?: string; neighborhood?: string; city: string; state?: string; zip_code?: string }) => Promise<void>;
 
   // Products
   products: Pizza[];
@@ -614,7 +614,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("customer", JSON.stringify(updated));
   };
 
-  const addCustomerAddress = async (data: { street: string; number?: string; complement?: string; neighborhood?: string; city: string; zip_code?: string }) => {
+  const addCustomerAddress = async (data: { label?: string; street: string; number?: string; complement?: string; neighborhood?: string; city: string; state?: string; zip_code?: string }) => {
     if (!customer) return;
     const newAddr = await customersApi.addAddress(customer.id, { ...data, is_default: (customer.addresses ?? []).length === 0 });
     const updated = { ...customer, addresses: [...(customer.addresses ?? []), newAddr] };
