@@ -284,7 +284,7 @@ export default function Home() {
 
       {/* Aviso de horário de funcionamento */}
       <div className="px-4 lg:px-8 pt-3 max-w-sm lg:max-w-4xl mx-auto w-full">
-        <StoreStatusBanner openPill />
+        <StoreStatusBanner />
       </div>
 
       {homeConfig.showPromotions && activeBanners.length > 0 && (
