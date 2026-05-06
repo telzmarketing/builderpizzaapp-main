@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
-from backend.core.response import ok, created, err
+from backend.core.response import ok, created, err, err_msg
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
 from backend.routes.customer_access import require_customer_id_or_admin
@@ -168,6 +168,12 @@ def _serialize_orders(db: Session, orders: list[Order]) -> list[dict]:
 
 @router.post("", status_code=201)
 def create_order(body: CheckoutIn, db: Session = Depends(get_db)):
+    if not body.customer_id:
+        return err_msg(
+            "É necessário ter uma conta cadastrada para fazer um pedido.",
+            code="CustomerRequired",
+            status_code=401,
+        )
     try:
         svc = OrderService(db)
         order = svc.create_from_checkout(body)
