@@ -121,6 +121,7 @@ export default function Checkout() {
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvv, setCardCvv] = useState("");
   const [cardCpf, setCardCpf] = useState("");
+  const [cardFunction, setCardFunction] = useState<"credit" | "debit">("credit");
   const [cardSubmitting, setCardSubmitting] = useState(false);
   const [cardError, setCardError] = useState("");
   const paymentMethodsRef = useRef<ApiPaymentMethods | null>(null);
@@ -538,9 +539,16 @@ export default function Checkout() {
 
       const bin = cardNumber.replace(/\s/g, "").slice(0, 6);
       let paymentMethodId = "";
+      let paymentTypeId = cardFunction === "debit" ? "debit_card" : "credit_card";
       try {
         const methods = await mp.getPaymentMethods({ bin });
-        if (methods.results?.[0]) paymentMethodId = methods.results[0].id;
+        if (methods.results?.length) {
+          const preferred = methods.results.find(
+            (m) => m.payment_type_id === paymentTypeId
+          ) ?? methods.results[0];
+          paymentMethodId = preferred.id;
+          paymentTypeId = preferred.payment_type_id;
+        }
       } catch { /* será omitido do body se vazio */ }
 
       const [expMonth, expYearShort] = cardExpiry.split("/");
@@ -560,6 +568,7 @@ export default function Checkout() {
       const createdPayment = await paymentsApi.createFromBrick(createdOrder.id, {
         token: token.id,
         ...(paymentMethodId ? { payment_method_id: paymentMethodId } : {}),
+        payment_type_id: paymentTypeId,
         installments: 1,
         transaction_amount: createdOrder.total,
         payer: {
@@ -890,6 +899,22 @@ export default function Checkout() {
             ) : (
               paymentState !== "approved" && (
                 <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["credit", "debit"] as const).map((fn) => (
+                      <button
+                        key={fn}
+                        type="button"
+                        onClick={() => setCardFunction(fn)}
+                        className={`py-2 rounded-xl border text-sm font-semibold transition-colors ${
+                          cardFunction === fn
+                            ? "border-gold bg-gold/10 text-gold-light"
+                            : "border-surface-03 bg-surface-03 text-stone"
+                        }`}
+                      >
+                        {fn === "credit" ? "Crédito" : "Débito"}
+                      </button>
+                    ))}
+                  </div>
                   <div className="flex flex-col gap-2">
                     <input
                       type="text"
