@@ -126,7 +126,6 @@ export default function Checkout() {
   const [cardError, setCardError] = useState("");
   const [pixExpiresAt, setPixExpiresAt] = useState<number | null>(null);
   const [pixSecondsLeft, setPixSecondsLeft] = useState<number | null>(null);
-  const [cancellingOrder, setCancellingOrder] = useState(false);
   const paymentMethodsRef = useRef<ApiPaymentMethods | null>(null);
 
   // Guard: if a payment was already initiated for a previous session, redirect to order tracking immediately.
@@ -343,6 +342,7 @@ export default function Checkout() {
           sessionStorage.removeItem(LOCKED_ORDER_KEY);
           setPaymentState("expired");
           setPaymentMessage("Pagamento expirado ou cancelado. Tente novamente.");
+          clearCart();
           clearInterval(id);
         }
       } catch {
@@ -361,12 +361,13 @@ export default function Checkout() {
       if (left === 0) {
         setPaymentState("expired");
         setPaymentMessage("PIX expirado. Gere um novo PIX, mude a forma de pagamento ou cancele o pedido.");
+        clearCart();
       }
     };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [pixExpiresAt]);
+  }, [pixExpiresAt, clearCart]);
 
   if (!customer && !createdOrder) {
     navigate("/conta?redirect=/checkout", { replace: true });
@@ -621,41 +622,6 @@ export default function Checkout() {
       setCardError(msg || "Erro ao processar cartao. Verifique os dados e tente novamente.");
     } finally {
       setCardSubmitting(false);
-    }
-  };
-
-  const handleRegeneratePix = async () => {
-    if (!createdOrder) return;
-    setPaymentState("loading");
-    setPaymentMessage("Gerando novo PIX...");
-    setCardError("");
-    try {
-      const pixPayment = await paymentsApi.createPix(createdOrder.id, createdOrder.total);
-      setPayment(pixPayment);
-      setPixExpiresAt(Date.now() + 30 * 60 * 1000);
-      setPaymentState("pending");
-      setPaymentMessage(
-        pixPayment.qr_code_text
-          ? "Novo PIX gerado. Pague pelo QR Code ou copia-e-cola."
-          : "PIX gerado. Aguardando QR Code do Mercado Pago.",
-      );
-    } catch {
-      setPaymentState("error");
-      setPaymentMessage("Erro ao gerar novo PIX. Tente novamente.");
-    }
-  };
-
-  const handleCancelOrder = async () => {
-    if (!createdOrder) return;
-    setCancellingOrder(true);
-    try {
-      await ordersApi.customerCancel(createdOrder.id);
-      sessionStorage.removeItem(LOCKED_ORDER_KEY);
-      clearCart();
-      navigate("/pedidos", { replace: true });
-    } catch (e) {
-      setPaymentMessage("Erro ao cancelar pedido. Tente novamente.");
-      setCancellingOrder(false);
     }
   };
 
@@ -971,32 +937,18 @@ export default function Checkout() {
                   </div>
                 )}
 
-                {/* PIX expirado — opções */}
+                {/* PIX expirado */}
                 {paymentState === "expired" && (
                   <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-4 space-y-3">
                     <p className="text-red-400 text-sm font-semibold flex items-center gap-2">
                       <AlertCircle size={16} />PIX expirado sem pagamento.
                     </p>
-                    <p className="text-stone text-xs">Escolha o que fazer com seu pedido:</p>
+                    <p className="text-stone text-xs">O pedido foi cancelado automaticamente. Você pode fazer um novo pedido quando quiser.</p>
                     <button
-                      onClick={handleRegeneratePix}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 hover:bg-green-500 active:scale-95 text-white font-bold py-3 transition-colors"
+                      onClick={() => navigate("/")}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold hover:bg-gold/90 active:scale-95 text-cream font-bold py-3 transition-colors text-sm"
                     >
-                      <QrCode size={18} />Gerar novo PIX
-                    </button>
-                    <button
-                      onClick={() => { setSelectedPaymentMethod("card"); setPaymentState("pending"); setPaymentMessage("Preencha os dados do cartao para concluir."); }}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-03 hover:bg-surface-02 border border-surface-03 text-cream font-semibold py-3 transition-colors text-sm"
-                    >
-                      <CreditCard size={18} />Pagar com cartão
-                    </button>
-                    <button
-                      onClick={handleCancelOrder}
-                      disabled={cancellingOrder}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/40 text-red-400 hover:bg-red-500/10 py-2.5 transition-colors text-sm disabled:opacity-50"
-                    >
-                      {cancellingOrder ? <Loader2 size={16} className="animate-spin" /> : null}
-                      {cancellingOrder ? "Cancelando..." : "Cancelar pedido"}
+                      Voltar à loja
                     </button>
                   </div>
                 )}
