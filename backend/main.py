@@ -588,6 +588,16 @@ def _run_migrations():
         # ── Pixel por campanha de tráfego pago ───────────────────────────────
         "ALTER TABLE traffic_campaigns ADD COLUMN IF NOT EXISTS pixel_id VARCHAR",
         "ALTER TABLE traffic_campaigns ADD COLUMN IF NOT EXISTS pixel_events VARCHAR(500)",
+        # ── Criativos por campanha de tráfego pago ───────────────────────────
+        """CREATE TABLE IF NOT EXISTS campaign_creatives (
+            id VARCHAR PRIMARY KEY,
+            campaign_id VARCHAR NOT NULL REFERENCES traffic_campaigns(id) ON DELETE CASCADE,
+            name VARCHAR(300),
+            media_url TEXT NOT NULL,
+            creative_type VARCHAR(20) NOT NULL DEFAULT 'image',
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_campaign_creatives_campaign_id ON campaign_creatives(campaign_id)",
     ]
     for stmt in stmts:
         try:

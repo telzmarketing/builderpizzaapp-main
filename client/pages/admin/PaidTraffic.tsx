@@ -19,6 +19,7 @@ import {
   Save,
   Settings,
   Trash2,
+  Video,
   XCircle,
   Zap,
 } from "lucide-react";
@@ -28,10 +29,13 @@ import {
   couponsApi,
   paidTrafficApi,
   productsApi,
+  resolveAssetUrl,
+  uploadApi,
   type AdIntegration,
   type AdsPixel,
   type ApiCoupon,
   type ApiProduct,
+  type CampaignCreative,
   type CampaignLink,
   type CampaignSettings,
   type PaidTrafficDashboard,
@@ -200,6 +204,10 @@ export default function AdminPaidTraffic() {
   const [pixels, setPixels] = useState<AdsPixel[]>([]);
   const [pixelForm, setPixelForm] = useState({ platform: "meta", pixel_id: "", events_tracked: "PageView,Purchase,Lead" });
   const [editingPixelId, setEditingPixelId] = useState<string | null>(null);
+
+  const [creatives, setCreatives] = useState<Record<string, CampaignCreative[]>>({});
+  const [expandedCreatives, setExpandedCreatives] = useState<Record<string, boolean>>({});
+  const [uploadingCreative, setUploadingCreative] = useState<Record<string, boolean>>({});
 
   const campaignById = useMemo(() => new Map(campaigns.map((campaign) => [campaign.id, campaign])), [campaigns]);
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
@@ -403,6 +411,50 @@ export default function AdminPaidTraffic() {
       alert("Configuracoes salvas.");
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao salvar configuracoes.");
+    }
+  };
+
+  const toggleCreatives = async (campaignId: string) => {
+    const nowExpanded = !expandedCreatives[campaignId];
+    setExpandedCreatives((prev) => ({ ...prev, [campaignId]: nowExpanded }));
+    if (nowExpanded && !creatives[campaignId]) {
+      try {
+        const list = await paidTrafficApi.creatives(campaignId);
+        setCreatives((prev) => ({ ...prev, [campaignId]: list }));
+      } catch {
+        setCreatives((prev) => ({ ...prev, [campaignId]: [] }));
+      }
+    }
+  };
+
+  const handleCreativeUpload = async (campaignId: string, file: File) => {
+    setUploadingCreative((prev) => ({ ...prev, [campaignId]: true }));
+    try {
+      const url = await uploadApi.upload(file);
+      const type = file.type.startsWith("video/") ? "video" : "image";
+      const created = await paidTrafficApi.addCreative(campaignId, {
+        media_url: url,
+        creative_type: type,
+        name: file.name,
+      });
+      setCreatives((prev) => ({ ...prev, [campaignId]: [created, ...(prev[campaignId] ?? [])] }));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao enviar criativo.");
+    } finally {
+      setUploadingCreative((prev) => ({ ...prev, [campaignId]: false }));
+    }
+  };
+
+  const removeCreative = async (campaignId: string, creativeId: string) => {
+    if (!confirm("Remover este criativo?")) return;
+    try {
+      await paidTrafficApi.deleteCreative(campaignId, creativeId);
+      setCreatives((prev) => ({
+        ...prev,
+        [campaignId]: (prev[campaignId] ?? []).filter((c) => c.id !== creativeId),
+      }));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao remover criativo.");
     }
   };
 
@@ -735,8 +787,78 @@ export default function AdminPaidTraffic() {
                           </div>
                           <div className="mt-4 flex gap-2">
                             <button onClick={() => editCampaign(campaign)} className="flex-1 rounded-xl bg-surface-02 px-3 py-2 text-sm font-semibold text-parchment hover:text-cream">Editar</button>
+                            <button
+                              onClick={() => toggleCreatives(campaign.id)}
+                              className={`rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${expandedCreatives[campaign.id] ? "bg-gold/20 text-gold" : "bg-surface-02 text-stone hover:text-cream"}`}
+                            >
+                              Criativos
+                            </button>
                             <button onClick={() => removeCampaign(campaign)} className="rounded-xl bg-red-500/10 px-3 py-2 text-red-300 hover:bg-red-500/20"><Trash2 size={16} /></button>
                           </div>
+
+                          {expandedCreatives[campaign.id] && (
+                            <div className="mt-4 border-t border-surface-03 pt-4 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <p className="text-parchment text-xs font-bold uppercase tracking-wider">Criativos</p>
+                                <label className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold cursor-pointer transition-colors ${uploadingCreative[campaign.id] ? "bg-surface-03 text-stone" : "bg-gold text-cream hover:bg-gold/90"}`}>
+                                  {uploadingCreative[campaign.id] ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                                  {uploadingCreative[campaign.id] ? "Enviando..." : "Adicionar"}
+                                  <input
+                                    type="file"
+                                    accept="image/*,video/mp4,video/webm,video/quicktime"
+                                    className="hidden"
+                                    disabled={uploadingCreative[campaign.id]}
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file) handleCreativeUpload(campaign.id, file);
+                                      e.target.value = "";
+                                    }}
+                                  />
+                                </label>
+                              </div>
+
+                              {(creatives[campaign.id] ?? []).length === 0 && !uploadingCreative[campaign.id] && (
+                                <p className="text-stone text-xs text-center py-4">Nenhum criativo adicionado ainda.</p>
+                              )}
+
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {(creatives[campaign.id] ?? []).map((c) => (
+                                  <div key={c.id} className="relative group rounded-xl overflow-hidden bg-surface-03 aspect-video">
+                                    {c.creative_type === "video" ? (
+                                      <video
+                                        src={resolveAssetUrl(c.media_url)}
+                                        className="w-full h-full object-cover"
+                                        muted
+                                        preload="metadata"
+                                      />
+                                    ) : (
+                                      <img
+                                        src={resolveAssetUrl(c.media_url)}
+                                        alt={c.name ?? "criativo"}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    )}
+                                    {c.creative_type === "video" && (
+                                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                        <Video size={22} className="text-white/80" />
+                                      </div>
+                                    )}
+                                    <button
+                                      onClick={() => removeCreative(campaign.id, c.id)}
+                                      className="absolute top-1 right-1 rounded-lg bg-black/60 p-1 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/80"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                    {c.name && (
+                                      <p className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1 text-[10px] text-white truncate">
+                                        {c.name}
+                                      </p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                       {campaigns.length === 0 && <EmptyState title="Nenhuma campanha criada" text="Crie a primeira campanha para gerar links UTM e atribuir pedidos reais." />}

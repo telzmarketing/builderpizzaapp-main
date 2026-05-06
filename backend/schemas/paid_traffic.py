@@ -53,6 +53,23 @@ class TrafficCampaignOut(TrafficCampaignBase):
     model_config = {"from_attributes": True}
 
 
+class CampaignCreativeCreate(BaseModel):
+    media_url: str
+    creative_type: str = "image"
+    name: Optional[str] = None
+
+
+class CampaignCreativeOut(BaseModel):
+    id: str
+    campaign_id: str
+    name: Optional[str] = None
+    media_url: str
+    creative_type: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class CampaignLinkCreate(BaseModel):
     campaign_id: str
     name: Optional[str] = None

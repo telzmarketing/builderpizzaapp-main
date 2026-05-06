@@ -9,6 +9,8 @@ from backend.routes.admin_auth import get_current_admin
 from backend.schemas.paid_traffic import (
     AdIntegrationIn,
     AdIntegrationOut,
+    CampaignCreativeCreate,
+    CampaignCreativeOut,
     CampaignLinkCreate,
     CampaignLinkOut,
     CampaignSettingsIn,
@@ -83,6 +85,21 @@ def update_campaign(campaign_id: str, body: TrafficCampaignUpdate, db: Session =
 @admin_router.delete("/campaigns/{campaign_id}", status_code=204)
 def delete_campaign(campaign_id: str, db: Session = Depends(get_db)):
     PaidTrafficService(db).delete_campaign(campaign_id)
+
+
+@admin_router.get("/campaigns/{campaign_id}/creatives", response_model=list[CampaignCreativeOut])
+def list_creatives(campaign_id: str, db: Session = Depends(get_db)):
+    return PaidTrafficService(db).list_creatives(campaign_id)
+
+
+@admin_router.post("/campaigns/{campaign_id}/creatives", response_model=CampaignCreativeOut, status_code=201)
+def add_creative(campaign_id: str, body: CampaignCreativeCreate, db: Session = Depends(get_db)):
+    return PaidTrafficService(db).add_creative(campaign_id, body)
+
+
+@admin_router.delete("/campaigns/{campaign_id}/creatives/{creative_id}", status_code=204)
+def delete_creative(campaign_id: str, creative_id: str, db: Session = Depends(get_db)):
+    PaidTrafficService(db).delete_creative(campaign_id, creative_id)
 
 
 @admin_router.get("/links", response_model=list[CampaignLinkOut])

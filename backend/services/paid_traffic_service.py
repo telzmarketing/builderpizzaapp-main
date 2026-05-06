@@ -18,6 +18,7 @@ from backend.models.paid_traffic import (
     AdDailyMetric,
     AdPlatformIntegration,
     AdSyncLog,
+    CampaignCreative,
     CampaignLink,
     CampaignSettings,
     TrackingEvent,
@@ -26,6 +27,7 @@ from backend.models.paid_traffic import (
 )
 from backend.schemas.paid_traffic import (
     AdIntegrationIn,
+    CampaignCreativeCreate,
     CampaignLinkCreate,
     CampaignSettingsIn,
     TrafficCampaignCreate,
@@ -83,6 +85,41 @@ class PaidTrafficService:
     def delete_campaign(self, campaign_id: str) -> None:
         campaign = self.get_campaign(campaign_id)
         self._db.delete(campaign)
+        self._db.commit()
+
+    # Criativos
+    def list_creatives(self, campaign_id: str) -> list[CampaignCreative]:
+        self.get_campaign(campaign_id)
+        return (
+            self._db.query(CampaignCreative)
+            .filter(CampaignCreative.campaign_id == campaign_id)
+            .order_by(CampaignCreative.created_at.desc())
+            .all()
+        )
+
+    def add_creative(self, campaign_id: str, body: CampaignCreativeCreate) -> CampaignCreative:
+        self.get_campaign(campaign_id)
+        creative = CampaignCreative(
+            id=f"cc-{uuid.uuid4().hex[:10]}",
+            campaign_id=campaign_id,
+            media_url=body.media_url,
+            creative_type=body.creative_type,
+            name=body.name,
+        )
+        self._db.add(creative)
+        self._db.commit()
+        self._db.refresh(creative)
+        return creative
+
+    def delete_creative(self, campaign_id: str, creative_id: str) -> None:
+        creative = (
+            self._db.query(CampaignCreative)
+            .filter(CampaignCreative.id == creative_id, CampaignCreative.campaign_id == campaign_id)
+            .first()
+        )
+        if not creative:
+            raise HTTPException(404, "Criativo não encontrado.")
+        self._db.delete(creative)
         self._db.commit()
 
     # Links

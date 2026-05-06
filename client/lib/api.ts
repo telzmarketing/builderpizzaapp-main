@@ -2091,6 +2091,15 @@ export const campaignsApi = {
   removeKitItem: (itemId: string) => del<void>(`/campaigns/kits/items/${itemId}`),
 };
 
+export interface CampaignCreative {
+  id: string;
+  campaign_id: string;
+  name: string | null;
+  media_url: string;
+  creative_type: "image" | "video" | string;
+  created_at: string;
+}
+
 export interface AdsPixel {
   id: string;
   platform: string;
@@ -2121,6 +2130,11 @@ export const paidTrafficApi = {
   syncIntegration: (platform: string) => post<{ status: string; message: string }>(`/paid-traffic/integrations/${platform}/sync`, {}),
   settings: () => get<CampaignSettings>("/paid-traffic/settings"),
   updateSettings: (data: Partial<CampaignSettings>) => put<CampaignSettings>("/paid-traffic/settings", data),
+  creatives: (campaignId: string) => get<CampaignCreative[]>(`/paid-traffic/campaigns/${campaignId}/creatives`),
+  addCreative: (campaignId: string, data: { media_url: string; creative_type: string; name?: string }) =>
+    post<CampaignCreative>(`/paid-traffic/campaigns/${campaignId}/creatives`, data),
+  deleteCreative: (campaignId: string, creativeId: string) =>
+    del<void>(`/paid-traffic/campaigns/${campaignId}/creatives/${creativeId}`),
   pixels: () => get<AdsPixel[]>("/ads/pixels"),
   createPixel: (data: { platform: string; pixel_id: string; events_tracked?: string }) => post<AdsPixel>("/ads/pixels", data),
   updatePixel: (id: string, data: { enabled?: boolean; pixel_id?: string; events_tracked?: string }) =>

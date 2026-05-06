@@ -53,12 +53,30 @@ class TrafficCampaign(Base):
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     links = relationship("CampaignLink", back_populates="campaign", cascade="all, delete-orphan")
+    creatives = relationship("CampaignCreative", back_populates="campaign", cascade="all, delete-orphan", order_by="CampaignCreative.created_at.desc()")
     product = relationship("Product", foreign_keys=[product_id])
     coupon = relationship("Coupon", foreign_keys=[coupon_id])
 
     __table_args__ = (
         Index("ix_traffic_campaigns_platform_status", "platform", "status"),
         Index("ix_traffic_campaigns_product_id", "product_id"),
+    )
+
+
+class CampaignCreative(Base):
+    __tablename__ = "campaign_creatives"
+
+    id = Column(String, primary_key=True)
+    campaign_id = Column(String, ForeignKey("traffic_campaigns.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(300), nullable=True)
+    media_url = Column(Text, nullable=False)
+    creative_type = Column(String(20), nullable=False, default="image")  # image | video
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    campaign = relationship("TrafficCampaign", back_populates="creatives")
+
+    __table_args__ = (
+        Index("ix_campaign_creatives_campaign_id", "campaign_id"),
     )
 
 
