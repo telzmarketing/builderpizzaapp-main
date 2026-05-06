@@ -312,6 +312,7 @@ export default function Cart() {
         <button
           onClick={() => {
             if (storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders) return;
+            if (!customer) { navigate("/conta?redirect=/checkout"); return; }
             navigate("/checkout");
           }}
           disabled={!!storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders}

@@ -349,6 +349,11 @@ export default function Checkout() {
     return () => clearInterval(id);
   }, [createdOrder, clearCart, navigate]);
 
+  if (!customer && !createdOrder) {
+    navigate("/conta?redirect=/checkout", { replace: true });
+    return null;
+  }
+
   if (cart.length === 0 && !createdOrder) {
     navigate("/");
     return null;

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ChevronLeft, ChevronRight, Edit2, Check, User, Mail, Phone,
   MapPin, Home, Hash, Eye, EyeOff, LogOut, Plus, Trash2, Shield, Lock,
@@ -193,6 +193,8 @@ function LgpdModal({
 
 export default function Conta() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectAfterLogin = searchParams.get("redirect") || null;
   const {
     orders, siteContent, customer,
     emailLogin, registerCustomer, googleLogin,
@@ -251,7 +253,10 @@ export default function Conta() {
         callback: async (res: { credential: string }) => {
           setError("");
           setLoading(true);
-          try { await googleLogin(res.credential); }
+          try {
+            await googleLogin(res.credential);
+            if (redirectAfterLogin) navigate(redirectAfterLogin, { replace: true });
+          }
           catch (e) { setError(e instanceof Error ? e.message : "Erro no login com Google."); }
           finally { setLoading(false); }
         },
@@ -273,7 +278,10 @@ export default function Conta() {
   const handleLogin = async () => {
     if (!loginIdentifier.trim() || !loginPassword) return;
     setLoading(true); setError("");
-    try { await emailLogin(loginIdentifier.trim(), loginPassword); }
+    try {
+      await emailLogin(loginIdentifier.trim(), loginPassword);
+      if (redirectAfterLogin) navigate(redirectAfterLogin, { replace: true });
+    }
     catch (e) { setError(e instanceof Error ? e.message : "Erro ao entrar."); }
     finally { setLoading(false); }
   };
@@ -319,6 +327,7 @@ export default function Conta() {
         marketing_email_consent: marketingEmail,
         marketing_whatsapp_consent: marketingWhatsapp,
       });
+      if (redirectAfterLogin) navigate(redirectAfterLogin, { replace: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao criar conta.");
       setRegStep("form");
