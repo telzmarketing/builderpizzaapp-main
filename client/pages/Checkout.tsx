@@ -20,7 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
-import { checkoutTrackingPayload, trackEvent, getTrackingData } from "@/lib/tracking";
+import { checkoutTrackingPayload, trackEvent, getTrackingData, firePixelEvent } from "@/lib/tracking";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { useApp } from "@/context/AppContext";
 import {
@@ -321,6 +321,7 @@ export default function Checkout() {
           setPaymentState("approved");
           setPaymentMessage("Pagamento aprovado! Pedido enviado para preparo.");
           trackEvent("order_paid", createdOrder.total, { order_id: createdOrder.id });
+          firePixelEvent("Purchase", { value: createdOrder.total, order_id: createdOrder.id });
           const _tdPaid = getTrackingData();
           customerEventsApi.register({
             event_type: "order_paid",
@@ -463,6 +464,7 @@ export default function Checkout() {
     setLoading(true);
     setApiError("");
     trackEvent("checkout_start", cartSubtotal);
+    firePixelEvent("InitiateCheckout", { value: cartSubtotal });
     const tracking = checkoutTrackingPayload();
     const payload: CheckoutIn = {
       items: cart.map((item) => ({

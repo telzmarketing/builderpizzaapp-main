@@ -18,6 +18,10 @@ class TrafficCampaignBase(BaseModel):
     notes: Optional[str] = None
     # Comma-separated weekday numbers (0=Sun,1=Mon,...,6=Sat). None = all days.
     active_weekdays: Optional[str] = None
+    # ID do pixel (ads_pixels.id) vinculado a esta campanha
+    pixel_id: Optional[str] = None
+    # Eventos do pixel a disparar, separados por vírgula
+    pixel_events: Optional[str] = None
 
 
 class TrafficCampaignCreate(TrafficCampaignBase):
@@ -37,6 +41,8 @@ class TrafficCampaignUpdate(BaseModel):
     destination_url: Optional[str] = None
     notes: Optional[str] = None
     active_weekdays: Optional[str] = None
+    pixel_id: Optional[str] = None
+    pixel_events: Optional[str] = None
 
 
 class TrafficCampaignOut(TrafficCampaignBase):

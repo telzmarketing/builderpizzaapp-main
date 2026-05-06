@@ -45,6 +45,10 @@ class TrafficCampaign(Base):
     # Comma-separated weekday numbers: "0"=Sun, "1"=Mon ... "6"=Sat.
     # NULL means the campaign runs every day of the week.
     active_weekdays = Column(String(20), nullable=True)
+    # Pixel vinculado à campanha (referencia ads_pixels.id)
+    pixel_id = Column(String, nullable=True)
+    # Eventos do pixel separados por vírgula: "PageView,InitiateCheckout,Purchase"
+    pixel_events = Column(String(500), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

@@ -20,6 +20,7 @@ import {
   Settings,
   Trash2,
   XCircle,
+  Zap,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
@@ -28,6 +29,7 @@ import {
   paidTrafficApi,
   productsApi,
   type AdIntegration,
+  type AdsPixel,
   type ApiCoupon,
   type ApiProduct,
   type CampaignLink,
@@ -36,7 +38,7 @@ import {
   type TrafficCampaign,
 } from "@/lib/api";
 
-type Tab = "dashboard" | "campanhas" | "links" | "relatorios" | "integracoes" | "configuracoes";
+type Tab = "dashboard" | "campanhas" | "links" | "relatorios" | "integracoes" | "pixels" | "configuracoes";
 
 type CampaignForm = {
   name: string;
@@ -52,6 +54,8 @@ type CampaignForm = {
   notes: string;
   // Selected weekday indices as a Set. Empty = all days.
   active_weekdays: Set<number>;
+  pixel_id: string;
+  pixel_events: Set<string>;
 };
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof BarChart3 }> = [
@@ -60,6 +64,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof BarChart3 }> = [
   { id: "links", label: "Links", icon: Link2 },
   { id: "relatorios", label: "Relatorios", icon: LineChart },
   { id: "integracoes", label: "Integracoes", icon: PlugZap },
+  { id: "pixels", label: "Pixels", icon: Zap },
   { id: "configuracoes", label: "Configuracoes", icon: Settings },
 ];
 
@@ -97,6 +102,8 @@ function weekdaysLabel(raw: string | null | undefined): string {
   return days.map((d) => WEEKDAYS[d]?.short ?? d).join(" · ");
 }
 
+const PIXEL_EVENT_OPTIONS = ["PageView", "InitiateCheckout", "Purchase", "AddToCart", "Lead"];
+
 const initialCampaignForm: CampaignForm = {
   name: "",
   platform: "manual",
@@ -110,6 +117,8 @@ const initialCampaignForm: CampaignForm = {
   destination_url: "",
   notes: "",
   active_weekdays: new Set(),
+  pixel_id: "",
+  pixel_events: new Set(["PageView", "InitiateCheckout", "Purchase"]),
 };
 
 const formatCurrency = (value: number | null | undefined) =>
@@ -130,6 +139,16 @@ function numberOrNull(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function parsePixelEvents(raw: string | null | undefined): Set<string> {
+  if (!raw) return new Set(["PageView", "InitiateCheckout", "Purchase"]);
+  return new Set(raw.split(",").map((e) => e.trim()).filter(Boolean));
+}
+
+function serializePixelEvents(events: Set<string>): string | null {
+  if (events.size === 0) return null;
+  return [...events].join(",");
+}
+
 function campaignToForm(campaign: TrafficCampaign): CampaignForm {
   return {
     name: campaign.name,
@@ -144,6 +163,8 @@ function campaignToForm(campaign: TrafficCampaign): CampaignForm {
     destination_url: campaign.destination_url ?? "",
     notes: campaign.notes ?? "",
     active_weekdays: parseWeekdays(campaign.active_weekdays),
+    pixel_id: campaign.pixel_id ?? "",
+    pixel_events: parsePixelEvents(campaign.pixel_events),
   };
 }
 
@@ -176,6 +197,10 @@ export default function AdminPaidTraffic() {
     tracking_enabled: true,
   });
 
+  const [pixels, setPixels] = useState<AdsPixel[]>([]);
+  const [pixelForm, setPixelForm] = useState({ platform: "meta", pixel_id: "", events_tracked: "PageView,Purchase,Lead" });
+  const [editingPixelId, setEditingPixelId] = useState<string | null>(null);
+
   const campaignById = useMemo(() => new Map(campaigns.map((campaign) => [campaign.id, campaign])), [campaigns]);
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const couponById = useMemo(() => new Map(coupons.map((coupon) => [coupon.id, coupon])), [coupons]);
@@ -183,7 +208,7 @@ export default function AdminPaidTraffic() {
   const loadAll = async () => {
     setLoading(true);
     setError("");
-    const [dashRes, campaignRes, linkRes, integrationRes, settingsRes, productRes, couponRes] =
+    const [dashRes, campaignRes, linkRes, integrationRes, settingsRes, productRes, couponRes, pixelRes] =
       await Promise.allSettled([
         paidTrafficApi.dashboard(),
         paidTrafficApi.campaigns(),
@@ -192,6 +217,7 @@ export default function AdminPaidTraffic() {
         paidTrafficApi.settings(),
         productsApi.list(false),
         couponsApi.list(),
+        paidTrafficApi.pixels(),
       ]);
 
     if (dashRes.status === "fulfilled") setDashboard(dashRes.value);
@@ -210,6 +236,7 @@ export default function AdminPaidTraffic() {
     }
     if (productRes.status === "fulfilled") setProducts(productRes.value);
     if (couponRes.status === "fulfilled") setCoupons(couponRes.value);
+    if (pixelRes.status === "fulfilled") setPixels(pixelRes.value);
 
     if ([dashRes, campaignRes, linkRes, integrationRes, settingsRes].some((res) => res.status === "rejected")) {
       setError("Nao foi possivel carregar todos os dados de trafego pago.");
@@ -259,6 +286,8 @@ export default function AdminPaidTraffic() {
       destination_url: campaignForm.destination_url || null,
       notes: campaignForm.notes || null,
       active_weekdays: serializeWeekdays(campaignForm.active_weekdays),
+      pixel_id: campaignForm.pixel_id || null,
+      pixel_events: serializePixelEvents(campaignForm.pixel_events),
     };
     try {
       const saved = editingId
@@ -374,6 +403,53 @@ export default function AdminPaidTraffic() {
       alert("Configuracoes salvas.");
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao salvar configuracoes.");
+    }
+  };
+
+  const savePixel = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!pixelForm.pixel_id.trim()) {
+      alert("Informe o ID do pixel.");
+      return;
+    }
+    try {
+      if (editingPixelId) {
+        const updated = await paidTrafficApi.updatePixel(editingPixelId, {
+          pixel_id: pixelForm.pixel_id.trim(),
+          events_tracked: pixelForm.events_tracked.trim() || "PageView,Purchase,Lead",
+        });
+        setPixels((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      } else {
+        const created = await paidTrafficApi.createPixel({
+          platform: pixelForm.platform,
+          pixel_id: pixelForm.pixel_id.trim(),
+          events_tracked: pixelForm.events_tracked.trim() || "PageView,Purchase,Lead",
+        });
+        setPixels((prev) => [created, ...prev]);
+      }
+      setPixelForm({ platform: "meta", pixel_id: "", events_tracked: "PageView,Purchase,Lead" });
+      setEditingPixelId(null);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao salvar pixel.");
+    }
+  };
+
+  const togglePixel = async (pixel: AdsPixel) => {
+    try {
+      const updated = await paidTrafficApi.updatePixel(pixel.id, { enabled: !pixel.enabled });
+      setPixels((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao atualizar pixel.");
+    }
+  };
+
+  const removePixel = async (pixel: AdsPixel) => {
+    if (!confirm(`Remover o pixel "${pixel.platform.toUpperCase()} · ${pixel.pixel_id}"?`)) return;
+    try {
+      await paidTrafficApi.deletePixel(pixel.id);
+      setPixels((prev) => prev.filter((p) => p.id !== pixel.id));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao remover pixel.");
     }
   };
 
@@ -567,6 +643,56 @@ export default function AdminPaidTraffic() {
                       <Field label="Observacoes">
                         <textarea className={`${fieldBase} min-h-20`} value={campaignForm.notes} onChange={(e) => setCampaignForm((prev) => ({ ...prev, notes: e.target.value }))} />
                       </Field>
+
+                      {/* ── Pixel de conversão ── */}
+                      <div className="rounded-xl border border-surface-03 bg-surface-03/30 p-3 space-y-3">
+                        <p className="text-parchment text-xs font-bold uppercase tracking-wider">Pixel de Conversão</p>
+                        <Field label="Pixel vinculado">
+                          <select
+                            className={fieldBase}
+                            value={campaignForm.pixel_id}
+                            onChange={(e) => setCampaignForm((prev) => ({ ...prev, pixel_id: e.target.value }))}
+                          >
+                            <option value="">— Nenhum pixel —</option>
+                            {pixels.filter((p) => p.enabled).map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.platform.toUpperCase()} · {p.pixel_id}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        {campaignForm.pixel_id && (
+                          <Field label="Eventos a disparar">
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              {PIXEL_EVENT_OPTIONS.map((evt) => {
+                                const active = campaignForm.pixel_events.has(evt);
+                                return (
+                                  <button
+                                    key={evt}
+                                    type="button"
+                                    onClick={() => setCampaignForm((prev) => {
+                                      const next = new Set(prev.pixel_events);
+                                      if (next.has(evt)) next.delete(evt); else next.add(evt);
+                                      return { ...prev, pixel_events: next };
+                                    })}
+                                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors select-none ${
+                                      active ? "bg-gold text-cream" : "bg-surface-03 text-stone hover:text-cream"
+                                    }`}
+                                  >
+                                    {evt}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <p className="text-stone text-[11px] mt-1.5">
+                              {campaignForm.pixel_events.size === 0
+                                ? "Nenhum evento selecionado"
+                                : `Disparando: ${[...campaignForm.pixel_events].join(", ")}`}
+                            </p>
+                          </Field>
+                        )}
+                      </div>
+
                       <div className="flex gap-2">
                         <button disabled={saving} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gold px-4 py-3 text-sm font-bold text-cream disabled:opacity-60">
                           {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} Salvar
@@ -698,6 +824,105 @@ export default function AdminPaidTraffic() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {activeTab === "pixels" && (
+                <div className="grid grid-cols-1 xl:grid-cols-[minmax(320px,400px)_1fr] gap-5">
+                  <Panel title={editingPixelId ? "Editar pixel" : "Adicionar pixel"}>
+                    <form onSubmit={savePixel} className="space-y-3">
+                      <Field label="Plataforma">
+                        <select
+                          className={fieldBase}
+                          value={pixelForm.platform}
+                          onChange={(e) => setPixelForm((prev) => ({ ...prev, platform: e.target.value }))}
+                          disabled={!!editingPixelId}
+                        >
+                          <option value="meta">Meta (Facebook)</option>
+                          <option value="google">Google</option>
+                          <option value="tiktok">TikTok</option>
+                        </select>
+                      </Field>
+                      <Field label="ID do Pixel">
+                        <input
+                          className={fieldBase}
+                          value={pixelForm.pixel_id}
+                          onChange={(e) => setPixelForm((prev) => ({ ...prev, pixel_id: e.target.value }))}
+                          placeholder={pixelForm.platform === "meta" ? "Ex: 1234567890" : pixelForm.platform === "google" ? "Ex: AW-123456789" : "Ex: ABCDE12345"}
+                        />
+                      </Field>
+                      <Field label="Eventos rastreados">
+                        <input
+                          className={fieldBase}
+                          value={pixelForm.events_tracked}
+                          onChange={(e) => setPixelForm((prev) => ({ ...prev, events_tracked: e.target.value }))}
+                          placeholder="PageView,Purchase,Lead"
+                        />
+                        <p className="text-stone text-[11px] mt-1">Separe os eventos por virgula.</p>
+                      </Field>
+                      <div className="flex gap-2">
+                        <button className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gold px-4 py-3 text-sm font-bold text-cream">
+                          <Save size={16} /> {editingPixelId ? "Atualizar" : "Adicionar pixel"}
+                        </button>
+                        {editingPixelId && (
+                          <button
+                            type="button"
+                            onClick={() => { setEditingPixelId(null); setPixelForm({ platform: "meta", pixel_id: "", events_tracked: "PageView,Purchase,Lead" }); }}
+                            className="rounded-xl border border-surface-03 px-4 py-3 text-sm font-semibold text-stone hover:text-cream"
+                          >
+                            Cancelar
+                          </button>
+                        )}
+                      </div>
+                    </form>
+                  </Panel>
+
+                  <Panel title="Pixels configurados">
+                    <div className="space-y-3">
+                      {pixels.map((pixel) => (
+                        <div key={pixel.id} className="rounded-2xl border border-surface-03 bg-surface-03/40 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="rounded-lg bg-gold/15 px-2.5 py-1 text-xs font-bold text-gold uppercase">{pixel.platform}</span>
+                                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${pixel.enabled ? "bg-green-500/15 text-green-300" : "bg-surface-03 text-stone"}`}>
+                                  {pixel.enabled ? "Ativo" : "Inativo"}
+                                </span>
+                              </div>
+                              <p className="text-cream font-bold mt-2 font-mono text-sm">{pixel.pixel_id}</p>
+                              <p className="text-stone text-xs mt-1">Eventos: {pixel.events_tracked}</p>
+                            </div>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingPixelId(pixel.id);
+                                setPixelForm({ platform: pixel.platform, pixel_id: pixel.pixel_id, events_tracked: pixel.events_tracked });
+                              }}
+                              className="rounded-xl bg-surface-02 px-3 py-2 text-sm font-semibold text-parchment hover:text-cream"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              onClick={() => togglePixel(pixel)}
+                              className={`rounded-xl px-3 py-2 text-sm font-semibold ${pixel.enabled ? "bg-orange-500/10 text-orange-300 hover:bg-orange-500/20" : "bg-green-500/10 text-green-300 hover:bg-green-500/20"}`}
+                            >
+                              {pixel.enabled ? "Desativar" : "Ativar"}
+                            </button>
+                            <button onClick={() => removePixel(pixel)} className="rounded-xl bg-red-500/10 px-3 py-2 text-red-300 hover:bg-red-500/20">
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {pixels.length === 0 && (
+                        <EmptyState
+                          title="Nenhum pixel configurado"
+                          text="Adicione o ID do pixel da Meta, Google ou TikTok para rastrear conversoes automaticamente."
+                        />
+                      )}
+                    </div>
+                  </Panel>
                 </div>
               )}
 

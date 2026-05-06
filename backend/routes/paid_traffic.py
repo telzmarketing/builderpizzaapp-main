@@ -31,6 +31,28 @@ def record_tracking_event(body: TrackingEventIn, db: Session = Depends(get_db)):
     return PaidTrafficService(db).record_event(body)
 
 
+@router.get("/paid-traffic/campaigns/{campaign_id}/pixel-config")
+def campaign_pixel_config(campaign_id: str, db: Session = Depends(get_db)):
+    """Endpoint público — retorna config do pixel vinculado à campanha (sem auth)."""
+    from backend.models.paid_traffic import TrafficCampaign
+    from backend.routes.ads_oauth import AdsPixel
+    from backend.core.response import ok
+
+    campaign = db.query(TrafficCampaign).filter(TrafficCampaign.id == campaign_id).first()
+    if not campaign or not campaign.pixel_id:
+        return ok(None)
+
+    pixel = db.query(AdsPixel).filter(AdsPixel.id == campaign.pixel_id, AdsPixel.enabled == True).first()
+    if not pixel:
+        return ok(None)
+
+    return ok({
+        "platform": pixel.platform,
+        "pixel_id": pixel.pixel_id,
+        "events": [e.strip() for e in (campaign.pixel_events or "PageView").split(",") if e.strip()],
+    })
+
+
 admin_router = APIRouter(prefix="/paid-traffic", tags=["paid-traffic-admin"], dependencies=[Depends(get_current_admin)])
 
 

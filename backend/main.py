@@ -585,6 +585,9 @@ def _run_migrations():
         # ── Banner direct product link ────────────────────────────────────────
         "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS product_id VARCHAR REFERENCES products(id) ON DELETE SET NULL",
         "CREATE INDEX IF NOT EXISTS ix_campaigns_product_id ON campaigns(product_id)",
+        # ── Pixel por campanha de tráfego pago ───────────────────────────────
+        "ALTER TABLE traffic_campaigns ADD COLUMN IF NOT EXISTS pixel_id VARCHAR",
+        "ALTER TABLE traffic_campaigns ADD COLUMN IF NOT EXISTS pixel_events VARCHAR(500)",
     ]
     for stmt in stmts:
         try:

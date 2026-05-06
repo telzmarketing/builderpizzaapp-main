@@ -387,6 +387,10 @@ export interface TrafficCampaign {
   notes: string | null;
   // Comma-separated weekday numbers "0"=Sun … "6"=Sat. null = every day.
   active_weekdays: string | null;
+  // ID da linha em ads_pixels vinculada a esta campanha
+  pixel_id: string | null;
+  // Eventos do pixel separados por vírgula: "PageView,InitiateCheckout,Purchase"
+  pixel_events: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -2087,6 +2091,21 @@ export const campaignsApi = {
   removeKitItem: (itemId: string) => del<void>(`/campaigns/kits/items/${itemId}`),
 };
 
+export interface AdsPixel {
+  id: string;
+  platform: string;
+  pixel_id: string;
+  enabled: boolean;
+  events_tracked: string;
+  created_at: string;
+}
+
+export interface CampaignPixelConfig {
+  platform: string;
+  pixel_id: string;
+  events: string[];
+}
+
 export const paidTrafficApi = {
   dashboard: () => get<PaidTrafficDashboard>("/paid-traffic/dashboard"),
   campaigns: () => get<TrafficCampaign[]>("/paid-traffic/campaigns"),
@@ -2102,6 +2121,12 @@ export const paidTrafficApi = {
   syncIntegration: (platform: string) => post<{ status: string; message: string }>(`/paid-traffic/integrations/${platform}/sync`, {}),
   settings: () => get<CampaignSettings>("/paid-traffic/settings"),
   updateSettings: (data: Partial<CampaignSettings>) => put<CampaignSettings>("/paid-traffic/settings", data),
+  pixels: () => get<AdsPixel[]>("/ads/pixels"),
+  createPixel: (data: { platform: string; pixel_id: string; events_tracked?: string }) => post<AdsPixel>("/ads/pixels", data),
+  updatePixel: (id: string, data: { enabled?: boolean; pixel_id?: string; events_tracked?: string }) =>
+    patch<AdsPixel>(`/ads/pixels/${id}`, data),
+  deletePixel: (id: string) => del<void>(`/ads/pixels/${id}`),
+  campaignPixelConfig: (campaignId: string) => get<CampaignPixelConfig | null>(`/paid-traffic/campaigns/${campaignId}/pixel-config`),
 };
 
 export const trackingApi = {
