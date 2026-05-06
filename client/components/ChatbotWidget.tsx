@@ -364,7 +364,7 @@ export default function ChatbotWidget() {
       {!open ? (
         <button
           onClick={handleOpen}
-          className="w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-2xl transition-transform hover:scale-110 active:scale-95"
+          className="w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-2xl transition-all duration-200 opacity-70 scale-[0.85] hover:opacity-100 hover:scale-100 active:scale-95"
           style={{ background: config.cor_primaria }}
           aria-label={`Abrir chat com ${config.nome_bot}`}
         >
@@ -373,10 +373,10 @@ export default function ChatbotWidget() {
       ) : (
         <button
           onClick={handleClose}
-          className="w-12 h-12 rounded-full shadow-xl flex items-center justify-center transition-transform hover:scale-110 active:scale-95 bg-[#1a1a1a] border border-white/10"
+          className="w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 bg-[#1a1a1a] border border-white/10"
           aria-label="Fechar chat"
         >
-          <X size={18} className="text-[#888]" />
+          <X size={20} className="text-[#888]" />
         </button>
       )}
     </div>
