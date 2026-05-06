@@ -48,10 +48,12 @@ class Campaign(Base):
     card_bg_color = Column(String(20), nullable=True)
     media_type = Column(String(10), default="image", nullable=True)  # 'image' | 'video'
     video_url = Column(Text, nullable=True)
+    product_id = Column(String, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     campaign_products = relationship("CampaignProduct", back_populates="campaign", cascade="all, delete-orphan")
+    product = relationship("Product", foreign_keys=[product_id])
 
 
 class CampaignProduct(Base):

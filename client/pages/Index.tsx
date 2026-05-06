@@ -292,7 +292,14 @@ export default function Home() {
           <div className="max-w-sm lg:max-w-4xl mx-auto">
             <button
               className="w-full text-left focus:outline-none"
-              onClick={() => displayBanner?.slug && navigate(`/campanha/${displayBanner.slug}`)}
+              onClick={() => {
+                if (!displayBanner) return;
+                if (displayBanner.product_id) {
+                  navigate(`/product/${displayBanner.product_id}`);
+                } else if (displayBanner.slug) {
+                  navigate(`/campanha/${displayBanner.slug}`);
+                }
+              }}
             >
               <div
                 className="rounded-2xl overflow-hidden relative h-[10.35rem] lg:h-[16.1rem]"

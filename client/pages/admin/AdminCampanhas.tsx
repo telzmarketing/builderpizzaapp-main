@@ -105,6 +105,7 @@ interface CampaignForm {
   card_bg_color: string;
   media_type: "image" | "video";
   video_url: string;
+  product_id: string;
 }
 
 interface KitForm {
@@ -137,7 +138,7 @@ const emptyCampaignForm: CampaignForm = {
   banner: "", slug: "", campaign_type: "products_promo",
   display_title: "", display_subtitle: "", display_order: 0, published: false,
   schedule_enabled: false, active_days: [], card_bg_color: "",
-  media_type: "image", video_url: "",
+  media_type: "image", video_url: "", product_id: "",
 };
 
 const emptyKitForm: KitForm = {
@@ -314,6 +315,7 @@ export default function AdminCampanhas() {
       card_bg_color: c.card_bg_color ?? "",
       media_type: (c.media_type as "image" | "video") ?? "image",
       video_url: c.video_url ?? "",
+      product_id: c.product_id ?? "",
     });
     setShowCampaignModal(true);
   };
@@ -347,6 +349,7 @@ export default function AdminCampanhas() {
         card_bg_color: campaignForm.card_bg_color || null,
         media_type: campaignForm.media_type,
         video_url: campaignForm.video_url || null,
+        product_id: campaignForm.product_id || null,
       };
       if (editingCampaignId) {
         await campaignsApi.update(editingCampaignId, payload as any);
@@ -1135,6 +1138,23 @@ export default function AdminCampanhas() {
             <div className="grid grid-cols-2 gap-4">
               <Inp label="Título de Exibição" value={campaignForm.display_title} onChange={(e) => setCampaignForm({ ...campaignForm, display_title: e.target.value })} placeholder="Texto opcional exibido na loja" />
               <Inp label="Subtítulo de Exibição" value={campaignForm.display_subtitle} onChange={(e) => setCampaignForm({ ...campaignForm, display_subtitle: e.target.value })} placeholder="Subtítulo" />
+            </div>
+
+            <div>
+              <label className="block text-parchment text-xs font-medium mb-1">Produto em Destaque (clique no banner)</label>
+              <select
+                value={campaignForm.product_id}
+                onChange={(e) => setCampaignForm({ ...campaignForm, product_id: e.target.value })}
+                className="w-full bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold"
+              >
+                <option value="">— Nenhum (vai para a página da campanha) —</option>
+                {products.filter((p) => p.active).map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              {campaignForm.product_id && (
+                <p className="text-stone text-[11px] mt-1">O clique no banner levará o cliente diretamente para a página deste produto.</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">

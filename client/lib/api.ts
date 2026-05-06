@@ -471,6 +471,7 @@ export interface ApiCampaign {
   card_bg_color: string | null;
   media_type: string | null;
   video_url: string | null;
+  product_id: string | null;
   created_at: string;
   updated_at: string;
 }
