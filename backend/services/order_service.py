@@ -226,6 +226,14 @@ class OrderService:
         if not payload.items:
             raise CartEmpty()
 
+        if payload.customer_id:
+            from backend.models.customer import Customer as CustomerModel
+            if not self._db.query(CustomerModel).filter(CustomerModel.id == payload.customer_id).first():
+                raise DomainError(
+                    "Conta não encontrada. Faça login novamente para continuar.",
+                    code="CustomerNotFound",
+                )
+
         from backend.services.store_operation_service import StoreOperationService
 
         StoreOperationService(self._db).validate_order_allowed(

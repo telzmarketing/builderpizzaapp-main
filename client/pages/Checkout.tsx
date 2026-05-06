@@ -82,7 +82,7 @@ function statusClass(state: PaymentState): string {
 
 export default function Checkout() {
   const navigate = useNavigate();
-  const { cart, cartSubtotal, clearCart, siteContent, customer } = useApp();
+  const { cart, cartSubtotal, clearCart, siteContent, customer, customerLogout } = useApp();
   const c = siteContent.pages.checkout;
 
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("delivery");
@@ -514,7 +514,13 @@ export default function Checkout() {
       }
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
     } catch (err) {
-      setApiError(err instanceof Error ? err.message : "Erro ao criar pedido. Tente novamente.");
+      const msg = err instanceof Error ? err.message : "Erro ao criar pedido. Tente novamente.";
+      if (msg.includes("Conta não encontrada") || msg.includes("CustomerNotFound")) {
+        customerLogout();
+        navigate("/conta?redirect=/checkout", { replace: true });
+        return;
+      }
+      setApiError(msg);
     } finally {
       setLoading(false);
     }
