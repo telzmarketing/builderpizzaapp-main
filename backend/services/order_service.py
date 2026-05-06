@@ -435,22 +435,24 @@ class OrderService:
             try:
                 from backend.schemas.paid_traffic import TrackingEventIn
                 from backend.services.paid_traffic_service import PaidTrafficService
+                from backend.database import SessionLocal
 
-                PaidTrafficService(self._db).record_event(TrackingEventIn(
-                    session_id=payload.session_id,
-                    campaign_id=payload.campaign_id,
-                    event_type="order_created",
-                    value=order.total,
-                    path=payload.landing_page,
-                    landing_page=payload.landing_page,
-                    referrer=payload.referrer,
-                    utm_source=payload.utm_source,
-                    utm_medium=payload.utm_medium,
-                    utm_campaign=payload.utm_campaign,
-                    utm_content=payload.utm_content,
-                    utm_term=payload.utm_term,
-                    metadata={"order_id": order.id},
-                ))
+                with SessionLocal() as tracking_db:
+                    PaidTrafficService(tracking_db).record_event(TrackingEventIn(
+                        session_id=payload.session_id,
+                        campaign_id=payload.campaign_id,
+                        event_type="order_created",
+                        value=order.total,
+                        path=payload.landing_page,
+                        landing_page=payload.landing_page,
+                        referrer=payload.referrer,
+                        utm_source=payload.utm_source,
+                        utm_medium=payload.utm_medium,
+                        utm_campaign=payload.utm_campaign,
+                        utm_content=payload.utm_content,
+                        utm_term=payload.utm_term,
+                        metadata={"order_id": order.id},
+                    ))
             except Exception:
                 pass
 
