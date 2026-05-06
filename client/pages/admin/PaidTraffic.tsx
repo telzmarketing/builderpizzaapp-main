@@ -208,6 +208,7 @@ export default function AdminPaidTraffic() {
   const [creatives, setCreatives] = useState<Record<string, CampaignCreative[]>>({});
   const [expandedCreatives, setExpandedCreatives] = useState<Record<string, boolean>>({});
   const [uploadingCreative, setUploadingCreative] = useState<Record<string, boolean>>({});
+  const [previewCreative, setPreviewCreative] = useState<CampaignCreative | null>(null);
 
   const campaignById = useMemo(() => new Map(campaigns.map((campaign) => [campaign.id, campaign])), [campaigns]);
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
@@ -428,10 +429,16 @@ export default function AdminPaidTraffic() {
   };
 
   const handleCreativeUpload = async (campaignId: string, file: File) => {
+    const isVideo = file.type.startsWith("video/");
+    const maxBytes = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      alert(`Arquivo muito grande. Limite: ${isVideo ? "50 MB para vídeos" : "5 MB para imagens"}.`);
+      return;
+    }
     setUploadingCreative((prev) => ({ ...prev, [campaignId]: true }));
     try {
       const url = await uploadApi.upload(file);
-      const type = file.type.startsWith("video/") ? "video" : "image";
+      const type = isVideo ? "video" : "image";
       const created = await paidTrafficApi.addCreative(campaignId, {
         media_url: url,
         creative_type: type,
@@ -823,7 +830,7 @@ export default function AdminPaidTraffic() {
 
                               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                 {(creatives[campaign.id] ?? []).map((c) => (
-                                  <div key={c.id} className="relative group rounded-xl overflow-hidden bg-surface-03 aspect-video">
+                                  <div key={c.id} className="relative group rounded-xl overflow-hidden bg-surface-03 aspect-video cursor-pointer" onClick={() => setPreviewCreative(c)}>
                                     {c.creative_type === "video" ? (
                                       <video
                                         src={resolveAssetUrl(c.media_url)}
@@ -844,7 +851,7 @@ export default function AdminPaidTraffic() {
                                       </div>
                                     )}
                                     <button
-                                      onClick={() => removeCreative(campaign.id, c.id)}
+                                      onClick={(e) => { e.stopPropagation(); removeCreative(campaign.id, c.id); }}
                                       className="absolute top-1 right-1 rounded-lg bg-black/60 p-1 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/80"
                                     >
                                       <Trash2 size={13} />
@@ -1084,6 +1091,45 @@ export default function AdminPaidTraffic() {
           )}
         </div>
       </main>
+
+      {/* ── Modal de preview de criativo ── */}
+      {previewCreative && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => setPreviewCreative(null)}
+        >
+          <div
+            className="relative max-w-4xl w-full max-h-[90vh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setPreviewCreative(null)}
+              className="absolute -top-10 right-0 text-white/70 hover:text-white text-sm font-semibold flex items-center gap-1"
+            >
+              <XCircle size={20} /> Fechar
+            </button>
+
+            {previewCreative.creative_type === "video" ? (
+              <video
+                src={resolveAssetUrl(previewCreative.media_url)}
+                controls
+                autoPlay
+                className="max-h-[80vh] w-full rounded-2xl bg-black"
+              />
+            ) : (
+              <img
+                src={resolveAssetUrl(previewCreative.media_url)}
+                alt={previewCreative.name ?? "criativo"}
+                className="max-h-[80vh] w-auto rounded-2xl object-contain"
+              />
+            )}
+
+            {previewCreative.name && (
+              <p className="mt-3 text-white/80 text-sm font-medium">{previewCreative.name}</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
