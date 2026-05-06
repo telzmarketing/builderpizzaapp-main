@@ -583,13 +583,39 @@ export default function Checkout() {
       });
 
       setPayment(createdPayment);
-      setPaymentState("pending");
-      setPaymentMessage("Pagamento enviado. Aguardando confirmacao do banco.");
+      if (createdPayment.status === "rejected" || createdPayment.status === "cancelled") {
+        setPaymentState("rejected");
+        setPaymentMessage("Cartao recusado pelo banco. Tente outro cartao ou pague via PIX.");
+      } else {
+        setPaymentState("pending");
+        setPaymentMessage("Pagamento enviado. Aguardando confirmacao do banco.");
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
       setCardError(msg || "Erro ao processar cartao. Verifique os dados e tente novamente.");
     } finally {
       setCardSubmitting(false);
+    }
+  };
+
+  const handleSwitchToPix = async () => {
+    if (!createdOrder) return;
+    setSelectedPaymentMethod("pix");
+    setPaymentState("loading");
+    setPaymentMessage("Gerando PIX seguro...");
+    setCardError("");
+    try {
+      const pixPayment = await paymentsApi.createPix(createdOrder.id, createdOrder.total);
+      setPayment(pixPayment);
+      setPaymentState("pending");
+      setPaymentMessage(
+        pixPayment.qr_code_text
+          ? "PIX gerado. Pague pelo QR Code ou copia-e-cola."
+          : "PIX criado. Aguardando retorno do QR Code do Mercado Pago.",
+      );
+    } catch {
+      setPaymentState("error");
+      setPaymentMessage("Erro ao gerar PIX. Tente novamente.");
     }
   };
 
@@ -904,81 +930,109 @@ export default function Checkout() {
             ) : (
               paymentState !== "approved" && (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    {(["credit", "debit"] as const).map((fn) => (
+                  {/* Cartão recusado — oferecer PIX */}
+                  {paymentState === "rejected" && (
+                    <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-4 space-y-3">
+                      <p className="text-red-400 text-sm font-semibold flex items-center gap-2">
+                        <AlertCircle size={16} />
+                        Cartao recusado pelo banco.
+                      </p>
+                      <p className="text-stone text-xs">Tente outro cartao ou pague via PIX — rapido e sem taxa.</p>
                       <button
-                        key={fn}
-                        type="button"
-                        onClick={() => setCardFunction(fn)}
-                        className={`py-2 rounded-xl border text-sm font-semibold transition-colors ${
-                          cardFunction === fn
-                            ? "border-gold bg-gold/10 text-gold-light"
-                            : "border-surface-03 bg-surface-03 text-stone"
-                        }`}
+                        onClick={handleSwitchToPix}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 hover:bg-green-500 active:scale-95 text-white font-bold py-3 transition-colors"
                       >
-                        {fn === "credit" ? "Crédito" : "Débito"}
+                        <QrCode size={18} />
+                        Pagar via PIX agora
                       </button>
-                    ))}
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="Numero do cartao"
-                      value={cardNumber}
-                      onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-                      maxLength={19}
-                      className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm tracking-widest"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Nome no cartao (como no cartao)"
-                      value={cardName}
-                      onChange={(e) => setCardName(e.target.value.toUpperCase())}
-                      className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm uppercase"
-                    />
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="Validade MM/AA"
-                        value={cardExpiry}
-                        onChange={(e) => setCardExpiry(formatExpiry(e.target.value))}
-                        maxLength={5}
-                        className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
-                      />
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="CVV"
-                        value={cardCvv}
-                        onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                        maxLength={4}
-                        className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
-                      />
+                      <button
+                        onClick={() => { setPaymentState("pending"); setPaymentMessage("Preencha os dados do cartao para concluir."); setCardError(""); }}
+                        className="w-full text-center text-stone text-xs underline underline-offset-2"
+                      >
+                        Tentar com outro cartao
+                      </button>
                     </div>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="CPF do titular (opcional)"
-                      value={cardCpf}
-                      onChange={(e) => setCardCpf(formatCpf(e.target.value))}
-                      maxLength={14}
-                      className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
-                    />
-                  </div>
-                  {cardError && <p className="text-red-400 text-xs ml-1">{cardError}</p>}
-                  <button
-                    onClick={handleCardPay}
-                    disabled={cardSubmitting || !cardNumber || !cardName || !cardExpiry || !cardCvv}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold hover:bg-gold/90 active:scale-95 text-cream font-bold py-4 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {cardSubmitting ? <Loader2 size={20} className="animate-spin" /> : <CreditCard size={20} />}
-                    {cardSubmitting ? "Processando..." : "Pagar com cartao"}
-                  </button>
-                  <p className="text-center text-stone text-xs">
-                    Pagamento seguro via Mercado Pago. Seus dados de cartao nao sao armazenados.
-                  </p>
+                  )}
+                  {/* Formulário do cartão — oculto quando recusado */}
+                  {paymentState !== "rejected" && (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(["credit", "debit"] as const).map((fn) => (
+                          <button
+                            key={fn}
+                            type="button"
+                            onClick={() => setCardFunction(fn)}
+                            className={`py-2 rounded-xl border text-sm font-semibold transition-colors ${
+                              cardFunction === fn
+                                ? "border-gold bg-gold/10 text-gold-light"
+                                : "border-surface-03 bg-surface-03 text-stone"
+                            }`}
+                          >
+                            {fn === "credit" ? "Crédito" : "Débito"}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Numero do cartao"
+                          value={cardNumber}
+                          onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
+                          maxLength={19}
+                          className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm tracking-widest"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Nome no cartao (como no cartao)"
+                          value={cardName}
+                          onChange={(e) => setCardName(e.target.value.toUpperCase())}
+                          className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm uppercase"
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="Validade MM/AA"
+                            value={cardExpiry}
+                            onChange={(e) => setCardExpiry(formatExpiry(e.target.value))}
+                            maxLength={5}
+                            className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
+                          />
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="CVV"
+                            value={cardCvv}
+                            onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                            maxLength={4}
+                            className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="CPF do titular (opcional)"
+                          value={cardCpf}
+                          onChange={(e) => setCardCpf(formatCpf(e.target.value))}
+                          maxLength={14}
+                          className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
+                        />
+                      </div>
+                      {cardError && <p className="text-red-400 text-xs ml-1">{cardError}</p>}
+                      <button
+                        onClick={handleCardPay}
+                        disabled={cardSubmitting || !cardNumber || !cardName || !cardExpiry || !cardCvv}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold hover:bg-gold/90 active:scale-95 text-cream font-bold py-4 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {cardSubmitting ? <Loader2 size={20} className="animate-spin" /> : <CreditCard size={20} />}
+                        {cardSubmitting ? "Processando..." : "Pagar com cartao"}
+                      </button>
+                      <p className="text-center text-stone text-xs">
+                        Pagamento seguro via Mercado Pago. Seus dados de cartao nao sao armazenados.
+                      </p>
+                    </>
+                  )}
                 </div>
               )
             )}
