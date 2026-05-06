@@ -389,6 +389,14 @@ class PaymentService:
                 order.updated_at = now
                 if status == PaymentStatus.approved:
                     order.paid_at = order.paid_at or now
+                # Trigger: PIX expirado → auto-cancelar com rastreamento
+                if status in {PaymentStatus.expired, PaymentStatus.cancelled} and not order.cancelled_by:
+                    if _allowed_order_transition(order, OrderStatus.cancelled):
+                        order_sm.transition(order.id, target_order_status.value, "cancelled")
+                        order.status = OrderStatus.cancelled
+                        order.cancelled_by = "system"
+                        order.cancellation_reason = "PIX não pago — expirado pelo Mercado Pago"
+                        order.cancelled_at = now
             else:
                 order.updated_at = now
         elif order and status == PaymentStatus.approved:

@@ -124,6 +124,9 @@ export default function Checkout() {
   const [cardFunction, setCardFunction] = useState<"credit" | "debit">("credit");
   const [cardSubmitting, setCardSubmitting] = useState(false);
   const [cardError, setCardError] = useState("");
+  const [pixExpiresAt, setPixExpiresAt] = useState<number | null>(null);
+  const [pixSecondsLeft, setPixSecondsLeft] = useState<number | null>(null);
+  const [cancellingOrder, setCancellingOrder] = useState(false);
   const paymentMethodsRef = useRef<ApiPaymentMethods | null>(null);
 
   // Guard: if a payment was already initiated for a previous session, redirect to order tracking immediately.
@@ -349,6 +352,22 @@ export default function Checkout() {
     return () => clearInterval(id);
   }, [createdOrder, clearCart, navigate]);
 
+  // Countdown do PIX (30 min = 1800s)
+  useEffect(() => {
+    if (!pixExpiresAt) return;
+    const tick = () => {
+      const left = Math.max(0, Math.round((pixExpiresAt - Date.now()) / 1000));
+      setPixSecondsLeft(left);
+      if (left === 0) {
+        setPaymentState("expired");
+        setPaymentMessage("PIX expirado. Gere um novo PIX, mude a forma de pagamento ou cancele o pedido.");
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [pixExpiresAt]);
+
   if (!customer && !createdOrder) {
     navigate("/conta?redirect=/checkout", { replace: true });
     return null;
@@ -502,6 +521,7 @@ export default function Checkout() {
         setPaymentMessage("Gerando PIX seguro...");
         const pixPayment = await paymentsApi.createPix(order.id, order.total);
         setPayment(pixPayment);
+        setPixExpiresAt(Date.now() + 30 * 60 * 1000); // 30 min de validade
         setPaymentState("pending");
         setPaymentMessage(
           pixPayment.qr_code_text
@@ -604,6 +624,41 @@ export default function Checkout() {
     }
   };
 
+  const handleRegeneratePix = async () => {
+    if (!createdOrder) return;
+    setPaymentState("loading");
+    setPaymentMessage("Gerando novo PIX...");
+    setCardError("");
+    try {
+      const pixPayment = await paymentsApi.createPix(createdOrder.id, createdOrder.total);
+      setPayment(pixPayment);
+      setPixExpiresAt(Date.now() + 30 * 60 * 1000);
+      setPaymentState("pending");
+      setPaymentMessage(
+        pixPayment.qr_code_text
+          ? "Novo PIX gerado. Pague pelo QR Code ou copia-e-cola."
+          : "PIX gerado. Aguardando QR Code do Mercado Pago.",
+      );
+    } catch {
+      setPaymentState("error");
+      setPaymentMessage("Erro ao gerar novo PIX. Tente novamente.");
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    if (!createdOrder) return;
+    setCancellingOrder(true);
+    try {
+      await ordersApi.customerCancel(createdOrder.id);
+      sessionStorage.removeItem(LOCKED_ORDER_KEY);
+      clearCart();
+      navigate("/pedidos", { replace: true });
+    } catch (e) {
+      setPaymentMessage("Erro ao cancelar pedido. Tente novamente.");
+      setCancellingOrder(false);
+    }
+  };
+
   const handleSwitchToPix = async () => {
     if (!createdOrder) return;
     setSelectedPaymentMethod("pix");
@@ -613,6 +668,7 @@ export default function Checkout() {
     try {
       const pixPayment = await paymentsApi.createPix(createdOrder.id, createdOrder.total);
       setPayment(pixPayment);
+      setPixExpiresAt(Date.now() + 30 * 60 * 1000);
       setPaymentState("pending");
       setPaymentMessage(
         pixPayment.qr_code_text
@@ -903,34 +959,80 @@ export default function Checkout() {
             <p className={`text-sm mb-3 ${statusClass(paymentState)}`}>{paymentMessage || "Aguardando pagamento."}</p>
             {selectedPaymentMethod === "pix" ? (
               <div className="space-y-4">
-                {payment?.qr_code && paymentState !== "approved" && (
-                  <div className="mx-auto w-full max-w-[260px] rounded-xl bg-white p-3">
-                    <img src={payment.qr_code} alt="QR Code PIX" className="h-auto w-full rounded-lg" />
+                {/* Timer de validade do PIX */}
+                {paymentState === "pending" && pixSecondsLeft !== null && pixSecondsLeft > 0 && (
+                  <div className={`flex items-center justify-between rounded-xl px-4 py-2 text-xs font-medium ${
+                    pixSecondsLeft < 300 ? "bg-red-500/10 border border-red-500/30 text-red-400" : "bg-surface-03 text-stone"
+                  }`}>
+                    <span className="flex items-center gap-1.5"><Clock size={12} />Validade do PIX</span>
+                    <span className={`font-mono font-bold ${pixSecondsLeft < 300 ? "text-red-400" : "text-cream"}`}>
+                      {String(Math.floor(pixSecondsLeft / 60)).padStart(2, "0")}:{String(pixSecondsLeft % 60).padStart(2, "0")}
+                    </span>
                   </div>
                 )}
-                {payment?.qr_code_text && paymentState !== "approved" && (
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-stone">Codigo copia-e-cola</label>
-                    <textarea
-                      readOnly
-                      value={payment.qr_code_text}
-                      rows={4}
-                      className="w-full resize-none rounded-xl border border-surface-03 bg-surface-03 px-3 py-2 text-xs text-cream outline-none"
-                    />
+
+                {/* PIX expirado — opções */}
+                {paymentState === "expired" && (
+                  <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-4 space-y-3">
+                    <p className="text-red-400 text-sm font-semibold flex items-center gap-2">
+                      <AlertCircle size={16} />PIX expirado sem pagamento.
+                    </p>
+                    <p className="text-stone text-xs">Escolha o que fazer com seu pedido:</p>
                     <button
-                      type="button"
-                      onClick={() => navigator.clipboard?.writeText(payment.qr_code_text || "")}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold px-4 py-3 text-sm font-bold text-cream transition-colors hover:bg-gold/90"
+                      onClick={handleRegeneratePix}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 hover:bg-green-500 active:scale-95 text-white font-bold py-3 transition-colors"
                     >
-                      <Copy size={16} />
-                      Copiar codigo PIX
+                      <QrCode size={18} />Gerar novo PIX
+                    </button>
+                    <button
+                      onClick={() => { setSelectedPaymentMethod("card"); setPaymentState("pending"); setPaymentMessage("Preencha os dados do cartao para concluir."); }}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-03 hover:bg-surface-02 border border-surface-03 text-cream font-semibold py-3 transition-colors text-sm"
+                    >
+                      <CreditCard size={18} />Pagar com cartão
+                    </button>
+                    <button
+                      onClick={handleCancelOrder}
+                      disabled={cancellingOrder}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/40 text-red-400 hover:bg-red-500/10 py-2.5 transition-colors text-sm disabled:opacity-50"
+                    >
+                      {cancellingOrder ? <Loader2 size={16} className="animate-spin" /> : null}
+                      {cancellingOrder ? "Cancelando..." : "Cancelar pedido"}
                     </button>
                   </div>
                 )}
-                {paymentState !== "loading" && !payment?.qr_code_text && paymentState !== "approved" && (
-                  <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
-                    O Mercado Pago ainda nao retornou o QR Code. A tela continua verificando o pagamento.
-                  </div>
+
+                {paymentState !== "expired" && (
+                  <>
+                    {payment?.qr_code && paymentState !== "approved" && (
+                      <div className="mx-auto w-full max-w-[260px] rounded-xl bg-white p-3">
+                        <img src={payment.qr_code} alt="QR Code PIX" className="h-auto w-full rounded-lg" />
+                      </div>
+                    )}
+                    {payment?.qr_code_text && paymentState !== "approved" && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-stone">Codigo copia-e-cola</label>
+                        <textarea
+                          readOnly
+                          value={payment.qr_code_text}
+                          rows={4}
+                          className="w-full resize-none rounded-xl border border-surface-03 bg-surface-03 px-3 py-2 text-xs text-cream outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard?.writeText(payment.qr_code_text || "")}
+                          className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold px-4 py-3 text-sm font-bold text-cream transition-colors hover:bg-gold/90"
+                        >
+                          <Copy size={16} />
+                          Copiar codigo PIX
+                        </button>
+                      </div>
+                    )}
+                    {paymentState !== "loading" && !payment?.qr_code_text && paymentState !== "approved" && (
+                      <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
+                        O Mercado Pago ainda nao retornou o QR Code. A tela continua verificando o pagamento.
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ) : (

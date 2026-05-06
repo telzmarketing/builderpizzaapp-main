@@ -157,6 +157,9 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
         "total_time_minutes": order.total_time_minutes,
         "preparation_time_minutes": order.preparation_time_minutes,
         "delivery_time_minutes": order.delivery_time_minutes,
+        "cancelled_by": order.cancelled_by,
+        "cancellation_reason": order.cancellation_reason,
+        "cancelled_at": order.cancelled_at,
         "delivery": delivery_summary,
     }
 
@@ -337,7 +340,59 @@ def cancel_order(
     _admin: AdminUser = Depends(get_current_admin),
 ):
     try:
-        order = OrderService(db).cancel(order_id, changed_by="admin")
+        order = OrderService(db).cancel(
+            order_id,
+            changed_by="admin",
+            cancelled_by="admin",
+            reason="Cancelado pelo administrador",
+        )
         return ok(_serialize_orders(db, [order])[0], "Pedido cancelado.")
     except DomainError as exc:
         return err(exc)
+
+
+@router.post("/{order_id}/customer-cancel")
+def customer_cancel_order(
+    order_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Permite que o próprio cliente cancele um pedido não pago."""
+    try:
+        order = OrderService(db).get(order_id)
+        require_order_or_admin(
+            order,
+            db,
+            request.headers.get("authorization"),
+            request.headers.get("x-customer-phone"),
+            request.headers.get("x-customer-email"),
+        )
+        # Só permite cancelar pedidos não pagos
+        non_cancellable = {"paid", "pago", "preparing", "ready_for_pickup", "on_the_way", "delivered"}
+        current = order.status.value if hasattr(order.status, "value") else str(order.status)
+        if current in non_cancellable:
+            return err_msg(
+                "Pedido já está em preparo ou entregue e não pode ser cancelado.",
+                code="OrderNotCancellable",
+                status_code=422,
+            )
+        order = OrderService(db).cancel(
+            order_id,
+            changed_by="customer",
+            cancelled_by="customer",
+            reason="Cancelado pelo cliente",
+        )
+        return ok(_serialize_orders(db, [order])[0], "Pedido cancelado com sucesso.")
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/auto-cancel-expired")
+def auto_cancel_expired(
+    hours: int = Query(default=2, ge=1, le=48),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    """Trigger interno: cancela pedidos presos em pagamento_expirado há mais de N horas."""
+    cancelled = OrderService(db).auto_cancel_expired(hours=hours)
+    return ok({"cancelled_count": len(cancelled), "cancelled_ids": cancelled})

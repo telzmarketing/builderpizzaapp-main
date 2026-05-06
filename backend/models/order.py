@@ -68,6 +68,10 @@ class Order(Base):
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
 
+    cancelled_by             = Column(String(50), nullable=True)   # "customer" | "admin" | "system"
+    cancellation_reason      = Column(Text, nullable=True)
+    cancelled_at             = Column(DateTime(timezone=True), nullable=True)
+
     paid_at                  = Column(DateTime(timezone=True), nullable=True)
     preparation_started_at   = Column(DateTime(timezone=True), nullable=True)
     out_for_delivery_at      = Column(DateTime(timezone=True), nullable=True)

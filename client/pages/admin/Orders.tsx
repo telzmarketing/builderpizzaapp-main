@@ -620,6 +620,24 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
         </div>
       </div>
 
+      {/* Quem cancelou — aparece apenas em pedidos cancelados */}
+      {order.status === "cancelled" && order.cancelled_by && (
+        <div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-red-300 mb-1">Cancelamento</p>
+          <p className="text-xs text-red-200 font-semibold">
+            {order.cancelled_by === "customer" && "Cancelado pelo cliente"}
+            {order.cancelled_by === "admin" && "Cancelado pelo administrador"}
+            {order.cancelled_by === "system" && "Cancelado pelo sistema (PIX não pago)"}
+          </p>
+          {order.cancellation_reason && (
+            <p className="text-[11px] text-stone mt-0.5">{order.cancellation_reason}</p>
+          )}
+          {order.cancelled_at && (
+            <p className="text-[10px] text-stone/70 mt-0.5">{formatDateTime(order.cancelled_at)}</p>
+          )}
+        </div>
+      )}
+
       {/* Operational timer — só aparece após pagamento confirmado */}
       {order.paid_at && (
         <OrderTimer

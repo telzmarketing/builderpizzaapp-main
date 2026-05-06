@@ -10,7 +10,7 @@ from __future__ import annotations
 import random
 import string
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.exceptions import (
@@ -529,15 +529,56 @@ class OrderService:
         self._db.refresh(order)
         return order
 
-    def cancel(self, order_id: str, *, reason: str = "", changed_by: str = "system") -> Order:
-        """Cancels an order through the state machine."""
+    def cancel(
+        self,
+        order_id: str,
+        *,
+        reason: str = "",
+        changed_by: str = "system",
+        cancelled_by: str = "system",
+    ) -> Order:
+        """Cancels an order through the state machine, recording who cancelled."""
         order = self.change_status(order_id, "cancelled", changed_by=changed_by)
+        now = datetime.now(timezone.utc)
+        order.cancelled_by = cancelled_by
+        order.cancellation_reason = reason or None
+        order.cancelled_at = now
+        self._db.flush()
+        self._db.commit()
+        self._db.refresh(order)
         bus.publish(EvOrderCancelled(
             order_id=order_id,
             reason=reason,
             refund_required=order.payment is not None,
         ))
         return order
+
+    def auto_cancel_expired(self, *, hours: int = 2) -> list[str]:
+        """Cancel all orders stuck in pagamento_expirado for longer than `hours` hours."""
+        from backend.models.order import OrderStatus as OS
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        expired_orders = (
+            self._db.query(Order)
+            .filter(
+                Order.status == OS.pagamento_expirado,
+                Order.updated_at <= cutoff,
+                Order.cancelled_by.is_(None),
+            )
+            .all()
+        )
+        cancelled_ids: list[str] = []
+        for order in expired_orders:
+            try:
+                self.cancel(
+                    order.id,
+                    reason="PIX não pago — cancelado automaticamente pelo sistema",
+                    changed_by="system",
+                    cancelled_by="system",
+                )
+                cancelled_ids.append(order.id)
+            except Exception:
+                pass
+        return cancelled_ids
 
     def get(self, order_id: str) -> Order:
         return self._get_order(order_id)

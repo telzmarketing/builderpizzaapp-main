@@ -595,6 +595,9 @@ export interface ApiOrder {
   total_time_minutes: number | null;
   preparation_time_minutes: number | null;
   delivery_time_minutes: number | null;
+  cancelled_by?: "customer" | "admin" | "system" | null;
+  cancellation_reason?: string | null;
+  cancelled_at?: string | null;
   delivery?: {
     id: string;
     status: string;
@@ -1363,6 +1366,12 @@ export const ordersApi = {
     put<ApiOrder>(`/orders/${id}/status`, { status }),
 
   cancel: (id: string) => post<ApiOrder>(`/orders/${id}/cancel`, {}),
+
+  customerCancel: (id: string) =>
+    request<ApiOrder>("POST", `/orders/${id}/customer-cancel`, {}, orderAccessHeaders(id)),
+
+  autoCancelExpired: (hours = 2) =>
+    post<{ cancelled_count: number; cancelled_ids: string[] }>(`/orders/auto-cancel-expired?hours=${hours}`, {}),
 };
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
