@@ -577,6 +577,14 @@ def _run_migrations():
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_order_code ON orders(order_code) WHERE order_code IS NOT NULL",
         # ── Campaign weekday schedule ─────────────────────────────────────────
         "ALTER TABLE traffic_campaigns ADD COLUMN IF NOT EXISTS active_weekdays VARCHAR(20)",
+        # ── Order cancellation tracking (previously only in .sql file) ────────
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_by VARCHAR(50)",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancellation_reason TEXT",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ",
+        "CREATE INDEX IF NOT EXISTS idx_orders_cancelled_by ON orders (cancelled_by) WHERE cancelled_by IS NOT NULL",
+        # ── Banner direct product link ────────────────────────────────────────
+        "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS product_id VARCHAR REFERENCES products(id) ON DELETE SET NULL",
+        "CREATE INDEX IF NOT EXISTS ix_campaigns_product_id ON campaigns(product_id)",
     ]
     for stmt in stmts:
         try:
