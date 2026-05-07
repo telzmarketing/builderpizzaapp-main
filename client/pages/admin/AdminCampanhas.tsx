@@ -192,13 +192,14 @@ export default function AdminCampanhas() {
 
   const [toast, setToast] = useState("");
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
+  const giftProducts = products.filter((p) => p.product_type === "brinde" && p.active);
 
   const loadAll = useCallback(async () => {
     setLoadingData(true);
     const [c, k, p, u, cps, autos] = await Promise.allSettled([
       campaignsApi.list(),
       campaignsApi.listKits(),
-      productsApi.list(false),
+      productsApi.listGifts(),
       couponsApi.listUsage(),
       couponsApi.list(),
       marketingAutomationsApi.list(),
@@ -937,7 +938,10 @@ export default function AdminCampanhas() {
                   <div className="col-span-2">
                     <Sel label="Produto brinde" value={couponForm.gift_product_id} onChange={(e) => setCouponForm({ ...couponForm, gift_product_id: e.target.value })}>
                       <option value="">Selecione</option>
-                      {products.filter((p) => p.active).map((p) => (
+                      {giftProducts.length === 0 && (
+                        <option disabled value="">Nenhum brinde cadastrado</option>
+                      )}
+                      {giftProducts.map((p) => (
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
                     </Sel>

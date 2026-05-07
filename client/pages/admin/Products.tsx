@@ -255,8 +255,8 @@ export default function AdminProducts() {
   const loadBrindes = useCallback(async () => {
     setBrindesLoading(true);
     try {
-      const all = await productsApi.list(false);
-      setBrindes(all.filter((p) => (p as any).product_type === "brinde"));
+      const all = await productsApi.listGifts();
+      setBrindes(all);
     } catch {
       setBrindes([]);
     } finally {

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Bell, BellOff, ChefHat, CheckCircle2, Clock3, Loader2,
+  Bell, BellOff, CalendarDays, ChefHat, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2,
   Maximize2, Minimize2, RefreshCw, Route, UtensilsCrossed,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
@@ -25,6 +25,44 @@ function elapsed(dateStr: string): string {
 function elapsedMinutes(dateStr: string): number {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
 }
+
+const toDateInputValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const todayInputValue = () => toDateInputValue(new Date());
+
+const inputDateToLocalDate = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const dayRangeIso = (value: string) => {
+  const start = inputDateToLocalDate(value);
+  const end = inputDateToLocalDate(value);
+  end.setHours(23, 59, 59, 999);
+  return {
+    date_from: start.toISOString(),
+    date_to: end.toISOString(),
+  };
+};
+
+const shiftDateInput = (value: string, days: number) => {
+  const date = inputDateToLocalDate(value);
+  date.setDate(date.getDate() + days);
+  return toDateInputValue(date);
+};
+
+const formatDayLabel = (value: string) =>
+  inputDateToLocalDate(value).toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 
 function itemDescription(item: ApiOrderItem): string {
   const nameParts: string[] = [];
@@ -131,6 +169,7 @@ export default function AdminCozinha() {
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [soundOn, setSoundOn]     = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(() => todayInputValue());
   const [, setTick]               = useState(0);
 
   // paidIds fires sound only once per order when it first enters paid status
@@ -140,10 +179,10 @@ export default function AdminCozinha() {
 
   const fetchOrders = useCallback(async (initial = false) => {
     try {
-      const all = await ordersApi.list();
+      const all = await ordersApi.list({ ...dayRangeIso(selectedDate), limit: 500 });
       const kitchen = all.filter((o) => KITCHEN_STATUSES.includes(o.status));
 
-      if (!initial) {
+      if (!initial && selectedDate === todayInputValue()) {
         const newlyPaid = kitchen.filter(
           (o) => (o.status === "paid" || o.status === "pago") && !paidIds.current.has(o.id),
         );
@@ -161,9 +200,15 @@ export default function AdminCozinha() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedDate]);
 
-  useEffect(() => { fetchOrders(true); }, [fetchOrders]);
+  const selectedDateLabel = useMemo(() => formatDayLabel(selectedDate), [selectedDate]);
+  const isToday = selectedDate === todayInputValue();
+
+  useEffect(() => {
+    setLoading(true);
+    fetchOrders(true);
+  }, [fetchOrders]);
 
   // auto-refresh 30s
   useEffect(() => {
@@ -225,12 +270,46 @@ export default function AdminCozinha() {
                   hour: "2-digit",
                   minute: "2-digit",
                   second: "2-digit",
-                })}
+                })} - {selectedDateLabel}
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <div className="flex h-10 shrink-0 items-center overflow-hidden rounded-lg border border-surface-03 bg-surface-01">
+              <button
+                onClick={() => setSelectedDate((value) => shiftDateInput(value, -1))}
+                title="Dia anterior"
+                className="flex h-full w-9 items-center justify-center text-stone transition-colors hover:text-cream"
+              >
+                <ChevronLeft size={15} />
+              </button>
+              <label className="flex h-full items-center gap-2 border-x border-surface-03 px-3 text-sm font-semibold text-parchment">
+                <CalendarDays size={15} className="text-gold" />
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(event) => setSelectedDate(event.target.value || todayInputValue())}
+                  className="w-[8.5rem] bg-transparent text-sm font-semibold text-parchment outline-none [color-scheme:dark]"
+                />
+              </label>
+              <button
+                onClick={() => setSelectedDate((value) => shiftDateInput(value, 1))}
+                title="Proximo dia"
+                className="flex h-full w-9 items-center justify-center text-stone transition-colors hover:text-cream"
+              >
+                <ChevronRight size={15} />
+              </button>
+            </div>
+
+            <button
+              onClick={() => setSelectedDate(todayInputValue())}
+              disabled={isToday}
+              className="h-10 rounded-lg border border-surface-03 px-3 text-sm font-semibold text-stone transition-colors hover:text-cream disabled:opacity-50"
+            >
+              Hoje
+            </button>
+
             <button
               onClick={() => setSoundOn((s) => !s)}
               title={soundOn ? "Silenciar alertas" : "Ativar alertas sonoros"}
@@ -300,7 +379,7 @@ export default function AdminCozinha() {
                     {colOrders.length === 0 && (
                       <div className="flex flex-col items-center justify-center h-36 text-stone/40 text-sm gap-2 select-none">
                         <UtensilsCrossed size={28} />
-                        <span>Nenhum pedido</span>
+                        <span>Nenhum pedido neste dia</span>
                       </div>
                     )}
 

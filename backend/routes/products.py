@@ -167,13 +167,17 @@ def delete_category(category_id: str, db: Session = Depends(get_db), _=Depends(g
 def list_products(
     request: Request,
     active_only: bool = True,
+    product_type: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    if not active_only:
+    if not active_only or product_type == "brinde":
         _require_admin(request, db)
     q = db.query(Product)
     if active_only:
         q = q.filter(Product.active == True)  # noqa: E712
+    if product_type:
+        q = q.filter(Product.product_type == product_type)
+    elif active_only:
         q = q.filter(or_(Product.product_type == None, Product.product_type != "brinde"))  # noqa: E711
     products = q.order_by(Product.name).all()
     return [_product_payload(product, db) for product in products]

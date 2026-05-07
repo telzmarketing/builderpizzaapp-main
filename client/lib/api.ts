@@ -1296,8 +1296,14 @@ export const adminAuthApi = {
 // ─── Products ─────────────────────────────────────────────────────────────────
 
 export const productsApi = {
-  list: (activeOnly = true) =>
-    get<ApiProduct[]>(`/products${activeOnly ? "?active_only=true" : ""}`),
+  list: (activeOnly = true, productType?: string) => {
+    const qs = new URLSearchParams({ active_only: activeOnly ? "true" : "false" });
+    if (productType) qs.set("product_type", productType);
+    return get<ApiProduct[]>(`/products?${qs.toString()}`);
+  },
+
+  listGifts: () =>
+    get<ApiProduct[]>("/products?active_only=true&product_type=brinde"),
 
   get: (id: string) => get<ApiProduct>(`/products/${id}`),
 

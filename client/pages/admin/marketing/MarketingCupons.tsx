@@ -171,7 +171,7 @@ export default function MarketingCupons() {
   }, [tab]); // eslint-disable-line
 
   useEffect(() => {
-    productsApi.list(false)
+    productsApi.listGifts()
       .then(setProducts)
       .catch(() => setProducts([]));
     marketingAutomationsApi.list()
