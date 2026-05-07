@@ -372,6 +372,80 @@ export interface ApiCouponUsage {
   created_at: string;
 }
 
+export type ApiStoreNotificationPage = "home" | "cardapio" | "product" | "cart";
+export type ApiStoreNotificationStatus = "active" | "paused";
+export type ApiStoreNotificationType = "manual" | "fomento";
+export type ApiStoreNotificationPriority = "low" | "medium" | "high";
+
+export interface ApiStoreNotificationSettings {
+  id: string;
+  enabled: boolean;
+  real_orders_enabled: boolean;
+  real_percentage: number;
+  manual_percentage: number;
+  min_delay_seconds: number;
+  max_delay_seconds: number;
+  default_display_seconds: number;
+  prevent_same_product_sequence: boolean;
+  prevent_same_neighborhood_sequence: boolean;
+  only_during_store_hours: boolean;
+  allowed_pages: ApiStoreNotificationPage[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiStoreNotificationInput {
+  type: ApiStoreNotificationType;
+  status: ApiStoreNotificationStatus;
+  internal_name: string;
+  display_name: string;
+  product_id: string;
+  neighborhood?: string | null;
+  template_text: string;
+  priority: ApiStoreNotificationPriority;
+  weight: number;
+  display_seconds: number;
+  start_time: string;
+  end_time: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  weekdays: number[];
+}
+
+export interface ApiStoreNotification extends ApiStoreNotificationInput {
+  id: string;
+  product_name: string | null;
+  product_icon: string | null;
+  impressions_count: number;
+  last_displayed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiStoreNotificationSummary {
+  active_notifications: number;
+  manual_notifications: number;
+  real_impressions: number;
+  total_impressions: number;
+}
+
+export interface ApiStoreNotificationNext {
+  source_type: "real" | "manual";
+  notification_id: string | null;
+  order_id: string | null;
+  product_id: string | null;
+  product_name: string;
+  product_image: string | null;
+  neighborhood: string | null;
+  message: string;
+  display_seconds: number;
+}
+
+export interface ApiStoreNotificationNextEnvelope {
+  notification: ApiStoreNotificationNext | null;
+  next_delay_seconds: number;
+}
+
 export interface TrafficCampaign {
   id: string;
   name: string;
@@ -2579,4 +2653,30 @@ export const deliveryApi = {
     get<{ lat: number | null; lng: number | null; cached: boolean }>(
       `/delivery/geocode?q=${encodeURIComponent(q)}`
     ),
+};
+
+export const storeNotificationsApi = {
+  list: () => get<ApiStoreNotification[]>("/store-notifications"),
+  summary: () => get<ApiStoreNotificationSummary>("/store-notifications/summary"),
+  create: (data: ApiStoreNotificationInput) =>
+    post<ApiStoreNotification>("/store-notifications", data),
+  update: (id: string, data: Partial<ApiStoreNotificationInput>) =>
+    put<ApiStoreNotification>(`/store-notifications/${id}`, data),
+  duplicate: (id: string) =>
+    post<ApiStoreNotification>(`/store-notifications/${id}/duplicate`, {}),
+  setStatus: (id: string, status: ApiStoreNotificationStatus) =>
+    patch<ApiStoreNotification>(`/store-notifications/${id}/status`, { status }),
+  remove: (id: string) => del<void>(`/store-notifications/${id}`),
+  settings: () => get<ApiStoreNotificationSettings>("/store-notifications/settings"),
+  updateSettings: (data: Omit<ApiStoreNotificationSettings, "id" | "created_at" | "updated_at">) =>
+    put<ApiStoreNotificationSettings>("/store-notifications/settings", data),
+  preview: (data: {
+    display_name: string;
+    product_name?: string | null;
+    neighborhood?: string | null;
+    template_text: string;
+    relative_time?: string;
+  }) => post<{ message: string }>("/store-notifications/preview", data),
+  next: (page: ApiStoreNotificationPage) =>
+    get<ApiStoreNotificationNextEnvelope>(`/store-notifications/next?page=${encodeURIComponent(page)}`),
 };

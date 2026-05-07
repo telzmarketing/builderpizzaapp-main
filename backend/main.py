@@ -37,6 +37,7 @@ from backend.routes import marketing_workflow as marketing_workflow_routes
 from backend.routes import rbac as rbac_routes
 from backend.routes import customer_events as customer_events_routes
 from backend.routes import bi as bi_routes
+from backend.routes import store_notifications as store_notifications_routes
 
 settings = get_settings()
 
@@ -666,6 +667,7 @@ app.include_router(marketing_workflow_routes.router)
 app.include_router(rbac_routes.router)
 app.include_router(customer_events_routes.router)
 app.include_router(bi_routes.router)
+app.include_router(store_notifications_routes.router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")
@@ -694,6 +696,7 @@ app.include_router(store_operation.router, prefix="/api")
 app.include_router(lgpd_routes.router, prefix="/api")
 app.include_router(lgpd_routes.admin_router, prefix="/api")
 app.include_router(bi_routes.router, prefix="/api")
+app.include_router(store_notifications_routes.router, prefix="/api")
 
 # ── Static files (uploaded images) ───────────────────────────────────────────
 # Must be mounted AFTER all route registrations.

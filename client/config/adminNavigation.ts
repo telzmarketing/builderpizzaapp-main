@@ -1,6 +1,7 @@
 import type { ElementType } from "react";
 import {
   BarChart3,
+  Bell,
   Brain,
   CheckSquare,
   ChefHat,
@@ -100,6 +101,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
       { path: "/painel/marketing/automacoes", icon: Zap, label: "Automacao de Marketing", permissions: ["marketing"] },
       { path: "/painel/marketing/workflow", icon: CheckSquare, label: "Workflow de Aprovacao", permissions: ["marketing"] },
       { path: "/painel/marketing/cupons", icon: Tag, label: "Cupons de Desconto", aliases: ["/painel/cupons"], permissions: ["cupons"] },
+      { path: "/painel/marketing/notificacoes", icon: Bell, label: "Notificacoes da Loja", permissions: ["marketing"] },
       { path: "/painel/campanhas", icon: Sparkles, label: "Promocoes & Banners", permissions: ["promocoes", "campanhas"] },
       { path: "/painel/fidelidade", icon: Trophy, label: "Fidelidade", permissions: ["clientes", "promocoes"] },
       { path: "/painel/popup-saida", icon: LogIn, label: "Popup de Saida", permissions: ["loja_online", "marketing"] },

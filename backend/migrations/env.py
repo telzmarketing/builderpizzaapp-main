@@ -31,6 +31,7 @@ from backend.models import (  # noqa: F401
     shipping,
     shipping_v2,
     store_operation,
+    store_notification,
     theme,
 )
 

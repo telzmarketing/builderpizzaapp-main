@@ -10,6 +10,7 @@ import { captureTrackingFromUrl, trackEvent, getTrackingData, initCampaignPixel 
 import { customerEventsApi, resolveAssetUrl } from "./lib/api";
 
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
+const StoreSocialProofNotification = lazy(() => import("./components/StoreSocialProofNotification"));
 
 function StoreWidget() {
   const { pathname } = useLocation();
@@ -34,6 +35,7 @@ function StoreWidget() {
   return (
     <Suspense fallback={null}>
       <ChatbotWidget />
+      <StoreSocialProofNotification />
     </Suspense>
   );
 }
@@ -157,6 +159,7 @@ import MarketingAutomacoes from "./pages/admin/marketing/MarketingAutomacoes";
 import MarketingAdsPanel from "./pages/admin/marketing/MarketingAdsPanel";
 import MarketingWorkflow from "./pages/admin/marketing/MarketingWorkflow";
 import MarketingCupons from "./pages/admin/marketing/MarketingCupons";
+import MarketingStoreNotifications from "./pages/admin/marketing/MarketingStoreNotifications";
 import CrmDashboard from "./pages/admin/crm/CrmDashboard";
 import CrmPipeline from "./pages/admin/crm/CrmPipeline";
 import CrmGrupos from "./pages/admin/crm/CrmGrupos";
@@ -244,6 +247,7 @@ export default function App() {
                 <Route path="/painel/marketing/ads" element={<MarketingAdsPanel />} />
                 <Route path="/painel/marketing/workflow" element={<MarketingWorkflow />} />
                 <Route path="/painel/marketing/cupons" element={<MarketingCupons />} />
+                <Route path="/painel/marketing/notificacoes" element={<MarketingStoreNotifications />} />
                 {/* ── CRM routes ── */}
                 <Route path="/painel/crm" element={<CrmDashboard />} />
                 <Route path="/painel/crm/inteligencia" element={<CrmInteligencia />} />
