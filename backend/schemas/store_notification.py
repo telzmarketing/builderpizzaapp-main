@@ -8,6 +8,7 @@ AllowedStorePage = Literal["home", "cardapio", "product", "cart"]
 NotificationStatus = Literal["active", "paused"]
 NotificationType = Literal["manual", "fomento"]
 NotificationPriority = Literal["low", "medium", "high"]
+CapturedStatus = Literal["pending", "activated", "discarded"]
 
 
 class StoreNotificationSettingsIn(BaseModel):
@@ -15,6 +16,7 @@ class StoreNotificationSettingsIn(BaseModel):
     real_orders_enabled: bool = True
     real_percentage: int = Field(default=70, ge=0, le=100)
     manual_percentage: int = Field(default=30, ge=0, le=100)
+    initial_delay_seconds: int = Field(default=5, ge=1, le=60)
     min_delay_seconds: int = Field(default=45, ge=5, le=3600)
     max_delay_seconds: int = Field(default=120, ge=5, le=7200)
     default_display_seconds: int = Field(default=7, ge=3, le=60)
@@ -153,3 +155,18 @@ class StoreNotificationNextOut(BaseModel):
 class StoreNotificationNextEnvelope(BaseModel):
     notification: StoreNotificationNextOut | None = None
     next_delay_seconds: int
+    initial_delay_seconds: int
+
+
+class StoreNotificationCapturedOut(BaseModel):
+    id: str
+    order_id: str | None = None
+    customer_id: str | None = None
+    product_id: str | None = None
+    product_name: str | None = None
+    product_image: str | None = None
+    neighborhood: str | None = None
+    buyer_name: str | None = None
+    order_time: datetime | None = None
+    status: CapturedStatus
+    created_at: datetime

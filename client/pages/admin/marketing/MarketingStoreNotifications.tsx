@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Bell,
+  CheckCircle2,
   Copy,
   Eye,
+  Inbox,
   Loader2,
   Pause,
   Pencil,
@@ -20,6 +22,7 @@ import {
   storeNotificationsApi,
   type ApiProduct,
   type ApiStoreNotification,
+  type ApiStoreNotificationCaptured,
   type ApiStoreNotificationInput,
   type ApiStoreNotificationPage,
   type ApiStoreNotificationPriority,
@@ -29,7 +32,7 @@ import {
   type ApiStoreNotificationType,
 } from "@/lib/api";
 
-type View = "notifications" | "settings";
+type View = "notifications" | "captured" | "settings";
 
 const IC = "w-full rounded-xl border border-surface-03 bg-surface-03 px-3 py-2 text-sm text-cream outline-none transition-colors focus:border-gold";
 const WEEKDAYS = [
@@ -62,6 +65,16 @@ const PRIORITY_LABEL: Record<ApiStoreNotificationPriority, string> = {
   medium: "Media",
   high: "Alta",
 };
+const CAPTURED_STATUS_LABEL: Record<string, string> = {
+  pending: "Pendente",
+  activated: "Ativada",
+  discarded: "Descartada",
+};
+const CAPTURED_STATUS_COLOR: Record<string, string> = {
+  pending: "bg-blue-500/15 text-blue-400",
+  activated: "bg-green-500/15 text-green-400",
+  discarded: "bg-surface-03 text-stone",
+};
 
 const emptyForm = (): ApiStoreNotificationInput => ({
   type: "manual",
@@ -86,6 +99,7 @@ const defaultSettings = (): Omit<ApiStoreNotificationSettings, "id" | "created_a
   real_orders_enabled: true,
   real_percentage: 70,
   manual_percentage: 30,
+  initial_delay_seconds: 5,
   min_delay_seconds: 45,
   max_delay_seconds: 120,
   default_display_seconds: 7,
@@ -126,6 +140,7 @@ function productName(products: ApiProduct[], productId: string) {
 export default function MarketingStoreNotifications() {
   const [view, setView] = useState<View>("notifications");
   const [items, setItems] = useState<ApiStoreNotification[]>([]);
+  const [captured, setCaptured] = useState<ApiStoreNotificationCaptured[]>([]);
   const [summary, setSummary] = useState<ApiStoreNotificationSummary>({
     active_notifications: 0,
     manual_notifications: 0,
@@ -139,6 +154,7 @@ export default function MarketingStoreNotifications() {
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [activatingCaptured, setActivatingCaptured] = useState<ApiStoreNotificationCaptured | null>(null);
   const [form, setForm] = useState<ApiStoreNotificationInput>(emptyForm());
   const [preview, setPreview] = useState("");
 
@@ -159,6 +175,7 @@ export default function MarketingStoreNotifications() {
           real_orders_enabled: cfg.real_orders_enabled,
           real_percentage: cfg.real_percentage,
           manual_percentage: cfg.manual_percentage,
+          initial_delay_seconds: cfg.initial_delay_seconds ?? 5,
           min_delay_seconds: cfg.min_delay_seconds,
           max_delay_seconds: cfg.max_delay_seconds,
           default_display_seconds: cfg.default_display_seconds,
@@ -173,9 +190,20 @@ export default function MarketingStoreNotifications() {
       .finally(() => setLoading(false));
   };
 
+  const loadCaptured = () => {
+    storeNotificationsApi
+      .listCaptured()
+      .then((list) => setCaptured(list ?? []))
+      .catch(() => {});
+  };
+
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (view === "captured") loadCaptured();
+  }, [view]);
 
   const activeProducts = useMemo(() => products.filter((product) => product.active), [products]);
 
@@ -209,6 +237,29 @@ export default function MarketingStoreNotifications() {
     setShowForm(true);
   };
 
+  const openActivateCaptured = (cap: ApiStoreNotificationCaptured) => {
+    setActivatingCaptured(cap);
+    const firstProduct = activeProducts.find((p) => p.id === cap.product_id) ?? activeProducts[0];
+    setForm({
+      type: "manual",
+      status: "active",
+      internal_name: `Pedido: ${cap.buyer_name ?? "Cliente"} - ${cap.product_name ?? "Produto"}`,
+      display_name: cap.buyer_name ?? "Cliente",
+      product_id: firstProduct?.id ?? "",
+      neighborhood: cap.neighborhood ?? "",
+      template_text: "{nome}, {bairro}, comprou {produto} - {tempo}",
+      priority: "medium",
+      weight: 1,
+      display_seconds: 7,
+      start_time: "00:00",
+      end_time: "23:59",
+      start_date: null,
+      end_date: null,
+      weekdays: [0, 1, 2, 3, 4, 5, 6],
+    });
+    setPreview("");
+  };
+
   const saveForm = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!form.product_id) {
@@ -217,13 +268,20 @@ export default function MarketingStoreNotifications() {
     }
     setSaving(true);
     try {
-      if (editingId) {
+      if (activatingCaptured) {
+        await storeNotificationsApi.activateCaptured(activatingCaptured.id, form);
+        setActivatingCaptured(null);
+        loadCaptured();
+        load();
+      } else if (editingId) {
         await storeNotificationsApi.update(editingId, form);
+        setShowForm(false);
+        load();
       } else {
         await storeNotificationsApi.create(form);
+        setShowForm(false);
+        load();
       }
-      setShowForm(false);
-      load();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Erro ao salvar notificacao.");
     } finally {
@@ -244,11 +302,11 @@ export default function MarketingStoreNotifications() {
   };
 
   const previewForm = async () => {
-    const product = productName(products, form.product_id);
+    const pName = productName(products, form.product_id);
     try {
       const result = await storeNotificationsApi.preview({
         display_name: form.display_name || "Cliente",
-        product_name: product,
+        product_name: pName,
         neighborhood: form.neighborhood,
         template_text: form.template_text,
         relative_time: "2min",
@@ -310,12 +368,22 @@ export default function MarketingStoreNotifications() {
     load();
   };
 
+  const discardCaptured = async (id: string) => {
+    if (!confirm("Descartar esta notificacao capturada?")) return;
+    await storeNotificationsApi.discardCaptured(id);
+    loadCaptured();
+  };
+
   const metrics = [
     { label: "Notificacoes ativas", value: summary.active_notifications, icon: Bell, color: "text-green-400", bg: "bg-green-500/10" },
     { label: "Notificacoes manuais", value: summary.manual_notifications, icon: Sparkles, color: "text-gold", bg: "bg-gold/10" },
     { label: "Reais exibidas", value: summary.real_impressions, icon: Eye, color: "text-blue-400", bg: "bg-blue-500/10" },
     { label: "Total de exibicoes", value: summary.total_impressions, icon: RefreshCw, color: "text-purple-400", bg: "bg-purple-500/10" },
   ];
+
+  const pendingCaptured = captured.filter((c) => c.status === "pending").length;
+
+  const isFormOpen = showForm || activatingCaptured !== null;
 
   return (
     <>
@@ -331,29 +399,43 @@ export default function MarketingStoreNotifications() {
             </button>
             <button
               type="button"
+              onClick={() => setView("captured")}
+              className={`relative flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${view === "captured" ? "bg-gold text-black" : "text-stone hover:text-cream"}`}
+            >
+              <Inbox size={15} /> Capturadas
+              {pendingCaptured > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                  {pendingCaptured}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
               onClick={() => setView("settings")}
               className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${view === "settings" ? "bg-gold text-black" : "text-stone hover:text-cream"}`}
             >
-              <Settings size={15} /> Configuracoes Inteligentes
+              <Settings size={15} /> Configuracoes
             </button>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={load}
+              onClick={() => { load(); if (view === "captured") loadCaptured(); }}
               className="rounded-xl border border-surface-03 bg-surface-02 p-2 text-stone transition-colors hover:text-cream"
               title="Atualizar"
             >
               <RefreshCw size={16} />
             </button>
-            <button
-              type="button"
-              onClick={openCreate}
-              className="inline-flex items-center gap-2 rounded-xl bg-gold px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-gold/90"
-            >
-              <Plus size={16} /> Nova notificacao
-            </button>
+            {view === "notifications" && (
+              <button
+                type="button"
+                onClick={openCreate}
+                className="inline-flex items-center gap-2 rounded-xl bg-gold px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-gold/90"
+              >
+                <Plus size={16} /> Nova notificacao
+              </button>
+            )}
           </div>
         </div>
 
@@ -441,24 +523,104 @@ export default function MarketingStoreNotifications() {
               </div>
             </div>
           </>
+        ) : view === "captured" ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-surface-03 bg-surface-02 p-4">
+              <p className="text-xs text-stone">
+                Compras realizadas na loja sao capturadas automaticamente aqui para revisao. Configure e ative para que apareçam como notificacao para outros clientes.
+              </p>
+            </div>
+            <div className="overflow-hidden rounded-2xl border border-surface-03 bg-surface-02">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] text-sm">
+                  <thead>
+                    <tr className="border-b border-surface-03 bg-surface-03/40 text-xs text-stone">
+                      {["Status", "Cliente", "Produto", "Bairro", "Data do pedido", "Capturada em", "Acoes"].map((header) => (
+                        <th key={header} className="p-3 text-left font-medium">{header}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-03">
+                    {captured.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-10 text-center text-sm text-stone">
+                          Nenhuma compra capturada ainda. Ative a captura automatica nas Configuracoes.
+                        </td>
+                      </tr>
+                    ) : captured.map((cap) => (
+                      <tr key={cap.id} className="transition-colors hover:bg-surface-03/25">
+                        <td className="p-3">
+                          <span className={`rounded-full px-2 py-1 text-xs font-semibold ${CAPTURED_STATUS_COLOR[cap.status] ?? "bg-surface-03 text-stone"}`}>
+                            {CAPTURED_STATUS_LABEL[cap.status] ?? cap.status}
+                          </span>
+                        </td>
+                        <td className="p-3 text-cream">{cap.buyer_name ?? "-"}</td>
+                        <td className="p-3 text-stone">{cap.product_name ?? "-"}</td>
+                        <td className="p-3 text-stone">{cap.neighborhood ?? "-"}</td>
+                        <td className="p-3 text-stone">{fmtDate(cap.order_time)}</td>
+                        <td className="p-3 text-stone">{fmtDate(cap.created_at)}</td>
+                        <td className="p-3">
+                          {cap.status === "pending" && (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => openActivateCaptured(cap)}
+                                className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-green-400 hover:bg-green-500/10"
+                                title="Configurar e ativar"
+                              >
+                                <CheckCircle2 size={14} /> Ativar
+                              </button>
+                              <button
+                                onClick={() => discardCaptured(cap.id)}
+                                className="rounded-lg p-1.5 text-stone hover:bg-red-500/10 hover:text-red-400"
+                                title="Descartar"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             <SettingsCard title="Exibicao na loja">
               <ToggleRow label="Ativar notificacoes na loja" checked={settings.enabled} onChange={(enabled) => setSettings((s) => ({ ...s, enabled }))} />
-              <ToggleRow label="Ativar pedidos reais automaticos" checked={settings.real_orders_enabled} onChange={(real_orders_enabled) => setSettings((s) => ({ ...s, real_orders_enabled }))} />
+              <ToggleRow label="Capturar pedidos reais automaticamente para revisao" checked={settings.real_orders_enabled} onChange={(real_orders_enabled) => setSettings((s) => ({ ...s, real_orders_enabled }))} />
               <ToggleRow label="Exibir somente durante horario de funcionamento" checked={settings.only_during_store_hours} onChange={(only_during_store_hours) => setSettings((s) => ({ ...s, only_during_store_hours }))} />
-              <div className="grid grid-cols-2 gap-3">
-                <NumberField label="% reais" value={settings.real_percentage} onChange={(real_percentage) => setSettings((s) => ({ ...s, real_percentage }))} />
-                <NumberField label="% manuais" value={settings.manual_percentage} onChange={(manual_percentage) => setSettings((s) => ({ ...s, manual_percentage }))} />
-              </div>
             </SettingsCard>
 
-            <SettingsCard title="Intervalos e repeticao">
+            <SettingsCard title="Temporizador de aparicao">
+              <p className="text-xs text-stone">Controle em quantos segundos a notificacao aparece apos o cliente entrar na loja e o intervalo entre exibicoes.</p>
               <div className="grid grid-cols-3 gap-3">
-                <NumberField label="Min. entre exibicoes" value={settings.min_delay_seconds} onChange={(min_delay_seconds) => setSettings((s) => ({ ...s, min_delay_seconds }))} />
-                <NumberField label="Max. entre exibicoes" value={settings.max_delay_seconds} onChange={(max_delay_seconds) => setSettings((s) => ({ ...s, max_delay_seconds }))} />
-                <NumberField label="Tempo padrao" value={settings.default_display_seconds} onChange={(default_display_seconds) => setSettings((s) => ({ ...s, default_display_seconds }))} />
+                <NumberField
+                  label="Aparicao inicial (seg)"
+                  value={settings.initial_delay_seconds}
+                  onChange={(initial_delay_seconds) => setSettings((s) => ({ ...s, initial_delay_seconds }))}
+                />
+                <NumberField
+                  label="Min. entre exibicoes"
+                  value={settings.min_delay_seconds}
+                  onChange={(min_delay_seconds) => setSettings((s) => ({ ...s, min_delay_seconds }))}
+                />
+                <NumberField
+                  label="Max. entre exibicoes"
+                  value={settings.max_delay_seconds}
+                  onChange={(max_delay_seconds) => setSettings((s) => ({ ...s, max_delay_seconds }))}
+                />
               </div>
+              <NumberField
+                label="Tempo padrao de exibicao (seg)"
+                value={settings.default_display_seconds}
+                onChange={(default_display_seconds) => setSettings((s) => ({ ...s, default_display_seconds }))}
+              />
+            </SettingsCard>
+
+            <SettingsCard title="Regras de sequencia">
               <ToggleRow label="Impedir mesmo produto em sequencia" checked={settings.prevent_same_product_sequence} onChange={(prevent_same_product_sequence) => setSettings((s) => ({ ...s, prevent_same_product_sequence }))} />
               <ToggleRow label="Impedir mesmo bairro em sequencia" checked={settings.prevent_same_neighborhood_sequence} onChange={(prevent_same_neighborhood_sequence) => setSettings((s) => ({ ...s, prevent_same_neighborhood_sequence }))} />
             </SettingsCard>
@@ -497,28 +659,52 @@ export default function MarketingStoreNotifications() {
         )}
       </div>
 
-      {showForm && (
+      {isFormOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="max-h-[92dvh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-surface-03 bg-surface-02 shadow-2xl">
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-surface-03 bg-surface-02 p-5">
-              <h2 className="text-lg font-semibold text-cream">{editingId ? "Editar notificacao" : "Nova notificacao"}</h2>
-              <button type="button" onClick={() => setShowForm(false)} className="text-stone hover:text-cream">
+              <h2 className="text-lg font-semibold text-cream">
+                {activatingCaptured
+                  ? "Configurar e ativar notificacao capturada"
+                  : editingId
+                  ? "Editar notificacao"
+                  : "Nova notificacao"}
+              </h2>
+              <button
+                type="button"
+                onClick={() => { setShowForm(false); setActivatingCaptured(null); }}
+                className="text-stone hover:text-cream"
+              >
                 <X size={18} />
               </button>
             </div>
+
+            {activatingCaptured && (
+              <div className="mx-5 mt-4 rounded-xl border border-gold/20 bg-gold/10 p-3 text-xs text-stone">
+                <span className="font-medium text-gold">Pedido original:</span>{" "}
+                {activatingCaptured.buyer_name ?? "Cliente"} — {activatingCaptured.product_name ?? "Produto"}
+                {activatingCaptured.neighborhood ? ` — ${activatingCaptured.neighborhood}` : ""}
+                {activatingCaptured.order_time ? ` — ${fmtDate(activatingCaptured.order_time)}` : ""}
+              </div>
+            )}
+
             <form onSubmit={saveForm} className="grid gap-4 p-5 md:grid-cols-2">
-              <Field label="Status">
-                <select className={IC} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as ApiStoreNotificationStatus }))}>
-                  <option value="active">Ativa</option>
-                  <option value="paused">Pausada</option>
-                </select>
-              </Field>
-              <Field label="Tipo da notificacao">
-                <select className={IC} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as ApiStoreNotificationType }))}>
-                  <option value="manual">Manual</option>
-                  <option value="fomento">Fomento</option>
-                </select>
-              </Field>
+              {!activatingCaptured && (
+                <>
+                  <Field label="Status">
+                    <select className={IC} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as ApiStoreNotificationStatus }))}>
+                      <option value="active">Ativa</option>
+                      <option value="paused">Pausada</option>
+                    </select>
+                  </Field>
+                  <Field label="Tipo da notificacao">
+                    <select className={IC} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as ApiStoreNotificationType }))}>
+                      <option value="manual">Manual</option>
+                      <option value="fomento">Fomento</option>
+                    </select>
+                  </Field>
+                </>
+              )}
               <Field label="Nome interno">
                 <input className={IC} required value={form.internal_name} onChange={(e) => setForm((f) => ({ ...f, internal_name: e.target.value }))} />
               </Field>
@@ -534,7 +720,7 @@ export default function MarketingStoreNotifications() {
                 </select>
               </Field>
               <Field label="Bairro exibido">
-                <input className={IC} required value={form.neighborhood ?? ""} onChange={(e) => setForm((f) => ({ ...f, neighborhood: e.target.value }))} />
+                <input className={IC} value={form.neighborhood ?? ""} onChange={(e) => setForm((f) => ({ ...f, neighborhood: e.target.value }))} />
               </Field>
               <Field label="Horario inicial">
                 <input className={IC} required type="time" value={form.start_time} onChange={(e) => setForm((f) => ({ ...f, start_time: e.target.value }))} />
@@ -542,7 +728,7 @@ export default function MarketingStoreNotifications() {
               <Field label="Horario final">
                 <input className={IC} required type="time" value={form.end_time} onChange={(e) => setForm((f) => ({ ...f, end_time: e.target.value }))} />
               </Field>
-              <Field label="Tempo de apresentacao">
+              <Field label="Tempo de apresentacao (seg)">
                 <input className={IC} required min={3} type="number" value={form.display_seconds} onChange={(e) => setForm((f) => ({ ...f, display_seconds: Number(e.target.value) }))} />
               </Field>
               <Field label="Prioridade">
@@ -585,14 +771,26 @@ export default function MarketingStoreNotifications() {
                 </div>
               )}
               <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row md:col-span-2">
-                <button type="button" onClick={() => setShowForm(false)} className="flex-1 rounded-xl border border-surface-03 px-4 py-2 text-sm text-stone hover:text-cream">
+                <button
+                  type="button"
+                  onClick={() => { setShowForm(false); setActivatingCaptured(null); }}
+                  className="flex-1 rounded-xl border border-surface-03 px-4 py-2 text-sm text-stone hover:text-cream"
+                >
                   Cancelar
                 </button>
-                <button type="button" onClick={previewForm} className="flex-1 rounded-xl border border-surface-03 bg-surface-03 px-4 py-2 text-sm text-cream hover:border-gold/50">
+                <button
+                  type="button"
+                  onClick={previewForm}
+                  className="flex-1 rounded-xl border border-surface-03 bg-surface-03 px-4 py-2 text-sm text-cream hover:border-gold/50"
+                >
                   Pre-visualizar
                 </button>
-                <button type="submit" disabled={saving} className="flex-1 rounded-xl bg-gold px-4 py-2 text-sm font-semibold text-black hover:bg-gold/90 disabled:opacity-60">
-                  {saving ? "Salvando..." : "Salvar"}
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 rounded-xl bg-gold px-4 py-2 text-sm font-semibold text-black hover:bg-gold/90 disabled:opacity-60"
+                >
+                  {saving ? "Salvando..." : activatingCaptured ? "Ativar notificacao" : "Salvar"}
                 </button>
               </div>
             </form>

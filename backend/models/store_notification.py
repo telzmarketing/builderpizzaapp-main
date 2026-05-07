@@ -14,6 +14,7 @@ class StoreNotificationSettings(Base):
     real_orders_enabled = Column(Boolean, default=True, nullable=False)
     real_percentage = Column(Integer, default=70, nullable=False)
     manual_percentage = Column(Integer, default=30, nullable=False)
+    initial_delay_seconds = Column(Integer, default=5, nullable=False)
     min_delay_seconds = Column(Integer, default=45, nullable=False)
     max_delay_seconds = Column(Integer, default=120, nullable=False)
     default_display_seconds = Column(Integer, default=7, nullable=False)
@@ -47,6 +48,11 @@ class StoreNotification(Base):
     end_time = Column(Time, nullable=False)
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
+    source_customer_id = Column(
+        String,
+        ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
         DateTime(timezone=True),
@@ -98,3 +104,32 @@ class StoreNotificationImpression(Base):
 
     notification = relationship("StoreNotification", back_populates="impressions")
     product = relationship("Product")
+
+
+class StoreNotificationCaptured(Base):
+    __tablename__ = "store_notification_captured"
+
+    id = Column(String, primary_key=True)
+    order_id = Column(
+        String,
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        nullable=True,
+        unique=True,
+    )
+    customer_id = Column(
+        String,
+        ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    product_id = Column(
+        String,
+        ForeignKey("products.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    product_name = Column(String(200), nullable=True)
+    product_image = Column(String(500), nullable=True)
+    neighborhood = Column(String(120), nullable=True)
+    buyer_name = Column(String(120), nullable=True)
+    order_time = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String(20), default="pending", nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

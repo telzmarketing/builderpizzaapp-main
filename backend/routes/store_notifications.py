@@ -5,6 +5,7 @@ from backend.core.response import ok, created
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
 from backend.schemas.store_notification import (
+    StoreNotificationCapturedOut,
     StoreNotificationCreate,
     StoreNotificationNextEnvelope,
     StoreNotificationOut,
@@ -27,9 +28,16 @@ def _service(db: Session) -> StoreNotificationService:
 @router.get("/next", response_model=StoreNotificationNextEnvelope)
 def next_store_notification(
     page: str = Query(default="home"),
+    customer_id: str | None = Query(default=None),
+    seen_ids: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    return _service(db).next_notification(page=page)
+    seen_list = [s.strip() for s in (seen_ids or "").split(",") if s.strip()]
+    return _service(db).next_notification(
+        page=page,
+        customer_id=customer_id or None,
+        seen_ids=seen_list,
+    )
 
 
 @router.get("", response_model=list[StoreNotificationOut])
@@ -65,6 +73,38 @@ def preview(
     _=Depends(get_current_admin),
 ):
     return _service(db).preview(body)
+
+
+@router.get("/captured", response_model=list[StoreNotificationCapturedOut])
+def list_captured(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    return _service(db).list_captured()
+
+
+@router.delete("/captured/{captured_id}", status_code=204)
+def discard_captured(
+    captured_id: str,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    try:
+        _service(db).discard_captured(captured_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+
+
+@router.post("/captured/{captured_id}/activate", response_model=StoreNotificationOut, status_code=201)
+def activate_captured(
+    captured_id: str,
+    body: StoreNotificationCreate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    try:
+        return _service(db).activate_captured(captured_id, body)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 
 @router.post("", response_model=StoreNotificationOut, status_code=201)

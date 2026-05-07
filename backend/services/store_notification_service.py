@@ -16,6 +16,7 @@ from backend.models.payment import Payment, PaymentStatus
 from backend.models.product import Product
 from backend.models.store_notification import (
     StoreNotification,
+    StoreNotificationCaptured,
     StoreNotificationDay,
     StoreNotificationImpression,
     StoreNotificationSettings,
@@ -41,6 +42,7 @@ PAID_ORDER_STATUSES = {
 }
 PAID_PAYMENT_STATUSES = {PaymentStatus.approved, PaymentStatus.paid}
 PRIORITY_SCORE = {"low": 1, "medium": 2, "high": 3}
+CAPTURE_LOOKBACK_HOURS = 72
 
 
 class StoreNotificationService:
@@ -109,10 +111,14 @@ class StoreNotificationService:
             "total_impressions": total_impressions,
         }
 
-    def create_notification(self, payload: StoreNotificationCreate) -> StoreNotification:
+    def create_notification(self, payload: StoreNotificationCreate, source_customer_id: str | None = None) -> StoreNotification:
         self._ensure_product(payload.product_id)
         values = payload.model_dump(exclude={"weekdays"})
-        notification = StoreNotification(id=f"sn-{uuid.uuid4().hex[:10]}", **values)
+        notification = StoreNotification(
+            id=f"sn-{uuid.uuid4().hex[:10]}",
+            source_customer_id=source_customer_id,
+            **values,
+        )
         self._db.add(notification)
         self._replace_days(notification, payload.weekdays)
         self._db.commit()
@@ -151,6 +157,7 @@ class StoreNotificationService:
             end_time=notification.end_time,
             start_date=notification.start_date,
             end_date=notification.end_date,
+            source_customer_id=notification.source_customer_id,
         )
         self._db.add(copy)
         self._replace_days(copy, [day.weekday for day in notification.days])
@@ -184,48 +191,180 @@ class StoreNotificationService:
         )
         return {"message": message}
 
-    def next_notification(self, page: str = "home") -> dict:
+    def next_notification(
+        self,
+        page: str = "home",
+        customer_id: str | None = None,
+        seen_ids: list[str] | None = None,
+    ) -> dict:
         settings = self.get_settings()
         next_delay = self._next_delay(settings)
+        initial_delay = max(1, settings.initial_delay_seconds or 5)
         page = self._normalize_page(page)
 
-        if not settings.enabled or page not in self._settings_pages(settings):
-            return {"notification": None, "next_delay_seconds": next_delay}
+        empty = {
+            "notification": None,
+            "next_delay_seconds": next_delay,
+            "initial_delay_seconds": initial_delay,
+        }
 
-        now_utc = datetime.now(timezone.utc)
-        if self._has_recent_impression(settings, now_utc):
-            return {"notification": None, "next_delay_seconds": next_delay}
+        if not settings.enabled or page not in self._settings_pages(settings):
+            return empty
 
         if settings.only_during_store_hours:
             try:
                 if not StoreOperationService(self._db).get_status()["is_open"]:
-                    return {"notification": None, "next_delay_seconds": next_delay}
+                    return empty
             except Exception:
-                return {"notification": None, "next_delay_seconds": next_delay}
+                return empty
 
         last = self._last_impression()
-        real_candidates = self._real_candidates(settings, last) if settings.real_orders_enabled else []
-        manual_candidates = self._manual_candidates(settings, last)
+        candidates = self._manual_candidates(
+            settings,
+            last,
+            customer_id=customer_id,
+            seen_ids=seen_ids or [],
+        )
 
-        selected = self._select_candidate(settings, real_candidates, manual_candidates)
-        if selected is None:
-            return {"notification": None, "next_delay_seconds": next_delay}
+        if not candidates:
+            return empty
 
-        source_type, payload = selected
+        selected = self._weighted_manual(candidates)
+        now_utc = datetime.now(timezone.utc)
         impression = StoreNotificationImpression(
             id=f"sni-{uuid.uuid4().hex[:12]}",
-            notification_id=payload.get("notification_id"),
-            source_type=source_type,
-            order_id=payload.get("order_id"),
-            product_id=payload.get("product_id"),
-            neighborhood=payload.get("neighborhood"),
+            notification_id=selected.get("notification_id"),
+            source_type="manual",
+            order_id=selected.get("order_id"),
+            product_id=selected.get("product_id"),
+            neighborhood=selected.get("neighborhood"),
             page=page,
             displayed_at=now_utc,
         )
         self._db.add(impression)
         self._db.commit()
 
-        return {"notification": payload, "next_delay_seconds": next_delay}
+        return {
+            "notification": selected,
+            "next_delay_seconds": next_delay,
+            "initial_delay_seconds": initial_delay,
+        }
+
+    # ── Captured notifications ────────────────────────────────────────────────
+
+    def list_captured(self) -> list[dict]:
+        settings = self.get_settings()
+        if settings.real_orders_enabled:
+            self._sync_captured_from_orders()
+        items = (
+            self._db.query(StoreNotificationCaptured)
+            .order_by(StoreNotificationCaptured.created_at.desc())
+            .all()
+        )
+        return [self._serialize_captured(item) for item in items]
+
+    def discard_captured(self, captured_id: str) -> None:
+        captured = self._captured(captured_id)
+        captured.status = "discarded"
+        self._db.commit()
+
+    def activate_captured(self, captured_id: str, payload: StoreNotificationCreate) -> dict:
+        captured = self._captured(captured_id)
+        if captured.status == "activated":
+            raise ValueError("Notificacao ja foi ativada anteriormente.")
+        notification = self.create_notification(payload, source_customer_id=captured.customer_id)
+        captured.status = "activated"
+        self._db.commit()
+        self._db.refresh(notification)
+        return self.serialize_notification(notification)
+
+    def _sync_captured_from_orders(self) -> None:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=CAPTURE_LOOKBACK_HOURS)
+        orders = (
+            self._db.query(Order)
+            .options(
+                joinedload(Order.customer),
+                joinedload(Order.address),
+                joinedload(Order.payment),
+                selectinload(Order.items).selectinload(OrderItem.flavors),
+            )
+            .outerjoin(Payment, Payment.order_id == Order.id)
+            .filter(Order.created_at >= cutoff)
+            .filter(
+                or_(
+                    Order.status.in_(list(PAID_ORDER_STATUSES)),
+                    Order.paid_at.is_not(None),
+                    Payment.status.in_(list(PAID_PAYMENT_STATUSES)),
+                )
+            )
+            .filter(~Order.status.in_([OrderStatus.cancelled, OrderStatus.refunded]))
+            .order_by(Order.created_at.desc())
+            .limit(100)
+            .all()
+        )
+        if not orders:
+            return
+
+        existing_order_ids = {
+            row[0]
+            for row in self._db.query(StoreNotificationCaptured.order_id)
+            .filter(StoreNotificationCaptured.order_id.in_([o.id for o in orders]))
+            .all()
+        }
+        product_lookup = self._product_lookup(orders)
+        for order in orders:
+            if order.id in existing_order_ids:
+                continue
+            product_id, product_name, product_image = self._main_product(order, product_lookup)
+            if not product_name:
+                continue
+            neighborhood = self._order_neighborhood(order)
+            buyer_name = self._first_name(
+                order.customer.name if order.customer else order.delivery_name
+            )
+            captured = StoreNotificationCaptured(
+                id=f"snc-{uuid.uuid4().hex[:10]}",
+                order_id=order.id,
+                customer_id=order.customer_id,
+                product_id=product_id,
+                product_name=product_name,
+                product_image=product_image,
+                neighborhood=neighborhood,
+                buyer_name=buyer_name,
+                order_time=order.paid_at or order.created_at,
+            )
+            self._db.add(captured)
+        try:
+            self._db.commit()
+        except Exception:
+            self._db.rollback()
+
+    def _serialize_captured(self, item: StoreNotificationCaptured) -> dict:
+        return {
+            "id": item.id,
+            "order_id": item.order_id,
+            "customer_id": item.customer_id,
+            "product_id": item.product_id,
+            "product_name": item.product_name,
+            "product_image": item.product_image,
+            "neighborhood": item.neighborhood,
+            "buyer_name": item.buyer_name,
+            "order_time": item.order_time,
+            "status": item.status,
+            "created_at": item.created_at,
+        }
+
+    def _captured(self, captured_id: str) -> StoreNotificationCaptured:
+        item = (
+            self._db.query(StoreNotificationCaptured)
+            .filter(StoreNotificationCaptured.id == captured_id)
+            .first()
+        )
+        if not item:
+            raise LookupError("Notificacao capturada nao encontrada.")
+        return item
+
+    # ── Settings serialization ────────────────────────────────────────────────
 
     def serialize_settings(self, settings: StoreNotificationSettings) -> dict:
         return {
@@ -234,6 +373,7 @@ class StoreNotificationService:
             "real_orders_enabled": bool(settings.real_orders_enabled),
             "real_percentage": settings.real_percentage,
             "manual_percentage": settings.manual_percentage,
+            "initial_delay_seconds": settings.initial_delay_seconds,
             "min_delay_seconds": settings.min_delay_seconds,
             "max_delay_seconds": settings.max_delay_seconds,
             "default_display_seconds": settings.default_display_seconds,
@@ -282,8 +422,17 @@ class StoreNotificationService:
             "updated_at": notification.updated_at,
         }
 
-    def _manual_candidates(self, settings: StoreNotificationSettings, last: StoreNotificationImpression | None) -> list[dict]:
+    # ── Candidate selection ───────────────────────────────────────────────────
+
+    def _manual_candidates(
+        self,
+        settings: StoreNotificationSettings,
+        last: StoreNotificationImpression | None,
+        customer_id: str | None = None,
+        seen_ids: list[str] | None = None,
+    ) -> list[dict]:
         current = self._local_now()
+        seen_set = set(seen_ids or [])
         notifications = (
             self._db.query(StoreNotification)
             .options(selectinload(StoreNotification.days), joinedload(StoreNotification.product))
@@ -293,6 +442,10 @@ class StoreNotificationService:
         )
         candidates = []
         for item in notifications:
+            if item.id in seen_set:
+                continue
+            if customer_id and item.source_customer_id and item.source_customer_id == customer_id:
+                continue
             if not self._manual_is_eligible(item, current):
                 continue
             if not self._passes_sequence_rules(settings, last, item.product_id, item.neighborhood):
@@ -316,79 +469,6 @@ class StoreNotificationService:
                 "_score": max(1, item.weight or 1) * PRIORITY_SCORE.get(item.priority, 2),
             })
         return candidates
-
-    def _real_candidates(self, settings: StoreNotificationSettings, last: StoreNotificationImpression | None) -> list[dict]:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=72)
-        orders = (
-            self._db.query(Order)
-            .options(
-                joinedload(Order.customer),
-                joinedload(Order.address),
-                joinedload(Order.payment),
-                selectinload(Order.items).selectinload(OrderItem.flavors),
-            )
-            .outerjoin(Payment, Payment.order_id == Order.id)
-            .filter(Order.created_at >= cutoff)
-            .filter(
-                or_(
-                    Order.status.in_(list(PAID_ORDER_STATUSES)),
-                    Order.paid_at.is_not(None),
-                    Payment.status.in_(list(PAID_PAYMENT_STATUSES)),
-                )
-            )
-            .filter(~Order.status.in_([OrderStatus.cancelled, OrderStatus.refunded]))
-            .order_by(Order.created_at.desc())
-            .limit(40)
-            .all()
-        )
-        product_lookup = self._product_lookup(orders)
-        candidates = []
-        for order in orders:
-            product_id, product_name, product_image = self._main_product(order, product_lookup)
-            if not product_id or not product_name:
-                continue
-            neighborhood = self._order_neighborhood(order)
-            if not self._passes_sequence_rules(settings, last, product_id, neighborhood):
-                continue
-            name = self._first_name(order.customer.name if order.customer else order.delivery_name)
-            relative = self._relative_time(order.paid_at or order.created_at)
-            candidates.append({
-                "source_type": "real",
-                "notification_id": None,
-                "order_id": order.id,
-                "product_id": product_id,
-                "product_name": product_name,
-                "product_image": product_image,
-                "neighborhood": neighborhood,
-                "message": self._render_template(
-                    DEFAULT_TEMPLATE,
-                    name=name,
-                    product=product_name,
-                    neighborhood=neighborhood,
-                    relative_time=relative,
-                ),
-                "display_seconds": settings.default_display_seconds,
-                "_score": 1,
-            })
-        return candidates
-
-    def _select_candidate(self, settings, real_candidates: list[dict], manual_candidates: list[dict]):
-        if real_candidates and not manual_candidates:
-            return "real", real_candidates[0]
-        if manual_candidates and not real_candidates:
-            return "manual", self._weighted_manual(manual_candidates)
-        if not real_candidates and not manual_candidates:
-            return None
-
-        real_percentage = max(0, min(100, settings.real_percentage or 0))
-        manual_percentage = max(0, min(100, settings.manual_percentage or 0))
-        total = real_percentage + manual_percentage
-        if total <= 0:
-            return "real", real_candidates[0]
-        pick_real = random.randint(1, total) <= real_percentage
-        if pick_real:
-            return "real", real_candidates[0]
-        return "manual", self._weighted_manual(manual_candidates)
 
     def _weighted_manual(self, candidates: list[dict]) -> dict:
         total = sum(item["_score"] for item in candidates)
@@ -434,15 +514,6 @@ class StoreNotificationService:
         ):
             return False
         return True
-
-    def _has_recent_impression(self, settings: StoreNotificationSettings, now: datetime) -> bool:
-        since = now - timedelta(seconds=max(5, settings.min_delay_seconds or 45))
-        return (
-            self._db.query(StoreNotificationImpression.id)
-            .filter(StoreNotificationImpression.displayed_at >= since)
-            .first()
-            is not None
-        )
 
     def _last_impression(self) -> StoreNotificationImpression | None:
         return (

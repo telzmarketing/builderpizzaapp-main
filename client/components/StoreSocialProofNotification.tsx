@@ -9,6 +9,46 @@ import {
   type ApiStoreNotificationPage,
 } from "@/lib/api";
 
+const SEEN_KEY = "sn_seen";
+const SEEN_MAX = 60;
+const SEEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+type SeenEntry = { id: string; ts: number };
+
+function loadSeenIds(): string[] {
+  try {
+    const raw = localStorage.getItem(SEEN_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as SeenEntry[];
+    const cutoff = Date.now() - SEEN_EXPIRY_MS;
+    return parsed.filter((e) => e.ts > cutoff).map((e) => e.id);
+  } catch {
+    return [];
+  }
+}
+
+function addSeenId(id: string): void {
+  try {
+    const raw = localStorage.getItem(SEEN_KEY);
+    const parsed: SeenEntry[] = raw ? JSON.parse(raw) : [];
+    const cutoff = Date.now() - SEEN_EXPIRY_MS;
+    const filtered = parsed.filter((e) => e.ts > cutoff && e.id !== id);
+    filtered.push({ id, ts: Date.now() });
+    localStorage.setItem(SEEN_KEY, JSON.stringify(filtered.slice(-SEEN_MAX)));
+  } catch {}
+}
+
+function getStoredCustomerId(): string | undefined {
+  try {
+    const raw = localStorage.getItem("customer");
+    if (!raw) return undefined;
+    const c = JSON.parse(raw) as { id?: string };
+    return c.id || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function pageFromPath(pathname: string): ApiStoreNotificationPage | null {
   if (pathname === "/") return "home";
   if (pathname === "/cardapio") return "cardapio";
@@ -24,45 +64,70 @@ export default function StoreSocialProofNotification() {
   const [visible, setVisible] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dismissedRef = useRef(false);
+  const isFirstRef = useRef(true);
 
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setNotification(null);
     setVisible(false);
     dismissedRef.current = false;
+    isFirstRef.current = true;
     if (!page) return;
 
     let cancelled = false;
 
     const schedule = (seconds: number) => {
       if (cancelled) return;
-      timerRef.current = setTimeout(fetchNext, Math.max(5, seconds) * 1000);
+      timerRef.current = setTimeout(fetchNext, Math.max(1, seconds) * 1000);
     };
 
     const fetchNext = async () => {
       if (cancelled || dismissedRef.current) return;
       try {
-        const result = await storeNotificationsApi.next(page);
+        const seenIds = loadSeenIds();
+        const customerId = getStoredCustomerId();
+        const result = await storeNotificationsApi.next(page, {
+          seen_ids: seenIds.length ? seenIds.join(",") : undefined,
+          customer_id: customerId,
+        });
         if (cancelled) return;
+
         if (!result.notification) {
           schedule(result.next_delay_seconds);
           return;
         }
-        setNotification(result.notification);
-        setVisible(true);
+
+        const notifId = result.notification.notification_id;
+        if (notifId && seenIds.includes(notifId)) {
+          schedule(result.next_delay_seconds);
+          return;
+        }
+
+        const showAfter = isFirstRef.current
+          ? Math.max(1, result.initial_delay_seconds ?? 5)
+          : 0;
+        isFirstRef.current = false;
+
         timerRef.current = setTimeout(() => {
-          setVisible(false);
+          if (cancelled || dismissedRef.current) return;
+          setNotification(result.notification);
+          setVisible(true);
+          if (notifId) addSeenId(notifId);
+
           timerRef.current = setTimeout(() => {
-            setNotification(null);
-            schedule(result.next_delay_seconds);
-          }, 350);
-        }, Math.max(3, result.notification.display_seconds) * 1000);
+            setVisible(false);
+            timerRef.current = setTimeout(() => {
+              setNotification(null);
+              schedule(result.next_delay_seconds);
+            }, 350);
+          }, Math.max(3, result.notification!.display_seconds) * 1000);
+        }, showAfter * 1000);
       } catch {
         schedule(45);
       }
     };
 
-    schedule(8);
+    schedule(0);
     return () => {
       cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);

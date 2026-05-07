@@ -383,6 +383,7 @@ export interface ApiStoreNotificationSettings {
   real_orders_enabled: boolean;
   real_percentage: number;
   manual_percentage: number;
+  initial_delay_seconds: number;
   min_delay_seconds: number;
   max_delay_seconds: number;
   default_display_seconds: number;
@@ -392,6 +393,20 @@ export interface ApiStoreNotificationSettings {
   allowed_pages: ApiStoreNotificationPage[];
   created_at: string;
   updated_at: string;
+}
+
+export interface ApiStoreNotificationCaptured {
+  id: string;
+  order_id: string | null;
+  customer_id: string | null;
+  product_id: string | null;
+  product_name: string | null;
+  product_image: string | null;
+  neighborhood: string | null;
+  buyer_name: string | null;
+  order_time: string | null;
+  status: "pending" | "activated" | "discarded";
+  created_at: string;
 }
 
 export interface ApiStoreNotificationInput {
@@ -444,6 +459,7 @@ export interface ApiStoreNotificationNext {
 export interface ApiStoreNotificationNextEnvelope {
   notification: ApiStoreNotificationNext | null;
   next_delay_seconds: number;
+  initial_delay_seconds: number;
 }
 
 export interface TrafficCampaign {
@@ -2677,6 +2693,14 @@ export const storeNotificationsApi = {
     template_text: string;
     relative_time?: string;
   }) => post<{ message: string }>("/store-notifications/preview", data),
-  next: (page: ApiStoreNotificationPage) =>
-    get<ApiStoreNotificationNextEnvelope>(`/store-notifications/next?page=${encodeURIComponent(page)}`),
+  next: (page: ApiStoreNotificationPage, opts?: { customer_id?: string; seen_ids?: string }) => {
+    const qs = new URLSearchParams({ page });
+    if (opts?.customer_id) qs.set("customer_id", opts.customer_id);
+    if (opts?.seen_ids) qs.set("seen_ids", opts.seen_ids);
+    return get<ApiStoreNotificationNextEnvelope>(`/store-notifications/next?${qs.toString()}`);
+  },
+  listCaptured: () => get<ApiStoreNotificationCaptured[]>("/store-notifications/captured"),
+  discardCaptured: (id: string) => del<void>(`/store-notifications/captured/${id}`),
+  activateCaptured: (id: string, data: ApiStoreNotificationInput) =>
+    post<ApiStoreNotification>(`/store-notifications/captured/${id}/activate`, data),
 };
