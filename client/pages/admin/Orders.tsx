@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle, Bell, BellOff, CheckCircle2, ChevronRight, Clock3, Loader2,
+  AlertTriangle, Bell, BellOff, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2,
   PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Truck, Utensils,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
@@ -153,6 +153,44 @@ const formatCurrency = (v: number) =>
 const formatDateTime = (v: string) =>
   new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
+const toDateInputValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const todayInputValue = () => toDateInputValue(new Date());
+
+const inputDateToLocalDate = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const dayRangeIso = (value: string) => {
+  const start = inputDateToLocalDate(value);
+  const end = inputDateToLocalDate(value);
+  end.setHours(23, 59, 59, 999);
+  return {
+    date_from: start.toISOString(),
+    date_to: end.toISOString(),
+  };
+};
+
+const shiftDateInput = (value: string, days: number) => {
+  const date = inputDateToLocalDate(value);
+  date.setDate(date.getDate() + days);
+  return toDateInputValue(date);
+};
+
+const formatDayLabel = (value: string) =>
+  inputDateToLocalDate(value).toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
 function orderTimeLabel(order: ApiOrder) {
   const diff = Date.now() - new Date(order.created_at).getTime();
   const minutes = Math.max(0, Math.floor(diff / 60000));
@@ -173,6 +211,7 @@ export default function AdminOrders() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [newOrderFlash, setNewOrderFlash] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(() => todayInputValue());
 
   // Motoboy assignment modal
   const [assignModal, setAssignModal] = useState<{ order: ApiOrder } | null>(null);
@@ -194,10 +233,10 @@ export default function AdminOrders() {
     else setLoading(true);
     setError("");
     try {
-      const data = await ordersApi.list({ limit: 150 });
+      const data = await ordersApi.list({ ...dayRangeIso(selectedDate), limit: 500 });
       const sorted = [...data].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-      if (!isFirstFetch.current) {
+      if (!isFirstFetch.current && selectedDate === todayInputValue()) {
         // Alert fires only when an order ENTERS paid/pago status for the first time
         const newlyPaid = sorted.filter(
           (o) => (o.status === "paid" || o.status === "pago") && !paidIds.current.has(o.id),
@@ -222,7 +261,7 @@ export default function AdminOrders() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [soundEnabled]);
+  }, [selectedDate, soundEnabled]);
 
   useEffect(() => {
     fetchOrders();
@@ -303,6 +342,9 @@ export default function AdminOrders() {
   }, [orders]);
 
   const activeOrders = orders.filter((o) => !["delivered", "cancelled", "refunded"].includes(o.status)).length;
+  const dayRevenue = useMemo(() => orders.reduce((sum, order) => sum + order.total, 0), [orders]);
+  const selectedDateLabel = useMemo(() => formatDayLabel(selectedDate), [selectedDate]);
+  const isToday = selectedDate === todayInputValue();
 
   return (
     <div className="min-h-screen bg-surface-00 flex flex-col md:flex-row md:h-screen overflow-hidden">
@@ -326,7 +368,7 @@ export default function AdminOrders() {
                       hour: "2-digit",
                       minute: "2-digit",
                       second: "2-digit",
-                    })}`
+                    })} - ${selectedDateLabel}`
                   : "Carregando pedidos..."}
               </p>
             </div>
@@ -345,14 +387,50 @@ export default function AdminOrders() {
           )}
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            <div className="relative z-20 grid w-full flex-shrink-0 grid-cols-[auto_auto_auto_auto_minmax(0,1fr)] items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-4 py-4 md:px-6">
+            <div className="relative z-20 flex w-full flex-shrink-0 flex-wrap items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-4 py-4 md:px-6">
+              <div className="flex h-11 shrink-0 items-center overflow-hidden rounded-xl border border-surface-03 bg-surface-02">
+                <button
+                  onClick={() => setSelectedDate((value) => shiftDateInput(value, -1))}
+                  title="Dia anterior"
+                  className="flex h-full w-10 items-center justify-center text-stone transition-colors hover:text-cream"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <label className="flex h-full items-center gap-2 border-x border-surface-03 px-3 text-sm font-semibold text-parchment">
+                  <CalendarDays size={16} className="text-gold" />
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(event) => setSelectedDate(event.target.value || todayInputValue())}
+                    className="w-[8.5rem] bg-transparent text-sm font-semibold text-parchment outline-none [color-scheme:dark]"
+                  />
+                </label>
+                <button
+                  onClick={() => setSelectedDate((value) => shiftDateInput(value, 1))}
+                  title="Proximo dia"
+                  className="flex h-full w-10 items-center justify-center text-stone transition-colors hover:text-cream"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+              <button
+                onClick={() => setSelectedDate(todayInputValue())}
+                disabled={isToday}
+                className="flex h-11 shrink-0 items-center justify-center rounded-xl border border-surface-03 bg-surface-02 px-4 text-sm font-semibold text-stone transition-colors hover:text-cream disabled:opacity-50"
+              >
+                Hoje
+              </button>
               <div className={`flex h-11 shrink-0 items-center gap-2 rounded-xl border px-4 transition-colors ${newOrderFlash ? "border-gold bg-gold/20" : "border-surface-03 bg-surface-02"}`}>
                 <span className="text-stone text-[10px] uppercase tracking-widest">Ativos</span>
                 <span className="text-cream text-sm font-black">{activeOrders}</span>
               </div>
               <div className="flex h-11 shrink-0 items-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4">
-                <span className="text-stone text-[10px] uppercase tracking-widest">Total</span>
+                <span className="text-stone text-[10px] uppercase tracking-widest">No dia</span>
                 <span className="text-cream text-sm font-black">{orders.length}</span>
+              </div>
+              <div className="flex h-11 shrink-0 items-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4">
+                <span className="text-stone text-[10px] uppercase tracking-widest">Receita</span>
+                <span className="text-cream text-sm font-black">{formatCurrency(dayRevenue)}</span>
               </div>
               <button
                 onClick={() => setSoundEnabled((v) => !v)}
@@ -375,7 +453,7 @@ export default function AdminOrders() {
                 <RefreshCw size={16} className={loading || refreshing ? "animate-spin" : ""} />
                 Atualizar
               </button>
-              <p className="min-w-0 truncate text-right text-[11px] text-stone">
+              <p className="ml-auto min-w-[10rem] truncate text-right text-[11px] text-stone">
                 {lastUpdated
                   ? `Atualizado as ${lastUpdated.toLocaleTimeString("pt-BR", {
                       hour: "2-digit",
@@ -393,8 +471,8 @@ export default function AdminOrders() {
             ) : orders.length === 0 ? (
               <div className="flex h-full flex-1 flex-col items-center justify-center px-6 text-center">
                 <ShoppingBag size={54} className="mb-4 text-gold" />
-                <p className="text-cream text-xl font-bold">Nenhum pedido ainda</p>
-                <p className="text-stone text-sm mt-2">Os pedidos aparecem aqui automaticamente.</p>
+                <p className="text-cream text-xl font-bold">Nenhum pedido neste dia</p>
+                <p className="text-stone text-sm mt-2">Os pedidos de {selectedDateLabel} aparecem aqui automaticamente.</p>
               </div>
             ) : (
               <div className="w-full min-w-0 flex-1 overflow-x-auto overflow-y-hidden px-4 pb-4 pt-4 md:px-6 md:pb-6">

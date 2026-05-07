@@ -590,6 +590,8 @@ class OrderService:
         *,
         status: str | None = None,
         customer_id: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
         limit: int = 50,
     ) -> list[Order]:
         q = self._db.query(Order).options(joinedload(Order.items).joinedload(OrderItem.flavors))
@@ -597,6 +599,10 @@ class OrderService:
             q = q.filter(Order.status == OrderStatus(status))
         if customer_id:
             q = q.filter(Order.customer_id == customer_id)
+        if date_from:
+            q = q.filter(Order.created_at >= date_from)
+        if date_to:
+            q = q.filter(Order.created_at <= date_to)
         return q.order_by(Order.created_at.desc()).limit(limit).all()
 
     def recalculate_total(self, order_id: str) -> Order:

@@ -195,7 +195,9 @@ def list_orders(
     request: Request,
     status: OrderStatus | None = Query(default=None),
     customer_id: str | None = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=200),
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     try:
@@ -212,6 +214,8 @@ def list_orders(
         orders = OrderService(db).list(
             status=status.value if status else None,
             customer_id=customer_id,
+            date_from=date_from,
+            date_to=date_to,
             limit=limit,
         )
         return ok(_serialize_orders(db, orders))

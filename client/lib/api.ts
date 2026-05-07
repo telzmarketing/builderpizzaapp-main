@@ -1437,10 +1437,12 @@ export const ordersApi = {
     return order;
   },
 
-  list: (params?: { status?: OrderStatus; customer_id?: string; limit?: number }) => {
+  list: (params?: { status?: OrderStatus; customer_id?: string; date_from?: string; date_to?: string; limit?: number }) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.customer_id) qs.set("customer_id", params.customer_id);
+    if (params?.date_from) qs.set("date_from", params.date_from);
+    if (params?.date_to) qs.set("date_to", params.date_to);
     if (params?.limit) qs.set("limit", String(params.limit));
     const q = qs.toString();
     return request<ApiOrder[]>(
