@@ -30,7 +30,7 @@ from backend.services.store_operation_service import StoreOperationService
 
 
 ALLOWED_PAGES = {"home", "cardapio", "product", "cart"}
-DEFAULT_TEMPLATE = "{nome}, do bairro {bairro}, pediu {produto} {tempo}"
+DEFAULT_TEMPLATE = "{nome}, {bairro}, comprou {produto} - {tempo}"
 PAID_ORDER_STATUSES = {
     OrderStatus.paid,
     OrderStatus.pago,
@@ -174,7 +174,7 @@ class StoreNotificationService:
         self._db.commit()
 
     def preview(self, payload: StoreNotificationPreviewIn) -> dict:
-        product_name = payload.product_name or "Produto"
+        product_name = self._safe_text(payload.product_name) or "Produto"
         message = self._render_template(
             payload.template_text,
             name=self._first_name(payload.display_name),
@@ -297,7 +297,7 @@ class StoreNotificationService:
                 continue
             if not self._passes_sequence_rules(settings, last, item.product_id, item.neighborhood):
                 continue
-            product_name = item.product.name if item.product else "Produto"
+            product_name = self._product_display_name(item.product, "Produto")
             candidates.append({
                 "source_type": "manual",
                 "notification_id": item.id,
@@ -310,7 +310,7 @@ class StoreNotificationService:
                     name=self._first_name(item.display_name),
                     product=product_name,
                     neighborhood=self._safe_text(item.neighborhood),
-                    relative_time="ha alguns minutos",
+                    relative_time="2min",
                 ),
                 "display_seconds": item.display_seconds or settings.default_display_seconds,
                 "_score": max(1, item.weight or 1) * PRIORITY_SCORE.get(item.priority, 2),
@@ -525,9 +525,9 @@ class StoreNotificationService:
         if item.flavors:
             flavor = sorted(item.flavors, key=lambda candidate: candidate.position or 0)[0]
             product = product_lookup.get(flavor.product_id)
-            return flavor.product_id, flavor.flavor_name, product.icon if product else None
+            return flavor.product_id, self._product_display_name(product, flavor.flavor_name), product.icon if product else None
         product = product_lookup.get(item.product_id)
-        return item.product_id, product.name if product else None, product.icon if product else None
+        return item.product_id, self._product_display_name(product, product.name if product else None), product.icon if product else None
 
     def _order_neighborhood(self, order: Order) -> str | None:
         if order.address and order.address.neighborhood:
@@ -546,16 +546,35 @@ class StoreNotificationService:
     def _render_template(self, template: str, *, name: str, product: str, neighborhood: str | None, relative_time: str) -> str:
         template = template or DEFAULT_TEMPLATE
         if not neighborhood:
+            template = re.sub(r",?\s*\{bairro\},?", "", template, flags=re.IGNORECASE)
             template = re.sub(r",?\s*do bairro\s*\{bairro\},?", "", template, flags=re.IGNORECASE)
             template = re.sub(r",?\s*do\s+\{bairro\},?", "", template, flags=re.IGNORECASE)
         rendered = (
             template.replace("{nome}", name or "Cliente")
             .replace("{produto}", product or "um produto")
             .replace("{bairro}", neighborhood or "")
-            .replace("{tempo}", relative_time or "ha alguns minutos")
+            .replace("{tempo}", relative_time or "2min")
         )
+        rendered = re.sub(r",\s*do bairro\s+", ", ", rendered, flags=re.IGNORECASE)
+        rendered = re.sub(r"\bdo bairro\s+", "", rendered, flags=re.IGNORECASE)
+        rendered = re.sub(r"\bpediu\b", "comprou", rendered, flags=re.IGNORECASE)
+        rendered = re.sub(r"\s+h[aá]\s+(agora|\d+\s*min|\d+\s*h)", r" - \1", rendered, flags=re.IGNORECASE)
+        rendered = re.sub(r"\s+h[aá]\s+alguns minutos", " - alguns min", rendered, flags=re.IGNORECASE)
+        rendered = re.sub(r"\s+-\s+h[aá]\s+", " - ", rendered, flags=re.IGNORECASE)
         rendered = re.sub(r"\s+", " ", rendered).strip(" ,")
         return rendered
+
+    def _product_display_name(self, product: Product | None, fallback: str | None) -> str | None:
+        name = self._safe_text(product.name if product else fallback)
+        if not name:
+            return None
+        if name.lower().startswith("pizza"):
+            return name
+        product_type = (product.product_type or "").lower() if product else ""
+        category = " ".join(filter(None, [product.category, product.subcategory])).lower() if product else ""
+        if product_type == "pizza" or "pizza" in category:
+            return f"Pizza de {name}"
+        return name
 
     def _first_name(self, value: str | None) -> str:
         clean = self._safe_text(value)
@@ -572,16 +591,14 @@ class StoreNotificationService:
 
     def _relative_time(self, value: datetime | None) -> str:
         if not value:
-            return "ha alguns minutos"
+            return "2min"
         current = datetime.now(timezone.utc)
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         minutes = max(1, int((current - value.astimezone(timezone.utc)).total_seconds() // 60))
         if minutes <= 1:
-            return "agora"
+            return "1min"
         if minutes < 60:
-            return f"ha {minutes} min"
-        if minutes < 180:
-            return "ha alguns minutos"
+            return f"{minutes}min"
         hours = min(23, minutes // 60)
-        return f"ha {hours} h"
+        return f"{hours}h"

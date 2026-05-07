@@ -70,7 +70,7 @@ const emptyForm = (): ApiStoreNotificationInput => ({
   display_name: "",
   product_id: "",
   neighborhood: "",
-  template_text: "{nome}, do bairro {bairro}, pediu {produto} ha {tempo}",
+  template_text: "{nome}, {bairro}, comprou {produto} - {tempo}",
   priority: "medium",
   weight: 1,
   display_seconds: 7,
@@ -110,8 +110,17 @@ function daysLabel(days: number[]) {
   return WEEKDAYS.filter((day) => days.includes(day.id)).map((day) => day.label).join(", ");
 }
 
+function productDisplayName(product?: ApiProduct | null) {
+  const name = product?.name?.trim();
+  if (!name) return "Produto";
+  if (name.toLowerCase().startsWith("pizza")) return name;
+  const category = [product.category, product.subcategory].filter(Boolean).join(" ").toLowerCase();
+  if (product.product_type === "pizza" || category.includes("pizza")) return `Pizza de ${name}`;
+  return name;
+}
+
 function productName(products: ApiProduct[], productId: string) {
-  return products.find((product) => product.id === productId)?.name ?? "Produto";
+  return productDisplayName(products.find((product) => product.id === productId));
 }
 
 export default function MarketingStoreNotifications() {
@@ -242,7 +251,7 @@ export default function MarketingStoreNotifications() {
         product_name: product,
         neighborhood: form.neighborhood,
         template_text: form.template_text,
-        relative_time: "ha alguns minutos",
+        relative_time: "2min",
       });
       setPreview(result.message);
     } catch {
@@ -254,10 +263,10 @@ export default function MarketingStoreNotifications() {
     try {
       const result = await storeNotificationsApi.preview({
         display_name: item.display_name,
-        product_name: item.product_name ?? productName(products, item.product_id),
+        product_name: productName(products, item.product_id),
         neighborhood: item.neighborhood,
         template_text: item.template_text,
-        relative_time: "ha alguns minutos",
+        relative_time: "2min",
       });
       setPreview(result.message);
     } catch {

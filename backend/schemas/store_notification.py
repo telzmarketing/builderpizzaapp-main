@@ -131,7 +131,7 @@ class StoreNotificationPreviewIn(BaseModel):
     product_name: str | None = None
     neighborhood: str | None = None
     template_text: str
-    relative_time: str = "ha alguns minutos"
+    relative_time: str = "2min"
 
 
 class StoreNotificationPreviewOut(BaseModel):
