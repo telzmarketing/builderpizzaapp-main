@@ -88,7 +88,10 @@ export default function Home() {
 
   // Apply home catalog config filter on top of all active products (drinks excluded from home)
   const catalogProducts = useMemo(() => {
-    const nonDrinks = products.filter(p => p.product_type !== "drink");
+    const nonDrinks = products.filter(p =>
+      p.product_type !== "drink" &&
+      (p.category ?? "").toLowerCase() !== "bebidas"
+    );
     if (homeConfig.mode === "categories" && homeConfig.selectedCategories.length > 0) {
       return nonDrinks.filter(p => {
         if (homeConfig.selectedCategories.includes(PROMO_LABEL) && p.promotion_applied) return true;
