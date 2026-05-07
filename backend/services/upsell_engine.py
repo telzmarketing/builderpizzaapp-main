@@ -132,6 +132,7 @@ class UpsellEngine:
             .order_by(Upsell.priority.desc(), Upsell.created_at.asc())
             .all()
         )
+        print(f"[UpsellEngine] {len(rows)} upsells ativos, cart_ids={cart_product_ids}, cart_total={cart_total}")
 
         eligible: list[UpsellOut] = []
 
@@ -161,12 +162,16 @@ class UpsellEngine:
                 triggered = cart_quantity >= (row.trigger_min_quantity or 1)
 
             elif t == "product_in_cart":
-                triggered = (row.trigger_product_id is not None) and (row.trigger_product_id in cart_product_ids)
+                if row.trigger_product_id is None:
+                    triggered = True  # sem produto gatilho = sempre elegível
+                else:
+                    triggered = row.trigger_product_id in cart_product_ids
 
             elif t == "category":
                 triggered = (row.trigger_category is not None) and (row.trigger_category in cart_categories)
 
             if not triggered:
+                print(f"[UpsellEngine] upsell {row.id[:8]} NOT triggered: type={row.trigger_type} trigger_pid={row.trigger_product_id}")
                 continue
 
             eligible.append(_serialize_upsell(row))
