@@ -484,21 +484,23 @@ export default function Product() {
           <button
             type="button"
             onClick={openProductImageZoom}
-            className="relative w-52 h-52 rounded-full bg-surface-02 border-4 border-surface-03 flex items-center justify-center text-8xl shadow-2xl shadow-black/40 overflow-hidden transition-transform active:scale-95"
+            className="relative w-52 h-52 rounded-full bg-surface-02 border-4 border-surface-03 flex items-center justify-center text-8xl shadow-2xl shadow-black/40 transition-transform active:scale-95"
             aria-label="Ampliar imagem do produto"
           >
-            <CategorySeal product={product} className="left-5 top-6" />
-            {isAssetUrl(product.icon)
-              ? (
-                <img
-                  src={resolveAssetUrl(product.icon)}
-                  alt={product.name}
-                  className="w-full h-full object-cover"
-                />
-              )
-              : (
-                <span>{product.icon || "🍕"}</span>
-              )}
+            <CategorySeal product={product} className="left-2 top-3" />
+            <span className="absolute inset-0 rounded-full overflow-hidden flex items-center justify-center">
+              {isAssetUrl(product.icon)
+                ? (
+                  <img
+                    src={resolveAssetUrl(product.icon)}
+                    alt={product.name}
+                    className="w-full h-full object-cover"
+                  />
+                )
+                : (
+                  <span>{product.icon || "🍕"}</span>
+                )}
+            </span>
             <span className="absolute bottom-4 right-4 h-9 w-9 rounded-full bg-surface-00/95 border border-surface-03 flex items-center justify-center text-gold shadow-lg">
               <ZoomIn size={17} />
             </span>
