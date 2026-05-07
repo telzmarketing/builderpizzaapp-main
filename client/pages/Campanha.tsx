@@ -6,6 +6,7 @@ import { useApp } from "@/context/AppContext";
 import { trackEvent } from "@/lib/tracking";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
+import CategorySeal from "@/components/CategorySeal";
 
 export default function Campanha() {
   const { slug } = useParams<{ slug: string }>();
@@ -157,7 +158,8 @@ export default function Campanha() {
 
                 return (
                   <div key={cp.id} className="bg-surface-02 rounded-2xl p-4 border border-surface-03 flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                    <div className="relative w-14 h-14 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                      <CategorySeal product={product} compact className="left-1 top-1 max-w-[90%] px-1 text-[7px]" />
                       {isAssetUrl(product.icon) ? (
                         <img src={resolveAssetUrl(product.icon)} alt={product.name} className="w-full h-full object-contain" />
                       ) : (

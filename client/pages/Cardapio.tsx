@@ -7,6 +7,7 @@ import { sortCategoryNamesByCatalogOrder } from "@/lib/catalogOrdering";
 import { trackEvent } from "@/lib/tracking";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
+import CategorySeal from "@/components/CategorySeal";
 
 export default function Cardapio() {
   const navigate = useNavigate();
@@ -123,7 +124,8 @@ export default function Cardapio() {
                   onClick={() => navigate(`/product/${product.id}`)}
                   className="w-full text-left"
                 >
-                  <div className="w-full aspect-square rounded-xl bg-surface-03 flex items-center justify-center overflow-hidden mb-3">
+                  <div className="relative w-full aspect-square rounded-xl bg-surface-03 flex items-center justify-center overflow-hidden mb-3">
+                    <CategorySeal product={product} />
                     {isAssetUrl(product.icon) ? (
                       <img src={resolveAssetUrl(product.icon)} alt={product.name} className="w-full h-full object-cover" />
                     ) : (

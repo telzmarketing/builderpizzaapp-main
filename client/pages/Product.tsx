@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, type PointerEvent } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check, Loader2, X, ZoomIn } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
+import CategorySeal from "@/components/CategorySeal";
 import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation } from "@/context/AppContext";
 import { sizesApi, crustApi, drinkVariantApi, productPromotionsApi, customerEventsApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductPriceQuote, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { isAllowedPizzaSize, isPizzaBroto, pizzaSizeDescription, pizzaSizeLabel, PIZZA_SIZE_LABELS } from "@/lib/pizzaSizes";
@@ -486,6 +487,7 @@ export default function Product() {
             className="relative w-52 h-52 rounded-full bg-surface-02 border-4 border-surface-03 flex items-center justify-center text-8xl shadow-2xl shadow-black/40 overflow-hidden transition-transform active:scale-95"
             aria-label="Ampliar imagem do produto"
           >
+            <CategorySeal product={product} className="left-5 top-6" />
             {isAssetUrl(product.icon)
               ? (
                 <img
@@ -870,6 +872,7 @@ export default function Product() {
             style={{ width: "min(94vw, 640px)", height: "min(94vw, 640px)" }}
             onClick={(e) => e.stopPropagation()}
           >
+            <CategorySeal product={product} className="left-4 top-4" />
             {isAssetUrl(product.icon) ? (
               <img
                 src={resolveAssetUrl(product.icon)}

@@ -8,6 +8,7 @@ import { sortCategoryNamesByCatalogOrder } from "@/lib/catalogOrdering";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import StoreStatusBanner from "@/components/StoreStatusBanner";
+import CategorySeal from "@/components/CategorySeal";
 
 const PIZZA_FALLBACKS = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🍖", "🍄", "🫒", "🔥", "🥩", "🌿", "🫑"];
 
@@ -423,7 +424,8 @@ export default function Home() {
                   clickedPizza === product.id ? "scale-105 shadow-gold/30" : "hover:scale-[1.02]"
                 }`}
               >
-                <div className="w-44 h-44 mx-auto mb-4 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
+                <div className="relative w-44 h-44 mx-auto mb-4 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
+                  <CategorySeal product={product} className="left-4 top-5" />
                   {renderIcon(product.icon, index, "lg")}
                 </div>
                 <p className="text-cream font-bold text-center text-base leading-snug line-clamp-1">
@@ -471,7 +473,8 @@ export default function Home() {
                     clickedPizza === currentPizza.id ? "scale-105 shadow-gold/30" : "active:scale-95"
                   }`}
                 >
-                  <div className="w-[min(156px,42vw)] h-[min(156px,42vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
+                  <div className="relative w-[min(156px,42vw)] h-[min(156px,42vw)] mx-auto mb-3 rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
+                    <CategorySeal product={currentPizza} className="left-4 top-4" compact />
                     {renderIcon(currentPizza?.icon, carouselPosition, "lg")}
                   </div>
                   <p className="text-cream font-bold text-center text-sm leading-snug line-clamp-1">
