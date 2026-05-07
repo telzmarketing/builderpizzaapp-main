@@ -129,12 +129,13 @@ export default function CheckoutUpsell({ isLocked }: Props) {
   const fetchedRef = useRef(false);
 
   useEffect(() => {
+    console.log("[Upsell] mount — cart:", cart.length, "isLocked:", isLocked);
     if (isLocked || cart.length === 0) return;
-    // Only fetch once per checkout session to avoid repeated requests
     if (fetchedRef.current) return;
     fetchedRef.current = true;
 
     const seen = getSeenIds();
+    console.log("[Upsell] seen ids:", [...seen]);
     setLoading(true);
 
     upsellsApi
@@ -147,20 +148,22 @@ export default function CheckoutUpsell({ isLocked }: Props) {
         cart_total: cartSubtotal,
       })
       .then((data) => {
-        // Filter already seen in this session
+        console.log("[Upsell] eligible response:", data);
         const fresh = data.filter((u) => !seen.has(u.id) && !acceptedIds.has(u.id));
+        console.log("[Upsell] fresh after session filter:", fresh);
         setUpsells(fresh);
 
-        // Mark all as viewed and log events
         fresh.forEach((u) => {
           markSeen(u.id);
           upsellsApi.event({ upsell_id: u.id, event_type: "viewed" }).catch(() => {});
         });
       })
-      .catch(() => {})
+      .catch((e) => {
+        console.error("[Upsell] eligible error:", e);
+      })
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLocked]);
+  }, [isLocked, cart.length]);
 
   const handleAccept = (upsell: ApiUpsell) => {
     const product = upsell.product;
