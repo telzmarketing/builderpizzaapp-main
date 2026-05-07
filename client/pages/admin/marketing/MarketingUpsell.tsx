@@ -626,19 +626,34 @@ export default function MarketingUpsell() {
               {/* 1. Produto principal (gatilho) */}
               <div>
                 <ProductPicker
-                  label="Produto principal (quando estiver no carrinho, o upsell aparece)"
+                  label="Produto gatilho — opcional (deixe vazio para mostrar em qualquer carrinho)"
                   value={form.trigger_product_id ?? ""}
                   products={activeProducts}
                   onChange={(id) => setForm((f) => ({ ...f, trigger_product_id: id || null }))}
-                  placeholder="Selecione o produto que aciona o upsell..."
+                  placeholder="Sem gatilho — aparece para qualquer carrinho"
                 />
+                {!selectedTriggerProduct && (
+                  <p className="mt-1.5 text-xs text-green-400 flex items-center gap-1">
+                    ✓ Sem gatilho: upsell aparece para todos os clientes
+                  </p>
+                )}
+                {selectedTriggerProduct && selectedTriggerProduct.id === form.product_id && (
+                  <p className="mt-1.5 text-xs text-amber-400 flex items-center gap-1">
+                    ⚠ O produto gatilho é igual ao produto ofertado — o cliente precisa já ter este produto no carrinho para ver o upsell (improvável)
+                  </p>
+                )}
+                {selectedTriggerProduct && selectedTriggerProduct.id !== form.product_id && (
+                  <p className="mt-1.5 text-xs text-blue-400 flex items-center gap-1">
+                    ↑ O upsell só aparece quando este produto estiver no carrinho
+                  </p>
+                )}
                 {selectedTriggerProduct && (
                   <button
                     type="button"
                     onClick={() => setForm((f) => ({ ...f, trigger_product_id: null }))}
-                    className="mt-1.5 text-xs text-stone hover:text-red-400 transition-colors flex items-center gap-1"
+                    className="mt-1 text-xs text-stone hover:text-red-400 transition-colors flex items-center gap-1"
                   >
-                    <X size={11} /> Remover (upsell aparece para qualquer carrinho)
+                    <X size={11} /> Remover gatilho (mostrar para qualquer carrinho)
                   </button>
                 )}
               </div>
