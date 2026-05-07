@@ -38,6 +38,7 @@ from backend.routes import rbac as rbac_routes
 from backend.routes import customer_events as customer_events_routes
 from backend.routes import bi as bi_routes
 from backend.routes import store_notifications as store_notifications_routes
+from backend.routes import upsells as upsells_routes
 
 settings = get_settings()
 
@@ -599,6 +600,69 @@ def _run_migrations():
             created_at TIMESTAMPTZ DEFAULT NOW()
         )""",
         "CREATE INDEX IF NOT EXISTS ix_campaign_creatives_campaign_id ON campaign_creatives(campaign_id)",
+
+        # ══════════════════════════════════════════════════════════════════════
+        # MÓDULO UPSELL NO CHECKOUT — tabelas isoladas
+        # ══════════════════════════════════════════════════════════════════════
+        """CREATE TABLE IF NOT EXISTS upsells (
+            id VARCHAR PRIMARY KEY,
+            internal_name VARCHAR(200) NOT NULL,
+            product_id VARCHAR NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            image_url TEXT,
+            main_text VARCHAR(500) NOT NULL,
+            secondary_text VARCHAR(500),
+            promotional_price FLOAT,
+            trigger_type VARCHAR(50) NOT NULL DEFAULT 'min_value',
+            trigger_product_id VARCHAR REFERENCES products(id) ON DELETE SET NULL,
+            trigger_category VARCHAR(100),
+            trigger_min_value FLOAT DEFAULT 0,
+            trigger_min_quantity INTEGER DEFAULT 1,
+            allowed_weekdays VARCHAR(20) DEFAULT '0123456',
+            start_time VARCHAR(5),
+            end_time VARCHAR(5),
+            priority INTEGER NOT NULL DEFAULT 0,
+            display_limit INTEGER NOT NULL DEFAULT 1,
+            active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_upsells_active ON upsells(active)",
+        "CREATE INDEX IF NOT EXISTS ix_upsells_priority ON upsells(priority DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_upsells_product_id ON upsells(product_id)",
+        """CREATE TABLE IF NOT EXISTS upsell_metrics (
+            id VARCHAR PRIMARY KEY,
+            upsell_id VARCHAR NOT NULL UNIQUE REFERENCES upsells(id) ON DELETE CASCADE,
+            views INTEGER NOT NULL DEFAULT 0,
+            accepts INTEGER NOT NULL DEFAULT 0,
+            rejects INTEGER NOT NULL DEFAULT 0,
+            revenue FLOAT NOT NULL DEFAULT 0,
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_upsell_metrics_upsell_id ON upsell_metrics(upsell_id)",
+        """CREATE TABLE IF NOT EXISTS upsell_events (
+            id VARCHAR PRIMARY KEY,
+            upsell_id VARCHAR NOT NULL REFERENCES upsells(id) ON DELETE CASCADE,
+            order_id VARCHAR REFERENCES orders(id) ON DELETE SET NULL,
+            session_id VARCHAR(200),
+            event_type VARCHAR(30) NOT NULL,
+            revenue FLOAT NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_upsell_events_upsell_id ON upsell_events(upsell_id)",
+        "CREATE INDEX IF NOT EXISTS ix_upsell_events_event_type ON upsell_events(event_type)",
+        "CREATE INDEX IF NOT EXISTS ix_upsell_events_created_at ON upsell_events(created_at DESC)",
+        """CREATE TABLE IF NOT EXISTS order_upsells (
+            id VARCHAR PRIMARY KEY,
+            order_id VARCHAR NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+            upsell_id VARCHAR NOT NULL REFERENCES upsells(id) ON DELETE CASCADE,
+            product_id VARCHAR REFERENCES products(id) ON DELETE SET NULL,
+            unit_price FLOAT NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            revenue FLOAT NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_order_upsells_order_id ON order_upsells(order_id)",
+        "CREATE INDEX IF NOT EXISTS ix_order_upsells_upsell_id ON order_upsells(upsell_id)",
     ]
     for stmt in stmts:
         try:
@@ -668,6 +732,7 @@ app.include_router(rbac_routes.router)
 app.include_router(customer_events_routes.router)
 app.include_router(bi_routes.router)
 app.include_router(store_notifications_routes.router)
+app.include_router(upsells_routes.router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")
@@ -697,6 +762,7 @@ app.include_router(lgpd_routes.router, prefix="/api")
 app.include_router(lgpd_routes.admin_router, prefix="/api")
 app.include_router(bi_routes.router, prefix="/api")
 app.include_router(store_notifications_routes.router, prefix="/api")
+app.include_router(upsells_routes.router, prefix="/api")
 
 # ── Static files (uploaded images) ───────────────────────────────────────────
 # Must be mounted AFTER all route registrations.

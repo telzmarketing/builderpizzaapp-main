@@ -2704,3 +2704,138 @@ export const storeNotificationsApi = {
   activateCaptured: (id: string, data: ApiStoreNotificationInput) =>
     post<ApiStoreNotification>(`/store-notifications/captured/${id}/activate`, data),
 };
+
+// ─── Upsell ───────────────────────────────────────────────────────────────────
+
+export type UpsellTriggerType = "product_in_cart" | "category" | "min_value" | "min_quantity";
+export type UpsellEventType = "viewed" | "accepted" | "rejected";
+
+export interface ApiUpsellProductSize {
+  id: string;
+  label: string;
+  price: number;
+  is_default: boolean;
+  active: boolean;
+  sort_order: number;
+}
+
+export interface ApiUpsellProduct {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  icon: string;
+  category: string | null;
+  product_type: string | null;
+  active: boolean;
+  sizes: ApiUpsellProductSize[];
+}
+
+export interface ApiUpsellMetric {
+  id: string;
+  upsell_id: string;
+  views: number;
+  accepts: number;
+  rejects: number;
+  revenue: number;
+  updated_at: string;
+}
+
+export interface ApiUpsell {
+  id: string;
+  internal_name: string;
+  product_id: string;
+  image_url: string | null;
+  main_text: string;
+  secondary_text: string | null;
+  promotional_price: number | null;
+  trigger_type: UpsellTriggerType;
+  trigger_product_id: string | null;
+  trigger_category: string | null;
+  trigger_min_value: number | null;
+  trigger_min_quantity: number | null;
+  allowed_weekdays: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  priority: number;
+  display_limit: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  product: ApiUpsellProduct | null;
+  trigger_product: ApiUpsellProduct | null;
+  metrics: ApiUpsellMetric | null;
+}
+
+export interface ApiUpsellInput {
+  internal_name: string;
+  product_id: string;
+  image_url?: string | null;
+  main_text: string;
+  secondary_text?: string | null;
+  promotional_price?: number | null;
+  trigger_type: UpsellTriggerType;
+  trigger_product_id?: string | null;
+  trigger_category?: string | null;
+  trigger_min_value?: number | null;
+  trigger_min_quantity?: number | null;
+  allowed_weekdays?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  priority?: number;
+  display_limit?: number;
+  active?: boolean;
+}
+
+export interface ApiUpsellCartItem {
+  product_id: string;
+  category?: string | null;
+  quantity: number;
+}
+
+export interface ApiUpsellEligibleIn {
+  cart_items: ApiUpsellCartItem[];
+  cart_total: number;
+  session_id?: string | null;
+}
+
+export interface ApiUpsellEventIn {
+  upsell_id: string;
+  event_type: UpsellEventType;
+  order_id?: string | null;
+  session_id?: string | null;
+  revenue?: number;
+}
+
+export interface ApiUpsellMetricsSummaryItem {
+  upsell_id: string;
+  internal_name: string;
+  product_name: string;
+  views: number;
+  accepts: number;
+  rejects: number;
+  revenue: number;
+  conversion_rate: number;
+}
+
+export interface ApiUpsellMetricsSummary {
+  total_views: number;
+  total_accepts: number;
+  total_rejects: number;
+  total_revenue: number;
+  items: ApiUpsellMetricsSummaryItem[];
+}
+
+export const upsellsApi = {
+  // public
+  eligible: (body: ApiUpsellEligibleIn) => post<ApiUpsell[]>("/upsells/eligible", body),
+  event: (body: ApiUpsellEventIn) => post<void>("/upsells/events", body),
+  // admin
+  list: () => get<ApiUpsell[]>("/upsells"),
+  metrics: () => get<ApiUpsellMetricsSummary>("/upsells/metrics"),
+  create: (body: ApiUpsellInput) => post<ApiUpsell>("/upsells", body),
+  update: (id: string, body: ApiUpsellInput) => put<ApiUpsell>(`/upsells/${id}`, body),
+  toggle: (id: string) => patch<ApiUpsell>(`/upsells/${id}/toggle`, {}),
+  remove: (id: string) => del<void>(`/upsells/${id}`),
+  reorder: (ids: string[]) => post<void>("/upsells/reorder", ids),
+};
