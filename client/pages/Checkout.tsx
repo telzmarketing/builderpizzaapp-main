@@ -20,7 +20,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
-import CheckoutUpsell from "@/pages/checkout/CheckoutUpsell";
 import { checkoutTrackingPayload, trackEvent, getTrackingData, firePixelEvent } from "@/lib/tracking";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { useApp } from "@/context/AppContext";
@@ -921,8 +920,6 @@ export default function Checkout() {
             </div>
           </div>
         </section>
-
-        <CheckoutUpsell isLocked={!!createdOrder} />
 
         {createdOrder && (
           <section className="bg-surface-02 rounded-xl p-4 border border-surface-03">

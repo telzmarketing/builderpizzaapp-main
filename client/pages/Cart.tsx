@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Plus, Minus, Trash2, UtensilsCrossed, ShoppingCart, Tag, Check, X } from "lucide-react";
 import { useApp, CartItem } from "@/context/AppContext";
+import CheckoutUpsell from "@/pages/checkout/CheckoutUpsell";
 import { couponsApi, isAssetUrl, resolveAssetUrl, storeOperationApi, type ApiCouponGift, type StoreOperationStatus } from "@/lib/api";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import BottomNav from "@/components/BottomNav";
@@ -301,6 +302,8 @@ export default function Cart() {
             <span className="text-gold font-bold text-lg">R$ {finalTotal.toFixed(2)}</span>
           </div>
         </div>
+
+        <CheckoutUpsell isLocked={false} />
       </div>
 
       {/* Finalizar Pedido */}
