@@ -652,7 +652,7 @@ export default function Checkout() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
       <div className="bg-brand-dark px-4 py-3 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => navigate("/")} className="text-parchment hover:text-cream transition-colors">
+        <button onClick={() => navigate("/cart")} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
         <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />

@@ -303,7 +303,9 @@ export default function Cart() {
           </div>
         </div>
 
-        <CheckoutUpsell isLocked={false} />
+        <div className="mt-4">
+          <CheckoutUpsell isLocked={false} />
+        </div>
       </div>
 
       {/* Finalizar Pedido */}
