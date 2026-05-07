@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Upload, X } from "lucide-react";
 import { uploadApi, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 
@@ -13,15 +13,18 @@ interface Props {
 }
 
 export default function ImageUpload({ value, onChange, label, hint, sizeGuide, maxKB = 500, previewRounded = false }: Props) {
-  const id = `upload-${label.replace(/\W/g, "-").toLowerCase()}-${Math.random().toString(36).slice(2, 6)}`;
+  const reactId = useId();
+  const id = `img-upload-${reactId}`;
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setError(null);
 
     if (file.size > maxKB * 1024) {
-      alert(`Arquivo muito grande. Máximo permitido: ${maxKB}KB`);
+      setError(`Arquivo muito grande. Máximo permitido: ${maxKB}KB`);
       e.target.value = "";
       return;
     }
@@ -31,7 +34,16 @@ export default function ImageUpload({ value, onChange, label, hint, sizeGuide, m
       const url = await uploadApi.upload(file);
       onChange(url);
     } catch (err) {
-      alert(`Erro ao enviar imagem: ${err instanceof Error ? err.message : "Tente novamente."}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("413")) {
+        setError("Arquivo muito grande para o servidor. Use uma imagem menor (recomendado: abaixo de 1MB).");
+      } else if (msg.includes("401") || msg.includes("403")) {
+        setError("Sessão expirada. Recarregue a página e faça login novamente.");
+      } else if (msg.includes("400")) {
+        setError("Formato não suportado. Use JPEG, PNG ou WebP.");
+      } else {
+        setError(`Erro ao enviar: ${msg}`);
+      }
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -61,14 +73,27 @@ export default function ImageUpload({ value, onChange, label, hint, sizeGuide, m
               {uploading ? "Enviando..." : "Fazer upload"}
             </label>
             {value && !uploading && (
-              <button type="button" onClick={() => onChange("")} className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors" title="Remover imagem">
+              <button
+                type="button"
+                onClick={() => { onChange(""); setError(null); }}
+                className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors"
+                title="Remover imagem"
+              >
                 <X size={14} />
               </button>
             )}
           </div>
-          <input id={id} type="file" accept="image/*" onChange={handleFile} className="hidden" disabled={uploading} />
+          <input
+            id={id}
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            onChange={handleFile}
+            className="hidden"
+            disabled={uploading}
+          />
           {sizeGuide && <p className="text-gold/80 text-xs font-medium">📐 {sizeGuide}</p>}
           {hint && <p className="text-stone/70 text-xs">{hint}</p>}
+          {error && <p className="text-red-400 text-xs mt-1">{error}</p>}
         </div>
       </div>
     </div>

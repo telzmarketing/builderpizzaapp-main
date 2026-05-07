@@ -86,18 +86,19 @@ export default function Home() {
 
   const PROMO_LABEL = "Promoções";
 
-  // Apply home catalog config filter on top of all active products
+  // Apply home catalog config filter on top of all active products (drinks excluded from home)
   const catalogProducts = useMemo(() => {
+    const nonDrinks = products.filter(p => p.product_type !== "drink");
     if (homeConfig.mode === "categories" && homeConfig.selectedCategories.length > 0) {
-      return products.filter(p => {
+      return nonDrinks.filter(p => {
         if (homeConfig.selectedCategories.includes(PROMO_LABEL) && p.promotion_applied) return true;
         return homeConfig.selectedCategories.includes(p.category ?? "");
       });
     }
     if (homeConfig.mode === "products" && homeConfig.selectedProductIds.length > 0) {
-      return products.filter(p => homeConfig.selectedProductIds.includes(p.id));
+      return nonDrinks.filter(p => homeConfig.selectedProductIds.includes(p.id));
     }
-    return products;
+    return nonDrinks;
   }, [products, homeConfig]);
 
   // Categories derived from catalogProducts (respect home config)

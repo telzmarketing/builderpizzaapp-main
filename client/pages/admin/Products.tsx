@@ -1351,7 +1351,8 @@ export default function AdminProducts() {
                           onChange={(url) => setBrindeForm((f) => ({ ...f, icon: url }))}
                           label="Foto do Brinde"
                           previewRounded={false}
-                          maxKB={2048}
+                          maxKB={1024}
+                          sizeGuide="Recomendado: 400×400px, JPEG ou PNG, máx. 1MB"
                         />
                       </div>
                       <div className="flex items-center gap-3">
