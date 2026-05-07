@@ -26,7 +26,7 @@ export default function AdminHomeConfig() {
   const allCategories = [
     ...(hasPromos ? [PROMO_LABEL] : []),
     ...sortCategoryNamesByCatalogOrder(
-      [...new Set(products.filter(p => p.active && p.category).map(p => p.category as string))],
+      [...new Set(products.filter(p => p.active && (p.subcategory || p.category)).map(p => (p.subcategory || p.category) as string))],
       catalogCategories,
     ),
   ];
