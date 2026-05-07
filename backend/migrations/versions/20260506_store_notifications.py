@@ -34,7 +34,19 @@ def upgrade() -> None:
         )
         """
     )
-    op.execute("INSERT INTO store_notification_settings (id) VALUES ('default') ON CONFLICT DO NOTHING")
+    op.execute(
+        """
+        INSERT INTO store_notification_settings
+            (id, enabled, real_orders_enabled, real_percentage, manual_percentage,
+             min_delay_seconds, max_delay_seconds, default_display_seconds,
+             prevent_same_product_sequence, prevent_same_neighborhood_sequence,
+             only_during_store_hours, allowed_pages)
+        VALUES
+            ('default', TRUE, TRUE, 70, 30, 45, 120, 7, TRUE, FALSE, FALSE,
+             '["home", "cardapio", "product", "cart"]')
+        ON CONFLICT DO NOTHING
+        """
+    )
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS store_notifications (
