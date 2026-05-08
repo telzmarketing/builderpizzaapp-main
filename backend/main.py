@@ -409,6 +409,8 @@ def _run_migrations():
         "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS evolution_base_url VARCHAR(500) DEFAULT ''",
         "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS evolution_api_key TEXT DEFAULT ''",
         "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS evolution_instance VARCHAR(120) DEFAULT ''",
+        "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS interval_min_seconds INTEGER DEFAULT 3",
+        "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS interval_max_seconds INTEGER DEFAULT 8",
 
         # ── Email Marketing ───────────────────────────────────────────────────
         "CREATE TABLE IF NOT EXISTS email_templates (id VARCHAR PRIMARY KEY, name VARCHAR(200) NOT NULL, subject VARCHAR(500) NOT NULL, body_html TEXT NOT NULL, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",

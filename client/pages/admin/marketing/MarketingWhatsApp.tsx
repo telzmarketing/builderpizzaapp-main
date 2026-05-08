@@ -53,10 +53,10 @@ interface WaTemplate { id: string; name: string; body: string; category: string;
 interface WaMessage  { id: string; phone: string; body_sent: string; status: string; sent_at: string; error?: string; customer_name?: string; template_name?: string; provider?: string; message_type?: string; media_type?: string; media_url?: string; caption?: string; }
 interface WaCampaign { id: string; name: string; status: string; template_id?: string; group_id?: string; scheduled_at?: string; sent_count: number; delivered_count: number; read_count: number; error_count: number; created_at: string; }
 interface WaDashboard { sent: number; delivered: number; read: number; responded: number; errors: number; active_campaigns: number; scheduled_campaigns: number; response_rate: number; orders_generated: number; revenue_generated: number; }
-interface WaConfig { connection_type: string; status: string; messages_per_minute: number; interval_seconds: number; daily_limit: number; webhook_url: string; evolution_base_url: string; evolution_api_key: string; evolution_instance: string; }
+interface WaConfig { connection_type: string; status: string; messages_per_minute: number; interval_seconds: number; interval_min_seconds: number; interval_max_seconds: number; daily_limit: number; webhook_url: string; evolution_base_url: string; evolution_api_key: string; evolution_instance: string; }
 
 const EMPTY_DASH: WaDashboard = { sent: 0, delivered: 0, read: 0, responded: 0, errors: 0, active_campaigns: 0, scheduled_campaigns: 0, response_rate: 0, orders_generated: 0, revenue_generated: 0 };
-const EMPTY_CFG: WaConfig = { connection_type: "official", status: "disconnected", messages_per_minute: 10, interval_seconds: 3, daily_limit: 1000, webhook_url: "", evolution_base_url: "", evolution_api_key: "", evolution_instance: "" };
+const EMPTY_CFG: WaConfig = { connection_type: "official", status: "disconnected", messages_per_minute: 10, interval_seconds: 3, interval_min_seconds: 3, interval_max_seconds: 8, daily_limit: 1000, webhook_url: "", evolution_base_url: "", evolution_api_key: "", evolution_instance: "" };
 const EMPTY_TPL = { name: "", body: "", category: "marketing", language: "pt_BR", provider: "official", media_type: "", media_url: "", caption: "", mimetype: "", file_name: "" };
 
 export default function MarketingWhatsApp() {
@@ -652,18 +652,26 @@ export default function MarketingWhatsApp() {
                 <span className={`w-3 h-3 rounded-full ${cfg.status === "connected" ? "bg-green-400" : "bg-red-400"}`} />
                 <span className="text-sm text-cream">Status: <span className={cfg.status === "connected" ? "text-green-400" : "text-red-400"}>{cfg.status === "connected" ? "Conectado" : "Desconectado"}</span></span>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs text-stone">Mensagens/minuto</label>
                   <input type="number" min={1} max={60} value={cfg.messages_per_minute}
                     onChange={e => setCfg(c => ({ ...c, messages_per_minute: +e.target.value }))} className={IC} />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-stone">Intervalo (segundos)</label>
-                  <input type="number" min={1} value={cfg.interval_seconds}
-                    onChange={e => setCfg(c => ({ ...c, interval_seconds: +e.target.value }))} className={IC} />
+                  <label className="text-xs text-stone">Intervalo minimo</label>
+                  <input type="number" min={0} value={cfg.interval_min_seconds}
+                    onChange={e => setCfg(c => ({ ...c, interval_min_seconds: +e.target.value, interval_seconds: +e.target.value }))} className={IC} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-stone">Intervalo maximo</label>
+                  <input type="number" min={0} value={cfg.interval_max_seconds}
+                    onChange={e => setCfg(c => ({ ...c, interval_max_seconds: +e.target.value }))} className={IC} />
                 </div>
               </div>
+              <p className="text-xs text-stone/70">
+                O sistema sorteia um intervalo entre esses dois valores antes de enviar a proxima mensagem.
+              </p>
               <div className="space-y-1">
                 <label className="text-xs text-stone">Limite diário de mensagens</label>
                 <input type="number" min={1} value={cfg.daily_limit}

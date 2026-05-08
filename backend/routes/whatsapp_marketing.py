@@ -1,6 +1,7 @@
 """WhatsApp Marketing — templates, campanhas, disparo, monitoramento, config."""
 from __future__ import annotations
 import json
+import random
 import time
 import uuid
 import requests
@@ -85,6 +86,8 @@ class WhatsAppConfig(Base):
     status = Column(String(20), default="disconnected")
     messages_per_minute = Column(Integer, default=10)
     interval_seconds = Column(Integer, default=3)
+    interval_min_seconds = Column(Integer, default=3)
+    interval_max_seconds = Column(Integer, default=8)
     daily_limit = Column(Integer, default=1000)
     webhook_url = Column(String(500), default="")
     evolution_base_url = Column(String(500), default="")
@@ -163,6 +166,8 @@ class ConfigUpdate(BaseModel):
     connection_type: Optional[str] = None
     messages_per_minute: Optional[int] = None
     interval_seconds: Optional[int] = None
+    interval_min_seconds: Optional[int] = None
+    interval_max_seconds: Optional[int] = None
     daily_limit: Optional[int] = None
     webhook_url: Optional[str] = None
     evolution_base_url: Optional[str] = None
@@ -235,6 +240,8 @@ def _cfg_to_dict(cfg: WhatsAppConfig) -> dict:
         "status": cfg.status,
         "messages_per_minute": cfg.messages_per_minute,
         "interval_seconds": cfg.interval_seconds,
+        "interval_min_seconds": cfg.interval_min_seconds if cfg.interval_min_seconds is not None else cfg.interval_seconds,
+        "interval_max_seconds": cfg.interval_max_seconds if cfg.interval_max_seconds is not None else cfg.interval_seconds,
         "daily_limit": cfg.daily_limit,
         "webhook_url": cfg.webhook_url or "",
         "evolution_base_url": cfg.evolution_base_url or "",
@@ -486,11 +493,15 @@ def _sent_today_count(db: Session) -> int:
 
 
 def _send_delay_seconds(cfg: WhatsAppConfig) -> float:
-    by_interval = max(0, int(cfg.interval_seconds or 0))
-    by_rate = 0.0
-    if cfg.messages_per_minute and cfg.messages_per_minute > 0:
-        by_rate = 60.0 / float(cfg.messages_per_minute)
-    return max(by_interval, by_rate)
+    fallback = max(0, int(cfg.interval_seconds or 0))
+    min_seconds = cfg.interval_min_seconds if cfg.interval_min_seconds is not None else fallback
+    max_seconds = cfg.interval_max_seconds if cfg.interval_max_seconds is not None else fallback
+    min_seconds = max(0, int(min_seconds or 0))
+    max_seconds = max(0, int(max_seconds or 0))
+    if max_seconds < min_seconds:
+        min_seconds, max_seconds = max_seconds, min_seconds
+    by_interval = random.uniform(float(min_seconds), float(max_seconds)) if max_seconds > min_seconds else float(min_seconds)
+    return by_interval
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -805,7 +816,6 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
 
     sent_count = failed_count = 0
     results = []
-    delay_seconds = _send_delay_seconds(cfg)
 
     for index, rec in enumerate(recipients):
         if cfg.daily_limit and sent_today + sent_count >= cfg.daily_limit:
@@ -875,8 +885,10 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
             "wamid": wamid,
             "error": error,
         })
-        if index < len(recipients) - 1 and delay_seconds > 0:
-            time.sleep(min(delay_seconds, 30))
+        if index < len(recipients) - 1:
+            delay_seconds = _send_delay_seconds(cfg)
+            if delay_seconds > 0:
+                time.sleep(delay_seconds)
 
     db.commit()
     return ok({"sent": sent_count, "failed": failed_count, "messages": results})
@@ -942,6 +954,16 @@ def update_config(body: ConfigUpdate, db: Session = Depends(get_db), _=Depends(g
         cfg.messages_per_minute = body.messages_per_minute
     if body.interval_seconds is not None:
         cfg.interval_seconds = body.interval_seconds
+        if body.interval_min_seconds is None:
+            cfg.interval_min_seconds = body.interval_seconds
+        if body.interval_max_seconds is None:
+            cfg.interval_max_seconds = body.interval_seconds
+    if body.interval_min_seconds is not None:
+        cfg.interval_min_seconds = body.interval_min_seconds
+    if body.interval_max_seconds is not None:
+        cfg.interval_max_seconds = body.interval_max_seconds
+    if cfg.interval_min_seconds is not None and cfg.interval_max_seconds is not None and cfg.interval_min_seconds > cfg.interval_max_seconds:
+        cfg.interval_min_seconds, cfg.interval_max_seconds = cfg.interval_max_seconds, cfg.interval_min_seconds
     if body.daily_limit is not None:
         cfg.daily_limit = body.daily_limit
     if body.webhook_url is not None:
