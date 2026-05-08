@@ -395,6 +395,14 @@ def _run_migrations():
         "CREATE TABLE IF NOT EXISTS whatsapp_config (id VARCHAR PRIMARY KEY DEFAULT 'default', connection_type VARCHAR(30) DEFAULT 'official', status VARCHAR(20) DEFAULT 'disconnected', messages_per_minute INTEGER DEFAULT 10, interval_seconds INTEGER DEFAULT 3, daily_limit INTEGER DEFAULT 1000, webhook_url VARCHAR(500) DEFAULT '', updated_at TIMESTAMPTZ DEFAULT NOW())",
         "INSERT INTO whatsapp_config (id) VALUES ('default') ON CONFLICT DO NOTHING",
         "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS campaign_id VARCHAR REFERENCES whatsapp_campaigns(id) ON DELETE SET NULL",
+        "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS provider VARCHAR(30) DEFAULT 'official'",
+        "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS message_type VARCHAR(30) DEFAULT 'text'",
+        "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS media_type VARCHAR(20)",
+        "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS media_url TEXT",
+        "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS caption TEXT",
+        "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS evolution_base_url VARCHAR(500) DEFAULT ''",
+        "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS evolution_api_key TEXT DEFAULT ''",
+        "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS evolution_instance VARCHAR(120) DEFAULT ''",
 
         # ── Email Marketing ───────────────────────────────────────────────────
         "CREATE TABLE IF NOT EXISTS email_templates (id VARCHAR PRIMARY KEY, name VARCHAR(200) NOT NULL, subject VARCHAR(500) NOT NULL, body_html TEXT NOT NULL, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",

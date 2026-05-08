@@ -3,6 +3,7 @@ import {
   Loader2, Plus, Pencil, Trash2, X, MessageCircle, Send, CheckCircle,
   XCircle, Clock, AlertCircle, BarChart2, Settings, Eye, Zap,
   RefreshCw, Play, Pause, Users, MessageSquare, Megaphone,
+  Image, Video,
 } from "lucide-react";
 import {
   AdminPageContent,
@@ -49,13 +50,13 @@ function fmtDate(s?: string) {
 const IC = "w-full bg-surface-03 border border-surface-03 rounded-xl px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold";
 
 interface WaTemplate { id: string; name: string; body: string; category: string; language: string; active: boolean; created_at: string; }
-interface WaMessage  { id: string; phone: string; body_sent: string; status: string; sent_at: string; error?: string; customer_name?: string; template_name?: string; }
+interface WaMessage  { id: string; phone: string; body_sent: string; status: string; sent_at: string; error?: string; customer_name?: string; template_name?: string; provider?: string; message_type?: string; media_type?: string; media_url?: string; caption?: string; }
 interface WaCampaign { id: string; name: string; status: string; template_id?: string; group_id?: string; scheduled_at?: string; sent_count: number; delivered_count: number; read_count: number; error_count: number; created_at: string; }
 interface WaDashboard { sent: number; delivered: number; read: number; responded: number; errors: number; active_campaigns: number; scheduled_campaigns: number; response_rate: number; orders_generated: number; revenue_generated: number; }
-interface WaConfig { connection_type: string; status: string; messages_per_minute: number; interval_seconds: number; daily_limit: number; webhook_url: string; }
+interface WaConfig { connection_type: string; status: string; messages_per_minute: number; interval_seconds: number; daily_limit: number; webhook_url: string; evolution_base_url: string; evolution_api_key: string; evolution_instance: string; }
 
 const EMPTY_DASH: WaDashboard = { sent: 0, delivered: 0, read: 0, responded: 0, errors: 0, active_campaigns: 0, scheduled_campaigns: 0, response_rate: 0, orders_generated: 0, revenue_generated: 0 };
-const EMPTY_CFG: WaConfig = { connection_type: "official", status: "disconnected", messages_per_minute: 10, interval_seconds: 3, daily_limit: 1000, webhook_url: "" };
+const EMPTY_CFG: WaConfig = { connection_type: "official", status: "disconnected", messages_per_minute: 10, interval_seconds: 3, daily_limit: 1000, webhook_url: "", evolution_base_url: "", evolution_api_key: "", evolution_instance: "" };
 
 export default function MarketingWhatsApp() {
   const [tab, setTab] = useState<Tab>("dashboard");
@@ -69,14 +70,27 @@ export default function MarketingWhatsApp() {
   const [tplLoading, setTplLoading] = useState(false);
   const [showTplModal, setShowTplModal] = useState(false);
   const [editingTplId, setEditingTplId] = useState<string | null>(null);
-  const [tplForm, setTplForm] = useState({ name: "", body: "", category: "marketing" });
+  const [tplForm, setTplForm] = useState({ name: "", body: "", category: "marketing", language: "pt_BR" });
   // ── Campanhas ──
   const [campaigns, setCampaigns] = useState<WaCampaign[]>([]);
   const [campLoading, setCampLoading] = useState(false);
   const [showCampModal, setShowCampModal] = useState(false);
   const [campForm, setCampForm] = useState({ name: "", template_id: "", group_id: "", scheduled_at: "" });
   // ── Disparo ──
-  const [dispForm, setDispForm] = useState({ template_id: "", phones: "", free_text: "", template_variables: "", mode: "template", schedule: "" });
+  const [dispForm, setDispForm] = useState({
+    provider: "official",
+    template_id: "",
+    phones: "",
+    free_text: "",
+    template_variables: "",
+    mode: "template",
+    schedule: "",
+    media_type: "",
+    media_url: "",
+    caption: "",
+    mimetype: "",
+    file_name: "",
+  });
   const [dispResult, setDispResult] = useState<{ sent: number; failed: number } | null>(null);
   const [dispatching, setDispatching] = useState(false);
   // ── Monitoramento ──
@@ -186,9 +200,17 @@ export default function MarketingWhatsApp() {
     try {
       const phones = dispForm.phones.split(/[\n,]/).map(p => p.trim()).filter(Boolean);
       const variables = dispForm.template_variables.split(/\n/).map(v => v.trim()).filter(Boolean);
-      const body = dispForm.mode === "template"
-        ? JSON.stringify({ template_id: dispForm.template_id, phones, variables })
-        : JSON.stringify({ free_text: dispForm.free_text, phones });
+      const mediaPayload = dispForm.media_type ? {
+        media_type: dispForm.media_type,
+        media_url: dispForm.media_url,
+        caption: dispForm.caption,
+        mimetype: dispForm.mimetype,
+        file_name: dispForm.file_name,
+      } : {};
+      const payload = dispForm.mode === "template"
+        ? { provider: dispForm.provider, template_id: dispForm.template_id, phones, variables, ...mediaPayload }
+        : { provider: dispForm.provider, free_text: dispForm.free_text, phones, ...mediaPayload };
+      const body = JSON.stringify(payload);
       const r = await fetch(`${BASE}/whatsapp/send`, { method: "POST", headers, body });
       const json = await r.json();
       if (!r.ok || json?.success === false) {
@@ -288,7 +310,7 @@ export default function MarketingWhatsApp() {
           <>
             <div className="flex items-center justify-between">
               <p className="text-stone text-sm">{templates.length} template(s)</p>
-              <button onClick={() => { setEditingTplId(null); setTplForm({ name: "", body: "", category: "marketing" }); setShowTplModal(true); }}
+              <button onClick={() => { setEditingTplId(null); setTplForm({ name: "", body: "", category: "marketing", language: "pt_BR" }); setShowTplModal(true); }}
                 className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-black font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
                 <Plus size={16} /> Novo Template
               </button>
@@ -329,7 +351,7 @@ export default function MarketingWhatsApp() {
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-stone">{fmtDate(t.created_at)}</span>
                       <div className="flex gap-1">
-                        <button onClick={() => { setEditingTplId(t.id); setTplForm({ name: t.name, body: t.body, category: t.category }); setShowTplModal(true); }}
+                        <button onClick={() => { setEditingTplId(t.id); setTplForm({ name: t.name, body: t.body, category: t.category, language: t.language || "pt_BR" }); setShowTplModal(true); }}
                           className="p-1.5 rounded-lg hover:bg-surface-03 text-stone hover:text-cream transition-colors"><Pencil size={13} /></button>
                         <button onClick={() => deleteTpl(t.id)}
                           className="p-1.5 rounded-lg hover:bg-red-500/10 text-stone hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
@@ -416,6 +438,16 @@ export default function MarketingWhatsApp() {
                     </button>
                   ))}
                 </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-stone">API de envio *</label>
+                  <select value={dispForm.provider} onChange={e => setDispForm(f => ({ ...f, provider: e.target.value }))} className={IC}>
+                    <option value="official">WABA / Meta Cloud API</option>
+                    <option value="evolution">Evolution API</option>
+                  </select>
+                  <p className="text-xs text-stone/60">
+                    WABA usa templates aprovados para campanha; Evolution envia texto, imagem e video pela instancia configurada.
+                  </p>
+                </div>
                 {dispForm.mode === "template" ? (
                   <div className="space-y-3">
                     <div className="space-y-1">
@@ -451,6 +483,49 @@ export default function MarketingWhatsApp() {
                     </div>
                   </div>
                 )}
+                <div className="space-y-3 rounded-xl border border-surface-03 bg-surface-03/30 p-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs text-stone flex items-center gap-1">
+                        {dispForm.media_type === "video" ? <Video size={12} /> : <Image size={12} />} Midia
+                      </label>
+                      <select value={dispForm.media_type} onChange={e => setDispForm(f => ({ ...f, media_type: e.target.value }))} className={IC}>
+                        <option value="">Sem midia</option>
+                        <option value="image">Imagem</option>
+                        <option value="video">Video</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-stone">Mimetype</label>
+                      <input type="text" value={dispForm.mimetype} onChange={e => setDispForm(f => ({ ...f, mimetype: e.target.value }))}
+                        placeholder={dispForm.media_type === "video" ? "video/mp4" : "image/jpeg"} className={IC} disabled={!dispForm.media_type} />
+                    </div>
+                  </div>
+                  {dispForm.media_type && (
+                    <>
+                      <div className="space-y-1">
+                        <label className="text-xs text-stone">URL HTTPS da midia *</label>
+                        <input type="url" value={dispForm.media_url} onChange={e => setDispForm(f => ({ ...f, media_url: e.target.value }))}
+                          placeholder={dispForm.media_type === "video" ? "https://site.com/video.mp4" : "https://site.com/imagem.jpg"} className={IC} />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-xs text-stone">Legenda</label>
+                          <input type="text" value={dispForm.caption} onChange={e => setDispForm(f => ({ ...f, caption: e.target.value }))}
+                            placeholder="Texto opcional da midia" className={IC} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs text-stone">Nome do arquivo</label>
+                          <input type="text" value={dispForm.file_name} onChange={e => setDispForm(f => ({ ...f, file_name: e.target.value }))}
+                            placeholder={dispForm.media_type === "video" ? "video.mp4" : "imagem.jpg"} className={IC} />
+                        </div>
+                      </div>
+                      <p className="text-xs text-stone/60">
+                        Na WABA com template, a midia e enviada como header do template aprovado. Na Evolution, vai pelo endpoint sendMedia.
+                      </p>
+                    </>
+                  )}
+                </div>
                 <div className="space-y-1">
                   <label className="text-xs text-stone">Telefones (um por linha ou separado por vírgula) *</label>
                   <textarea value={dispForm.phones} onChange={e => setDispForm(f => ({ ...f, phones: e.target.value }))}
@@ -501,7 +576,7 @@ export default function MarketingWhatsApp() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-stone text-xs border-b border-surface-03 bg-surface-03/30">
-                          {["Cliente", "Telefone", "Template", "Status", "Data/Hora", "Erro"].map(h => (
+                          {["Cliente", "Telefone", "Provedor", "Tipo", "Template", "Status", "Data/Hora", "Erro"].map(h => (
                             <th key={h} className="text-left p-3">{h}</th>
                           ))}
                         </tr>
@@ -514,6 +589,8 @@ export default function MarketingWhatsApp() {
                             <tr key={m.id} className="hover:bg-surface-03/30 transition-colors">
                               <td className="p-3 text-cream font-medium">{m.customer_name ?? "—"}</td>
                               <td className="p-3 text-stone font-mono text-xs">{m.phone}</td>
+                              <td className="p-3 text-stone text-xs">{m.provider === "evolution" ? "Evolution" : "WABA"}</td>
+                              <td className="p-3 text-stone text-xs">{m.media_type || m.message_type || "text"}</td>
                               <td className="p-3 text-stone text-xs">{m.template_name ?? "—"}</td>
                               <td className="p-3"><span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${sc.cls}`}><SI size={10} />{sc.label}</span></td>
                               <td className="p-3 text-stone text-xs whitespace-nowrap">{fmtDate(m.sent_at)}</td>
@@ -532,17 +609,18 @@ export default function MarketingWhatsApp() {
 
         {/* ═══ CONFIGURAÇÕES ═══ */}
         {tab === "configuracoes" && (
-          <div className="max-w-xl">
+          <div className="max-w-2xl">
             <form onSubmit={saveCfg} className="bg-surface-02 border border-surface-03 rounded-2xl p-5 space-y-4">
               <h2 className="text-sm font-semibold text-cream">Configurações de Conexão</h2>
               <div className="space-y-1">
                 <label className="text-xs text-stone">Tipo de Conexão</label>
                 <select value={cfg.connection_type} onChange={e => setCfg(c => ({ ...c, connection_type: e.target.value }))} className={IC}>
                   <option value="official">WhatsApp Oficial (Cloud API)</option>
+                  <option value="evolution">Evolution API</option>
                   <option value="qr" disabled>WhatsApp QR Code (indisponivel sem servico de sessao)</option>
                 </select>
                 <p className="text-xs text-stone/70">
-                  Para producao, use a API oficial. QR Code depende de um servico separado de sessao WhatsApp Web.
+                  Selecione o provedor padrao. No disparo imediato tambem e possivel escolher WABA ou Evolution por envio.
                 </p>
               </div>
               <div className="flex items-center gap-3 p-3 bg-surface-03 rounded-xl">
@@ -574,6 +652,28 @@ export default function MarketingWhatsApp() {
                   Cadastre esta URL na Meta junto com o Verify Token configurado em Integracoes.
                 </p>
               </div>
+              {cfg.connection_type === "evolution" && (
+                <div className="space-y-3 rounded-xl border border-surface-03 bg-surface-03/30 p-3">
+                  <h3 className="text-xs font-semibold text-cream">Evolution API</h3>
+                  <div className="space-y-1">
+                    <label className="text-xs text-stone">URL base</label>
+                    <input type="url" value={cfg.evolution_base_url} onChange={e => setCfg(c => ({ ...c, evolution_base_url: e.target.value }))}
+                      placeholder="https://evolution.seudominio.com" className={IC} />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs text-stone">API Key</label>
+                      <input type="password" value={cfg.evolution_api_key} onChange={e => setCfg(c => ({ ...c, evolution_api_key: e.target.value }))}
+                        placeholder="apikey da Evolution" className={IC} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-stone">Instancia</label>
+                      <input type="text" value={cfg.evolution_instance} onChange={e => setCfg(c => ({ ...c, evolution_instance: e.target.value }))}
+                        placeholder="nome-da-instancia" className={IC} />
+                    </div>
+                  </div>
+                </div>
+              )}
               <button type="submit" disabled={cfgSaving}
                 className="w-full py-2.5 rounded-xl bg-gold hover:bg-gold/90 text-black font-semibold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
                 {cfgSaving && <Loader2 size={14} className="animate-spin" />} Salvar Configurações
@@ -603,6 +703,11 @@ export default function MarketingWhatsApp() {
                   <option value="utility">Utilidade</option>
                   <option value="authentication">Autenticação</option>
                 </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-stone">Idioma do template</label>
+                <input type="text" value={tplForm.language} onChange={e => setTplForm(f => ({ ...f, language: e.target.value }))}
+                  placeholder="pt_BR" className={IC} />
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-stone">Mensagem *</label>

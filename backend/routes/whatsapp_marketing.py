@@ -43,6 +43,11 @@ class WhatsAppMessage(Base):
     customer_id = Column(String, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
     phone = Column(String(20), nullable=False)
     body_sent = Column(Text)
+    provider = Column(String(30), default="official")
+    message_type = Column(String(30), default="text")
+    media_type = Column(String(20), nullable=True)
+    media_url = Column(Text, nullable=True)
+    caption = Column(Text, nullable=True)
     status = Column(String(20), default="pending")
     wamid = Column(String(200))
     error = Column(Text)
@@ -76,6 +81,9 @@ class WhatsAppConfig(Base):
     interval_seconds = Column(Integer, default=3)
     daily_limit = Column(Integer, default=1000)
     webhook_url = Column(String(500), default="")
+    evolution_base_url = Column(String(500), default="")
+    evolution_api_key = Column(Text, default="")
+    evolution_instance = Column(String(120), default="")
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
 
@@ -93,10 +101,12 @@ class TemplateUpdate(BaseModel):
     name: Optional[str] = None
     body: Optional[str] = None
     category: Optional[str] = None
+    language: Optional[str] = None
     active: Optional[bool] = None
 
 
 class SendRequest(BaseModel):
+    provider: Optional[str] = None
     # Modo template (antigo)
     template_id: Optional[str] = None
     customer_ids: list[str] = []
@@ -106,6 +116,12 @@ class SendRequest(BaseModel):
     free_text: Optional[str] = None
     # Telefones diretos (novo)
     phones: list[str] = []
+    # Midia para WABA e Evolution API
+    media_type: Optional[str] = None
+    media_url: Optional[str] = None
+    caption: Optional[str] = None
+    mimetype: Optional[str] = None
+    file_name: Optional[str] = None
     # Agendamento
     scheduled_at: Optional[str] = None
 
@@ -131,6 +147,9 @@ class ConfigUpdate(BaseModel):
     interval_seconds: Optional[int] = None
     daily_limit: Optional[int] = None
     webhook_url: Optional[str] = None
+    evolution_base_url: Optional[str] = None
+    evolution_api_key: Optional[str] = None
+    evolution_instance: Optional[str] = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -200,6 +219,9 @@ def _cfg_to_dict(cfg: WhatsAppConfig) -> dict:
         "interval_seconds": cfg.interval_seconds,
         "daily_limit": cfg.daily_limit,
         "webhook_url": cfg.webhook_url or "",
+        "evolution_base_url": cfg.evolution_base_url or "",
+        "evolution_api_key": cfg.evolution_api_key or "",
+        "evolution_instance": cfg.evolution_instance or "",
     }
 
 
@@ -235,6 +257,55 @@ def _load_whatsapp_cloud_credentials(db: Session) -> tuple[dict, Optional[str]]:
     return creds, None
 
 
+def _normalize_provider(provider: Optional[str]) -> str:
+    value = (provider or "official").strip().lower()
+    if value in {"waba", "meta", "cloud", "whatsapp_cloud"}:
+        return "official"
+    if value in {"evolution", "evolution_api"}:
+        return "evolution"
+    if value == "qr":
+        return "qr"
+    return value
+
+
+def _normalize_media_type(media_type: Optional[str], media_url: Optional[str]) -> Optional[str]:
+    if not media_url:
+        return None
+    value = (media_type or "").strip().lower()
+    if value in {"image", "video"}:
+        return value
+    lower_url = media_url.lower().split("?")[0]
+    if lower_url.endswith((".mp4", ".mov", ".m4v", ".webm")):
+        return "video"
+    return "image"
+
+
+def _guess_mimetype(media_type: Optional[str], media_url: Optional[str], mimetype: Optional[str]) -> str:
+    if mimetype:
+        return mimetype
+    lower_url = (media_url or "").lower().split("?")[0]
+    if lower_url.endswith(".png"):
+        return "image/png"
+    if lower_url.endswith(".webp"):
+        return "image/webp"
+    if lower_url.endswith(".mov"):
+        return "video/quicktime"
+    if lower_url.endswith(".webm"):
+        return "video/webm"
+    if media_type == "video":
+        return "video/mp4"
+    return "image/jpeg"
+
+
+def _evolution_credentials(cfg: WhatsAppConfig) -> tuple[dict, Optional[str]]:
+    base_url = (cfg.evolution_base_url or "").strip().rstrip("/")
+    api_key = (cfg.evolution_api_key or "").strip()
+    instance = (cfg.evolution_instance or "").strip()
+    if not base_url or not api_key or not instance:
+        return {}, "Evolution API incompleta. Informe URL base, API Key e instancia."
+    return {"base_url": base_url, "api_key": api_key, "instance": instance}, None
+
+
 def _load_whatsapp_verify_token(db: Session) -> Optional[str]:
     conn = db.execute(
         text("SELECT credentials_json FROM integration_connections WHERE integration_type = 'whatsapp_cloud'")
@@ -263,35 +334,54 @@ def _send_whatsapp_api(
     template_name: str | None = None,
     template_language: str = "pt_BR",
     template_variables: list[str] | None = None,
+    media_type: str | None = None,
+    media_url: str | None = None,
+    caption: str | None = None,
 ) -> tuple[Optional[str], str, Optional[str]]:
     """Envia via WhatsApp Cloud API. Retorna (wamid, status, error)."""
-    cfg = _get_config(db)
-    if cfg.connection_type == "qr":
-        return None, "failed", "WhatsApp QR Code ainda nao possui servico de sessao implementado."
-    if cfg.status != "connected":
-        return None, "failed", "WhatsApp Cloud API nao esta conectada."
-
     creds, error = _load_whatsapp_cloud_credentials(db)
     if error:
         return None, "failed", error
 
     clean_phone = "".join(c for c in phone if c.isdigit())
+    normalized_media = _normalize_media_type(media_type, media_url)
     if template_name:
         template: dict = {
             "name": template_name,
             "language": {"code": template_language or "pt_BR"},
         }
+        components = []
+        if media_url and normalized_media:
+            components.append({
+                "type": "header",
+                "parameters": [{
+                    "type": normalized_media,
+                    normalized_media: {"link": media_url},
+                }],
+            })
         variables = template_variables or []
         if variables:
-            template["components"] = [{
+            components.append({
                 "type": "body",
                 "parameters": [{"type": "text", "text": str(value)} for value in variables],
-            }]
+            })
+        if components:
+            template["components"] = components
         payload = {
             "messaging_product": "whatsapp",
             "to": clean_phone,
             "type": "template",
             "template": template,
+        }
+    elif media_url and normalized_media:
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": clean_phone,
+            "type": normalized_media,
+            normalized_media: {
+                "link": media_url,
+                "caption": caption or body or "",
+            },
         }
     else:
         payload = {
@@ -312,6 +402,60 @@ def _send_whatsapp_api(
         if resp.status_code == 200 and "messages" in data:
             return data["messages"][0].get("id"), "sent", None
         return None, "failed", data.get("error", {}).get("message", resp.text)
+    except Exception as exc:
+        return None, "failed", str(exc)
+
+
+def _send_evolution_api(
+    phone: str,
+    body: str,
+    cfg: WhatsAppConfig,
+    *,
+    media_type: str | None = None,
+    media_url: str | None = None,
+    caption: str | None = None,
+    mimetype: str | None = None,
+    file_name: str | None = None,
+) -> tuple[Optional[str], str, Optional[str]]:
+    """Envia via Evolution API. Retorna (message_id, status, error)."""
+    creds, error = _evolution_credentials(cfg)
+    if error:
+        return None, "failed", error
+
+    clean_phone = "".join(c for c in phone if c.isdigit())
+    normalized_media = _normalize_media_type(media_type, media_url)
+    headers = {"apikey": creds["api_key"], "Content-Type": "application/json"}
+
+    if media_url and normalized_media:
+        endpoint = f"{creds['base_url']}/message/sendMedia/{creds['instance']}"
+        payload = {
+            "number": clean_phone,
+            "mediatype": normalized_media,
+            "mimetype": _guess_mimetype(normalized_media, media_url, mimetype),
+            "caption": caption or body or "",
+            "media": media_url,
+            "fileName": file_name or ("video.mp4" if normalized_media == "video" else "imagem.jpg"),
+        }
+    else:
+        endpoint = f"{creds['base_url']}/message/sendText/{creds['instance']}"
+        payload = {
+            "number": clean_phone,
+            "text": body,
+            "linkPreview": True,
+        }
+
+    try:
+        resp = requests.post(endpoint, headers=headers, json=payload, timeout=20)
+        data = resp.json() if resp.content else {}
+        if 200 <= resp.status_code < 300:
+            msg_id = (
+                data.get("key", {}).get("id")
+                or data.get("message", {}).get("key", {}).get("id")
+                or data.get("id")
+            )
+            return msg_id, "sent", None
+        message = data.get("message") or data.get("error") or resp.text
+        return None, "failed", str(message)
     except Exception as exc:
         return None, "failed", str(exc)
 
@@ -473,6 +617,8 @@ def update_template(template_id: str, body: TemplateUpdate,
         t.body = body.body
     if body.category is not None:
         t.category = body.category
+    if body.language is not None:
+        t.language = body.language
     if body.active is not None:
         t.active = body.active
     t.updated_at = _now()
@@ -561,20 +707,32 @@ def delete_campaign(campaign_id: str, db: Session = Depends(get_db), _=Depends(g
 @router.post("/send")
 def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     cfg = _get_config(db)
-    if cfg.connection_type == "qr":
+    provider = _normalize_provider(body.provider or cfg.connection_type)
+    if provider == "qr":
         return err_msg(
-            "WhatsApp QR Code ainda nao possui servico de sessao implementado. Use WhatsApp Oficial (Cloud API).",
+            "WhatsApp QR Code ainda nao possui servico de sessao implementado. Use WABA ou Evolution API.",
             code="WhatsAppQrNotImplemented",
             status_code=501,
         )
-    if cfg.status != "connected":
-        return err_msg("WhatsApp Cloud API nao esta conectada. Configure e teste a integracao antes de disparar.", code="WhatsAppNotConnected")
+    if provider not in {"official", "evolution"}:
+        return err_msg("Provedor WhatsApp invalido. Use official ou evolution.", code="WhatsAppProviderInvalid")
+    if provider == "official":
+        _, cloud_error = _load_whatsapp_cloud_credentials(db)
+        if cloud_error:
+            return err_msg(cloud_error, code="WhatsAppConfigMissing")
+    if provider == "evolution":
+        _, evolution_error = _evolution_credentials(cfg)
+        if evolution_error:
+            return err_msg(evolution_error, code="EvolutionConfigMissing")
     if body.scheduled_at:
         return err_msg("Agendamento ainda nao possui worker ativo. Faca disparo imediato por enquanto.", code="WhatsAppScheduleUnavailable")
 
     # Resolve o body final (template ou texto livre)
     template = None
     final_body_template: Optional[str] = None
+    media_url = (body.media_url or "").strip() or None
+    media_type = _normalize_media_type(body.media_type, media_url)
+    caption = (body.caption or "").strip() or None
 
     if body.template_id:
         template = db.query(WhatsAppTemplate).filter(
@@ -585,8 +743,11 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
             raise HTTPException(404, "Template não encontrado ou inativo.")
         final_body_template = _render_template_preview(template.body, body.variables)
 
-    elif not body.free_text:
-        raise HTTPException(400, "Informe template_id ou free_text.")
+    elif not body.free_text and not media_url:
+        raise HTTPException(400, "Informe template_id, free_text ou uma midia.")
+
+    if media_url and media_type not in {"image", "video"}:
+        raise HTTPException(400, "media_type deve ser image ou video.")
 
     # Resolve destinatários
     recipients = _resolve_phones(body, db)
@@ -609,6 +770,7 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
 
         phone = rec["phone"]
         msg_body = final_body_template if template else (body.free_text or "")
+        message_type = "template" if template else (media_type or "text")
 
         msg = WhatsAppMessage(
             id=str(uuid.uuid4()),
@@ -616,19 +778,39 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
             customer_id=rec.get("customer_id"),
             phone=phone,
             body_sent=msg_body,
+            provider=provider,
+            message_type=message_type,
+            media_type=media_type,
+            media_url=media_url,
+            caption=caption,
             status="pending",
         )
         db.add(msg)
         db.flush()
 
-        wamid, status, error = _send_whatsapp_api(
-            phone,
-            msg_body,
-            db,
-            template_name=template.name if template else None,
-            template_language=template.language if template else "pt_BR",
-            template_variables=body.variables if template else None,
-        )
+        if provider == "evolution":
+            wamid, status, error = _send_evolution_api(
+                phone,
+                msg_body,
+                cfg,
+                media_type=media_type,
+                media_url=media_url,
+                caption=caption,
+                mimetype=body.mimetype,
+                file_name=body.file_name,
+            )
+        else:
+            wamid, status, error = _send_whatsapp_api(
+                phone,
+                msg_body,
+                db,
+                template_name=template.name if template else None,
+                template_language=template.language if template else "pt_BR",
+                template_variables=body.variables if template else None,
+                media_type=media_type,
+                media_url=media_url,
+                caption=caption,
+            )
 
         msg.status = status
         msg.wamid = wamid
@@ -639,7 +821,15 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
         else:
             failed_count += 1
 
-        results.append({"phone": phone, "status": status, "wamid": wamid, "error": error})
+        results.append({
+            "phone": phone,
+            "provider": provider,
+            "message_type": message_type,
+            "media_type": media_type,
+            "status": status,
+            "wamid": wamid,
+            "error": error,
+        })
         if index < len(recipients) - 1 and delay_seconds > 0:
             time.sleep(min(delay_seconds, 30))
 
@@ -657,7 +847,10 @@ def list_messages(db: Session = Depends(get_db), _=Depends(get_current_admin)):
             c.name  AS customer_name,
             wt.name AS template_name,
             wm.phone, wm.body_sent, wm.status, wm.wamid, wm.error,
-            wm.sent_at, wm.created_at
+            wm.sent_at, wm.created_at,
+            COALESCE(wm.provider, 'official') AS provider,
+            COALESCE(wm.message_type, 'text') AS message_type,
+            wm.media_type, wm.media_url, wm.caption
         FROM whatsapp_messages wm
         LEFT JOIN customers c ON c.id = wm.customer_id
         LEFT JOIN whatsapp_templates wt ON wt.id = wm.template_id
@@ -678,6 +871,11 @@ def list_messages(db: Session = Depends(get_db), _=Depends(get_current_admin)):
         "error": r[9],
         "sent_at": r[10].isoformat() if r[10] else None,
         "created_at": r[11].isoformat() if r[11] else None,
+        "provider": r[12],
+        "message_type": r[13],
+        "media_type": r[14],
+        "media_url": r[15],
+        "caption": r[16],
     } for r in rows])
 
 
@@ -692,8 +890,8 @@ def get_config(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 def update_config(body: ConfigUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     cfg = _get_config(db)
     if body.connection_type is not None:
-        cfg.connection_type = body.connection_type
-        if body.connection_type == "qr":
+        cfg.connection_type = _normalize_provider(body.connection_type)
+        if cfg.connection_type == "qr":
             cfg.status = "disconnected"
     if body.messages_per_minute is not None:
         cfg.messages_per_minute = body.messages_per_minute
@@ -703,6 +901,21 @@ def update_config(body: ConfigUpdate, db: Session = Depends(get_db), _=Depends(g
         cfg.daily_limit = body.daily_limit
     if body.webhook_url is not None:
         cfg.webhook_url = body.webhook_url
+    if body.evolution_base_url is not None:
+        cfg.evolution_base_url = body.evolution_base_url.strip()
+    if body.evolution_api_key is not None:
+        cfg.evolution_api_key = body.evolution_api_key.strip()
+    if body.evolution_instance is not None:
+        cfg.evolution_instance = body.evolution_instance.strip()
+    if cfg.connection_type == "evolution":
+        cfg.status = "connected" if all([
+            cfg.evolution_base_url,
+            cfg.evolution_api_key,
+            cfg.evolution_instance,
+        ]) else "disconnected"
+    elif body.connection_type is not None and cfg.connection_type == "official":
+        _, cloud_error = _load_whatsapp_cloud_credentials(db)
+        cfg.status = "disconnected" if cloud_error else "connected"
     cfg.updated_at = _now()
     db.commit()
     return ok(_cfg_to_dict(cfg))
