@@ -29,6 +29,12 @@ class WhatsAppTemplate(Base):
     body = Column(Text, nullable=False)
     category = Column(String(50), default="marketing")
     language = Column(String(10), default="pt_BR")
+    provider = Column(String(30), default="official")
+    media_type = Column(String(20), nullable=True)
+    media_url = Column(Text, nullable=True)
+    caption = Column(Text, nullable=True)
+    mimetype = Column(String(120), nullable=True)
+    file_name = Column(String(255), nullable=True)
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
@@ -95,6 +101,12 @@ class TemplateCreate(BaseModel):
     body: str
     category: str = "marketing"
     language: str = "pt_BR"
+    provider: str = "official"
+    media_type: Optional[str] = None
+    media_url: Optional[str] = None
+    caption: Optional[str] = None
+    mimetype: Optional[str] = None
+    file_name: Optional[str] = None
 
 
 class TemplateUpdate(BaseModel):
@@ -102,6 +114,12 @@ class TemplateUpdate(BaseModel):
     body: Optional[str] = None
     category: Optional[str] = None
     language: Optional[str] = None
+    provider: Optional[str] = None
+    media_type: Optional[str] = None
+    media_url: Optional[str] = None
+    caption: Optional[str] = None
+    mimetype: Optional[str] = None
+    file_name: Optional[str] = None
     active: Optional[bool] = None
 
 
@@ -585,7 +603,9 @@ def list_templates(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     )
     return ok([{
         "id": t.id, "name": t.name, "body": t.body, "category": t.category,
-        "language": t.language, "active": t.active,
+        "language": t.language, "provider": t.provider or "official",
+        "media_type": t.media_type, "media_url": t.media_url, "caption": t.caption,
+        "mimetype": t.mimetype, "file_name": t.file_name, "active": t.active,
         "created_at": t.created_at.isoformat() if t.created_at else None,
     } for t in templates])
 
@@ -598,6 +618,12 @@ def create_template(body: TemplateCreate, db: Session = Depends(get_db), _=Depen
         body=body.body,
         category=body.category,
         language=body.language,
+        provider=_normalize_provider(body.provider),
+        media_type=_normalize_media_type(body.media_type, body.media_url),
+        media_url=(body.media_url or "").strip() or None,
+        caption=(body.caption or "").strip() or None,
+        mimetype=(body.mimetype or "").strip() or None,
+        file_name=(body.file_name or "").strip() or None,
     )
     db.add(t)
     db.commit()
@@ -619,6 +645,18 @@ def update_template(template_id: str, body: TemplateUpdate,
         t.category = body.category
     if body.language is not None:
         t.language = body.language
+    if body.provider is not None:
+        t.provider = _normalize_provider(body.provider)
+    if body.media_url is not None or body.media_type is not None:
+        media_url = (body.media_url if body.media_url is not None else t.media_url) or ""
+        t.media_url = media_url.strip() or None
+        t.media_type = _normalize_media_type(body.media_type if body.media_type is not None else t.media_type, t.media_url)
+    if body.caption is not None:
+        t.caption = body.caption.strip() or None
+    if body.mimetype is not None:
+        t.mimetype = body.mimetype.strip() or None
+    if body.file_name is not None:
+        t.file_name = body.file_name.strip() or None
     if body.active is not None:
         t.active = body.active
     t.updated_at = _now()
@@ -733,6 +771,8 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
     media_url = (body.media_url or "").strip() or None
     media_type = _normalize_media_type(body.media_type, media_url)
     caption = (body.caption or "").strip() or None
+    mimetype = body.mimetype
+    file_name = body.file_name
 
     if body.template_id:
         template = db.query(WhatsAppTemplate).filter(
@@ -742,6 +782,11 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
         if not template:
             raise HTTPException(404, "Template não encontrado ou inativo.")
         final_body_template = _render_template_preview(template.body, body.variables)
+        media_url = media_url or template.media_url
+        media_type = _normalize_media_type(media_type or template.media_type, media_url)
+        caption = caption or template.caption
+        mimetype = mimetype or template.mimetype
+        file_name = file_name or template.file_name
 
     elif not body.free_text and not media_url:
         raise HTTPException(400, "Informe template_id, free_text ou uma midia.")
@@ -796,8 +841,8 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
                 media_type=media_type,
                 media_url=media_url,
                 caption=caption,
-                mimetype=body.mimetype,
-                file_name=body.file_name,
+                mimetype=mimetype,
+                file_name=file_name,
             )
         else:
             wamid, status, error = _send_whatsapp_api(

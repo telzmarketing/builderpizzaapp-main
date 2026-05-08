@@ -49,7 +49,7 @@ function fmtDate(s?: string) {
 
 const IC = "w-full bg-surface-03 border border-surface-03 rounded-xl px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold";
 
-interface WaTemplate { id: string; name: string; body: string; category: string; language: string; active: boolean; created_at: string; }
+interface WaTemplate { id: string; name: string; body: string; category: string; language: string; provider?: string; media_type?: string; media_url?: string; caption?: string; mimetype?: string; file_name?: string; active: boolean; created_at: string; }
 interface WaMessage  { id: string; phone: string; body_sent: string; status: string; sent_at: string; error?: string; customer_name?: string; template_name?: string; provider?: string; message_type?: string; media_type?: string; media_url?: string; caption?: string; }
 interface WaCampaign { id: string; name: string; status: string; template_id?: string; group_id?: string; scheduled_at?: string; sent_count: number; delivered_count: number; read_count: number; error_count: number; created_at: string; }
 interface WaDashboard { sent: number; delivered: number; read: number; responded: number; errors: number; active_campaigns: number; scheduled_campaigns: number; response_rate: number; orders_generated: number; revenue_generated: number; }
@@ -57,6 +57,7 @@ interface WaConfig { connection_type: string; status: string; messages_per_minut
 
 const EMPTY_DASH: WaDashboard = { sent: 0, delivered: 0, read: 0, responded: 0, errors: 0, active_campaigns: 0, scheduled_campaigns: 0, response_rate: 0, orders_generated: 0, revenue_generated: 0 };
 const EMPTY_CFG: WaConfig = { connection_type: "official", status: "disconnected", messages_per_minute: 10, interval_seconds: 3, daily_limit: 1000, webhook_url: "", evolution_base_url: "", evolution_api_key: "", evolution_instance: "" };
+const EMPTY_TPL = { name: "", body: "", category: "marketing", language: "pt_BR", provider: "official", media_type: "", media_url: "", caption: "", mimetype: "", file_name: "" };
 
 export default function MarketingWhatsApp() {
   const [tab, setTab] = useState<Tab>("dashboard");
@@ -70,7 +71,7 @@ export default function MarketingWhatsApp() {
   const [tplLoading, setTplLoading] = useState(false);
   const [showTplModal, setShowTplModal] = useState(false);
   const [editingTplId, setEditingTplId] = useState<string | null>(null);
-  const [tplForm, setTplForm] = useState({ name: "", body: "", category: "marketing", language: "pt_BR" });
+  const [tplForm, setTplForm] = useState(EMPTY_TPL);
   // ── Campanhas ──
   const [campaigns, setCampaigns] = useState<WaCampaign[]>([]);
   const [campLoading, setCampLoading] = useState(false);
@@ -103,6 +104,9 @@ export default function MarketingWhatsApp() {
   // ── Global ──
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const providerTemplates = templates.filter(t => (t.provider || "official") === dispForm.provider);
+  const selectedTemplate = providerTemplates.find(t => t.id === dispForm.template_id);
+  const isEvolution = dispForm.provider === "evolution";
 
   // fetch helpers
   const fetchDash = () => {
@@ -154,6 +158,7 @@ export default function MarketingWhatsApp() {
   // ── Template CRUD ──
   const saveTpl = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (tplForm.provider === "evolution" && tplForm.media_type && !tplForm.media_url.trim()) { alert("Informe a URL HTTPS da midia."); return; }
     if (!tplForm.name.trim() || !tplForm.body.trim()) { alert("Nome e body obrigatórios."); return; }
     setSaving(true);
     try {
@@ -310,7 +315,7 @@ export default function MarketingWhatsApp() {
           <>
             <div className="flex items-center justify-between">
               <p className="text-stone text-sm">{templates.length} template(s)</p>
-              <button onClick={() => { setEditingTplId(null); setTplForm({ name: "", body: "", category: "marketing", language: "pt_BR" }); setShowTplModal(true); }}
+              <button onClick={() => { setEditingTplId(null); setTplForm(EMPTY_TPL); setShowTplModal(true); }}
                 className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-black font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
                 <Plus size={16} /> Novo Template
               </button>
@@ -339,7 +344,10 @@ export default function MarketingWhatsApp() {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <h3 className="text-cream font-semibold text-sm">{t.name}</h3>
-                        <span className="text-xs text-stone">{t.category} · {t.language}</span>
+                        <span className="text-xs text-stone">
+                          {(t.provider || "official") === "evolution" ? "Evolution" : "WABA"} · {t.category} · {t.language}
+                          {t.media_type ? ` · ${t.media_type === "video" ? "Video" : "Imagem"}` : ""}
+                        </span>
                       </div>
                       <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs ${t.active ? "bg-green-500/20 text-green-400" : "bg-surface-03 text-stone"}`}>
                         {t.active ? "Ativo" : "Inativo"}
@@ -351,7 +359,18 @@ export default function MarketingWhatsApp() {
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-stone">{fmtDate(t.created_at)}</span>
                       <div className="flex gap-1">
-                        <button onClick={() => { setEditingTplId(t.id); setTplForm({ name: t.name, body: t.body, category: t.category, language: t.language || "pt_BR" }); setShowTplModal(true); }}
+                        <button onClick={() => { setEditingTplId(t.id); setTplForm({
+                          name: t.name,
+                          body: t.body,
+                          category: t.category,
+                          language: t.language || "pt_BR",
+                          provider: t.provider || "official",
+                          media_type: t.media_type || "",
+                          media_url: t.media_url || "",
+                          caption: t.caption || "",
+                          mimetype: t.mimetype || "",
+                          file_name: t.file_name || "",
+                        }); setShowTplModal(true); }}
                           className="p-1.5 rounded-lg hover:bg-surface-03 text-stone hover:text-cream transition-colors"><Pencil size={13} /></button>
                         <button onClick={() => deleteTpl(t.id)}
                           className="p-1.5 rounded-lg hover:bg-red-500/10 text-stone hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
@@ -440,22 +459,25 @@ export default function MarketingWhatsApp() {
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs text-stone">API de envio *</label>
-                  <select value={dispForm.provider} onChange={e => setDispForm(f => ({ ...f, provider: e.target.value }))} className={IC}>
+                  <select value={dispForm.provider} onChange={e => setDispForm(f => ({ ...f, provider: e.target.value, template_id: "" }))} className={IC}>
                     <option value="official">WABA / Meta Cloud API</option>
                     <option value="evolution">Evolution API</option>
                   </select>
                   <p className="text-xs text-stone/60">
-                    WABA usa templates aprovados para campanha; Evolution envia texto, imagem e video pela instancia configurada.
+                    {isEvolution ? "Evolution usa modelos internos com texto, imagem e video." : "WABA usa templates aprovados na Meta para campanha."}
                   </p>
                 </div>
                 {dispForm.mode === "template" ? (
                   <div className="space-y-3">
                     <div className="space-y-1">
-                      <label className="text-xs text-stone">Template aprovado na Meta *</label>
+                      <label className="text-xs text-stone">{isEvolution ? "Modelo interno da Evolution *" : "Template aprovado na Meta *"}</label>
                       <select value={dispForm.template_id} onChange={e => setDispForm(f => ({ ...f, template_id: e.target.value }))} className={IC}>
                         <option value="">Selecione...</option>
-                        {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        {providerTemplates.map(t => <option key={t.id} value={t.id}>{t.name}{t.media_type ? ` (${t.media_type})` : ""}</option>)}
                       </select>
+                      {providerTemplates.length === 0 && (
+                        <p className="text-xs text-stone/60">{isEvolution ? "Crie um modelo interno da Evolution na aba Templates." : "Crie ou sincronize um template aprovado da Meta na aba Templates."}</p>
+                      )}
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs text-stone">Variaveis do template</label>
@@ -466,7 +488,10 @@ export default function MarketingWhatsApp() {
                         placeholder={"Valor para {{1}}\nValor para {{2}}"}
                         className={`${IC} resize-none font-mono text-xs`}
                       />
-                      <p className="text-xs text-stone/60">Uma variavel por linha, na mesma ordem aprovada na Meta.</p>
+                      <p className="text-xs text-stone/60">{isEvolution ? "Uma variavel por linha, na ordem usada no modelo interno." : "Uma variavel por linha, na mesma ordem aprovada na Meta."}</p>
+                      {selectedTemplate?.media_type && (
+                        <p className="text-xs text-gold/90">Este modelo ja possui {selectedTemplate.media_type === "video" ? "video" : "imagem"} configurado(a).</p>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -693,8 +718,15 @@ export default function MarketingWhatsApp() {
             </div>
             <form onSubmit={saveTpl} className="p-5 space-y-4">
               <div className="space-y-1">
-                <label className="text-xs text-stone">Nome do template aprovado na Meta *</label>
+                <label className="text-xs text-stone">{tplForm.provider === "evolution" ? "Nome do modelo interno *" : "Nome do template aprovado na Meta *"}</label>
                 <input type="text" value={tplForm.name} onChange={e => setTplForm(f => ({ ...f, name: e.target.value }))} placeholder="boas_vindas" className={IC} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-stone">API do modelo</label>
+                <select value={tplForm.provider} onChange={e => setTplForm(f => ({ ...f, provider: e.target.value, media_type: e.target.value === "evolution" ? f.media_type : "", media_url: e.target.value === "evolution" ? f.media_url : "" }))} className={IC}>
+                  <option value="official">WABA / Meta Cloud API</option>
+                  <option value="evolution">Evolution API</option>
+                </select>
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-stone">Categoria</label>
@@ -721,6 +753,46 @@ export default function MarketingWhatsApp() {
                   ))}
                 </div>
               </div>
+              {tplForm.provider === "evolution" && (
+                <div className="space-y-3 rounded-xl border border-surface-03 bg-surface-03/30 p-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs text-stone">Midia do modelo</label>
+                      <select value={tplForm.media_type} onChange={e => setTplForm(f => ({ ...f, media_type: e.target.value }))} className={IC}>
+                        <option value="">Sem midia</option>
+                        <option value="image">Imagem</option>
+                        <option value="video">Video</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-stone">Mimetype</label>
+                      <input type="text" value={tplForm.mimetype} onChange={e => setTplForm(f => ({ ...f, mimetype: e.target.value }))}
+                        placeholder={tplForm.media_type === "video" ? "video/mp4" : "image/jpeg"} className={IC} disabled={!tplForm.media_type} />
+                    </div>
+                  </div>
+                  {tplForm.media_type && (
+                    <>
+                      <div className="space-y-1">
+                        <label className="text-xs text-stone">URL HTTPS da midia *</label>
+                        <input type="url" value={tplForm.media_url} onChange={e => setTplForm(f => ({ ...f, media_url: e.target.value }))}
+                          placeholder={tplForm.media_type === "video" ? "https://site.com/video.mp4" : "https://site.com/imagem.jpg"} className={IC} />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-xs text-stone">Legenda</label>
+                          <input type="text" value={tplForm.caption} onChange={e => setTplForm(f => ({ ...f, caption: e.target.value }))}
+                            placeholder="Texto opcional da midia" className={IC} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs text-stone">Nome do arquivo</label>
+                          <input type="text" value={tplForm.file_name} onChange={e => setTplForm(f => ({ ...f, file_name: e.target.value }))}
+                            placeholder={tplForm.media_type === "video" ? "video.mp4" : "imagem.jpg"} className={IC} />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
               {tplForm.body && (
                 <div className="bg-surface-03 rounded-xl p-3">
                   <p className="text-xs text-stone mb-1 font-medium">Pré-visualização:</p>
