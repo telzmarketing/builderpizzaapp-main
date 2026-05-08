@@ -52,12 +52,14 @@ const IC = "w-full bg-surface-03 border border-surface-03 rounded-xl px-3 py-2 t
 interface WaTemplate { id: string; name: string; body: string; category: string; language: string; provider?: string; media_type?: string; media_url?: string; caption?: string; mimetype?: string; file_name?: string; active: boolean; created_at: string; }
 interface WaMessage  { id: string; phone: string; body_sent: string; status: string; sent_at: string; error?: string; customer_name?: string; template_name?: string; provider?: string; message_type?: string; media_type?: string; media_url?: string; caption?: string; }
 interface WaCampaign { id: string; name: string; status: string; template_id?: string; group_id?: string; scheduled_at?: string; sent_count: number; delivered_count: number; read_count: number; error_count: number; created_at: string; }
+interface WaContactList { id: string; name: string; contact_count: number; created_at?: string; }
 interface WaDashboard { sent: number; delivered: number; read: number; responded: number; errors: number; active_campaigns: number; scheduled_campaigns: number; response_rate: number; orders_generated: number; revenue_generated: number; }
 interface WaConfig { connection_type: string; status: string; messages_per_minute: number; interval_seconds: number; interval_min_seconds: number; interval_max_seconds: number; daily_limit: number; webhook_url: string; evolution_base_url: string; evolution_api_key: string; evolution_instance: string; }
 
 const EMPTY_DASH: WaDashboard = { sent: 0, delivered: 0, read: 0, responded: 0, errors: 0, active_campaigns: 0, scheduled_campaigns: 0, response_rate: 0, orders_generated: 0, revenue_generated: 0 };
 const EMPTY_CFG: WaConfig = { connection_type: "official", status: "disconnected", messages_per_minute: 10, interval_seconds: 3, interval_min_seconds: 3, interval_max_seconds: 8, daily_limit: 1000, webhook_url: "", evolution_base_url: "", evolution_api_key: "", evolution_instance: "" };
 const EMPTY_TPL = { name: "", body: "", category: "marketing", language: "pt_BR", provider: "official", media_type: "", media_url: "", caption: "", mimetype: "", file_name: "" };
+const EMPTY_LIST = { name: "", contacts: "" };
 
 export default function MarketingWhatsApp() {
   const [tab, setTab] = useState<Tab>("dashboard");
@@ -81,6 +83,7 @@ export default function MarketingWhatsApp() {
   const [dispForm, setDispForm] = useState({
     provider: "official",
     template_id: "",
+    contact_list_id: "",
     phones: "",
     free_text: "",
     template_variables: "",
@@ -94,6 +97,10 @@ export default function MarketingWhatsApp() {
   });
   const [dispResult, setDispResult] = useState<{ sent: number; failed: number } | null>(null);
   const [dispatching, setDispatching] = useState(false);
+  const [contactLists, setContactLists] = useState<WaContactList[]>([]);
+  const [listLoading, setListLoading] = useState(false);
+  const [showListModal, setShowListModal] = useState(false);
+  const [listForm, setListForm] = useState(EMPTY_LIST);
   // ── Monitoramento ──
   const [messages, setMessages] = useState<WaMessage[]>([]);
   const [msgLoading, setMsgLoading] = useState(false);
@@ -107,6 +114,7 @@ export default function MarketingWhatsApp() {
   const providerTemplates = templates.filter(t => (t.provider || "official") === dispForm.provider);
   const selectedTemplate = providerTemplates.find(t => t.id === dispForm.template_id);
   const isEvolution = dispForm.provider === "evolution";
+  const selectedContactList = contactLists.find(l => l.id === dispForm.contact_list_id);
 
   // fetch helpers
   const fetchDash = () => {
@@ -125,6 +133,12 @@ export default function MarketingWhatsApp() {
       .then(r => r.json()).then(d => setCampaigns(unwrap(d) ?? [])).catch(() => setCampaigns([]))
       .finally(() => setCampLoading(false));
   };
+  const fetchContactLists = () => {
+    setListLoading(true);
+    fetch(`${BASE}/whatsapp/contact-lists`, { headers })
+      .then(r => r.json()).then(d => setContactLists(unwrap(d) ?? [])).catch(() => setContactLists([]))
+      .finally(() => setListLoading(false));
+  };
   const fetchMessages = () => {
     setMsgLoading(true);
     fetch(`${BASE}/whatsapp/messages`, { headers })
@@ -140,7 +154,7 @@ export default function MarketingWhatsApp() {
     if (tab === "dashboard") { fetchDash(); }
     if (tab === "templates") { fetchTemplates(); }
     if (tab === "campanhas") { fetchCampaigns(); fetchTemplates(); }
-    if (tab === "disparo")   { fetchTemplates(); }
+    if (tab === "disparo")   { fetchTemplates(); fetchContactLists(); }
     if (tab === "monitoramento") { fetchMessages(); }
     if (tab === "configuracoes") { fetchConfig(); }
   }, [tab]); // eslint-disable-line
@@ -198,6 +212,47 @@ export default function MarketingWhatsApp() {
   };
 
   // ── Disparo imediato ──
+  const parseContactLines = (value: string) => value
+    .split(/\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const parts = line.split(/[;,]/).map(part => part.trim()).filter(Boolean);
+      return { name: parts[0] ?? "", phone: parts.slice(1).join("").trim() };
+    })
+    .filter(contact => contact.name && contact.phone);
+
+  const saveContactList = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const contacts = parseContactLines(listForm.contacts);
+    if (!listForm.name.trim()) { alert("Informe o nome da lista."); return; }
+    if (!contacts.length) { alert("Inclua contatos no formato Nome, telefone."); return; }
+    setSaving(true);
+    try {
+      const response = await fetch(`${BASE}/whatsapp/contact-lists`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ name: listForm.name.trim(), contacts }),
+      });
+      const json = await response.json();
+      if (!response.ok || json?.success === false) {
+        throw new Error(json?.error?.message ?? "Erro ao criar lista.");
+      }
+      setShowListModal(false);
+      setListForm(EMPTY_LIST);
+      fetchContactLists();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao criar lista.");
+    } finally { setSaving(false); }
+  };
+
+  const deleteContactList = async (id: string) => {
+    if (!confirm("Desativar lista de contatos?")) return;
+    await fetch(`${BASE}/whatsapp/contact-lists/${id}`, { method: "DELETE", headers });
+    setDispForm(f => ({ ...f, contact_list_id: f.contact_list_id === id ? "" : f.contact_list_id }));
+    fetchContactLists();
+  };
+
   const sendNow = async (e: React.FormEvent) => {
     e.preventDefault();
     setDispatching(true);
@@ -213,8 +268,8 @@ export default function MarketingWhatsApp() {
         file_name: dispForm.file_name,
       } : {};
       const payload = dispForm.mode === "template"
-        ? { provider: dispForm.provider, template_id: dispForm.template_id, phones, variables, ...mediaPayload }
-        : { provider: dispForm.provider, free_text: dispForm.free_text, phones, ...mediaPayload };
+        ? { provider: dispForm.provider, template_id: dispForm.template_id, contact_list_id: dispForm.contact_list_id, phones, variables, ...mediaPayload }
+        : { provider: dispForm.provider, free_text: dispForm.free_text, contact_list_id: dispForm.contact_list_id, phones, ...mediaPayload };
       const body = JSON.stringify(payload);
       const r = await fetch(`${BASE}/whatsapp/send`, { method: "POST", headers, body });
       const json = await r.json();
@@ -553,6 +608,18 @@ export default function MarketingWhatsApp() {
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs text-stone">Telefones (um por linha ou separado por vírgula) *</label>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <label className="text-xs text-stone">Lista de contatos</label>
+                    <button type="button" onClick={() => { setListForm(EMPTY_LIST); setShowListModal(true); }}
+                      className="text-xs text-gold hover:underline">Nova lista</button>
+                  </div>
+                  <select value={dispForm.contact_list_id} onChange={e => setDispForm(f => ({ ...f, contact_list_id: e.target.value }))} className={`${IC} mb-3`}>
+                    <option value="">Sem lista cadastrada</option>
+                    {contactLists.map(list => <option key={list.id} value={list.id}>{list.name} ({list.contact_count})</option>)}
+                  </select>
+                  {selectedContactList && (
+                    <p className="text-xs text-stone/60 mb-2">{selectedContactList.contact_count} contato(s) selecionado(s) na lista.</p>
+                  )}
                   <textarea value={dispForm.phones} onChange={e => setDispForm(f => ({ ...f, phones: e.target.value }))}
                     rows={4} placeholder={"5511999999999\n5511888888888"} className={`${IC} resize-none font-mono text-xs`} />
                   <p className="text-xs text-stone/60">
@@ -819,6 +886,36 @@ export default function MarketingWhatsApp() {
       )}
 
       {/* ── Campaign modal ── */}
+      {showListModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-surface-02 border border-surface-03 rounded-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between p-5 border-b border-surface-03">
+              <h2 className="text-cream font-semibold">Nova Lista de Contatos</h2>
+              <button onClick={() => setShowListModal(false)} className="text-stone hover:text-cream"><X size={18} /></button>
+            </div>
+            <form onSubmit={saveContactList} className="p-5 space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs text-stone">Nome da lista *</label>
+                <input type="text" value={listForm.name} onChange={e => setListForm(f => ({ ...f, name: e.target.value }))}
+                  placeholder="Clientes VIP" className={IC} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-stone">Contatos *</label>
+                <textarea value={listForm.contacts} onChange={e => setListForm(f => ({ ...f, contacts: e.target.value }))}
+                  rows={8} placeholder={"Maria Silva, 5511999999999\nJoao Souza, 5511888888888"} className={`${IC} resize-none font-mono text-xs`} />
+                <p className="text-xs text-stone/60">{parseContactLines(listForm.contacts).length} contato(s) valido(s)</p>
+              </div>
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setShowListModal(false)} className="flex-1 py-2 rounded-xl border border-surface-03 text-stone text-sm">Cancelar</button>
+                <button type="submit" disabled={saving} className="flex-1 py-2 rounded-xl bg-gold hover:bg-gold/90 text-black font-semibold text-sm disabled:opacity-60 flex items-center justify-center gap-2">
+                  {saving && <Loader2 size={14} className="animate-spin" />} Criar Lista
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {showCampModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="bg-surface-02 border border-surface-03 rounded-2xl w-full max-w-md">

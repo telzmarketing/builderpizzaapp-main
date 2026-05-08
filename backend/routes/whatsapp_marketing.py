@@ -42,6 +42,25 @@ class WhatsAppTemplate(Base):
                         onupdate=lambda: datetime.now(timezone.utc))
 
 
+class WhatsAppContactList(Base):
+    __tablename__ = "whatsapp_contact_lists"
+    id = Column(String, primary_key=True)
+    name = Column(String(200), nullable=False)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
+class WhatsAppContactListItem(Base):
+    __tablename__ = "whatsapp_contact_list_items"
+    id = Column(String, primary_key=True)
+    list_id = Column(String, ForeignKey("whatsapp_contact_lists.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(200), nullable=False)
+    phone = Column(String(20), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class WhatsAppMessage(Base):
     __tablename__ = "whatsapp_messages"
     id = Column(String, primary_key=True)
@@ -49,6 +68,7 @@ class WhatsAppMessage(Base):
     campaign_id = Column(String, ForeignKey("whatsapp_campaigns.id", ondelete="SET NULL"), nullable=True)
     customer_id = Column(String, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
     phone = Column(String(20), nullable=False)
+    recipient_name = Column(String(200), nullable=True)
     body_sent = Column(Text)
     provider = Column(String(30), default="official")
     message_type = Column(String(30), default="text")
@@ -126,12 +146,28 @@ class TemplateUpdate(BaseModel):
     active: Optional[bool] = None
 
 
+class ContactListItemPayload(BaseModel):
+    name: str
+    phone: str
+
+
+class ContactListCreate(BaseModel):
+    name: str
+    contacts: list[ContactListItemPayload] = []
+
+
+class ContactListUpdate(BaseModel):
+    name: Optional[str] = None
+    contacts: Optional[list[ContactListItemPayload]] = None
+
+
 class SendRequest(BaseModel):
     provider: Optional[str] = None
     # Modo template (antigo)
     template_id: Optional[str] = None
     customer_ids: list[str] = []
     group_id: Optional[str] = None
+    contact_list_id: Optional[str] = None
     variables: list[str] = []
     # Modo texto livre
     free_text: Optional[str] = None
@@ -181,11 +217,38 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _append_recipient(result: list[dict], seen: set[str], phone: str, *, customer_id: str | None = None, name: str | None = None) -> None:
+    clean_phone = (phone or "").strip()
+    if not clean_phone:
+        return
+    dedupe_key = "".join(c for c in clean_phone if c.isdigit()) or clean_phone
+    if dedupe_key in seen:
+        return
+    seen.add(dedupe_key)
+    result.append({"phone": clean_phone, "customer_id": customer_id, "name": name})
+
+
 def _resolve_phones(body: SendRequest, db: Session) -> list[dict]:
     """Resolve lista de {phone, customer_id} a partir das diferentes fontes."""
     result = []
+    seen: set[str] = set()
 
-    # Telefones diretos (modo novo)
+    # Lista simples do disparador
+    if body.contact_list_id:
+        rows = db.execute(
+            text("""
+                SELECT i.name, i.phone
+                FROM whatsapp_contact_list_items i
+                JOIN whatsapp_contact_lists l ON l.id = i.list_id
+                WHERE i.list_id = :list_id AND l.active = TRUE
+                ORDER BY i.created_at ASC
+            """),
+            {"list_id": body.contact_list_id},
+        ).fetchall()
+        for row in rows:
+            _append_recipient(result, seen, row[1], name=row[0])
+
+    # Telefones diretos
     if body.phones:
         for ph in body.phones:
             ph = ph.strip()
@@ -196,8 +259,7 @@ def _resolve_phones(body: SendRequest, db: Session) -> list[dict]:
                 text("SELECT id, name FROM customers WHERE phone = :ph LIMIT 1"),
                 {"ph": ph},
             ).fetchone()
-            result.append({"phone": ph, "customer_id": row[0] if row else None})
-        return result
+            _append_recipient(result, seen, ph, customer_id=row[0] if row else None, name=row[1] if row else None)
 
     # Grupo de clientes
     if body.group_id:
@@ -209,7 +271,8 @@ def _resolve_phones(body: SendRequest, db: Session) -> list[dict]:
             ),
             {"gid": body.group_id},
         ).fetchall()
-        return [{"phone": r[1], "customer_id": r[0]} for r in rows]
+        for row in rows:
+            _append_recipient(result, seen, row[1], customer_id=row[0])
 
     # customer_ids explícitos
     if body.customer_ids:
@@ -219,7 +282,7 @@ def _resolve_phones(body: SendRequest, db: Session) -> list[dict]:
                 {"cid": cid},
             ).fetchone()
             if row:
-                result.append({"phone": row[1], "customer_id": row[0]})
+                _append_recipient(result, seen, row[1], customer_id=row[0])
 
     return result
 
@@ -265,6 +328,46 @@ def _campaign_to_dict(c: WhatsAppCampaign) -> dict:
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
     }
+
+
+def _contact_list_to_dict(item: WhatsAppContactList, db: Session, *, include_contacts: bool = False) -> dict:
+    count = db.execute(
+        text("SELECT COUNT(*) FROM whatsapp_contact_list_items WHERE list_id = :list_id"),
+        {"list_id": item.id},
+    ).scalar() or 0
+    payload = {
+        "id": item.id,
+        "name": item.name,
+        "active": item.active,
+        "contact_count": int(count),
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+    }
+    if include_contacts:
+        rows = db.execute(
+            text("""
+                SELECT id, name, phone
+                FROM whatsapp_contact_list_items
+                WHERE list_id = :list_id
+                ORDER BY created_at ASC
+            """),
+            {"list_id": item.id},
+        ).fetchall()
+        payload["contacts"] = [{"id": r[0], "name": r[1], "phone": r[2]} for r in rows]
+    return payload
+
+
+def _render_contact_variables(text_value: Optional[str], recipient: dict) -> str:
+    rendered = text_value or ""
+    name = recipient.get("name") or ""
+    phone = recipient.get("phone") or ""
+    first_name = name.split(" ", 1)[0] if name else ""
+    return (
+        rendered
+        .replace("{{nome}}", name)
+        .replace("{{primeiro_nome}}", first_name)
+        .replace("{{telefone}}", phone)
+    )
 
 
 def _load_whatsapp_cloud_credentials(db: Session) -> tuple[dict, Optional[str]]:
@@ -688,6 +791,99 @@ def delete_template(template_id: str, db: Session = Depends(get_db), _=Depends(g
 
 # ── Campanhas ─────────────────────────────────────────────────────────────────
 
+# ── Listas de contatos ───────────────────────────────────────────────────────
+
+@router.get("/contact-lists")
+def list_contact_lists(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    items = (
+        db.query(WhatsAppContactList)
+        .filter(WhatsAppContactList.active == True)  # noqa: E712
+        .order_by(WhatsAppContactList.created_at.desc())
+        .all()
+    )
+    return ok([_contact_list_to_dict(item, db) for item in items])
+
+
+@router.get("/contact-lists/{list_id}")
+def get_contact_list(list_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    item = db.query(WhatsAppContactList).filter(
+        WhatsAppContactList.id == list_id,
+        WhatsAppContactList.active == True,  # noqa: E712
+    ).first()
+    if not item:
+        raise HTTPException(404, "Lista de contatos nao encontrada.")
+    return ok(_contact_list_to_dict(item, db, include_contacts=True))
+
+
+@router.post("/contact-lists")
+def create_contact_list(body: ContactListCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    clean_contacts = [
+        {"name": c.name.strip(), "phone": c.phone.strip()}
+        for c in body.contacts
+        if c.name.strip() and c.phone.strip()
+    ]
+    if not body.name.strip():
+        raise HTTPException(400, "Informe o nome da lista.")
+    if not clean_contacts:
+        raise HTTPException(400, "Inclua pelo menos um contato com nome e telefone.")
+
+    item = WhatsAppContactList(id=str(uuid.uuid4()), name=body.name.strip())
+    db.add(item)
+    db.flush()
+    for contact in clean_contacts:
+        db.add(WhatsAppContactListItem(
+            id=str(uuid.uuid4()),
+            list_id=item.id,
+            name=contact["name"],
+            phone=contact["phone"],
+        ))
+    db.commit()
+    db.refresh(item)
+    return created(_contact_list_to_dict(item, db, include_contacts=True), "Lista de contatos criada.")
+
+
+@router.patch("/contact-lists/{list_id}")
+def update_contact_list(list_id: str, body: ContactListUpdate,
+                        db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    item = db.query(WhatsAppContactList).filter(WhatsAppContactList.id == list_id).first()
+    if not item or not item.active:
+        raise HTTPException(404, "Lista de contatos nao encontrada.")
+    if body.name is not None:
+        if not body.name.strip():
+            raise HTTPException(400, "Informe o nome da lista.")
+        item.name = body.name.strip()
+    if body.contacts is not None:
+        clean_contacts = [
+            {"name": c.name.strip(), "phone": c.phone.strip()}
+            for c in body.contacts
+            if c.name.strip() and c.phone.strip()
+        ]
+        if not clean_contacts:
+            raise HTTPException(400, "Inclua pelo menos um contato com nome e telefone.")
+        db.execute(text("DELETE FROM whatsapp_contact_list_items WHERE list_id = :list_id"), {"list_id": list_id})
+        for contact in clean_contacts:
+            db.add(WhatsAppContactListItem(
+                id=str(uuid.uuid4()),
+                list_id=item.id,
+                name=contact["name"],
+                phone=contact["phone"],
+            ))
+    item.updated_at = _now()
+    db.commit()
+    return ok(_contact_list_to_dict(item, db, include_contacts=True))
+
+
+@router.delete("/contact-lists/{list_id}")
+def delete_contact_list(list_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    item = db.query(WhatsAppContactList).filter(WhatsAppContactList.id == list_id).first()
+    if not item:
+        raise HTTPException(404, "Lista de contatos nao encontrada.")
+    item.active = False
+    item.updated_at = _now()
+    db.commit()
+    return ok(None, "Lista de contatos desativada.")
+
+
 @router.get("/campaigns")
 def list_campaigns(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     campaigns = db.query(WhatsAppCampaign).order_by(WhatsAppCampaign.created_at.desc()).all()
@@ -824,7 +1020,9 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
             continue
 
         phone = rec["phone"]
-        msg_body = final_body_template if template else (body.free_text or "")
+        msg_body = _render_contact_variables(final_body_template if template else (body.free_text or ""), rec)
+        msg_caption = _render_contact_variables(caption, rec) if caption else None
+        recipient_variables = [_render_contact_variables(str(value), rec) for value in body.variables]
         message_type = "template" if template else (media_type or "text")
 
         msg = WhatsAppMessage(
@@ -832,12 +1030,13 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
             template_id=template.id if template else None,
             customer_id=rec.get("customer_id"),
             phone=phone,
+            recipient_name=rec.get("name"),
             body_sent=msg_body,
             provider=provider,
             message_type=message_type,
             media_type=media_type,
             media_url=media_url,
-            caption=caption,
+            caption=msg_caption,
             status="pending",
         )
         db.add(msg)
@@ -850,7 +1049,7 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
                 cfg,
                 media_type=media_type,
                 media_url=media_url,
-                caption=caption,
+                caption=msg_caption,
                 mimetype=mimetype,
                 file_name=file_name,
             )
@@ -861,10 +1060,10 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
                 db,
                 template_name=template.name if template else None,
                 template_language=template.language if template else "pt_BR",
-                template_variables=body.variables if template else None,
+                template_variables=recipient_variables if template else None,
                 media_type=media_type,
                 media_url=media_url,
-                caption=caption,
+                caption=msg_caption,
             )
 
         msg.status = status
@@ -903,7 +1102,8 @@ def list_messages(db: Session = Depends(get_db), _=Depends(get_current_admin)):
             wm.id, wm.template_id, wm.customer_id,
             c.name  AS customer_name,
             wt.name AS template_name,
-            wm.phone, wm.body_sent, wm.status, wm.wamid, wm.error,
+            wm.phone, COALESCE(c.name, wm.recipient_name) AS recipient_name,
+            wm.body_sent, wm.status, wm.wamid, wm.error,
             wm.sent_at, wm.created_at,
             COALESCE(wm.provider, 'official') AS provider,
             COALESCE(wm.message_type, 'text') AS message_type,
@@ -919,20 +1119,21 @@ def list_messages(db: Session = Depends(get_db), _=Depends(get_current_admin)):
         "id": r[0],
         "template_id": r[1],
         "customer_id": r[2],
-        "customer_name": r[3],
+        "customer_name": r[6] or r[3],
         "template_name": r[4],
         "phone": r[5],
-        "body_sent": r[6],
-        "status": r[7],
-        "wamid": r[8],
-        "error": r[9],
-        "sent_at": r[10].isoformat() if r[10] else None,
-        "created_at": r[11].isoformat() if r[11] else None,
-        "provider": r[12],
-        "message_type": r[13],
-        "media_type": r[14],
-        "media_url": r[15],
-        "caption": r[16],
+        "recipient_name": r[6],
+        "body_sent": r[7],
+        "status": r[8],
+        "wamid": r[9],
+        "error": r[10],
+        "sent_at": r[11].isoformat() if r[11] else None,
+        "created_at": r[12].isoformat() if r[12] else None,
+        "provider": r[13],
+        "message_type": r[14],
+        "media_type": r[15],
+        "media_url": r[16],
+        "caption": r[17],
     } for r in rows])
 
 
