@@ -22,6 +22,8 @@ from backend.schemas.paid_traffic import (
     TrafficCampaignUpdate,
     TrackingEventIn,
     TrackingEventOut,
+    TrackingSessionIn,
+    TrackingSessionOut,
 )
 from backend.services.paid_traffic_service import PaidTrafficService
 
@@ -31,6 +33,11 @@ router = APIRouter(tags=["paid-traffic"])
 @router.post("/tracking/event", response_model=TrackingEventOut, status_code=201)
 def record_tracking_event(body: TrackingEventIn, db: Session = Depends(get_db)):
     return PaidTrafficService(db).record_event(body)
+
+
+@router.post("/tracking/session", response_model=TrackingSessionOut)
+def record_tracking_session(body: TrackingSessionIn, db: Session = Depends(get_db)):
+    return PaidTrafficService(db).record_session(body)
 
 
 @router.get("/paid-traffic/campaigns/{campaign_id}/pixel-config")

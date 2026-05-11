@@ -114,6 +114,32 @@ class TrackingEventIn(BaseModel):
     metadata: Optional[dict] = None
 
 
+class TrackingSessionIn(BaseModel):
+    session_id: str
+    campaign_id: Optional[str] = None
+    landing_page: Optional[str] = None
+    referrer: Optional[str] = None
+    utm_source: Optional[str] = None
+    utm_medium: Optional[str] = None
+    utm_campaign: Optional[str] = None
+    utm_content: Optional[str] = None
+    utm_term: Optional[str] = None
+
+
+class TrackingSessionOut(BaseModel):
+    id: str
+    campaign_id: Optional[str]
+    utm_source: Optional[str]
+    utm_medium: Optional[str]
+    utm_campaign: Optional[str]
+    landing_page: Optional[str]
+    referrer: Optional[str]
+    first_seen_at: datetime
+    last_seen_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class TrackingEventOut(BaseModel):
     id: str
     session_id: Optional[str]

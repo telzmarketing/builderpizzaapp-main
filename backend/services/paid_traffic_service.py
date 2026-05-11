@@ -33,6 +33,7 @@ from backend.schemas.paid_traffic import (
     TrafficCampaignCreate,
     TrafficCampaignUpdate,
     TrackingEventIn,
+    TrackingSessionIn,
 )
 
 
@@ -169,6 +170,38 @@ class PaidTrafficService:
         return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
     # Tracking
+    def record_session(self, body: TrackingSessionIn) -> TrackingSession:
+        settings = self.get_settings()
+        if not settings.tracking_enabled:
+            raise HTTPException(202, "Tracking desativado.")
+
+        campaign_id = body.campaign_id or self._find_campaign_id(body.utm_campaign)
+        session = self._db.query(TrackingSession).filter(TrackingSession.id == body.session_id).first()
+        now = datetime.now(timezone.utc)
+        if not session:
+            session = TrackingSession(
+                id=body.session_id,
+                campaign_id=campaign_id,
+                utm_source=body.utm_source,
+                utm_medium=body.utm_medium,
+                utm_campaign=body.utm_campaign,
+                utm_content=body.utm_content,
+                utm_term=body.utm_term,
+                landing_page=body.landing_page,
+                referrer=body.referrer,
+                first_seen_at=now,
+                last_seen_at=now,
+            )
+            self._db.add(session)
+        else:
+            session.last_seen_at = now
+            if campaign_id and not session.campaign_id:
+                session.campaign_id = campaign_id
+
+        self._db.commit()
+        self._db.refresh(session)
+        return session
+
     def record_event(self, body: TrackingEventIn) -> TrackingEvent:
         settings = self.get_settings()
         if not settings.tracking_enabled:
