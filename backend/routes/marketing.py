@@ -260,6 +260,42 @@ def _get_or_create_visitor(fingerprint: str, db: Session, ip_hash: str = "") -> 
     return visitor
 
 
+def _client_device(user_agent: str | None) -> tuple[str, str, str]:
+    agent = (user_agent or "").lower()
+    if "tablet" in agent or "ipad" in agent:
+        device = "tablet"
+    elif "mobile" in agent or "android" in agent or "iphone" in agent:
+        device = "mobile"
+    else:
+        device = "desktop"
+
+    if "edg/" in agent:
+        browser = "Edge"
+    elif "chrome/" in agent and "chromium" not in agent:
+        browser = "Chrome"
+    elif "firefox/" in agent:
+        browser = "Firefox"
+    elif "safari/" in agent and "chrome/" not in agent:
+        browser = "Safari"
+    else:
+        browser = "Outro"
+
+    if "windows" in agent:
+        os_name = "Windows"
+    elif "android" in agent:
+        os_name = "Android"
+    elif "iphone" in agent or "ipad" in agent or "ios" in agent:
+        os_name = "iOS"
+    elif "mac os" in agent or "macintosh" in agent:
+        os_name = "macOS"
+    elif "linux" in agent:
+        os_name = "Linux"
+    else:
+        os_name = "Outro"
+
+    return device, browser, os_name
+
+
 # ── Campaign routes ───────────────────────────────────────────────────────────
 
 @router.get("/campaigns")
@@ -328,7 +364,7 @@ def delete_campaign(campaign_id: str, db: Session = Depends(get_db), _=Depends(g
 
 @router.get("/dashboard")
 def marketing_dashboard(
-    period: str = Query("7d", regex="^(today|yesterday|7d|30d)$"),
+    period: str = Query("7d", regex="^(today|yesterday|7d|30d|90d)$"),
     db: Session = Depends(get_db), _=Depends(get_current_admin)
 ):
     now = datetime.now(timezone.utc)
@@ -338,6 +374,8 @@ def marketing_dashboard(
         since = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0)
     elif period == "30d":
         since = now - timedelta(days=30)
+    elif period == "90d":
+        since = now - timedelta(days=90)
     else:
         since = now - timedelta(days=7)
 
@@ -368,6 +406,16 @@ def marketing_dashboard(
         FROM marketing_campaigns WHERE channel IS NOT NULL
         GROUP BY channel ORDER BY rev DESC NULLS LAST
     """)).fetchall()
+    recent_campaigns = (
+        db.query(MarketingCampaign)
+        .order_by(MarketingCampaign.created_at.desc())
+        .limit(8)
+        .all()
+    )
+    by_channel = [
+        {"channel": r[0], "campaigns": r[1], "revenue": round(r[2] or 0, 2), "spend": round(r[3] or 0, 2)}
+        for r in channels
+    ]
 
     return ok({
         "period": period,
@@ -381,10 +429,30 @@ def marketing_dashboard(
         },
         "visitors": {"period": visitors_period, "online": visitors_online},
         "tracking_links": {"active": tracking_links, "clicks": int(link_clicks or 0)},
-        "by_channel": [
-            {"channel": r[0], "campaigns": r[1], "revenue": round(r[2] or 0, 2), "spend": round(r[3] or 0, 2)}
-            for r in channels
-        ],
+        "by_channel": by_channel,
+        "total_investment": round(total_spend, 2),
+        "revenue_generated": round(total_revenue, 2),
+        "roas": roas or 0,
+        "roi": round((total_revenue - total_spend) / total_spend, 4) if total_spend > 0 else 0,
+        "cpa": cpa or 0,
+        "cac": cpa or 0,
+        "visitors": visitors_period,
+        "leads": int(total_leads or 0),
+        "clients_generated": int(total_orders or 0),
+        "active_campaigns": active_campaigns,
+        "clicks": int(total_clicks or 0),
+        "orders": int(total_orders or 0),
+        "online_visitors": visitors_online,
+        "revenue_by_channel": [{"channel": r["channel"], "revenue": r["revenue"]} for r in by_channel],
+        "recent_campaigns": [{
+            "id": c.id,
+            "name": c.name,
+            "channel": c.channel or "",
+            "status": c.status,
+            "investment": c.spend or c.budget or 0,
+            "revenue": c.revenue or 0,
+            "roas": round((c.revenue or 0) / (c.spend or 0), 2) if c.spend and c.spend > 0 else 0,
+        } for c in recent_campaigns],
     })
 
 
@@ -438,6 +506,10 @@ async def track_event(body: VisitorEventIn, request: Request, db: Session = Depe
     ip_hash = _hash_ip(ip, anonymize=settings.ip_anonymization if settings else True)
 
     visitor = _get_or_create_visitor(body.fingerprint, db, ip_hash)
+    device, browser, os_name = _client_device(request.headers.get("user-agent"))
+    visitor.device_type = visitor.device_type or device
+    visitor.browser = visitor.browser or browser
+    visitor.os = visitor.os or os_name
 
     # Create / reuse session
     session = None
@@ -445,7 +517,7 @@ async def track_event(body: VisitorEventIn, request: Request, db: Session = Depe
         session = db.query(VisitorSession).filter(VisitorSession.id == body.session_id).first()
     if not session and body.event_type == "page_view":
         session = VisitorSession(
-            id=str(uuid.uuid4()), visitor_id=visitor.id,
+            id=body.session_id or str(uuid.uuid4()), visitor_id=visitor.id,
             utm_source=body.utm_source, utm_medium=body.utm_medium,
             utm_campaign=body.utm_campaign, utm_content=body.utm_content,
             utm_term=body.utm_term, landing_page=body.page, referrer=body.referrer,
@@ -465,6 +537,8 @@ async def track_event(body: VisitorEventIn, request: Request, db: Session = Depe
         visitor.total_pageviews = (visitor.total_pageviews or 0) + 1
         if session:
             session.pageviews = (session.pageviews or 0) + 1
+    if body.event_type == "order_created":
+        visitor.total_orders = (visitor.total_orders or 0) + 1
 
     db.commit()
     return {"ok": True, "session_id": session.id if session else body.session_id, "visitor_id": visitor.id}
@@ -540,16 +614,17 @@ def list_visitors(
     try:
         prod_rows = db.execute(text("""
             SELECT p.name,
-                   COUNT(ve.id) FILTER (WHERE ve.event_type = 'product_view') AS views,
-                   COUNT(ve.id) FILTER (WHERE ve.event_type = 'add_to_cart') AS orders,
+                   COUNT(ve.id) FILTER (WHERE ve.event_type IN ('product_view', 'product_viewed')) AS views,
+                   COUNT(ve.id) FILTER (WHERE ve.event_type IN ('add_to_cart', 'cart_item_added')) AS add_to_cart,
+                   COUNT(ve.id) FILTER (WHERE ve.event_type = 'order_created') AS orders,
                    0 AS revenue
             FROM visitor_events ve
             JOIN products p ON p.id = ve.product_id
             WHERE ve.created_at >= :since AND ve.product_id IS NOT NULL
             GROUP BY p.name ORDER BY views DESC LIMIT 10
         """), {"since": since}).fetchall()
-        top_products = [{"name": r[0], "views": r[1] or 0, "orders": r[2] or 0,
-                         "revenue": float(r[3] or 0)} for r in prod_rows]
+        top_products = [{"name": r[0], "views": r[1] or 0, "add_to_cart": r[2] or 0, "orders": r[3] or 0,
+                         "revenue": float(r[4] or 0)} for r in prod_rows]
     except Exception:
         top_products = []
 
@@ -603,7 +678,7 @@ def list_visitors(
 
     # Normalize top_products to match frontend {product_name, views, add_to_cart, orders}
     normalized_products = [{"product_name": p["name"], "views": p["views"],
-                            "add_to_cart": p.get("orders", 0), "orders": p.get("orders", 0)}
+                            "add_to_cart": p.get("add_to_cart", 0), "orders": p.get("orders", 0)}
                            for p in top_products]
 
     # Normalize funnel to match frontend {label, value}

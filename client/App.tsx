@@ -156,7 +156,6 @@ import MarketingIntegracoes from "./pages/admin/marketing/MarketingIntegracoes";
 import MarketingWhatsApp from "./pages/admin/marketing/MarketingWhatsApp";
 import MarketingEmail from "./pages/admin/marketing/MarketingEmail";
 import MarketingAutomacoes from "./pages/admin/marketing/MarketingAutomacoes";
-import MarketingAdsPanel from "./pages/admin/marketing/MarketingAdsPanel";
 import MarketingWorkflow from "./pages/admin/marketing/MarketingWorkflow";
 import MarketingCupons from "./pages/admin/marketing/MarketingCupons";
 import MarketingStoreNotifications from "./pages/admin/marketing/MarketingStoreNotifications";
@@ -245,7 +244,7 @@ export default function App() {
                 <Route path="/painel/marketing/whatsapp" element={<MarketingWhatsApp />} />
                 <Route path="/painel/marketing/email" element={<MarketingEmail />} />
                 <Route path="/painel/marketing/automacoes" element={<MarketingAutomacoes />} />
-                <Route path="/painel/marketing/ads" element={<MarketingAdsPanel />} />
+                <Route path="/painel/marketing/ads" element={<AdminPaidTraffic />} />
                 <Route path="/painel/marketing/workflow" element={<MarketingWorkflow />} />
                 <Route path="/painel/marketing/cupons" element={<MarketingCupons />} />
                 <Route path="/painel/marketing/notificacoes" element={<MarketingStoreNotifications />} />

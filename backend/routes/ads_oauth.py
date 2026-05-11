@@ -106,6 +106,18 @@ class PixelUpdate(BaseModel):
 
 # ── Helper: credentials CRUD ──────────────────────────────────────────────────
 
+def _serialize_pixel(pixel: AdsPixel) -> dict:
+    return {
+        "id": pixel.id,
+        "platform": pixel.platform,
+        "pixel_id": pixel.pixel_id,
+        "enabled": pixel.enabled,
+        "events_tracked": pixel.events_tracked,
+        "created_at": pixel.created_at.isoformat() if pixel.created_at else None,
+        "updated_at": pixel.updated_at.isoformat() if pixel.updated_at else None,
+    }
+
+
 def _get_creds(platform: str, db: Session) -> dict | None:
     """Fetch credentials from integration_connections for the given platform."""
     try:
@@ -940,11 +952,7 @@ def list_leads(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 @router.get("/pixels")
 def list_pixels(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     pixels = db.query(AdsPixel).order_by(AdsPixel.created_at.desc()).all()
-    return ok([{
-        "id": p.id, "platform": p.platform, "pixel_id": p.pixel_id,
-        "enabled": p.enabled, "events_tracked": p.events_tracked,
-        "created_at": p.created_at.isoformat(),
-    } for p in pixels])
+    return ok([_serialize_pixel(p) for p in pixels])
 
 
 @router.post("/pixels")
@@ -957,7 +965,7 @@ def create_pixel(body: PixelCreate, db: Session = Depends(get_db),
     db.add(p)
     db.commit()
     db.refresh(p)
-    return created({"id": p.id, "platform": p.platform, "pixel_id": p.pixel_id}, "Pixel salvo.")
+    return created(_serialize_pixel(p), "Pixel salvo.")
 
 
 @router.patch("/pixels/{pixel_id}")
@@ -972,7 +980,8 @@ def update_pixel(pixel_id: str, body: PixelUpdate,
     if body.pixel_id is not None:       p.pixel_id = body.pixel_id
     p.updated_at = datetime.now(timezone.utc)
     db.commit()
-    return ok({"id": p.id, "enabled": p.enabled})
+    db.refresh(p)
+    return ok(_serialize_pixel(p))
 
 
 @router.delete("/pixels/{pixel_id}")

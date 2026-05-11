@@ -519,6 +519,31 @@ export interface PaidTrafficDashboard {
   by_day: Array<Record<string, any>>;
 }
 
+export type MarketingVisitorsPeriod = "today" | "7d" | "30d" | "90d";
+
+export interface MarketingVisitorData {
+  visitors_today: number;
+  online_visitors: number;
+  total_sessions: number;
+  total_events: number;
+  bounce_rate?: number;
+  avg_session_duration?: number;
+  recent_visitors: Array<{
+    id: string;
+    city: string;
+    browser: string;
+    device: string;
+    sessions: number;
+    pageviews: number;
+    last_seen: string;
+  }>;
+  common_events: Array<{ name: string; count: number }>;
+  utm_breakdown?: Array<{ source: string; medium: string | null; campaign: string | null; sessions: number; conversions: number }>;
+  devices?: Array<{ device_type: string; count: number; pct: number }>;
+  top_products?: Array<{ product_name: string; views: number; add_to_cart: number; orders: number }>;
+  funnel?: Array<{ label: string; value: number }>;
+}
+
 export interface AdIntegration {
   id: string;
   platform: string;
@@ -2260,6 +2285,11 @@ export const marketingTrackApi = {
     utm_term?: string | null;
     referrer?: string | null;
   }) => post<{ ok: boolean }>("/marketing/track", data),
+};
+
+export const marketingVisitorsApi = {
+  list: (period: MarketingVisitorsPeriod) =>
+    get<MarketingVisitorData>(`/marketing/visitors?period=${period}`),
 };
 
 // ─── Admin ────────────────────────────────────────────────────────────────────

@@ -310,9 +310,19 @@ class PaidTrafficService:
         settings = self.get_settings()
         estimated_profit = round(revenue * settings.default_margin - spend, 2)
 
+        campaign_utm_map: dict[str, set[str]] = {}
+        for link in self._db.query(CampaignLink).all():
+            if link.utm_campaign:
+                campaign_utm_map.setdefault(link.campaign_id, set()).add(link.utm_campaign)
+
         by_campaign = []
         for campaign in self.list_campaigns():
-            campaign_orders = [o for o in paid_orders if getattr(o, "campaign_id", None) == campaign.id]
+            campaign_utms = campaign_utm_map.get(campaign.id, set())
+            campaign_orders = [
+                o for o in paid_orders
+                if getattr(o, "campaign_id", None) == campaign.id
+                or (getattr(o, "utm_campaign", None) and getattr(o, "utm_campaign", None) in campaign_utms)
+            ]
             campaign_revenue = round(sum(o.total or 0 for o in campaign_orders), 2)
             campaign_spend = round(sum(m.spend or 0 for m in metrics_q.filter(AdDailyMetric.traffic_campaign_id == campaign.id).all()), 2)
             by_campaign.append({
@@ -332,6 +342,24 @@ class PaidTrafficService:
             item["revenue"] += row["revenue"]
             item["orders"] += row["orders"]
 
+        by_day_map: dict[str, dict] = {}
+        for metric in metrics_q.all():
+            key = metric.metric_date.isoformat()
+            item = by_day_map.setdefault(key, {"date": key, "spend": 0.0, "revenue": 0.0, "orders": 0, "visitors": 0, "carts": 0})
+            item["spend"] = round(item["spend"] + (metric.spend or 0), 2)
+        for order in paid_orders:
+            key = order.created_at.date().isoformat()
+            item = by_day_map.setdefault(key, {"date": key, "spend": 0.0, "revenue": 0.0, "orders": 0, "visitors": 0, "carts": 0})
+            item["revenue"] = round(item["revenue"] + (order.total or 0), 2)
+            item["orders"] += 1
+        for event in events_q.filter(TrackingEvent.event_type.in_(("page_view", "add_to_cart"))).all():
+            key = event.created_at.date().isoformat()
+            item = by_day_map.setdefault(key, {"date": key, "spend": 0.0, "revenue": 0.0, "orders": 0, "visitors": 0, "carts": 0})
+            if event.event_type == "page_view":
+                item["visitors"] += 1
+            elif event.event_type == "add_to_cart":
+                item["carts"] += 1
+
         return {
             "spend": spend,
             "revenue": revenue,
@@ -348,5 +376,5 @@ class PaidTrafficService:
             "abandoned_carts": max(carts - paid_count, 0),
             "by_campaign": by_campaign,
             "by_platform": list(by_platform.values()),
-            "by_day": [],
+            "by_day": [by_day_map[key] for key in sorted(by_day_map)],
         }

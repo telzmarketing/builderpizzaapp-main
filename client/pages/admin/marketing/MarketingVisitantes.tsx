@@ -5,12 +5,9 @@ import {
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
+import { marketingVisitorsApi, type MarketingVisitorData, type MarketingVisitorsPeriod } from "@/lib/api";
 
-const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const unwrap = (json: any) => json?.data ?? json;
-
-type Period = "today" | "7d" | "30d" | "90d";
+type Period = MarketingVisitorsPeriod;
 
 interface Visitor {
   id: string; city: string; browser: string; device: string;
@@ -37,7 +34,7 @@ interface VisitorData {
   funnel?: FunnelStep[];
 }
 
-const EMPTY: VisitorData = {
+const EMPTY: MarketingVisitorData = {
   visitors_today: 0, online_visitors: 0, total_sessions: 0, total_events: 0,
   bounce_rate: 0, avg_session_duration: 0,
   recent_visitors: [], common_events: [],
@@ -70,18 +67,15 @@ function fmtDuration(seconds?: number) {
 export default function MarketingVisitantes() {
   const [period, setPeriod] = useState<Period>("7d");
   const [tab, setTab] = useState<ActiveTab>("visao_geral");
-  const [data, setData] = useState<VisitorData>(EMPTY);
+  const [data, setData] = useState<MarketingVisitorData>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [warn, setWarn] = useState("");
-
-  const token = localStorage.getItem("admin_token");
-  const headers = { Authorization: `Bearer ${token}` };
 
   const fetchData = (p: Period) => {
     setLoading(true);
     setWarn("");
-    fetch(`${BASE}/marketing/visitors?period=${p}`, { headers })
-      .then(r => r.json()).then(d => setData({ ...EMPTY, ...unwrap(d) }))
+    marketingVisitorsApi.list(p)
+      .then(d => setData({ ...EMPTY, ...d }))
       .catch(() => setWarn("Não foi possível carregar dados de visitantes."))
       .finally(() => setLoading(false));
   };

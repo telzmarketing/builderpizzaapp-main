@@ -204,6 +204,7 @@ export function trackEvent(event_type: string, value?: number, metadata?: Record
     session_id: data.session_id,
     event_type,
     page: window.location.pathname,
+    product_id: typeof metadata?.product_id === "string" ? metadata.product_id : undefined,
     metadata,
     utm_source: data.utm_source,
     utm_medium: data.utm_medium,

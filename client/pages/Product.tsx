@@ -167,6 +167,7 @@ export default function Product() {
       session_id: td.session_id,
       page_url: window.location.href,
     }).catch(() => {});
+    trackEvent("product_viewed", undefined, { product_id: product.id });
   }, [product?.id]);
 
   useEffect(() => {
