@@ -303,6 +303,32 @@ def _client_device(user_agent: str | None) -> tuple[str, str, str]:
     return device, browser, os_name
 
 
+def _reverse_geocode(latitude: float, longitude: float) -> dict:
+    try:
+        resp = requests.get(
+            "https://nominatim.openstreetmap.org/reverse",
+            params={
+                "format": "jsonv2",
+                "lat": latitude,
+                "lon": longitude,
+                "zoom": 10,
+                "addressdetails": 1,
+            },
+            headers={"User-Agent": "MoschettieriSaaS/1.0 visitor-analytics"},
+            timeout=3,
+        )
+        if resp.status_code != 200:
+            return {}
+        address = (resp.json() or {}).get("address") or {}
+        return {
+            "city": address.get("city") or address.get("town") or address.get("village") or address.get("municipality"),
+            "state": address.get("state"),
+            "country": address.get("country"),
+        }
+    except Exception:
+        return {}
+
+
 # ── Campaign routes ───────────────────────────────────────────────────────────
 
 @router.get("/campaigns")
@@ -522,6 +548,11 @@ async def track_event(body: VisitorEventIn, request: Request, db: Session = Depe
         visitor.longitude = body.longitude
         visitor.location_accuracy_m = body.location_accuracy_m
         visitor.location_captured_at = datetime.now(timezone.utc)
+        if not visitor.city:
+            location = _reverse_geocode(body.latitude, body.longitude)
+            visitor.city = location.get("city") or visitor.city
+            visitor.state = location.get("state") or visitor.state
+            visitor.country = location.get("country") or visitor.country
 
     # Create / reuse session
     session = None
