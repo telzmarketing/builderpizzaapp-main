@@ -29,8 +29,10 @@ export function resolveAssetUrl(value?: string | null): string {
   const trimmed = value?.trim();
   if (!trimmed) return "";
   if (trimmed.startsWith("http") || trimmed.startsWith("data:")) return trimmed;
+  if (trimmed.startsWith("/api/uploads/")) return `${ASSET_BASE}${trimmed.replace(/^\/api/, "")}`;
   if (trimmed.startsWith("/")) return `${ASSET_BASE}${trimmed}`;
   if (trimmed.startsWith("uploads/")) return `${ASSET_BASE}/${trimmed}`;
+  if (trimmed.startsWith("api/uploads/")) return `${ASSET_BASE}/${trimmed.replace(/^api\//, "")}`;
   if (IMAGE_FILE_RE.test(trimmed)) return `${ASSET_BASE}/uploads/${trimmed}`;
   return trimmed;
 }

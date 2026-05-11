@@ -1,4 +1,4 @@
-import { trackingApi, marketingTrackApi, paidTrafficApi, type CampaignPixelConfig } from "./api";
+import { marketingTrackApi, paidTrafficApi, type CampaignPixelConfig } from "./api";
 
 const STORAGE_KEY = "paid_traffic_tracking";
 const PIXEL_STORAGE_KEY = "campaign_pixel_config";
@@ -191,14 +191,6 @@ export function checkoutTrackingPayload(): Partial<TrackingData> {
 
 export function trackEvent(event_type: string, value?: number, metadata?: Record<string, unknown>) {
   const data = getTrackingData();
-  trackingApi.event({
-    ...data,
-    event_type,
-    value,
-    path: window.location.pathname,
-    metadata,
-  }).catch(() => { /* Tracking must never break the customer experience. */ });
-
   marketingTrackApi.track({
     fingerprint: data.session_id,
     session_id: data.session_id,
