@@ -429,6 +429,7 @@ def _run_migrations():
         # ── Marketing settings ────────────────────────────────────────────────
         "CREATE TABLE IF NOT EXISTS marketing_settings (id VARCHAR PRIMARY KEY DEFAULT 'default', tracking_enabled BOOLEAN DEFAULT TRUE, ip_anonymization BOOLEAN DEFAULT TRUE, online_visitor_minutes INTEGER DEFAULT 5, data_retention_days INTEGER DEFAULT 365, attribution_window_days INTEGER DEFAULT 30, default_utm_source VARCHAR(100), default_utm_medium VARCHAR(100), tracking_domain VARCHAR(300), created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         "INSERT INTO marketing_settings (id) VALUES ('default') ON CONFLICT DO NOTHING",
+        "UPDATE marketing_settings SET tracking_enabled = TRUE, updated_at = NOW() WHERE id = 'default'",
 
         # ── Integration credentials (encrypted at app level) ──────────────────
         "CREATE TABLE IF NOT EXISTS integration_connections (id VARCHAR PRIMARY KEY, integration_type VARCHAR(50) NOT NULL, status VARCHAR(20) DEFAULT 'disconnected', credentials_json TEXT, last_sync_at TIMESTAMPTZ, last_error TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), CONSTRAINT uq_integration_type UNIQUE(integration_type))",

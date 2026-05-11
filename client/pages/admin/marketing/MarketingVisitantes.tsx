@@ -71,16 +71,22 @@ export default function MarketingVisitantes() {
   const [loading, setLoading] = useState(true);
   const [warn, setWarn] = useState("");
 
-  const fetchData = (p: Period) => {
-    setLoading(true);
-    setWarn("");
+  const fetchData = (p: Period, silent = false) => {
+    if (!silent) setLoading(true);
+    if (!silent) setWarn("");
     marketingVisitorsApi.list(p)
       .then(d => setData({ ...EMPTY, ...d }))
       .catch(() => setWarn("Não foi possível carregar dados de visitantes."))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   };
 
-  useEffect(() => { fetchData(period); }, [period]); // eslint-disable-line
+  useEffect(() => {
+    fetchData(period);
+    const timer = window.setInterval(() => fetchData(period, true), 15000);
+    return () => window.clearInterval(timer);
+  }, [period]); // eslint-disable-line
 
   const maxEvent = Math.max(...(data.common_events ?? []).map(e => e.count), 1);
   const maxUtm   = Math.max(...(data.utm_breakdown ?? []).map(u => u.sessions), 1);
