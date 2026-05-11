@@ -37,6 +37,8 @@ const INTEGRATIONS: IntegrationDef[] = [
     emoji: "📘",
     description: "Conecte sua conta do Facebook/Instagram Ads para rastrear conversões e otimizar campanhas.",
     fields: [
+      { key: "app_id", label: "App ID", placeholder: "ID do aplicativo Meta" },
+      { key: "app_secret", label: "App Secret", placeholder: "Chave secreta do aplicativo", secret: true },
       { key: "pixel_id", label: "Pixel ID", placeholder: "1234567890" },
       { key: "access_token", label: "Access Token", placeholder: "EAABsb...", secret: true },
     ],
@@ -193,11 +195,15 @@ export default function MarketingIntegracoes() {
         { headers },
       );
       const data = await res.json();
-      const url = data?.data?.url ?? data?.url;
+      const payload = unwrap(data);
+      if (!res.ok || data?.success === false) {
+        throw new Error(data?.error?.message ?? payload?.message ?? "Erro ao gerar URL OAuth.");
+      }
+      const url = payload?.url ?? data?.url;
       if (url) window.open(url, "_blank", "width=600,height=700");
-      else alert("Erro ao gerar URL OAuth.");
-    } catch {
-      alert("Erro ao iniciar OAuth.");
+      else throw new Error("Erro ao gerar URL OAuth.");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao iniciar OAuth.");
     }
   };
 
