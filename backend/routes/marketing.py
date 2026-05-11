@@ -56,6 +56,10 @@ class VisitorProfile(Base):
     city = Column(String(100))
     state = Column(String(50))
     country = Column(String(50))
+    latitude = Column(Float)
+    longitude = Column(Float)
+    location_accuracy_m = Column(Float)
+    location_captured_at = Column(DateTime(timezone=True))
     device_type = Column(String(30))
     browser = Column(String(80))
     os = Column(String(80))
@@ -236,6 +240,9 @@ class VisitorEventIn(BaseModel):
     utm_content: str | None = None
     utm_term: str | None = None
     referrer: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    location_accuracy_m: float | None = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -510,6 +517,11 @@ async def track_event(body: VisitorEventIn, request: Request, db: Session = Depe
     visitor.device_type = visitor.device_type or device
     visitor.browser = visitor.browser or browser
     visitor.os = visitor.os or os_name
+    if body.latitude is not None and body.longitude is not None:
+        visitor.latitude = body.latitude
+        visitor.longitude = body.longitude
+        visitor.location_accuracy_m = body.location_accuracy_m
+        visitor.location_captured_at = datetime.now(timezone.utc)
 
     # Create / reuse session
     session = None
@@ -557,7 +569,9 @@ def list_visitors(
     since = now - timedelta(days=days)
 
     total = db.query(func.count(VisitorProfile.id)).filter(VisitorProfile.last_seen_at >= since).scalar() or 0
-    online_since = now - timedelta(minutes=5)
+    settings = db.query(MarketingSettings).filter(MarketingSettings.id == "default").first()
+    online_minutes = settings.online_visitor_minutes if settings and settings.online_visitor_minutes else 5
+    online_since = now - timedelta(minutes=online_minutes)
     online = db.query(func.count(VisitorProfile.id)).filter(VisitorProfile.last_seen_at >= online_since).scalar() or 0
 
     recent = (db.query(VisitorProfile)
@@ -697,6 +711,12 @@ def list_visitors(
             "device": v.device_type or "desktop",
             "sessions": v.total_sessions or 0, "pageviews": v.total_pageviews or 0,
             "last_seen": v.last_seen_at.isoformat(),
+            "status": "online" if v.last_seen_at and v.last_seen_at >= online_since else "offline",
+            "is_online": bool(v.last_seen_at and v.last_seen_at >= online_since),
+            "latitude": v.latitude,
+            "longitude": v.longitude,
+            "location_accuracy_m": v.location_accuracy_m,
+            "location_captured_at": v.location_captured_at.isoformat() if v.location_captured_at else None,
         } for v in recent],
         "common_events": [{"name": r[0], "count": r[1]} for r in top_events],
         "utm_breakdown": normalized_utm,
@@ -710,6 +730,12 @@ def list_visitors(
             "browser": v.browser, "total_sessions": v.total_sessions,
             "total_pageviews": v.total_pageviews, "total_orders": v.total_orders,
             "last_seen_at": v.last_seen_at.isoformat(),
+            "status": "online" if v.last_seen_at and v.last_seen_at >= online_since else "offline",
+            "is_online": bool(v.last_seen_at and v.last_seen_at >= online_since),
+            "latitude": v.latitude,
+            "longitude": v.longitude,
+            "location_accuracy_m": v.location_accuracy_m,
+            "location_captured_at": v.location_captured_at.isoformat() if v.location_captured_at else None,
         } for v in recent],
         "top_events": [{"event": r[0], "count": r[1]} for r in top_events],
     })

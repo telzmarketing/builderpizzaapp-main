@@ -12,6 +12,12 @@ type Period = MarketingVisitorsPeriod;
 interface Visitor {
   id: string; city: string; browser: string; device: string;
   sessions: number; pageviews: number; last_seen: string;
+  status?: "online" | "offline";
+  is_online?: boolean;
+  latitude?: number | null;
+  longitude?: number | null;
+  location_accuracy_m?: number | null;
+  location_captured_at?: string | null;
 }
 interface CommonEvent { name: string; count: number; }
 interface UtmRow      { source: string; medium: string; campaign: string; sessions: number; conversions: number; }
@@ -76,7 +82,9 @@ export default function MarketingVisitantes() {
     if (!silent) setWarn("");
     marketingVisitorsApi.list(p)
       .then(d => setData({ ...EMPTY, ...d }))
-      .catch(() => setWarn("Não foi possível carregar dados de visitantes."))
+      .catch(() => {
+        if (!silent) setWarn("Não foi possível carregar dados de visitantes.");
+      })
       .finally(() => {
         if (!silent) setLoading(false);
       });
@@ -102,6 +110,11 @@ export default function MarketingVisitantes() {
   const deviceColor: Record<string, string> = {
     mobile: "bg-blue-500", desktop: "bg-emerald-500", tablet: "bg-purple-500", other: "bg-stone",
   };
+
+  const mapsUrl = (v: Visitor) =>
+    v.latitude != null && v.longitude != null
+      ? `https://www.google.com/maps?q=${v.latitude},${v.longitude}`
+      : "";
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-surface-00 overflow-hidden">
@@ -172,7 +185,7 @@ export default function MarketingVisitantes() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-stone text-xs border-b border-surface-03">
-                            {["Cidade", "Navegador", "Dispositivo", "Sessões", "Pageviews", "Último acesso"].map(h => (
+                            {["Status", "Cidade", "Localizacao", "Navegador", "Dispositivo", "Sessoes", "Pageviews", "Ultimo acesso"].map(h => (
                               <th key={h} className="text-left pb-2 pr-3">{h}</th>
                             ))}
                           </tr>
@@ -180,7 +193,25 @@ export default function MarketingVisitantes() {
                         <tbody className="divide-y divide-surface-03">
                           {data.recent_visitors.map(v => (
                             <tr key={v.id} className="hover:bg-surface-03/30 transition-colors">
+                              <td className="py-2 pr-3">
+                                <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                  v.is_online ? "bg-green-500/15 text-green-300" : "bg-stone/10 text-stone"
+                                }`}>
+                                  <span className={`h-1.5 w-1.5 rounded-full ${v.is_online ? "bg-green-400" : "bg-stone"}`} />
+                                  {v.is_online ? "Online" : "Offline"}
+                                </span>
+                              </td>
                               <td className="py-2 pr-3 text-cream">{v.city || "—"}</td>
+                              <td className="py-2 pr-3 text-xs">
+                                {mapsUrl(v) ? (
+                                  <a href={mapsUrl(v)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-gold hover:underline">
+                                    <MapPin size={13} />
+                                    {v.latitude?.toFixed(5)}, {v.longitude?.toFixed(5)}
+                                  </a>
+                                ) : (
+                                  <span className="text-stone">Sem permissao</span>
+                                )}
+                              </td>
                               <td className="py-2 pr-3 text-stone text-xs">{v.browser || "—"}</td>
                               <td className="py-2 pr-3">
                                 <div className="flex items-center gap-1.5 text-stone">{deviceIcon(v.device)}<span className="text-xs">{v.device || "—"}</span></div>

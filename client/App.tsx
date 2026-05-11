@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { themeApi, applyTheme, DEFAULT_THEME, readCachedTheme } from "./lib/themeApi";
-import { captureTrackingFromUrl, trackEvent, getTrackingData, initCampaignPixel } from "./lib/tracking";
+import { captureTrackingFromUrl, trackEvent, getTrackingData, initCampaignPixel, requestVisitorLocation } from "./lib/tracking";
 import { customerEventsApi, resolveAssetUrl } from "./lib/api";
 
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
@@ -60,6 +60,7 @@ function TrackingInjector() {
     if (pathname.startsWith("/painel")) return;
     if (sessionStorage.getItem("_mo_site_opened")) return;
     sessionStorage.setItem("_mo_site_opened", "1");
+    requestVisitorLocation();
     const td = getTrackingData();
     customerEventsApi.register({
       event_type: "site_opened",

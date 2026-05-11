@@ -2,6 +2,7 @@ import { marketingTrackApi, paidTrafficApi, type CampaignPixelConfig } from "./a
 
 const STORAGE_KEY = "paid_traffic_tracking";
 const PIXEL_STORAGE_KEY = "campaign_pixel_config";
+const LOCATION_STORAGE_KEY = "visitor_location_permission_checked";
 
 // ─── Pixel helpers ────────────────────────────────────────────────────────────
 
@@ -189,7 +190,18 @@ export function checkoutTrackingPayload(): Partial<TrackingData> {
   return getTrackingData();
 }
 
-export function trackEvent(event_type: string, value?: number, metadata?: Record<string, unknown>) {
+type VisitorLocation = {
+  latitude: number;
+  longitude: number;
+  location_accuracy_m?: number | null;
+};
+
+export function trackEvent(
+  event_type: string,
+  value?: number,
+  metadata?: Record<string, unknown>,
+  location?: VisitorLocation
+) {
   const data = getTrackingData();
   marketingTrackApi.track({
     fingerprint: data.session_id,
@@ -204,5 +216,26 @@ export function trackEvent(event_type: string, value?: number, metadata?: Record
     utm_content: data.utm_content,
     utm_term: data.utm_term,
     referrer: data.referrer,
+    latitude: location?.latitude,
+    longitude: location?.longitude,
+    location_accuracy_m: location?.location_accuracy_m,
   }).catch(() => { /* Tracking must never break the customer experience. */ });
+}
+
+export function requestVisitorLocation(): void {
+  if (!("geolocation" in navigator)) return;
+  if (sessionStorage.getItem(LOCATION_STORAGE_KEY)) return;
+  sessionStorage.setItem(LOCATION_STORAGE_KEY, "1");
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      trackEvent("location_update", undefined, { source: "browser_geolocation" }, {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        location_accuracy_m: position.coords.accuracy,
+      });
+    },
+    () => { /* Cliente negou ou navegador nao entregou localizacao. */ },
+    { enableHighAccuracy: false, timeout: 8000, maximumAge: 10 * 60 * 1000 },
+  );
 }

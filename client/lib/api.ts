@@ -573,6 +573,12 @@ export interface MarketingVisitorData {
     sessions: number;
     pageviews: number;
     last_seen: string;
+    status?: "online" | "offline";
+    is_online?: boolean;
+    latitude?: number | null;
+    longitude?: number | null;
+    location_accuracy_m?: number | null;
+    location_captured_at?: string | null;
   }>;
   common_events: Array<{ name: string; count: number }>;
   utm_breakdown?: Array<{ source: string; medium: string | null; campaign: string | null; sessions: number; conversions: number }>;
@@ -2321,6 +2327,9 @@ export const marketingTrackApi = {
     utm_content?: string | null;
     utm_term?: string | null;
     referrer?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    location_accuracy_m?: number | null;
   }) => post<{ ok: boolean }>("/marketing/track", data),
 };
 
