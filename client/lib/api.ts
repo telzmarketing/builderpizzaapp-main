@@ -5,7 +5,14 @@
  * Padrão de desenvolvimento: http://localhost:8000
  */
 
-const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+const RAW_API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+const isLocalApiBase = (value: string) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(value);
+const PRIMARY_API_BASE = RAW_API_BASE && !(import.meta.env.PROD && isLocalApiBase(RAW_API_BASE))
+  ? RAW_API_BASE
+  : (import.meta.env.DEV ? "http://localhost:8000" : "");
+const API_BASES = Array.from(new Set([PRIMARY_API_BASE, "", "/api"].filter((base) => base || import.meta.env.PROD)));
+const BASE = API_BASES[0] ?? "";
+const ASSET_BASE = BASE.endsWith("/api") ? BASE.slice(0, -4) : BASE;
 const IMAGE_FILE_RE = /\.(apng|avif|gif|jpe?g|jfif|pjpeg|pjp|png|svg|webp)$/i;
 
 export function isAssetUrl(value?: string | null): boolean {
@@ -22,9 +29,9 @@ export function resolveAssetUrl(value?: string | null): string {
   const trimmed = value?.trim();
   if (!trimmed) return "";
   if (trimmed.startsWith("http") || trimmed.startsWith("data:")) return trimmed;
-  if (trimmed.startsWith("/")) return `${BASE}${trimmed}`;
-  if (trimmed.startsWith("uploads/")) return `${BASE}/${trimmed}`;
-  if (IMAGE_FILE_RE.test(trimmed)) return `${BASE}/uploads/${trimmed}`;
+  if (trimmed.startsWith("/")) return `${ASSET_BASE}${trimmed}`;
+  if (trimmed.startsWith("uploads/")) return `${ASSET_BASE}/${trimmed}`;
+  if (IMAGE_FILE_RE.test(trimmed)) return `${ASSET_BASE}/uploads/${trimmed}`;
   return trimmed;
 }
 
@@ -35,13 +42,37 @@ function authHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+async function fetchApi(path: string, init: RequestInit): Promise<Response> {
+  let lastError: Error | null = null;
+  for (const base of API_BASES) {
+    try {
+      const res = await fetch(`${base}${path}`, init);
+      if (!res.ok) {
+        lastError = new Error(`HTTP ${res.status}`);
+        if ([404, 405].includes(res.status)) continue;
+      }
+      if (res.ok && res.status !== 204) {
+        const contentType = res.headers.get("content-type") ?? "";
+        if (!contentType.includes("application/json")) {
+          lastError = new Error("Resposta invalida da API.");
+          continue;
+        }
+      }
+      return res;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error("Falha de rede.");
+    }
+  }
+  throw lastError ?? new Error("Nao foi possivel conectar a API.");
+}
+
 async function request<T>(
   method: string,
   path: string,
   body?: unknown,
   extraHeaders?: HeadersInit
 ): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetchApi(path, {
     method,
     headers: {
       "Content-Type": "application/json",
