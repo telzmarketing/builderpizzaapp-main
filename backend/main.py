@@ -848,6 +848,7 @@ app.include_router(admin_chatbot_routes.router, prefix="/api")
 app.include_router(upload_routes.router, prefix="/api")
 app.include_router(theme_routes.router, prefix="/api")
 app.include_router(home_config_routes.router, prefix="/api")
+app.include_router(site_config_routes.router, prefix="/api")
 app.include_router(webhooks.router, prefix="/api")
 app.include_router(paid_traffic_routes.router, prefix="/api")
 app.include_router(paid_traffic_routes.admin_router, prefix="/api")
@@ -871,6 +872,7 @@ app.include_router(upsells_routes.router, prefix="/api")
 # Must be mounted AFTER all route registrations.
 os.makedirs("uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads", html=False), name="uploads")
+app.mount("/api/uploads", StaticFiles(directory="uploads", html=False), name="api-uploads")
 
 # ── Health check ──────────────────────────────────────────────────────────────
 @app.get("/health", tags=["system"])

@@ -13,6 +13,9 @@ const PRIMARY_API_BASE = RAW_API_BASE && !(import.meta.env.PROD && isLocalApiBas
 const API_BASES = Array.from(new Set([PRIMARY_API_BASE, "", "/api"].filter((base) => base || import.meta.env.PROD)));
 const BASE = API_BASES[0] ?? "";
 const ASSET_BASE = BASE.endsWith("/api") ? BASE.slice(0, -4) : BASE;
+const UPLOAD_ASSET_BASE = BASE.endsWith("/api")
+  ? BASE
+  : (import.meta.env.PROD ? `${BASE}/api` : BASE);
 const IMAGE_FILE_RE = /\.(apng|avif|gif|jpe?g|jfif|pjpeg|pjp|png|svg|webp)$/i;
 
 export function isAssetUrl(value?: string | null): boolean {
@@ -29,11 +32,12 @@ export function resolveAssetUrl(value?: string | null): string {
   const trimmed = value?.trim();
   if (!trimmed) return "";
   if (trimmed.startsWith("http") || trimmed.startsWith("data:")) return trimmed;
-  if (trimmed.startsWith("/api/uploads/")) return `${ASSET_BASE}${trimmed.replace(/^\/api/, "")}`;
+  if (trimmed.startsWith("/api/uploads/")) return `${UPLOAD_ASSET_BASE}${trimmed.replace(/^\/api/, "")}`;
+  if (trimmed.startsWith("/uploads/")) return `${UPLOAD_ASSET_BASE}${trimmed}`;
   if (trimmed.startsWith("/")) return `${ASSET_BASE}${trimmed}`;
-  if (trimmed.startsWith("uploads/")) return `${ASSET_BASE}/${trimmed}`;
-  if (trimmed.startsWith("api/uploads/")) return `${ASSET_BASE}/${trimmed.replace(/^api\//, "")}`;
-  if (IMAGE_FILE_RE.test(trimmed)) return `${ASSET_BASE}/uploads/${trimmed}`;
+  if (trimmed.startsWith("uploads/")) return `${UPLOAD_ASSET_BASE}/${trimmed}`;
+  if (trimmed.startsWith("api/uploads/")) return `${UPLOAD_ASSET_BASE}/${trimmed.replace(/^api\//, "")}`;
+  if (IMAGE_FILE_RE.test(trimmed)) return `${UPLOAD_ASSET_BASE}/uploads/${trimmed}`;
   return trimmed;
 }
 
@@ -2357,12 +2361,7 @@ export const uploadApi = {
 // ─── Site Config (CMS persistence) ───────────────────────────────────────────
 
 export const siteConfigApi = {
-  get: async (): Promise<Record<string, unknown>> => {
-    const res = await fetch(`${BASE}/site-config`);
-    if (!res.ok) return {};
-    const json = await res.json();
-    return (json?.data ?? json) as Record<string, unknown>;
-  },
+  get: () => get<Record<string, unknown>>("/site-config"),
   save: (content: unknown): Promise<unknown> =>
     put("/admin/site-config", content),
 };
