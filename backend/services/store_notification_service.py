@@ -448,8 +448,6 @@ class StoreNotificationService:
                 continue
             if not self._manual_is_eligible(item, current):
                 continue
-            if not self._passes_sequence_rules(settings, last, item.product_id, item.neighborhood):
-                continue
             product_name = self._product_display_name(item.product, "Produto")
             candidates.append({
                 "source_type": "manual",
@@ -466,8 +464,19 @@ class StoreNotificationService:
                     relative_time="2min",
                 ),
                 "display_seconds": item.display_seconds or settings.default_display_seconds,
+                "_product_id": item.product_id,
+                "_neighborhood": item.neighborhood,
                 "_score": max(1, item.weight or 1) * PRIORITY_SCORE.get(item.priority, 2),
             })
+        sequenced = [
+            item for item in candidates
+            if self._passes_sequence_rules(settings, last, item.get("_product_id"), item.get("_neighborhood"))
+        ]
+        if sequenced:
+            candidates = sequenced
+        for item in candidates:
+            item.pop("_product_id", None)
+            item.pop("_neighborhood", None)
         return candidates
 
     def _weighted_manual(self, candidates: list[dict]) -> dict:

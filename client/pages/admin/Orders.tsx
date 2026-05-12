@@ -775,8 +775,8 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
           </button>
         )}
 
-        {/* Print dropdown */}
-        <div className="relative">
+        {/* Print menu trigger */}
+        <div>
           <button
             onClick={() => setPrintMenuOpen((v) => !v)}
             title="Imprimir pedido"
@@ -784,31 +784,29 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
           >
             <Printer size={14} />
           </button>
-          {printMenuOpen && (
-            <div
-              className="absolute bottom-full right-0 mb-1 w-40 rounded-xl border border-surface-03 bg-surface-02 shadow-lg z-50 overflow-hidden"
-              onMouseLeave={() => setPrintMenuOpen(false)}
-            >
-              {(
-                [
-                  { tpl: "completo" as PrintTemplate, label: "Completo" },
-                  { tpl: "cozinha" as PrintTemplate, label: "Cozinha" },
-                  { tpl: "entrega" as PrintTemplate, label: "Entrega" },
-                ] as { tpl: PrintTemplate; label: string }[]
-              ).map(({ tpl, label }) => (
-                <button
-                  key={tpl}
-                  onClick={() => { onPrint(tpl); setPrintMenuOpen(false); }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-parchment hover:bg-surface-03 transition-colors"
-                >
-                  <Printer size={12} className="text-stone flex-shrink-0" />
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       </div>
+
+      {printMenuOpen && (
+        <div className="mt-2 grid grid-cols-3 gap-2 rounded-xl border border-surface-03 bg-surface-02 p-2">
+          {(
+            [
+              { tpl: "completo" as PrintTemplate, label: "Completo" },
+              { tpl: "cozinha" as PrintTemplate, label: "Cozinha" },
+              { tpl: "entrega" as PrintTemplate, label: "Entrega" },
+            ] as { tpl: PrintTemplate; label: string }[]
+          ).map(({ tpl, label }) => (
+            <button
+              key={tpl}
+              onClick={() => { onPrint(tpl); setPrintMenuOpen(false); }}
+              className="flex items-center justify-center gap-1 rounded-lg border border-surface-03 bg-surface-03/50 px-2 py-2 text-[11px] font-bold text-parchment transition-colors hover:border-gold/40 hover:text-gold"
+            >
+              <Printer size={12} className="shrink-0 text-stone" />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
     </article>
   );
 }

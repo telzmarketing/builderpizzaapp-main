@@ -339,8 +339,9 @@ def _run_migrations():
         # ── Fix home_catalog_config show_promotions NULL rows ─────────────
         "UPDATE home_catalog_config SET show_promotions = TRUE WHERE show_promotions IS NULL",
         # ── Exit popup config ─────────────────────────────────────────────
-        "CREATE TABLE IF NOT EXISTS exit_popup_config (id VARCHAR PRIMARY KEY DEFAULT 'default', enabled BOOLEAN DEFAULT FALSE, title VARCHAR(200) DEFAULT 'Espera! Temos uma oferta para você 🍕', subtitle TEXT DEFAULT 'Use o cupom abaixo e ganhe desconto no seu pedido!', coupon_code VARCHAR(50), button_text VARCHAR(100) DEFAULT 'Usar cupom agora', image_url TEXT, show_once_per_session BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS exit_popup_config (id VARCHAR PRIMARY KEY DEFAULT 'default', enabled BOOLEAN DEFAULT FALSE, title VARCHAR(200) DEFAULT 'Espera! Temos uma oferta para você 🍕', subtitle TEXT DEFAULT 'Use o cupom abaixo e ganhe desconto no seu pedido!', coupon_code VARCHAR(50), button_text VARCHAR(100) DEFAULT 'Usar cupom agora', image_url TEXT, show_once_per_session BOOLEAN DEFAULT TRUE, trigger_delay_seconds INTEGER DEFAULT 10, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         "INSERT INTO exit_popup_config (id) VALUES ('default') ON CONFLICT DO NOTHING",
+        "ALTER TABLE IF EXISTS exit_popup_config ADD COLUMN IF NOT EXISTS trigger_delay_seconds INTEGER DEFAULT 10",
 
         # ══════════════════════════════════════════════════════════════════════
         # MÓDULO MARKETING & CRM — Fase 1

@@ -11,6 +11,7 @@ export default function ExitPopup() {
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState(false);
   const triggered = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isAdmin = pathname.startsWith("/painel");
 
   useEffect(() => {
@@ -23,17 +24,18 @@ export default function ExitPopup() {
     if (!config?.enabled) return;
     if (config.show_once_per_session && sessionStorage.getItem(SESSION_KEY)) return;
 
-    const handleMouseLeave = (e: MouseEvent) => {
+    const showPopup = () => {
       if (triggered.current) return;
-      if (e.clientY <= 5) {
-        triggered.current = true;
-        if (config.show_once_per_session) sessionStorage.setItem(SESSION_KEY, "1");
-        setVisible(true);
-      }
+      triggered.current = true;
+      if (config.show_once_per_session) sessionStorage.setItem(SESSION_KEY, "1");
+      setVisible(true);
     };
 
-    document.addEventListener("mouseleave", handleMouseLeave);
-    return () => document.removeEventListener("mouseleave", handleMouseLeave);
+    const delaySeconds = Math.max(1, config.trigger_delay_seconds ?? 10);
+    timerRef.current = setTimeout(showPopup, delaySeconds * 1000);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, [config, isAdmin]);
 
   const handleCopy = () => {

@@ -1110,6 +1110,7 @@ export interface ApiExitPopupConfig {
   button_text: string;
   image_url: string | null;
   show_once_per_session: boolean;
+  trigger_delay_seconds: number;
   updated_at: string | null;
 }
 

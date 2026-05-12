@@ -588,8 +588,8 @@ export default function MarketingStoreNotifications() {
           </div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
-            <SettingsCard title="Exibicao na loja">
-              <ToggleRow label="Ativar notificacoes na loja" checked={settings.enabled} onChange={(enabled) => setSettings((s) => ({ ...s, enabled }))} />
+            <SettingsCard title="Exibicao para compradores">
+              <ToggleRow label="Ativar notificacoes de compradores" checked={settings.enabled} onChange={(enabled) => setSettings((s) => ({ ...s, enabled }))} />
               <ToggleRow label="Capturar pedidos reais automaticamente para revisao" checked={settings.real_orders_enabled} onChange={(real_orders_enabled) => setSettings((s) => ({ ...s, real_orders_enabled }))} />
               <ToggleRow label="Exibir somente durante horario de funcionamento" checked={settings.only_during_store_hours} onChange={(only_during_store_hours) => setSettings((s) => ({ ...s, only_during_store_hours }))} />
             </SettingsCard>

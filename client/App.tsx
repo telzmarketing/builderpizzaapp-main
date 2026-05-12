@@ -33,10 +33,14 @@ function StoreWidget() {
   ));
   if (!isStoreRoute) return null;
   return (
-    <Suspense fallback={null}>
-      <ChatbotWidget />
-      <StoreSocialProofNotification />
-    </Suspense>
+    <>
+      <Suspense fallback={null}>
+        <ChatbotWidget />
+      </Suspense>
+      <Suspense fallback={null}>
+        <StoreSocialProofNotification />
+      </Suspense>
+    </>
   );
 }
 

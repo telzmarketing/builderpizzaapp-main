@@ -1,7 +1,7 @@
 """Exit popup configuration — public GET, admin-only PUT."""
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import Column, Boolean, String, Text, DateTime
+from sqlalchemy import Column, Boolean, Integer, String, Text, DateTime
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 
@@ -21,6 +21,7 @@ class ExitPopupConfig(Base):
     button_text = Column(String(100), default="Usar cupom agora")
     image_url = Column(Text, nullable=True)
     show_once_per_session = Column(Boolean, default=True)
+    trigger_delay_seconds = Column(Integer, default=10)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
@@ -34,6 +35,7 @@ class ExitPopupUpdate(BaseModel):
     button_text: str | None = None
     image_url: str | None = None
     show_once_per_session: bool | None = None
+    trigger_delay_seconds: int | None = None
 
 
 def _get_or_create(db: Session) -> ExitPopupConfig:
@@ -56,6 +58,7 @@ def _to_dict(cfg: ExitPopupConfig) -> dict:
         "button_text": cfg.button_text,
         "image_url": cfg.image_url,
         "show_once_per_session": cfg.show_once_per_session,
+        "trigger_delay_seconds": cfg.trigger_delay_seconds or 10,
         "updated_at": cfg.updated_at.isoformat() if cfg.updated_at else None,
     }
 
@@ -69,6 +72,8 @@ def get_exit_popup(db: Session = Depends(get_db)):
 def update_exit_popup(body: ExitPopupUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     cfg = _get_or_create(db)
     for field, value in body.model_dump(exclude_none=True).items():
+        if field == "trigger_delay_seconds":
+            value = max(1, min(int(value), 3600))
         setattr(cfg, field, value)
     cfg.updated_at = datetime.now(timezone.utc)
     db.commit()
