@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { themeApi, applyTheme, DEFAULT_THEME, readCachedTheme } from "./lib/themeApi";
-import { captureTrackingFromUrl, trackEvent, getTrackingData, initCampaignPixel, requestVisitorLocation } from "./lib/tracking";
+import { captureTrackingFromUrl, firePixelEvent, trackEvent, getTrackingData, initCampaignPixel, initStorePixels, requestVisitorLocation } from "./lib/tracking";
 import { customerEventsApi, resolveAssetUrl } from "./lib/api";
 
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
@@ -83,7 +83,9 @@ function TrackingInjector() {
     if (pathname.startsWith("/painel")) return;
     const data = captureTrackingFromUrl();
     trackEvent("page_view");
-    if (data.campaign_id) initCampaignPixel(data.campaign_id);
+    const pixelTasks = [initStorePixels()];
+    if (data.campaign_id) pixelTasks.push(initCampaignPixel(data.campaign_id));
+    Promise.all(pixelTasks).then(() => firePixelEvent("PageView")).catch(() => {});
   }, [pathname, search]);
   return null;
 }

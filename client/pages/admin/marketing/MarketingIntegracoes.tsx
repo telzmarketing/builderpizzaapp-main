@@ -39,8 +39,8 @@ const INTEGRATIONS: IntegrationDef[] = [
     fields: [
       { key: "app_id", label: "App ID", placeholder: "ID do aplicativo Meta" },
       { key: "app_secret", label: "App Secret", placeholder: "Chave secreta do aplicativo", secret: true },
-      { key: "pixel_id", label: "Pixel ID", placeholder: "1234567890" },
-      { key: "access_token", label: "Access Token", placeholder: "EAABsb...", secret: true },
+      { key: "ad_account_id", label: "ID da conta de anuncios", placeholder: "act_1234567890" },
+      { key: "access_token", label: "Token Meta Graph", placeholder: "Token OAuth/Graph da conta Meta", secret: true },
     ],
   },
   {
@@ -60,7 +60,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     emoji: "🎵",
     description: "Integre com o TikTok Ads Manager para rastrear eventos e conversões.",
     fields: [
-      { key: "pixel_id", label: "Pixel ID", placeholder: "CXXXXXXXXXXXXXXXX" },
+      { key: "advertiser_id", label: "Advertiser ID", placeholder: "1234567890" },
       { key: "app_id", label: "App ID", placeholder: "..." },
       { key: "app_secret", label: "App Secret", placeholder: "...", secret: true },
     ],

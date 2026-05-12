@@ -2292,6 +2292,8 @@ export interface AdsPixel {
   pixel_id: string;
   enabled: boolean;
   events_tracked: string;
+  conversion_access_token_configured?: boolean;
+  base_code?: string | null;
   created_at: string;
 }
 
@@ -2322,8 +2324,21 @@ export const paidTrafficApi = {
   deleteCreative: (campaignId: string, creativeId: string) =>
     del<void>(`/paid-traffic/campaigns/${campaignId}/creatives/${creativeId}`),
   pixels: () => get<AdsPixel[]>("/ads/pixels"),
-  createPixel: (data: { platform: string; pixel_id: string; events_tracked?: string }) => post<AdsPixel>("/ads/pixels", data),
-  updatePixel: (id: string, data: { enabled?: boolean; pixel_id?: string; events_tracked?: string }) =>
+  storePixelConfig: () => get<CampaignPixelConfig[]>("/paid-traffic/pixels/store-config"),
+  createPixel: (data: {
+    platform: string;
+    pixel_id: string;
+    events_tracked?: string;
+    conversion_access_token?: string;
+    base_code?: string;
+  }) => post<AdsPixel>("/ads/pixels", data),
+  updatePixel: (id: string, data: {
+    enabled?: boolean;
+    pixel_id?: string;
+    events_tracked?: string;
+    conversion_access_token?: string;
+    base_code?: string;
+  }) =>
     patch<AdsPixel>(`/ads/pixels/${id}`, data),
   deletePixel: (id: string) => del<void>(`/ads/pixels/${id}`),
   campaignPixelConfig: (campaignId: string) => get<CampaignPixelConfig | null>(`/paid-traffic/campaigns/${campaignId}/pixel-config`),

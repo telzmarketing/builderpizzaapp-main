@@ -62,6 +62,33 @@ def campaign_pixel_config(campaign_id: str, db: Session = Depends(get_db)):
     })
 
 
+@router.get("/paid-traffic/pixels/store-config")
+def store_pixel_config(db: Session = Depends(get_db)):
+    """Endpoint publico: pixels ativos que devem carregar na loja."""
+    from backend.routes.ads_oauth import AdsPixel
+    from backend.core.response import ok
+
+    pixels = (
+        db.query(AdsPixel)
+        .filter(AdsPixel.enabled == True)  # noqa: E712
+        .order_by(AdsPixel.created_at.desc())
+        .all()
+    )
+    return ok([
+        {
+            "platform": pixel.platform,
+            "pixel_id": pixel.pixel_id,
+            "events": [
+                e.strip()
+                for e in (pixel.events_tracked or "PageView").split(",")
+                if e.strip()
+            ],
+        }
+        for pixel in pixels
+        if pixel.pixel_id
+    ])
+
+
 admin_router = APIRouter(prefix="/paid-traffic", tags=["paid-traffic-admin"], dependencies=[Depends(get_current_admin)])
 
 

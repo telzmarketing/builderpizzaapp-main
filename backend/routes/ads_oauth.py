@@ -75,6 +75,8 @@ class AdsPixel(Base):
     pixel_id = Column(String(200), nullable=False)
     enabled = Column(Boolean, default=True)
     events_tracked = Column(String(500), default="PageView,Purchase,Lead")
+    conversion_access_token = Column(Text, nullable=True)
+    base_code = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
@@ -96,12 +98,16 @@ class PixelCreate(BaseModel):
     platform: str
     pixel_id: str
     events_tracked: str = "PageView,Purchase,Lead"
+    conversion_access_token: Optional[str] = None
+    base_code: Optional[str] = None
 
 
 class PixelUpdate(BaseModel):
     enabled: Optional[bool] = None
     events_tracked: Optional[str] = None
     pixel_id: Optional[str] = None
+    conversion_access_token: Optional[str] = None
+    base_code: Optional[str] = None
 
 
 # ── Helper: credentials CRUD ──────────────────────────────────────────────────
@@ -113,6 +119,8 @@ def _serialize_pixel(pixel: AdsPixel) -> dict:
         "pixel_id": pixel.pixel_id,
         "enabled": pixel.enabled,
         "events_tracked": pixel.events_tracked,
+        "conversion_access_token_configured": bool(pixel.conversion_access_token),
+        "base_code": pixel.base_code,
         "created_at": pixel.created_at.isoformat() if pixel.created_at else None,
         "updated_at": pixel.updated_at.isoformat() if pixel.updated_at else None,
     }
@@ -203,7 +211,7 @@ def _build_tiktok_auth_url(app_id: str, redirect_uri: str, state: str) -> str:
 # ── Token exchange helpers ────────────────────────────────────────────────────
 
 def _exchange_meta_token(code: str, app_id: str, app_secret: str, redirect_uri: str) -> dict:
-    """Exchange Meta OAuth code for access token."""
+    """Exchange Meta OAuth code for short-lived token, then upgrade to long-lived (~60 days)."""
     resp = requests.post(
         "https://graph.facebook.com/v19.0/oauth/access_token",
         data={
@@ -215,7 +223,29 @@ def _exchange_meta_token(code: str, app_id: str, app_secret: str, redirect_uri: 
         timeout=15,
     )
     resp.raise_for_status()
-    return resp.json()  # access_token, token_type, expires_in
+    short_lived = resp.json()
+
+    short_token = short_lived.get("access_token", "")
+    if not short_token:
+        return short_lived
+
+    # Troca pelo token de longa duração (~60 dias)
+    ll_resp = requests.get(
+        "https://graph.facebook.com/v19.0/oauth/access_token",
+        params={
+            "grant_type": "fb_exchange_token",
+            "client_id": app_id,
+            "client_secret": app_secret,
+            "fb_exchange_token": short_token,
+        },
+        timeout=15,
+    )
+    if ll_resp.ok:
+        ll_data = ll_resp.json()
+        if ll_data.get("access_token"):
+            return ll_data  # access_token, token_type, expires_in (~5184000 s = 60 dias)
+
+    return short_lived
 
 
 def _exchange_google_token(code: str, client_id: str, client_secret: str, redirect_uri: str) -> dict:
@@ -274,20 +304,24 @@ def _upsert_campaign(db: Session, campaign_id: str, platform: str, external_id: 
         db.add(row)
 
 
-def _sync_meta_campaigns(creds: dict, db: Session) -> int:
+def _sync_meta_campaigns(creds: dict, db: Session, date_preset: str = "last_30_days") -> int:
     """Fetch campaigns + insights from Meta Graph API and upsert into ads_campaigns."""
     try:
         token = creds.get("access_token", "")
         if not token:
             return 0
 
-        url = (
-            "https://graph.facebook.com/v19.0/me/adaccounts"
-            "?fields=id,name,campaigns{id,name,status,objective,daily_budget,"
-            "insights{spend,impressions,clicks,actions,action_values,ctr,cpc}}"
-            f"&access_token={token}"
+        fields = (
+            "id,name,campaigns{id,name,status,objective,daily_budget,"
+            f"insights.date_preset({date_preset}){{spend,impressions,clicks,actions,action_values,ctr,cpc}}}}"
         )
-        resp = requests.get(url, timeout=30)
+        url = "https://graph.facebook.com/v19.0/me/adaccounts"
+        resp = requests.get(
+            url,
+            params={"fields": fields},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
         resp.raise_for_status()
         payload = resp.json()
 
@@ -470,13 +504,25 @@ def _fire_meta_capi_event(
 ) -> None:
     """Send a server-side Conversions API event to Meta. Never raises."""
     try:
-        creds = _get_creds("meta_ads", db)
-        if not creds:
-            return
+        targets = [
+            {"pixel_id": p.pixel_id, "access_token": p.conversion_access_token}
+            for p in db.query(AdsPixel)
+            .filter(AdsPixel.platform == "meta", AdsPixel.enabled == True)  # noqa: E712
+            .all()
+            if p.pixel_id and p.conversion_access_token
+        ]
 
-        token = creds.get("access_token", "")
-        pixel_id = creds.get("pixel_id", "")
-        if not token or not pixel_id:
+        # Backward compatibility for older installs that stored CAPI credentials
+        # under Marketing > Integracoes > Meta Ads.
+        if not targets:
+            creds = _get_creds("meta_ads", db)
+            if creds and creds.get("access_token") and creds.get("pixel_id"):
+                targets.append({
+                    "pixel_id": creds.get("pixel_id", ""),
+                    "access_token": creds.get("access_token", ""),
+                })
+
+        if not targets:
             return
 
         user_data: dict = {}
@@ -499,12 +545,13 @@ def _fire_meta_capi_event(
             ]
         }
 
-        requests.post(
-            f"https://graph.facebook.com/v19.0/{pixel_id}/events",
-            params={"access_token": token},
-            json=payload,
-            timeout=10,
-        )
+        for target in targets:
+            requests.post(
+                f"https://graph.facebook.com/v19.0/{target['pixel_id']}/events",
+                headers={"Authorization": f"Bearer {target['access_token']}"},
+                json=payload,
+                timeout=10,
+            )
     except Exception:
         pass  # Never propagate — CAPI is best-effort
 
@@ -710,14 +757,33 @@ def list_campaigns(
     return ok(result)
 
 
+_PERIOD_TO_PRESET: dict[str, str] = {
+    "7d": "last_7d",
+    "30d": "last_30_days",
+    "90d": "last_90d",
+}
+
+_PERIOD_TO_DAYS: dict[str, int] = {
+    "7d": 7,
+    "30d": 30,
+    "90d": 90,
+}
+
+
 @router.get("/insights")
 def get_insights(
-    period: str = Query(default="7d"),
+    period: str = Query(default="30d"),
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    """Aggregate campaign metrics by platform and overall totals."""
-    campaigns = db.query(AdsCampaign).all()
+    """Aggregate campaign metrics by platform and overall totals, filtered by sync period."""
+    from datetime import timedelta
+    days = _PERIOD_TO_DAYS.get(period, 30)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    campaigns = db.query(AdsCampaign).filter(
+        AdsCampaign.last_synced_at >= cutoff
+    ).all()
 
     by_platform: dict[str, dict] = {}
     totals = {
@@ -777,10 +843,11 @@ def get_insights(
 @router.post("/{platform}/sync")
 def sync_platform(
     platform: str,
+    period: str = Query(default="30d"),
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    """Sync campaigns from a single platform."""
+    """Sync campaigns from a single platform. period: 7d | 30d | 90d"""
     if platform not in _SUPPORTED_PLATFORMS:
         return err_msg(f"Plataforma '{platform}' não suportada.", status_code=400)
 
@@ -788,22 +855,26 @@ def sync_platform(
     if not creds:
         return err_msg("Plataforma não configurada.", status_code=400)
 
+    date_preset = _PERIOD_TO_PRESET.get(period, "last_30_days")
+
     if platform == "meta":
-        synced = _sync_meta_campaigns(creds, db)
+        synced = _sync_meta_campaigns(creds, db, date_preset=date_preset)
     elif platform == "google":
         synced = _sync_google_campaigns(creds, db)
     else:
         synced = _sync_tiktok_campaigns(creds, db)
 
-    return ok({"synced": synced, "platform": platform})
+    return ok({"synced": synced, "platform": platform, "period": period})
 
 
 @router.post("/sync-all")
 def sync_all(
+    period: str = Query(default="30d"),
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    """Sync campaigns from all platforms. Failures per platform are isolated."""
+    """Sync campaigns from all platforms. Failures per platform are isolated. period: 7d | 30d | 90d"""
+    date_preset = _PERIOD_TO_PRESET.get(period, "last_30_days")
     results: dict[str, int] = {}
 
     for platform in ("meta", "google", "tiktok"):
@@ -813,7 +884,7 @@ def sync_all(
                 results[platform] = 0
                 continue
             if platform == "meta":
-                results[platform] = _sync_meta_campaigns(creds, db)
+                results[platform] = _sync_meta_campaigns(creds, db, date_preset=date_preset)
             elif platform == "google":
                 results[platform] = _sync_google_campaigns(creds, db)
             else:
@@ -821,7 +892,7 @@ def sync_all(
         except Exception:
             results[platform] = 0
 
-    return ok(results)
+    return ok({**results, "period": period})
 
 
 # ── Routes: Status ────────────────────────────────────────────────────────────
@@ -961,6 +1032,8 @@ def create_pixel(body: PixelCreate, db: Session = Depends(get_db),
     p = AdsPixel(
         id=str(uuid.uuid4()), platform=body.platform,
         pixel_id=body.pixel_id, events_tracked=body.events_tracked,
+        conversion_access_token=body.conversion_access_token or None,
+        base_code=body.base_code or None,
     )
     db.add(p)
     db.commit()
@@ -978,6 +1051,10 @@ def update_pixel(pixel_id: str, body: PixelUpdate,
     if body.enabled is not None:        p.enabled = body.enabled
     if body.events_tracked is not None: p.events_tracked = body.events_tracked
     if body.pixel_id is not None:       p.pixel_id = body.pixel_id
+    if body.conversion_access_token is not None:
+        p.conversion_access_token = body.conversion_access_token or None
+    if body.base_code is not None:
+        p.base_code = body.base_code or None
     p.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(p)

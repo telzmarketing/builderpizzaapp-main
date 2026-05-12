@@ -62,12 +62,20 @@ type CampaignForm = {
   pixel_events: Set<string>;
 };
 
+type PixelForm = {
+  platform: string;
+  pixel_id: string;
+  events_tracked: string;
+  conversion_access_token: string;
+  base_code: string;
+};
+
 const tabs: Array<{ id: Tab; label: string; icon: typeof BarChart3 }> = [
   { id: "dashboard", label: "Dashboard", icon: BarChart3 },
   { id: "campanhas", label: "Campanhas", icon: Megaphone },
   { id: "links", label: "Links", icon: Link2 },
   { id: "relatorios", label: "Relatorios", icon: LineChart },
-  { id: "integracoes", label: "Integracoes", icon: PlugZap },
+  { id: "integracoes", label: "Meta/CAPI", icon: PlugZap },
   { id: "pixels", label: "Pixels", icon: Zap },
   { id: "configuracoes", label: "Configuracoes", icon: Settings },
 ];
@@ -125,6 +133,14 @@ const initialCampaignForm: CampaignForm = {
   pixel_events: new Set(["PageView", "InitiateCheckout", "Purchase"]),
 };
 
+const initialPixelForm: PixelForm = {
+  platform: "meta",
+  pixel_id: "",
+  events_tracked: "PageView,Purchase,Lead,InitiateCheckout,AddToCart",
+  conversion_access_token: "",
+  base_code: "",
+};
+
 const formatCurrency = (value: number | null | undefined) =>
   (value ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -151,6 +167,11 @@ function parsePixelEvents(raw: string | null | undefined): Set<string> {
 function serializePixelEvents(events: Set<string>): string | null {
   if (events.size === 0) return null;
   return [...events].join(",");
+}
+
+function extractMetaPixelId(code: string): string {
+  const match = code.match(/fbq\(['"]init['"],\s*['"]([^'"]+)['"]/i);
+  return match?.[1] ?? "";
 }
 
 function campaignToForm(campaign: TrafficCampaign): CampaignForm {
@@ -202,7 +223,7 @@ export default function AdminPaidTraffic() {
   });
 
   const [pixels, setPixels] = useState<AdsPixel[]>([]);
-  const [pixelForm, setPixelForm] = useState({ platform: "meta", pixel_id: "", events_tracked: "PageView,Purchase,Lead" });
+  const [pixelForm, setPixelForm] = useState<PixelForm>(initialPixelForm);
   const [editingPixelId, setEditingPixelId] = useState<string | null>(null);
 
   const [creatives, setCreatives] = useState<Record<string, CampaignCreative[]>>({});
@@ -467,26 +488,37 @@ export default function AdminPaidTraffic() {
 
   const savePixel = async (event: FormEvent) => {
     event.preventDefault();
-    if (!pixelForm.pixel_id.trim()) {
+    const extractedPixelId = pixelForm.platform === "meta" ? extractMetaPixelId(pixelForm.base_code) : "";
+    const pixelId = pixelForm.pixel_id.trim() || extractedPixelId;
+    if (!pixelId) {
       alert("Informe o ID do pixel.");
       return;
     }
     try {
+      const payload: {
+        pixel_id: string;
+        events_tracked: string;
+        conversion_access_token?: string;
+        base_code?: string;
+      } = {
+        pixel_id: pixelId,
+        events_tracked: pixelForm.events_tracked.trim() || "PageView,Purchase,Lead",
+        base_code: pixelForm.base_code.trim(),
+      };
+      if (!editingPixelId || pixelForm.conversion_access_token.trim()) {
+        payload.conversion_access_token = pixelForm.conversion_access_token.trim();
+      }
       if (editingPixelId) {
-        const updated = await paidTrafficApi.updatePixel(editingPixelId, {
-          pixel_id: pixelForm.pixel_id.trim(),
-          events_tracked: pixelForm.events_tracked.trim() || "PageView,Purchase,Lead",
-        });
+        const updated = await paidTrafficApi.updatePixel(editingPixelId, payload);
         setPixels((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
       } else {
         const created = await paidTrafficApi.createPixel({
           platform: pixelForm.platform,
-          pixel_id: pixelForm.pixel_id.trim(),
-          events_tracked: pixelForm.events_tracked.trim() || "PageView,Purchase,Lead",
+          ...payload,
         });
         setPixels((prev) => [created, ...prev]);
       }
-      setPixelForm({ platform: "meta", pixel_id: "", events_tracked: "PageView,Purchase,Lead" });
+      setPixelForm(initialPixelForm);
       setEditingPixelId(null);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao salvar pixel.");
@@ -922,37 +954,41 @@ export default function AdminPaidTraffic() {
               )}
 
               {activeTab === "integracoes" && (
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                  {platforms.filter((platform) => platform.value !== "manual").map((platform) => {
-                    const integration = integrations.find((item) => item.platform === platform.value);
-                    const draft = integrationDraft[platform.value] ?? { token: "", account: "" };
-                    const connected = integration?.status === "connected";
-                    return (
-                      <div key={platform.value} className="rounded-2xl border border-surface-03 bg-surface-02 p-5">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <h3 className="text-cream font-black">{platform.label}</h3>
-                            <p className="text-stone text-xs mt-1">{connected ? "Conectado" : "Desconectado"}</p>
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  <Panel title="Meta Pixel e Conversions API">
+                    <div className="space-y-4">
+                      <p className="text-stone text-sm">
+                        A integracao da conta Meta Graph fica no modulo Integracoes. Aqui ficam apenas Pixel ID, codigo base da loja e token da Conversions API.
+                      </p>
+                      {pixels.filter((pixel) => pixel.platform === "meta").map((pixel) => (
+                        <div key={pixel.id} className="rounded-2xl border border-surface-03 bg-surface-03/40 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-cream font-mono text-sm font-bold">{pixel.pixel_id}</p>
+                              <p className="text-stone text-xs mt-1">Eventos: {pixel.events_tracked}</p>
+                            </div>
+                            {pixel.conversion_access_token_configured ? <CheckCircle2 className="text-green-400" /> : <XCircle className="text-red-300" />}
                           </div>
-                          {connected ? <CheckCircle2 className="text-green-400" /> : <XCircle className="text-red-300" />}
+                          <p className="text-stone text-xs mt-3">
+                            Token CAPI: {pixel.conversion_access_token_configured ? "configurado" : "pendente"} · Codigo base: {pixel.base_code ? "informado" : "pendente"}
+                          </p>
                         </div>
-                        <div className="mt-4 space-y-3">
-                          <Field label="Conta vinculada">
-                            <input className={fieldBase} value={draft.account} onChange={(e) => setIntegrationDraft((prev) => ({ ...prev, [platform.value]: { ...draft, account: e.target.value } }))} placeholder={integration?.account_name || "Nome da conta"} />
-                          </Field>
-                          <Field label="Access token">
-                            <input type="password" className={fieldBase} value={draft.token} onChange={(e) => setIntegrationDraft((prev) => ({ ...prev, [platform.value]: { ...draft, token: e.target.value } }))} placeholder={connected ? "Token salvo e mascarado" : "Cole o token da plataforma"} />
-                          </Field>
-                          {integration?.last_error && <p className="text-red-300 text-xs">{integration.last_error}</p>}
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            <button onClick={() => saveIntegration(platform.value)} className="rounded-xl bg-gold px-3 py-2 text-sm font-bold text-cream">Conectar</button>
-                            <button onClick={() => syncIntegration(platform.value)} className="rounded-xl bg-surface-03 px-3 py-2 text-sm font-semibold text-parchment hover:text-cream">Testar</button>
-                            <button onClick={() => disconnectIntegration(platform.value)} className="rounded-xl bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-300">Desconectar</button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      ))}
+                      {pixels.filter((pixel) => pixel.platform === "meta").length === 0 && (
+                        <EmptyState title="Nenhum Meta Pixel" text="Cadastre o Pixel ID, o token da Conversions API e o codigo base na aba Pixels." />
+                      )}
+                      <button onClick={() => setActiveTab("pixels")} className="rounded-xl bg-gold px-4 py-3 text-sm font-bold text-cream">
+                        Configurar pixels
+                      </button>
+                    </div>
+                  </Panel>
+                  <Panel title="Separacao das credenciais">
+                    <div className="space-y-3 text-sm text-stone">
+                      <p><strong className="text-parchment">Modulo Integracoes:</strong> token Meta Graph/OAuth, App ID, App Secret e conta de anuncios.</p>
+                      <p><strong className="text-parchment">Modulo Trafego Pago:</strong> Pixel ID, codigo base do pixel, eventos rastreados e token da Conversions API.</p>
+                      <p><strong className="text-parchment">Loja online:</strong> carrega automaticamente os pixels ativos e dispara PageView, AddToCart, InitiateCheckout e Purchase conforme configurado.</p>
+                    </div>
+                  </Panel>
                 </div>
               )}
 
@@ -979,7 +1015,41 @@ export default function AdminPaidTraffic() {
                           onChange={(e) => setPixelForm((prev) => ({ ...prev, pixel_id: e.target.value }))}
                           placeholder={pixelForm.platform === "meta" ? "Ex: 1234567890" : pixelForm.platform === "google" ? "Ex: AW-123456789" : "Ex: ABCDE12345"}
                         />
+                        {pixelForm.platform === "meta" && (
+                          <p className="text-stone text-[11px] mt-1">Tambem pode colar o codigo base abaixo que o ID sera identificado automaticamente.</p>
+                        )}
                       </Field>
+                      {pixelForm.platform === "meta" && (
+                        <>
+                          <Field label="Token da Conversions API">
+                            <input
+                              type="password"
+                              className={fieldBase}
+                              value={pixelForm.conversion_access_token}
+                              onChange={(e) => setPixelForm((prev) => ({ ...prev, conversion_access_token: e.target.value }))}
+                              placeholder={editingPixelId ? "Token salvo. Cole um novo para substituir." : "Cole o token gerado no Pixel da Meta"}
+                            />
+                            <p className="text-stone text-[11px] mt-1">Este token e do pixel/CAPI. O token Meta Graph da conta fica no modulo Integracoes.</p>
+                          </Field>
+                          <Field label="Codigo base Meta Pixel">
+                            <textarea
+                              className={`${fieldBase} min-h-[130px] font-mono text-xs`}
+                              value={pixelForm.base_code}
+                              onChange={(e) => {
+                                const code = e.target.value;
+                                const extracted = extractMetaPixelId(code);
+                                setPixelForm((prev) => ({
+                                  ...prev,
+                                  base_code: code,
+                                  pixel_id: prev.pixel_id || extracted,
+                                }));
+                              }}
+                              placeholder="Cole aqui o codigo base do Pixel da Meta"
+                            />
+                            <p className="text-stone text-[11px] mt-1">A loja carrega os pixels ativos automaticamente; o codigo colado fica como referencia e o SDK e injetado de forma controlada.</p>
+                          </Field>
+                        </>
+                      )}
                       <Field label="Eventos rastreados">
                         <input
                           className={fieldBase}
@@ -996,7 +1066,7 @@ export default function AdminPaidTraffic() {
                         {editingPixelId && (
                           <button
                             type="button"
-                            onClick={() => { setEditingPixelId(null); setPixelForm({ platform: "meta", pixel_id: "", events_tracked: "PageView,Purchase,Lead" }); }}
+                            onClick={() => { setEditingPixelId(null); setPixelForm(initialPixelForm); }}
                             className="rounded-xl border border-surface-03 px-4 py-3 text-sm font-semibold text-stone hover:text-cream"
                           >
                             Cancelar
@@ -1020,13 +1090,24 @@ export default function AdminPaidTraffic() {
                               </div>
                               <p className="text-cream font-bold mt-2 font-mono text-sm">{pixel.pixel_id}</p>
                               <p className="text-stone text-xs mt-1">Eventos: {pixel.events_tracked}</p>
+                              {pixel.platform === "meta" && (
+                                <p className="text-stone text-xs mt-1">
+                                  Conversions API: {pixel.conversion_access_token_configured ? "token configurado" : "sem token"} · Codigo base: {pixel.base_code ? "informado" : "nao informado"}
+                                </p>
+                              )}
                             </div>
                           </div>
                           <div className="mt-4 flex flex-wrap gap-2">
                             <button
                               onClick={() => {
                                 setEditingPixelId(pixel.id);
-                                setPixelForm({ platform: pixel.platform, pixel_id: pixel.pixel_id, events_tracked: pixel.events_tracked });
+                                setPixelForm({
+                                  platform: pixel.platform,
+                                  pixel_id: pixel.pixel_id,
+                                  events_tracked: pixel.events_tracked,
+                                  conversion_access_token: "",
+                                  base_code: pixel.base_code ?? "",
+                                });
                               }}
                               className="rounded-xl bg-surface-02 px-3 py-2 text-sm font-semibold text-parchment hover:text-cream"
                             >

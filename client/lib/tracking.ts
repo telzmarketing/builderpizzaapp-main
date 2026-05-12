@@ -2,6 +2,7 @@ import { marketingTrackApi, paidTrafficApi, type CampaignPixelConfig } from "./a
 
 const STORAGE_KEY = "paid_traffic_tracking";
 const PIXEL_STORAGE_KEY = "campaign_pixel_config";
+const STORE_PIXEL_STORAGE_KEY = "store_pixel_configs";
 const LOCATION_STORAGE_KEY = "visitor_location_permission_checked";
 
 // ─── Pixel helpers ────────────────────────────────────────────────────────────
@@ -26,7 +27,7 @@ function injectMetaPixel(pixelId: string): void {
     n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
     t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
     (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
-    fbq('init','${pixelId}');fbq('track','PageView');
+    fbq('init','${pixelId}');
   `;
   document.head.appendChild(script);
 }
@@ -70,50 +71,96 @@ export function firePixelEvent(
   event: string,
   data?: { value?: number; currency?: string; content_name?: string; order_id?: string }
 ): void {
-  const raw = sessionStorage.getItem(PIXEL_STORAGE_KEY);
-  if (!raw) return;
+  const configs = readPixelConfigs();
+  if (configs.length === 0) return;
   try {
-    const config = JSON.parse(raw) as CampaignPixelConfig;
-    if (!config.events.includes(event)) return;
+    for (const config of configs) {
+      if (!config.events.includes(event)) continue;
 
-    const currency = data?.currency ?? "BRL";
-    const value = data?.value ?? 0;
+      const currency = data?.currency ?? "BRL";
+      const value = data?.value ?? 0;
 
-    if (config.platform === "meta" && typeof window.fbq === "function") {
-      if (event === "Purchase") {
-        window.fbq("track", "Purchase", { value, currency, content_name: data?.content_name });
-      } else if (event === "InitiateCheckout") {
-        window.fbq("track", "InitiateCheckout", { value, currency });
-      } else if (event === "AddToCart") {
-        window.fbq("track", "AddToCart", { value, currency, content_name: data?.content_name });
-      } else if (event === "Lead") {
-        window.fbq("track", "Lead");
-      } else {
-        window.fbq("track", event);
+      if (config.platform === "meta" && typeof window.fbq === "function") {
+        if (event === "Purchase") {
+          window.fbq("trackSingle", config.pixel_id, "Purchase", { value, currency, content_name: data?.content_name });
+        } else if (event === "InitiateCheckout") {
+          window.fbq("trackSingle", config.pixel_id, "InitiateCheckout", { value, currency });
+        } else if (event === "AddToCart") {
+          window.fbq("trackSingle", config.pixel_id, "AddToCart", { value, currency, content_name: data?.content_name });
+        } else if (event === "Lead") {
+          window.fbq("trackSingle", config.pixel_id, "Lead");
+        } else {
+          window.fbq("trackSingle", config.pixel_id, event);
+        }
       }
-    }
 
-    if (config.platform === "google" && typeof window.gtag === "function") {
-      if (event === "Purchase") {
-        window.gtag("event", "purchase", { value, currency, transaction_id: data?.order_id });
-      } else if (event === "InitiateCheckout") {
-        window.gtag("event", "begin_checkout", { value, currency });
-      } else {
-        window.gtag("event", event.toLowerCase().replace(/\s+/g, "_"));
+      if (config.platform === "google" && typeof window.gtag === "function") {
+        if (event === "Purchase") {
+          window.gtag("event", "purchase", { value, currency, transaction_id: data?.order_id });
+        } else if (event === "InitiateCheckout") {
+          window.gtag("event", "begin_checkout", { value, currency });
+        } else {
+          window.gtag("event", event.toLowerCase().replace(/\s+/g, "_"));
+        }
       }
-    }
 
-    if (config.platform === "tiktok" && window.ttq) {
-      if (event === "Purchase") {
-        window.ttq.track("PlaceAnOrder", { value, currency });
-      } else if (event === "InitiateCheckout") {
-        window.ttq.track("InitiateCheckout", { value, currency });
-      } else {
-        window.ttq.track(event);
+      if (config.platform === "tiktok" && window.ttq) {
+        if (event === "Purchase") {
+          window.ttq.track("PlaceAnOrder", { value, currency });
+        } else if (event === "InitiateCheckout") {
+          window.ttq.track("InitiateCheckout", { value, currency });
+        } else {
+          window.ttq.track(event);
+        }
       }
     }
   } catch {
     // pixel errors never block the customer experience
+  }
+}
+
+function readPixelConfigs(): CampaignPixelConfig[] {
+  const configs: CampaignPixelConfig[] = [];
+  const seen = new Set<string>();
+  const add = (config: CampaignPixelConfig | null | undefined) => {
+    if (!config?.platform || !config.pixel_id) return;
+    const key = `${config.platform}:${config.pixel_id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    configs.push(config);
+  };
+
+  try {
+    const rawStore = sessionStorage.getItem(STORE_PIXEL_STORAGE_KEY);
+    const storeConfigs = rawStore ? JSON.parse(rawStore) as CampaignPixelConfig[] : [];
+    storeConfigs.forEach(add);
+  } catch {
+    /* ignore invalid cached config */
+  }
+
+  try {
+    const rawCampaign = sessionStorage.getItem(PIXEL_STORAGE_KEY);
+    add(rawCampaign ? JSON.parse(rawCampaign) as CampaignPixelConfig : null);
+  } catch {
+    /* ignore invalid cached config */
+  }
+
+  return configs;
+}
+
+function injectPixelConfig(config: CampaignPixelConfig): void {
+  if (config.platform === "meta") injectMetaPixel(config.pixel_id);
+  else if (config.platform === "google") injectGooglePixel(config.pixel_id);
+  else if (config.platform === "tiktok") injectTikTokPixel(config.pixel_id);
+}
+
+export async function initStorePixels(): Promise<void> {
+  try {
+    const configs = await paidTrafficApi.storePixelConfig();
+    sessionStorage.setItem(STORE_PIXEL_STORAGE_KEY, JSON.stringify(configs));
+    configs.forEach(injectPixelConfig);
+  } catch {
+    // pixel init errors never block the customer experience
   }
 }
 
@@ -123,10 +170,7 @@ export async function initCampaignPixel(campaignId: string | null | undefined): 
     const config = await paidTrafficApi.campaignPixelConfig(campaignId);
     if (!config) return;
     sessionStorage.setItem(PIXEL_STORAGE_KEY, JSON.stringify(config));
-
-    if (config.platform === "meta") injectMetaPixel(config.pixel_id);
-    else if (config.platform === "google") injectGooglePixel(config.pixel_id);
-    else if (config.platform === "tiktok") injectTikTokPixel(config.pixel_id);
+    injectPixelConfig(config);
   } catch {
     // pixel init errors never block the customer experience
   }
