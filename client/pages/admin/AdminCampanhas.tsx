@@ -42,8 +42,11 @@ const Txt = ({ label, ...p }: { label: string } & React.TextareaHTMLAttributes<H
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-      <div className="bg-surface-01 rounded-2xl border border-surface-03 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4" onMouseDown={onClose}>
+      <div
+        className="bg-surface-01 rounded-2xl border border-surface-03 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03">
           <h3 className="text-cream font-bold text-lg">{title}</h3>
           <button onClick={onClose} className="text-stone hover:text-cream transition-colors"><X size={20} /></button>
@@ -62,7 +65,6 @@ function SaveBtn({ loading, label = "Salvar" }: { loading?: boolean; label?: str
   );
 }
 
-const STATUS_LABEL: Record<CampaignStatus, string> = { draft: "Rascunho", active: "Ativa", paused: "Pausada", ended: "Encerrada" };
 const STATUS_COLOR: Record<CampaignStatus, string> = {
   draft: "bg-stone/20 text-stone border-stone/30",
   active: "bg-green-500/20 text-green-400 border-green-500/30",
@@ -147,6 +149,12 @@ const emptyKitForm: KitForm = {
   discount_type: "", discount_value: 0, valid_until: "", active: true,
 };
 
+const campaignVisibleEnabled = (campaign: Pick<ApiCampaign, "status" | "published">) =>
+  campaign.status === "active" && campaign.published;
+
+const campaignFormChanged = (a: CampaignForm, b: CampaignForm) =>
+  JSON.stringify(a) !== JSON.stringify(b);
+
 export default function AdminCampanhas() {
   const [activeTab, setActiveTab] = useState<Tab>("campanhas");
 
@@ -169,6 +177,7 @@ export default function AdminCampanhas() {
   const [showCampaignModal, setShowCampaignModal] = useState(false);
   const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
   const [campaignForm, setCampaignForm] = useState<CampaignForm>(emptyCampaignForm);
+  const [initialCampaignForm, setInitialCampaignForm] = useState<CampaignForm>(emptyCampaignForm);
   const [campaignSaving, setCampaignSaving] = useState(false);
 
   // ── Campaign products modal ────────────────────────────────────────────────
@@ -296,33 +305,36 @@ export default function AdminCampanhas() {
   // ── Campaign CRUD ──────────────────────────────────────────────────────────
 
   const openCreateCampaign = () => {
+    const nextForm = { ...emptyCampaignForm };
     setEditingCampaignId(null);
-    setCampaignForm(emptyCampaignForm);
+    setCampaignForm(nextForm);
+    setInitialCampaignForm(nextForm);
     setShowCampaignModal(true);
   };
 
   const openEditCampaign = (c: ApiCampaign) => {
-    setEditingCampaignId(c.id);
-    setCampaignForm({
-      name: c.name, description: c.description ?? "", status: c.status,
+    const nextForm = {
+      name: c.name, description: c.description ?? "", status: campaignVisibleEnabled(c) ? "active" as CampaignStatus : "paused" as CampaignStatus,
       start_at: c.start_at ? c.start_at.slice(0, 16) : "",
       end_at: c.end_at ? c.end_at.slice(0, 16) : "",
       banner: c.banner ?? "", slug: c.slug,
       campaign_type: c.campaign_type, display_title: c.display_title ?? "",
       display_subtitle: c.display_subtitle ?? "",
-      display_order: c.display_order, published: c.published,
+      display_order: c.display_order, published: campaignVisibleEnabled(c),
       schedule_enabled: Boolean(c.start_at || c.end_at),
       active_days: c.active_days ? c.active_days.split(",").map(Number) : [],
       card_bg_color: c.card_bg_color ?? "",
       media_type: (c.media_type as "image" | "video") ?? "image",
       video_url: c.video_url ?? "",
       product_id: c.product_id ?? "",
-    });
+    };
+    setEditingCampaignId(c.id);
+    setCampaignForm(nextForm);
+    setInitialCampaignForm(nextForm);
     setShowCampaignModal(true);
   };
 
-  const handleSaveCampaign = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const saveCampaign = async () => {
     if (!campaignForm.name.trim() || !campaignForm.slug.trim()) {
       showToast("Nome e slug são obrigatórios.");
       return;
@@ -338,8 +350,11 @@ export default function AdminCampanhas() {
     setCampaignSaving(true);
     try {
       const { schedule_enabled, active_days, ...formData } = campaignForm;
+      const enabled = campaignVisibleEnabled(formData as Pick<ApiCampaign, "status" | "published">);
       const payload = {
         ...formData,
+        status: enabled ? "active" : "paused",
+        published: enabled,
         start_at: schedule_enabled && campaignForm.start_at ? new Date(campaignForm.start_at).toISOString() : null,
         end_at: schedule_enabled && campaignForm.end_at ? new Date(campaignForm.end_at).toISOString() : null,
         description: campaignForm.description || null,
@@ -366,6 +381,25 @@ export default function AdminCampanhas() {
     } finally { setCampaignSaving(false); }
   };
 
+  const handleSaveCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveCampaign();
+  };
+
+  const handleCloseCampaignModal = async () => {
+    if (campaignSaving) return;
+    if (!campaignFormChanged(campaignForm, initialCampaignForm)) {
+      setShowCampaignModal(false);
+      return;
+    }
+    const shouldSave = confirm("Deseja salvar as alteracoes antes de fechar?");
+    if (shouldSave) {
+      await saveCampaign();
+      return;
+    }
+    setShowCampaignModal(false);
+  };
+
   const deleteCampaign = async (id: string) => {
     if (!confirm("Excluir esta campanha?")) return;
     try {
@@ -376,6 +410,20 @@ export default function AdminCampanhas() {
   };
 
   // ── Campaign Products ──────────────────────────────────────────────────────
+
+  const toggleCampaignActive = async (campaign: ApiCampaign) => {
+    const enable = !campaignVisibleEnabled(campaign);
+    try {
+      const updated = await campaignsApi.update(campaign.id, {
+        status: enable ? "active" : "paused",
+        published: enable,
+      } as Partial<ApiCampaign>);
+      setCampaigns((prev) => prev.map((item) => item.id === campaign.id ? updated : item));
+      showToast(enable ? "Campanha ativada." : "Campanha desativada.");
+    } catch {
+      showToast("Erro ao alterar status da campanha.");
+    }
+  };
 
   const openCampaignProducts = async (c: ApiCampaign) => {
     setSelectedCampaign(c);
@@ -532,7 +580,7 @@ export default function AdminCampanhas() {
         <div className="flex-1 overflow-auto">
           {/* Header */}
           <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 sticky top-0 z-20 flex items-center justify-between">
-            <div>
+            <div className="grid grid-cols-2 gap-4">
               <h2 className="text-2xl font-bold text-cream">Campanhas</h2>
               <p className="text-stone text-sm">{campaigns.length} campanhas · {kits.length} kits</p>
             </div>
@@ -654,13 +702,10 @@ export default function AdminCampanhas() {
                         const now = new Date();
                         const notStartedYet = c.start_at && new Date(c.start_at) > now;
                         const alreadyEnded = c.end_at && new Date(c.end_at) < now;
-                        const visibleInStore = c.published && c.status === "active" && !notStartedYet && !alreadyEnded;
-                        const notVisibleReason = !c.published && c.status !== "active"
-                          ? "marque como Publicada e mude o status para Ativa"
-                          : !c.published
-                          ? "marque como Publicada para aparecer na loja"
-                          : c.status !== "active"
-                          ? "mude o status para Ativa para aparecer na loja"
+                        const enabled = campaignVisibleEnabled(c);
+                        const visibleInStore = enabled && !notStartedYet && !alreadyEnded;
+                        const notVisibleReason = !enabled
+                          ? "ative a campanha para aparecer na loja"
                           : notStartedYet
                           ? `agendada para iniciar em ${new Date(c.start_at!).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} — edite e remova o início para ativar agora`
                           : alreadyEnded
@@ -687,14 +732,9 @@ export default function AdminCampanhas() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <h3 className="text-cream font-bold text-sm">{c.name}</h3>
-                                <span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_COLOR[c.status]}`}>
-                                  {STATUS_LABEL[c.status]}
+                                <span className={`text-xs px-2 py-0.5 rounded-full border ${enabled ? STATUS_COLOR.active : STATUS_COLOR.paused}`}>
+                                  {enabled ? "Ativa" : "Inativa"}
                                 </span>
-                                {c.published && (
-                                  <span className="text-xs px-2 py-0.5 rounded-full bg-gold/20 text-gold border border-gold/30">
-                                    Publicada
-                                  </span>
-                                )}
                               </div>
                               <p className="text-stone text-xs mt-0.5">
                                 /{c.slug} · {c.campaign_type === "exclusive_page" ? "Página exclusiva" : "Produtos em promoção"}
@@ -711,6 +751,16 @@ export default function AdminCampanhas() {
                                 className="px-3 py-1.5 text-xs bg-surface-03 text-parchment hover:bg-brand-mid rounded-lg transition-colors"
                               >
                                 Produtos
+                              </button>
+                              <button
+                                onClick={() => toggleCampaignActive(c)}
+                                className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-colors ${
+                                  enabled
+                                    ? "bg-red-500/15 text-red-300 hover:bg-red-500/25"
+                                    : "bg-green-500/15 text-green-300 hover:bg-green-500/25"
+                                }`}
+                              >
+                                {enabled ? "Desativar" : "Ativar"}
                               </button>
                               <a
                                 href={`/campanha/${c.slug}`}
@@ -889,7 +939,7 @@ export default function AdminCampanhas() {
 
             <Txt label="Descrição" value={couponForm.description} onChange={(e) => setCouponForm({ ...couponForm, description: e.target.value })} rows={2} placeholder="Descrição do cupom" />
 
-            <div className="grid grid-cols-2 gap-4">
+            <div>
               <Sel label="Tipo de desconto" value={couponForm.coupon_type} onChange={(e) => setCouponForm({ ...couponForm, coupon_type: e.target.value as "percentage" | "fixed" })}>
                 <option value="percentage">Percentual (%)</option>
                 <option value="fixed">Valor Fixo (R$)</option>
@@ -972,7 +1022,7 @@ export default function AdminCampanhas() {
 
       {/* ── Modal: Campaign Form ──────────────────────────────────────────────── */}
       {showCampaignModal && (
-        <Modal title={editingCampaignId ? "Editar Campanha" : "Nova Campanha"} onClose={() => setShowCampaignModal(false)}>
+        <Modal title={editingCampaignId ? "Editar Campanha" : "Nova Campanha"} onClose={handleCloseCampaignModal}>
           <form onSubmit={handleSaveCampaign} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <Inp label="Nome interno da Campanha *" value={campaignForm.name} onChange={(e) => setCampaignForm({ ...campaignForm, name: e.target.value })} placeholder="Ex: Promoção de Verão" />
@@ -982,12 +1032,22 @@ export default function AdminCampanhas() {
             <Txt label="Descrição" value={campaignForm.description} onChange={(e) => setCampaignForm({ ...campaignForm, description: e.target.value })} rows={2} placeholder="Descrição interna da campanha" />
 
             <div className="grid grid-cols-2 gap-4">
-              <Sel label="Status" value={campaignForm.status} onChange={(e) => setCampaignForm({ ...campaignForm, status: e.target.value as CampaignStatus })}>
-                <option value="draft">Rascunho</option>
-                <option value="active">Ativa</option>
-                <option value="paused">Pausada</option>
-                <option value="ended">Encerrada</option>
-              </Sel>
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-03/40 px-4 py-3">
+                <span>
+                  <span className="block text-parchment text-sm font-bold">Ativar campanha</span>
+                  <span className="block text-stone text-xs mt-0.5">Ativa e publica o banner na loja.</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={campaignVisibleEnabled(campaignForm as Pick<ApiCampaign, "status" | "published">)}
+                  onChange={(e) => setCampaignForm({
+                    ...campaignForm,
+                    status: e.target.checked ? "active" : "paused",
+                    published: e.target.checked,
+                  })}
+                  className="w-4 h-4 accent-gold"
+                />
+              </label>
               <Sel label="Tipo" value={campaignForm.campaign_type} onChange={(e) => setCampaignForm({ ...campaignForm, campaign_type: e.target.value as CampaignType })}>
                 <option value="products_promo">Produtos em Promoção</option>
                 <option value="exclusive_page">Página Exclusiva</option>
@@ -1163,18 +1223,11 @@ export default function AdminCampanhas() {
 
             <div className="grid grid-cols-2 gap-4">
               <Inp label="Ordem de Exibição" type="number" value={campaignForm.display_order} onChange={(e) => setCampaignForm({ ...campaignForm, display_order: parseInt(e.target.value) || 0 })} />
-              <div className="flex flex-col justify-end gap-1">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={campaignForm.published} onChange={(e) => setCampaignForm({ ...campaignForm, published: e.target.checked })} className="w-4 h-4 accent-gold" />
-                  <span className="text-parchment text-sm font-medium">Publicada</span>
-                </label>
-                <p className="text-stone text-[11px]">Requer status <strong className="text-parchment">Ativa</strong> + Publicada para aparecer na loja</p>
-              </div>
             </div>
 
             <div className="flex gap-3 pt-2">
               <SaveBtn loading={campaignSaving} />
-              <button type="button" onClick={() => setShowCampaignModal(false)} className="flex-1 bg-surface-03 hover:bg-slate-600 text-cream font-bold py-2 px-4 rounded-lg text-sm transition-colors">
+              <button type="button" onClick={handleCloseCampaignModal} className="flex-1 bg-surface-03 hover:bg-slate-600 text-cream font-bold py-2 px-4 rounded-lg text-sm transition-colors">
                 Cancelar
               </button>
             </div>
