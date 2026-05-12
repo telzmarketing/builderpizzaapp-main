@@ -4,7 +4,7 @@ import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import ImageUpload from "@/components/admin/ImageUpload";
-import { productsApi, sizesApi, crustApi, drinkVariantApi, categoriesApi, productPromotionsApi, ApiProduct, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, ApiProductPromotion, ApiProductPromotionCombination, ProductPromotionDiscountType, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { productsApi, sizesApi, crustApi, drinkVariantApi, categoriesApi, productPromotionsApi, ApiProduct, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, ApiProductPromotion, ApiProductPromotionCombination, ProductPromotionDiscountType, ApiBestSellerConfig, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { pizzaSizeDescription, pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { normalizeCrustPriceAddition } from "@/lib/pricing";
 
@@ -386,7 +386,8 @@ export default function AdminProducts() {
       category: (product as any).category ?? "",
       subcategory: (product as any).subcategory ?? "",
       product_type: (product as any).product_type ?? "pizza",
-    });
+      best_seller_badge_mode: (product as any).best_seller_badge_mode ?? "off",
+    } as any);
     setEditingId(product.id);
     setShowForm(true);
   };
@@ -407,6 +408,34 @@ export default function AdminProducts() {
       setTimeout(() => setConfigSaved(false), 2000);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao salvar configuração.");
+    }
+  };
+
+  const [bestSellerConfig, setBestSellerConfig] = useState<ApiBestSellerConfig | null>(null);
+  const [bestSellerSaving, setBestSellerSaving] = useState(false);
+  const [bestSellerSaved, setBestSellerSaved] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === "config") {
+      productsApi.getBestSellerConfig().then(setBestSellerConfig).catch(() => {});
+    }
+  }, [activeTab]);
+
+  const handleBestSellerSave = async () => {
+    if (!bestSellerConfig) return;
+    setBestSellerSaving(true);
+    try {
+      const updated = await productsApi.updateBestSellerConfig({
+        period_days: bestSellerConfig.period_days,
+        top_count: bestSellerConfig.top_count,
+      });
+      setBestSellerConfig(updated);
+      setBestSellerSaved(true);
+      setTimeout(() => setBestSellerSaved(false), 2000);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao salvar configuração do selo.");
+    } finally {
+      setBestSellerSaving(false);
     }
   };
 
@@ -1168,6 +1197,19 @@ export default function AdminProducts() {
                           <input type="number" value={formData.rating || ""} onChange={(e) => setFormData({ ...formData, rating: parseFloat(e.target.value) })} className={cls} placeholder="4.5" min="1" max="5" step="0.1" />
                         </div>
                       </div>
+                      <div>
+                        <label className="block text-parchment text-sm font-medium mb-2">Selo "Mais Pedida"</label>
+                        <select
+                          value={(formData as any).best_seller_badge_mode || "off"}
+                          onChange={(e) => setFormData({ ...formData, best_seller_badge_mode: e.target.value } as any)}
+                          className={cls}
+                        >
+                          <option value="off">Não exibir</option>
+                          <option value="manual">Manual — exibir sempre neste produto</option>
+                          <option value="auto">Automático — conforme volume de vendas</option>
+                        </select>
+                        <p className="text-stone text-xs mt-1">Manual tem prioridade. Automático considera apenas pedidos pagos/concluídos.</p>
+                      </div>
 
                       {/* Dica de próximos passos */}
                       {!editingId && (
@@ -1755,6 +1797,60 @@ export default function AdminProducts() {
                   >
                     {configSaved ? "✓ Salvo!" : "Salvar Configurações"}
                   </button>
+                </div>
+
+                {/* Best Seller Config */}
+                <div className="bg-surface-02 rounded-xl p-6 border border-surface-03 space-y-4 mt-6">
+                  <div className="flex items-center gap-3 pb-3 border-b border-surface-03">
+                    <span className="text-lg">🔥</span>
+                    <div>
+                      <h3 className="text-cream font-bold">Selo "Mais Pedida" — Automático</h3>
+                      <p className="text-stone text-sm">Configura o cálculo automático por volume de vendas</p>
+                    </div>
+                  </div>
+
+                  {!bestSellerConfig ? (
+                    <div className="flex items-center gap-2 text-stone text-sm py-2">
+                      <Loader2 size={14} className="animate-spin" />
+                      Carregando...
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-parchment text-sm font-medium mb-2">Período de análise</label>
+                        <select
+                          value={bestSellerConfig.period_days}
+                          onChange={(e) => setBestSellerConfig({ ...bestSellerConfig, period_days: Number(e.target.value) })}
+                          className={cls}
+                        >
+                          <option value={7}>Últimos 7 dias</option>
+                          <option value={15}>Últimos 15 dias</option>
+                          <option value={30}>Últimos 30 dias</option>
+                          <option value={0}>Todos os tempos</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-parchment text-sm font-medium mb-2">Quantidade máxima com selo automático</label>
+                        <select
+                          value={bestSellerConfig.top_count}
+                          onChange={(e) => setBestSellerConfig({ ...bestSellerConfig, top_count: Number(e.target.value) })}
+                          className={cls}
+                        >
+                          <option value={3}>Top 3 produtos</option>
+                          <option value={5}>Top 5 produtos</option>
+                          <option value={10}>Top 10 produtos</option>
+                        </select>
+                      </div>
+                      <p className="text-stone text-xs">Considera apenas pedidos pagos e concluídos. Produtos com modo "Manual" têm prioridade sobre o automático.</p>
+                      <button
+                        onClick={handleBestSellerSave}
+                        disabled={bestSellerSaving}
+                        className={`w-full py-3 rounded-xl font-bold text-sm transition-colors ${bestSellerSaved ? "bg-green-500 text-white" : "bg-gold hover:bg-gold/90 text-cream"} disabled:opacity-60`}
+                      >
+                        {bestSellerSaved ? "✓ Salvo!" : bestSellerSaving ? "Salvando..." : "Salvar Configuração do Selo"}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )}

@@ -126,6 +126,7 @@ class ProductBase(BaseModel):
     product_type: Optional[str] = None  # "pizza" | "drink" | "other" | "brinde"
     rating: float = Field(default=4.5, ge=1.0, le=5.0)
     active: bool = True
+    best_seller_badge_mode: str = "off"  # "off" | "manual" | "auto"
 
 
 class ProductCreate(ProductBase):
@@ -142,6 +143,7 @@ class ProductUpdate(BaseModel):
     product_type: Optional[str] = None
     rating: Optional[float] = Field(default=None, ge=1.0, le=5.0)
     active: Optional[bool] = None
+    best_seller_badge_mode: Optional[str] = None
 
 
 class ProductOut(ProductBase):
@@ -157,8 +159,22 @@ class ProductOut(ProductBase):
     promotion_id: Optional[str] = None
     promotion_name: Optional[str] = None
     promotion_discount: float = 0.0
+    show_best_seller_badge: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class BestSellerConfigOut(BaseModel):
+    model_config = {"from_attributes": True}
+    id: str
+    period_days: int
+    top_count: int
+    updated_at: datetime
+
+
+class BestSellerConfigUpdate(BaseModel):
+    period_days: Optional[int] = Field(default=None, ge=0)
+    top_count: Optional[int] = Field(default=None, ge=1, le=20)
 
 
 class ProductPromotionCombinationBase(BaseModel):

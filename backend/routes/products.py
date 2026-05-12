@@ -1,17 +1,19 @@
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.models.admin import AdminUser
-from backend.models.product import Product, MultiFlavorsConfig, ProductSize, ProductCrustType, ProductDrinkVariant
+from backend.models.order import Order, OrderItem, OrderStatus
+from backend.models.product import Product, BestSellerConfig, MultiFlavorsConfig, ProductSize, ProductCrustType, ProductDrinkVariant
 from backend.models.product_promotion import ProductPromotion, ProductPromotionCombination
 from backend.schemas.product import (
     ProductCreate, ProductUpdate, ProductOut,
     MultiFlavorsConfigUpdate, MultiFlavorsConfigOut,
+    BestSellerConfigOut, BestSellerConfigUpdate,
     ProductCategoryCreate, ProductCategoryUpdate, ProductCategoryOut,
     ProductSizeCreate, ProductSizeUpdate, ProductSizeOut,
     ProductCrustTypeCreate, ProductCrustTypeUpdate, ProductCrustTypeOut,
@@ -22,6 +24,33 @@ from backend.schemas.product import (
 from backend.routes.admin_auth import get_current_admin
 from backend.services import product_category_service
 from backend.services.product_pricing_service import ProductPricingService
+
+_VALID_BADGE_STATUSES = [
+    OrderStatus.paid, OrderStatus.pago, OrderStatus.preparing,
+    OrderStatus.ready_for_pickup, OrderStatus.on_the_way, OrderStatus.delivered,
+]
+
+
+def _get_best_seller_badge_ids(db: Session) -> set[str]:
+    """Returns IDs of products that qualify for the automatic best-seller badge."""
+    config = db.query(BestSellerConfig).filter(BestSellerConfig.id == "default").first()
+    if not config:
+        return set()
+    q = (
+        db.query(OrderItem.product_id, func.sum(OrderItem.quantity).label("total"))
+        .join(Order, Order.id == OrderItem.order_id)
+        .filter(Order.status.in_(_VALID_BADGE_STATUSES))
+    )
+    if config.period_days > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=config.period_days)
+        q = q.filter(Order.created_at >= cutoff)
+    top = (
+        q.group_by(OrderItem.product_id)
+        .order_by(func.sum(OrderItem.quantity).desc())
+        .limit(config.top_count)
+        .all()
+    )
+    return {row.product_id for row in top}
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -82,7 +111,7 @@ def _add_promotion_combinations(
         ))
 
 
-def _product_payload(product: Product, db: Session) -> dict:
+def _product_payload(product: Product, db: Session, auto_badge_ids: set[str] | None = None) -> dict:
     payload = ProductOut.model_validate(product).model_dump()
     default_size = next((size for size in product.sizes if size.active and size.is_default), None)
     if not default_size:
@@ -101,6 +130,16 @@ def _product_payload(product: Product, db: Session) -> dict:
     ]
     if promotion_quotes:
         quote = min(promotion_quotes, key=lambda candidate: candidate.final_price)
+
+    mode = product.best_seller_badge_mode or "off"
+    if mode == "manual":
+        show_badge = True
+    elif mode == "auto":
+        badge_set = auto_badge_ids if auto_badge_ids is not None else _get_best_seller_badge_ids(db)
+        show_badge = product.id in badge_set
+    else:
+        show_badge = False
+
     payload.update({
         "standard_price": quote.standard_price,
         "current_price": quote.final_price,
@@ -108,6 +147,7 @@ def _product_payload(product: Product, db: Session) -> dict:
         "promotion_id": quote.promotion_id,
         "promotion_name": quote.promotion_name,
         "promotion_discount": quote.discount_amount,
+        "show_best_seller_badge": show_badge,
     })
     return payload
 
@@ -163,6 +203,35 @@ def delete_category(category_id: str, db: Session = Depends(get_db), _=Depends(g
     product_category_service.delete_category(db, category_id)
 
 
+@router.get("/config/best-seller", response_model=BestSellerConfigOut)
+def get_best_seller_config(db: Session = Depends(get_db)):
+    config = db.query(BestSellerConfig).filter(BestSellerConfig.id == "default").first()
+    if not config:
+        config = BestSellerConfig(id="default")
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+    return config
+
+
+@router.patch("/config/best-seller", response_model=BestSellerConfigOut)
+def update_best_seller_config(
+    body: BestSellerConfigUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    config = db.query(BestSellerConfig).filter(BestSellerConfig.id == "default").first()
+    if not config:
+        config = BestSellerConfig(id="default")
+        db.add(config)
+        db.flush()
+    for key, value in body.model_dump(exclude_none=True).items():
+        setattr(config, key, value)
+    db.commit()
+    db.refresh(config)
+    return config
+
+
 @router.get("", response_model=list[ProductOut])
 def list_products(
     request: Request,
@@ -180,7 +249,8 @@ def list_products(
     elif active_only:
         q = q.filter(or_(Product.product_type == None, Product.product_type != "brinde"))  # noqa: E711
     products = q.order_by(Product.name).all()
-    return [_product_payload(product, db) for product in products]
+    auto_badge_ids = _get_best_seller_badge_ids(db)
+    return [_product_payload(product, db, auto_badge_ids) for product in products]
 
 
 @router.get("/{product_id}", response_model=ProductOut)

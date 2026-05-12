@@ -63,9 +63,10 @@ export default function CategorySeal({ product, className = "", compact = false 
 
   return (
     <span
-      className={`pointer-events-none absolute left-2 top-2 z-10 max-w-[78%] truncate rounded-full border border-white/80 shadow-lg ring-1 ring-black/20 ${
-        compact ? "px-1.5 py-0.5 text-[10px]" : "px-2.5 py-1 text-[11px]"
-      } font-bold uppercase leading-none ${styleFor(label)} ${className}`}
+      className={`pointer-events-none absolute left-2 top-2 z-10 max-w-[80%] truncate rounded-full border border-white/60 ring-1 ring-black/15 backdrop-blur-[2px] ${
+        compact ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-[4.5px] text-[10.5px]"
+      } font-bold uppercase leading-none tracking-wide ${styleFor(label)} ${className}`}
+      style={{ boxShadow: "0 2px 8px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.2)" }}
       title={label}
     >
       {label}

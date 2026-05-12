@@ -8,6 +8,7 @@ import { trackEvent } from "@/lib/tracking";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import CategorySeal from "@/components/CategorySeal";
+import BestSellerSeal from "@/components/BestSellerSeal";
 
 export default function Cardapio() {
   const navigate = useNavigate();
@@ -124,13 +125,33 @@ export default function Cardapio() {
                   onClick={() => navigate(`/product/${product.id}`)}
                   className="w-full text-left"
                 >
-                  <div className="relative w-full aspect-square rounded-xl bg-surface-03 flex items-center justify-center overflow-hidden mb-3">
-                    <CategorySeal product={product} />
-                    {isAssetUrl(product.icon) ? (
-                      <img src={resolveAssetUrl(product.icon)} alt={product.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-5xl">{product.icon || "🍕"}</span>
-                    )}
+                  {/* Image wrapper — outer is relative for BestSellerSeal positioning */}
+                  <div className="relative w-full aspect-square mb-3">
+                    {/* Inner container clips scaled image */}
+                    <div className="absolute inset-0 rounded-xl bg-surface-03 flex items-center justify-center overflow-hidden">
+                      {/* Warm oven glow — organic, asymmetric, premium */}
+                      <div
+                        className="absolute inset-0 z-0 pointer-events-none"
+                        style={{
+                          background:
+                            "radial-gradient(ellipse 80% 70% at 50% 60%, rgba(251,146,60,0.20) 0%, rgba(234,88,12,0.09) 42%, transparent 70%)",
+                        }}
+                      />
+                      <CategorySeal product={product} />
+                      {isAssetUrl(product.icon) ? (
+                        <img
+                          src={resolveAssetUrl(product.icon)}
+                          alt={product.name}
+                          className="relative z-[1] w-full h-full object-cover scale-[1.10] transition-transform duration-300"
+                        />
+                      ) : (
+                        <span className="relative z-[1] text-5xl scale-[1.10] inline-block">
+                          {product.icon || "🍕"}
+                        </span>
+                      )}
+                    </div>
+                    {/* Best seller seal floats over bottom-right corner */}
+                    <BestSellerSeal show={(product as any).show_best_seller_badge} />
                   </div>
                   <h3 className="text-cream font-semibold text-sm leading-tight line-clamp-1">
                     {product.name}

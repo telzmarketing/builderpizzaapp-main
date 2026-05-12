@@ -30,6 +30,7 @@ class Product(Base):
     product_type = Column(String(20), nullable=True)  # "pizza" | "drink" | "other"
     rating = Column(Float, default=4.5)
     active = Column(Boolean, default=True)
+    best_seller_badge_mode = Column(String(10), default="off")  # "off" | "manual" | "auto"
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
@@ -98,6 +99,17 @@ class ProductDrinkVariant(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     product = relationship("Product", back_populates="drink_variants")
+
+
+class BestSellerConfig(Base):
+    """Singleton config for automatic best-seller badge calculation."""
+    __tablename__ = "best_seller_config"
+
+    id = Column(String, primary_key=True, default="default")
+    period_days = Column(Integer, default=30)  # 0 = all time
+    top_count = Column(Integer, default=5)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
 
 
 class MultiFlavorsConfig(Base):

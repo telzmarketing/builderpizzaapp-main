@@ -762,6 +762,13 @@ def _run_migrations():
         )""",
         "CREATE INDEX IF NOT EXISTS ix_order_upsells_order_id ON order_upsells(order_id)",
         "CREATE INDEX IF NOT EXISTS ix_order_upsells_upsell_id ON order_upsells(upsell_id)",
+
+        # ══════════════════════════════════════════════════════════════════════
+        # SELO "MAIS PEDIDA" — badge de best-seller por produto
+        # ══════════════════════════════════════════════════════════════════════
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS best_seller_badge_mode VARCHAR(10) DEFAULT 'off'",
+        "CREATE TABLE IF NOT EXISTS best_seller_config (id VARCHAR PRIMARY KEY DEFAULT 'default', period_days INTEGER DEFAULT 30, top_count INTEGER DEFAULT 5, updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "INSERT INTO best_seller_config (id, period_days, top_count) VALUES ('default', 30, 5) ON CONFLICT DO NOTHING",
     ]
     for stmt in stmts:
         try:

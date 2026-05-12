@@ -259,6 +259,15 @@ export interface ApiProduct {
   promotion_id?: string | null;
   promotion_name?: string | null;
   promotion_discount?: number;
+  best_seller_badge_mode?: "off" | "manual" | "auto";
+  show_best_seller_badge?: boolean;
+}
+
+export interface ApiBestSellerConfig {
+  id: string;
+  period_days: number;
+  top_count: number;
+  updated_at: string;
 }
 
 export type ProductPromotionDiscountType = "fixed_price" | "amount_off" | "percent_off";
@@ -1388,6 +1397,12 @@ export const productsApi = {
 
   updateMultiFlavorsConfig: (data: Partial<Pick<ApiMultiFlavorsConfig, "max_flavors" | "pricing_rule">>) =>
     patch<ApiMultiFlavorsConfig>("/products/config/multi-flavors", data),
+
+  getBestSellerConfig: () =>
+    get<ApiBestSellerConfig>("/products/config/best-seller"),
+
+  updateBestSellerConfig: (data: { period_days?: number; top_count?: number }) =>
+    patch<ApiBestSellerConfig>("/products/config/best-seller", data),
 };
 
 export const categoriesApi = {
