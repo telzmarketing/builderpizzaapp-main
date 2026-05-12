@@ -46,31 +46,27 @@ export function savePrinterSettings(s: PrinterSettings): void {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(v: number) {
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function dt(v: string) {
-  return new Date(v).toLocaleString("pt-BR", {
-    day: "2-digit", month: "2-digit", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
+function orderNum(order: ApiOrder) {
+  return order.order_code ? `#${order.order_code}` : `#${order.id.slice(0, 8).toUpperCase()}`;
 }
 
-function orderNo(order: ApiOrder) {
-  return order.id.slice(0, 8).toUpperCase();
+function shortDate(d: Date) {
+  const day = String(d.getDate()).padStart(2, "0");
+  const months = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  return `${day}/${months[d.getMonth()]}`;
 }
 
-function itemLines(order: ApiOrder) {
-  return order.items.map((item) => {
-    const isMulti = item.flavor_division > 1;
-    const name = isMulti ? item.flavors.map((f) => f.name).join(" + ") : item.product_name;
-    const details = [
-      item.selected_size || null,
-      item.selected_crust_type || null,
-      item.selected_drink_variant || null,
-    ].filter(Boolean).join(" · ");
-    return { qty: item.quantity, name, details, addOns: item.add_ons ?? [], price: item.unit_price * item.quantity };
-  });
+function hhmm(d: Date) {
+  return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function estDeliveryTime(order: ApiOrder) {
+  const base = new Date(order.created_at);
+  const ms = base.getTime() + order.estimated_time * 60 * 1000;
+  return hhmm(new Date(ms));
 }
 
 // ── Paper width → CSS max-width ───────────────────────────────────────────────
@@ -86,133 +82,224 @@ function paperCss(width: PaperWidth) {
 function baseCss() {
   return `
     body{font-family:'Courier New',Courier,monospace;font-size:12px;margin:0;padding:12px;color:#000}
-    h1{font-size:14px;margin:0 0 2px;text-align:center}
     p{margin:2px 0}
     hr{border:none;border-top:1px dashed #555;margin:6px 0}
     table{width:100%;border-collapse:collapse}
-    td{vertical-align:top;padding:2px 2px}
-    .center{text-align:center}
-    .right{text-align:right}
-    .big{font-size:15px;font-weight:bold}
-    .bold{font-weight:bold}
-    .small{font-size:10px;color:#555}
+    td{vertical-align:top;padding:1px 2px}
+    .c{text-align:center}
+    .r{text-align:right}
+    .b{font-weight:bold}
+    .s{font-size:10px;color:#444}
     @media print{body{padding:0}button{display:none}}
   `;
 }
 
-// ── Template 1: Pedido Completo ───────────────────────────────────────────────
+// ── Kitchen/Delivery legacy item lines ────────────────────────────────────────
+
+function itemLines(order: ApiOrder) {
+  return order.items.map((item) => {
+    const isMulti = item.flavor_division > 1;
+    const name = isMulti ? item.flavors.map((f) => f.name).join(" + ") : item.product_name;
+    const details = [
+      item.selected_size || null,
+      item.selected_crust_type || null,
+      item.selected_drink_variant || null,
+    ].filter(Boolean).join(" · ");
+    return { qty: item.quantity, name, details, addOns: item.add_ons ?? [], price: item.unit_price * item.quantity };
+  });
+}
+
+// ── Template 1: Pedido Completo (Saipos style) ────────────────────────────────
 
 export function buildCompletoHtml(order: ApiOrder, settings: PrinterSettings): string {
-  const items = itemLines(order);
-  const rows = items.map((i) => `
-    <tr>
-      <td class="bold">${i.qty}x</td>
-      <td style="width:100%">
-        <span class="bold">${i.name}</span>
-        ${i.details ? `<br/><span class="small">${i.details}</span>` : ""}
-        ${i.addOns.map((a) => `<br/><span class="small">+ ${a}</span>`).join("")}
-      </td>
-      <td class="right" style="white-space:nowrap">${fmt(i.price)}</td>
-    </tr>`).join("");
+  const num = orderNum(order);
+  const created = new Date(order.created_at);
 
-  const headerLines = [
-    settings.storeName ? `<p class="center bold">${settings.storeName}</p>` : "",
-    settings.storeWebsite ? `<p class="center small">${settings.storeWebsite}</p>` : "",
-    settings.storeAddress ? `<p class="center small">${settings.storeAddress}</p>` : "",
-    settings.storePhone ? `<p class="center small">${settings.storePhone}</p>` : "",
-    settings.storeCnpj ? `<p class="center small">CNPJ: ${settings.storeCnpj}</p>` : "",
+  // Store header
+  const headerParts = [
+    settings.storeName ? `<p class="c b" style="font-size:13px">${settings.storeName}</p>` : "",
+    settings.storeCnpj ? `<p class="c s">CNPJ: ${settings.storeCnpj}</p>` : "",
+    settings.storeAddress ? `<p class="c s">${settings.storeAddress}</p>` : "",
+    settings.storePhone ? `<p class="c s">${settings.storePhone}</p>` : "",
   ].filter(Boolean).join("");
 
+  // Items rows (Saipos style with sub-lines)
+  const itemRows = order.items.map((item) => {
+    const isMulti = item.flavor_division > 1;
+    const sizePart = item.selected_size ? ` (${item.selected_size})` : "";
+    const flavorPart = isMulti ? ` até ${item.flavor_division} Sabores` : "";
+    const mainName = `${item.product_name}${sizePart}${flavorPart}`;
+
+    const subLines: string[] = [];
+    if (item.selected_crust_type) {
+      subLines.push(`-${item.quantity}x Massa ${item.selected_crust_type}`);
+    }
+    if (isMulti) {
+      item.flavors.forEach((f) => subLines.push(`-${item.quantity}x 1/${item.flavor_division} ${f.name}`));
+    } else if (item.flavors.length === 1 && item.flavors[0].name !== item.product_name) {
+      subLines.push(`-${item.quantity}x ${item.flavors[0].name}`);
+    }
+    if (item.selected_drink_variant) {
+      subLines.push(`-${item.quantity}x ${item.selected_drink_variant}`);
+    }
+    (item.add_ons ?? []).forEach((a) => subLines.push(`+ ${a}`));
+
+    const subHtml = subLines.map((l) => `<br/><span class="s">${l}</span>`).join("");
+
+    return `<tr>
+      <td style="width:22px;padding-top:2px">${item.quantity}</td>
+      <td style="width:100%"><span class="b">${mainName}</span>${subHtml}</td>
+      <td class="r" style="white-space:nowrap;padding-top:2px">${fmt(item.unit_price * item.quantity)}</td>
+    </tr>`;
+  }).join("");
+
+  const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
+
+  // Financial rows
+  const finRows = [
+    `<tr><td>Total itens(=)</td><td class="r">${fmt(order.subtotal)}</td></tr>`,
+    order.shipping_fee > 0 ? `<tr><td>Taxa de entrega(+)</td><td class="r">${fmt(order.shipping_fee)}</td></tr>` : "",
+    order.discount > 0 ? `<tr><td>Desconto(-)</td><td class="r">-${fmt(order.discount)}</td></tr>` : "",
+    `<tr><td class="b" style="font-size:13px;padding-top:4px">TOTAL(=)</td><td class="b r" style="font-size:13px;padding-top:4px">${fmt(order.total)}</td></tr>`,
+  ].filter(Boolean).join("");
+
+  // Delivery person
+  const motoboy = order.delivery?.delivery_person_name;
+  const deliveryLine = motoboy
+    ? `<p class="s">Entrega: ${motoboy}</p>`
+    : `<p class="s">Entrega pela loja</p>`;
+
+  // Address
+  const addrLine = `${order.delivery_street}${order.delivery_complement ? `, ${order.delivery_complement}` : ""}`;
+  const refLine = order.delivery_complement ? `<p class="s">Ref: ${order.delivery_complement}</p>` : "";
+
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-<title>Pedido #${orderNo(order)}</title>
+<title>Pedido ${num}</title>
 <style>${baseCss()}body{${paperCss(settings.paperWidth)}}</style>
 </head><body>
-${headerLines}
+
+${headerParts}
+${headerParts ? "<hr/>" : ""}
+
+<table><tr>
+  <td class="b" style="font-size:15px;letter-spacing:2px">ENTREGA</td>
+  <td class="r s">${shortDate(created)} — ${hhmm(created)}</td>
+</tr></table>
+
 <hr/>
-<p class="center bold">PEDIDO #${orderNo(order)}</p>
-<p class="center small">${dt(order.created_at)}</p>
+<p><span class="s">Pedido: </span><span class="b" style="font-size:14px">${num}</span></p>
+<p class="b">${order.delivery_name}</p>
+<p class="s">Telefone: ${order.delivery_phone} | ID: ${order.id.slice(0, 8).toUpperCase()}</p>
+
 <hr/>
-<p class="bold">${order.delivery_name}</p>
-<p>${order.delivery_phone}</p>
-<p>${order.delivery_street}${order.delivery_complement ? ` — ${order.delivery_complement}` : ""}</p>
+<p>${addrLine}</p>
 <p>${order.delivery_city}</p>
+${refLine}
+
 <hr/>
-<table>${rows}</table>
+<p class="s">Entrega para as <span class="b">${estDeliveryTime(order)}</span></p>
+${deliveryLine}
+
 <hr/>
-${order.shipping_fee > 0 ? `<p class="right">Frete: ${fmt(order.shipping_fee)}</p>` : ""}
-${order.discount > 0 ? `<p class="right">Desconto: -${fmt(order.discount)}</p>` : ""}
-<p class="right big">TOTAL: ${fmt(order.total)}</p>
+<table>
+  <tr>
+    <td class="b s" style="width:22px">Qt.</td>
+    <td class="b s">Descrição</td>
+    <td class="b s r">Valor</td>
+  </tr>
+</table>
 <hr/>
-<p>Entrega estimada: <span class="bold">${order.estimated_time} min</span></p>
+<table>${itemRows}</table>
 <hr/>
-<p class="center small">Obrigado pela preferência!</p>
+
+<table>
+  <tr>
+    <td class="s">Quantidade de itens:</td>
+    <td class="s r">${totalQty}</td>
+  </tr>
+</table>
+<hr/>
+
+<table>${finRows}</table>
+<hr/>
+
+<p class="c s">Obrigado pela preferência!</p>
+${settings.storeWebsite ? `<p class="c s">${settings.storeWebsite}</p>` : ""}
+
 </body></html>`;
 }
 
 // ── Template 2: Comanda Cozinha ───────────────────────────────────────────────
 
 export function buildCozinhaHtml(order: ApiOrder, settings: PrinterSettings): string {
+  const num = orderNum(order);
   const items = itemLines(order);
   const rows = items.map((i) => `
     <tr>
       <td style="font-size:15px;font-weight:bold;padding:4px 2px">${i.qty}x</td>
       <td style="width:100%;padding:4px 2px">
         <div style="font-size:14px;font-weight:bold;text-transform:uppercase">${i.name}</div>
-        ${i.details ? `<div class="small">${i.details}</div>` : ""}
-        ${i.addOns.map((a) => `<div class="small">+ ${a}</div>`).join("")}
+        ${i.details ? `<div class="s">${i.details}</div>` : ""}
+        ${i.addOns.map((a) => `<div class="s">+ ${a}</div>`).join("")}
       </td>
     </tr>
     <tr><td colspan="2"><hr/></td></tr>`).join("");
 
+  const created = new Date(order.created_at);
+
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-<title>Comanda #${orderNo(order)}</title>
+<title>Comanda ${num}</title>
 <style>${baseCss()}body{${paperCss(settings.paperWidth)}}</style>
 </head><body>
-<p class="center" style="font-size:11px;font-weight:bold;letter-spacing:2px">*** COMANDA COZINHA ***</p>
-<p class="center bold" style="font-size:16px">PEDIDO #${orderNo(order)}</p>
-<p class="center small">${new Date(order.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+<p class="c" style="font-size:11px;font-weight:bold;letter-spacing:2px">*** COMANDA COZINHA ***</p>
+<p class="c b" style="font-size:16px">PEDIDO ${num}</p>
+<p class="c s">${hhmm(created)}</p>
 <hr/>
 <table>${rows}</table>
-<p class="bold">${order.delivery_name}</p>
-<p class="small">Entrega: ${order.estimated_time} min</p>
+<p class="b">${order.delivery_name}</p>
+<p class="s">Entrega: ${order.estimated_time} min</p>
 </body></html>`;
 }
 
 // ── Template 3: Via Entrega ────────────────────────────────────────────────────
 
 export function buildEntregaHtml(order: ApiOrder, settings: PrinterSettings): string {
+  const num = orderNum(order);
   const items = itemLines(order);
   const rows = items.map((i) => `
     <tr>
-      <td class="bold">${i.qty}x</td>
+      <td class="b">${i.qty}x</td>
       <td style="width:100%">
-        <span class="bold">${i.name}</span>
-        ${i.details ? `<br/><span class="small">${i.details}</span>` : ""}
-        ${i.addOns.map((a) => `<br/><span class="small">+ ${a}</span>`).join("")}
+        <span class="b">${i.name}</span>
+        ${i.details ? `<br/><span class="s">${i.details}</span>` : ""}
+        ${i.addOns.map((a) => `<br/><span class="s">+ ${a}</span>`).join("")}
       </td>
-      <td class="right" style="white-space:nowrap">${fmt(i.price)}</td>
+      <td class="r" style="white-space:nowrap">${fmt(i.price)}</td>
     </tr>`).join("");
 
+  const created = new Date(order.created_at);
+  const addrLine = `${order.delivery_street}${order.delivery_complement ? `, ${order.delivery_complement}` : ""}`;
+
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-<title>Entrega #${orderNo(order)}</title>
+<title>Entrega ${num}</title>
 <style>${baseCss()}body{${paperCss(settings.paperWidth)}}</style>
 </head><body>
-<p class="center" style="font-size:11px;font-weight:bold;letter-spacing:2px">*** VIA ENTREGA ***</p>
-<p class="center bold" style="font-size:16px">PEDIDO #${orderNo(order)}</p>
-<p class="center small">${dt(order.created_at)}</p>
+<p class="c" style="font-size:11px;font-weight:bold;letter-spacing:2px">*** VIA ENTREGA ***</p>
+<p class="c b" style="font-size:16px">PEDIDO ${num}</p>
+<p class="c s">${shortDate(created)} — ${hhmm(created)}</p>
 <hr/>
-<p class="bold" style="font-size:13px">ENDEREÇO DE ENTREGA</p>
-<p class="bold">${order.delivery_name}</p>
+<p class="b" style="font-size:13px">ENDEREÇO DE ENTREGA</p>
+<p class="b">${order.delivery_name}</p>
 <p>${order.delivery_phone}</p>
-<p>${order.delivery_street}${order.delivery_complement ? ` — ${order.delivery_complement}` : ""}</p>
+<p>${addrLine}</p>
 <p>${order.delivery_city}</p>
 <hr/>
-<p class="bold small">ITENS DO PEDIDO</p>
+<p class="b s">ITENS DO PEDIDO</p>
 <table>${rows}</table>
 <hr/>
-${order.shipping_fee > 0 ? `<p class="right">Frete: ${fmt(order.shipping_fee)}</p>` : ""}
-${order.discount > 0 ? `<p class="right">Desconto: -${fmt(order.discount)}</p>` : ""}
-<p class="right big">TOTAL: ${fmt(order.total)}</p>
+${order.shipping_fee > 0 ? `<p class="r">Taxa de entrega: ${fmt(order.shipping_fee)}</p>` : ""}
+${order.discount > 0 ? `<p class="r">Desconto: -${fmt(order.discount)}</p>` : ""}
+<p class="r b" style="font-size:13px">TOTAL: R$ ${fmt(order.total)}</p>
 </body></html>`;
 }
 
@@ -238,45 +325,41 @@ export function printOrder(order: ApiOrder, template?: PrintTemplate): void {
 
 export const SAMPLE_ORDER: ApiOrder = {
   id: "abc12345-0000-0000-0000-000000000000",
-  order_code: null,
+  order_code: "4",
   customer_id: null,
-  delivery_name: "João Silva",
-  delivery_phone: "(11) 99999-9999",
-  delivery_street: "Rua das Flores, 123",
-  delivery_city: "São Paulo/SP",
-  delivery_complement: "Apto 21",
+  delivery_name: "Nicholas",
+  delivery_phone: "(11) 98765-4321",
+  delivery_street: "R. Vicente Ferreira Leite, 133",
+  delivery_city: "São Paulo — Vila Siqueira (Zona Norte)",
+  delivery_complement: "ap 9",
   status: "preparing",
-  subtotal: 89.90,
-  shipping_fee: 5.00,
-  discount: 5.00,
-  total: 89.90,
-  estimated_time: 45,
+  subtotal: 87.40,
+  shipping_fee: 11.99,
+  discount: 9.90,
+  total: 89.49,
+  estimated_time: 48,
   loyalty_points_earned: 0,
   coupon_id: null,
   paid_at: null,
   preparation_started_at: null,
   out_for_delivery_at: null,
   delivered_at: null,
-  target_delivery_minutes: 45,
+  target_delivery_minutes: 48,
   total_time_minutes: null,
   preparation_time_minutes: null,
   delivery_time_minutes: null,
   items: [
     {
-      id: "i1", product_id: "p1", product_name: "Pizza Pepperoni",
-      quantity: 1, selected_size: "Grande", selected_size_id: null,
-      flavor_division: 1, selected_crust_type: "Tradicional",
+      id: "i1", product_id: "p1", product_name: "Pizza Grande Salgada",
+      quantity: 1, selected_size: "Grande (8 Pedaços)", selected_size_id: null,
+      flavor_division: 2, selected_crust_type: "Massa Tradicional",
       selected_crust_type_id: null, selected_drink_variant: null,
-      notes: null, flavors: [{ product_id: "p1", name: "Pepperoni", price: 79.90, icon: "🍕" }],
-      add_ons: [], unit_price: 79.90, final_price: 79.90,
-    },
-    {
-      id: "i2", product_id: "p2", product_name: "Coca-Cola",
-      quantity: 2, selected_size: "600ml", selected_size_id: null,
-      flavor_division: 1, selected_crust_type: null, selected_crust_type_id: null,
-      selected_drink_variant: "Normal", notes: null,
-      flavors: [{ product_id: "p2", name: "Coca-Cola", price: 10.00, icon: "🥤" }],
-      add_ons: [], unit_price: 10.00, final_price: 10.00,
+      notes: null,
+      flavors: [
+        { product_id: "p1", name: "Bacon", price: 43.70, icon: "🍕" },
+        { product_id: "p2", name: "Castelões", price: 43.70, icon: "🍕" },
+      ],
+      add_ons: [], unit_price: 87.40, final_price: 87.40,
     },
   ],
   created_at: new Date().toISOString(),
