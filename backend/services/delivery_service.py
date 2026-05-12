@@ -13,7 +13,7 @@ import uuid
 import json
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, case
 from passlib.context import CryptContext
 
 from backend.core.exceptions import (
@@ -570,9 +570,21 @@ class DeliveryService:
             .join(Order, Order.id == Delivery.order_id)
             .filter(
                 Delivery.delivery_person_id == person_id,
-                Delivery.status.notin_(["failed", "cancelled"]),
+                Delivery.status != DeliveryStatus.cancelled,
             )
-            .order_by(func.coalesce(Order.paid_at, Order.created_at).asc(), Delivery.created_at.asc())
+            .order_by(
+                case(
+                    (Delivery.status.in_([
+                        DeliveryStatus.assigned,
+                        DeliveryStatus.picked_up,
+                        DeliveryStatus.on_the_way,
+                    ]), 0),
+                    (Delivery.status == DeliveryStatus.failed, 1),
+                    else_=2,
+                ),
+                func.coalesce(Order.paid_at, Order.created_at).asc(),
+                Delivery.created_at.asc(),
+            )
             .limit(20)
             .all()
         )
@@ -771,6 +783,33 @@ class DeliveryService:
             from_status=old_status,
             to_status="failed",
         ))
+        return delivery
+
+    def resolve_problem(
+        self,
+        delivery_id: str,
+        resolution_note: str,
+        *,
+        admin_id: str | None = None,
+    ) -> Delivery:
+        """Mark a driver-reported delivery problem as resolved with a note for the driver."""
+        delivery = self._get_delivery(delivery_id)
+        if not delivery.problem_report:
+            raise DomainError("Esta entrega nao possui problema reportado.", code="DeliveryProblemNotFound")
+
+        now = datetime.now(timezone.utc)
+        delivery.problem_resolved_at = now
+        delivery.admin_resolution_note = resolution_note
+        self._add_event(
+            delivery_id,
+            "driver_problem_resolved",
+            description=resolution_note,
+            actor_type="admin",
+            actor_id=admin_id,
+            metadata={"notified_driver": bool(delivery.delivery_person_id)},
+        )
+        self._db.commit()
+        self._db.refresh(delivery)
         return delivery
 
     def list_driver_earnings(
@@ -1039,9 +1078,41 @@ class DeliveryService:
     # ── Phase 3 — Delay Alerts ────────────────────────────────────────────────
 
     def get_alerts(self) -> list[dict]:
-        """Return active deliveries past their ETA, sorted by most overdue first."""
+        """Return delivery delay alerts and unresolved driver-reported problems."""
         from sqlalchemy.orm import joinedload
         now = datetime.now(timezone.utc)
+
+        problem_rows = (
+            self._db.query(Delivery)
+            .options(joinedload(Delivery.delivery_person), joinedload(Delivery.order))
+            .filter(
+                Delivery.problem_report.isnot(None),
+                Delivery.problem_resolved_at.is_(None),
+            )
+            .all()
+        )
+
+        alerts = []
+        for d in problem_rows:
+            alerts.append({
+                "alert_type": "problem",
+                "id": d.id,
+                "order_id": d.order_id,
+                "delivery_person_id": d.delivery_person_id,
+                "person_name": d.delivery_person.name if d.delivery_person else None,
+                "person_phone": d.delivery_person.phone if d.delivery_person else None,
+                "status": d.status.value,
+                "assigned_at": d.assigned_at.isoformat() if d.assigned_at else None,
+                "estimated_minutes": d.estimated_minutes or 0,
+                "overdue_minutes": 0,
+                "delivery_street": d.order.delivery_street if d.order else None,
+                "delivery_name": d.order.delivery_name if d.order else None,
+                "delivery_phone": d.order.delivery_phone if d.order else None,
+                "problem_report": d.problem_report,
+                "problem_reported_at": d.problem_reported_at.isoformat() if d.problem_reported_at else None,
+                "problem_resolved_at": None,
+                "admin_resolution_note": None,
+            })
 
         active = (
             self._db.query(Delivery)
@@ -1068,6 +1139,7 @@ class DeliveryService:
             if deadline < now:
                 overdue_minutes = int((now - deadline).total_seconds() / 60)
                 alerts.append({
+                    "alert_type": "delay",
                     "id": d.id,
                     "order_id": d.order_id,
                     "delivery_person_id": d.delivery_person_id,
@@ -1078,9 +1150,14 @@ class DeliveryService:
                     "estimated_minutes": d.estimated_minutes,
                     "overdue_minutes": overdue_minutes,
                     "delivery_street": d.order.delivery_street if d.order else None,
+                    "delivery_name": d.order.delivery_name if d.order else None,
+                    "delivery_phone": d.order.delivery_phone if d.order else None,
                 })
 
-        return sorted(alerts, key=lambda x: x["overdue_minutes"], reverse=True)
+        return sorted(
+            alerts,
+            key=lambda x: (0 if x["alert_type"] == "problem" else 1, -x["overdue_minutes"]),
+        )
 
     # ── Phase 4 — Auto-assignment ─────────────────────────────────────────────
 

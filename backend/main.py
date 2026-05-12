@@ -769,6 +769,11 @@ def _run_migrations():
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS best_seller_badge_mode VARCHAR(10) DEFAULT 'off'",
         "CREATE TABLE IF NOT EXISTS best_seller_config (id VARCHAR PRIMARY KEY DEFAULT 'default', period_days INTEGER DEFAULT 30, top_count INTEGER DEFAULT 5, updated_at TIMESTAMPTZ DEFAULT NOW())",
         "INSERT INTO best_seller_config (id, period_days, top_count) VALUES ('default', 30, 5) ON CONFLICT DO NOTHING",
+        # ══════════════════════════════════════════════════════════════════════
+        # RESOLUÇÃO DE PROBLEMA DE ENTREGA — campos de resolução pelo admin
+        # ══════════════════════════════════════════════════════════════════════
+        "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS problem_resolved_at TIMESTAMPTZ",
+        "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS admin_resolution_note TEXT",
     ]
     for stmt in stmts:
         try:

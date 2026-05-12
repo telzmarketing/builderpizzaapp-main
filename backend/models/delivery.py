@@ -99,8 +99,10 @@ class Delivery(Base):
     delivery_photo_url = Column(String(500), nullable=True)
     recipient_name     = Column(String(200), nullable=True)
     notes              = Column(Text, nullable=True)
-    problem_report     = Column(Text, nullable=True)
-    problem_reported_at = Column(DateTime(timezone=True), nullable=True)
+    problem_report        = Column(Text, nullable=True)
+    problem_reported_at   = Column(DateTime(timezone=True), nullable=True)
+    problem_resolved_at   = Column(DateTime(timezone=True), nullable=True)
+    admin_resolution_note = Column(Text, nullable=True)
 
     # Confirmation code (shown to customer, driver confirms via code)
     confirmation_code      = Column(String(4), nullable=True)

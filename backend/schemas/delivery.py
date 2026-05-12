@@ -53,6 +53,10 @@ class DriverDeliveryProblemIn(BaseModel):
     description: Optional[str] = Field(default=None, max_length=500)
 
 
+class DeliveryProblemResolveIn(BaseModel):
+    resolution_note: str = Field(..., min_length=3, max_length=500)
+
+
 class DeliveryPersonOut(BaseModel):
     id: str
     name: str
@@ -129,6 +133,8 @@ class DeliveryOut(BaseModel):
     notes: Optional[str] = None
     problem_report: Optional[str] = None
     problem_reported_at: Optional[datetime] = None
+    problem_resolved_at: Optional[datetime] = None
+    admin_resolution_note: Optional[str] = None
     rating: Optional[int] = None
     rating_comment: Optional[str] = None
     created_at: datetime
@@ -234,6 +240,7 @@ class DriverAnalyticsOut(BaseModel):
 
 
 class DeliveryAlertOut(BaseModel):
+    alert_type: str = "delay"
     id: str
     order_id: str
     delivery_person_id: Optional[str] = None
@@ -244,3 +251,9 @@ class DeliveryAlertOut(BaseModel):
     estimated_minutes: int
     overdue_minutes: int
     delivery_street: Optional[str] = None
+    delivery_name: Optional[str] = None
+    delivery_phone: Optional[str] = None
+    problem_report: Optional[str] = None
+    problem_reported_at: Optional[str] = None
+    problem_resolved_at: Optional[str] = None
+    admin_resolution_note: Optional[str] = None

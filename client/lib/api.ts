@@ -2559,6 +2559,10 @@ export interface DeliveryRecord {
   rating?: number;
   rating_comment?: string;
   notes?: string;
+  problem_report?: string | null;
+  problem_reported_at?: string | null;
+  problem_resolved_at?: string | null;
+  admin_resolution_note?: string | null;
   created_at: string;
   updated_at: string;
   order?: OrderAddress;
@@ -2625,6 +2629,7 @@ export interface DriverAnalytics {
 }
 
 export interface DeliveryAlert {
+  alert_type?: "delay" | "problem";
   id: string;
   order_id: string;
   delivery_person_id: string | null;
@@ -2635,6 +2640,12 @@ export interface DeliveryAlert {
   estimated_minutes: number;
   overdue_minutes: number;
   delivery_street?: string | null;
+  delivery_name?: string | null;
+  delivery_phone?: string | null;
+  problem_report?: string | null;
+  problem_reported_at?: string | null;
+  problem_resolved_at?: string | null;
+  admin_resolution_note?: string | null;
 }
 
 function driverAuthHeaders(): HeadersInit {
@@ -2683,6 +2694,8 @@ export const deliveryApi = {
     post<DeliveryRecord>("/delivery/assign", { order_id, delivery_person_id, estimated_minutes }),
   listActive: () =>
     get<DeliveryRecord[]>("/delivery/active"),
+  resolveProblem: (deliveryId: string, resolution_note: string) =>
+    post<DeliveryRecord>(`/delivery/${deliveryId}/resolve-problem`, { resolution_note }),
 
   // Admin — settings
   getSettings: () =>

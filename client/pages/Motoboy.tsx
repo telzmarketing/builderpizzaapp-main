@@ -12,7 +12,6 @@ import {
   Navigation,
   NavigationOff,
   Package,
-  Phone,
   RefreshCw,
   Route,
   Send,
@@ -72,6 +71,11 @@ function money(value?: number | null) {
 
 function shortOrder(id: string) {
   return `#${id.slice(0, 8).toUpperCase()}`;
+}
+
+function maskCustomerName(name?: string | null) {
+  const firstName = (name || "Cliente").trim().split(/\s+/)[0] || "Cliente";
+  return `${firstName} ********`;
 }
 
 function deliveryAddress(delivery: DeliveryRecord): string | null {
@@ -200,7 +204,7 @@ function DeliveryCard({
       <div className="flex items-center justify-between gap-3 border-b border-surface-03 px-4 py-3">
         <div className="min-w-0">
           <p className="font-mono text-base font-black text-gold">{shortOrder(delivery.order_id)}</p>
-          <p className="mt-0.5 truncate text-sm font-semibold text-cream">{order?.delivery_name || "Cliente"}</p>
+          <p className="mt-0.5 truncate text-sm font-semibold text-cream">{maskCustomerName(order?.delivery_name)}</p>
         </div>
         <span className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-bold tracking-wide ${statusCls}`}>
           {STATUS_LABELS[delivery.status] || delivery.status}
@@ -229,11 +233,6 @@ function DeliveryCard({
 
         <div className="flex flex-wrap items-center gap-3 text-xs text-stone">
           <span className="inline-flex items-center gap-1"><Clock3 size={12} /><EtaLine delivery={delivery} /></span>
-          {order?.delivery_phone && (
-            <a href={`tel:${order.delivery_phone}`} className="inline-flex items-center gap-1 text-parchment hover:text-gold transition-colors">
-              <Phone size={12} />{order.delivery_phone}
-            </a>
-          )}
         </div>
       </div>
 
@@ -419,6 +418,7 @@ export default function Motoboy() {
   const allDeliveries       = dashboard?.queue ?? [];
   const activeDeliveries    = useMemo(() => allDeliveries.filter((d) => ACTIVE_STATUSES.has(d.status)),  [allDeliveries]);
   const completedDeliveries = useMemo(() => allDeliveries.filter((d) => DONE_STATUSES.has(d.status)),   [allDeliveries]);
+  const problemDeliveries   = useMemo(() => allDeliveries.filter((d) => d.status === "failed" && d.problem_report), [allDeliveries]);
   const completedToday      = completedDeliveries.filter((d) => isToday(d.delivered_at)).length;
   const pendingToday        = activeDeliveries.filter((d) => isToday(effectiveDate(d))).length;
   const pendingAmount       = dashboard?.pending_earnings ?? 0;
@@ -585,6 +585,44 @@ export default function Motoboy() {
           {/* Mapa GPS */}
           <DriverLocationMap location={mapLocation} />
 
+          {problemDeliveries.length > 0 && (
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-black text-cream">Problemas reportados</h2>
+                <span className="text-xs text-stone">Atualiza a cada 30s</span>
+              </div>
+              {problemDeliveries.map((delivery) => {
+                const resolved = Boolean(delivery.problem_resolved_at);
+                return (
+                  <button
+                    key={delivery.id}
+                    onClick={() => setDetail(delivery)}
+                    className={`w-full rounded-xl border p-4 text-left transition-colors ${
+                      resolved
+                        ? "border-green-500/30 bg-green-500/10 hover:bg-green-500/15"
+                        : "border-red-500/30 bg-red-500/10 hover:bg-red-500/15"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className={resolved ? "text-sm font-black text-green-200" : "text-sm font-black text-red-200"}>
+                          {resolved ? "Resolvido pela administraÃ§Ã£o" : "Aguardando administraÃ§Ã£o"}
+                        </p>
+                        <p className="mt-1 font-mono text-xs font-bold text-gold">{shortOrder(delivery.order_id)}</p>
+                        <p className="mt-1 line-clamp-2 text-xs text-parchment">
+                          {resolved
+                            ? delivery.admin_resolution_note || "Problema resolvido. Verifique a orientaÃ§Ã£o da loja."
+                            : delivery.problem_report}
+                        </p>
+                      </div>
+                      {resolved ? <CheckCircle2 size={18} className="shrink-0 text-green-300" /> : <AlertTriangle size={18} className="shrink-0 text-red-300" />}
+                    </div>
+                  </button>
+                );
+              })}
+            </section>
+          )}
+
           {/* Rota sugerida */}
           {activeDeliveries.length > 1 && routeUrl && (
             <section className="rounded-xl border border-green-500/20 bg-green-500/5 p-4">
@@ -699,7 +737,7 @@ export default function Motoboy() {
                 >
                   <div>
                     <p className="font-mono text-sm font-black text-gold">{shortOrder(delivery.order_id)}</p>
-                    <p className="mt-0.5 text-xs text-stone">{delivery.order?.delivery_name || "Cliente"}</p>
+                    <p className="mt-0.5 text-xs text-stone">{maskCustomerName(delivery.order?.delivery_name)}</p>
                   </div>
                   <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2.5 py-1 text-xs font-bold text-green-300">
                     {STATUS_LABELS[delivery.status]}
@@ -767,13 +805,14 @@ export default function Motoboy() {
 
             <div className="space-y-3 text-sm">
               {[
-                ["Cliente",     detail.order?.delivery_name || "—"],
-                ["Telefone",    detail.order?.delivery_phone || "—"],
+                ["Cliente",     maskCustomerName(detail.order?.delivery_name)],
                 ["Endereço",    deliveryAddress(detail) || "—"],
                 ["Pagamento",   detail.order?.payment?.method || detail.order?.payment_status || "—"],
                 ["Valor",       money(detail.order?.total)],
                 ["Taxa entrega",money(detail.order?.shipping_fee)],
                 ["Status",      detail.order?.status || "—"],
+                ...(detail.problem_report ? [["Problema", detail.problem_report]] : []),
+                ...(detail.admin_resolution_note ? [["Retorno admin", detail.admin_resolution_note]] : []),
                 ["Observações", detail.order?.notes || detail.notes || "—"],
               ].map(([label, value]) => (
                 <div key={label} className="flex gap-2 rounded-lg bg-surface-01 px-3 py-2.5">

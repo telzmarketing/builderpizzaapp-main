@@ -57,6 +57,7 @@ from backend.schemas.delivery import (
     DeliveryRateIn,
     DriverDeliveryActionIn,
     DriverDeliveryProblemIn,
+    DeliveryProblemResolveIn,
     DriverLoginIn,
     LogisticsSettingsUpdate,
     BulkPayIn,
@@ -240,6 +241,52 @@ def _decode_driver_token(authorization: str | None) -> str:
         raise ValueError("Token inválido.")
 
 
+def _mask_customer_name(name: str | None) -> str:
+    first_name = (name or "Cliente").strip().split(" ")[0] or "Cliente"
+    return f"{first_name} ********"
+
+
+def _driver_delivery_payload(delivery):
+    order = getattr(delivery, "order", None)
+    return {
+        "id": delivery.id,
+        "order_id": delivery.order_id,
+        "delivery_person_id": delivery.delivery_person_id,
+        "status": delivery.status.value if hasattr(delivery.status, "value") else delivery.status,
+        "assigned_at": delivery.assigned_at,
+        "picked_up_at": delivery.picked_up_at,
+        "delivered_at": delivery.delivered_at,
+        "estimated_minutes": delivery.estimated_minutes,
+        "confirmation_code": delivery.confirmation_code,
+        "confirmed_by_code_at": delivery.confirmed_by_code_at,
+        "rating": delivery.rating,
+        "rating_comment": delivery.rating_comment,
+        "notes": delivery.notes,
+        "problem_report": delivery.problem_report,
+        "problem_reported_at": delivery.problem_reported_at,
+        "problem_resolved_at": delivery.problem_resolved_at,
+        "admin_resolution_note": delivery.admin_resolution_note,
+        "created_at": delivery.created_at,
+        "updated_at": delivery.updated_at,
+        "order": None if not order else {
+            "id": order.id,
+            "delivery_name": _mask_customer_name(order.delivery_name),
+            "delivery_phone": None,
+            "delivery_street": order.delivery_street,
+            "delivery_city": order.delivery_city,
+            "delivery_complement": order.delivery_complement,
+            "status": order.status.value if hasattr(order.status, "value") else order.status,
+            "payment_status": order.payment_status.value if hasattr(order.payment_status, "value") else order.payment_status,
+            "subtotal": order.subtotal,
+            "shipping_fee": order.shipping_fee,
+            "total": order.total,
+            "notes": order.notes,
+            "created_at": order.created_at,
+            "paid_at": order.paid_at,
+        },
+    }
+
+
 @router.post("/driver/login")
 def driver_login(body: DriverLoginIn, db: Session = Depends(get_db)):
     """Driver app login — returns a bearer token containing the driver's ID."""
@@ -275,7 +322,7 @@ def driver_deliveries(
         person_id = _decode_driver_token(authorization)
         DeliveryService(db).get_person(person_id)
         deliveries = DeliveryService(db).get_driver_deliveries(person_id)
-        return ok(deliveries)
+        return ok([_driver_delivery_payload(delivery) for delivery in deliveries])
     except (ValueError, DomainError) as exc:
         return err_msg(str(exc), code="Unauthorized", status_code=401)
 
@@ -288,7 +335,10 @@ def driver_dashboard(
     """Return the logged-in driver's mobile dashboard, queue and finance summary."""
     try:
         person_id = _decode_driver_token(authorization)
-        return ok(DeliveryService(db).get_driver_dashboard(person_id))
+        dashboard = DeliveryService(db).get_driver_dashboard(person_id)
+        queue = [_driver_delivery_payload(delivery) for delivery in dashboard["queue"]]
+        active = _driver_delivery_payload(dashboard["active_delivery"]) if dashboard["active_delivery"] else None
+        return ok({**dashboard, "queue": queue, "active_delivery": active})
     except (ValueError, DomainError) as exc:
         return err_msg(str(exc), code="Unauthorized", status_code=401)
 
@@ -325,7 +375,7 @@ def driver_start_delivery(
     try:
         person_id = _decode_driver_token(authorization)
         delivery = DeliveryService(db).start_driver_delivery(person_id, delivery_id, notes=body.notes if body else None)
-        return ok(delivery, "Entrega iniciada.")
+        return ok(_driver_delivery_payload(delivery), "Entrega iniciada.")
     except (ValueError, DomainError) as exc:
         return err_msg(str(exc), code="Unauthorized", status_code=401)
 
@@ -348,7 +398,7 @@ def driver_complete_delivery(
             delivery_photo_url=payload.delivery_photo_url,
             notes=payload.notes,
         )
-        return ok(delivery, "Entrega marcada como entregue.")
+        return ok(_driver_delivery_payload(delivery), "Entrega marcada como entregue.")
     except (ValueError, DomainError) as exc:
         return err_msg(str(exc), code="Unauthorized", status_code=401)
 
@@ -369,7 +419,7 @@ def driver_report_problem(
             reason=body.reason,
             description=body.description,
         )
-        return ok(delivery, "Problema registrado.")
+        return ok(_driver_delivery_payload(delivery), "Problema registrado.")
     except (ValueError, DomainError) as exc:
         return err_msg(str(exc), code="Unauthorized", status_code=401)
 
@@ -539,6 +589,26 @@ def get_delivery_alerts(
 
 
 # ── Deliveries ────────────────────────────────────────────────────────────────
+
+@router.post("/{delivery_id}/resolve-problem")
+def resolve_delivery_problem(
+    delivery_id: str,
+    body: DeliveryProblemResolveIn,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin),
+):
+    """Admin resolves a driver-reported delivery problem and leaves the driver response."""
+    try:
+        admin_id = getattr(admin, "id", None) or getattr(admin, "email", None) or "admin"
+        delivery = DeliveryService(db).resolve_problem(
+            delivery_id,
+            body.resolution_note,
+            admin_id=str(admin_id),
+        )
+        return ok(delivery, "Problema resolvido e motoboy notificado.")
+    except DomainError as exc:
+        return err(exc)
+
 
 @router.post("/assign", status_code=201)
 def assign_delivery(

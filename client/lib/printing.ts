@@ -69,6 +69,11 @@ function estDeliveryTime(order: ApiOrder) {
   return hhmm(new Date(ms));
 }
 
+function maskCustomerName(name?: string | null) {
+  const firstName = (name || "Cliente").trim().split(/\s+/)[0] || "Cliente";
+  return `${firstName} ********`;
+}
+
 // ── Paper width → CSS max-width ───────────────────────────────────────────────
 
 function paperCss(width: PaperWidth) {
@@ -289,8 +294,7 @@ export function buildEntregaHtml(order: ApiOrder, settings: PrinterSettings): st
 <p class="c s">${shortDate(created)} — ${hhmm(created)}</p>
 <hr/>
 <p class="b" style="font-size:13px">ENDEREÇO DE ENTREGA</p>
-<p class="b">${order.delivery_name}</p>
-<p>${order.delivery_phone}</p>
+<p class="b">${maskCustomerName(order.delivery_name)}</p>
 <p>${addrLine}</p>
 <p>${order.delivery_city}</p>
 <hr/>
