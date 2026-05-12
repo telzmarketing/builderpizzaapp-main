@@ -1083,7 +1083,7 @@ export default function AdminProducts() {
             </div>
             {activeTab === "produtos" && (
               <button
-                onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza" }); }}
+                onClick={() => { setShowForm(true); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza" }); }}
                 className="flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
               >
                 <Plus size={20} />
@@ -1106,138 +1106,6 @@ export default function AdminProducts() {
             {/* ── TAB: PRODUTOS ── */}
             {activeTab === "produtos" && (
               <>
-                {showForm && (
-                  <div className="bg-surface-02 rounded-xl p-6 border border-surface-03 mb-8">
-                    <h3 className="text-xl font-bold text-cream mb-4">{editingId ? "Editar Produto" : "Novo Produto"}</h3>
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                      <div>
-                        <label className="block text-parchment text-sm font-medium mb-2">Nome do Produto *</label>
-                        <input type="text" value={formData.name || ""} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className={cls} placeholder="Ex: Pizza Pepperoni" />
-                      </div>
-                      <div>
-                        <label className="block text-parchment text-sm font-medium mb-2">Descrição *</label>
-                        <textarea value={formData.description || ""} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className={`${cls} resize-none`} placeholder="Descreva o produto..." rows={3} />
-                      </div>
-                      <div>
-                        <label className="block text-parchment text-sm font-medium mb-2">Preco base *</label>
-                        <input
-                          type="number"
-                          value={formData.price ?? ""}
-                          onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
-                          className={cls}
-                          placeholder="Ex: 39.90"
-                          min="0.01"
-                          step="0.01"
-                        />
-                        <p className="text-stone text-xs mt-1">Usado como preco inicial e fallback. Tamanhos podem ser configurados depois no card do produto.</p>
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between gap-3 mb-2">
-                          <label className="block text-parchment text-sm font-medium">Categoria</label>
-                          <button
-                            type="button"
-                            onClick={() => setActiveTab("categorias")}
-                            className="text-xs text-gold hover:text-gold-light font-semibold"
-                          >
-                            Gerenciar categorias
-                          </button>
-                        </div>
-                        <select
-                          value={(formData as any).category || ""}
-                          onChange={(e) => setFormData({ ...formData, category: e.target.value, subcategory: "" } as any)}
-                          className={cls}
-                          disabled={activeCatalogCategories.length === 0}
-                        >
-                          <option value="">
-                            {activeCatalogCategories.length === 0 ? "Cadastre uma categoria na aba Categorias" : "Selecione uma categoria"}
-                          </option>
-                          {activeCatalogCategories.map((cat) => (
-                            <option key={cat.id} value={cat.name}>{cat.name}</option>
-                          ))}
-                          {(formData as any).category && !catalogCategoryNames.includes((formData as any).category) && (
-                            <option value={(formData as any).category}>Categoria atual nao cadastrada: {(formData as any).category}</option>
-                          )}
-                        </select>
-                        {(formData as any).category && !catalogCategoryNames.includes((formData as any).category) && (
-                          <p className="text-amber-400 text-xs mt-2">
-                            Esta categoria veio de um produto antigo. Crie ela na aba Categorias ou selecione uma categoria cadastrada.
-                          </p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-parchment text-sm font-medium mb-2">Subcategoria</label>
-                        <select
-                          value={(formData as any).subcategory || ""}
-                          onChange={(e) => setFormData({ ...formData, subcategory: e.target.value } as any)}
-                          className={cls}
-                          disabled={!selectedCategoryId || availableSubcategories.length === 0}
-                        >
-                          <option value="">
-                            {!selectedCategoryId ? "Selecione uma categoria primeiro" : availableSubcategories.length === 0 ? "Sem subcategorias cadastradas" : "Selecione uma subcategoria"}
-                          </option>
-                          {availableSubcategories.map((cat) => (
-                            <option key={cat.id} value={cat.name}>{cat.name}</option>
-                          ))}
-                          {(formData as any).subcategory && !catalogSubcategoryNames.includes((formData as any).subcategory) && (
-                            <option value={(formData as any).subcategory}>Subcategoria atual nao cadastrada: {(formData as any).subcategory}</option>
-                          )}
-                        </select>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4 items-start">
-                        <ImageUpload
-                          value={formData.icon || ""}
-                          onChange={(v) => setFormData({ ...formData, icon: v })}
-                          label="Ícone / Imagem do produto"
-                          sizeGuide="Tamanho recomendado: 800×800px ou maior, máx. 2MB"
-                          hint="Faça upload de uma imagem ou use um emoji 🍕"
-                          maxKB={2048}
-                        />
-                        <div>
-                          <label className="block text-parchment text-sm font-medium mb-2">Avaliação (1–5)</label>
-                          <input type="number" value={formData.rating || ""} onChange={(e) => setFormData({ ...formData, rating: parseFloat(e.target.value) })} className={cls} placeholder="4.5" min="1" max="5" step="0.1" />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-parchment text-sm font-medium mb-2">Selo "Mais Pedida"</label>
-                        <select
-                          value={(formData as any).best_seller_badge_mode || "off"}
-                          onChange={(e) => setFormData({ ...formData, best_seller_badge_mode: e.target.value } as any)}
-                          className={cls}
-                        >
-                          <option value="off">Não exibir</option>
-                          <option value="manual">Manual — exibir sempre neste produto</option>
-                          <option value="auto">Automático — conforme volume de vendas</option>
-                        </select>
-                        <p className="text-stone text-xs mt-1">Manual tem prioridade. Automático considera apenas pedidos pagos/concluídos.</p>
-                      </div>
-
-                      {/* Dica de próximos passos */}
-                      {!editingId && (
-                        <div className="bg-surface-03/60 rounded-lg p-3 text-stone text-xs">
-                          {(formData.product_type || "pizza") === "pizza" && (
-                            <span>💡 Após criar a pizza, use <strong className="text-parchment">Gerenciar Tamanhos</strong>, <strong className="text-parchment">Gerenciar Massas</strong> e <strong className="text-parchment">Gerenciar Bordas</strong> no card do produto.</span>
-                          )}
-                          {formData.product_type === "drink" && (
-                            <span>💡 Após criar a bebida, use <strong className="text-parchment">Gerenciar Tamanhos</strong> e <strong className="text-parchment">Gerenciar Variantes</strong> no card do produto.</span>
-                          )}
-                          {formData.product_type === "other" && (
-                            <span>💡 Após criar o produto, use <strong className="text-parchment">Gerenciar Tamanhos</strong> para configurar variações de tamanho e preço.</span>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="flex gap-3 pt-4">
-                        <button type="submit" className="flex-1 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors">
-                          {editingId ? "Salvar Alterações" : "Adicionar Produto"}
-                        </button>
-                        <button type="button" onClick={() => { setShowForm(false); setEditingId(null); }} className="flex-1 bg-surface-03 hover:bg-brand-mid text-cream font-bold py-2 px-4 rounded-lg transition-colors">
-                          Cancelar
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                )}
-
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredProducts.map((product) => {
                     const pType = (product as any).product_type as string | null | undefined;
@@ -1359,75 +1227,6 @@ export default function AdminProducts() {
             {/* ── TAB: BRINDES ── */}
             {activeTab === "brindes" && (
               <div className="space-y-6">
-                {showBrindeForm && (
-                  <div className="bg-surface-02 rounded-xl p-6 border border-surface-03">
-                    <h3 className="text-xl font-bold text-cream mb-4">
-                      {editingBrindeId ? "Editar Brinde" : "Novo Brinde"}
-                    </h3>
-                    <form onSubmit={handleBrindeSubmit} className="space-y-4">
-                      <div>
-                        <label className="block text-parchment text-sm font-medium mb-2">Nome do Brinde *</label>
-                        <input
-                          type="text"
-                          value={brindeForm.name}
-                          onChange={(e) => setBrindeForm((f) => ({ ...f, name: e.target.value }))}
-                          className={cls}
-                          placeholder="Ex: Refrigerante Lata, Sobremesa..."
-                          maxLength={200}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-parchment text-sm font-medium mb-2">Descrição *</label>
-                        <textarea
-                          value={brindeForm.description}
-                          onChange={(e) => setBrindeForm((f) => ({ ...f, description: e.target.value }))}
-                          className={`${cls} resize-none`}
-                          placeholder="Descreva o brinde..."
-                          rows={3}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-parchment text-sm font-medium mb-2">Foto do Brinde</label>
-                        <ImageUpload
-                          value={brindeForm.icon}
-                          onChange={(url) => setBrindeForm((f) => ({ ...f, icon: url }))}
-                          label="Foto do Brinde"
-                          previewRounded={false}
-                          maxKB={1024}
-                          sizeGuide="Recomendado: 400×400px, JPEG ou PNG, máx. 1MB"
-                        />
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setBrindeForm((f) => ({ ...f, active: !f.active }))}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${brindeForm.active ? "bg-gold" : "bg-surface-03"}`}
-                        >
-                          <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${brindeForm.active ? "translate-x-6" : "translate-x-1"}`} />
-                        </button>
-                        <span className="text-parchment text-sm">{brindeForm.active ? "Ativo" : "Inativo"}</span>
-                      </div>
-                      <div className="flex gap-3 pt-2">
-                        <button
-                          type="submit"
-                          disabled={brindeSaving}
-                          className="flex items-center gap-2 bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold py-2 px-6 rounded-lg transition-colors"
-                        >
-                          {brindeSaving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-                          {editingBrindeId ? "Salvar" : "Criar Brinde"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => { setShowBrindeForm(false); setEditingBrindeId(null); }}
-                          className="flex items-center gap-2 bg-surface-03 hover:bg-surface-03/80 text-parchment font-bold py-2 px-6 rounded-lg transition-colors"
-                        >
-                          <X size={16} /> Cancelar
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                )}
-
                 {brindesLoading ? (
                   <div className="flex justify-center py-12">
                     <Loader2 size={32} className="animate-spin text-gold" />
@@ -1859,10 +1658,157 @@ export default function AdminProducts() {
         </div>
       </div>
 
+      {/* ── Product Form Modal ───────────────────────────────────────────────── */}
+      {showForm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => { setShowForm(false); setEditingId(null); }}
+        >
+          <div
+            className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03 sticky top-0 bg-surface-02 z-10">
+              <h3 className="text-xl font-bold text-cream">{editingId ? "Editar Produto" : "Novo Produto"}</h3>
+              <button onClick={() => { setShowForm(false); setEditingId(null); }} className="text-stone hover:text-cream transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-parchment text-sm font-medium mb-2">Nome do Produto *</label>
+                  <input type="text" value={formData.name || ""} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className={cls} placeholder="Ex: Pizza Pepperoni" />
+                </div>
+                <div>
+                  <label className="block text-parchment text-sm font-medium mb-2">Descrição *</label>
+                  <textarea value={formData.description || ""} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className={`${cls} resize-none`} placeholder="Descreva o produto..." rows={3} />
+                </div>
+                <div>
+                  <label className="block text-parchment text-sm font-medium mb-2">Preco base *</label>
+                  <input
+                    type="number"
+                    value={formData.price ?? ""}
+                    onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
+                    className={cls}
+                    placeholder="Ex: 39.90"
+                    min="0.01"
+                    step="0.01"
+                  />
+                  <p className="text-stone text-xs mt-1">Usado como preco inicial e fallback. Tamanhos podem ser configurados depois no card do produto.</p>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <label className="block text-parchment text-sm font-medium">Categoria</label>
+                    <button
+                      type="button"
+                      onClick={() => { setShowForm(false); setEditingId(null); setActiveTab("categorias"); }}
+                      className="text-xs text-gold hover:text-gold-light font-semibold"
+                    >
+                      Gerenciar categorias
+                    </button>
+                  </div>
+                  <select
+                    value={(formData as any).category || ""}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value, subcategory: "" } as any)}
+                    className={cls}
+                    disabled={activeCatalogCategories.length === 0}
+                  >
+                    <option value="">
+                      {activeCatalogCategories.length === 0 ? "Cadastre uma categoria na aba Categorias" : "Selecione uma categoria"}
+                    </option>
+                    {activeCatalogCategories.map((cat) => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
+                    {(formData as any).category && !catalogCategoryNames.includes((formData as any).category) && (
+                      <option value={(formData as any).category}>Categoria atual nao cadastrada: {(formData as any).category}</option>
+                    )}
+                  </select>
+                  {(formData as any).category && !catalogCategoryNames.includes((formData as any).category) && (
+                    <p className="text-amber-400 text-xs mt-2">
+                      Esta categoria veio de um produto antigo. Crie ela na aba Categorias ou selecione uma categoria cadastrada.
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-parchment text-sm font-medium mb-2">Subcategoria</label>
+                  <select
+                    value={(formData as any).subcategory || ""}
+                    onChange={(e) => setFormData({ ...formData, subcategory: e.target.value } as any)}
+                    className={cls}
+                    disabled={!selectedCategoryId || availableSubcategories.length === 0}
+                  >
+                    <option value="">
+                      {!selectedCategoryId ? "Selecione uma categoria primeiro" : availableSubcategories.length === 0 ? "Sem subcategorias cadastradas" : "Selecione uma subcategoria"}
+                    </option>
+                    {availableSubcategories.map((cat) => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
+                    {(formData as any).subcategory && !catalogSubcategoryNames.includes((formData as any).subcategory) && (
+                      <option value={(formData as any).subcategory}>Subcategoria atual nao cadastrada: {(formData as any).subcategory}</option>
+                    )}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4 items-start">
+                  <ImageUpload
+                    value={formData.icon || ""}
+                    onChange={(v) => setFormData({ ...formData, icon: v })}
+                    label="Ícone / Imagem do produto"
+                    sizeGuide="Tamanho recomendado: 800×800px ou maior, máx. 2MB"
+                    hint="Faça upload de uma imagem ou use um emoji 🍕"
+                    maxKB={2048}
+                  />
+                  <div>
+                    <label className="block text-parchment text-sm font-medium mb-2">Avaliação (1–5)</label>
+                    <input type="number" value={formData.rating || ""} onChange={(e) => setFormData({ ...formData, rating: parseFloat(e.target.value) })} className={cls} placeholder="4.5" min="1" max="5" step="0.1" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-parchment text-sm font-medium mb-2">Selo "Mais Pedida"</label>
+                  <select
+                    value={(formData as any).best_seller_badge_mode || "off"}
+                    onChange={(e) => setFormData({ ...formData, best_seller_badge_mode: e.target.value } as any)}
+                    className={cls}
+                  >
+                    <option value="off">Não exibir</option>
+                    <option value="manual">Manual — exibir sempre neste produto</option>
+                    <option value="auto">Automático — conforme volume de vendas</option>
+                  </select>
+                  <p className="text-stone text-xs mt-1">Manual tem prioridade. Automático considera apenas pedidos pagos/concluídos.</p>
+                </div>
+
+                {!editingId && (
+                  <div className="bg-surface-03/60 rounded-lg p-3 text-stone text-xs">
+                    {(formData.product_type || "pizza") === "pizza" && (
+                      <span>💡 Após criar a pizza, use <strong className="text-parchment">Gerenciar Tamanhos</strong>, <strong className="text-parchment">Gerenciar Massas</strong> e <strong className="text-parchment">Gerenciar Bordas</strong> no card do produto.</span>
+                    )}
+                    {formData.product_type === "drink" && (
+                      <span>💡 Após criar a bebida, use <strong className="text-parchment">Gerenciar Tamanhos</strong> e <strong className="text-parchment">Gerenciar Variantes</strong> no card do produto.</span>
+                    )}
+                    {formData.product_type === "other" && (
+                      <span>💡 Após criar o produto, use <strong className="text-parchment">Gerenciar Tamanhos</strong> para configurar variações de tamanho e preço.</span>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-4">
+                  <button type="submit" className="flex-1 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors">
+                    {editingId ? "Salvar Alterações" : "Adicionar Produto"}
+                  </button>
+                  <button type="button" onClick={() => { setShowForm(false); setEditingId(null); }} className="flex-1 bg-surface-03 hover:bg-brand-mid text-cream font-bold py-2 px-4 rounded-lg transition-colors">
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Sizes Modal ───────────────────────────────────────────────────────── */}
       {promotionModalProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={closePromotionModal}>
+          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03 sticky top-0 bg-surface-02 z-10">
               <div className="flex items-center gap-3">
                 <Tag size={18} className="text-emerald-300" />
@@ -2042,8 +1988,8 @@ export default function AdminProducts() {
       )}
 
       {sizesModalProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={closeSizesModal}>
+          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03 sticky top-0 bg-surface-02 z-10">
               <div className="flex items-center gap-3">
                 <Ruler size={18} className="text-gold" />
@@ -2151,8 +2097,8 @@ export default function AdminProducts() {
 
       {/* ── Crust Modal (Pizza) ──────────────────────────────────────────────── */}
       {crustModalProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={closeCrustModal}>
+          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03 sticky top-0 bg-surface-02 z-10">
               <div className="flex items-center gap-3">
                 <ChefHat size={18} className="text-amber-400" />
@@ -2252,8 +2198,8 @@ export default function AdminProducts() {
 
       {/* ── Drink Variants Modal ─────────────────────────────────────────────── */}
       {borderModalProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={closeBorderModal}>
+          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03 sticky top-0 bg-surface-02 z-10">
               <div className="flex items-center gap-3">
                 <Tag size={18} className="text-orange-300" />
@@ -2337,8 +2283,8 @@ export default function AdminProducts() {
       )}
 
       {drinkModalProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={closeDrinkModal}>
+          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03 sticky top-0 bg-surface-02 z-10">
               <div className="flex items-center gap-3">
                 <Droplets size={18} className="text-blue-400" />
@@ -2417,6 +2363,89 @@ export default function AdminProducts() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Brinde Form Modal ────────────────────────────────────────────────── */}
+      {showBrindeForm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => { setShowBrindeForm(false); setEditingBrindeId(null); }}
+        >
+          <div
+            className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03 sticky top-0 bg-surface-02 z-10">
+              <h3 className="text-xl font-bold text-cream">{editingBrindeId ? "Editar Brinde" : "Novo Brinde"}</h3>
+              <button onClick={() => { setShowBrindeForm(false); setEditingBrindeId(null); }} className="text-stone hover:text-cream transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <form onSubmit={handleBrindeSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-parchment text-sm font-medium mb-2">Nome do Brinde *</label>
+                  <input
+                    type="text"
+                    value={brindeForm.name}
+                    onChange={(e) => setBrindeForm((f) => ({ ...f, name: e.target.value }))}
+                    className={cls}
+                    placeholder="Ex: Refrigerante Lata, Sobremesa..."
+                    maxLength={200}
+                  />
+                </div>
+                <div>
+                  <label className="block text-parchment text-sm font-medium mb-2">Descrição *</label>
+                  <textarea
+                    value={brindeForm.description}
+                    onChange={(e) => setBrindeForm((f) => ({ ...f, description: e.target.value }))}
+                    className={`${cls} resize-none`}
+                    placeholder="Descreva o brinde..."
+                    rows={3}
+                  />
+                </div>
+                <div>
+                  <label className="block text-parchment text-sm font-medium mb-2">Foto do Brinde</label>
+                  <ImageUpload
+                    value={brindeForm.icon}
+                    onChange={(url) => setBrindeForm((f) => ({ ...f, icon: url }))}
+                    label="Foto do Brinde"
+                    previewRounded={false}
+                    maxKB={1024}
+                    sizeGuide="Recomendado: 400×400px, JPEG ou PNG, máx. 1MB"
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setBrindeForm((f) => ({ ...f, active: !f.active }))}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${brindeForm.active ? "bg-gold" : "bg-surface-03"}`}
+                  >
+                    <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${brindeForm.active ? "translate-x-6" : "translate-x-1"}`} />
+                  </button>
+                  <span className="text-parchment text-sm">{brindeForm.active ? "Ativo" : "Inativo"}</span>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="submit"
+                    disabled={brindeSaving}
+                    className="flex items-center gap-2 bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold py-2 px-6 rounded-lg transition-colors"
+                  >
+                    {brindeSaving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                    {editingBrindeId ? "Salvar" : "Criar Brinde"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowBrindeForm(false); setEditingBrindeId(null); }}
+                    className="flex items-center gap-2 bg-surface-03 hover:bg-surface-03/80 text-parchment font-bold py-2 px-6 rounded-lg transition-colors"
+                  >
+                    <X size={16} /> Cancelar
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
