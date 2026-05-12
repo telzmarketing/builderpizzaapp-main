@@ -1128,7 +1128,6 @@ class DeliveryService:
             .all()
         )
 
-        alerts = []
         for d in active:
             if not d.assigned_at or not d.estimated_minutes:
                 continue

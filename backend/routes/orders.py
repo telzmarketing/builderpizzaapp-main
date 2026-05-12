@@ -116,6 +116,10 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
                 "assigned_at": d.assigned_at,
                 "picked_up_at": d.picked_up_at,
                 "delivered_at": d.delivered_at,
+                "problem_report": d.problem_report,
+                "problem_reported_at": d.problem_reported_at,
+                "problem_resolved_at": d.problem_resolved_at,
+                "admin_resolution_note": d.admin_resolution_note,
                 "rating": d.rating,
                 "rating_comment": d.rating_comment,
             }

@@ -638,6 +638,7 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
   const isReadyForPickup = order.status === "ready_for_pickup";
   const isWaitingPayment = WAITING_PAYMENT_STATUSES.has(order.status);
   const nextLabel = isReadyForPickup || isWaitingPayment ? null : NEXT_LABEL[order.status];
+  const unresolvedDeliveryProblem = Boolean(order.delivery?.problem_report && !order.delivery.problem_resolved_at);
 
   const itemSummary = order.items.slice(0, 2).map((item) => {
     const isMulti = item.flavor_division > 1;
@@ -741,6 +742,25 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
             <span className="shrink-0 rounded-full border border-blue-500/30 bg-blue-500/15 px-2 py-1 text-[10px] font-bold text-blue-200">
               {STATUS_LABELS[order.delivery.status] ?? order.delivery.status}
             </span>
+          </div>
+        </div>
+      )}
+
+      {unresolvedDeliveryProblem && (
+        <div className="mt-3 rounded-xl border border-red-500/40 bg-red-500/10 p-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0 text-red-300" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-red-300">
+                Problema na entrega
+              </p>
+              <p className="mt-1 text-xs font-semibold text-red-100">
+                Entre em contato com o cliente e registre a resolucao em Logistica &gt; Alertas.
+              </p>
+              <p className="mt-1 line-clamp-2 text-xs text-parchment">
+                {order.delivery?.problem_report}
+              </p>
+            </div>
           </div>
         </div>
       )}

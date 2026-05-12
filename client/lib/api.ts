@@ -778,6 +778,10 @@ export interface ApiOrder {
     assigned_at?: string | null;
     picked_up_at?: string | null;
     delivered_at?: string | null;
+    problem_report?: string | null;
+    problem_reported_at?: string | null;
+    problem_resolved_at?: string | null;
+    admin_resolution_note?: string | null;
     rating?: number | null;
     rating_comment?: string | null;
   } | null;
