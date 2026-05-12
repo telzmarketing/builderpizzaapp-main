@@ -9,6 +9,7 @@ import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import StoreStatusBanner from "@/components/StoreStatusBanner";
 import CategorySeal from "@/components/CategorySeal";
+import BestSellerSeal from "@/components/BestSellerSeal";
 
 const PIZZA_FALLBACKS = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🍖", "🍄", "🫒", "🔥", "🥩", "🌿", "🫑"];
 
@@ -433,6 +434,7 @@ export default function Home() {
                   <div className="h-full w-full rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
                     {renderIcon(product.icon, index, "lg")}
                   </div>
+                  <BestSellerSeal show={(product as any).show_best_seller_badge} />
                 </div>
                 <p className="text-cream font-bold text-center text-base leading-snug line-clamp-1">
                   {product.name}
@@ -484,6 +486,7 @@ export default function Home() {
                     <div className="h-full w-full rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
                       {renderIcon(currentPizza?.icon, carouselPosition, "lg")}
                     </div>
+                    <BestSellerSeal show={(currentPizza as any)?.show_best_seller_badge} />
                   </div>
                   <p className="text-cream font-bold text-center text-sm leading-snug line-clamp-1">
                     {currentPizza?.name}
