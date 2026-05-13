@@ -79,13 +79,13 @@ class RegisterIn(BaseModel):
     email: str = Field(..., min_length=5)
     password: str = Field(..., min_length=8)
     phone: str = Field(..., min_length=8)
-    street: str = Field(..., min_length=3)
-    number: str = Field(..., min_length=1)
+    street: str | None = Field(default=None, min_length=3)
+    number: str | None = Field(default=None, min_length=1)
     complement: str | None = None
-    neighborhood: str = Field(..., min_length=2)
-    city: str = Field(..., min_length=2)
+    neighborhood: str | None = Field(default=None, min_length=2)
+    city: str | None = Field(default=None, min_length=2)
     state: str | None = None
-    zip_code: str = Field(..., min_length=8)
+    zip_code: str | None = Field(default=None, min_length=8)
     label: str | None = None
     lgpd_consent: bool = Field(..., description="Must be True to complete registration")
     lgpd_policy_version: str | None = None
@@ -151,7 +151,7 @@ def login_email(body: EmailLoginIn, db: Session = Depends(get_db)):
 
 @router.post("/register")
 def register(body: RegisterIn, db: Session = Depends(get_db)):
-    """Full registration: name, email, password, phone, address and LGPD consent."""
+    """Simple registration: name, email, password, phone and LGPD consent."""
     if not body.lgpd_consent:
         return err_msg(
             "E necessario aceitar os Termos de Privacidade para criar a conta.",
@@ -193,20 +193,21 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     db.add(new_customer)
     db.flush()
 
-    new_address = Address(
-        id=str(uuid.uuid4()),
-        customer_id=new_customer.id,
-        label=body.label,
-        street=body.street.strip(),
-        number=body.number,
-        complement=body.complement,
-        neighborhood=body.neighborhood,
-        city=body.city.strip(),
-        state=body.state,
-        zip_code=body.zip_code,
-        is_default=True,
-    )
-    db.add(new_address)
+    if body.street and body.city:
+        new_address = Address(
+            id=str(uuid.uuid4()),
+            customer_id=new_customer.id,
+            label=body.label,
+            street=body.street.strip(),
+            number=body.number,
+            complement=body.complement,
+            neighborhood=body.neighborhood,
+            city=body.city.strip(),
+            state=body.state,
+            zip_code=body.zip_code,
+            is_default=True,
+        )
+        db.add(new_address)
     db.commit()
     db.refresh(new_customer)
 

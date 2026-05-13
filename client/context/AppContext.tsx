@@ -235,7 +235,7 @@ interface AppContextType {
   customerLogin: (phone: string, password: string) => Promise<void>;
   googleLogin: (credential: string) => Promise<void>;
   emailLogin: (email: string, password: string) => Promise<void>;
-  registerCustomer: (data: { name: string; email: string; password: string; phone: string; street: string; number: string; complement?: string; neighborhood: string; city: string; state?: string; zip_code: string; label?: string; lgpd_consent: boolean; lgpd_policy_version?: string; marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean }) => Promise<void>;
+  registerCustomer: (data: { name: string; email: string; password: string; phone: string; street?: string; number?: string; complement?: string; neighborhood?: string; city?: string; state?: string; zip_code?: string; label?: string; lgpd_consent: boolean; lgpd_policy_version?: string; marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean }) => Promise<void>;
   customerLogout: () => void;
   updateCustomer: (data: { name?: string; phone?: string }) => Promise<void>;
   addCustomerAddress: (data: { label?: string; street: string; number?: string; complement?: string; neighborhood?: string; city: string; state?: string; zip_code?: string }) => Promise<void>;
@@ -595,7 +595,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     _linkSession(c.id);
   };
 
-  const registerCustomer = async (data: { name: string; email: string; password: string; phone: string; street: string; number: string; complement?: string; neighborhood: string; city: string; state?: string; zip_code: string; label?: string; lgpd_consent: boolean; lgpd_policy_version?: string; marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean }) => {
+  const registerCustomer = async (data: { name: string; email: string; password: string; phone: string; street?: string; number?: string; complement?: string; neighborhood?: string; city?: string; state?: string; zip_code?: string; label?: string; lgpd_consent: boolean; lgpd_policy_version?: string; marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean }) => {
     const { customer: c } = await authApi.register(data);
     setCustomer(c);
     localStorage.setItem("customer", JSON.stringify(c));

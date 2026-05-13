@@ -217,9 +217,6 @@ export default function Conta() {
   // Register tab
   const [reg, setReg] = useState({
     name: "", email: "", password: "", password_confirm: "", phone: "",
-    street: "", number: "", complement: "",
-    neighborhood: "", city: "", zip_code: "",
-    label: "",
   });
   const [regErrors, setRegErrors] = useState<Partial<Record<keyof typeof reg, string>>>({});
 
@@ -293,11 +290,6 @@ export default function Conta() {
     if (reg.password.length < 8) errs.password = "Senha obrigatória (mínimo 8 caracteres)";
     if (reg.password_confirm !== reg.password) errs.password_confirm = "As senhas não conferem";
     if (!reg.phone.trim() || reg.phone.replace(/\D/g, "").length < 10) errs.phone = "Telefone obrigatório (mínimo 10 dígitos)";
-    if (!reg.street.trim()) errs.street = "Rua obrigatória";
-    if (!reg.number.trim()) errs.number = "Número obrigatório";
-    if (!reg.neighborhood.trim()) errs.neighborhood = "Bairro obrigatório";
-    if (!reg.city.trim()) errs.city = "Cidade obrigatória";
-    if (!reg.zip_code.trim() || reg.zip_code.replace(/\D/g, "").length < 8) errs.zip_code = "CEP obrigatório (8 dígitos)";
     setRegErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -315,13 +307,6 @@ export default function Conta() {
         email: reg.email,
         password: reg.password,
         phone: reg.phone,
-        street: reg.street,
-        number: reg.number,
-        complement: reg.complement,
-        neighborhood: reg.neighborhood,
-        city: reg.city,
-        zip_code: reg.zip_code,
-        label: reg.label,
         lgpd_consent: true,
         lgpd_policy_version: lgpdPolicy?.version,
         marketing_email_consent: marketingEmail,
@@ -481,7 +466,7 @@ export default function Conta() {
               <div className="bg-surface-02 rounded-2xl border border-surface-03 p-5 space-y-4">
                 <div>
                   <p className="text-cream font-semibold mb-1">Criar conta</p>
-                  <p className="text-stone text-xs">Preencha todos os campos para criar sua conta.</p>
+                  <p className="text-stone text-xs">Informe seus dados básicos. O endereço será pedido na finalização do primeiro pedido.</p>
                 </div>
 
                 {/* Personal data */}
@@ -497,25 +482,6 @@ export default function Conta() {
                     value={reg.password_confirm} onChange={(v) => setReg((p) => ({ ...p, password_confirm: v }))} error={regErrors.password_confirm} />
                   <Field icon={Phone} label="Telefone / WhatsApp" placeholder="(00) 00000-0000" type="tel" required
                     value={reg.phone} onChange={(v) => setReg((p) => ({ ...p, phone: v }))} error={regErrors.phone} />
-                </div>
-
-                {/* Address */}
-                <div className="space-y-3 pt-1">
-                  <p className="text-gold text-[10px] font-bold uppercase tracking-widest">Endereço de entrega</p>
-                  <Field icon={MapPin} label="CEP" placeholder="00000-000" required
-                    value={reg.zip_code} onChange={(v) => setReg((p) => ({ ...p, zip_code: v }))} error={regErrors.zip_code} />
-                  <Field icon={Home} label="Rua / Logradouro" placeholder="Rua das Flores" required
-                    value={reg.street} onChange={(v) => setReg((p) => ({ ...p, street: v }))} error={regErrors.street} />
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field icon={Hash} label="Número" placeholder="123" required
-                      value={reg.number} onChange={(v) => setReg((p) => ({ ...p, number: v }))} error={regErrors.number} />
-                    <Field icon={Home} label="Complemento" placeholder="Apto 4"
-                      value={reg.complement} onChange={(v) => setReg((p) => ({ ...p, complement: v }))} />
-                  </div>
-                  <Field icon={MapPin} label="Bairro" placeholder="Centro" required
-                    value={reg.neighborhood} onChange={(v) => setReg((p) => ({ ...p, neighborhood: v }))} error={regErrors.neighborhood} />
-                  <Field icon={MapPin} label="Cidade" placeholder="São Paulo" required
-                    value={reg.city} onChange={(v) => setReg((p) => ({ ...p, city: v }))} error={regErrors.city} />
                 </div>
 
                 {error && <p className="text-red-400 text-sm text-center">{error}</p>}

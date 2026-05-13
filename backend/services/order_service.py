@@ -26,6 +26,7 @@ from backend.core.events import (
 from backend.models.order import Order, OrderItem, OrderItemFlavor, OrderStatus
 from backend.models.payment import Payment, PaymentMethod, PaymentStatus
 from backend.models.product import Product, MultiFlavorsConfig, PricingRule, ProductCrustType, ProductDrinkVariant, ProductSize
+from backend.models.customer import Address, Customer as CustomerModel
 from backend.schemas.order import CheckoutIn, CartItemIn, FlavorIn, OrderStatusUpdate
 from backend.services.customer_metrics_service import sync_customer_order_metrics
 from backend.services.product_pricing_service import ProductPriceResult, ProductPricingService, normalize_crust_price_addition
@@ -98,6 +99,32 @@ class OrderService:
             self._db.add(config)
             self._db.flush()
         return config
+
+    def _save_first_delivery_address(self, payload: CheckoutIn) -> None:
+        if not payload.customer_id or not payload.delivery or payload.delivery.is_pickup:
+            return
+        if not payload.delivery.street or not payload.delivery.city:
+            return
+        has_address = (
+            self._db.query(Address.id)
+            .filter(Address.customer_id == payload.customer_id)
+            .first()
+            is not None
+        )
+        if has_address:
+            return
+        self._db.add(Address(
+            id=str(uuid.uuid4()),
+            customer_id=payload.customer_id,
+            label="Primeiro pedido",
+            street=payload.delivery.street.strip(),
+            number=None,
+            complement=payload.delivery.complement,
+            neighborhood=payload.delivery.neighborhood,
+            city=payload.delivery.city.strip(),
+            zip_code=payload.delivery.zip_code,
+            is_default=True,
+        ))
 
     def _validate_item(
         self,
@@ -227,7 +254,6 @@ class OrderService:
             raise CartEmpty()
 
         if payload.customer_id:
-            from backend.models.customer import Customer as CustomerModel
             if not self._db.query(CustomerModel).filter(CustomerModel.id == payload.customer_id).first():
                 raise DomainError(
                     "Conta não encontrada. Faça login novamente para continuar.",
@@ -341,6 +367,7 @@ class OrderService:
         )
         self._db.add(order)
         self._db.flush()
+        self._save_first_delivery_address(payload)
 
         payment_method = PaymentMethod(payload.payment_method) if payload.payment_method in PaymentMethod._value2member_map_ else PaymentMethod.pix
         self._db.add(Payment(

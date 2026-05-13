@@ -1385,8 +1385,8 @@ export const authApi = {
 
   register: (data: {
     name: string; email: string; password: string; phone: string;
-    street: string; number: string; complement?: string;
-    neighborhood: string; city: string; state?: string; zip_code: string;
+    street?: string; number?: string; complement?: string;
+    neighborhood?: string; city?: string; state?: string; zip_code?: string;
     label?: string;
     lgpd_consent: boolean; lgpd_policy_version?: string;
     marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean;
