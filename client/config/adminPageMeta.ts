@@ -56,7 +56,7 @@ export const adminPageMeta: Record<string, PageMeta> = {
   "/painel/pagamentos": { eyebrow: "Configuracoes", title: "Pagamentos", subtitle: "Meios de pagamento e credenciais" },
   "/painel/frete": { eyebrow: "Configuracoes", title: "Entregas e Fretes", subtitle: "Regras de entrega e taxas" },
   "/painel/funcionamento": { eyebrow: "Configuracoes", title: "Funcionamento da Loja Online", subtitle: "Dias, horarios, excecoes e agendamento" },
-  "/painel/chatbot": { eyebrow: "Configuracoes", title: "Chatbot", subtitle: "Atendimento inteligente integrado ao site" },
+  "/painel/chatbot": { eyebrow: "Marketing", title: "Chatbot", subtitle: "Atendimento inteligente integrado ao site" },
   "/painel/aparencia": { eyebrow: "Configuracoes", title: "Aparencia", subtitle: "Tema visual e identidade da loja" },
   "/painel/usuarios": { eyebrow: "Configuracoes", title: "Usuarios do Sistema", subtitle: "Acessos administrativos" },
   "/painel/lgpd": { eyebrow: "Configuracoes", title: "LGPD & Privacidade", subtitle: "Politicas, consentimentos e privacidade" },
