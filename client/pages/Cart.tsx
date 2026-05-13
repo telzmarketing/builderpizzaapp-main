@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Plus, Minus, Trash2, UtensilsCrossed, ShoppingCart, Tag, Check, X } from "lucide-react";
 import { useApp, CartItem } from "@/context/AppContext";
@@ -199,13 +199,15 @@ export default function Cart() {
       {/* Content */}
       <div className="px-4 pt-6 pb-36">
         <div className="space-y-3">
-          {cart.map((item) => (
-            <CartItemRow
-              key={item.cartItemId}
-              item={item}
-              onRemove={() => removeFromCart(item.cartItemId)}
-              onUpdate={(qty) => updateCartItem(item.cartItemId, qty, item.selectedSize, item.selectedAddOns)}
-            />
+          {cart.map((item, index) => (
+            <Fragment key={item.cartItemId}>
+              <CartItemRow
+                item={item}
+                onRemove={() => removeFromCart(item.cartItemId)}
+                onUpdate={(qty) => updateCartItem(item.cartItemId, qty, item.selectedSize, item.selectedAddOns)}
+              />
+              {index === cart.length - 1 && <CheckoutUpsell isLocked={false} />}
+            </Fragment>
           ))}
           {couponGift && (
             <div className="bg-green-500/10 rounded-2xl p-4 border border-green-500/30">
@@ -303,9 +305,6 @@ export default function Cart() {
           </div>
         </div>
 
-        <div className="mt-4">
-          <CheckoutUpsell isLocked={false} />
-        </div>
       </div>
 
       {/* Finalizar Pedido */}
