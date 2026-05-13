@@ -1,6 +1,6 @@
 # Base de Conhecimento — PizzaApp
 > Documento técnico completo: telas, funcionalidades, banco de dados, endpoints e integrações.
-> Gerado em: 2026-04-13 | **Atualizado em: 2026-05-03** | Versao: 2.7.0
+> Gerado em: 2026-04-13 | **Atualizado em: 2026-05-13** | Versao: 3.0.0
 
 ---
 
@@ -36,6 +36,7 @@
 14. [Atualizacao 2026-04-23 - Mercado Pago Payment Brick](#14-atualizacao-2026-04-23---mercado-pago-payment-brick)
 15. [Atualizacao 2026-04-24 - Estado Atual Consolidado](#15-atualizacao-2026-04-24---estado-atual-consolidado)
 16. [Atualizacao 2026-05-03 - Estado Atual do Admin SaaS](#16-atualizacao-2026-05-03---estado-atual-do-admin-saas)
+17. [Atualizacao 2026-05-13 - Estado Atual Completo](#17-atualizacao-2026-05-13---estado-atual-completo)
 
 ---
 
@@ -1952,4 +1953,349 @@ Observacao:
 - O inventario de aliases `/api` no backend deve ser revisado quando alguma integracao externa depender de prefixo especifico, pois nem todos os routers novos aparecem necessariamente com alias `/api` no mesmo bloco de inclusao.
 - A integracao Saipos continua indicada como stub em `backend/services/saipos_service.py`.
 - A padronizacao visual deve ser conferida manualmente em navegador nas rotas administrativas principais, principalmente paginas densas de Marketing, CRM, Logistica, Configuracoes e Pedidos.
-- O estado local contem uma alteracao pendente em `client/pages/admin/Orders.tsx`; esta base documenta o comportamento esperado do workspace atual, mas o historico remoto so refletira isso apos commit e push.
+- O estado local deve ser sempre verificado com `git status -sb`; em 2026-05-13 o remoto `origin/main` estava sincronizado apos o commit `f5fa13a`, restando apenas ruido local em `.claude/*` e `backend/__pycache__/*`.
+
+---
+
+## 17. Atualizacao 2026-05-13 - Estado Atual Completo
+
+Esta secao consolida a leitura atual feita em 2026-05-13. Quando houver divergencia com secoes historicas anteriores, esta secao deve ser tratada como a referencia mais recente.
+
+### 17.1 Estado do repositorio
+
+- Branch principal: `main`.
+- Remoto: `https://github.com/telzmarketing/builderpizzaapp-main.git`.
+- Ultimo push funcional confirmado: `f5fa13a feat(marketing): mapear eventos e ajustar notificacoes`.
+- Sincronizacao apos push: `git rev-list --left-right --count origin/main...HEAD` retornou `0 0`.
+- Ruido local conhecido e fora de escopo de commits funcionais: `.claude/settings*`, `.claude/worktrees/*` e `backend/__pycache__/*`.
+- O projeto possui cerca de 346 arquivos principais em `backend/`, `client/`, `server/` e `shared/`.
+
+### 17.2 Validacao atual
+
+Comandos executados em 2026-05-13:
+
+- `npm.cmd run typecheck`: passou.
+- `npm.cmd test`: passou quando executado isoladamente, com 6 arquivos e 25 testes.
+- `npm.cmd run build`: passou, gerando `dist/spa` e `dist/server`.
+- `py -m py_compile backend/main.py`: nao executou porque nao ha Python instalado neste ambiente local.
+
+Observacao operacional:
+- Evitar rodar `npm test` em paralelo com outros comandos neste ambiente, pois uma execucao concorrente apontou o Vitest para uma copia sandbox e incluiu specs dentro de `.claude/worktrees`, gerando falha falsa.
+
+### 17.3 Stack e scripts atuais
+
+Scripts declarados em `package.json`:
+
+- `npm run dev`
+- `npm run build`
+- `npm run build:client`
+- `npm run build:server`
+- `npm run start`
+- `npm run test`
+- `npm run format.fix`
+- `npm run typecheck`
+
+Nao ha script `lint` declarado.
+
+Stack operacional:
+
+- Frontend: React 18, TypeScript, Vite, Tailwind, React Router, shadcn/Radix, Lucide.
+- Backend: FastAPI, SQLAlchemy, Pydantic, Alembic, PostgreSQL.
+- Server JS: Vite SSR/Express em `server/`.
+- Cliente de API frontend: `client/lib/api.ts`; componentes nao devem chamar `fetch` diretamente.
+
+### 17.4 Rotas principais do app cliente
+
+Rotas publicas relevantes em `client/App.tsx`:
+
+- `/`
+- `/product/:id`
+- `/cart`
+- `/checkout`
+- `/order-tracking`
+- `/fidelidade`
+- `/cupons`
+- `/pedidos`
+- `/conta`
+- `/localizacao`
+- `/cardapio`
+- `/campanha/:slug`
+- `/motoboy`
+
+Componente global da loja:
+
+- `client/components/StoreSocialProofNotification.tsx` renderiza os baloes de prova social.
+- O componente cria uma sessao anonima em `localStorage` e consulta `/store-notifications/next`.
+
+### 17.5 Rotas atuais do painel administrativo
+
+Rotas administrativas protegidas relevantes:
+
+- `/painel`
+- `/painel/bi`
+- `/painel/products`
+- `/painel/home-config`
+- `/painel/orders`
+- `/painel/cozinha`
+- `/painel/logistica`
+- `/painel/clientes`
+- `/painel/clientes/:id`
+- `/painel/crm`
+- `/painel/crm/inteligencia`
+- `/painel/crm/pipeline`
+- `/painel/crm/grupos`
+- `/painel/crm/tarefas`
+- `/painel/marketing`
+- `/painel/marketing/campanhas`
+- `/painel/marketing/visitantes`
+- `/painel/marketing/links`
+- `/painel/marketing/integracoes`
+- `/painel/marketing/whatsapp`
+- `/painel/marketing/email`
+- `/painel/marketing/automacoes`
+- `/painel/marketing/ads`
+- `/painel/trafego-pago`
+- `/painel/marketing/workflow`
+- `/painel/marketing/cupons`
+- `/painel/marketing/notificacoes`
+- `/painel/marketing/upsell`
+- `/painel/campanhas`
+- `/painel/fidelidade`
+- `/painel/popup-saida`
+- `/painel/conteudo`
+- `/painel/pagamentos`
+- `/painel/frete`
+- `/painel/funcionamento`
+- `/painel/chatbot`
+- `/painel/aparencia`
+- `/painel/usuarios`
+- `/painel/lgpd`
+- `/painel/configuracoes`
+
+Fontes de navegacao e metadados:
+
+- `client/config/adminNavigation.ts`
+- `client/config/adminPageMeta.ts`
+
+Regra vigente do painel:
+
+- O shell global fica em `client/components/layout/AdminLayout.tsx`.
+- Paginas administrativas nao devem montar header/sidebar propria.
+- Ordem visual esperada: Header global, tabs quando aplicavel, toolbar, conteudo.
+
+### 17.6 Inventario backend atual
+
+Rotas em `backend/routes/`:
+
+- Admin/autenticacao: `admin.py`, `admin_auth.py`, `admin_users.py`, `auth.py`, `rbac.py`.
+- Loja/catalogo: `products.py`, `home_config.py`, `theme.py`, `site_config.py`, `upload.py`.
+- Pedidos/operacao: `orders.py`, `payments.py`, `shipping.py`, `delivery.py`, `store_operation.py`, `webhooks.py`.
+- Clientes/CRM: `customers.py`, `customer_access.py`, `customer_events.py`, `crm.py`, `order_access.py`.
+- Marketing: `marketing.py`, `whatsapp_marketing.py`, `email_marketing.py`, `automations.py`, `marketing_workflow.py`, `paid_traffic.py`, `ads_oauth.py`, `campaigns.py`, `promotions.py`, `coupons.py`, `exit_popup.py`, `loyalty.py`, `store_notifications.py`, `upsells.py`.
+- BI: `bi.py`.
+- Chatbot/privacidade: `chatbot.py`, `admin_chatbot.py`, `lgpd.py`.
+
+Modelos novos ou relevantes:
+
+- `store_notification.py`: notificacoes reais/manuais, capturadas e historico de exibicao.
+- `upsell.py`: upsells, metricas, eventos e vinculo com pedido.
+- `business_intelligence.py`: base de BI.
+- `paid_traffic.py`: pixels, CAPI e rastreamento pago.
+
+Services novos ou relevantes:
+
+- `store_notification_service.py`
+- `upsell_engine.py`
+- `business_intelligence_service.py`
+- `paid_traffic_service.py`
+- `automation_service.py`
+
+`backend/main.py` inclui routers diretos e aliases com prefixo `/api` para os modulos principais, incluindo `bi`, `store_notifications` e `upsells`.
+
+### 17.7 Migrations atuais relevantes
+
+Migrations presentes ate 2026-05-13:
+
+- `20260503_business_intelligence.py`
+- `20260503_driver_mobile_logistics.py`
+- `20260504_coupon_compound_benefits.py`
+- `20260504_customer_password_auth.py`
+- `20260505_coupon_public_profile.py`
+- `20260505_coupon_trigger_automation.py`
+- `20260506_campaign_product_link.py`
+- `20260506_store_notifications.py`
+- `20260507_notification_captured.py`
+- `20260507_whatsapp_interval_range.py`
+- `20260507_whatsapp_providers_media.py`
+- `20260507_whatsapp_template_media.py`
+- `20260508_whatsapp_contact_lists.py`
+- `20260511_best_seller_badge.py`
+- `20260511_visitor_location_status.py`
+- `20260512_ads_pixel_capi_config.py`
+- `20260512_ads_pixel_event_defaults.py`
+- `20260512_delivery_problem_resolution.py`
+- `20260512_exit_popup_delay.py`
+- `20260513_store_notification_display_rules.py`
+
+Regra:
+- Toda alteracao persistente deve ter migration Alembic.
+- Os `ALTER TABLE ... IF NOT EXISTS` de `backend/main.py` sao compatibilidade de runtime e nao substituem migration.
+
+### 17.8 Marketing, pixel e trafego pago
+
+Separacao vigente:
+
+- `Marketing > Integracoes` (`MarketingIntegracoes.tsx`) concentra Meta Graph/OAuth e credenciais de conta.
+- `Trafego Pago` (`PaidTraffic.tsx`) concentra Pixel ID, Conversions API token, codigo base e configuracoes de eventos.
+- `client/lib/tracking.ts` inicializa e dispara tracking da loja.
+- Configuracao store-facing do pixel vem de `/paid-traffic/pixels/store-config`.
+
+Eventos mapeados:
+
+- O modulo de automacoes em `MarketingAutomacoes.tsx` possui aba/eventos mapeados e consome tipos em `client/lib/api.ts`.
+- Backend relacionado: `backend/routes/automations.py` e `backend/services/automation_service.py`.
+
+### 17.9 Notificacoes da loja e prova social
+
+Fluxo atual:
+
+- Painel: `client/pages/admin/marketing/MarketingStoreNotifications.tsx`.
+- Balão na loja: `client/components/StoreSocialProofNotification.tsx`.
+- Backend: `backend/routes/store_notifications.py`, `backend/services/store_notification_service.py`.
+- Model/schema: `backend/models/store_notification.py`, `backend/schemas/store_notification.py`.
+
+Regras implementadas:
+
+- Compras reais/capturadas tem prioridade sobre notificacoes manuais.
+- Notificacoes manuais usam o campo `purchase_minutes_ago`.
+- O painel exibe e edita o campo "Exibir como compra realizada ha X minutos".
+- Tempo precisa ser inteiro positivo.
+- Notificacao com nome, produto, bairro ou tempo faltando nao e exibida.
+- Notificacao cujo horario simulado fique antes de 18:00 nao e exibida.
+- Cliente logado nao deve ver notificacao da propria compra quando `source_customer_id` coincide com `customer_id`.
+- Visitante anonimo recebe `anonymous_session_id` e o backend registra historico em `store_notification_impressions`.
+- A mesma notificacao nao deve aparecer mais de uma vez para o mesmo cliente/sessao anonima.
+- Se nao houver notificacao elegivel, o frontend nao forca exibicao.
+
+Campos adicionados:
+
+- `store_notifications.purchase_minutes_ago`
+- `store_notification_impressions.customer_id`
+- `store_notification_impressions.anonymous_session_id`
+- `store_notification_impressions.notification_type`
+
+### 17.10 WhatsApp marketing
+
+Estado atual:
+
+- Backend: `backend/routes/whatsapp_marketing.py`.
+- Painel: `client/pages/admin/marketing/MarketingWhatsApp.tsx`.
+- Configuracao suporta intervalo minimo/maximo entre envios: `interval_min_seconds` e `interval_max_seconds`.
+- Listas de contatos possuem estrutura minima: nome e telefone.
+- O disparador permite selecionar/criar lista dentro do fluxo de envio.
+- Templates suportam midia e provedores.
+- Deve manter fallback de `interval_seconds` para compatibilidade.
+
+### 17.11 Cupons, campanhas, promocoes e banners
+
+Cupons:
+
+- Backend principal: `backend/services/coupon_service.py`.
+- Cupom com gatilho de automacao so deve ser usado por clientes elegiveis pelo gatilho.
+- Cupom sem gatilho segue liberado conforme suas regras normais.
+
+Promocoes e banners:
+
+- Painel: `client/pages/admin/AdminCampanhas.tsx`.
+- Produtos vinculados a campanhas devem listar produtos promocionais elegiveis, nao apenas brindes.
+- Migration relevante: `20260506_campaign_product_link.py`.
+
+### 17.12 Produtos, tamanhos e massas
+
+Painel principal:
+
+- `client/pages/admin/Products.tsx`.
+
+Regras recentes:
+
+- Cadastro inicial de produto nao deve exigir preco base quando o preco depende de tamanho/massa/borda.
+- Tamanhos e tipos de massa podem ser organizados por ordem.
+- Produtos no painel podem ser ordenados por criterios como recente, data, nome e tipo.
+- Helpers de midia em `client/lib/api.ts` continuam relevantes para resolver uploads/imagens.
+
+### 17.13 Carrinho e upsell
+
+Upsell:
+
+- Backend: `backend/routes/upsells.py`, `backend/services/upsell_engine.py`, `backend/models/upsell.py`.
+- Painel: `/painel/marketing/upsell`.
+- Carrinho deve exibir upsell logo abaixo do produto selecionado pelo cliente.
+- Tabelas/runtime incluem `upsells`, `upsell_metrics`, `upsell_events` e `order_upsells`.
+
+### 17.14 Pedidos, cozinha, impressora e som
+
+Pedidos:
+
+- Painel: `client/pages/admin/Orders.tsx`.
+- Cozinha: `client/pages/admin/Cozinha.tsx`.
+- Impressora/configuracoes: `client/pages/admin/AdminConfiguracoes.tsx` e helpers em `client/lib/printing.ts`.
+
+Comportamentos recentes:
+
+- Ao confirmar pedido, impressao deve gerar via da cozinha e via completa/recepcao.
+- Via de entrega deve mascarar sobrenome e ocultar telefone quando aplicavel.
+- Alerta sonoro de novo pedido deve tocar e, em seguida, dizer em voz alta "PEDIDO".
+- `client/lib/printing.spec.ts` cobre montagem de comandas.
+
+### 17.15 Logistica, motoboy e entrega
+
+Arquivos principais:
+
+- `client/pages/Motoboy.tsx`
+- `client/pages/admin/logistica/LogisticaMapa.tsx`
+- `backend/routes/delivery.py`
+- `backend/services/delivery_service.py`
+
+Regras vigentes:
+
+- Usuario motoboy deve ver apenas modulo/fluxo de logistica.
+- Mapa deve renderizar o pin do motoboy.
+- Sistema deve sugerir rota de entregas e link acionavel do Google Maps.
+
+### 17.16 BI e CRM
+
+BI:
+
+- Rota frontend: `/painel/bi`.
+- Backend: `backend/routes/bi.py`, `backend/services/business_intelligence_service.py`, `backend/models/business_intelligence.py`.
+
+CRM:
+
+- Rotas: `/painel/crm`, `/painel/crm/inteligencia`, `/painel/crm/pipeline`, `/painel/crm/grupos`, `/painel/crm/tarefas`.
+- Services relevantes: `customer_ai_service.py`, `customer_metrics_service.py`.
+- Modelos relevantes: `crm.py`, `customer_event.py`, `customer.py`.
+
+### 17.17 Chatbot e configuracoes
+
+Chatbot:
+
+- Backend: `chatbot.py`, `admin_chatbot.py`, `chatbot_service.py`.
+- Painel: `/painel/chatbot` e paginas em `client/pages/admin/chatbot/`.
+- Suporta modos/provedor de IA e configuracoes de atendimento.
+
+Configuracoes:
+
+- `/painel/configuracoes` concentra impressora/modelos e som.
+- `/painel/funcionamento` concentra horario de loja.
+- `/painel/lgpd` concentra politicas e consentimentos.
+
+### 17.18 Regras operacionais para proximas demandas
+
+- Antes de alterar comportamento, mapear estrutura do projeto e arquivos responsaveis.
+- Preservar arquitetura atual: rota delega, service decide regra, schema valida, frontend consome via `client/lib/api.ts`.
+- Em painel admin, manter o shell global e evitar headers/sidebars duplicados.
+- Quando houver banco, criar migration Alembic e manter compatibilidade de runtime se o projeto ja fizer isso no mesmo modulo.
+- Para frontend, validar com `npm.cmd run typecheck` e `npm.cmd run build`.
+- Para testes, executar `npm.cmd test` isoladamente neste ambiente.
+- Python local nao esta disponivel; validacao backend Python precisa ocorrer em ambiente com Python instalado.
+- Ao fazer push, manter `.claude/*` e `backend/__pycache__/*` fora do commit.
