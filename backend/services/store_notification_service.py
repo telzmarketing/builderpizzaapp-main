@@ -649,7 +649,7 @@ class StoreNotificationService:
         return aliases.get(page, page if page in ALLOWED_PAGES else "home")
 
     def _next_delay(self, settings: StoreNotificationSettings) -> int:
-        min_delay = max(5, settings.min_delay_seconds or 45)
+        min_delay = max(1, settings.min_delay_seconds or 45)
         max_delay = max(min_delay, settings.max_delay_seconds or min_delay)
         return random.randint(min_delay, max_delay)
 

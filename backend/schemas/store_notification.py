@@ -17,8 +17,8 @@ class StoreNotificationSettingsIn(BaseModel):
     real_percentage: int = Field(default=70, ge=0, le=100)
     manual_percentage: int = Field(default=30, ge=0, le=100)
     initial_delay_seconds: int = Field(default=5, ge=1, le=60)
-    min_delay_seconds: int = Field(default=45, ge=5, le=3600)
-    max_delay_seconds: int = Field(default=120, ge=5, le=7200)
+    min_delay_seconds: int = Field(default=45, ge=1, le=3600)
+    max_delay_seconds: int = Field(default=120, ge=1, le=7200)
     default_display_seconds: int = Field(default=7, ge=3, le=60)
     prevent_same_product_sequence: bool = True
     prevent_same_neighborhood_sequence: bool = False

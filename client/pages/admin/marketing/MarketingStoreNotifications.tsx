@@ -297,6 +297,20 @@ export default function MarketingStoreNotifications() {
   };
 
   const saveSettings = async () => {
+    const values = [
+      settings.initial_delay_seconds,
+      settings.min_delay_seconds,
+      settings.max_delay_seconds,
+      settings.default_display_seconds,
+    ];
+    if (values.some((value) => !Number.isInteger(value) || value <= 0)) {
+      alert("Informe apenas numeros inteiros positivos nos temporizadores.");
+      return;
+    }
+    if (settings.max_delay_seconds < settings.min_delay_seconds) {
+      alert("O tempo maximo entre exibicoes deve ser maior ou igual ao minimo.");
+      return;
+    }
     setSaving(true);
     try {
       await storeNotificationsApi.updateSettings(settings);
@@ -857,7 +871,14 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
   return (
     <label className="space-y-1">
       <span className="text-xs text-stone">{label}</span>
-      <input className={IC} min={0} type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <input
+        className={IC}
+        min={1}
+        step={1}
+        type="number"
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
     </label>
   );
 }
