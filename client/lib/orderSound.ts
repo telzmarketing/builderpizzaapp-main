@@ -36,6 +36,33 @@ export function saveSoundType(type: OrderSoundType): void {
   localStorage.setItem(LS_KEY, type);
 }
 
+function speakPedidoAfter(delayMs: number): void {
+  if (!("speechSynthesis" in window)) return;
+  window.setTimeout(() => {
+    try {
+      window.speechSynthesis.cancel();
+      const voices = window.speechSynthesis.getVoices();
+      const ptVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith("pt"));
+      const speak = (delay: number) => {
+        window.setTimeout(() => {
+          const utterance = new SpeechSynthesisUtterance("PEDIDO");
+          utterance.lang = "pt-BR";
+          utterance.rate = 0.7;
+          utterance.pitch = 0.75;
+          utterance.volume = 1;
+          if (ptVoice) utterance.voice = ptVoice;
+          window.speechSynthesis.speak(utterance);
+        }, delay);
+      };
+      speak(0);
+      speak(850);
+      speak(1700);
+    } catch {
+      /* speechSynthesis can be blocked by browser audio policies */
+    }
+  }, delayMs);
+}
+
 export function playOrderAlert(type: OrderSoundType = "classic"): void {
   if (type === "silent") return;
   try {
@@ -65,24 +92,7 @@ export function playOrderAlert(type: OrderSoundType = "classic"): void {
       alarm(880,  0.64, 0.12);
       alarm(1320, 0.78, 0.18);
 
-      // Voice: "PEDIDO" spoken loudly, twice
-      setTimeout(() => {
-        if ("speechSynthesis" in window) {
-          window.speechSynthesis.cancel();
-          const speak = (text: string, delay: number) => {
-            setTimeout(() => {
-              const u = new SpeechSynthesisUtterance(text);
-              u.lang = "pt-BR";
-              u.rate = 0.8;
-              u.pitch = 0.85;
-              u.volume = 1;
-              window.speechSynthesis.speak(u);
-            }, delay);
-          };
-          speak("PEDIDO!", 0);
-          speak("PEDIDO!", 900);
-        }
-      }, 1050);
+      speakPedidoAfter(1100);
     }
 
     if (type === "bell") {
@@ -102,6 +112,7 @@ export function playOrderAlert(type: OrderSoundType = "classic"): void {
       note(659, 0.18, 0.45);
       note(784, 0.36, 0.55);
       note(1047, 0.54, 0.7);
+      speakPedidoAfter(1350);
     }
   } catch {
     // AudioContext pode falhar sem interação prévia do usuário
