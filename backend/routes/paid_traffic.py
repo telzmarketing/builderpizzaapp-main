@@ -16,6 +16,7 @@ from backend.schemas.paid_traffic import (
     CampaignSettingsIn,
     CampaignSettingsOut,
     PaidTrafficDashboardOut,
+    PaidTrafficRealtimeOut,
     SyncResultOut,
     TrafficCampaignCreate,
     TrafficCampaignOut,
@@ -28,6 +29,11 @@ from backend.schemas.paid_traffic import (
 from backend.services.paid_traffic_service import PaidTrafficService
 
 router = APIRouter(tags=["paid-traffic"])
+DEFAULT_PIXEL_EVENTS = "PageView,ViewContent,AddToCart,InitiateCheckout,Purchase,Lead"
+
+
+def _split_pixel_events(raw: str | None) -> list[str]:
+    return [event.strip() for event in (raw or DEFAULT_PIXEL_EVENTS).split(",") if event.strip()]
 
 
 @router.post("/tracking/event", response_model=TrackingEventOut, status_code=201)
@@ -58,7 +64,7 @@ def campaign_pixel_config(campaign_id: str, db: Session = Depends(get_db)):
     return ok({
         "platform": pixel.platform,
         "pixel_id": pixel.pixel_id,
-        "events": [e.strip() for e in (campaign.pixel_events or "PageView").split(",") if e.strip()],
+        "events": _split_pixel_events(campaign.pixel_events or pixel.events_tracked),
     })
 
 
@@ -78,11 +84,7 @@ def store_pixel_config(db: Session = Depends(get_db)):
         {
             "platform": pixel.platform,
             "pixel_id": pixel.pixel_id,
-            "events": [
-                e.strip()
-                for e in (pixel.events_tracked or "PageView").split(",")
-                if e.strip()
-            ],
+            "events": _split_pixel_events(pixel.events_tracked),
         }
         for pixel in pixels
         if pixel.pixel_id
@@ -99,6 +101,15 @@ def dashboard(
     db: Session = Depends(get_db),
 ):
     return PaidTrafficService(db).dashboard(date_from=date_from, date_to=date_to)
+
+
+@admin_router.get("/realtime", response_model=PaidTrafficRealtimeOut)
+def realtime_tracking(
+    window_minutes: int = Query(default=15, ge=1, le=240),
+    limit: int = Query(default=60, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    return PaidTrafficService(db).realtime(window_minutes=window_minutes, limit=limit)
 
 
 @admin_router.get("/campaigns", response_model=list[TrafficCampaignOut])

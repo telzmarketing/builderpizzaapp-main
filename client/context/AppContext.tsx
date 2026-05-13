@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
-import { getTrackingData } from "@/lib/tracking";
+import { firePixelEvent, getTrackingData } from "@/lib/tracking";
 import {
   productsApi,
   promotionsApi,
@@ -600,6 +600,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCustomer(c);
     localStorage.setItem("customer", JSON.stringify(c));
     _linkSession(c.id);
+    firePixelEvent("Lead", { content_name: "Cadastro de cliente" });
   };
 
   const customerLogout = () => {
@@ -683,6 +684,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       customer_id: customer?.id ?? null,
       session_id: _td.session_id,
     }).catch(() => {});
+    firePixelEvent("AddToCart", {
+      value: finalPrice * quantity,
+      content_name: primaryProduct.name,
+    });
   };
 
   const updateCartItem = (cartItemId: string, quantity: number, size: string, addOns: string[]) =>

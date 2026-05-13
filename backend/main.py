@@ -576,7 +576,7 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_ads_campaigns_spend ON ads_campaigns(spend DESC)",
         # Ads UTM links + pixels
         "CREATE TABLE IF NOT EXISTS ads_utm_links (id VARCHAR PRIMARY KEY, name VARCHAR(300) NOT NULL, url TEXT NOT NULL, utm_source VARCHAR(100) DEFAULT '', utm_medium VARCHAR(100) DEFAULT '', utm_campaign VARCHAR(200) DEFAULT '', utm_term VARCHAR(200) DEFAULT '', utm_content VARCHAR(200) DEFAULT '', clicks INTEGER DEFAULT 0, conversions INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW())",
-        "CREATE TABLE IF NOT EXISTS ads_pixels (id VARCHAR PRIMARY KEY, platform VARCHAR(30) NOT NULL, pixel_id VARCHAR(200) NOT NULL, enabled BOOLEAN DEFAULT TRUE, events_tracked VARCHAR(500) DEFAULT 'PageView,Purchase,Lead', conversion_access_token TEXT, base_code TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS ads_pixels (id VARCHAR PRIMARY KEY, platform VARCHAR(30) NOT NULL, pixel_id VARCHAR(200) NOT NULL, enabled BOOLEAN DEFAULT TRUE, events_tracked VARCHAR(500) DEFAULT 'PageView,ViewContent,AddToCart,InitiateCheckout,Purchase,Lead', conversion_access_token TEXT, base_code TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         "ALTER TABLE ads_pixels ADD COLUMN IF NOT EXISTS conversion_access_token TEXT",
         "ALTER TABLE ads_pixels ADD COLUMN IF NOT EXISTS base_code TEXT",
         "CREATE INDEX IF NOT EXISTS ix_ads_pixels_platform ON ads_pixels(platform)",

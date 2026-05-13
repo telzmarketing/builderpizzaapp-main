@@ -565,6 +565,56 @@ export interface PaidTrafficDashboard {
   by_day: Array<Record<string, any>>;
 }
 
+export interface PaidTrafficRealtimeEvent {
+  id: string;
+  visitor_id: string;
+  session_id: string | null;
+  event_type: string;
+  page: string | null;
+  product_id: string | null;
+  product_name: string | null;
+  metadata: Record<string, unknown> | null;
+  city: string | null;
+  device: string | null;
+  browser: string | null;
+  created_at: string;
+}
+
+export interface PaidTrafficRealtimeVisitor {
+  id: string;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  device: string | null;
+  browser: string | null;
+  operating_system: string | null;
+  sessions: number;
+  pageviews: number;
+  orders: number;
+  current_page: string | null;
+  current_event: string | null;
+  current_event_at: string | null;
+  last_seen: string;
+  is_online: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  location_accuracy_m: number | null;
+}
+
+export interface PaidTrafficRealtime {
+  generated_at: string;
+  window_minutes: number;
+  online_visitors: number;
+  active_sessions: number;
+  total_events: number;
+  last_event_at: string | null;
+  visitors: PaidTrafficRealtimeVisitor[];
+  events: PaidTrafficRealtimeEvent[];
+  event_counts: Array<{ name: string; count: number }>;
+  devices: Array<{ name: string; count: number }>;
+  cities: Array<{ name: string; count: number }>;
+}
+
 export type MarketingVisitorsPeriod = "today" | "7d" | "30d" | "90d";
 
 export interface MarketingVisitorData {
@@ -2305,6 +2355,7 @@ export interface CampaignPixelConfig {
 
 export const paidTrafficApi = {
   dashboard: () => get<PaidTrafficDashboard>("/paid-traffic/dashboard"),
+  realtime: (windowMinutes = 15) => get<PaidTrafficRealtime>(`/paid-traffic/realtime?window_minutes=${windowMinutes}`),
   campaigns: () => get<TrafficCampaign[]>("/paid-traffic/campaigns"),
   createCampaign: (data: Partial<TrafficCampaign>) => post<TrafficCampaign>("/paid-traffic/campaigns", data),
   updateCampaign: (id: string, data: Partial<TrafficCampaign>) => put<TrafficCampaign>(`/paid-traffic/campaigns/${id}`, data),

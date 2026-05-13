@@ -8,7 +8,7 @@ import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariat
 import { sizesApi, crustApi, drinkVariantApi, productPromotionsApi, customerEventsApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductPriceQuote, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { isAllowedPizzaSize, isPizzaBroto, pizzaSizeDescription, pizzaSizeLabel, PIZZA_SIZE_LABELS } from "@/lib/pizzaSizes";
 import { formatCrustAddition, normalizeCrustPriceAddition } from "@/lib/pricing";
-import { trackEvent, getTrackingData } from "@/lib/tracking";
+import { firePixelEvent, trackEvent, getTrackingData } from "@/lib/tracking";
 
 // ─── Add-ons ──────────────────────────────────────────────────────────────────
 
@@ -169,6 +169,10 @@ export default function Product() {
       page_url: window.location.href,
     }).catch(() => {});
     trackEvent("product_viewed", undefined, { product_id: product.id });
+    firePixelEvent("ViewContent", {
+      value: product.current_price ?? product.price,
+      content_name: product.name,
+    });
   }, [product?.id]);
 
   useEffect(() => {

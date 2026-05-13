@@ -210,6 +210,61 @@ class PaidTrafficDashboardOut(BaseModel):
     by_day: list[dict]
 
 
+class PaidTrafficRealtimeEventOut(BaseModel):
+    id: str
+    visitor_id: str
+    session_id: Optional[str] = None
+    event_type: str
+    page: Optional[str] = None
+    product_id: Optional[str] = None
+    product_name: Optional[str] = None
+    metadata: Optional[dict] = None
+    city: Optional[str] = None
+    device: Optional[str] = None
+    browser: Optional[str] = None
+    created_at: datetime
+
+
+class PaidTrafficRealtimeVisitorOut(BaseModel):
+    id: str
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
+    device: Optional[str] = None
+    browser: Optional[str] = None
+    operating_system: Optional[str] = None
+    sessions: int
+    pageviews: int
+    orders: int
+    current_page: Optional[str] = None
+    current_event: Optional[str] = None
+    current_event_at: Optional[datetime] = None
+    last_seen: datetime
+    is_online: bool
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    location_accuracy_m: Optional[float] = None
+
+
+class PaidTrafficRealtimeBreakdownOut(BaseModel):
+    name: str
+    count: int
+
+
+class PaidTrafficRealtimeOut(BaseModel):
+    generated_at: datetime
+    window_minutes: int
+    online_visitors: int
+    active_sessions: int
+    total_events: int
+    last_event_at: Optional[datetime] = None
+    visitors: list[PaidTrafficRealtimeVisitorOut]
+    events: list[PaidTrafficRealtimeEventOut]
+    event_counts: list[PaidTrafficRealtimeBreakdownOut]
+    devices: list[PaidTrafficRealtimeBreakdownOut]
+    cities: list[PaidTrafficRealtimeBreakdownOut]
+
+
 class SyncResultOut(BaseModel):
     status: str
     message: str

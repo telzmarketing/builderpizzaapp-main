@@ -4,7 +4,7 @@ import base64
 import hashlib
 import json
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from cryptography.fernet import Fernet
@@ -320,6 +320,148 @@ class PaidTrafficService:
         return settings
 
     # Analytics
+    def realtime(self, window_minutes: int = 15, limit: int = 60) -> dict:
+        from backend.models.product import Product
+        from backend.routes.marketing import MarketingSettings, VisitorEvent, VisitorProfile, VisitorSession
+
+        now = datetime.now(timezone.utc)
+        since = now - timedelta(minutes=window_minutes)
+        settings = self._db.query(MarketingSettings).filter(MarketingSettings.id == "default").first()
+        online_minutes = settings.online_visitor_minutes if settings and settings.online_visitor_minutes else 5
+        online_since = now - timedelta(minutes=online_minutes)
+
+        recent_events = (
+            self._db.query(VisitorEvent, VisitorProfile, Product.name)
+            .join(VisitorProfile, VisitorProfile.id == VisitorEvent.visitor_id)
+            .outerjoin(Product, Product.id == VisitorEvent.product_id)
+            .filter(VisitorEvent.created_at >= since)
+            .order_by(VisitorEvent.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+        latest_by_visitor: dict[str, VisitorEvent] = {}
+        for event, _visitor, _product_name in recent_events:
+            latest_by_visitor.setdefault(event.visitor_id, event)
+
+        visitors = (
+            self._db.query(VisitorProfile)
+            .filter(VisitorProfile.last_seen_at >= since)
+            .order_by(VisitorProfile.last_seen_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+        event_counts = (
+            self._db.query(VisitorEvent.event_type, func.count(VisitorEvent.id))
+            .filter(VisitorEvent.created_at >= since)
+            .group_by(VisitorEvent.event_type)
+            .order_by(func.count(VisitorEvent.id).desc())
+            .limit(12)
+            .all()
+        )
+        device_counts = (
+            self._db.query(func.coalesce(VisitorProfile.device_type, "unknown"), func.count(VisitorProfile.id))
+            .filter(VisitorProfile.last_seen_at >= since)
+            .group_by(func.coalesce(VisitorProfile.device_type, "unknown"))
+            .order_by(func.count(VisitorProfile.id).desc())
+            .all()
+        )
+        city_counts = (
+            self._db.query(func.coalesce(VisitorProfile.city, "Sem cidade"), func.count(VisitorProfile.id))
+            .filter(VisitorProfile.last_seen_at >= since)
+            .group_by(func.coalesce(VisitorProfile.city, "Sem cidade"))
+            .order_by(func.count(VisitorProfile.id).desc())
+            .limit(8)
+            .all()
+        )
+
+        total_events = (
+            self._db.query(func.count(VisitorEvent.id))
+            .filter(VisitorEvent.created_at >= since)
+            .scalar()
+            or 0
+        )
+        active_sessions = (
+            self._db.query(func.count(VisitorSession.id))
+            .filter(VisitorSession.started_at >= since)
+            .scalar()
+            or 0
+        )
+        online_visitors = (
+            self._db.query(func.count(VisitorProfile.id))
+            .filter(VisitorProfile.last_seen_at >= online_since)
+            .scalar()
+            or 0
+        )
+
+        def metadata(raw: str | None) -> dict | None:
+            if not raw:
+                return None
+            try:
+                parsed = json.loads(raw)
+                return parsed if isinstance(parsed, dict) else None
+            except Exception:
+                return None
+
+        def is_online(value: datetime | None) -> bool:
+            if not value:
+                return False
+            comparable = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+            return comparable >= online_since
+
+        return {
+            "generated_at": now,
+            "window_minutes": window_minutes,
+            "online_visitors": online_visitors,
+            "active_sessions": active_sessions,
+            "total_events": total_events,
+            "last_event_at": recent_events[0][0].created_at if recent_events else None,
+            "visitors": [
+                {
+                    "id": visitor.id,
+                    "city": visitor.city,
+                    "state": visitor.state,
+                    "country": visitor.country,
+                    "device": visitor.device_type,
+                    "browser": visitor.browser,
+                    "operating_system": visitor.os,
+                    "sessions": visitor.total_sessions or 0,
+                    "pageviews": visitor.total_pageviews or 0,
+                    "orders": visitor.total_orders or 0,
+                    "current_page": latest_by_visitor.get(visitor.id).page if visitor.id in latest_by_visitor else None,
+                    "current_event": latest_by_visitor.get(visitor.id).event_type if visitor.id in latest_by_visitor else None,
+                    "current_event_at": latest_by_visitor.get(visitor.id).created_at if visitor.id in latest_by_visitor else None,
+                    "last_seen": visitor.last_seen_at,
+                    "is_online": is_online(visitor.last_seen_at),
+                    "latitude": visitor.latitude,
+                    "longitude": visitor.longitude,
+                    "location_accuracy_m": visitor.location_accuracy_m,
+                }
+                for visitor in visitors
+            ],
+            "events": [
+                {
+                    "id": event.id,
+                    "visitor_id": visitor.id,
+                    "session_id": event.session_id,
+                    "event_type": event.event_type,
+                    "page": event.page,
+                    "product_id": event.product_id,
+                    "product_name": product_name,
+                    "metadata": metadata(event.metadata_json),
+                    "city": visitor.city,
+                    "device": visitor.device_type,
+                    "browser": visitor.browser,
+                    "created_at": event.created_at,
+                }
+                for event, visitor, product_name in recent_events
+            ],
+            "event_counts": [{"name": event_type, "count": count or 0} for event_type, count in event_counts],
+            "devices": [{"name": device, "count": count or 0} for device, count in device_counts],
+            "cities": [{"name": city, "count": count or 0} for city, count in city_counts],
+        }
+
     def dashboard(self, date_from: date | None = None, date_to: date | None = None) -> dict:
         orders_q = self._db.query(Order)
         events_q = self._db.query(TrackingEvent)

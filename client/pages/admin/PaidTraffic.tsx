@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   CheckCircle2,
+  Clock,
   Copy,
   Download,
   ExternalLink,
@@ -11,7 +12,9 @@ import {
   LineChart,
   Link2,
   Loader2,
+  MapPin,
   Megaphone,
+  Monitor,
   PauseCircle,
   PlugZap,
   Plus,
@@ -39,6 +42,7 @@ import {
   type CampaignLink,
   type CampaignSettings,
   type PaidTrafficDashboard,
+  type PaidTrafficRealtime,
   type TrafficCampaign,
 } from "@/lib/api";
 
@@ -65,7 +69,7 @@ type CampaignForm = {
 type PixelForm = {
   platform: string;
   pixel_id: string;
-  events_tracked: string;
+  events_tracked: Set<string>;
   conversion_access_token: string;
   base_code: string;
 };
@@ -114,7 +118,8 @@ function weekdaysLabel(raw: string | null | undefined): string {
   return days.map((d) => WEEKDAYS[d]?.short ?? d).join(" · ");
 }
 
-const PIXEL_EVENT_OPTIONS = ["PageView", "InitiateCheckout", "Purchase", "AddToCart", "Lead"];
+const PIXEL_EVENT_OPTIONS = ["PageView", "ViewContent", "AddToCart", "InitiateCheckout", "Purchase", "Lead"];
+const DEFAULT_PIXEL_EVENTS = "PageView,ViewContent,AddToCart,InitiateCheckout,Purchase,Lead";
 
 const initialCampaignForm: CampaignForm = {
   name: "",
@@ -136,7 +141,7 @@ const initialCampaignForm: CampaignForm = {
 const initialPixelForm: PixelForm = {
   platform: "meta",
   pixel_id: "",
-  events_tracked: "PageView,Purchase,Lead,InitiateCheckout,AddToCart",
+  events_tracked: parsePixelEvents(DEFAULT_PIXEL_EVENTS),
   conversion_access_token: "",
   base_code: "",
 };
@@ -149,6 +154,26 @@ const formatPercent = (value: number | null | undefined) =>
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   })}%`;
+
+const formatDateTime = (value: string | null | undefined) =>
+  value ? new Date(value).toLocaleString("pt-BR") : "-";
+
+const EVENT_LABELS: Record<string, string> = {
+  page_view: "Visualizou pagina",
+  product_viewed: "Visualizou produto",
+  add_to_cart: "Adicionou ao carrinho",
+  cart_item_added: "Adicionou ao carrinho",
+  checkout_start: "Iniciou checkout",
+  checkout_started: "Iniciou checkout",
+  order_created: "Pedido criado",
+  order_paid: "Pedido pago",
+  location_update: "Localizacao atualizada",
+};
+
+function eventLabel(eventType: string | null | undefined) {
+  if (!eventType) return "-";
+  return EVENT_LABELS[eventType] ?? eventType;
+}
 
 const fieldBase =
   "w-full rounded-xl border border-surface-03 bg-surface-03/70 px-3 py-2.5 text-sm text-cream outline-none transition focus:border-gold";
@@ -166,7 +191,7 @@ function parsePixelEvents(raw: string | null | undefined): Set<string> {
 
 function serializePixelEvents(events: Set<string>): string | null {
   if (events.size === 0) return null;
-  return [...events].join(",");
+  return PIXEL_EVENT_OPTIONS.filter((eventName) => events.has(eventName)).join(",");
 }
 
 function extractMetaPixelId(code: string): string {
@@ -200,6 +225,7 @@ function platformLabel(value: string | null | undefined) {
 export default function AdminPaidTraffic() {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [dashboard, setDashboard] = useState<PaidTrafficDashboard | null>(null);
+  const [realtime, setRealtime] = useState<PaidTrafficRealtime | null>(null);
   const [campaigns, setCampaigns] = useState<TrafficCampaign[]>([]);
   const [links, setLinks] = useState<CampaignLink[]>([]);
   const [integrations, setIntegrations] = useState<AdIntegration[]>([]);
@@ -238,9 +264,10 @@ export default function AdminPaidTraffic() {
   const loadAll = async () => {
     setLoading(true);
     setError("");
-    const [dashRes, campaignRes, linkRes, integrationRes, settingsRes, productRes, couponRes, pixelRes] =
+    const [dashRes, realtimeRes, campaignRes, linkRes, integrationRes, settingsRes, productRes, couponRes, pixelRes] =
       await Promise.allSettled([
         paidTrafficApi.dashboard(),
+        paidTrafficApi.realtime(),
         paidTrafficApi.campaigns(),
         paidTrafficApi.links(),
         paidTrafficApi.integrations(),
@@ -251,6 +278,7 @@ export default function AdminPaidTraffic() {
       ]);
 
     if (dashRes.status === "fulfilled") setDashboard(dashRes.value);
+    if (realtimeRes.status === "fulfilled") setRealtime(realtimeRes.value);
     if (campaignRes.status === "fulfilled") setCampaigns(campaignRes.value);
     if (linkRes.status === "fulfilled") setLinks(linkRes.value);
     if (integrationRes.status === "fulfilled") setIntegrations(integrationRes.value);
@@ -276,9 +304,22 @@ export default function AdminPaidTraffic() {
 
   const refreshDashboard = async () => {
     try {
-      setDashboard(await paidTrafficApi.dashboard());
+      const [dashboardData, realtimeData] = await Promise.all([
+        paidTrafficApi.dashboard(),
+        paidTrafficApi.realtime(),
+      ]);
+      setDashboard(dashboardData);
+      setRealtime(realtimeData);
     } catch {
       setError("Nao foi possivel atualizar o dashboard.");
+    }
+  };
+
+  const refreshRealtime = async () => {
+    try {
+      setRealtime(await paidTrafficApi.realtime());
+    } catch {
+      /* realtime polling must not interrupt dashboard use */
     }
   };
 
@@ -288,8 +329,12 @@ export default function AdminPaidTraffic() {
 
   useEffect(() => {
     if (activeTab !== "dashboard") return;
-    const interval = window.setInterval(refreshDashboard, 60000);
-    return () => window.clearInterval(interval);
+    const dashboardInterval = window.setInterval(refreshDashboard, 60000);
+    const realtimeInterval = window.setInterval(refreshRealtime, 5000);
+    return () => {
+      window.clearInterval(dashboardInterval);
+      window.clearInterval(realtimeInterval);
+    };
   }, [activeTab]);
 
   useEffect(() => {
@@ -300,6 +345,10 @@ export default function AdminPaidTraffic() {
     event.preventDefault();
     if (!campaignForm.name.trim()) {
       alert("Informe o nome da campanha.");
+      return;
+    }
+    if (campaignForm.pixel_id && campaignForm.pixel_events.size === 0) {
+      alert("Selecione pelo menos um evento do pixel para esta campanha.");
       return;
     }
     setSaving(true);
@@ -494,6 +543,10 @@ export default function AdminPaidTraffic() {
       alert("Informe o ID do pixel.");
       return;
     }
+    if (pixelForm.events_tracked.size === 0) {
+      alert("Selecione pelo menos um evento do pixel.");
+      return;
+    }
     try {
       const payload: {
         pixel_id: string;
@@ -502,7 +555,7 @@ export default function AdminPaidTraffic() {
         base_code?: string;
       } = {
         pixel_id: pixelId,
-        events_tracked: pixelForm.events_tracked.trim() || "PageView,Purchase,Lead",
+        events_tracked: serializePixelEvents(pixelForm.events_tracked) || DEFAULT_PIXEL_EVENTS,
         base_code: pixelForm.base_code.trim(),
       };
       if (!editingPixelId || pixelForm.conversion_access_token.trim()) {
@@ -634,6 +687,8 @@ export default function AdminPaidTraffic() {
                     <MiniStat label="Visitantes" value={dashboard?.visitors ?? 0} />
                     <MiniStat label="Carrinhos abandonados" value={dashboard?.abandoned_carts ?? 0} />
                   </div>
+
+                  <RealtimeTrackingPanel data={realtime} />
 
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                     <Panel title="Resultado por campanha">
@@ -1051,13 +1106,32 @@ export default function AdminPaidTraffic() {
                         </>
                       )}
                       <Field label="Eventos rastreados">
-                        <input
-                          className={fieldBase}
-                          value={pixelForm.events_tracked}
-                          onChange={(e) => setPixelForm((prev) => ({ ...prev, events_tracked: e.target.value }))}
-                          placeholder="PageView,Purchase,Lead"
-                        />
-                        <p className="text-stone text-[11px] mt-1">Separe os eventos por virgula.</p>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {PIXEL_EVENT_OPTIONS.map((evt) => {
+                            const active = pixelForm.events_tracked.has(evt);
+                            return (
+                              <button
+                                key={evt}
+                                type="button"
+                                onClick={() => setPixelForm((prev) => {
+                                  const next = new Set(prev.events_tracked);
+                                  if (next.has(evt)) next.delete(evt); else next.add(evt);
+                                  return { ...prev, events_tracked: next };
+                                })}
+                                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors select-none ${
+                                  active ? "bg-gold text-cream" : "bg-surface-03 text-stone hover:text-cream"
+                                }`}
+                              >
+                                {evt}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-stone text-[11px] mt-1.5">
+                          {pixelForm.events_tracked.size === 0
+                            ? "Nenhum evento selecionado"
+                            : `Disparando: ${serializePixelEvents(pixelForm.events_tracked)}`}
+                        </p>
                       </Field>
                       <div className="flex gap-2">
                         <button className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gold px-4 py-3 text-sm font-bold text-cream">
@@ -1104,7 +1178,7 @@ export default function AdminPaidTraffic() {
                                 setPixelForm({
                                   platform: pixel.platform,
                                   pixel_id: pixel.pixel_id,
-                                  events_tracked: pixel.events_tracked,
+                                  events_tracked: parsePixelEvents(pixel.events_tracked),
                                   conversion_access_token: "",
                                   base_code: pixel.base_code ?? "",
                                 });
@@ -1281,6 +1355,175 @@ function EmptyState({ title, text }: { title: string; text: string }) {
     <div className="rounded-2xl border border-dashed border-surface-03 p-8 text-center lg:col-span-2">
       <p className="text-cream font-bold">{title}</p>
       <p className="text-stone text-sm mt-1">{text}</p>
+    </div>
+  );
+}
+
+function RealtimeTrackingPanel({ data }: { data: PaidTrafficRealtime | null }) {
+  const events = data?.events ?? [];
+  const visitors = data?.visitors ?? [];
+  const eventCounts = data?.event_counts ?? [];
+  const devices = data?.devices ?? [];
+  const cities = data?.cities ?? [];
+  const maxEventCount = Math.max(...eventCounts.map((item) => item.count), 1);
+
+  return (
+    <Panel title="Tracking em tempo real">
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <RealtimeMetric label="Online agora" value={data?.online_visitors ?? 0} icon={Activity} tone="text-green-300" />
+          <RealtimeMetric label="Sessoes ativas" value={data?.active_sessions ?? 0} icon={Globe2} tone="text-blue-300" />
+          <RealtimeMetric label="Eventos recentes" value={data?.total_events ?? 0} icon={Zap} tone="text-gold" />
+          <div className="rounded-xl border border-surface-03 bg-surface-03/35 p-3">
+            <div className="flex items-center gap-2 text-stone text-xs">
+              <Clock size={14} />
+              <span>Ultimo evento</span>
+            </div>
+            <p className="mt-2 text-sm font-bold text-cream">{formatDateTime(data?.last_event_at)}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] gap-4">
+          <div className="rounded-xl border border-surface-03 bg-surface-03/25 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-sm font-bold text-cream">Visitantes fazendo algo na loja</p>
+              <span className="rounded-full bg-surface-02 px-2.5 py-1 text-[11px] font-semibold text-stone">
+                janela {data?.window_minutes ?? 15} min
+              </span>
+            </div>
+            {visitors.length ? (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] text-left text-xs">
+                  <thead className="text-stone">
+                    <tr>
+                      <th className="py-2 pr-3">Status</th>
+                      <th className="py-2 pr-3">Cidade</th>
+                      <th className="py-2 pr-3">Dispositivo</th>
+                      <th className="py-2 pr-3">Pagina atual</th>
+                      <th className="py-2 pr-3">Evento atual</th>
+                      <th className="py-2 pr-3">Horario</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-03">
+                    {visitors.slice(0, 12).map((visitor) => (
+                      <tr key={visitor.id} className="text-parchment">
+                        <td className="py-2 pr-3">
+                          <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-bold ${
+                            visitor.is_online ? "bg-green-500/15 text-green-300" : "bg-surface-02 text-stone"
+                          }`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${visitor.is_online ? "bg-green-300" : "bg-stone"}`} />
+                            {visitor.is_online ? "Online" : "Offline"}
+                          </span>
+                        </td>
+                        <td className="py-2 pr-3">
+                          <div className="flex items-center gap-1.5">
+                            <MapPin size={13} className="text-gold" />
+                            <span>{visitor.city || visitor.state || "Sem cidade"}</span>
+                          </div>
+                        </td>
+                        <td className="py-2 pr-3">
+                          <div className="flex items-center gap-1.5 text-stone">
+                            <Monitor size={13} />
+                            <span>{visitor.device || "-"}</span>
+                            <span>{visitor.browser ? `- ${visitor.browser}` : ""}</span>
+                          </div>
+                        </td>
+                        <td className="py-2 pr-3 max-w-[210px] truncate text-stone">{visitor.current_page || "-"}</td>
+                        <td className="py-2 pr-3 font-semibold text-cream">{eventLabel(visitor.current_event)}</td>
+                        <td className="py-2 pr-3 text-stone">{formatDateTime(visitor.current_event_at ?? visitor.last_seen)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState title="Sem visitantes recentes" text="Os visitantes aparecem aqui assim que navegarem pela loja." />
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            <div className="rounded-xl border border-surface-03 bg-surface-03/25 p-4">
+              <p className="mb-3 text-sm font-bold text-cream">Eventos por tipo</p>
+              {eventCounts.length ? (
+                <div className="space-y-3">
+                  {eventCounts.map((item) => (
+                    <div key={item.name} className="space-y-1.5">
+                      <div className="flex justify-between gap-3 text-xs">
+                        <span className="text-stone">{eventLabel(item.name)}</span>
+                        <span className="font-bold text-cream">{item.count}</span>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-surface-02">
+                        <div className="h-full rounded-full bg-gold" style={{ width: `${(item.count / maxEventCount) * 100}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="py-6 text-center text-sm text-stone">Sem eventos recentes.</p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <BreakdownList title="Dispositivos" items={devices} />
+              <BreakdownList title="Cidades" items={cities} />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-surface-03 bg-surface-03/25 p-4">
+          <p className="mb-3 text-sm font-bold text-cream">Linha do tempo de eventos</p>
+          {events.length ? (
+            <div className="max-h-[360px] overflow-y-auto pr-1">
+              <div className="space-y-2">
+                {events.slice(0, 24).map((event) => (
+                  <div key={event.id} className="grid grid-cols-1 gap-2 rounded-xl bg-surface-02 px-3 py-2 text-xs md:grid-cols-[150px_1fr_130px_150px] md:items-center">
+                    <span className="font-semibold text-cream">{eventLabel(event.event_type)}</span>
+                    <span className="min-w-0 truncate text-stone">
+                      {event.product_name ? `${event.product_name} - ` : ""}{event.page || "-"}
+                    </span>
+                    <span className="text-stone">{event.city || "Sem cidade"}</span>
+                    <span className="text-right text-stone md:text-left">{formatDateTime(event.created_at)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="py-6 text-center text-sm text-stone">Nenhum evento na janela atual.</p>
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function RealtimeMetric({ label, value, icon: Icon, tone }: { label: string; value: number; icon: typeof BarChart3; tone: string }) {
+  return (
+    <div className="rounded-xl border border-surface-03 bg-surface-03/35 p-3">
+      <div className="flex items-center gap-2 text-stone text-xs">
+        <Icon size={14} />
+        <span>{label}</span>
+      </div>
+      <p className={`mt-2 text-2xl font-black ${tone}`}>{value.toLocaleString("pt-BR")}</p>
+    </div>
+  );
+}
+
+function BreakdownList({ title, items }: { title: string; items: Array<{ name: string; count: number }> }) {
+  return (
+    <div className="rounded-xl border border-surface-03 bg-surface-03/25 p-4">
+      <p className="mb-3 text-sm font-bold text-cream">{title}</p>
+      {items.length ? (
+        <div className="space-y-2">
+          {items.slice(0, 6).map((item) => (
+            <div key={item.name} className="flex items-center justify-between gap-3 text-xs">
+              <span className="truncate text-stone">{item.name || "-"}</span>
+              <span className="font-bold text-cream">{item.count}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="py-4 text-center text-xs text-stone">Sem dados.</p>
+      )}
     </div>
   );
 }

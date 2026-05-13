@@ -18,6 +18,8 @@ from backend.core.response import ok, created, err_msg
 from backend.database import get_db, Base
 from backend.routes.admin_auth import get_current_admin
 
+DEFAULT_PIXEL_EVENTS = "PageView,ViewContent,AddToCart,InitiateCheckout,Purchase,Lead"
+
 
 # ── ORM Models ────────────────────────────────────────────────────────────────
 
@@ -74,7 +76,7 @@ class AdsPixel(Base):
     platform = Column(String(30), nullable=False)
     pixel_id = Column(String(200), nullable=False)
     enabled = Column(Boolean, default=True)
-    events_tracked = Column(String(500), default="PageView,Purchase,Lead")
+    events_tracked = Column(String(500), default=DEFAULT_PIXEL_EVENTS)
     conversion_access_token = Column(Text, nullable=True)
     base_code = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -97,7 +99,7 @@ class UtmLinkCreate(BaseModel):
 class PixelCreate(BaseModel):
     platform: str
     pixel_id: str
-    events_tracked: str = "PageView,Purchase,Lead"
+    events_tracked: str = DEFAULT_PIXEL_EVENTS
     conversion_access_token: Optional[str] = None
     base_code: Optional[str] = None
 

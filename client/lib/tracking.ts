@@ -99,6 +99,12 @@ export function firePixelEvent(
           window.gtag("event", "purchase", { value, currency, transaction_id: data?.order_id });
         } else if (event === "InitiateCheckout") {
           window.gtag("event", "begin_checkout", { value, currency });
+        } else if (event === "AddToCart") {
+          window.gtag("event", "add_to_cart", { value, currency, item_name: data?.content_name });
+        } else if (event === "ViewContent") {
+          window.gtag("event", "view_item", { value, currency, item_name: data?.content_name });
+        } else if (event === "Lead") {
+          window.gtag("event", "generate_lead");
         } else {
           window.gtag("event", event.toLowerCase().replace(/\s+/g, "_"));
         }
@@ -109,6 +115,8 @@ export function firePixelEvent(
           window.ttq.track("PlaceAnOrder", { value, currency });
         } else if (event === "InitiateCheckout") {
           window.ttq.track("InitiateCheckout", { value, currency });
+        } else if (event === "Lead") {
+          window.ttq.track("SubmitForm");
         } else {
           window.ttq.track(event);
         }
@@ -120,14 +128,16 @@ export function firePixelEvent(
 }
 
 function readPixelConfigs(): CampaignPixelConfig[] {
-  const configs: CampaignPixelConfig[] = [];
-  const seen = new Set<string>();
+  const configsByKey = new Map<string, CampaignPixelConfig>();
   const add = (config: CampaignPixelConfig | null | undefined) => {
     if (!config?.platform || !config.pixel_id) return;
     const key = `${config.platform}:${config.pixel_id}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    configs.push(config);
+    const existing = configsByKey.get(key);
+    if (existing) {
+      existing.events = Array.from(new Set([...existing.events, ...config.events]));
+      return;
+    }
+    configsByKey.set(key, { ...config, events: [...config.events] });
   };
 
   try {
@@ -145,7 +155,7 @@ function readPixelConfigs(): CampaignPixelConfig[] {
     /* ignore invalid cached config */
   }
 
-  return configs;
+  return Array.from(configsByKey.values());
 }
 
 function injectPixelConfig(config: CampaignPixelConfig): void {
