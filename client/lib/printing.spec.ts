@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PRINTER_SETTINGS,
+  buildPrintHtml,
   buildEntregaHtml,
   type PrinterSettings,
 } from "./printing";
@@ -67,5 +68,19 @@ describe("buildEntregaHtml", () => {
     expect(html).not.toContain("Souza");
     expect(html).not.toContain("(11) 98765-4321");
     expect(html).not.toContain("Telefone");
+  });
+});
+
+describe("buildPrintHtml", () => {
+  it("monta as vias de cozinha e recepcao/completo para o mesmo pedido", () => {
+    const settings: PrinterSettings = { ...DEFAULT_PRINTER_SETTINGS };
+    const order = deliveryOrder();
+
+    const cozinha = buildPrintHtml(order, "cozinha", settings);
+    const completo = buildPrintHtml(order, "completo", settings);
+
+    expect(cozinha).toContain("COMANDA COZINHA");
+    expect(completo).toContain("Pedido: ");
+    expect(completo).toContain(order.delivery_phone);
   });
 });

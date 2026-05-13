@@ -162,6 +162,7 @@ export default function AdminCampanhas() {
   const [campaigns, setCampaigns] = useState<ApiCampaign[]>([]);
   const [kits, setKits] = useState<ApiPromotionalKit[]>([]);
   const [products, setProducts] = useState<ApiProduct[]>([]);
+  const [giftProducts, setGiftProducts] = useState<ApiProduct[]>([]);
   const [usage, setUsage] = useState<ApiCouponUsage[]>([]);
   const [couponsList, setCouponsList] = useState<ApiCoupon[]>([]);
   const [automations, setAutomations] = useState<ApiMarketingAutomation[]>([]);
@@ -201,13 +202,13 @@ export default function AdminCampanhas() {
 
   const [toast, setToast] = useState("");
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
-  const giftProducts = products.filter((p) => p.product_type === "brinde" && p.active);
 
   const loadAll = useCallback(async () => {
     setLoadingData(true);
-    const [c, k, p, u, cps, autos] = await Promise.allSettled([
+    const [c, k, p, gifts, u, cps, autos] = await Promise.allSettled([
       campaignsApi.list(),
       campaignsApi.listKits(),
+      productsApi.list(true),
       productsApi.listGifts(),
       couponsApi.listUsage(),
       couponsApi.list(),
@@ -216,6 +217,7 @@ export default function AdminCampanhas() {
     if (c.status === "fulfilled") setCampaigns(c.value);
     if (k.status === "fulfilled") setKits(k.value);
     if (p.status === "fulfilled") setProducts(p.value);
+    if (gifts.status === "fulfilled") setGiftProducts(gifts.value);
     if (u.status === "fulfilled") setUsage(u.value);
     if (cps.status === "fulfilled") setCouponsList(cps.value);
     if (autos.status === "fulfilled") setAutomations(autos.value);

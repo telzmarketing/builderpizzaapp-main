@@ -6,7 +6,7 @@ import {
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import { ordersApi, deliveryApi, type ApiOrder, type OrderStatus, type DeliveryPerson } from "@/lib/api";
-import { printOrder, type PrintTemplate } from "@/lib/printing";
+import { loadPrinterSettings, printConfirmedOrder, printOrder, type PrintTemplate } from "@/lib/printing";
 import OrderTimer from "@/components/OrderTimer";
 import { playOrderAlert, loadSoundType } from "@/lib/orderSound";
 
@@ -134,6 +134,38 @@ const NEXT_LABEL: Partial<Record<string, string>> = {
 };
 
 const WAITING_PAYMENT_STATUSES = new Set(["pending", "waiting_payment", "aguardando_pagamento"]);
+const CONFIRMED_PAYMENT_STATUSES = new Set(["paid", "pago"]);
+const AUTO_PRINTED_CONFIRMED_ORDERS_KEY = "moschettieri_auto_printed_confirmed_orders";
+
+function loadAutoPrintedConfirmedOrderIds() {
+  try {
+    const raw = localStorage.getItem(AUTO_PRINTED_CONFIRMED_ORDERS_KEY);
+    const ids = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : []);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function rememberAutoPrintedConfirmedOrder(orderId: string) {
+  try {
+    const ids = Array.from(loadAutoPrintedConfirmedOrderIds());
+    const next = [orderId, ...ids.filter((id) => id !== orderId)].slice(0, 200);
+    localStorage.setItem(AUTO_PRINTED_CONFIRMED_ORDERS_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore storage errors */
+  }
+}
+
+function printConfirmedOrderOnce(order: ApiOrder) {
+  if (!CONFIRMED_PAYMENT_STATUSES.has(order.status)) return true;
+  if (!loadPrinterSettings().autoPrintConfirmedOrders) return true;
+  if (loadAutoPrintedConfirmedOrderIds().has(order.id)) return true;
+
+  const opened = printConfirmedOrder(order);
+  if (opened) rememberAutoPrintedConfirmedOrder(order.id);
+  return opened;
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -241,6 +273,10 @@ export default function AdminOrders() {
         const newlyPaid = sorted.filter(
           (o) => (o.status === "paid" || o.status === "pago") && !paidIds.current.has(o.id),
         );
+        const blockedPrint = newlyPaid.some((order) => !printConfirmedOrderOnce(order));
+        if (blockedPrint) {
+          setError("O navegador bloqueou a impressao automatica. Habilite pop-ups para imprimir cozinha e recepcao.");
+        }
         if (newlyPaid.length > 0 && soundEnabled) {
           playNewOrderAlert();
           setNewOrderFlash(true);

@@ -14,6 +14,7 @@ export interface PrinterSettings {
   storeWebsite: string;
   defaultTemplate: PrintTemplate;
   autoPrint: boolean;
+  autoPrintConfirmedOrders: boolean;
 }
 
 const STORAGE_KEY = "moschettieri_printer_settings";
@@ -27,6 +28,7 @@ export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   storeWebsite: "delivery.moschettieri.com.br",
   defaultTemplate: "completo" as PrintTemplate,
   autoPrint: false,
+  autoPrintConfirmedOrders: true,
 };
 
 export function loadPrinterSettings(): PrinterSettings {
@@ -309,20 +311,45 @@ ${order.discount > 0 ? `<p class="r">Desconto: -${fmt(order.discount)}</p>` : ""
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
-export function printOrder(order: ApiOrder, template?: PrintTemplate): void {
-  const settings = loadPrinterSettings();
-  const tpl = template ?? settings.defaultTemplate;
-
+export function buildPrintHtml(order: ApiOrder, template: PrintTemplate, settings: PrinterSettings): string {
   let html: string;
+  const tpl = template;
   if (tpl === "cozinha") html = buildCozinhaHtml(order, settings);
   else if (tpl === "entrega") html = buildEntregaHtml(order, settings);
   else html = buildCompletoHtml(order, settings);
+  return html;
+}
 
+function openPrintWindow(html: string, shouldPrint: boolean, printDelayMs = 0): boolean {
   const w = window.open("", "_blank", "width=440,height=700,scrollbars=yes");
-  if (!w) { alert("Habilite pop-ups para imprimir."); return; }
+  if (!w) return false;
   w.document.write(html);
   w.document.close();
-  w.onload = () => { w.focus(); if (settings.autoPrint) w.print(); };
+  w.onload = () => {
+    w.focus();
+    if (shouldPrint) window.setTimeout(() => w.print(), printDelayMs);
+  };
+  return true;
+}
+
+export function printOrder(order: ApiOrder, template?: PrintTemplate): void {
+  const settings = loadPrinterSettings();
+  const tpl = template ?? settings.defaultTemplate;
+  const opened = openPrintWindow(buildPrintHtml(order, tpl, settings), settings.autoPrint);
+  if (!opened) alert("Habilite pop-ups para imprimir.");
+}
+
+export function printConfirmedOrder(order: ApiOrder): boolean {
+  const settings = loadPrinterSettings();
+  if (!settings.autoPrintConfirmedOrders) return true;
+
+  const templates: PrintTemplate[] = ["cozinha", "completo"];
+  const results = templates.map((tpl, index) => {
+    const html = buildPrintHtml(order, tpl, settings);
+    return openPrintWindow(html, true, index * 600);
+  });
+
+  return results.every(Boolean);
 }
 
 // ── Sample order for preview ──────────────────────────────────────────────────

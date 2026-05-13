@@ -99,11 +99,20 @@ const emptyPromotionForm = (): PromotionFormState => ({
 });
 
 type PTab = "produtos" | "brindes" | "categorias" | "config";
+type ProductSortMode = "recent" | "date" | "name" | "type";
+
+const PRODUCT_SORT_LABELS: Record<ProductSortMode, string> = {
+  recent: "Recente",
+  date: "Por data",
+  name: "Nome",
+  type: "Tipo",
+};
 
 export default function AdminProducts() {
   const { products, addProduct, updateProduct, deleteProduct, multiFlavorsConfig, updateMultiFlavorsConfig } = useApp();
   const [activeTab, setActiveTab] = useState<PTab>("produtos");
   const [tabSearch, setTabSearch] = useState("");
+  const [productSort, setProductSort] = useState<ProductSortMode>("recent");
   const [configSaved, setConfigSaved] = useState(false);
   const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -984,17 +993,31 @@ export default function AdminProducts() {
     if (!searchTerm) return true;
     return values.some((value) => String(value ?? "").toLowerCase().includes(searchTerm));
   };
-  const filteredProducts = products.filter((product) =>
-    matchesSearch(
-      product.name,
-      product.description,
-      (product as any).category,
-      (product as any).subcategory,
-      (product as any).product_type,
-      product.price,
-      product.rating,
+  const productTypeLabel = (type?: string | null) =>
+    type === "drink" ? "Bebida" : type === "other" ? "Outros" : type === "brinde" ? "Brinde" : "Pizza";
+  const filteredProducts = products
+    .filter((product) =>
+      matchesSearch(
+        product.name,
+        product.description,
+        (product as any).category,
+        (product as any).subcategory,
+        (product as any).product_type,
+        productTypeLabel((product as any).product_type),
+        product.price,
+        product.rating,
+      )
     )
-  );
+    .sort((a, b) => {
+      if (productSort === "name") return a.name.localeCompare(b.name);
+      if (productSort === "type") {
+        const typeCompare = productTypeLabel((a as any).product_type).localeCompare(productTypeLabel((b as any).product_type));
+        return typeCompare || a.name.localeCompare(b.name);
+      }
+      const aDate = new Date(productSort === "date" ? a.updated_at : a.created_at).getTime();
+      const bDate = new Date(productSort === "date" ? b.updated_at : b.created_at).getTime();
+      return bDate - aDate;
+    });
   const filteredBrindes = brindes.filter((brinde) =>
     matchesSearch(
       brinde.name,
@@ -1082,13 +1105,25 @@ export default function AdminProducts() {
               </div>
             </div>
             {activeTab === "produtos" && (
-              <button
-                onClick={() => { setShowForm(true); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza" }); }}
-                className="flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
-              >
-                <Plus size={20} />
-                Novo Produto
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={productSort}
+                  onChange={(event) => setProductSort(event.target.value as ProductSortMode)}
+                  className="h-10 rounded-lg border border-surface-03 bg-surface-02 px-3 text-sm font-medium text-parchment outline-none transition-colors focus:border-gold"
+                  title="Organizar produtos"
+                >
+                  {(Object.keys(PRODUCT_SORT_LABELS) as ProductSortMode[]).map((mode) => (
+                    <option key={mode} value={mode}>{PRODUCT_SORT_LABELS[mode]}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => { setShowForm(true); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza" }); }}
+                  className="flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  <Plus size={20} />
+                  Novo Produto
+                </button>
+              </div>
             )}
             {activeTab === "brindes" && (
               <button

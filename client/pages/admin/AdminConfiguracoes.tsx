@@ -348,6 +348,23 @@ export default function AdminConfiguracoes() {
                         {settings.autoPrint ? "✓ Ativada" : "Desativada"}
                       </button>
                     </Field>
+
+                    <Field
+                      label="Imprimir pedido confirmado"
+                      hint="Quando o painel Pedidos estiver aberto, imprime uma via da cozinha e uma via completa da recepção ao confirmar pagamento."
+                    >
+                      <button
+                        type="button"
+                        onClick={() => update({ autoPrintConfirmedOrders: !settings.autoPrintConfirmedOrders })}
+                        className={`mt-1 w-full py-2.5 rounded-lg text-sm font-bold border-2 transition-all ${
+                          settings.autoPrintConfirmedOrders
+                            ? "border-gold bg-gold/15 text-gold"
+                            : "border-surface-03 text-stone hover:border-gold/40 hover:text-parchment"
+                        }`}
+                      >
+                        {settings.autoPrintConfirmedOrders ? "✓ Ativada" : "Desativada"}
+                      </button>
+                    </Field>
                   </div>
                 </section>
 
