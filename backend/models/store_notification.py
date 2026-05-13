@@ -44,6 +44,7 @@ class StoreNotification(Base):
     priority = Column(String(20), default="medium", nullable=False)
     weight = Column(Integer, default=1, nullable=False)
     display_seconds = Column(Integer, default=7, nullable=False)
+    purchase_minutes_ago = Column(Integer, default=12, nullable=False)
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
     start_date = Column(Date, nullable=True)
@@ -100,6 +101,9 @@ class StoreNotificationImpression(Base):
     product_id = Column(String, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
     neighborhood = Column(String(120), nullable=True)
     page = Column(String(40), nullable=True, index=True)
+    customer_id = Column(String, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True)
+    anonymous_session_id = Column(String(120), nullable=True, index=True)
+    notification_type = Column(String(20), nullable=True)
     displayed_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
     notification = relationship("StoreNotification", back_populates="impressions")

@@ -26,6 +26,205 @@ VALID_TRIGGERS = {
 }
 VALID_CHANNELS = {"whatsapp", "email"}
 
+AUTOMATION_EVENT_CATALOG = [
+    {
+        "event_name": "new_customer",
+        "event_label": "Novo Cliente Cadastrado",
+        "event_description": "Cliente acabou de criar cadastro ou foi identificado no CRM.",
+        "category": "cliente",
+        "source_events": ["customer_created", "customer_logged_in"],
+    },
+    {
+        "event_name": "first_order",
+        "event_label": "Apos 1o Pedido",
+        "event_description": "Cliente concluiu o primeiro pedido na loja.",
+        "category": "pedido",
+        "source_events": ["order_created", "order_paid", "checkout_completed"],
+    },
+    {
+        "event_name": "repeat_order",
+        "event_label": "Apos Pedido Recorrente",
+        "event_description": "Cliente voltou a comprar apos o primeiro pedido.",
+        "category": "pedido",
+        "source_events": ["order_created", "order_paid", "order_delivered"],
+    },
+    {
+        "event_name": "order_completed",
+        "event_label": "Pedido Entregue",
+        "event_description": "Pedido marcado como entregue para o cliente.",
+        "category": "pedido",
+        "source_events": ["order_delivered"],
+    },
+    {
+        "event_name": "order_cancelled",
+        "event_label": "Pedido Cancelado",
+        "event_description": "Pedido cancelado ou perdido.",
+        "category": "pedido",
+        "source_events": ["order_cancelled"],
+    },
+    {
+        "event_name": "abandoned_cart",
+        "event_label": "Carrinho Abandonado",
+        "event_description": "Cliente colocou item no carrinho e nao concluiu o pedido no periodo configurado.",
+        "category": "loja",
+        "source_events": ["cart_item_added", "cart_abandoned", "add_to_cart"],
+    },
+    {
+        "event_name": "reactivation",
+        "event_label": "Reativacao",
+        "event_description": "Cliente esta sem comprar ha N dias.",
+        "category": "cliente",
+        "source_events": ["order_created", "order_paid", "order_delivered"],
+    },
+    {
+        "event_name": "birthday",
+        "event_label": "Aniversario do Cliente",
+        "event_description": "Data de aniversario do cliente.",
+        "category": "cliente",
+        "source_events": ["customer_created"],
+    },
+    {
+        "event_name": "birthday_week",
+        "event_label": "Semana de Aniversario",
+        "event_description": "Cliente faz aniversario nos proximos dias.",
+        "category": "cliente",
+        "source_events": ["customer_created"],
+    },
+    {
+        "event_name": "low_points",
+        "event_label": "Poucos Pontos de Fidelidade",
+        "event_description": "Cliente esta perto de perder ou precisa acumular pontos.",
+        "category": "fidelidade",
+        "source_events": ["order_paid", "order_delivered"],
+    },
+    {
+        "event_name": "level_up",
+        "event_label": "Subiu de Nivel",
+        "event_description": "Cliente mudou de nivel no programa de fidelidade.",
+        "category": "fidelidade",
+        "source_events": ["order_paid", "order_delivered"],
+    },
+    {
+        "event_name": "no_engagement",
+        "event_label": "Sem Engajamento",
+        "event_description": "Cliente esta sem abrir ou interagir ha N dias.",
+        "category": "engajamento",
+        "source_events": ["campaign_viewed", "popup_clicked", "chatbot_message_sent"],
+    },
+    {
+        "event_name": "coupon_unused",
+        "event_label": "Cupom Nao Usado",
+        "event_description": "Cliente recebeu cupom e ainda nao utilizou.",
+        "category": "cupom",
+        "source_events": ["coupon_applied", "coupon_rejected"],
+    },
+    {
+        "event_name": "vip_milestone",
+        "event_label": "Marco VIP",
+        "event_description": "Cliente atingiu criterio de alto valor ou recorrencia.",
+        "category": "cliente",
+        "source_events": ["order_paid", "order_delivered"],
+    },
+    {
+        "event_name": "product_back",
+        "event_label": "Produto Voltou ao Cardapio",
+        "event_description": "Produto voltou a ficar disponivel para campanhas.",
+        "category": "produto",
+        "source_events": ["product_viewed"],
+    },
+    {
+        "event_name": "high_value_order",
+        "event_label": "Pedido de Alto Valor",
+        "event_description": "Cliente fez pedido acima do valor configurado.",
+        "category": "pedido",
+        "source_events": ["order_created", "order_paid"],
+    },
+    {
+        "event_name": "days_after_last_order",
+        "event_label": "Dias Apos Ultima Compra",
+        "event_description": "Cliente completou X dias desde a ultima compra.",
+        "category": "cliente",
+        "source_events": ["order_paid", "order_delivered"],
+    },
+    {
+        "event_name": "same_weekday_last_order",
+        "event_label": "Mesmo Dia da Semana da Ultima Compra",
+        "event_description": "Cliente costuma comprar em um dia especifico da semana.",
+        "category": "pedido",
+        "source_events": ["order_paid", "order_delivered"],
+    },
+    {
+        "event_name": "preferred_purchase_time",
+        "event_label": "Horario Habitual de Compra",
+        "event_description": "Cliente tem horario recorrente de compra.",
+        "category": "pedido",
+        "source_events": ["order_paid", "order_delivered"],
+    },
+    {
+        "event_name": "product_purchased",
+        "event_label": "Produto Comprado",
+        "event_description": "Cliente comprou um produto especifico anteriormente.",
+        "category": "produto",
+        "source_events": ["order_created", "order_paid", "product_viewed"],
+    },
+    {
+        "event_name": "category_purchased",
+        "event_label": "Categoria Comprada",
+        "event_description": "Cliente comprou item de uma categoria especifica.",
+        "category": "produto",
+        "source_events": ["order_created", "order_paid", "category_viewed"],
+    },
+    {
+        "event_name": "registered_no_order",
+        "event_label": "Cadastro Sem Pedido",
+        "event_description": "Cliente se cadastrou mas ainda nao fez pedido.",
+        "category": "cliente",
+        "source_events": ["customer_created", "checkout_started"],
+    },
+    {
+        "event_name": "inactive_customer",
+        "event_label": "Cliente Inativo",
+        "event_description": "Cliente esta sem pedidos ha N dias.",
+        "category": "cliente",
+        "source_events": ["order_paid", "order_delivered"],
+    },
+    {
+        "event_name": "recurring_customer",
+        "event_label": "Cliente Recorrente",
+        "event_description": "Cliente atingiu minimo de pedidos configurado.",
+        "category": "cliente",
+        "source_events": ["order_created", "order_paid"],
+    },
+    {
+        "event_name": "vip_customer",
+        "event_label": "Cliente VIP",
+        "event_description": "Cliente atingiu gasto minimo configurado.",
+        "category": "cliente",
+        "source_events": ["order_paid", "order_delivered"],
+    },
+    {
+        "event_name": "tag_match",
+        "event_label": "Cliente com Tag",
+        "event_description": "Cliente possui tag especifica no CRM.",
+        "category": "crm",
+        "source_events": ["customer_created", "customer_logged_in"],
+    },
+    {
+        "event_name": "group_match",
+        "event_label": "Cliente em Grupo",
+        "event_description": "Cliente pertence ao grupo configurado.",
+        "category": "crm",
+        "source_events": ["customer_created", "customer_logged_in"],
+    },
+    {
+        "event_name": "segment_match",
+        "event_label": "Cliente em Segmento",
+        "event_description": "Cliente pertence ao segmento inteligente configurado.",
+        "category": "crm",
+        "source_events": ["customer_created", "order_paid", "product_viewed"],
+    },
+]
+
 
 # ── ORM Models ────────────────────────────────────────────────────────────────
 
@@ -397,7 +596,7 @@ def list_global_logs(db: Session = Depends(get_db), _=Depends(get_current_admin)
 
 @router.get("/events")
 def list_events(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    rows = db.execute(text("""
+    log_rows = db.execute(text("""
         SELECT ma.trigger AS event_name,
                COUNT(al.id) AS count,
                COUNT(DISTINCT al.customer_id) AS unique_customers,
@@ -405,12 +604,83 @@ def list_events(db: Session = Depends(get_db), _=Depends(get_current_admin)):
         FROM automation_logs al
         JOIN marketing_automations ma ON ma.id = al.automation_id
         GROUP BY ma.trigger
-        ORDER BY count DESC
     """)).fetchall()
-    return ok([{
-        "event_name": r[0], "count": r[1] or 0, "unique_customers": r[2] or 0,
-        "last_triggered": r[3].isoformat() if r[3] else None,
-    } for r in rows])
+    execution_rows = db.execute(text("""
+        SELECT source_event_type AS event_name,
+               COUNT(id) AS count,
+               COUNT(DISTINCT customer_id) AS unique_customers,
+               MAX(created_at) AS last_triggered
+        FROM automation_executions
+        WHERE source_event_type IS NOT NULL
+        GROUP BY source_event_type
+    """)).fetchall()
+    automation_rows = db.execute(text("""
+        SELECT trigger AS event_name,
+               COUNT(id) AS automations_total,
+               COUNT(id) FILTER (WHERE active = TRUE) AS automations_active
+        FROM marketing_automations
+        GROUP BY trigger
+    """)).fetchall()
+
+    stats: dict[str, dict] = {}
+    for row in [*log_rows, *execution_rows]:
+        event_name = row[0]
+        current = stats.setdefault(event_name, {
+            "count": 0,
+            "unique_customers": 0,
+            "last_triggered": None,
+        })
+        current["count"] += row[1] or 0
+        current["unique_customers"] += row[2] or 0
+        if row[3] and (current["last_triggered"] is None or row[3] > current["last_triggered"]):
+            current["last_triggered"] = row[3]
+
+    automation_stats = {
+        row[0]: {"automations_total": row[1] or 0, "automations_active": row[2] or 0}
+        for row in automation_rows
+    }
+
+    mapped_events = []
+    for item in AUTOMATION_EVENT_CATALOG:
+        event_name = item["event_name"]
+        current = stats.get(event_name, {})
+        auto = automation_stats.get(event_name, {})
+        mapped_events.append({
+            **item,
+            "mapped": True,
+            "count": current.get("count", 0),
+            "unique_customers": current.get("unique_customers", 0),
+            "last_triggered": current["last_triggered"].isoformat() if current.get("last_triggered") else None,
+            "automations_total": auto.get("automations_total", 0),
+            "automations_active": auto.get("automations_active", 0),
+        })
+
+    configured_names = {event["event_name"] for event in mapped_events}
+    for event_name, auto in automation_stats.items():
+        if event_name in configured_names:
+            continue
+        current = stats.get(event_name, {})
+        mapped_events.append({
+            "event_name": event_name,
+            "event_label": event_name,
+            "event_description": "Gatilho configurado que ainda nao esta no catalogo padrao.",
+            "category": "personalizado",
+            "source_events": [],
+            "mapped": False,
+            "count": current.get("count", 0),
+            "unique_customers": current.get("unique_customers", 0),
+            "last_triggered": current["last_triggered"].isoformat() if current.get("last_triggered") else None,
+            "automations_total": auto.get("automations_total", 0),
+            "automations_active": auto.get("automations_active", 0),
+        })
+
+    mapped_events.sort(key=lambda event: (
+        -int(event["automations_active"]),
+        -int(event["count"]),
+        str(event["category"]),
+        str(event["event_label"]),
+    ))
+    return ok(mapped_events)
 
 
 # ── Routes — Automations CRUD ─────────────────────────────────────────────────

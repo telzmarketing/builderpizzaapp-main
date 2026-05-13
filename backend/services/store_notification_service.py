@@ -4,7 +4,7 @@ import json
 import random
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, func, or_
@@ -31,7 +31,7 @@ from backend.services.store_operation_service import StoreOperationService
 
 
 ALLOWED_PAGES = {"home", "cardapio", "product", "cart"}
-DEFAULT_TEMPLATE = "{nome}, {bairro}, comprou {produto} - {tempo}"
+DEFAULT_TEMPLATE = "{nome}, do {bairro}, comprou {produto} {tempo}"
 PAID_ORDER_STATUSES = {
     OrderStatus.paid,
     OrderStatus.pago,
@@ -43,6 +43,7 @@ PAID_ORDER_STATUSES = {
 PAID_PAYMENT_STATUSES = {PaymentStatus.approved, PaymentStatus.paid}
 PRIORITY_SCORE = {"low": 1, "medium": 2, "high": 3}
 CAPTURE_LOOKBACK_HOURS = 72
+STORE_OPEN_TIME = time(18, 0)
 
 
 class StoreNotificationService:
@@ -153,6 +154,7 @@ class StoreNotificationService:
             priority=notification.priority,
             weight=notification.weight,
             display_seconds=notification.display_seconds,
+            purchase_minutes_ago=notification.purchase_minutes_ago or 12,
             start_time=notification.start_time,
             end_time=notification.end_time,
             start_date=notification.start_date,
@@ -187,7 +189,9 @@ class StoreNotificationService:
             name=self._first_name(payload.display_name),
             product=product_name,
             neighborhood=self._safe_text(payload.neighborhood),
-            relative_time=payload.relative_time,
+            relative_time=self._display_relative_time(payload.purchase_minutes_ago)
+            if payload.purchase_minutes_ago
+            else payload.relative_time,
         )
         return {"message": message}
 
@@ -195,6 +199,7 @@ class StoreNotificationService:
         self,
         page: str = "home",
         customer_id: str | None = None,
+        anonymous_session_id: str | None = None,
         seen_ids: list[str] | None = None,
     ) -> dict:
         settings = self.get_settings()
@@ -223,22 +228,28 @@ class StoreNotificationService:
             settings,
             last,
             customer_id=customer_id,
+            anonymous_session_id=anonymous_session_id,
             seen_ids=seen_ids or [],
         )
 
         if not candidates:
             return empty
 
-        selected = self._weighted_manual(candidates)
+        real_candidates = [item for item in candidates if item.get("source_type") == "real"]
+        selected = self._weighted_manual(real_candidates or candidates)
         now_utc = datetime.now(timezone.utc)
+        source_type = selected.get("source_type") or "manual"
         impression = StoreNotificationImpression(
             id=f"sni-{uuid.uuid4().hex[:12]}",
             notification_id=selected.get("notification_id"),
-            source_type="manual",
+            source_type=source_type,
             order_id=selected.get("order_id"),
             product_id=selected.get("product_id"),
             neighborhood=selected.get("neighborhood"),
             page=page,
+            customer_id=customer_id,
+            anonymous_session_id=anonymous_session_id,
+            notification_type=source_type,
             displayed_at=now_utc,
         )
         self._db.add(impression)
@@ -411,6 +422,7 @@ class StoreNotificationService:
             "priority": notification.priority,
             "weight": notification.weight,
             "display_seconds": notification.display_seconds,
+            "purchase_minutes_ago": notification.purchase_minutes_ago or 12,
             "start_time": notification.start_time,
             "end_time": notification.end_time,
             "start_date": notification.start_date,
@@ -429,6 +441,7 @@ class StoreNotificationService:
         settings: StoreNotificationSettings,
         last: StoreNotificationImpression | None,
         customer_id: str | None = None,
+        anonymous_session_id: str | None = None,
         seen_ids: list[str] | None = None,
     ) -> list[dict]:
         current = self._local_now()
@@ -446,11 +459,19 @@ class StoreNotificationService:
                 continue
             if customer_id and item.source_customer_id and item.source_customer_id == customer_id:
                 continue
+            if self._was_already_displayed(item.id, customer_id, anonymous_session_id):
+                continue
             if not self._manual_is_eligible(item, current):
                 continue
             product_name = self._product_display_name(item.product, "Produto")
+            purchase_minutes = int(item.purchase_minutes_ago or 0)
+            if not self._has_complete_display_data(item, product_name, purchase_minutes):
+                continue
+            if not self._purchase_time_is_coherent(current, purchase_minutes):
+                continue
+            source_type = "real" if item.source_customer_id else "manual"
             candidates.append({
-                "source_type": "manual",
+                "source_type": source_type,
                 "notification_id": item.id,
                 "product_id": item.product_id,
                 "product_name": product_name,
@@ -461,9 +482,10 @@ class StoreNotificationService:
                     name=self._first_name(item.display_name),
                     product=product_name,
                     neighborhood=self._safe_text(item.neighborhood),
-                    relative_time="2min",
+                    relative_time=self._display_relative_time(purchase_minutes),
                 ),
                 "display_seconds": item.display_seconds or settings.default_display_seconds,
+                "purchase_minutes_ago": purchase_minutes,
                 "_product_id": item.product_id,
                 "_neighborhood": item.neighborhood,
                 "_score": max(1, item.weight or 1) * PRIORITY_SCORE.get(item.priority, 2),
@@ -490,6 +512,54 @@ class StoreNotificationService:
                 return item
         candidates[0].pop("_score", None)
         return candidates[0]
+
+    def _was_already_displayed(
+        self,
+        notification_id: str,
+        customer_id: str | None,
+        anonymous_session_id: str | None,
+    ) -> bool:
+        if not customer_id and not anonymous_session_id:
+            return False
+        query = self._db.query(StoreNotificationImpression.id).filter(
+            StoreNotificationImpression.notification_id == notification_id
+        )
+        identity_filters = []
+        if customer_id:
+            identity_filters.append(StoreNotificationImpression.customer_id == customer_id)
+        if anonymous_session_id:
+            identity_filters.append(StoreNotificationImpression.anonymous_session_id == anonymous_session_id)
+        return query.filter(or_(*identity_filters)).first() is not None
+
+    def _has_complete_display_data(
+        self,
+        notification: StoreNotification,
+        product_name: str | None,
+        purchase_minutes: int,
+    ) -> bool:
+        return all([
+            self._safe_text(notification.display_name),
+            self._safe_text(product_name),
+            self._safe_text(notification.neighborhood),
+            purchase_minutes > 0,
+        ])
+
+    def _purchase_time_is_coherent(self, current: datetime, purchase_minutes: int) -> bool:
+        if purchase_minutes <= 0:
+            return False
+        simulated_purchase = current - timedelta(minutes=purchase_minutes)
+        return simulated_purchase.time() >= STORE_OPEN_TIME
+
+    def _display_relative_time(self, purchase_minutes: int | None) -> str:
+        minutes = max(1, int(purchase_minutes or 1))
+        if minutes == 1:
+            return "há 1 minuto"
+        if minutes < 60:
+            return f"há {minutes} minutos"
+        hours = minutes // 60
+        if hours == 1:
+            return "há 1 hora"
+        return f"há {hours} horas"
 
     def _manual_is_eligible(self, notification: StoreNotification, current: datetime) -> bool:
         if current.weekday() not in [day.weekday for day in notification.days]:
@@ -641,6 +711,8 @@ class StoreNotificationService:
         rendered = re.sub(r"\s+h[aá]\s+(agora|\d+\s*min|\d+\s*h)", r" - \1", rendered, flags=re.IGNORECASE)
         rendered = re.sub(r"\s+h[aá]\s+alguns minutos", " - alguns min", rendered, flags=re.IGNORECASE)
         rendered = re.sub(r"\s+-\s+h[aá]\s+", " - ", rendered, flags=re.IGNORECASE)
+        rendered = re.sub(r"\s+-\s+há\s+", " há ", rendered, flags=re.IGNORECASE)
+        rendered = re.sub(r"\s+-\s+(\d+\s+minutos?|\d+\s+horas?)", r" há \1", rendered, flags=re.IGNORECASE)
         rendered = re.sub(r"\s+", " ", rendered).strip(" ,")
         return rendered
 

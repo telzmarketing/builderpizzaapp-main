@@ -83,10 +83,11 @@ const emptyForm = (): ApiStoreNotificationInput => ({
   display_name: "",
   product_id: "",
   neighborhood: "",
-  template_text: "{nome}, {bairro}, comprou {produto} - {tempo}",
+  template_text: "{nome}, do {bairro}, comprou {produto} {tempo}",
   priority: "medium",
   weight: 1,
   display_seconds: 7,
+  purchase_minutes_ago: 14,
   start_time: "18:00",
   end_time: "23:30",
   start_date: null,
@@ -227,6 +228,7 @@ export default function MarketingStoreNotifications() {
       priority: item.priority,
       weight: item.weight,
       display_seconds: item.display_seconds,
+      purchase_minutes_ago: item.purchase_minutes_ago ?? 14,
       start_time: item.start_time.slice(0, 5),
       end_time: item.end_time.slice(0, 5),
       start_date: item.start_date ?? null,
@@ -247,12 +249,13 @@ export default function MarketingStoreNotifications() {
       display_name: cap.buyer_name ?? "Cliente",
       product_id: firstProduct?.id ?? "",
       neighborhood: cap.neighborhood ?? "",
-      template_text: "{nome}, {bairro}, comprou {produto} - {tempo}",
+      template_text: "{nome}, do {bairro}, comprou {produto} {tempo}",
       priority: "medium",
       weight: 1,
       display_seconds: 7,
-      start_time: "00:00",
-      end_time: "23:59",
+      purchase_minutes_ago: 14,
+      start_time: "18:00",
+      end_time: "23:30",
       start_date: null,
       end_date: null,
       weekdays: [0, 1, 2, 3, 4, 5, 6],
@@ -264,6 +267,10 @@ export default function MarketingStoreNotifications() {
     event.preventDefault();
     if (!form.product_id) {
       alert("Selecione um produto.");
+      return;
+    }
+    if (!Number.isInteger(form.purchase_minutes_ago) || form.purchase_minutes_ago <= 0) {
+      alert("Informe ha quantos minutos a compra foi realizada usando um numero inteiro positivo.");
       return;
     }
     setSaving(true);
@@ -309,7 +316,7 @@ export default function MarketingStoreNotifications() {
         product_name: pName,
         neighborhood: form.neighborhood,
         template_text: form.template_text,
-        relative_time: "2min",
+        purchase_minutes_ago: form.purchase_minutes_ago,
       });
       setPreview(result.message);
     } catch {
@@ -324,7 +331,7 @@ export default function MarketingStoreNotifications() {
         product_name: productName(products, item.product_id),
         neighborhood: item.neighborhood,
         template_text: item.template_text,
-        relative_time: "2min",
+        purchase_minutes_ago: item.purchase_minutes_ago,
       });
       setPreview(result.message);
     } catch {
@@ -470,7 +477,7 @@ export default function MarketingStoreNotifications() {
                 <table className="w-full min-w-[980px] text-sm">
                   <thead>
                     <tr className="border-b border-surface-03 bg-surface-03/40 text-xs text-stone">
-                      {["Status", "Nome interno", "Tipo", "Produto", "Bairro", "Dias ativos", "Horario", "Prioridade", "Ultima exibicao", "Acoes"].map((header) => (
+                      {["Status", "Nome interno", "Tipo", "Produto", "Bairro", "Tempo", "Dias ativos", "Horario", "Prioridade", "Ultima exibicao", "Acoes"].map((header) => (
                         <th key={header} className="p-3 text-left font-medium">{header}</th>
                       ))}
                     </tr>
@@ -478,7 +485,7 @@ export default function MarketingStoreNotifications() {
                   <tbody className="divide-y divide-surface-03">
                     {items.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="p-10 text-center text-sm text-stone">
+                        <td colSpan={11} className="p-10 text-center text-sm text-stone">
                           Nenhuma notificacao manual cadastrada.
                         </td>
                       </tr>
@@ -493,6 +500,7 @@ export default function MarketingStoreNotifications() {
                         <td className="p-3 text-stone">{TYPE_LABEL[item.type]}</td>
                         <td className="p-3 text-stone">{item.product_name ?? productName(products, item.product_id)}</td>
                         <td className="p-3 text-stone">{item.neighborhood || "-"}</td>
+                        <td className="p-3 text-stone">{item.purchase_minutes_ago ?? 12} min</td>
                         <td className="p-3 text-stone">{daysLabel(item.weekdays)}</td>
                         <td className="p-3 text-stone">{item.start_time.slice(0, 5)} - {item.end_time.slice(0, 5)}</td>
                         <td className="p-3 text-stone">{PRIORITY_LABEL[item.priority]}</td>
@@ -730,6 +738,17 @@ export default function MarketingStoreNotifications() {
               </Field>
               <Field label="Tempo de apresentacao (seg)">
                 <input className={IC} required min={3} type="number" value={form.display_seconds} onChange={(e) => setForm((f) => ({ ...f, display_seconds: Number(e.target.value) }))} />
+              </Field>
+              <Field label="Exibir como compra realizada há X minutos">
+                <input
+                  className={IC}
+                  required
+                  min={1}
+                  step={1}
+                  type="number"
+                  value={form.purchase_minutes_ago}
+                  onChange={(e) => setForm((f) => ({ ...f, purchase_minutes_ago: Number(e.target.value) }))}
+                />
               </Field>
               <Field label="Prioridade">
                 <select className={IC} value={form.priority} onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value as ApiStoreNotificationPriority }))}>

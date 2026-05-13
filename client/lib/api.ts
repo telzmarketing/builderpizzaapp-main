@@ -466,6 +466,7 @@ export interface ApiStoreNotificationInput {
   priority: ApiStoreNotificationPriority;
   weight: number;
   display_seconds: number;
+  purchase_minutes_ago: number;
   start_time: string;
   end_time: string;
   start_date?: string | null;
@@ -500,6 +501,7 @@ export interface ApiStoreNotificationNext {
   neighborhood: string | null;
   message: string;
   display_seconds: number;
+  purchase_minutes_ago: number;
 }
 
 export interface ApiStoreNotificationNextEnvelope {
@@ -2121,9 +2123,16 @@ export interface ApiAutomationLog {
 
 export interface ApiAutomationEvent {
   event_name: string;
+  event_label?: string;
+  event_description?: string | null;
+  category?: string | null;
+  source_events?: string[];
+  mapped?: boolean;
   count: number;
   unique_customers: number;
-  last_triggered: string;
+  last_triggered: string | null;
+  automations_total?: number;
+  automations_active?: number;
 }
 
 export interface ApiAutomationRunResult {
@@ -2870,10 +2879,12 @@ export const storeNotificationsApi = {
     neighborhood?: string | null;
     template_text: string;
     relative_time?: string;
+    purchase_minutes_ago?: number;
   }) => post<{ message: string }>("/store-notifications/preview", data),
-  next: (page: ApiStoreNotificationPage, opts?: { customer_id?: string; seen_ids?: string }) => {
+  next: (page: ApiStoreNotificationPage, opts?: { customer_id?: string; anonymous_session_id?: string; seen_ids?: string }) => {
     const qs = new URLSearchParams({ page });
     if (opts?.customer_id) qs.set("customer_id", opts.customer_id);
+    if (opts?.anonymous_session_id) qs.set("anonymous_session_id", opts.anonymous_session_id);
     if (opts?.seen_ids) qs.set("seen_ids", opts.seen_ids);
     return get<ApiStoreNotificationNextEnvelope>(`/store-notifications/next?${qs.toString()}`);
   },

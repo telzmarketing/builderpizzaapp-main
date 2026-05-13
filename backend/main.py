@@ -777,6 +777,13 @@ def _run_migrations():
         # ══════════════════════════════════════════════════════════════════════
         "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS problem_resolved_at TIMESTAMPTZ",
         "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS admin_resolution_note TEXT",
+        "ALTER TABLE store_notifications ADD COLUMN IF NOT EXISTS purchase_minutes_ago INTEGER NOT NULL DEFAULT 12",
+        "ALTER TABLE store_notification_impressions ADD COLUMN IF NOT EXISTS customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL",
+        "ALTER TABLE store_notification_impressions ADD COLUMN IF NOT EXISTS anonymous_session_id VARCHAR(120)",
+        "ALTER TABLE store_notification_impressions ADD COLUMN IF NOT EXISTS notification_type VARCHAR(20)",
+        "CREATE INDEX IF NOT EXISTS ix_store_notification_impressions_customer_id ON store_notification_impressions(customer_id)",
+        "CREATE INDEX IF NOT EXISTS ix_store_notification_impressions_anonymous_session_id ON store_notification_impressions(anonymous_session_id)",
+        "CREATE INDEX IF NOT EXISTS ix_store_notification_impressions_identity_notification ON store_notification_impressions(notification_id, customer_id, anonymous_session_id)",
     ]
     for stmt in stmts:
         try:

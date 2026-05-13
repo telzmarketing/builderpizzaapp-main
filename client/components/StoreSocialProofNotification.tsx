@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 
 const SEEN_KEY = "sn_seen";
+const ANON_KEY = "sn_anon_session";
 const SEEN_MAX = 60;
 const SEEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
@@ -46,6 +47,18 @@ function getStoredCustomerId(): string | undefined {
     return c.id || undefined;
   } catch {
     return undefined;
+  }
+}
+
+function getAnonymousSessionId(): string {
+  try {
+    const existing = localStorage.getItem(ANON_KEY);
+    if (existing) return existing;
+    const generated = `snanon-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(ANON_KEY, generated);
+    return generated;
+  } catch {
+    return `snanon-${Date.now().toString(36)}`;
   }
 }
 
@@ -86,9 +99,11 @@ export default function StoreSocialProofNotification() {
       try {
         const seenIds = loadSeenIds();
         const customerId = getStoredCustomerId();
+        const anonymousSessionId = getAnonymousSessionId();
         const result = await storeNotificationsApi.next(page, {
           seen_ids: seenIds.length ? seenIds.join(",") : undefined,
           customer_id: customerId,
+          anonymous_session_id: anonymousSessionId,
         });
         if (cancelled) return;
 

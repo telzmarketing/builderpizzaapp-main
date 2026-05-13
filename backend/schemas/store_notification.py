@@ -53,6 +53,7 @@ class StoreNotificationBase(BaseModel):
     priority: NotificationPriority = "medium"
     weight: int = Field(default=1, ge=1, le=100)
     display_seconds: int = Field(default=7, ge=3, le=60)
+    purchase_minutes_ago: int = Field(default=12, gt=0, le=1440)
     start_time: time
     end_time: time
     start_date: date | None = None
@@ -92,6 +93,7 @@ class StoreNotificationUpdate(BaseModel):
     priority: NotificationPriority | None = None
     weight: int | None = Field(default=None, ge=1, le=100)
     display_seconds: int | None = Field(default=None, ge=3, le=60)
+    purchase_minutes_ago: int | None = Field(default=None, gt=0, le=1440)
     start_time: time | None = None
     end_time: time | None = None
     start_date: date | None = None
@@ -134,6 +136,7 @@ class StoreNotificationPreviewIn(BaseModel):
     neighborhood: str | None = None
     template_text: str
     relative_time: str = "2min"
+    purchase_minutes_ago: int | None = Field(default=None, gt=0, le=1440)
 
 
 class StoreNotificationPreviewOut(BaseModel):
@@ -150,6 +153,7 @@ class StoreNotificationNextOut(BaseModel):
     neighborhood: str | None = None
     message: str
     display_seconds: int
+    purchase_minutes_ago: int
 
 
 class StoreNotificationNextEnvelope(BaseModel):

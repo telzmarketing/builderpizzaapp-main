@@ -75,6 +75,40 @@ const TRIGGER_VALUE_LABEL: Record<string, string> = {
 
 const CHANNEL_LABELS: Record<string, string> = { whatsapp: "WhatsApp", email: "E-mail" };
 
+const CUSTOMER_EVENT_LABELS: Record<string, string> = {
+  site_opened: "Acessou o site",
+  page_viewed: "Visualizou pagina",
+  product_viewed: "Visualizou produto",
+  category_viewed: "Visualizou categoria",
+  campaign_viewed: "Visualizou campanha",
+  popup_viewed: "Viu popup",
+  popup_closed: "Fechou popup",
+  popup_clicked: "Clicou no popup",
+  banner_clicked: "Clicou no banner",
+  cart_item_added: "Adicionou ao carrinho",
+  add_to_cart: "Adicionou ao carrinho (legado)",
+  cart_item_removed: "Removeu do carrinho",
+  cart_viewed: "Visualizou carrinho",
+  cart_abandoned: "Abandonou carrinho",
+  cart_recovered: "Recuperou carrinho",
+  checkout_started: "Iniciou checkout",
+  checkout_completed: "Completou checkout",
+  checkout_abandoned: "Abandonou checkout",
+  payment_method_selected: "Selecionou pagamento",
+  order_created: "Pedido criado",
+  order_paid: "Pedido pago",
+  order_cancelled: "Pedido cancelado",
+  order_delivered: "Pedido entregue",
+  coupon_applied: "Aplicou cupom",
+  coupon_rejected: "Cupom rejeitado",
+  customer_logged_in: "Cliente fez login",
+  customer_created: "Cadastro realizado",
+  customer_returned: "Cliente retornou",
+  chatbot_opened: "Abriu chatbot",
+  chatbot_message_sent: "Mensagem no chat",
+  chatbot_closed: "Fechou chatbot",
+};
+
 const LOG_STATUS_CFG: Record<string, { label: string; cls: string; icon: React.ElementType }> = {
   sent:    { label: "Enviado",  cls: "bg-green-500/20 text-green-400", icon: CheckCircle },
   failed:  { label: "Falhou",   cls: "bg-red-500/20 text-red-400",     icon: XCircle },
@@ -301,7 +335,10 @@ export default function MarketingAutomacoes() {
         {tab === "eventos" && (
           <>
             <div className="flex items-center justify-between">
-              <p className="text-stone text-sm">{events.length} tipo(s) de evento</p>
+              <div>
+                <p className="text-cream text-sm font-semibold">{events.length} evento(s) mapeado(s)</p>
+                <p className="text-stone text-xs">Relacao entre gatilhos de automacao e eventos capturados na loja/CRM.</p>
+              </div>
               <button onClick={fetchEvents} className="p-2 rounded-xl bg-surface-02 border border-surface-03 text-stone hover:text-cream transition-colors">
                 <RefreshCw size={16} />
               </button>
@@ -311,8 +348,8 @@ export default function MarketingAutomacoes() {
             ) : events.length === 0 ? (
               <div className="flex flex-col items-center py-20 bg-surface-02 border border-surface-03 rounded-2xl">
                 <BarChart2 size={40} className="text-surface-03 mb-3" />
-                <p className="text-stone text-sm">Nenhum evento rastreado ainda.</p>
-                <p className="text-stone/60 text-xs mt-1">Os eventos são registrados automaticamente quando as automações são executadas.</p>
+                <p className="text-stone text-sm">Nenhum evento mapeado encontrado.</p>
+                <p className="text-stone/60 text-xs mt-1">Os eventos mapeados devem aparecer aqui mesmo antes dos primeiros disparos.</p>
               </div>
             ) : (
               <div className="bg-surface-02 border border-surface-03 rounded-2xl overflow-hidden">
@@ -328,12 +365,28 @@ export default function MarketingAutomacoes() {
                     {events.map(ev => (
                       <tr key={ev.event_name} className="hover:bg-surface-03/30 transition-colors">
                         <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <Zap size={12} className="text-gold" />
-                            <span className="text-cream font-medium text-xs">{TRIGGER_LABELS[ev.event_name] ?? ev.event_name}</span>
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Zap size={12} className={ev.mapped === false ? "text-stone" : "text-gold"} />
+                              <span className="text-cream font-medium text-xs">{ev.event_label ?? TRIGGER_LABELS[ev.event_name] ?? ev.event_name}</span>
+                              {ev.mapped === false && <span className="rounded-full bg-surface-03 px-2 py-0.5 text-[10px] text-stone">personalizado</span>}
+                            </div>
+                            {ev.event_description && (
+                              <p className="text-stone text-[11px] leading-snug max-w-xl">{ev.event_description}</p>
+                            )}
+                            <div className="flex flex-wrap gap-1.5">
+                              {ev.source_events?.length ? ev.source_events.map((eventName) => (
+                                <span key={eventName} className="rounded-lg bg-surface-03 px-2 py-1 text-[11px] text-parchment">
+                                  {CUSTOMER_EVENT_LABELS[eventName] ?? eventName}
+                                </span>
+                              )) : <span className="text-stone text-xs">Sem vinculo de evento publico</span>}
+                            </div>
                           </div>
                         </td>
-                        <td className="p-3 text-cream font-semibold">{ev.count.toLocaleString("pt-BR")}</td>
+                        <td className="p-3">
+                          <div className="text-cream font-semibold">{ev.count.toLocaleString("pt-BR")}</div>
+                          <div className="text-stone text-xs">{(ev.automations_active ?? 0).toLocaleString("pt-BR")} automacao(oes) ativa(s)</div>
+                        </td>
                         <td className="p-3 text-stone">{ev.unique_customers.toLocaleString("pt-BR")}</td>
                         <td className="p-3 text-stone text-xs">{fmtDate(ev.last_triggered)}</td>
                       </tr>

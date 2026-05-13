@@ -29,6 +29,7 @@ def _service(db: Session) -> StoreNotificationService:
 def next_store_notification(
     page: str = Query(default="home"),
     customer_id: str | None = Query(default=None),
+    anonymous_session_id: str | None = Query(default=None),
     seen_ids: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
@@ -36,6 +37,7 @@ def next_store_notification(
     return _service(db).next_notification(
         page=page,
         customer_id=customer_id or None,
+        anonymous_session_id=anonymous_session_id or None,
         seen_ids=seen_list,
     )
 
