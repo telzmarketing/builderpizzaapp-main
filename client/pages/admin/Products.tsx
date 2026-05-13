@@ -454,6 +454,7 @@ export default function AdminProducts() {
   const [sizesLoading, setSizesLoading] = useState(false);
   const [sizeForm, setSizeForm] = useState({ label: "", description: "", price: "", is_default: false });
   const [savingSizeId, setSavingSizeId] = useState<string | null>(null);
+  const [reorderingSizeId, setReorderingSizeId] = useState<string | null>(null);
 
   const openSizesModal = useCallback(async (product: Pizza) => {
     setSizesModalProduct(product);
@@ -526,6 +527,27 @@ export default function AdminProducts() {
     }
   };
 
+  const handleMoveSize = async (size: ApiProductSize, direction: -1 | 1) => {
+    if (!sizesModalProduct) return;
+    const currentIndex = productSizes.findIndex((item) => item.id === size.id);
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= productSizes.length) return;
+
+    const reordered = [...productSizes];
+    [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
+    setReorderingSizeId(size.id);
+    try {
+      const updatedSizes = await Promise.all(
+        reordered.map((item, index) => sizesApi.update(sizesModalProduct.id, item.id, { sort_order: index }))
+      );
+      setProductSizes(updatedSizes.sort((a, b) => a.sort_order - b.sort_order));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao alterar ordem dos tamanhos.");
+    } finally {
+      setReorderingSizeId(null);
+    }
+  };
+
   const handleDeleteSize = async (sizeId: string) => {
     if (!sizesModalProduct) return;
     if (!confirm("Remover este tamanho?")) return;
@@ -543,6 +565,7 @@ export default function AdminProducts() {
   const [crustsLoading, setCrustsLoading] = useState(false);
   const [crustForm, setCrustForm] = useState({ name: "", price_addition: "" });
   const [savingCrustId, setSavingCrustId] = useState<string | null>(null);
+  const [reorderingCrustId, setReorderingCrustId] = useState<string | null>(null);
 
   const openCrustModal = useCallback(async (product: Pizza) => {
     setCrustModalProduct(product);
@@ -710,6 +733,27 @@ export default function AdminProducts() {
       alert(err instanceof Error ? err.message : "Erro ao atualizar adicional da massa.");
     } finally {
       setSavingCrustId(null);
+    }
+  };
+
+  const handleMoveCrust = async (crust: ApiProductCrustType, direction: -1 | 1) => {
+    if (!crustModalProduct) return;
+    const currentIndex = productCrusts.findIndex((item) => item.id === crust.id);
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= productCrusts.length) return;
+
+    const reordered = [...productCrusts];
+    [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
+    setReorderingCrustId(crust.id);
+    try {
+      const updatedCrusts = await Promise.all(
+        reordered.map((item, index) => crustApi.update(crustModalProduct.id, item.id, { sort_order: index }))
+      );
+      setProductCrusts(updatedCrusts.sort((a, b) => a.sort_order - b.sort_order));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao alterar ordem das massas.");
+    } finally {
+      setReorderingCrustId(null);
     }
   };
 
@@ -2050,7 +2094,7 @@ export default function AdminProducts() {
                   <p className="text-stone text-sm text-center py-4">Nenhum tamanho cadastrado. Este produto usará os tamanhos padrão.</p>
                 ) : (
                   <div className="space-y-2">
-                    {productSizes.map((size) => (
+                    {productSizes.map((size, index) => (
                       <div key={size.id} className="flex items-center gap-3 bg-surface-03 rounded-xl px-4 py-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
@@ -2073,6 +2117,24 @@ export default function AdminProducts() {
                           title="Preco deste tamanho"
                         />
                         <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleMoveSize(size, -1)}
+                            disabled={reorderingSizeId !== null || savingSizeId === size.id || index === 0}
+                            title="Mover tamanho para cima"
+                            className="p-1.5 rounded-lg text-stone hover:text-gold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            {reorderingSizeId === size.id ? <Loader2 size={13} className="animate-spin" /> : <ChevronUp size={13} />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveSize(size, 1)}
+                            disabled={reorderingSizeId !== null || savingSizeId === size.id || index === productSizes.length - 1}
+                            title="Mover tamanho para baixo"
+                            className="p-1.5 rounded-lg text-stone hover:text-gold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <ChevronDown size={13} />
+                          </button>
                           <button onClick={() => handleToggleSizeField(size, "is_default")} disabled={savingSizeId === size.id} title={size.is_default ? "Remover como padrão" : "Marcar como padrão"} className={`p-1.5 rounded-lg transition-colors ${size.is_default ? "bg-gold/20 text-gold" : "text-stone hover:text-gold"}`}>
                             {savingSizeId === size.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
                           </button>
@@ -2159,7 +2221,7 @@ export default function AdminProducts() {
                   <p className="text-stone text-sm text-center py-4">Nenhum tipo de massa cadastrado. O cliente não verá opção de massa.</p>
                 ) : (
                   <div className="space-y-2">
-                    {productCrusts.map((crust) => {
+                    {productCrusts.map((crust, index) => {
                       const effectiveAddition = normalizeCrustPriceAddition(crust.price_addition, crustModalProduct.price);
                       const isLegacyDuplicate = crust.price_addition > 0 && effectiveAddition === 0;
                       return (
@@ -2184,6 +2246,24 @@ export default function AdminProducts() {
                           title="Adicional da massa"
                         />
                         <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleMoveCrust(crust, -1)}
+                            disabled={reorderingCrustId !== null || savingCrustId === crust.id || index === 0}
+                            title="Mover massa para cima"
+                            className="p-1.5 rounded-lg text-stone hover:text-amber-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            {reorderingCrustId === crust.id ? <Loader2 size={13} className="animate-spin" /> : <ChevronUp size={13} />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveCrust(crust, 1)}
+                            disabled={reorderingCrustId !== null || savingCrustId === crust.id || index === productCrusts.length - 1}
+                            title="Mover massa para baixo"
+                            className="p-1.5 rounded-lg text-stone hover:text-amber-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <ChevronDown size={13} />
+                          </button>
                           <button onClick={() => handleToggleCrustActive(crust)} disabled={savingCrustId === crust.id} title={crust.active ? "Desativar" : "Ativar"} className={`p-1.5 rounded-lg transition-colors ${crust.active ? "text-green-400 hover:text-red-400" : "text-red-400 hover:text-green-400"}`}>
                             {savingCrustId === crust.id ? <Loader2 size={13} className="animate-spin" /> : <Settings2 size={13} />}
                           </button>
