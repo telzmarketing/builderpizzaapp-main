@@ -243,6 +243,105 @@ class OrderService:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    def quote_checkout(self, payload: CheckoutIn) -> dict:
+        """Validate cart and calculate totals without creating an order."""
+        if not payload.items:
+            raise CartEmpty()
+
+        if payload.customer_id:
+            if not self._db.query(CustomerModel).filter(CustomerModel.id == payload.customer_id).first():
+                raise DomainError(
+                    "Conta nao encontrada. Faca login novamente para continuar.",
+                    code="CustomerNotFound",
+                )
+
+        from backend.services.store_operation_service import StoreOperationService
+
+        StoreOperationService(self._db).validate_order_allowed(
+            is_scheduled=payload.delivery.is_scheduled if payload.delivery else False,
+            scheduled_for=payload.delivery.scheduled_for if payload.delivery else None,
+        )
+
+        config = self._get_config()
+        items: list[dict] = []
+        subtotal = 0.0
+        for item in payload.items:
+            unit_price, flavor_products, pricing, size_obj, crust_obj = self._validate_item(item, config)
+            line_total = round(unit_price * item.quantity, 2)
+            subtotal += line_total
+            items.append({
+                "product_id": item.product_id,
+                "quantity": item.quantity,
+                "selected_size": item.selected_size,
+                "selected_size_id": size_obj.id if size_obj else item.selected_size_id,
+                "selected_crust_type_id": crust_obj.id if crust_obj else item.selected_crust_type_id,
+                "selected_crust_type": item.selected_crust_type_name,
+                "selected_drink_variant": item.selected_drink_variant_name,
+                "unit_price": unit_price,
+                "line_total": line_total,
+                "standard_unit_price": pricing.standard_price,
+                "promotion_applied": pricing.promotion_applied,
+                "promotion_id": pricing.promotion_id,
+                "promotion_name": pricing.promotion_name,
+                "promotion_discount": pricing.discount_amount,
+                "promotion_blocked": pricing.promotion_blocked,
+                "promotion_block_reason": pricing.promotion_block_reason,
+                "flavors": [
+                    {"product_id": product.id, "name": product.name, "price": product.price}
+                    for product in flavor_products
+                ],
+            })
+        subtotal = round(subtotal, 2)
+
+        from backend.services.shipping_service import ShippingService
+        from backend.schemas.shipping_v2 import ShippingCalculateIn
+
+        shipping_result = ShippingService(self._db).calculate(
+            ShippingCalculateIn(
+                city=payload.delivery.city,
+                neighborhood=payload.delivery.neighborhood,
+                zip_code=payload.delivery.zip_code,
+                order_subtotal=subtotal,
+                is_pickup=payload.delivery.is_pickup,
+                is_scheduled=payload.delivery.is_scheduled,
+            )
+        )
+        if not shipping_result.available:
+            raise DomainError(shipping_result.message or "Entrega indisponivel para este pedido.")
+
+        discount = 0.0
+        coupon_payload = None
+        delivery_fee_final = round(shipping_result.shipping_price, 2)
+        if payload.coupon_code:
+            from backend.services.coupon_service import CouponService
+            from backend.schemas.coupon import CouponApplyIn
+            coupon_result = CouponService(self._db).apply(
+                CouponApplyIn(
+                    code=payload.coupon_code,
+                    order_subtotal=subtotal,
+                    delivery_fee=shipping_result.shipping_price,
+                    customer_id=payload.customer_id,
+                    phone=payload.delivery.phone if payload.delivery else None,
+                )
+            )
+            if not coupon_result.valid:
+                raise DomainError(coupon_result.message, code="InvalidCoupon")
+            coupon_payload = coupon_result.model_dump()
+            discount = coupon_result.discount_amount
+            delivery_fee_final = coupon_result.delivery_fee_final
+
+        total = round(subtotal + delivery_fee_final - discount, 2)
+        return {
+            "items": items,
+            "subtotal": subtotal,
+            "shipping": shipping_result.model_dump(),
+            "coupon": coupon_payload,
+            "discount": discount,
+            "delivery_fee_final": delivery_fee_final,
+            "total": total,
+            "payment_method": payload.payment_method,
+        }
+
     def create_from_checkout(self, payload: CheckoutIn) -> Order:
         """
         Validate cart, recompute prices server-side, apply shipping + coupon,

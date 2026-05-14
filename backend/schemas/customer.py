@@ -66,3 +66,31 @@ class CustomerOut(CustomerBase):
     addresses: list[AddressOut] = []
 
     model_config = {"from_attributes": True}
+
+
+class CustomerChannelOut(BaseModel):
+    id: str
+    customer_id: str
+    channel: str
+    identifier: str
+    normalized_identifier: str
+    is_primary: bool
+    marketing_consent: bool
+    source: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class WhatsAppLeadCreate(BaseModel):
+    phone: str
+    name: Optional[str] = None
+    source: str = "whatsapp"
+
+
+class CustomerIdentityOut(BaseModel):
+    customer: CustomerOut
+    channel: Optional[CustomerChannelOut] = None
+    created: bool = False
+    profile_level: str

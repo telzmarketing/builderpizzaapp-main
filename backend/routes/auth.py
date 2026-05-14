@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import urllib.error
 import urllib.request
 import uuid
@@ -15,17 +14,22 @@ from backend.core.security import hash_password, verify_password
 from backend.database import get_db
 from backend.models.customer import Address, Customer
 from backend.schemas.customer import CustomerOut
+from backend.services.customer_identity_service import (
+    CustomerIdentityService,
+    is_system_lead_email,
+    normalize_phone,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _normalize_phone(phone: str) -> str:
-    return re.sub(r"[^\d+]", "", phone)
+    return normalize_phone(phone)
 
 
 def _find_by_phone(phone: str, db: Session) -> Customer | None:
     normalized = _normalize_phone(phone)
-    return db.query(Customer).filter(Customer.phone == normalized).first()
+    return CustomerIdentityService(db).find_by_phone(normalized)
 
 
 def _verify_or_activate_password(customer: Customer, password: str, db: Session) -> tuple[bool, bool]:
@@ -39,7 +43,13 @@ def _verify_or_activate_password(customer: Customer, password: str, db: Session)
     if customer.password_hash:
         return verify_password(password, customer.password_hash), False
 
-    customer.password_hash = hash_password(password)
+    password_hash_value = hash_password(password)
+    customer.password_hash = password_hash_value
+    CustomerIdentityService(db).sync_registered_customer(
+        customer,
+        auth_provider="password",
+        password_hash_value=password_hash_value,
+    )
     db.commit()
     db.refresh(customer)
     return True, True
@@ -161,14 +171,18 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
 
     email = body.email.strip().lower()
     phone = _normalize_phone(body.phone)
+    identity = CustomerIdentityService(db)
 
-    if db.query(Customer).filter(Customer.email == email).first():
+    existing_email = db.query(Customer).filter(Customer.email == email).first()
+    existing_phone = identity.find_by_phone(phone)
+
+    if existing_email and (not existing_phone or existing_email.id != existing_phone.id):
         return err_msg(
             "E-mail ja cadastrado. Tente fazer login.",
             code="EmailTaken",
             status_code=409,
         )
-    if phone and db.query(Customer).filter(Customer.phone == phone).first():
+    if phone and existing_phone and not is_system_lead_email(existing_phone.email):
         return err_msg(
             "Telefone ja cadastrado. Tente fazer login.",
             code="PhoneTaken",
@@ -178,20 +192,60 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     from datetime import datetime, timezone as tz
 
     now = datetime.now(tz.utc)
+    if existing_phone and is_system_lead_email(existing_phone.email):
+        new_customer = identity.complete_lead_registration(
+            existing_phone,
+            name=body.name,
+            email=email,
+            password=body.password,
+            lgpd_consent=True,
+            lgpd_policy_version=body.lgpd_policy_version,
+            marketing_email_consent=body.marketing_email_consent,
+            marketing_whatsapp_consent=body.marketing_whatsapp_consent,
+        )
+        if body.street and body.city:
+            new_address = Address(
+                id=str(uuid.uuid4()),
+                customer_id=new_customer.id,
+                label=body.label,
+                street=body.street.strip(),
+                number=body.number,
+                complement=body.complement,
+                neighborhood=body.neighborhood,
+                city=body.city.strip(),
+                state=body.state,
+                zip_code=body.zip_code,
+                is_default=True,
+            )
+            db.add(new_address)
+        db.commit()
+        db.refresh(new_customer)
+        return created(
+            LoginOut(customer=CustomerOut.model_validate(new_customer), is_new=True),
+            f"Cadastro concluido! Bem-vindo, {new_customer.name}!",
+        )
+
+    password_hash_value = hash_password(body.password)
     new_customer = Customer(
         id=str(uuid.uuid4()),
         name=body.name.strip(),
         email=email,
-        password_hash=hash_password(body.password),
+        password_hash=password_hash_value,
         phone=phone,
         lgpd_consent=True,
         lgpd_consent_at=now,
         lgpd_policy_version=body.lgpd_policy_version,
         marketing_email_consent=body.marketing_email_consent,
         marketing_whatsapp_consent=body.marketing_whatsapp_consent,
+        source="site",
     )
     db.add(new_customer)
     db.flush()
+    identity.sync_registered_customer(
+        new_customer,
+        auth_provider="password",
+        password_hash_value=password_hash_value,
+    )
 
     if body.street and body.city:
         new_address = Address(
@@ -245,6 +299,11 @@ def google_login(body: GoogleLoginIn, db: Session = Depends(get_db)):
     if customer:
         if not customer.google_id:
             customer.google_id = google_sub
+            CustomerIdentityService(db).sync_registered_customer(
+                customer,
+                auth_provider="google",
+                provider_subject=google_sub,
+            )
             db.commit()
             db.refresh(customer)
         return ok(
@@ -257,8 +316,15 @@ def google_login(body: GoogleLoginIn, db: Session = Depends(get_db)):
         name=name,
         email=email,
         google_id=google_sub,
+        source="google",
     )
     db.add(new_customer)
+    db.flush()
+    CustomerIdentityService(db).sync_registered_customer(
+        new_customer,
+        auth_provider="google",
+        provider_subject=google_sub,
+    )
     db.commit()
     db.refresh(new_customer)
 

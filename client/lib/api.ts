@@ -1128,6 +1128,189 @@ export interface ApiCustomer {
   addresses: ApiAddress[];
 }
 
+export interface ApiCustomerChannel {
+  id: string;
+  customer_id: string;
+  channel: string;
+  identifier: string;
+  normalized_identifier: string;
+  is_primary: boolean;
+  marketing_consent: boolean;
+  source?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiCustomerIdentity {
+  customer: ApiCustomer;
+  channel: ApiCustomerChannel | null;
+  created: boolean;
+  profile_level: "lead" | "partial" | "complete";
+}
+
+export interface ApiAgenteWhatsAppDashboard {
+  sessions_open: number;
+  sessions_human: number;
+  sessions_ai_paused: number;
+  messages_today: number;
+  inbound_today: number;
+  outbound_today: number;
+  campaigns_total: number;
+  stories_total: number;
+}
+
+export interface ApiAgenteWhatsAppSession {
+  id: string;
+  customer_id: string | null;
+  customer_name: string | null;
+  phone: string;
+  provider: string;
+  provider_contact_id: string | null;
+  status: "open" | "waiting_human" | "human" | "ai_paused" | "closed";
+  origin: "inbound" | "campaign" | "order_status" | "manual";
+  current_intent: string | null;
+  last_message_at: string | null;
+  assigned_admin_id: string | null;
+  ai_enabled: boolean;
+  automation_blocked: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiAgenteWhatsAppMessage {
+  id: string;
+  session_id: string;
+  customer_id: string | null;
+  direction: "inbound" | "outbound";
+  sender_type: "customer" | "ai" | "human" | "system";
+  message_type: string;
+  body: string | null;
+  media_url: string | null;
+  provider_message_id: string | null;
+  provider_status: string | null;
+  error: string | null;
+  raw_payload: Record<string, unknown>;
+  created_at: string;
+  delivered_at: string | null;
+  read_at: string | null;
+}
+
+export interface ApiAgenteWhatsAppSessionDetail {
+  session: ApiAgenteWhatsAppSession;
+  messages: ApiAgenteWhatsAppMessage[];
+}
+
+export interface ApiAgenteWhatsAppTool {
+  name: string;
+  description: string;
+  category: string;
+  input_schema: Record<string, unknown>;
+  mutates_data: boolean;
+  requires_confirmation: boolean;
+  enabled: boolean;
+}
+
+export interface ApiAgenteWhatsAppToolCall {
+  log_id: string | null;
+  tool_name: string;
+  success: boolean;
+  data: Record<string, unknown> | Array<Record<string, unknown>> | null;
+  error: string | null;
+  latency_ms: number;
+}
+
+export interface ApiAgenteWhatsAppOutbox {
+  id: string;
+  message_id: string;
+  session_id: string;
+  customer_id: string | null;
+  phone: string;
+  provider: string;
+  message_type: string | null;
+  message_body: string | null;
+  status: "pending" | "processing" | "sent" | "failed" | "dead" | string;
+  attempts: number;
+  max_attempts: number;
+  idempotency_key: string;
+  provider_message_id: string | null;
+  error: string | null;
+  next_attempt_at: string | null;
+  locked_at: string | null;
+  sent_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiAgenteWhatsAppOutboxSummary {
+  pending: number;
+  processing: number;
+  sent: number;
+  failed: number;
+  dead: number;
+  queued_messages: number;
+}
+
+export interface ApiAgenteWhatsAppOutboxProcess {
+  enqueued: number;
+  processed: number;
+  sent: number;
+  failed: number;
+}
+
+export interface ApiAgenteWhatsAppOutboxMetrics extends ApiAgenteWhatsAppOutboxSummary {
+  oldest_pending_age_seconds: number | null;
+  avg_send_latency_seconds: number | null;
+  last_sent_at: string | null;
+  last_error_at: string | null;
+  last_error: string | null;
+}
+
+export interface ApiAgenteWhatsAppProviderState {
+  id: string;
+  provider: string;
+  status: "active" | "paused" | string;
+  consecutive_failures: number;
+  failure_threshold: number;
+  last_failure_at: string | null;
+  last_success_at: string | null;
+  paused_at: string | null;
+  paused_until: string | null;
+  paused_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiAgenteWhatsAppOutboxAlert {
+  level: "warning" | "critical" | string;
+  code: string;
+  message: string;
+}
+
+export interface ApiAgenteWhatsAppInternalAlert {
+  id: string;
+  alert_type: string;
+  level: "info" | "warning" | "critical" | string;
+  status: "active" | "acknowledged" | "resolved" | string;
+  title: string;
+  message: string;
+  dedupe_key: string;
+  payload: Record<string, unknown>;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  acknowledged_at: string | null;
+  resolved_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ApiAgenteWhatsAppOutboxAlerts {
+  alerts: ApiAgenteWhatsAppOutboxAlert[];
+  providers: ApiAgenteWhatsAppProviderState[];
+  metrics: ApiAgenteWhatsAppOutboxMetrics;
+  internal_alerts: ApiAgenteWhatsAppInternalAlert[];
+}
+
 export interface ApiLgpdPolicy {
   id: string;
   version: string;
@@ -2197,6 +2380,12 @@ export const marketingAutomationsApi = {
 export const customersApi = {
   list: () => get<ApiCustomer[]>("/customers"),
   get: (id: string) => get<ApiCustomer>(`/customers/${id}`),
+  findIdentityByPhone: (phone: string, channel = "whatsapp") =>
+    get<ApiCustomerIdentity | null>(
+      `/customers/identity/by-phone?phone=${encodeURIComponent(phone)}&channel=${encodeURIComponent(channel)}`,
+    ),
+  createWhatsAppLead: (data: { phone: string; name?: string; source?: string }) =>
+    post<ApiCustomerIdentity>("/customers/identity/whatsapp-lead", data),
   update: (id: string, data: { name?: string; phone?: string }) =>
     request<ApiCustomer>("PUT", `/customers/${id}`, data, customerAccessHeaders(id)),
   addAddress: (
@@ -2221,6 +2410,80 @@ export const customersApi = {
     post<ApiCustomerAISuggestion>(`/suggestions/${suggestionId}/accept`, {}),
   rejectSuggestion: (suggestionId: string) =>
     post<ApiCustomerAISuggestion>(`/suggestions/${suggestionId}/reject`, {}),
+};
+
+export const agenteWhatsAppApi = {
+  dashboard: () => get<ApiAgenteWhatsAppDashboard>("/agente-whatsapp/dashboard"),
+  listTools: () => get<ApiAgenteWhatsAppTool[]>("/agente-whatsapp/tools"),
+  executeTool: (data: {
+    tool_name: string;
+    arguments?: Record<string, unknown>;
+    session_id?: string | null;
+    customer_id?: string | null;
+  }) => post<ApiAgenteWhatsAppToolCall>("/agente-whatsapp/tools/execute", data),
+  outboxSummary: () => get<ApiAgenteWhatsAppOutboxSummary>("/agente-whatsapp/outbox/summary"),
+  outboxMetrics: () => get<ApiAgenteWhatsAppOutboxMetrics>("/agente-whatsapp/outbox/metrics"),
+  outboxAlerts: () => get<ApiAgenteWhatsAppOutboxAlerts>("/agente-whatsapp/outbox/alerts"),
+  listInternalAlerts: (params?: { status?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    return get<ApiAgenteWhatsAppInternalAlert[]>(
+      `/agente-whatsapp/outbox/internal-alerts${qs.toString() ? `?${qs}` : ""}`,
+    );
+  },
+  acknowledgeInternalAlert: (id: string) =>
+    post<ApiAgenteWhatsAppInternalAlert>(`/agente-whatsapp/outbox/internal-alerts/${encodeURIComponent(id)}/ack`, {}),
+  listOutboxProviders: () => get<ApiAgenteWhatsAppProviderState[]>("/agente-whatsapp/outbox/providers"),
+  pauseOutboxProvider: (provider: string, data: { reason?: string; minutes?: number }) =>
+    post<ApiAgenteWhatsAppProviderState>(`/agente-whatsapp/outbox/providers/${encodeURIComponent(provider)}/pause`, data),
+  resumeOutboxProvider: (provider: string) =>
+    post<ApiAgenteWhatsAppProviderState>(`/agente-whatsapp/outbox/providers/${encodeURIComponent(provider)}/resume`, {}),
+  listOutbox: (params?: { status?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    return get<ApiAgenteWhatsAppOutbox[]>(`/agente-whatsapp/outbox${qs.toString() ? `?${qs}` : ""}`);
+  },
+  enqueueOutbox: (limit = 100) =>
+    post<{ enqueued: number; skipped: number }>(`/agente-whatsapp/outbox/enqueue?limit=${limit}`, {}),
+  processOutbox: (limit = 20) =>
+    post<ApiAgenteWhatsAppOutboxProcess>("/agente-whatsapp/outbox/process", { limit }),
+  retryOutbox: (id: string) => post<ApiAgenteWhatsAppOutbox>(`/agente-whatsapp/outbox/${id}/retry`, {}),
+  listSessions: (params?: { status?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    return get<ApiAgenteWhatsAppSession[]>(`/agente-whatsapp/sessions${qs.toString() ? `?${qs}` : ""}`);
+  },
+  createSession: (data: {
+    phone: string;
+    customer_id?: string | null;
+    provider?: string;
+    provider_contact_id?: string | null;
+    origin?: ApiAgenteWhatsAppSession["origin"];
+    ai_enabled?: boolean;
+    metadata?: Record<string, unknown>;
+  }) => post<ApiAgenteWhatsAppSession>("/agente-whatsapp/sessions", data),
+  getSession: (sessionId: string) =>
+    get<ApiAgenteWhatsAppSessionDetail>(`/agente-whatsapp/sessions/${sessionId}`),
+  updateSession: (sessionId: string, data: Partial<Pick<
+    ApiAgenteWhatsAppSession,
+    "status" | "current_intent" | "assigned_admin_id" | "ai_enabled" | "automation_blocked"
+  >> & { metadata?: Record<string, unknown> }) =>
+    patch<ApiAgenteWhatsAppSession>(`/agente-whatsapp/sessions/${sessionId}`, data),
+  listMessages: (sessionId: string, limit = 100) =>
+    get<ApiAgenteWhatsAppMessage[]>(`/agente-whatsapp/sessions/${sessionId}/messages?limit=${limit}`),
+  addMessage: (sessionId: string, data: {
+    direction: ApiAgenteWhatsAppMessage["direction"];
+    sender_type: ApiAgenteWhatsAppMessage["sender_type"];
+    message_type?: string;
+    body?: string | null;
+    media_url?: string | null;
+    provider_message_id?: string | null;
+    provider_status?: string | null;
+    raw_payload?: Record<string, unknown>;
+  }) => post<ApiAgenteWhatsAppMessage>(`/agente-whatsapp/sessions/${sessionId}/messages`, data),
 };
 
 export const crmApi = {

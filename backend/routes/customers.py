@@ -10,8 +10,14 @@ from backend.routes.admin_auth import get_current_admin
 from backend.routes.customer_access import require_customer_or_admin
 from backend.models.admin import AdminUser
 from backend.models.customer import Customer, Address
+from backend.models.customer_identity import CustomerChannel
 from backend.models.order import Order
 from backend.models.customer_event import CustomerEvent
+from backend.services.customer_identity_service import (
+    CustomerIdentityService,
+    is_system_lead_email,
+    normalize_phone,
+)
 from backend.services.customer_ai_service import (
     accept_customer_ai_suggestion,
     analyze_customer_profile,
@@ -21,12 +27,34 @@ from backend.services.customer_ai_service import (
 )
 from backend.schemas.customer import (
     CustomerCreate, CustomerUpdate, CustomerOut,
-    AddressCreate, AddressOut,
+    AddressCreate, AddressOut, CustomerIdentityOut, WhatsAppLeadCreate,
 )
 from backend.core.response import ok
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 suggestions_router = APIRouter(prefix="/suggestions", tags=["customer-ai"])
+
+
+def _profile_level(customer: Customer) -> str:
+    if customer.password_hash and not is_system_lead_email(customer.email):
+        return "complete"
+    if customer.phone and customer.addresses:
+        return "partial"
+    return "lead"
+
+
+def _identity_payload(db: Session, customer: Customer, created: bool = False) -> dict:
+    channel = (
+        db.query(CustomerChannel)
+        .filter(CustomerChannel.customer_id == customer.id, CustomerChannel.channel == "whatsapp")
+        .first()
+    )
+    return CustomerIdentityOut(
+        customer=CustomerOut.model_validate(customer),
+        channel=channel,
+        created=created,
+        profile_level=_profile_level(customer),
+    ).model_dump()
 
 
 @router.get("", response_model=list[CustomerOut])
@@ -35,6 +63,43 @@ def list_customers(
     _admin: AdminUser = Depends(get_current_admin),
 ):
     return db.query(Customer).order_by(Customer.name).all()
+
+
+@router.get("/identity/by-phone")
+def get_customer_identity_by_phone(
+    phone: str = Query(..., min_length=8),
+    channel: str | None = Query(default="whatsapp"),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    normalized = normalize_phone(phone)
+    identity = CustomerIdentityService(db)
+    customer = identity.find_by_phone(normalized, channel=channel) or identity.find_by_phone(normalized)
+    if not customer:
+        return ok(None, "Cliente nao encontrado para este telefone.")
+    return ok(_identity_payload(db, customer))
+
+
+@router.post("/identity/whatsapp-lead", status_code=201)
+def create_whatsapp_lead(
+    body: WhatsAppLeadCreate,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    try:
+        customer, created = CustomerIdentityService(db).get_or_create_whatsapp_lead(
+            phone=body.phone,
+            name=body.name,
+            source=body.source or "whatsapp",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(customer)
+    return ok(
+        _identity_payload(db, customer, created=created),
+        "Lead WhatsApp criado." if created else "Cliente existente localizado pelo telefone.",
+    )
 
 
 @router.get("/{customer_id}", response_model=CustomerOut)
@@ -56,6 +121,8 @@ def create_customer(body: CustomerCreate, db: Session = Depends(get_db)):
         raise HTTPException(400, "E-mail já cadastrado.")
     customer = Customer(id=str(uuid.uuid4()), **body.model_dump())
     db.add(customer)
+    db.flush()
+    CustomerIdentityService(db).sync_registered_customer(customer, auth_provider="manual")
     db.commit()
     db.refresh(customer)
     return customer

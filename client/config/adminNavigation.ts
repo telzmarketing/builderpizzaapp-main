@@ -87,6 +87,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
       { path: "/painel/crm/pipeline", icon: KanbanSquare, label: "Pipeline", permissions: ["clientes"] },
       { path: "/painel/crm/grupos", icon: UserCheck, label: "Grupos & Segmentacoes", permissions: ["clientes"] },
       { path: "/painel/crm/tarefas", icon: ClipboardList, label: "Tarefas", permissions: ["clientes"] },
+      { path: "/painel/crm/agente-whatsapp", icon: MessageCircle, label: "Agente WhatsApp", permissions: ["clientes", "whatsapp"] },
     ],
   },
   {

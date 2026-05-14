@@ -7,8 +7,9 @@ Start with:
 Or directly:
     python -m backend.main
 """
+import asyncio
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,6 +40,7 @@ from backend.routes import customer_events as customer_events_routes
 from backend.routes import bi as bi_routes
 from backend.routes import store_notifications as store_notifications_routes
 from backend.routes import upsells as upsells_routes
+from backend.routes import agente_whatsapp as agente_whatsapp_routes
 
 settings = get_settings()
 
@@ -60,7 +62,7 @@ async def lifespan(app: FastAPI):
     from backend.core.events import (
         bus,
         OrderCreated, OrderStatusChanged, OrderCancelled,
-        PaymentConfirmed, DeliveryAssigned, DeliveryCompleted,
+        PaymentConfirmed, PaymentFailed, DeliveryAssigned, DeliveryCompleted,
         erp_order_created_handler, erp_order_status_handler,
         erp_payment_confirmed_handler, erp_delivery_completed_handler,
         push_notification_handler,
@@ -75,7 +77,49 @@ async def lifespan(app: FastAPI):
     bus.subscribe(DeliveryCompleted, erp_delivery_completed_handler)
     bus.subscribe(DeliveryCompleted, push_notification_handler)
 
-    # Phase 4 — Auto-assign driver when order reaches ready_for_pickup
+    # AGENTE WHATSAPP Phase 6: queue order status messages without sending externally.
+    def _agente_whatsapp_status_handler(event):
+        try:
+            with SessionLocal() as db:
+                from backend.core.events import (
+                    DeliveryAssigned as EvDeliveryAssigned,
+                    DeliveryCompleted as EvDeliveryCompleted,
+                    OrderCancelled as EvOrderCancelled,
+                    OrderCreated as EvOrderCreated,
+                    OrderStatusChanged as EvOrderStatusChanged,
+                    PaymentConfirmed as EvPaymentConfirmed,
+                    PaymentFailed as EvPaymentFailed,
+                )
+                from backend.services.agente_whatsapp_status_service import AgenteWhatsAppStatusService
+
+                service = AgenteWhatsAppStatusService(db)
+                if isinstance(event, EvOrderCreated):
+                    service.handle_order_created(event)
+                elif isinstance(event, EvPaymentConfirmed):
+                    service.handle_payment_confirmed(event)
+                elif isinstance(event, EvPaymentFailed):
+                    service.handle_payment_failed(event)
+                elif isinstance(event, EvOrderStatusChanged):
+                    service.handle_order_status_changed(event)
+                elif isinstance(event, EvOrderCancelled):
+                    service.handle_order_cancelled(event)
+                elif isinstance(event, EvDeliveryAssigned):
+                    service.handle_delivery_assigned(event)
+                elif isinstance(event, EvDeliveryCompleted):
+                    service.handle_delivery_completed(event)
+                db.commit()
+        except Exception:
+            pass
+
+    bus.subscribe(OrderCreated, _agente_whatsapp_status_handler)
+    bus.subscribe(PaymentConfirmed, _agente_whatsapp_status_handler)
+    bus.subscribe(PaymentFailed, _agente_whatsapp_status_handler)
+    bus.subscribe(OrderStatusChanged, _agente_whatsapp_status_handler)
+    bus.subscribe(OrderCancelled, _agente_whatsapp_status_handler)
+    bus.subscribe(DeliveryAssigned, _agente_whatsapp_status_handler)
+    bus.subscribe(DeliveryCompleted, _agente_whatsapp_status_handler)
+
+    # Phase 4 - Auto-assign driver when order reaches ready_for_pickup.
     def _auto_assign_handler(event: OrderStatusChanged):
         if event.to_status not in ("ready_for_pickup", "preparing"):
             return
@@ -88,7 +132,25 @@ async def lifespan(app: FastAPI):
 
     bus.subscribe(OrderStatusChanged, _auto_assign_handler)
 
-    yield
+    agente_whatsapp_worker_task = None
+    if settings.AGENTE_WHATSAPP_WORKER_ENABLED:
+        from backend.services.agente_whatsapp_worker import run_agente_whatsapp_outbox_worker
+
+        agente_whatsapp_worker_task = asyncio.create_task(
+            run_agente_whatsapp_outbox_worker(
+                SessionLocal,
+                interval_seconds=settings.AGENTE_WHATSAPP_WORKER_INTERVAL_SECONDS,
+                batch_size=settings.AGENTE_WHATSAPP_WORKER_BATCH_SIZE,
+            )
+        )
+
+    try:
+        yield
+    finally:
+        if agente_whatsapp_worker_task:
+            agente_whatsapp_worker_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await agente_whatsapp_worker_task
     # ── Shutdown ──────────────────────────────────────────────────────────────
 
 
@@ -332,6 +394,57 @@ def _run_migrations():
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS lgpd_policy_version VARCHAR(20)",
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS marketing_email_consent BOOLEAN DEFAULT FALSE",
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS marketing_whatsapp_consent BOOLEAN DEFAULT FALSE",
+        # Customer identity/channel foundation for AGENTE WHATSAPP.
+        "CREATE TABLE IF NOT EXISTS customer_auth (id VARCHAR PRIMARY KEY, customer_id VARCHAR NOT NULL REFERENCES customers(id) ON DELETE CASCADE, auth_provider VARCHAR(40) NOT NULL DEFAULT 'password', identifier VARCHAR(255), password_hash TEXT, provider_subject VARCHAR(255), status VARCHAR(30) NOT NULL DEFAULT 'active', last_login_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), CONSTRAINT uq_customer_auth_customer_provider UNIQUE (customer_id, auth_provider), CONSTRAINT uq_customer_auth_provider_identifier UNIQUE (auth_provider, identifier))",
+        "CREATE INDEX IF NOT EXISTS ix_customer_auth_customer_id ON customer_auth(customer_id)",
+        "CREATE TABLE IF NOT EXISTS customer_channels (id VARCHAR PRIMARY KEY, customer_id VARCHAR NOT NULL REFERENCES customers(id) ON DELETE CASCADE, channel VARCHAR(40) NOT NULL, identifier VARCHAR(255) NOT NULL, normalized_identifier VARCHAR(255) NOT NULL, is_primary BOOLEAN NOT NULL DEFAULT FALSE, verified_at TIMESTAMPTZ, marketing_consent BOOLEAN NOT NULL DEFAULT FALSE, source VARCHAR(100), metadata_json TEXT NOT NULL DEFAULT '{}', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), CONSTRAINT uq_customer_channel_identifier UNIQUE (channel, normalized_identifier))",
+        "CREATE INDEX IF NOT EXISTS ix_customer_channels_customer_id ON customer_channels(customer_id)",
+        "CREATE INDEX IF NOT EXISTS ix_customer_channels_channel ON customer_channels(channel)",
+        "CREATE TABLE IF NOT EXISTS customer_preferences (id VARCHAR PRIMARY KEY, customer_id VARCHAR NOT NULL UNIQUE REFERENCES customers(id) ON DELETE CASCADE, preferred_channel VARCHAR(40), preferred_contact_time VARCHAR(40), language VARCHAR(10) NOT NULL DEFAULT 'pt_BR', accepts_ai_service BOOLEAN NOT NULL DEFAULT TRUE, accepts_order_status BOOLEAN NOT NULL DEFAULT TRUE, metadata_json TEXT NOT NULL DEFAULT '{}', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "INSERT INTO customer_channels (id, customer_id, channel, identifier, normalized_identifier, is_primary, marketing_consent, source) SELECT 'cchan-email-' || substr(md5(c.id || ':email'), 1, 20), c.id, 'email', c.email, lower(c.email), CASE WHEN c.phone IS NULL OR c.phone = '' THEN TRUE ELSE FALSE END, COALESCE(c.marketing_email_consent, FALSE), COALESCE(c.source, 'legacy') FROM customers c WHERE c.email IS NOT NULL AND c.email <> '' ON CONFLICT DO NOTHING",
+        "INSERT INTO customer_channels (id, customer_id, channel, identifier, normalized_identifier, is_primary, marketing_consent, source) SELECT 'cchan-phone-' || substr(md5(c.id || ':phone'), 1, 20), c.id, 'phone', c.phone, regexp_replace(c.phone, '[^0-9]', '', 'g'), TRUE, COALESCE(c.marketing_whatsapp_consent, FALSE), COALESCE(c.source, 'legacy') FROM customers c WHERE c.phone IS NOT NULL AND c.phone <> '' AND regexp_replace(c.phone, '[^0-9]', '', 'g') <> '' ON CONFLICT DO NOTHING",
+        "INSERT INTO customer_channels (id, customer_id, channel, identifier, normalized_identifier, is_primary, marketing_consent, source) SELECT 'cchan-wpp-' || substr(md5(c.id || ':whatsapp'), 1, 22), c.id, 'whatsapp', c.phone, regexp_replace(c.phone, '[^0-9]', '', 'g'), TRUE, COALESCE(c.marketing_whatsapp_consent, FALSE), COALESCE(c.source, 'legacy') FROM customers c WHERE c.phone IS NOT NULL AND c.phone <> '' AND regexp_replace(c.phone, '[^0-9]', '', 'g') <> '' ON CONFLICT DO NOTHING",
+        "INSERT INTO customer_auth (id, customer_id, auth_provider, identifier, password_hash, status) SELECT 'cauth-pass-' || substr(md5(c.id || ':password'), 1, 20), c.id, 'password', lower(c.email), c.password_hash, CASE WHEN c.password_hash IS NULL THEN 'inactive' ELSE 'active' END FROM customers c WHERE c.email IS NOT NULL AND c.email <> '' ON CONFLICT DO NOTHING",
+        "INSERT INTO customer_preferences (id, customer_id, preferred_channel) SELECT 'cpref-' || substr(md5(c.id || ':preferences'), 1, 26), c.id, CASE WHEN c.phone IS NOT NULL AND c.phone <> '' THEN 'whatsapp' ELSE 'email' END FROM customers c ON CONFLICT DO NOTHING",
+        # Core AGENTE WHATSAPP tables.
+        "CREATE TABLE IF NOT EXISTS agente_whatsapp_sessions (id VARCHAR PRIMARY KEY, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, phone VARCHAR(30) NOT NULL, provider VARCHAR(40) NOT NULL DEFAULT 'official', provider_contact_id VARCHAR(255), status VARCHAR(30) NOT NULL DEFAULT 'open', origin VARCHAR(40) NOT NULL DEFAULT 'manual', current_intent VARCHAR(120), last_message_at TIMESTAMPTZ, assigned_admin_id VARCHAR REFERENCES admin_users(id) ON DELETE SET NULL, ai_enabled BOOLEAN NOT NULL DEFAULT TRUE, automation_blocked BOOLEAN NOT NULL DEFAULT FALSE, metadata_json TEXT NOT NULL DEFAULT '{}', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_sessions_phone ON agente_whatsapp_sessions(phone)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_sessions_status ON agente_whatsapp_sessions(status)",
+        "CREATE TABLE IF NOT EXISTS agente_whatsapp_messages (id VARCHAR PRIMARY KEY, session_id VARCHAR NOT NULL REFERENCES agente_whatsapp_sessions(id) ON DELETE CASCADE, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, direction VARCHAR(20) NOT NULL, sender_type VARCHAR(20) NOT NULL, message_type VARCHAR(30) NOT NULL DEFAULT 'text', body TEXT, media_url TEXT, provider_message_id VARCHAR(255), provider_status VARCHAR(40), error TEXT, raw_payload_json TEXT NOT NULL DEFAULT '{}', created_at TIMESTAMPTZ DEFAULT NOW(), delivered_at TIMESTAMPTZ, read_at TIMESTAMPTZ)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_messages_session_id ON agente_whatsapp_messages(session_id)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_messages_provider_message_id ON agente_whatsapp_messages(provider_message_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_agente_whatsapp_messages_provider_message_id ON agente_whatsapp_messages(provider_message_id) WHERE provider_message_id IS NOT NULL",
+        "CREATE TABLE IF NOT EXISTS agente_whatsapp_outbox (id VARCHAR PRIMARY KEY, message_id VARCHAR NOT NULL UNIQUE REFERENCES agente_whatsapp_messages(id) ON DELETE CASCADE, session_id VARCHAR NOT NULL REFERENCES agente_whatsapp_sessions(id) ON DELETE CASCADE, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, phone VARCHAR(30) NOT NULL, provider VARCHAR(40) NOT NULL DEFAULT 'official', status VARCHAR(30) NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 3, idempotency_key VARCHAR(180) NOT NULL UNIQUE, payload_json TEXT NOT NULL DEFAULT '{}', provider_message_id VARCHAR(255), error TEXT, next_attempt_at TIMESTAMPTZ, locked_at TIMESTAMPTZ, sent_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_outbox_session_id ON agente_whatsapp_outbox(session_id)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_outbox_customer_id ON agente_whatsapp_outbox(customer_id)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_outbox_phone ON agente_whatsapp_outbox(phone)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_outbox_status_next_attempt ON agente_whatsapp_outbox(status, next_attempt_at)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_outbox_provider_message_id ON agente_whatsapp_outbox(provider_message_id)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_outbox_created_at ON agente_whatsapp_outbox(created_at DESC)",
+        "CREATE TABLE IF NOT EXISTS agente_whatsapp_provider_states (id VARCHAR PRIMARY KEY, provider VARCHAR(40) NOT NULL UNIQUE, status VARCHAR(30) NOT NULL DEFAULT 'active', consecutive_failures INTEGER NOT NULL DEFAULT 0, failure_threshold INTEGER NOT NULL DEFAULT 5, last_failure_at TIMESTAMPTZ, last_success_at TIMESTAMPTZ, paused_at TIMESTAMPTZ, paused_until TIMESTAMPTZ, paused_reason TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_provider_states_provider ON agente_whatsapp_provider_states(provider)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_provider_states_status ON agente_whatsapp_provider_states(status)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_provider_states_paused_until ON agente_whatsapp_provider_states(paused_until)",
+        "CREATE TABLE IF NOT EXISTS agente_whatsapp_internal_alerts (id VARCHAR PRIMARY KEY, alert_type VARCHAR(80) NOT NULL, level VARCHAR(30) NOT NULL DEFAULT 'warning', status VARCHAR(30) NOT NULL DEFAULT 'active', title VARCHAR(200) NOT NULL, message TEXT NOT NULL, dedupe_key VARCHAR(220) NOT NULL UNIQUE, payload_json TEXT NOT NULL DEFAULT '{}', first_seen_at TIMESTAMPTZ DEFAULT NOW(), last_seen_at TIMESTAMPTZ DEFAULT NOW(), acknowledged_at TIMESTAMPTZ, resolved_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_internal_alerts_alert_type ON agente_whatsapp_internal_alerts(alert_type)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_internal_alerts_level ON agente_whatsapp_internal_alerts(level)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_internal_alerts_status ON agente_whatsapp_internal_alerts(status)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_internal_alerts_last_seen_at ON agente_whatsapp_internal_alerts(last_seen_at DESC)",
+        "CREATE TABLE IF NOT EXISTS agente_whatsapp_events (id VARCHAR PRIMARY KEY, session_id VARCHAR REFERENCES agente_whatsapp_sessions(id) ON DELETE CASCADE, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, order_id VARCHAR REFERENCES orders(id) ON DELETE SET NULL, event_type VARCHAR(100) NOT NULL, source VARCHAR(80) NOT NULL DEFAULT 'agente_whatsapp', payload_json TEXT NOT NULL DEFAULT '{}', processed_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_events_session_id ON agente_whatsapp_events(session_id)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_events_event_type ON agente_whatsapp_events(event_type)",
+        "CREATE TABLE IF NOT EXISTS agente_whatsapp_context (id VARCHAR PRIMARY KEY, session_id VARCHAR NOT NULL UNIQUE REFERENCES agente_whatsapp_sessions(id) ON DELETE CASCADE, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, short_context_json TEXT NOT NULL DEFAULT '{}', long_context_json TEXT NOT NULL DEFAULT '{}', preferences_json TEXT NOT NULL DEFAULT '{}', behavior_json TEXT NOT NULL DEFAULT '{}', last_intent VARCHAR(120), sentiment VARCHAR(40), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS agente_whatsapp_metrics (id VARCHAR PRIMARY KEY, date DATE NOT NULL, sessions_opened INTEGER NOT NULL DEFAULT 0, messages_inbound INTEGER NOT NULL DEFAULT 0, messages_outbound INTEGER NOT NULL DEFAULT 0, ai_responses INTEGER NOT NULL DEFAULT 0, human_takeovers INTEGER NOT NULL DEFAULT 0, orders_created INTEGER NOT NULL DEFAULT 0, revenue FLOAT NOT NULL DEFAULT 0, avg_response_time_seconds FLOAT NOT NULL DEFAULT 0, abandoned_sessions INTEGER NOT NULL DEFAULT 0, recovered_carts INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_metrics_date ON agente_whatsapp_metrics(date)",
+        "CREATE TABLE IF NOT EXISTS agente_whatsapp_campaigns (id VARCHAR PRIMARY KEY, name VARCHAR(300) NOT NULL, status VARCHAR(40) NOT NULL DEFAULT 'draft', campaign_type VARCHAR(60) NOT NULL DEFAULT 'manual', audience_json TEXT NOT NULL DEFAULT '{}', template_id VARCHAR, scheduled_at TIMESTAMPTZ, sent_count INTEGER NOT NULL DEFAULT 0, delivered_count INTEGER NOT NULL DEFAULT 0, read_count INTEGER NOT NULL DEFAULT 0, replied_count INTEGER NOT NULL DEFAULT 0, conversion_count INTEGER NOT NULL DEFAULT 0, revenue FLOAT NOT NULL DEFAULT 0, created_by VARCHAR(200), created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_campaigns_status ON agente_whatsapp_campaigns(status)",
+        "CREATE TABLE IF NOT EXISTS agente_whatsapp_stories (id VARCHAR PRIMARY KEY, campaign_id VARCHAR REFERENCES agente_whatsapp_campaigns(id) ON DELETE SET NULL, title VARCHAR(300) NOT NULL, media_type VARCHAR(20) NOT NULL, media_url TEXT NOT NULL, caption TEXT, cta_text VARCHAR(120), cta_url TEXT, status VARCHAR(40) NOT NULL DEFAULT 'draft', scheduled_at TIMESTAMPTZ, published_at TIMESTAMPTZ, provider_story_id VARCHAR(255), metrics_json TEXT NOT NULL DEFAULT '{}', created_by VARCHAR(200), created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_stories_status ON agente_whatsapp_stories(status)",
+        "CREATE TABLE IF NOT EXISTS agente_whatsapp_tool_calls (id VARCHAR PRIMARY KEY, session_id VARCHAR REFERENCES agente_whatsapp_sessions(id) ON DELETE SET NULL, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, tool_name VARCHAR(120) NOT NULL, status VARCHAR(30) NOT NULL DEFAULT 'success', arguments_json TEXT NOT NULL DEFAULT '{}', result_json TEXT NOT NULL DEFAULT '{}', error TEXT, latency_ms INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_tool_calls_session_id ON agente_whatsapp_tool_calls(session_id)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_tool_calls_customer_id ON agente_whatsapp_tool_calls(customer_id)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_tool_calls_tool_name ON agente_whatsapp_tool_calls(tool_name)",
+        "CREATE INDEX IF NOT EXISTS ix_agente_whatsapp_tool_calls_created_at ON agente_whatsapp_tool_calls(created_at DESC)",
         # ── Address label ─────────────────────────────────────────────────
         "ALTER TABLE addresses ADD COLUMN IF NOT EXISTS label VARCHAR(100)",
         # ── LGPD policies table ───────────────────────────────────────────
@@ -854,6 +967,7 @@ app.include_router(customer_events_routes.router)
 app.include_router(bi_routes.router)
 app.include_router(store_notifications_routes.router)
 app.include_router(upsells_routes.router)
+app.include_router(agente_whatsapp_routes.router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")
@@ -894,6 +1008,7 @@ app.include_router(lgpd_routes.admin_router, prefix="/api")
 app.include_router(bi_routes.router, prefix="/api")
 app.include_router(store_notifications_routes.router, prefix="/api")
 app.include_router(upsells_routes.router, prefix="/api")
+app.include_router(agente_whatsapp_routes.router, prefix="/api")
 
 # ── Static files (uploaded images) ───────────────────────────────────────────
 # Must be mounted AFTER all route registrations.

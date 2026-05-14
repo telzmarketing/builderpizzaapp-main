@@ -55,6 +55,14 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
 
+    # AGENTE WHATSAPP - outbox worker
+    AGENTE_WHATSAPP_WORKER_ENABLED: bool = True
+    AGENTE_WHATSAPP_WORKER_INTERVAL_SECONDS: int = 10
+    AGENTE_WHATSAPP_WORKER_BATCH_SIZE: int = 20
+    AGENTE_WHATSAPP_PROVIDER_FAILURE_THRESHOLD: int = 5
+    AGENTE_WHATSAPP_PROVIDER_PAUSE_MINUTES: int = 30
+    AGENTE_WHATSAPP_DEAD_ALERT_AFTER_MINUTES: int = 5
+
     class Config:
         env_file = (
             PROJECT_ROOT / ".env",

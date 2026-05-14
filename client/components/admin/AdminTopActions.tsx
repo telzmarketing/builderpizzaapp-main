@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, CheckCircle2, MessageCircle, PackageCheck, RefreshCw, Search, Truck, X } from "lucide-react";
-import { ordersApi, type ApiOrder } from "@/lib/api";
+import { AlertTriangle, Bell, CheckCircle2, MessageCircle, PackageCheck, RefreshCw, Search, Truck, X } from "lucide-react";
+import { agenteWhatsAppApi, ordersApi, type ApiAgenteWhatsAppInternalAlert, type ApiOrder } from "@/lib/api";
 import { chatbotAdminApi, type ChatbotConversation } from "@/lib/chatbotApi";
 import { useAdminLayout } from "@/components/layout/AdminLayoutContext";
 
@@ -11,7 +11,8 @@ type AdminNotification = {
   description: string;
   time: string;
   href: string;
-  icon: "new_order" | "ready" | "delivered" | "chat";
+  icon: "new_order" | "ready" | "delivered" | "chat" | "agente_whatsapp";
+  ackId?: string;
 };
 
 const NOTIFICATION_ORDER_STATUSES = new Set(["paid", "pago", "ready_for_pickup", "delivered"]);
@@ -74,8 +75,21 @@ function chatNotification(conversation: ChatbotConversation): AdminNotification 
   };
 }
 
+function agenteWhatsAppNotification(alert: ApiAgenteWhatsAppInternalAlert): AdminNotification {
+  return {
+    id: `agente-whatsapp:${alert.id}:${alert.updated_at || alert.last_seen_at || alert.created_at}`,
+    title: alert.title,
+    description: alert.message,
+    time: alert.last_seen_at || alert.updated_at || alert.created_at || new Date().toISOString(),
+    href: "/painel/crm/agente-whatsapp",
+    icon: "agente_whatsapp",
+    ackId: alert.id,
+  };
+}
+
 function NotificationIcon({ icon }: { icon: AdminNotification["icon"] }) {
   const cls = "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg";
+  if (icon === "agente_whatsapp") return <span className={`${cls} bg-red-500/15 text-red-300`}><AlertTriangle size={14} /></span>;
   if (icon === "ready") return <span className={`${cls} bg-blue-500/15 text-blue-300`}><PackageCheck size={14} /></span>;
   if (icon === "delivered") return <span className={`${cls} bg-green-500/15 text-green-300`}><Truck size={14} /></span>;
   if (icon === "chat") return <span className={`${cls} bg-violet-500/15 text-violet-300`}><MessageCircle size={14} /></span>;
@@ -96,9 +110,10 @@ function AdminTopActionsContent() {
   useEffect(() => {
     const fetchNotifications = async () => {
       try {
-        const [orders, conversations] = await Promise.all([
+        const [orders, conversations, agenteAlerts] = await Promise.all([
           ordersApi.list({ limit: 50 }),
           chatbotAdminApi.listConversations(undefined, 1).catch(() => ({ items: [] })),
+          agenteWhatsAppApi.listInternalAlerts({ status: "active", limit: 10 }).catch(() => []),
         ]);
         const orderNotifications = (orders ?? [])
           .filter((order) => NOTIFICATION_ORDER_STATUSES.has(order.status))
@@ -107,7 +122,8 @@ function AdminTopActionsContent() {
         const chatNotifications = (conversations.items ?? [])
           .filter((conversation) => conversation.status === "aberta" || conversation.status === "em_humano")
           .map(chatNotification);
-        setNotifications([...orderNotifications, ...chatNotifications]
+        const agenteNotifications = (agenteAlerts ?? []).map(agenteWhatsAppNotification);
+        setNotifications([...agenteNotifications, ...orderNotifications, ...chatNotifications]
           .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
           .slice(0, 30));
       } catch {
@@ -214,7 +230,11 @@ function AdminTopActionsContent() {
                 notifications.map((notification) => (
                   <button
                     key={notification.id}
-                    onClick={() => { navigate(notification.href); setBellOpen(false); }}
+                    onClick={() => {
+                      if (notification.ackId) agenteWhatsAppApi.acknowledgeInternalAlert(notification.ackId).catch(() => {});
+                      navigate(notification.href);
+                      setBellOpen(false);
+                    }}
                     className="flex w-full gap-3 border-b border-surface-03/40 px-4 py-3 text-left transition-colors last:border-0 hover:bg-surface-03/50"
                   >
                     <NotificationIcon icon={notification.icon} />
@@ -232,10 +252,10 @@ function AdminTopActionsContent() {
             {notifications.length > 0 && (
               <div className="border-t border-surface-03 px-4 py-2.5">
                 <button
-                  onClick={() => { navigate("/painel/orders"); setBellOpen(false); }}
+                  onClick={() => { navigate(notifications[0]?.href || "/painel/orders"); setBellOpen(false); }}
                   className="w-full text-center text-gold text-xs font-bold hover:text-gold/80 transition-colors"
                 >
-                  Ver painel de pedidos
+                  Abrir notificacao mais recente
                 </button>
               </div>
             )}

@@ -172,6 +172,7 @@ import CrmPipeline from "./pages/admin/crm/CrmPipeline";
 import CrmGrupos from "./pages/admin/crm/CrmGrupos";
 import CrmTarefas from "./pages/admin/crm/CrmTarefas";
 import CrmInteligencia from "./pages/admin/crm/CrmInteligencia";
+import CrmAgenteWhatsApp from "./pages/admin/crm/CrmAgenteWhatsApp";
 import AdminLogistica from "./pages/admin/logistica/AdminLogistica";
 import Motoboy from "./pages/Motoboy";
 import Campanha from "./pages/Campanha";
@@ -262,6 +263,7 @@ export default function App() {
                 <Route path="/painel/crm/pipeline" element={<CrmPipeline />} />
                 <Route path="/painel/crm/grupos" element={<CrmGrupos />} />
                 <Route path="/painel/crm/tarefas" element={<CrmTarefas />} />
+                <Route path="/painel/crm/agente-whatsapp" element={<CrmAgenteWhatsApp />} />
                 {/* ── Logistics routes ── */}
                 <Route path="/painel/logistica" element={<AdminLogistica />} />
                 </Route>
