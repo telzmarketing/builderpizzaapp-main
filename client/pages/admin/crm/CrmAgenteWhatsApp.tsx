@@ -326,9 +326,11 @@ export default function CrmAgenteWhatsApp() {
     setError("");
     setLoading(true);
     try {
+      const [dash, rows] = await Promise.all([
+        agenteWhatsAppApi.dashboard(),
+        agenteWhatsAppApi.listSessions({ limit: 100 }),
+      ]);
       const [
-        dash,
-        rows,
         outbox,
         obs,
         campaignRows,
@@ -339,17 +341,15 @@ export default function CrmAgenteWhatsApp() {
         aiSettingsPayload,
         aiStatusPayload,
       ] = await Promise.all([
-        agenteWhatsAppApi.dashboard(),
-        agenteWhatsAppApi.listSessions({ limit: 100 }),
-        agenteWhatsAppApi.outboxMetrics(),
-        agenteWhatsAppApi.observability(),
-        agenteWhatsAppApi.listCampaigns(),
-        agenteWhatsAppApi.listCampaignTemplates(),
-        agenteWhatsAppApi.listAutomationTemplates(),
-        agenteWhatsAppApi.listStories(),
-        agenteWhatsAppApi.listStoryTemplates(),
-        agenteWhatsAppApi.getAISettings(),
-        agenteWhatsAppApi.aiProviderStatus(),
+        agenteWhatsAppApi.outboxMetrics().catch(() => null),
+        agenteWhatsAppApi.observability().catch(() => null),
+        agenteWhatsAppApi.listCampaigns().catch(() => []),
+        agenteWhatsAppApi.listCampaignTemplates().catch(() => []),
+        agenteWhatsAppApi.listAutomationTemplates().catch(() => []),
+        agenteWhatsAppApi.listStories().catch(() => []),
+        agenteWhatsAppApi.listStoryTemplates().catch(() => []),
+        agenteWhatsAppApi.getAISettings().catch(() => null),
+        agenteWhatsAppApi.aiProviderStatus().catch(() => null),
       ]);
       setDashboard(dash);
       setSessions(rows);
