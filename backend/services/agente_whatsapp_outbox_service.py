@@ -265,6 +265,129 @@ class AgenteWhatsAppOutboxService:
             "last_error": last_error.error if last_error else None,
         }
 
+    def observability(self) -> dict[str, Any]:
+        alert_payload = self.alerts()
+        metrics = alert_payload["metrics"]
+        providers = alert_payload["providers"]
+        internal_alerts = self.list_internal_alerts(status=None, limit=50)
+        active_internal = [alert for alert in internal_alerts if alert.status == "active"]
+        critical_internal = [alert for alert in active_internal if alert.level == "critical"]
+        attempted = metrics.get("sent", 0) + metrics.get("failed", 0) + metrics.get("dead", 0)
+        success_rate = round((metrics.get("sent", 0) / attempted) * 100, 2) if attempted else 100.0
+        failure_rate = round(((metrics.get("failed", 0) + metrics.get("dead", 0)) / attempted) * 100, 2) if attempted else 0.0
+        oldest_pending_age = metrics.get("oldest_pending_age_seconds")
+        providers_paused = sum(1 for provider in providers if provider["status"] == "paused")
+
+        health_status = "healthy"
+        health_message = "Operacao normal."
+        if metrics.get("dead", 0) > 0 or providers_paused or critical_internal:
+            health_status = "critical"
+            health_message = "Acao administrativa necessaria."
+        elif metrics.get("failed", 0) > 0 or (oldest_pending_age and oldest_pending_age > 900):
+            health_status = "degraded"
+            health_message = "Fila operando com atraso ou falhas recentes."
+
+        alert_status_counts = {
+            status: count
+            for status, count in (
+                self._db.query(AgenteWhatsAppInternalAlert.status, func.count(AgenteWhatsAppInternalAlert.id))
+                .group_by(AgenteWhatsAppInternalAlert.status)
+                .all()
+            )
+        }
+
+        return {
+            "health_status": health_status,
+            "health_message": health_message,
+            "success_rate": success_rate,
+            "failure_rate": failure_rate,
+            "attempted_deliveries": attempted,
+            "active_alerts": len(active_internal),
+            "critical_alerts": len(critical_internal),
+            "providers_paused": providers_paused,
+            "oldest_pending_age_seconds": oldest_pending_age,
+            "avg_send_latency_seconds": metrics.get("avg_send_latency_seconds"),
+            "last_sent_at": metrics.get("last_sent_at"),
+            "last_error_at": metrics.get("last_error_at"),
+            "alert_status_counts": alert_status_counts,
+            "providers": self.provider_observability(providers),
+            "recent_errors": self.recent_errors(),
+            "alert_history": [self.serialize_internal_alert(alert) for alert in internal_alerts],
+        }
+
+    def provider_observability(self, provider_states: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        status_rows = (
+            self._db.query(
+                AgenteWhatsAppOutbox.provider,
+                AgenteWhatsAppOutbox.status,
+                func.count(AgenteWhatsAppOutbox.id),
+            )
+            .group_by(AgenteWhatsAppOutbox.provider, AgenteWhatsAppOutbox.status)
+            .all()
+        )
+        counts: dict[str, dict[str, int]] = {}
+        for provider, status, count in status_rows:
+            key = provider or "unknown"
+            counts.setdefault(key, {})[status] = int(count or 0)
+
+        sent_rows = (
+            self._db.query(AgenteWhatsAppOutbox)
+            .filter(AgenteWhatsAppOutbox.status == "sent", AgenteWhatsAppOutbox.sent_at.isnot(None))
+            .order_by(AgenteWhatsAppOutbox.sent_at.desc())
+            .limit(500)
+            .all()
+        )
+        latencies: dict[str, list[float]] = {}
+        for row in sent_rows:
+            if row.sent_at and row.created_at:
+                latencies.setdefault(row.provider or "unknown", []).append(max(0.0, _seconds_between(row.sent_at, row.created_at)))
+
+        states_by_provider = {state["provider"]: state for state in provider_states}
+        providers = sorted(set(counts) | set(states_by_provider))
+        result: list[dict[str, Any]] = []
+        for provider in providers:
+            provider_counts = counts.get(provider, {})
+            attempted = provider_counts.get("sent", 0) + provider_counts.get("failed", 0) + provider_counts.get("dead", 0)
+            avg_latency = None
+            if latencies.get(provider):
+                avg_latency = round(sum(latencies[provider]) / len(latencies[provider]), 2)
+            result.append({
+                "provider": provider,
+                "status": states_by_provider.get(provider, {}).get("status", "active"),
+                "sent": provider_counts.get("sent", 0),
+                "failed": provider_counts.get("failed", 0),
+                "dead": provider_counts.get("dead", 0),
+                "pending": provider_counts.get("pending", 0),
+                "success_rate": round((provider_counts.get("sent", 0) / attempted) * 100, 2) if attempted else 100.0,
+                "avg_send_latency_seconds": avg_latency,
+                "consecutive_failures": states_by_provider.get(provider, {}).get("consecutive_failures", 0),
+                "last_failure_at": states_by_provider.get(provider, {}).get("last_failure_at"),
+                "last_success_at": states_by_provider.get(provider, {}).get("last_success_at"),
+                "paused_until": states_by_provider.get(provider, {}).get("paused_until"),
+            })
+        return result
+
+    def recent_errors(self, limit: int = 10) -> list[dict[str, Any]]:
+        rows = (
+            self._db.query(AgenteWhatsAppOutbox)
+            .filter(AgenteWhatsAppOutbox.status.in_(["failed", "dead"]))
+            .order_by(AgenteWhatsAppOutbox.updated_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "id": row.id,
+                "status": row.status,
+                "provider": row.provider,
+                "phone": row.phone,
+                "attempts": row.attempts,
+                "error": row.error,
+                "updated_at": row.updated_at,
+            }
+            for row in rows
+        ]
+
     def retry(self, outbox_id: str) -> AgenteWhatsAppOutbox | None:
         item = self._db.query(AgenteWhatsAppOutbox).filter(AgenteWhatsAppOutbox.id == outbox_id).first()
         if not item:

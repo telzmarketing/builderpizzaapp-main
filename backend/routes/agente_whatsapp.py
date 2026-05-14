@@ -7,10 +7,27 @@ from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
 from backend.routes.whatsapp_marketing import _load_whatsapp_verify_token
 from backend.schemas.agente_whatsapp import (
+    AgenteWhatsAppAIGuardrailsOut,
+    AgenteWhatsAppAIKeysUpdate,
+    AgenteWhatsAppAIProviderStatusOut,
+    AgenteWhatsAppAIRespondIn,
+    AgenteWhatsAppAIRespondOut,
+    AgenteWhatsAppAISettingsOut,
+    AgenteWhatsAppAISettingsUpdate,
+    AgenteWhatsAppAITestIn,
+    AgenteWhatsAppAITestOut,
+    AgenteWhatsAppCampaignCreate,
+    AgenteWhatsAppCampaignDispatchOut,
+    AgenteWhatsAppCampaignOut,
+    AgenteWhatsAppCampaignTemplateOut,
+    AgenteWhatsAppAutomationRunIn,
+    AgenteWhatsAppAutomationRunOut,
+    AgenteWhatsAppAutomationTemplateOut,
     AgenteWhatsAppDashboardOut,
     AgenteWhatsAppInternalAlertOut,
     AgenteWhatsAppMessageCreate,
     AgenteWhatsAppMessageOut,
+    AgenteWhatsAppObservabilityOut,
     AgenteWhatsAppOutboxAlertsOut,
     AgenteWhatsAppOutboxMetricsOut,
     AgenteWhatsAppOutboxOut,
@@ -22,10 +39,16 @@ from backend.schemas.agente_whatsapp import (
     AgenteWhatsAppSessionCreate,
     AgenteWhatsAppSessionOut,
     AgenteWhatsAppSessionUpdate,
+    AgenteWhatsAppStoryCreate,
+    AgenteWhatsAppStoryOut,
+    AgenteWhatsAppStoryPublishOut,
+    AgenteWhatsAppStoryTemplateOut,
+    AgenteWhatsAppStoryUpdate,
     AgenteWhatsAppToolCallIn,
     AgenteWhatsAppToolCallOut,
     AgenteWhatsAppToolOut,
 )
+from backend.services.agente_whatsapp_ai_service import AgenteWhatsAppAIService
 from backend.services.agente_whatsapp_outbox_service import AgenteWhatsAppOutboxService
 from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 from backend.services.agente_whatsapp_tools import AgenteWhatsAppToolService
@@ -74,9 +97,230 @@ def dashboard(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     return AgenteWhatsAppService(db).dashboard()
 
 
+@router.get("/automations/templates", response_model=list[AgenteWhatsAppAutomationTemplateOut])
+def automation_templates(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    return AgenteWhatsAppService(db).automation_templates()
+
+
+@router.post("/automations/run", response_model=AgenteWhatsAppAutomationRunOut)
+def run_commercial_automation(
+    body: AgenteWhatsAppAutomationRunIn,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    service = AgenteWhatsAppService(db)
+    try:
+        result = service.run_commercial_automation(
+            key=body.key,
+            limit=body.limit,
+            dry_run=body.dry_run,
+            message_template=body.message_template,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    db.commit()
+    return result
+
+
+@router.post("/automations/run-due")
+def run_due_commercial_automations(
+    limit_per_automation: int = Query(default=30, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    result = AgenteWhatsAppService(db).run_due_commercial_automations(limit_per_automation=limit_per_automation)
+    db.commit()
+    return ok(result, "Automacoes comerciais processadas.")
+
+
+@router.get("/campaigns/templates", response_model=list[AgenteWhatsAppCampaignTemplateOut])
+def campaign_templates(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    return AgenteWhatsAppService(db).campaign_templates()
+
+
+@router.get("/stories/templates", response_model=list[AgenteWhatsAppStoryTemplateOut])
+def story_templates(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    return AgenteWhatsAppService(db).story_templates()
+
+
+@router.post("/stories/process-scheduled")
+def process_scheduled_stories(
+    limit: int = Query(default=10, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    result = AgenteWhatsAppService(db).process_scheduled_stories(limit=limit)
+    db.commit()
+    return ok(result, "Stories agendados processados.")
+
+
+@router.get("/stories", response_model=list[AgenteWhatsAppStoryOut])
+def list_stories(
+    status: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    service = AgenteWhatsAppService(db)
+    normalized_status = None if status in (None, "", "all") else status
+    return [service.serialize_story(story) for story in service.list_stories(status=normalized_status, limit=limit)]
+
+
+@router.post("/stories", response_model=AgenteWhatsAppStoryOut)
+def create_story(
+    body: AgenteWhatsAppStoryCreate,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin),
+):
+    service = AgenteWhatsAppService(db)
+    story = service.create_story(body.model_dump(), created_by=getattr(admin, "email", None))
+    db.commit()
+    db.refresh(story)
+    return service.serialize_story(story)
+
+
+@router.patch("/stories/{story_id}", response_model=AgenteWhatsAppStoryOut)
+def update_story(
+    story_id: str,
+    body: AgenteWhatsAppStoryUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    service = AgenteWhatsAppService(db)
+    story = service.get_story(story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story nao encontrado.")
+    updated = service.update_story(story, body.model_dump(exclude_unset=True))
+    db.commit()
+    db.refresh(updated)
+    return service.serialize_story(updated)
+
+
+@router.post("/stories/{story_id}/publish", response_model=AgenteWhatsAppStoryPublishOut)
+def publish_story(
+    story_id: str,
+    force: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    service = AgenteWhatsAppService(db)
+    story = service.get_story(story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story nao encontrado.")
+    result = service.publish_story(story, force=force)
+    db.commit()
+    return result
+
+
+@router.post("/campaigns/process-scheduled")
+def process_scheduled_campaigns(
+    limit: int = Query(default=10, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    result = AgenteWhatsAppService(db).process_scheduled_campaigns(limit=limit)
+    db.commit()
+    return ok(result, "Campanhas agendadas processadas.")
+
+
+@router.get("/campaigns", response_model=list[AgenteWhatsAppCampaignOut])
+def list_campaigns(
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    service = AgenteWhatsAppService(db)
+    return [service.serialize_campaign(campaign) for campaign in service.list_campaigns(limit=limit)]
+
+
+@router.post("/campaigns", response_model=AgenteWhatsAppCampaignOut)
+def create_campaign(
+    body: AgenteWhatsAppCampaignCreate,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin),
+):
+    service = AgenteWhatsAppService(db)
+    try:
+        campaign = service.create_campaign(body.model_dump(), created_by=getattr(admin, "email", None))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    db.commit()
+    db.refresh(campaign)
+    return service.serialize_campaign(campaign)
+
+
+@router.post("/campaigns/{campaign_id}/dispatch", response_model=AgenteWhatsAppCampaignDispatchOut)
+def dispatch_campaign(
+    campaign_id: str,
+    force: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    service = AgenteWhatsAppService(db)
+    campaign = service.get_campaign(campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha nao encontrada.")
+    result = service.dispatch_campaign(campaign, force=force)
+    db.commit()
+    return result
+
+
 @router.get("/tools", response_model=list[AgenteWhatsAppToolOut])
 def list_tools(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     return AgenteWhatsAppToolService(db).list_tools()
+
+
+@router.get("/ai/settings", response_model=AgenteWhatsAppAISettingsOut)
+def get_ai_settings(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    service = AgenteWhatsAppAIService(db)
+    return service.serialize_settings(service.get_settings())
+
+
+@router.put("/ai/settings", response_model=AgenteWhatsAppAISettingsOut)
+def update_ai_settings(
+    body: AgenteWhatsAppAISettingsUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    result = AgenteWhatsAppAIService(db).update_settings(body.model_dump(exclude_none=True))
+    db.commit()
+    return result
+
+
+@router.get("/ai/settings/status", response_model=AgenteWhatsAppAIProviderStatusOut)
+def ai_provider_status(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    return AgenteWhatsAppAIService(db).provider_status()
+
+
+@router.put("/ai/settings/keys", response_model=AgenteWhatsAppAIProviderStatusOut)
+def update_ai_keys(
+    body: AgenteWhatsAppAIKeysUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    try:
+        result = AgenteWhatsAppAIService(db).update_ai_keys(
+            openai_api_key=body.openai_api_key,
+            anthropic_api_key=body.anthropic_api_key,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    db.commit()
+    return result
+
+
+@router.post("/ai/settings/test", response_model=AgenteWhatsAppAITestOut)
+def test_ai_settings(
+    body: AgenteWhatsAppAITestIn,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    try:
+        return AgenteWhatsAppAIService(db).test_ai_connection(message=body.message)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=f"Falha ao chamar IA: {exc}")
 
 
 @router.post("/tools/execute", response_model=AgenteWhatsAppToolCallOut)
@@ -95,6 +339,38 @@ def execute_tool(
     return result
 
 
+@router.post("/sessions/{session_id}/ai/respond", response_model=AgenteWhatsAppAIRespondOut)
+def ai_respond(
+    session_id: str,
+    body: AgenteWhatsAppAIRespondIn,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    try:
+        result = AgenteWhatsAppAIService(db).respond(
+            session_id=session_id,
+            message=body.message,
+            auto_queue=body.auto_queue,
+            record_inbound=body.record_inbound,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    db.commit()
+    return result
+
+
+@router.get("/sessions/{session_id}/ai/guardrails", response_model=AgenteWhatsAppAIGuardrailsOut)
+def ai_guardrails(
+    session_id: str,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    try:
+        return AgenteWhatsAppAIService(db).guardrails(session_id=session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 @router.get("/outbox/summary", response_model=AgenteWhatsAppOutboxSummaryOut)
 def outbox_summary(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     return AgenteWhatsAppOutboxService(db).summary()
@@ -103,6 +379,14 @@ def outbox_summary(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 @router.get("/outbox/metrics", response_model=AgenteWhatsAppOutboxMetricsOut)
 def outbox_metrics(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     return AgenteWhatsAppOutboxService(db).metrics()
+
+
+@router.get("/observability", response_model=AgenteWhatsAppObservabilityOut)
+def observability(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    service = AgenteWhatsAppOutboxService(db)
+    payload = service.observability()
+    db.commit()
+    return payload
 
 
 @router.get("/outbox/alerts", response_model=AgenteWhatsAppOutboxAlertsOut)
@@ -128,7 +412,8 @@ def list_internal_alerts(
     _=Depends(get_current_admin),
 ):
     service = AgenteWhatsAppOutboxService(db)
-    alerts = service.list_internal_alerts(status=status, limit=limit)
+    normalized_status = None if status in (None, "", "all") else status
+    alerts = service.list_internal_alerts(status=normalized_status, limit=limit)
     db.commit()
     return [service.serialize_internal_alert(alert) for alert in alerts]
 

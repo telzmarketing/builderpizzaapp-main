@@ -36,6 +36,27 @@ class AgenteWhatsAppSession(Base):
     tool_calls = relationship("AgenteWhatsAppToolCall", back_populates="session", cascade="all, delete-orphan")
 
 
+class AgenteWhatsAppAISettings(Base):
+    __tablename__ = "agente_whatsapp_ai_settings"
+
+    id = Column(String, primary_key=True, default="default")
+    enabled = Column(Boolean, nullable=False, default=True)
+    provider = Column(String(40), nullable=False, default="internal")
+    model = Column(String(120), nullable=False, default="internal-rules-v1")
+    temperature = Column(Float, nullable=False, default=0.4)
+    max_tokens = Column(Integer, nullable=False, default=800)
+    prompt_base = Column(Text, nullable=False, default="")
+    business_rules = Column(Text, nullable=False, default="")
+    tone_of_voice = Column(Text, nullable=False, default="")
+    objective = Column(Text, nullable=False, default="")
+    transfer_instructions = Column(Text, nullable=False, default="")
+    forbidden_topics = Column(Text, nullable=False, default="")
+    allowed_tools_json = Column(Text, nullable=False, default="{}")
+    openai_api_key = Column(Text, nullable=True)
+    anthropic_api_key = Column(Text, nullable=True)
+    updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
+
+
 class AgenteWhatsAppMessage(Base):
     __tablename__ = "agente_whatsapp_messages"
 

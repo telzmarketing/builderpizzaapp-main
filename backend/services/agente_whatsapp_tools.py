@@ -709,7 +709,8 @@ class AgenteWhatsAppToolService:
     def _order_by_id(self, order_id: Any) -> Order:
         if not order_id:
             raise ValueError("Informe o ID do pedido.")
-        order = self._db.query(Order).filter(Order.id == str(order_id)).first()
+        order_ref = str(order_id).strip()
+        order = self._db.query(Order).filter(or_(Order.id == order_ref, Order.order_code == order_ref)).first()
         if not order:
             raise ValueError("Pedido nao encontrado.")
         return order
