@@ -118,7 +118,9 @@ export default function Fidelidade() {
         <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />
+        <button onClick={() => navigate("/")} aria-label="Ir para a home da loja">
+          <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />
+        </button>
         <button onClick={loadData} className="text-stone hover:text-gold"><RefreshCw size={18} /></button>
       </div>
 

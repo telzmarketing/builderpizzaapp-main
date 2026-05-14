@@ -401,6 +401,22 @@ export default function MarketingAutomacoes() {
         {/* ═══ AUTOMAÇÕES ═══ */}
         {tab === "automacoes" && (
           <>
+            <div className="bg-surface-02 border border-surface-03 rounded-2xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-cream">Integração com AGENTE WHATSAPP</p>
+                <p className="text-xs text-stone mt-1">
+                  As automacoes continuam neste modulo. Quando gerarem atendimento por WhatsApp, a conversa pode ser acompanhada na central do Agente.
+                </p>
+              </div>
+              <a
+                href="/painel/crm/agente-whatsapp"
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-surface-03 px-3 text-xs font-semibold text-stone hover:bg-surface-03 hover:text-cream"
+              >
+                <MessageSquare size={14} />
+                Abrir Agente
+              </a>
+            </div>
+
             <div className="flex items-center justify-between">
               <p className="text-stone text-sm">{automations.length} automação(ões)</p>
               <button onClick={() => { setEditingAutoId(null); setAutoForm(emptyAutoForm()); setShowAutoModal(true); }}

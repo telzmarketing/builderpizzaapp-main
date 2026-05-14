@@ -85,7 +85,9 @@ export default function OrderTracking() {
           <button onClick={() => navigate("/")} className="text-parchment hover:text-cream transition-colors">
             <ChevronLeft size={24} />
           </button>
-          <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />
+          <button onClick={() => navigate("/")} aria-label="Ir para a home da loja">
+            <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />
+          </button>
           <div className="w-6" />
         </div>
         <div className="flex-1 flex items-center justify-center px-4 py-16">

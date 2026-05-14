@@ -334,6 +334,22 @@ export default function MarketingWhatsApp() {
                 </div>
               ))}
             </div>
+
+            <div className="bg-surface-02 border border-surface-03 rounded-2xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-cream">Integração com AGENTE WHATSAPP</p>
+                <p className="text-xs text-stone mt-1">
+                  Campanhas e templates continuam aqui. As conversas e respostas geradas podem ser acompanhadas na central de atendimento.
+                </p>
+              </div>
+              <a
+                href="/painel/crm/agente-whatsapp"
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-surface-03 px-3 text-xs font-semibold text-stone hover:bg-surface-03 hover:text-cream"
+              >
+                <MessageCircle size={14} />
+                Abrir Agente
+              </a>
+            </div>
             {/* Funil WA */}
             <div className="bg-surface-02 border border-surface-03 rounded-2xl p-5">
               <h2 className="text-sm font-semibold text-cream mb-4">Funil de Engajamento</h2>
