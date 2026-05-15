@@ -241,6 +241,34 @@ class OrderService:
 
         return server_price, flavor_products, pricing, selected_size_obj, selected_crust_obj
 
+    def _collect_promotion_gifts(
+        self,
+        item_data: list[tuple[CartItemIn, float, list[Product], ProductPriceResult, ProductSize | None, ProductCrustType | None]],
+    ) -> list[dict]:
+        gifts: dict[tuple[str, str], dict] = {}
+        for item, _, _, pricing, _, _ in item_data:
+            if not pricing.promotion_applied or not pricing.gift_enabled or not pricing.gift_product_id:
+                continue
+            product = (
+                self._db.query(Product)
+                .filter(Product.id == pricing.gift_product_id, Product.active == True)  # noqa: E712
+                .first()
+            )
+            if not product:
+                continue
+            key = (pricing.promotion_id or "", product.id)
+            quantity = max(1, int(pricing.gift_quantity or 1)) * item.quantity
+            if key not in gifts:
+                gifts[key] = {
+                    "product_id": product.id,
+                    "quantity": 0,
+                    "original_price": round(float(product.price), 2),
+                    "promotion_id": pricing.promotion_id,
+                    "promotion_name": pricing.promotion_name or "Promocao",
+                }
+            gifts[key]["quantity"] += quantity
+        return list(gifts.values())
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     def quote_checkout(self, payload: CheckoutIn) -> dict:
@@ -284,6 +312,13 @@ class OrderService:
                 "promotion_id": pricing.promotion_id,
                 "promotion_name": pricing.promotion_name,
                 "promotion_discount": pricing.discount_amount,
+                "promotion_free_shipping": pricing.free_shipping,
+                "promotion_gift_enabled": pricing.gift_enabled,
+                "promotion_gift_product_id": pricing.gift_product_id,
+                "promotion_gift_quantity": pricing.gift_quantity,
+                "promotion_gift_name": pricing.gift_name,
+                "promotion_gift_icon": pricing.gift_icon,
+                "promotion_blocks_other_coupons": pricing.blocks_other_coupons,
                 "promotion_blocked": pricing.promotion_blocked,
                 "promotion_block_reason": pricing.promotion_block_reason,
                 "flavors": [
@@ -311,8 +346,15 @@ class OrderService:
 
         discount = 0.0
         coupon_payload = None
+        promotion_free_shipping = any(item.get("promotion_free_shipping") for item in items)
+        coupon_blocker = next((item for item in items if item.get("promotion_blocks_other_coupons")), None)
         delivery_fee_final = round(shipping_result.shipping_price, 2)
         if payload.coupon_code:
+            if coupon_blocker:
+                raise DomainError(
+                    f"O produto em promocao {coupon_blocker.get('promotion_name') or ''} nao permite usar cupom neste pedido.".strip(),
+                    code="CouponBlockedByProductPromotion",
+                )
             from backend.services.coupon_service import CouponService
             from backend.schemas.coupon import CouponApplyIn
             coupon_result = CouponService(self._db).apply(
@@ -329,6 +371,8 @@ class OrderService:
             coupon_payload = coupon_result.model_dump()
             discount = coupon_result.discount_amount
             delivery_fee_final = coupon_result.delivery_fee_final
+        if promotion_free_shipping:
+            delivery_fee_final = 0.0
 
         total = round(subtotal + delivery_fee_final - discount, 2)
         return {
@@ -338,6 +382,7 @@ class OrderService:
             "coupon": coupon_payload,
             "discount": discount,
             "delivery_fee_final": delivery_fee_final,
+            "promotion_free_shipping_applied": promotion_free_shipping,
             "total": total,
             "payment_method": payload.payment_method,
         }
@@ -376,6 +421,9 @@ class OrderService:
             subtotal += unit_price * item.quantity
             item_data.append((item, unit_price, flavor_products, pricing, size_obj, crust_obj))
         subtotal = round(subtotal, 2)
+        coupon_blocker = next((pricing for _, _, _, pricing, _, _ in item_data if pricing.blocks_other_coupons), None)
+        promotion_free_shipping = any(pricing.free_shipping for _, _, _, pricing, _, _ in item_data)
+        promotion_gifts = self._collect_promotion_gifts(item_data)
 
         # 2. Shipping — delegated to ShippingService (lazy import avoids circular)
         from backend.services.shipping_service import ShippingService
@@ -404,6 +452,11 @@ class OrderService:
         delivery_fee_final = round(shipping_fee, 2)
         free_shipping_applied = False
         if payload.coupon_code:
+            if coupon_blocker:
+                raise DomainError(
+                    f"O produto em promocao {coupon_blocker.promotion_name or ''} nao permite usar cupom neste pedido.".strip(),
+                    code="CouponBlockedByProductPromotion",
+                )
             from backend.services.coupon_service import CouponService
             from backend.schemas.coupon import CouponApplyIn
             coupon_result = CouponService(self._db).apply(
@@ -425,6 +478,12 @@ class OrderService:
             delivery_fee_discount = coupon_result.delivery_fee_discount
             delivery_fee_final = coupon_result.delivery_fee_final
             free_shipping_applied = coupon_result.free_shipping_applied
+
+        if promotion_free_shipping and shipping_fee > 0:
+            delivery_fee_original = round(shipping_fee, 2)
+            delivery_fee_discount = delivery_fee_original
+            delivery_fee_final = 0.0
+            free_shipping_applied = True
 
         # 4. Build order
         total = round(subtotal + delivery_fee_final - discount, 2)
@@ -540,6 +599,29 @@ class OrderService:
                 coupon_id=resolved_coupon_id,
                 coupon_code=coupon_code,
                 notes=f"Brinde do cupom {coupon_code}" if coupon_code else "Brinde do cupom",
+            )
+            self._db.add(gift_item)
+
+        for gift in promotion_gifts:
+            gift_item = OrderItem(
+                id=str(uuid.uuid4()),
+                order_id=order.id,
+                product_id=gift["product_id"],
+                quantity=gift["quantity"],
+                selected_size="Brinde",
+                selected_size_id=None,
+                flavor_division=1,
+                flavor_count=1,
+                unit_price=0.0,
+                total_price=0.0,
+                standard_unit_price=gift["original_price"],
+                applied_unit_price=0.0,
+                original_price=gift["original_price"],
+                is_gift=True,
+                gift_reason="product_promotion",
+                promotion_id=gift["promotion_id"],
+                promotion_name=gift["promotion_name"],
+                notes=f"Brinde da promocao {gift['promotion_name']}",
             )
             self._db.add(gift_item)
 

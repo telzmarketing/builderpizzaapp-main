@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat, Droplets, Gift, Search, ChevronUp, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat, Droplets, Gift, Search, ChevronUp, ChevronDown, Truck } from "lucide-react";
 import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
@@ -82,6 +82,11 @@ type PromotionFormState = {
   end_date: string;
   discount_type: ProductPromotionDiscountType;
   default_value: number | null;
+  free_shipping: boolean;
+  gift_enabled: boolean;
+  gift_product_id: string;
+  gift_quantity: number;
+  blocks_other_coupons: boolean;
   timezone: string;
 };
 
@@ -95,6 +100,11 @@ const emptyPromotionForm = (): PromotionFormState => ({
   end_date: "",
   discount_type: "fixed_price",
   default_value: null,
+  free_shipping: false,
+  gift_enabled: false,
+  gift_product_id: "",
+  gift_quantity: 1,
+  blocks_other_coupons: false,
   timezone: "America/Sao_Paulo",
 });
 
@@ -774,6 +784,7 @@ export default function AdminProducts() {
   const [productPromotions, setProductPromotions] = useState<ApiProductPromotion[]>([]);
   const [promoSizes, setPromoSizes] = useState<ApiProductSize[]>([]);
   const [promoCrusts, setPromoCrusts] = useState<ApiProductCrustType[]>([]);
+  const [promotionGiftProducts, setPromotionGiftProducts] = useState<ApiProduct[]>([]);
   const [promoCombinations, setPromoCombinations] = useState<ApiProductPromotionCombination[]>([]);
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoSaving, setPromoSaving] = useState(false);
@@ -808,19 +819,22 @@ export default function AdminProducts() {
     setEditingPromotionId(null);
     setPromotionForm(emptyPromotionForm());
     try {
-      const [promotions, sizes, crusts] = await Promise.all([
+      const [promotions, sizes, crusts, gifts] = await Promise.all([
         productPromotionsApi.list(product.id),
         sizesApi.list(product.id, false),
         crustApi.list(product.id, false),
+        productsApi.listGifts(),
       ]);
       setProductPromotions(promotions);
       setPromoSizes(sizes);
       setPromoCrusts(crusts);
+      setPromotionGiftProducts(gifts.filter((gift) => gift.active));
       setPromoCombinations(buildPromotionCombinations(sizes, crusts));
     } catch (err: unknown) {
       setProductPromotions([]);
       setPromoSizes([]);
       setPromoCrusts([]);
+      setPromotionGiftProducts([]);
       setPromoCombinations([]);
       alert(err instanceof Error ? err.message : "Erro ao carregar promocoes.");
     } finally {
@@ -833,6 +847,7 @@ export default function AdminProducts() {
     setProductPromotions([]);
     setPromoSizes([]);
     setPromoCrusts([]);
+    setPromotionGiftProducts([]);
     setPromoCombinations([]);
     setEditingPromotionId(null);
     setPromotionForm(emptyPromotionForm());
@@ -850,6 +865,11 @@ export default function AdminProducts() {
       end_date: promotion.end_date ?? "",
       discount_type: promotion.discount_type,
       default_value: promotion.default_value,
+      free_shipping: promotion.free_shipping,
+      gift_enabled: promotion.gift_enabled,
+      gift_product_id: promotion.gift_product_id ?? "",
+      gift_quantity: promotion.gift_quantity || 1,
+      blocks_other_coupons: promotion.blocks_other_coupons,
       timezone: promotion.timezone || "America/Sao_Paulo",
     });
     setPromoCombinations(buildPromotionCombinations(promoSizes, promoCrusts, promotion.combinations));
@@ -896,6 +916,10 @@ export default function AdminProducts() {
       alert("Ative pelo menos uma combinacao da promocao.");
       return;
     }
+    if (promotionForm.gift_enabled && !promotionForm.gift_product_id) {
+      alert("Selecione o produto brinde da promocao.");
+      return;
+    }
 
     setPromoSaving(true);
     const payload = {
@@ -905,6 +929,8 @@ export default function AdminProducts() {
       end_time: promotionForm.end_time || null,
       start_date: promotionForm.start_date || null,
       end_date: promotionForm.end_date || null,
+      gift_product_id: promotionForm.gift_enabled ? promotionForm.gift_product_id : null,
+      gift_quantity: Math.max(1, Number(promotionForm.gift_quantity) || 1),
       combinations,
     };
     try {
@@ -1886,23 +1912,23 @@ export default function AdminProducts() {
 
       {/* ── Sizes Modal ───────────────────────────────────────────────────────── */}
       {promotionModalProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={closePromotionModal}>
-          <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-surface-03 sticky top-0 bg-surface-02 z-10">
-              <div className="flex items-center gap-3">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 backdrop-blur-sm p-2 sm:items-center sm:p-4" onClick={closePromotionModal}>
+          <div className="flex h-[calc(100dvh-1rem)] w-full max-w-[1180px] flex-col overflow-hidden rounded-xl border border-surface-03 bg-surface-02 shadow-2xl sm:h-auto sm:max-h-[92dvh] sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-surface-03 bg-surface-02 px-4 py-3 sm:px-6 sm:py-4">
+              <div className="flex min-w-0 items-center gap-3">
                 <Tag size={18} className="text-emerald-300" />
-                <div>
+                <div className="min-w-0">
                   <h3 className="text-cream font-bold">Promoções</h3>
-                  <p className="text-stone text-xs">{promotionModalProduct.name}</p>
+                  <p className="truncate text-stone text-xs">{promotionModalProduct.name}</p>
                 </div>
               </div>
-              <button onClick={closePromotionModal} className="text-stone hover:text-cream transition-colors">
+              <button onClick={closePromotionModal} className="shrink-0 text-stone hover:text-cream transition-colors">
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-6 grid grid-cols-1 lg:grid-cols-[260px,1fr] gap-5">
-              <aside className="space-y-3">
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-3 sm:p-5 lg:grid-cols-[260px,minmax(0,1fr)] lg:p-6">
+              <aside className="space-y-3 lg:sticky lg:top-0 lg:self-start">
                 <button onClick={handleNewPromotion} className="w-full flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2.5 rounded-xl transition-colors text-sm">
                   <Plus size={15} /> Nova Promoção
                 </button>
@@ -1914,7 +1940,7 @@ export default function AdminProducts() {
                 ) : productPromotions.length === 0 ? (
                   <p className="text-stone text-sm bg-surface-03 rounded-xl p-4">Nenhuma promoção cadastrada para esta pizza.</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
                     {productPromotions.map((promotion) => (
                       <button
                         key={promotion.id}
@@ -1932,13 +1958,20 @@ export default function AdminProducts() {
                           </span>
                         </div>
                         <p className="text-stone text-xs mt-1">{promotion.valid_weekdays.map((day) => WEEKDAYS.find((item) => item.value === day)?.label).filter(Boolean).join(", ") || "Sem dias"}</p>
+                        {(promotion.free_shipping || promotion.gift_enabled || promotion.blocks_other_coupons) && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {promotion.free_shipping && <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">frete</span>}
+                            {promotion.gift_enabled && <span className="rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-semibold text-gold">brinde</span>}
+                            {promotion.blocks_other_coupons && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-300">sem cupom</span>}
+                          </div>
+                        )}
                       </button>
                     ))}
                   </div>
                 )}
               </aside>
 
-              <section className="space-y-5">
+              <section className="min-w-0 space-y-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-parchment text-xs font-medium mb-1">Nome da promoção *</label>
@@ -1962,6 +1995,63 @@ export default function AdminProducts() {
                   <span className="text-stone text-xs">Timezone: America/Sao_Paulo</span>
                 </div>
 
+                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3 sm:p-4 space-y-3">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-parchment text-sm font-bold">Atribuições da promoção</p>
+                    <span className="text-stone text-xs">Aplicadas ao carrinho quando esta promoção estiver ativa.</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                    <button
+                      type="button"
+                      onClick={() => setPromotionForm((form) => ({ ...form, free_shipping: !form.free_shipping }))}
+                      className={`flex min-h-[52px] items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${promotionForm.free_shipping ? "border-gold bg-gold/10 text-gold" : "border-surface-03 bg-surface-03 text-stone hover:text-cream"}`}
+                    >
+                      <span className="flex min-w-0 items-center gap-2"><Truck size={15} className="shrink-0" /> <span>Frete grátis</span></span>
+                      <span className={`h-4 w-8 shrink-0 rounded-full p-0.5 ${promotionForm.free_shipping ? "bg-gold" : "bg-brand-mid"}`}>
+                        <span className={`block h-3 w-3 rounded-full bg-white transition-transform ${promotionForm.free_shipping ? "translate-x-4" : ""}`} />
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPromotionForm((form) => ({ ...form, gift_enabled: !form.gift_enabled }))}
+                      className={`flex min-h-[52px] items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${promotionForm.gift_enabled ? "border-gold bg-gold/10 text-gold" : "border-surface-03 bg-surface-03 text-stone hover:text-cream"}`}
+                    >
+                      <span className="flex min-w-0 items-center gap-2"><Gift size={15} className="shrink-0" /> <span>Brinde</span></span>
+                      <span className={`h-4 w-8 shrink-0 rounded-full p-0.5 ${promotionForm.gift_enabled ? "bg-gold" : "bg-brand-mid"}`}>
+                        <span className={`block h-3 w-3 rounded-full bg-white transition-transform ${promotionForm.gift_enabled ? "translate-x-4" : ""}`} />
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPromotionForm((form) => ({ ...form, blocks_other_coupons: !form.blocks_other_coupons }))}
+                      className={`flex min-h-[52px] items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${promotionForm.blocks_other_coupons ? "border-gold bg-gold/10 text-gold" : "border-surface-03 bg-surface-03 text-stone hover:text-cream"}`}
+                    >
+                      <span className="flex min-w-0 items-center gap-2"><Tag size={15} className="shrink-0" /> <span>Bloquear cupons</span></span>
+                      <span className={`h-4 w-8 shrink-0 rounded-full p-0.5 ${promotionForm.blocks_other_coupons ? "bg-gold" : "bg-brand-mid"}`}>
+                        <span className={`block h-3 w-3 rounded-full bg-white transition-transform ${promotionForm.blocks_other_coupons ? "translate-x-4" : ""}`} />
+                      </span>
+                    </button>
+                  </div>
+                  {promotionForm.gift_enabled && (
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr),120px]">
+                      <div className="min-w-0">
+                        <label className="block text-parchment text-xs font-medium mb-1">Produto brinde</label>
+                        <select value={promotionForm.gift_product_id} onChange={(e) => setPromotionForm((form) => ({ ...form, gift_product_id: e.target.value }))} className={cls}>
+                          <option value="">Selecione um brinde</option>
+                          {promotionGiftProducts.length === 0 && <option disabled value="">Nenhum brinde cadastrado</option>}
+                          {promotionGiftProducts.map((gift) => (
+                            <option key={gift.id} value={gift.id}>{gift.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-parchment text-xs font-medium mb-1">Quantidade</label>
+                        <input type="number" min="1" step="1" value={promotionForm.gift_quantity} onChange={(e) => setPromotionForm((form) => ({ ...form, gift_quantity: Math.max(1, Number(e.target.value) || 1) }))} className={cls} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <label className="block text-parchment text-xs font-medium mb-2">Dias válidos</label>
                   <div className="flex gap-2 flex-wrap">
@@ -1982,7 +2072,7 @@ export default function AdminProducts() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-parchment text-xs font-medium mb-1">Data inicial</label>
                     <input type="date" value={promotionForm.start_date} onChange={(e) => setPromotionForm((form) => ({ ...form, start_date: e.target.value }))} className={cls} />
@@ -2001,7 +2091,40 @@ export default function AdminProducts() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto rounded-xl border border-surface-03">
+                <div className="space-y-2 md:hidden">
+                  {promoCombinations.map((combo, index) => {
+                    const size = promoSizes.find((item) => item.id === combo.product_size_id);
+                    const crust = promoCrusts.find((item) => item.id === combo.product_crust_type_id);
+                    const standardPrice = (size?.price ?? promotionModalProduct.price) + (crust ? normalizeCrustPriceAddition(crust.price_addition, promotionModalProduct.price) : 0);
+                    return (
+                      <div key={`${combo.product_size_id}-${combo.product_crust_type_id ?? "none"}-card`} className="rounded-xl border border-surface-03 bg-surface-02 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-cream font-semibold">{size ? pizzaSizeLabel(size.label) : "Padrão"}</p>
+                            <p className="text-parchment text-xs">{crust?.name ?? "Sem massa"}</p>
+                            <p className="mt-1 text-gold text-xs font-bold">Preço padrão: R$ {standardPrice.toFixed(2)}</p>
+                          </div>
+                          <label className="inline-flex shrink-0 items-center gap-2 text-parchment text-xs">
+                            <input type="checkbox" checked={combo.active} onChange={(e) => updatePromoCombination(index, { active: e.target.checked })} className="accent-gold" />
+                            Ativar
+                          </label>
+                        </div>
+                        <label className="mt-3 block text-parchment text-xs font-medium">{promotionForm.discount_type === "fixed_price" ? "Preço promocional" : "Valor do desconto"}</label>
+                        <input
+                          type="number"
+                          value={combo.promotional_value ?? ""}
+                          onChange={(e) => updatePromoCombination(index, { promotional_value: e.target.value === "" ? null : Number(e.target.value) })}
+                          className="mt-1 w-full rounded-lg border border-surface-03 bg-surface-03 px-3 py-2 text-cream outline-none focus:border-gold"
+                          placeholder={promotionForm.discount_type === "percent_off" ? "10" : "39.90"}
+                          step="0.01"
+                          min="0"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="hidden overflow-x-auto rounded-xl border border-surface-03 md:block">
                   <table className="w-full min-w-[720px] text-sm">
                     <thead className="bg-surface-03 text-stone">
                       <tr>

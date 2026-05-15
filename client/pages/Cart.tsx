@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Plus, Minus, Trash2, UtensilsCrossed, ShoppingCart, Tag, Check, X } from "lucide-react";
 import { useApp, CartItem } from "@/context/AppContext";
@@ -65,6 +65,9 @@ function CartItemRow({ item, onRemove, onUpdate }: {
           <p className="text-gold font-bold text-sm mt-1">
             R$ {item.finalPrice.toFixed(2)}
           </p>
+          {item.promotionApplied && item.promotionName && (
+            <p className="text-emerald-300 text-[11px] font-semibold mt-0.5">{item.promotionName} aplicada</p>
+          )}
         </div>
         <div className="flex flex-col items-center gap-1 flex-shrink-0">
           <button onClick={() => onUpdate(item.quantity + 1)} className="w-7 h-7 rounded-full bg-surface-03 hover:bg-brand-mid text-gold-light flex items-center justify-center transition-colors">
@@ -115,8 +118,51 @@ export default function Cart() {
     storeOperationApi.status().then(setStoreStatus).catch(() => setStoreStatus(null));
   }, []);
 
+  const promotionBlocksCoupons = cart.some((item) => item.promotionApplied && item.promotionBlocksOtherCoupons);
+  const promotionFreeShipping = cart.some((item) => item.promotionApplied && item.promotionFreeShipping);
+  const promotionGifts = useMemo<ApiCouponGift[]>(() => {
+    const gifts = new Map<string, ApiCouponGift>();
+    cart.forEach((item) => {
+      if (!item.promotionApplied || !item.promotionGiftEnabled || !item.promotionGiftProductId || !item.promotionGiftName) return;
+      const key = `${item.promotionId ?? "promotion"}-${item.promotionGiftProductId}`;
+      const quantity = Math.max(1, item.promotionGiftQuantity ?? 1) * item.quantity;
+      const current = gifts.get(key);
+      if (current) {
+        current.quantity += quantity;
+        return;
+      }
+      gifts.set(key, {
+        product_id: item.promotionGiftProductId,
+        name: item.promotionGiftName,
+        icon: item.promotionGiftIcon ?? "🎁",
+        quantity,
+        unit_price: 0,
+        original_price: 0,
+        is_gift: true,
+        gift_reason: "product_promotion",
+        promotion_id: item.promotionId ?? null,
+        promotion_name: item.promotionName ?? null,
+      });
+    });
+    return Array.from(gifts.values());
+  }, [cart]);
+
+  useEffect(() => {
+    if (!promotionBlocksCoupons || !couponApplied) return;
+    setCouponCode("");
+    setCouponDiscount(0);
+    setCouponFreeShipping(false);
+    setCouponGift(null);
+    setCouponApplied(false);
+    setCouponMsg("Este carrinho tem produto em promocao que bloqueia outros cupons.");
+  }, [promotionBlocksCoupons, couponApplied]);
+
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) return;
+    if (promotionBlocksCoupons) {
+      setCouponMsg("Este carrinho tem produto em promocao que bloqueia outros cupons.");
+      return;
+    }
     setCouponLoading(true);
     setCouponMsg("");
     try {
@@ -156,7 +202,7 @@ export default function Cart() {
     setCouponMsg("");
   };
 
-  const deliveryFeeFinal = couponFreeShipping ? 0 : cartDeliveryFee;
+  const deliveryFeeFinal = couponFreeShipping || promotionFreeShipping ? 0 : cartDeliveryFee;
   const finalTotal = cartSubtotal + deliveryFeeFinal - couponDiscount;
 
   if (cart.length === 0) {
@@ -228,6 +274,21 @@ export default function Cart() {
               </div>
             </div>
           )}
+          {promotionGifts.map((gift) => (
+            <div key={`${gift.promotion_id}-${gift.product_id}`} className="bg-green-500/10 rounded-2xl p-4 border border-green-500/30">
+              <div className="flex items-center gap-3">
+                <CartProductIcon icons={[gift.icon || "🎁"]} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-cream font-semibold text-sm leading-tight truncate">{gift.name}</h3>
+                    <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold text-green-300">Brinde</span>
+                  </div>
+                  <p className="text-stone text-xs mt-1">{gift.quantity}x - Promocao {gift.promotion_name}</p>
+                  <p className="text-green-400 font-bold text-sm mt-1">R$ 0,00</p>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* Action Buttons */}
@@ -264,6 +325,9 @@ export default function Cart() {
             </div>
           ) : (
             <>
+              {promotionBlocksCoupons && (
+                <p className="text-amber-300 text-xs mb-2">Produto em promocao neste carrinho bloqueia outros cupons.</p>
+              )}
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -271,11 +335,12 @@ export default function Cart() {
                   onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
                   onKeyDown={(e) => e.key === "Enter" && handleApplyCoupon()}
                   placeholder="Digite o código"
+                  disabled={promotionBlocksCoupons}
                   className="flex-1 bg-surface-03 border border-surface-03 rounded-lg px-3 py-2 text-cream placeholder-stone text-sm focus:outline-none focus:border-gold font-mono uppercase"
                 />
                 <button
                   onClick={handleApplyCoupon}
-                  disabled={couponLoading || !couponCode.trim()}
+                  disabled={promotionBlocksCoupons || couponLoading || !couponCode.trim()}
                   className="bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold px-4 py-2 rounded-lg text-sm transition-colors"
                 >
                   {couponLoading ? "..." : "Aplicar"}
@@ -295,8 +360,14 @@ export default function Cart() {
           </div>
           <div className="flex justify-between text-parchment text-sm">
             <span>Taxa de entrega:</span>
-            <span>{couponFreeShipping ? "Grátis" : `R$ ${cartDeliveryFee.toFixed(2)}`}</span>
+            <span>{couponFreeShipping || promotionFreeShipping ? "Gratis" : `R$ ${cartDeliveryFee.toFixed(2)}`}</span>
           </div>
+          {promotionFreeShipping && (
+            <div className="flex justify-between text-sm">
+              <span className="text-green-400">Frete gratis da promocao:</span>
+              <span className="text-green-400">Aplicado</span>
+            </div>
+          )}
           {couponDiscount > 0 && (
             <div className="flex justify-between text-sm">
               <span className="text-green-400">Desconto do cupom:</span>

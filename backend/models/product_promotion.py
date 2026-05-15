@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -20,6 +20,11 @@ class ProductPromotion(Base):
     end_date = Column(Date, nullable=True)
     discount_type = Column(String(30), nullable=False, default="fixed_price")
     default_value = Column(Float, nullable=True)
+    free_shipping = Column(Boolean, default=False, nullable=False)
+    gift_enabled = Column(Boolean, default=False, nullable=False)
+    gift_product_id = Column(String, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    gift_quantity = Column(Integer, default=1, nullable=False)
+    blocks_other_coupons = Column(Boolean, default=False, nullable=False)
     timezone = Column(String(80), nullable=False, default="America/Sao_Paulo")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
@@ -28,7 +33,8 @@ class ProductPromotion(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    product = relationship("Product", back_populates="promotions")
+    product = relationship("Product", foreign_keys=[product_id], back_populates="promotions")
+    gift_product = relationship("Product", foreign_keys=[gift_product_id])
     combinations = relationship(
         "ProductPromotionCombination",
         back_populates="promotion",

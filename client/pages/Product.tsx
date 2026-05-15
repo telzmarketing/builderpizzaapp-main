@@ -427,6 +427,19 @@ export default function Product() {
       crustVariation,
       drinkVariation,
       selectedSizeObj?.id,
+      priceQuote?.promotion_applied ? {
+        applied: true,
+        id: priceQuote.promotion_id,
+        name: priceQuote.promotion_name,
+        discount: priceQuote.discount_amount,
+        freeShipping: priceQuote.free_shipping,
+        giftEnabled: priceQuote.gift_enabled,
+        giftProductId: priceQuote.gift_product_id,
+        giftQuantity: priceQuote.gift_quantity,
+        giftName: priceQuote.gift_name,
+        giftIcon: priceQuote.gift_icon,
+        blocksOtherCoupons: priceQuote.blocks_other_coupons,
+      } : undefined,
     );
     trackEvent("add_to_cart", totalPrice, { product_id: product.id, quantity, selected_size: selectedSize });
     navigate("/cart");

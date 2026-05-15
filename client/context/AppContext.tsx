@@ -65,6 +65,31 @@ export interface CartItem {
   notes?: string;
   selectedCrustType?: CartItemVariation | null;
   selectedDrinkVariant?: CartItemVariation | null;
+  promotionApplied?: boolean;
+  promotionId?: string | null;
+  promotionName?: string | null;
+  promotionDiscount?: number;
+  promotionFreeShipping?: boolean;
+  promotionGiftEnabled?: boolean;
+  promotionGiftProductId?: string | null;
+  promotionGiftQuantity?: number;
+  promotionGiftName?: string | null;
+  promotionGiftIcon?: string | null;
+  promotionBlocksOtherCoupons?: boolean;
+}
+
+export interface CartPromotionMeta {
+  applied?: boolean;
+  id?: string | null;
+  name?: string | null;
+  discount?: number;
+  freeShipping?: boolean;
+  giftEnabled?: boolean;
+  giftProductId?: string | null;
+  giftQuantity?: number;
+  giftName?: string | null;
+  giftIcon?: string | null;
+  blocksOtherCoupons?: boolean;
 }
 
 // ─── Order (frontend view) ────────────────────────────────────────────────────
@@ -259,7 +284,8 @@ interface AppContextType {
     notes?: string,
     crustType?: CartItemVariation | null,
     drinkVariant?: CartItemVariation | null,
-    sizeId?: string
+    sizeId?: string,
+    promotion?: CartPromotionMeta
   ) => void;
   updateCartItem: (cartItemId: string, quantity: number, size: string, addOns: string[]) => void;
   removeFromCart: (cartItemId: string) => void;
@@ -655,7 +681,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     notes?: string,
     crustType?: CartItemVariation | null,
     drinkVariant?: CartItemVariation | null,
-    sizeId?: string
+    sizeId?: string,
+    promotion?: CartPromotionMeta
   ) => {
     const cartItemId = `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     setCart((prev) => [
@@ -674,6 +701,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         notes,
         selectedCrustType: crustType ?? null,
         selectedDrinkVariant: drinkVariant ?? null,
+        promotionApplied: !!promotion?.applied,
+        promotionId: promotion?.id ?? null,
+        promotionName: promotion?.name ?? null,
+        promotionDiscount: promotion?.discount ?? 0,
+        promotionFreeShipping: !!promotion?.freeShipping,
+        promotionGiftEnabled: !!promotion?.giftEnabled,
+        promotionGiftProductId: promotion?.giftProductId ?? null,
+        promotionGiftQuantity: promotion?.giftQuantity ?? 1,
+        promotionGiftName: promotion?.giftName ?? null,
+        promotionGiftIcon: promotion?.giftIcon ?? null,
+        promotionBlocksOtherCoupons: !!promotion?.blocksOtherCoupons,
       },
     ]);
     const _td = getTrackingData();

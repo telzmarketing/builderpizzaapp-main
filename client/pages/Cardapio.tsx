@@ -61,7 +61,24 @@ export default function Cardapio() {
       [],
       [{ productId: product.id, name: product.name, price: unitPrice, icon: product.icon || "🍕" }],
       1,
-      unitPrice
+      unitPrice,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      product.promotion_applied ? {
+        applied: true,
+        id: product.promotion_id,
+        name: product.promotion_name,
+        discount: product.promotion_discount,
+        freeShipping: product.promotion_free_shipping,
+        giftEnabled: product.promotion_gift_enabled,
+        giftProductId: product.promotion_gift_product_id,
+        giftQuantity: product.promotion_gift_quantity,
+        giftName: product.promotion_gift_name,
+        giftIcon: product.promotion_gift_icon,
+        blocksOtherCoupons: product.promotion_blocks_other_coupons,
+      } : undefined
     );
     trackEvent("add_to_cart", unitPrice, { product_id: product.id, source: "cardapio" });
     setJustAdded(product.id);

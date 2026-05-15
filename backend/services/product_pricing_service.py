@@ -28,6 +28,14 @@ class ProductPriceResult:
     promotion_name: str | None = None
     discount_amount: float = 0.0
     discount_type: str | None = None
+    free_shipping: bool = False
+    gift_enabled: bool = False
+    gift_product_id: str | None = None
+    gift_quantity: int = 1
+    gift_name: str | None = None
+    gift_icon: str | None = None
+    gift_original_price: float | None = None
+    blocks_other_coupons: bool = False
     promotion_blocked: bool = False
     promotion_block_reason: str | None = None
 
@@ -95,6 +103,7 @@ class ProductPricingService:
 
             final_price = self._apply_discount(standard_price, promotion.discount_type, float(value))
             discount = max(0.0, round(standard_price - final_price, 2))
+            gift = self._resolve_gift(promotion)
             return ProductPriceResult(
                 standard_price=round(standard_price, 2),
                 final_price=round(final_price, 2),
@@ -102,6 +111,14 @@ class ProductPricingService:
                 promotion_name=promotion.name,
                 discount_amount=discount,
                 discount_type=promotion.discount_type,
+                free_shipping=bool(promotion.free_shipping),
+                gift_enabled=gift is not None,
+                gift_product_id=gift.id if gift else None,
+                gift_quantity=max(1, int(promotion.gift_quantity or 1)),
+                gift_name=gift.name if gift else None,
+                gift_icon=gift.icon if gift else None,
+                gift_original_price=round(float(gift.price), 2) if gift else None,
+                blocks_other_coupons=bool(promotion.blocks_other_coupons),
             )
 
         return ProductPriceResult(
@@ -173,6 +190,15 @@ class ProductPricingService:
         if discount_type == "percent_off":
             return max(0.0, standard_price * (1 - (value / 100)))
         return max(0.0, value)
+
+    def _resolve_gift(self, promotion: ProductPromotion) -> Product | None:
+        if not promotion.gift_enabled or not promotion.gift_product_id:
+            return None
+        return (
+            self._db.query(Product)
+            .filter(Product.id == promotion.gift_product_id, Product.active == True)  # noqa: E712
+            .first()
+        )
 
     def _parse_weekdays(self, raw: str | None) -> set[int]:
         if not raw:

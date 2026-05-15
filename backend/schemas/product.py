@@ -159,6 +159,13 @@ class ProductOut(ProductBase):
     promotion_id: Optional[str] = None
     promotion_name: Optional[str] = None
     promotion_discount: float = 0.0
+    promotion_free_shipping: bool = False
+    promotion_gift_enabled: bool = False
+    promotion_gift_product_id: Optional[str] = None
+    promotion_gift_quantity: int = 1
+    promotion_gift_name: Optional[str] = None
+    promotion_gift_icon: Optional[str] = None
+    promotion_blocks_other_coupons: bool = False
     show_best_seller_badge: bool = False
 
     model_config = {"from_attributes": True}
@@ -207,6 +214,11 @@ class ProductPromotionBase(BaseModel):
     end_date: Optional[date] = None
     discount_type: str = Field(default="fixed_price", pattern=r"^(fixed_price|amount_off|percent_off)$")
     default_value: Optional[float] = Field(default=None, ge=0)
+    free_shipping: bool = False
+    gift_enabled: bool = False
+    gift_product_id: Optional[str] = None
+    gift_quantity: int = Field(default=1, ge=1)
+    blocks_other_coupons: bool = False
     timezone: str = "America/Sao_Paulo"
 
 
@@ -224,6 +236,11 @@ class ProductPromotionUpdate(BaseModel):
     end_date: Optional[date] = None
     discount_type: Optional[str] = Field(default=None, pattern=r"^(fixed_price|amount_off|percent_off)$")
     default_value: Optional[float] = Field(default=None, ge=0)
+    free_shipping: Optional[bool] = None
+    gift_enabled: Optional[bool] = None
+    gift_product_id: Optional[str] = None
+    gift_quantity: Optional[int] = Field(default=None, ge=1)
+    blocks_other_coupons: Optional[bool] = None
     timezone: Optional[str] = None
     combinations: Optional[List[ProductPromotionCombinationCreate]] = None
 
@@ -246,6 +263,13 @@ class ProductPriceQuoteOut(BaseModel):
     promotion_name: Optional[str] = None
     discount_amount: float = 0.0
     discount_type: Optional[str] = None
+    free_shipping: bool = False
+    gift_enabled: bool = False
+    gift_product_id: Optional[str] = None
+    gift_quantity: int = 1
+    gift_name: Optional[str] = None
+    gift_icon: Optional[str] = None
+    blocks_other_coupons: bool = False
     promotion_blocked: bool = False
     promotion_block_reason: Optional[str] = None
 

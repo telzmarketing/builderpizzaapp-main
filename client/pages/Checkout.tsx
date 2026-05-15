@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
@@ -370,6 +370,45 @@ export default function Checkout() {
     return () => clearInterval(id);
   }, [pixExpiresAt, clearCart]);
 
+  const promotionBlocksCoupons = cart.some((item) => item.promotionApplied && item.promotionBlocksOtherCoupons);
+  const promotionFreeShipping = cart.some((item) => item.promotionApplied && item.promotionFreeShipping);
+  const promotionGifts = useMemo<ApiCouponGift[]>(() => {
+    const gifts = new Map<string, ApiCouponGift>();
+    cart.forEach((item) => {
+      if (!item.promotionApplied || !item.promotionGiftEnabled || !item.promotionGiftProductId || !item.promotionGiftName) return;
+      const key = `${item.promotionId ?? "promotion"}-${item.promotionGiftProductId}`;
+      const quantity = Math.max(1, item.promotionGiftQuantity ?? 1) * item.quantity;
+      const current = gifts.get(key);
+      if (current) {
+        current.quantity += quantity;
+        return;
+      }
+      gifts.set(key, {
+        product_id: item.promotionGiftProductId,
+        name: item.promotionGiftName,
+        icon: item.promotionGiftIcon ?? "🎁",
+        quantity,
+        unit_price: 0,
+        original_price: 0,
+        is_gift: true,
+        gift_reason: "product_promotion",
+        promotion_id: item.promotionId ?? null,
+        promotion_name: item.promotionName ?? null,
+      });
+    });
+    return Array.from(gifts.values());
+  }, [cart]);
+
+  useEffect(() => {
+    if (!promotionBlocksCoupons || !couponApplied) return;
+    setCouponCode("");
+    setCouponDiscount(0);
+    setCouponFreeShipping(false);
+    setCouponGift(null);
+    setCouponApplied(false);
+    setCouponMsg("Este carrinho tem produto em promocao que bloqueia outros cupons.");
+  }, [promotionBlocksCoupons, couponApplied]);
+
   if (!customer && !createdOrder) {
     navigate("/conta?redirect=/checkout", { replace: true });
     return null;
@@ -382,7 +421,7 @@ export default function Checkout() {
 
   const deliveryFee = shippingResult?.shipping_price ?? 10.0;
   const shippingAvailable = shippingResult?.available !== false;
-  const deliveryFeeFinal = couponFreeShipping || deliveryMode === "pickup" || shippingResult?.free ? 0 : deliveryFee;
+  const deliveryFeeFinal = couponFreeShipping || promotionFreeShipping || deliveryMode === "pickup" || shippingResult?.free ? 0 : deliveryFee;
   const total = cartSubtotal + deliveryFeeFinal - couponDiscount;
 
   const handleChange = (field: keyof typeof form, value: string) => {
@@ -403,6 +442,10 @@ export default function Checkout() {
 
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) return;
+    if (promotionBlocksCoupons) {
+      setCouponMsg("Este carrinho tem produto em promocao que bloqueia outros cupons.");
+      return;
+    }
     setCouponMsg("");
     try {
       const result = await couponsApi.apply(couponCode.trim(), cartSubtotal, customer?.id, form.phone, deliveryFee);
@@ -501,7 +544,7 @@ export default function Checkout() {
       },
       payment_method: selectedPaymentMethod === "pix" ? "pix" : "credit_card",
       ...tracking,
-      ...(couponApplied && couponCode ? { coupon_code: couponCode } : {}),
+      ...(couponApplied && couponCode && !promotionBlocksCoupons ? { coupon_code: couponCode } : {}),
       ...(customer ? { customer_id: customer.id } : {}),
     };
 
@@ -803,6 +846,9 @@ export default function Checkout() {
               <Tag size={20} className="text-gold" />
               Cupom de desconto
             </h2>
+            {promotionBlocksCoupons && (
+              <p className="text-amber-300 text-xs mb-2">Produto em promocao neste carrinho bloqueia outros cupons.</p>
+            )}
             <div className="flex gap-2">
               <input
                 type="text"
@@ -816,11 +862,12 @@ export default function Checkout() {
                   setCouponFreeShipping(false);
                   setCouponGift(null);
                 }}
+                disabled={promotionBlocksCoupons}
                 className="flex-1 bg-surface-02 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/70 outline-none focus:border-gold text-sm uppercase"
               />
               <button
                 onClick={couponApplied ? handleRemoveCoupon : handleApplyCoupon}
-                disabled={!couponApplied && !couponCode.trim()}
+                disabled={promotionBlocksCoupons || (!couponApplied && !couponCode.trim())}
                 className="px-4 py-3 bg-gold hover:bg-gold/90 rounded-xl text-cream font-bold text-sm transition-colors disabled:opacity-50"
               >
                 {couponApplied ? "Remover" : "Aplicar"}
@@ -887,6 +934,9 @@ export default function Checkout() {
                   <div className="flex-1 min-w-0">
                     <p className="text-cream font-semibold text-sm truncate">{displayName}</p>
                     <p className="text-stone text-xs">{item.quantity}x - {pizzaSizeLabel(item.selectedSize)}</p>
+                    {item.promotionApplied && item.promotionName && (
+                      <p className="text-emerald-300 text-[11px] font-semibold mt-0.5">{item.promotionName} aplicada</p>
+                    )}
                   </div>
                   <p className="text-gold font-bold text-sm flex-shrink-0">R$ {(item.finalPrice * item.quantity).toFixed(2)}</p>
                 </div>
@@ -910,10 +960,29 @@ export default function Checkout() {
                 <p className="text-green-400 font-bold text-sm flex-shrink-0">R$ 0,00</p>
               </div>
             )}
+            {promotionGifts.map((gift) => (
+              <div key={`${gift.promotion_id}-${gift.product_id}`} className="bg-green-500/10 rounded-xl p-4 flex items-center gap-4 border border-green-500/30">
+                <div className="w-12 h-12 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center text-xl overflow-hidden">
+                  {isAssetUrl(gift.icon)
+                    ? <img src={resolveAssetUrl(gift.icon)} alt={gift.name} className="w-full h-full object-cover" />
+                    : <span>{gift.icon || "🎁"}</span>
+                  }
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-cream font-semibold text-sm truncate">{gift.name}</p>
+                    <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold text-green-300">Brinde</span>
+                  </div>
+                  <p className="text-stone text-xs">{gift.quantity}x - Promocao {gift.promotion_name}</p>
+                </div>
+                <p className="text-green-400 font-bold text-sm flex-shrink-0">R$ 0,00</p>
+              </div>
+            ))}
 
             <div className="bg-surface-02 rounded-xl p-4 space-y-3 border border-surface-03">
               <Line label="Subtotal:" value={`R$ ${cartSubtotal.toFixed(2)}`} />
               <Line label="Taxa de entrega:" value={deliveryFeeFinal === 0 ? "Gratis" : `R$ ${deliveryFee.toFixed(2)}`} />
+              {promotionFreeShipping && <Line label="Frete gratis da promocao:" value="Aplicado" good />}
               {couponDiscount > 0 && <Line label="Desconto cupom:" value={`-R$ ${couponDiscount.toFixed(2)}`} good />}
               <div className="border-t border-surface-03 pt-3 flex justify-between">
                 <span className="text-cream font-bold">Total:</span>

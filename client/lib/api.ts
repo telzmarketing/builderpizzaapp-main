@@ -259,6 +259,13 @@ export interface ApiProduct {
   promotion_id?: string | null;
   promotion_name?: string | null;
   promotion_discount?: number;
+  promotion_free_shipping?: boolean;
+  promotion_gift_enabled?: boolean;
+  promotion_gift_product_id?: string | null;
+  promotion_gift_quantity?: number;
+  promotion_gift_name?: string | null;
+  promotion_gift_icon?: string | null;
+  promotion_blocks_other_coupons?: boolean;
   best_seller_badge_mode?: "off" | "manual" | "auto";
   show_best_seller_badge?: boolean;
 }
@@ -295,6 +302,11 @@ export interface ApiProductPromotion {
   end_date: string | null;
   discount_type: ProductPromotionDiscountType;
   default_value: number | null;
+  free_shipping: boolean;
+  gift_enabled: boolean;
+  gift_product_id: string | null;
+  gift_quantity: number;
+  blocks_other_coupons: boolean;
   timezone: string;
   combinations: ApiProductPromotionCombination[];
   created_at: string;
@@ -309,6 +321,13 @@ export interface ApiProductPriceQuote {
   promotion_name: string | null;
   discount_amount: number;
   discount_type: ProductPromotionDiscountType | null;
+  free_shipping: boolean;
+  gift_enabled: boolean;
+  gift_product_id: string | null;
+  gift_quantity: number;
+  gift_name: string | null;
+  gift_icon: string | null;
+  blocks_other_coupons: boolean;
   promotion_blocked: boolean;
   promotion_block_reason: string | null;
 }
@@ -391,8 +410,10 @@ export interface ApiCouponGift {
   original_price: number;
   is_gift: boolean;
   gift_reason: string;
-  coupon_id: string;
-  coupon_code: string;
+  coupon_id?: string | null;
+  coupon_code?: string | null;
+  promotion_id?: string | null;
+  promotion_name?: string | null;
 }
 
 export interface ApiCouponApply {
