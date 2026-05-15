@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "PizzaApp API"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
+    PUBLIC_STORE_URL: str = ""
+    VITE_PUBLIC_STORE_URL: str = ""
 
     @field_validator("DEBUG", mode="before")
     @classmethod

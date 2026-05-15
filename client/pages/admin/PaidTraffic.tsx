@@ -74,6 +74,17 @@ type PixelForm = {
   base_code: string;
 };
 
+function storefrontOrigin(): string {
+  return window.location.origin.replace(/\/$/, "");
+}
+
+function normalizeGeneratedLinkUrl(url: string): string {
+  const value = url.trim();
+  if (!value) return storefrontOrigin();
+  if (/^https?:\/\//i.test(value)) return value;
+  return value.startsWith("/") ? `${storefrontOrigin()}${value}` : `${storefrontOrigin()}/${value}`;
+}
+
 const tabs: Array<{ id: Tab; label: string; icon: typeof BarChart3 }> = [
   { id: "dashboard", label: "Dashboard", icon: BarChart3 },
   { id: "campanhas", label: "Campanhas", icon: Megaphone },
@@ -485,6 +496,7 @@ export default function AdminPaidTraffic() {
       const created = await paidTrafficApi.createLink({
         campaign_id: linkCampaignId,
         name: linkName || undefined,
+        destination_url: storefrontOrigin(),
       });
       setLinks((prev) => [created, ...prev]);
       setLinkName("");
@@ -1077,20 +1089,23 @@ export default function AdminPaidTraffic() {
 
                   <Panel title="Links gerados">
                     <div className="space-y-3">
-                      {links.map((link) => (
-                        <div key={link.id} className="rounded-2xl border border-surface-03 bg-surface-03/40 p-4">
-                          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-cream font-bold">{link.name || campaignById.get(link.campaign_id)?.name || "Link de campanha"}</p>
-                              <p className="text-stone text-xs mt-1 break-all">{link.final_url}</p>
-                            </div>
-                            <div className="flex gap-2">
-                              <button onClick={() => copyLink(link.final_url)} className="inline-flex items-center gap-2 rounded-xl bg-surface-02 px-3 py-2 text-sm text-parchment hover:text-cream"><Copy size={15} /> Copiar</button>
-                              <a href={link.final_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-surface-02 px-3 py-2 text-sm text-parchment hover:text-cream"><ExternalLink size={15} /> Abrir</a>
+                      {links.map((link) => {
+                        const finalUrl = normalizeGeneratedLinkUrl(link.final_url);
+                        return (
+                          <div key={link.id} className="rounded-2xl border border-surface-03 bg-surface-03/40 p-4">
+                            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-cream font-bold">{link.name || campaignById.get(link.campaign_id)?.name || "Link de campanha"}</p>
+                                <p className="text-stone text-xs mt-1 break-all">{finalUrl}</p>
+                              </div>
+                              <div className="flex gap-2">
+                                <button onClick={() => copyLink(finalUrl)} className="inline-flex items-center gap-2 rounded-xl bg-surface-02 px-3 py-2 text-sm text-parchment hover:text-cream"><Copy size={15} /> Copiar</button>
+                                <a href={finalUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-surface-02 px-3 py-2 text-sm text-parchment hover:text-cream"><ExternalLink size={15} /> Abrir</a>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                       {links.length === 0 && <EmptyState title="Nenhum link gerado" text="Selecione uma campanha e gere um link com UTM automaticamente." />}
                     </div>
                   </Panel>

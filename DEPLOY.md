@@ -225,6 +225,7 @@ DEBUG=false
 
 # CORS — domínio real do site
 ALLOWED_ORIGINS=["https://$DOMAIN","https://www.$DOMAIN"]
+PUBLIC_STORE_URL=https://$DOMAIN
 
 # JWT — gere uma chave forte:
 # python3 -c "import secrets; print(secrets.token_hex(32))"

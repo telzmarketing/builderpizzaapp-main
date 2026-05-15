@@ -54,6 +54,32 @@ def _encrypt(value: str | None) -> str | None:
     return _fernet().encrypt(value.encode("utf-8")).decode("utf-8")
 
 
+def _public_store_url() -> str:
+    settings = get_settings()
+    configured = (settings.PUBLIC_STORE_URL or settings.VITE_PUBLIC_STORE_URL or "").strip().rstrip("/")
+    if configured:
+        return configured
+
+    for origin in settings.ALLOWED_ORIGINS:
+        normalized = str(origin).strip().rstrip("/")
+        if normalized.startswith("http") and "localhost" not in normalized and "127.0.0.1" not in normalized:
+            return normalized
+
+    return "https://delivery.moschettieri.com.br"
+
+
+def _normalize_destination_url(url: str | None) -> str:
+    raw = (url or "").strip()
+    base_url = _public_store_url()
+    if not raw:
+        return base_url
+    if raw.startswith(("http://", "https://")):
+        return raw
+    if raw.startswith("/"):
+        return f"{base_url}{raw}"
+    return f"{base_url}/{raw}"
+
+
 class PaidTrafficService:
     def __init__(self, db: Session):
         self._db = db
@@ -132,7 +158,7 @@ class PaidTrafficService:
 
     def create_link(self, body: CampaignLinkCreate) -> CampaignLink:
         campaign = self.get_campaign(body.campaign_id)
-        destination_url = body.destination_url or campaign.destination_url or "/"
+        destination_url = _normalize_destination_url(body.destination_url or campaign.destination_url)
         utm_source = body.utm_source or campaign.platform
         utm_medium = body.utm_medium or "cpc"
         utm_campaign = body.utm_campaign or _slug(campaign.name)
