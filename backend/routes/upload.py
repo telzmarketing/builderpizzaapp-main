@@ -54,7 +54,7 @@ async def upload_image(
     Upload an image and save it permanently under the project-root ``uploads/`` directory.
 
     - Accepts: jpeg, png, gif, webp, mp4, webm, mov
-    - Maximum file size: 5 MB
+    - Maximum file size: 5 MB for images, 50 MB for videos
     - Returns: ``{ "url": "/uploads/<uuid>.<ext>" }``
     """
     # ── Content-type validation ───────────────────────────────────────────────
@@ -75,7 +75,7 @@ async def upload_image(
         return err_msg(
             f"Arquivo muito grande. O tamanho máximo permitido é {limit_label}.",
             code="FileTooLarge",
-            status_code=400,
+            status_code=413,
         )
 
     # ── Ensure uploads directory exists ──────────────────────────────────────

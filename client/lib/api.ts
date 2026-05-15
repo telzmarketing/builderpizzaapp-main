@@ -3042,12 +3042,42 @@ export const uploadApi = {
   upload: async (file: File): Promise<string> => {
     const form = new FormData();
     form.append("file", file);
-    const res = await fetch(`${BASE}/admin/upload`, {
-      method: "POST",
-      headers: { ...authHeaders() },
-      body: form,
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const uploadBases = Array.from(
+      new Set([
+        BASE.endsWith("/api") ? BASE : import.meta.env.PROD ? `${BASE}/api` : BASE,
+        BASE,
+        ...API_BASES,
+      ].filter((base) => base || import.meta.env.PROD)),
+    );
+
+    let res: Response | null = null;
+    let lastError: Error | null = null;
+    for (const base of uploadBases) {
+      try {
+        res = await fetch(`${base}/admin/upload`, {
+          method: "POST",
+          headers: { ...authHeaders() },
+          body: form,
+        });
+        if (res.ok || ![404, 405].includes(res.status)) break;
+        lastError = new Error(`HTTP ${res.status}`);
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error("Falha de rede.");
+      }
+    }
+
+    if (!res) throw lastError ?? new Error("Falha ao enviar arquivo.");
+    if (!res.ok) {
+      let message = `HTTP ${res.status}`;
+      try {
+        const json = await res.json();
+        const detail = json?.error?.message ?? json?.detail;
+        if (typeof detail === "string") message = detail;
+      } catch {
+        /* ignore parse errors */
+      }
+      throw new Error(message);
+    }
     const json = await res.json();
     const data = "data" in json ? json.data : json;
     return data.url as string;
