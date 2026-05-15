@@ -68,6 +68,18 @@ class BIFunnelStepOut(BaseModel):
     conversion_pct: float = 0
 
 
+class BINeighborhoodOut(BaseModel):
+    neighborhood: str
+    city: Optional[str] = None
+    visitors: int = 0
+    sessions: int = 0
+    pageviews: int = 0
+    visitor_orders: int = 0
+    orders: int = 0
+    revenue: float = 0
+    conversion_pct: float = 0
+
+
 class BIInsightOut(BaseModel):
     id: str
     insight_type: str
@@ -107,6 +119,7 @@ class BIOverviewOut(BaseModel):
     customer_segments: list[BICustomerSegmentOut]
     top_customers: list[BITopCustomerOut]
     funnel: list[BIFunnelStepOut]
+    neighborhoods: list[BINeighborhoodOut] = []
     insights: list[BIInsightOut]
     recommendations: list[BIRecommendationOut]
 

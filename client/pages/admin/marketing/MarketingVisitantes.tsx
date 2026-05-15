@@ -20,6 +20,7 @@ type Period = MarketingVisitorsPeriod;
 interface Visitor {
   id: string;
   city: string;
+  neighborhood?: string | null;
   browser: string;
   device: string;
   sessions: number;
@@ -202,7 +203,7 @@ export default function MarketingVisitantes() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-stone text-xs border-b border-surface-03">
-                          {["Status", "Cidade", "Localizacao", "Navegador", "Dispositivo", "Sessoes", "Pageviews", "Ultimo acesso"].map((h) => (
+                          {["Status", "Cidade", "Bairro", "Localizacao", "Navegador", "Dispositivo", "Sessoes", "Pageviews", "Ultimo acesso"].map((h) => (
                             <th key={h} className="text-left pb-2 pr-3">{h}</th>
                           ))}
                         </tr>
@@ -219,6 +220,7 @@ export default function MarketingVisitantes() {
                               </span>
                             </td>
                             <td className="py-2 pr-3 text-cream">{v.city || "-"}</td>
+                            <td className="py-2 pr-3 text-cream">{v.neighborhood || "-"}</td>
                             <td className="py-2 pr-3 text-xs">
                               {mapsUrl(v) ? (
                                 <a href={mapsUrl(v)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-gold hover:underline">

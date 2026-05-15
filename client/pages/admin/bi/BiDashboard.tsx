@@ -5,6 +5,7 @@ import {
   Brain,
   DollarSign,
   Loader2,
+  MapPin,
   Package,
   RefreshCw,
   Sparkles,
@@ -254,6 +255,10 @@ export default function BiDashboard() {
     () => Math.max(...(data?.sales ?? []).map((item) => item.revenue), 1),
     [data?.sales],
   );
+  const maxNeighborhoodVisitors = useMemo(
+    () => Math.max(...(data?.neighborhoods ?? []).map((item) => item.visitors), 1),
+    [data?.neighborhoods],
+  );
 
   if (loading && !data) {
     return (
@@ -355,6 +360,64 @@ export default function BiDashboard() {
               </div>
             </Section>
           </div>
+
+          <Section title="Bairros: acessos e pedidos">
+            <div className="overflow-hidden rounded-xl border border-surface-03 bg-surface-02">
+              {data.neighborhoods?.length ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[760px] text-sm">
+                    <thead className="bg-surface-01 text-xs uppercase text-stone">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Bairro</th>
+                        <th className="px-4 py-3 text-left">Acessos</th>
+                        <th className="px-4 py-3 text-left">Sessoes</th>
+                        <th className="px-4 py-3 text-left">Pageviews</th>
+                        <th className="px-4 py-3 text-left">Pedidos</th>
+                        <th className="px-4 py-3 text-left">Receita</th>
+                        <th className="px-4 py-3 text-left">Conversao</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.neighborhoods.map((item) => (
+                        <tr key={item.neighborhood} className="border-t border-surface-03 text-cream">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <MapPin size={15} className="text-gold" />
+                              <div>
+                                <p className="font-semibold">{item.neighborhood}</p>
+                                {item.city && <p className="text-xs text-stone">{item.city}</p>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="min-w-[120px] space-y-1">
+                              <span className="font-semibold text-cream">{number(item.visitors)}</span>
+                              <div className="h-2 overflow-hidden rounded-full bg-surface-01">
+                                <div
+                                  className="h-full rounded-full bg-gold"
+                                  style={{ width: `${Math.max((item.visitors / maxNeighborhoodVisitors) * 100, item.visitors ? 5 : 0)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-stone">{number(item.sessions)}</td>
+                          <td className="px-4 py-3 text-stone">{number(item.pageviews)}</td>
+                          <td className="px-4 py-3 text-stone">
+                            {number(item.orders || item.visitor_orders)}
+                            {item.visitor_orders > item.orders && <span className="ml-1 text-xs text-stone">rastreados</span>}
+                          </td>
+                          <td className="px-4 py-3 text-gold">{money(item.revenue)}</td>
+                          <td className="px-4 py-3 text-stone">{item.conversion_pct.toFixed(1)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <EmptyState label="Sem bairros mapeados no periodo. O dado aparece quando o visitante autoriza localizacao." />
+              )}
+            </div>
+          </Section>
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Section title="Produtos e Pareto 80/20">

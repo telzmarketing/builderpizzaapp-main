@@ -5,11 +5,11 @@ import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Iterable
 
-from sqlalchemy import distinct, func
+from sqlalchemy import distinct, func, text
 from sqlalchemy.orm import Session
 
 from backend.models.business_intelligence import BusinessInsight, ProductPerformance
-from backend.models.customer import Customer
+from backend.models.customer import Address, Customer
 from backend.models.customer_event import CustomerEvent
 from backend.models.delivery import Delivery
 from backend.models.order import Order, OrderItem
@@ -40,6 +40,7 @@ class BusinessIntelligenceService:
         products = self.get_products(**bounds, limit=8)
         customers = self.get_customers(**bounds)
         marketing = self.get_marketing(**bounds)
+        neighborhoods = self.get_neighborhoods(**bounds)
         insights = self.get_insights(overview, products, customers, marketing)
         insights = self._merge_persisted_insights(insights, bounds)
         recommendations = self.get_recommendations(insights)
@@ -52,6 +53,7 @@ class BusinessIntelligenceService:
             "customer_segments": customers["segments"],
             "top_customers": customers["top_customers"],
             "funnel": marketing["funnel"],
+            "neighborhoods": neighborhoods["neighborhoods"],
             "insights": insights,
             "recommendations": recommendations,
         }
@@ -277,6 +279,114 @@ class BusinessIntelligenceService:
             "roas": self._round(revenue / spend if spend else 0),
             "events_by_type": events_by_type,
             "funnel": funnel,
+        }
+
+    def get_neighborhoods(self, start_dt: datetime, end_dt: datetime, period: str, limit: int = 12) -> dict:
+        # Use raw SQL here because visitor_profiles is owned by the marketing route module.
+        raw_visitor_rows = self._db.execute(
+            text("""
+            SELECT
+                COALESCE(NULLIF(TRIM(neighborhood), ''), 'Sem bairro') AS name,
+                MAX(city) AS city,
+                COUNT(DISTINCT id) AS visitors,
+                COALESCE(SUM(total_sessions), 0) AS sessions,
+                COALESCE(SUM(total_pageviews), 0) AS pageviews
+            FROM visitor_profiles
+            WHERE last_seen_at >= :start_dt
+              AND last_seen_at <= :end_dt
+              AND neighborhood IS NOT NULL
+              AND TRIM(neighborhood) <> ''
+            GROUP BY COALESCE(NULLIF(TRIM(neighborhood), ''), 'Sem bairro')
+            """),
+            {"start_dt": start_dt, "end_dt": end_dt},
+        ).fetchall()
+        by_key: dict[str, dict] = {}
+        for row in raw_visitor_rows:
+            name = row[0] or "Sem bairro"
+            key = name.strip().lower()
+            by_key[key] = {
+                "neighborhood": name,
+                "city": row[1],
+                "visitors": int(row[2] or 0),
+                "sessions": int(row[3] or 0),
+                "pageviews": int(row[4] or 0),
+                "visitor_orders": 0,
+                "orders": 0,
+                "revenue": 0.0,
+            }
+
+        raw_visitor_order_rows = self._db.execute(
+            text("""
+            SELECT
+                COALESCE(NULLIF(TRIM(vp.neighborhood), ''), 'Sem bairro') AS name,
+                COUNT(ve.id) AS visitor_orders
+            FROM visitor_events ve
+            JOIN visitor_profiles vp ON vp.id = ve.visitor_id
+            WHERE ve.created_at >= :start_dt
+              AND ve.created_at <= :end_dt
+              AND ve.event_type = 'order_created'
+              AND vp.neighborhood IS NOT NULL
+              AND TRIM(vp.neighborhood) <> ''
+            GROUP BY COALESCE(NULLIF(TRIM(vp.neighborhood), ''), 'Sem bairro')
+            """),
+            {"start_dt": start_dt, "end_dt": end_dt},
+        ).fetchall()
+        for row in raw_visitor_order_rows:
+            name = row[0] or "Sem bairro"
+            key = name.strip().lower()
+            item = by_key.setdefault(key, {
+                "neighborhood": name,
+                "city": None,
+                "visitors": 0,
+                "sessions": 0,
+                "pageviews": 0,
+                "visitor_orders": 0,
+                "orders": 0,
+                "revenue": 0.0,
+            })
+            item["visitor_orders"] = int(row[1] or 0)
+
+        order_rows = (
+            self._db.query(
+                Address.neighborhood,
+                func.count(Order.id).label("orders"),
+                func.coalesce(func.sum(Order.total), 0).label("revenue"),
+            )
+            .join(Order, Order.address_id == Address.id)
+            .filter(Order.created_at >= start_dt, Order.created_at <= end_dt)
+            .filter(Order.status.in_(self.REVENUE_STATUSES))
+            .filter(Address.neighborhood.isnot(None), func.trim(Address.neighborhood) != "")
+            .group_by(Address.neighborhood)
+            .all()
+        )
+        for row in order_rows:
+            name = row.neighborhood or "Sem bairro"
+            key = name.strip().lower()
+            item = by_key.setdefault(key, {
+                "neighborhood": name,
+                "city": None,
+                "visitors": 0,
+                "sessions": 0,
+                "pageviews": 0,
+                "visitor_orders": 0,
+                "orders": 0,
+                "revenue": 0.0,
+            })
+            item["orders"] = int(row.orders or 0)
+            item["revenue"] = self._round(row.revenue)
+
+        neighborhoods = []
+        for item in by_key.values():
+            sessions = item["sessions"] or item["visitors"] or 0
+            orders = item["orders"] or item["visitor_orders"] or 0
+            neighborhoods.append({
+                **item,
+                "conversion_pct": self._round((orders / sessions) * 100 if sessions else 0),
+            })
+        neighborhoods.sort(key=lambda item: (item["orders"], item["visitor_orders"], item["visitors"], item["revenue"]), reverse=True)
+        return {
+            **self._period_payload({"period": period, "start_dt": start_dt, "end_dt": end_dt}),
+            "neighborhoods": neighborhoods[:limit],
         }
 
     def get_operations(self, start_dt: datetime, end_dt: datetime, period: str) -> dict:

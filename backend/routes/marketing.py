@@ -56,6 +56,7 @@ class VisitorProfile(Base):
     city = Column(String(100))
     state = Column(String(50))
     country = Column(String(50))
+    neighborhood = Column(String(120))
     latitude = Column(Float)
     longitude = Column(Float)
     location_accuracy_m = Column(Float)
@@ -311,7 +312,7 @@ def _reverse_geocode(latitude: float, longitude: float) -> dict:
                 "format": "jsonv2",
                 "lat": latitude,
                 "lon": longitude,
-                "zoom": 10,
+                "zoom": 16,
                 "addressdetails": 1,
             },
             headers={"User-Agent": "MoschettieriSaaS/1.0 visitor-analytics"},
@@ -320,7 +321,15 @@ def _reverse_geocode(latitude: float, longitude: float) -> dict:
         if resp.status_code != 200:
             return {}
         address = (resp.json() or {}).get("address") or {}
+        neighborhood = (
+            address.get("neighbourhood")
+            or address.get("suburb")
+            or address.get("quarter")
+            or address.get("city_district")
+            or address.get("district")
+        )
         return {
+            "neighborhood": neighborhood,
             "city": address.get("city") or address.get("town") or address.get("village") or address.get("municipality"),
             "state": address.get("state"),
             "country": address.get("country"),
@@ -548,8 +557,9 @@ async def track_event(body: VisitorEventIn, request: Request, db: Session = Depe
         visitor.longitude = body.longitude
         visitor.location_accuracy_m = body.location_accuracy_m
         visitor.location_captured_at = datetime.now(timezone.utc)
-        if not visitor.city:
+        if not visitor.city or not visitor.neighborhood:
             location = _reverse_geocode(body.latitude, body.longitude)
+            visitor.neighborhood = location.get("neighborhood") or visitor.neighborhood
             visitor.city = location.get("city") or visitor.city
             visitor.state = location.get("state") or visitor.state
             visitor.country = location.get("country") or visitor.country
@@ -738,7 +748,7 @@ def list_visitors(
         "bounce_rate": 0,
         "avg_session_duration": 0,
         "recent_visitors": [{
-            "id": v.id, "city": v.city or "", "browser": v.browser or "",
+            "id": v.id, "city": v.city or "", "neighborhood": v.neighborhood or "", "browser": v.browser or "",
             "device": v.device_type or "desktop",
             "sessions": v.total_sessions or 0, "pageviews": v.total_pageviews or 0,
             "last_seen": v.last_seen_at.isoformat(),
@@ -757,7 +767,7 @@ def list_visitors(
         # Legacy nested structure (kept for backward compatibility)
         "summary": {"total": total, "online": online},
         "visitors": [{
-            "id": v.id, "city": v.city, "country": v.country, "device_type": v.device_type,
+            "id": v.id, "city": v.city, "neighborhood": v.neighborhood, "country": v.country, "device_type": v.device_type,
             "browser": v.browser, "total_sessions": v.total_sessions,
             "total_pageviews": v.total_pageviews, "total_orders": v.total_orders,
             "last_seen_at": v.last_seen_at.isoformat(),

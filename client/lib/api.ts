@@ -629,6 +629,7 @@ export interface MarketingVisitorData {
   recent_visitors: Array<{
     id: string;
     city: string;
+    neighborhood?: string | null;
     browser: string;
     device: string;
     sessions: number;
@@ -3092,6 +3093,18 @@ export interface ApiBIFunnelStep {
   conversion_pct: number;
 }
 
+export interface ApiBINeighborhood {
+  neighborhood: string;
+  city?: string | null;
+  visitors: number;
+  sessions: number;
+  pageviews: number;
+  visitor_orders: number;
+  orders: number;
+  revenue: number;
+  conversion_pct: number;
+}
+
 export interface ApiBIInsight {
   id: string;
   insight_type: string;
@@ -3127,6 +3140,7 @@ export interface ApiBIDashboard {
   customer_segments: ApiBICustomerSegment[];
   top_customers: ApiBITopCustomer[];
   funnel: ApiBIFunnelStep[];
+  neighborhoods: ApiBINeighborhood[];
   insights: ApiBIInsight[];
   recommendations: ApiBIRecommendation[];
 }
