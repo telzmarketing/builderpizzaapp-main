@@ -118,6 +118,9 @@ export default function Cart() {
     storeOperationApi.status().then(setStoreStatus).catch(() => setStoreStatus(null));
   }, []);
 
+  const selectedItemsCount = cart.reduce((total, item) => total + item.quantity, 0);
+  const selectedItemsTitle = selectedItemsCount === 1 ? "Item escolhido" : "Itens escolhidos";
+
   const promotionBlocksCoupons = cart.some((item) => item.promotionApplied && item.promotionBlocksOtherCoupons);
   const promotionFreeShipping = cart.some((item) => item.promotionApplied && item.promotionFreeShipping);
   const promotionGifts = useMemo<ApiCouponGift[]>(() => {
@@ -217,6 +220,9 @@ export default function Cart() {
           </button>
           <div className="w-6"></div>
         </div>
+        <div className="px-4 pt-6">
+          <h1 className="text-2xl font-bold text-cream">Carrinho de Compra</h1>
+        </div>
         <div className="flex-1 flex items-center justify-center px-4 py-16 pb-32">
           <div className="text-center">
             <div className="text-6xl mb-4">🛒</div>
@@ -248,7 +254,14 @@ export default function Cart() {
 
       {/* Content */}
       <div className="px-4 pt-6 pb-36">
+        <div className="mb-5">
+          <h1 className="text-2xl font-bold text-cream">Carrinho de Compra</h1>
+        </div>
+
         <div className="space-y-3">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-gold-light">
+            {selectedItemsTitle}
+          </h2>
           {cart.map((item, index) => (
             <Fragment key={item.cartItemId}>
               <CartItemRow
