@@ -162,6 +162,12 @@ class StoreNotificationNextEnvelope(BaseModel):
     initial_delay_seconds: int
 
 
+class StoreNotificationImpressionIn(BaseModel):
+    page: AllowedStorePage = "home"
+    customer_id: str | None = None
+    anonymous_session_id: str | None = None
+
+
 class StoreNotificationCapturedOut(BaseModel):
     id: str
     order_id: str | None = None

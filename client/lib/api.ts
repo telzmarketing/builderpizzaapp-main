@@ -3553,6 +3553,8 @@ export const storeNotificationsApi = {
     if (opts?.seen_ids) qs.set("seen_ids", opts.seen_ids);
     return get<ApiStoreNotificationNextEnvelope>(`/store-notifications/next?${qs.toString()}`);
   },
+  recordImpression: (id: string, data: { page: ApiStoreNotificationPage; customer_id?: string; anonymous_session_id?: string }) =>
+    post<{ recorded: boolean }>(`/store-notifications/${id}/impression`, data),
   listCaptured: () => get<ApiStoreNotificationCaptured[]>("/store-notifications/captured"),
   discardCaptured: (id: string) => del<void>(`/store-notifications/captured/${id}`),
   activateCaptured: (id: string, data: ApiStoreNotificationInput) =>

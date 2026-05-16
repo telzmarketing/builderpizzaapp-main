@@ -7,6 +7,7 @@ from backend.routes.admin_auth import get_current_admin
 from backend.schemas.store_notification import (
     StoreNotificationCapturedOut,
     StoreNotificationCreate,
+    StoreNotificationImpressionIn,
     StoreNotificationNextEnvelope,
     StoreNotificationOut,
     StoreNotificationPreviewIn,
@@ -80,6 +81,24 @@ def preview(
 @router.get("/captured", response_model=list[StoreNotificationCapturedOut])
 def list_captured(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     return _service(db).list_captured()
+
+
+@router.post("/{notification_id}/impression")
+def record_impression(
+    notification_id: str,
+    body: StoreNotificationImpressionIn,
+    db: Session = Depends(get_db),
+):
+    try:
+        _service(db).record_impression(
+            notification_id,
+            page=body.page,
+            customer_id=body.customer_id or None,
+            anonymous_session_id=body.anonymous_session_id or None,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    return ok({"recorded": True})
 
 
 @router.delete("/captured/{captured_id}", status_code=204)

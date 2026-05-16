@@ -127,7 +127,14 @@ export default function StoreSocialProofNotification() {
           if (cancelled || dismissedRef.current) return;
           setNotification(result.notification);
           setVisible(true);
-          if (notifId) addSeenId(notifId);
+          if (notifId) {
+            addSeenId(notifId);
+            storeNotificationsApi.recordImpression(notifId, {
+              page,
+              customer_id: customerId,
+              anonymous_session_id: anonymousSessionId,
+            }).catch(() => {});
+          }
 
           timerRef.current = setTimeout(() => {
             setVisible(false);

@@ -4,7 +4,7 @@ import json
 import random
 import re
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, func, or_
@@ -43,7 +43,6 @@ PAID_ORDER_STATUSES = {
 PAID_PAYMENT_STATUSES = {PaymentStatus.approved, PaymentStatus.paid}
 PRIORITY_SCORE = {"low": 1, "medium": 2, "high": 3}
 CAPTURE_LOOKBACK_HOURS = 72
-STORE_OPEN_TIME = time(18, 0)
 
 
 class StoreNotificationService:
@@ -237,29 +236,42 @@ class StoreNotificationService:
 
         real_candidates = [item for item in candidates if item.get("source_type") == "real"]
         selected = self._weighted_manual(real_candidates or candidates)
-        now_utc = datetime.now(timezone.utc)
-        source_type = selected.get("source_type") or "manual"
-        impression = StoreNotificationImpression(
-            id=f"sni-{uuid.uuid4().hex[:12]}",
-            notification_id=selected.get("notification_id"),
-            source_type=source_type,
-            order_id=selected.get("order_id"),
-            product_id=selected.get("product_id"),
-            neighborhood=selected.get("neighborhood"),
-            page=page,
-            customer_id=customer_id,
-            anonymous_session_id=anonymous_session_id,
-            notification_type=source_type,
-            displayed_at=now_utc,
-        )
-        self._db.add(impression)
-        self._db.commit()
-
         return {
             "notification": selected,
             "next_delay_seconds": next_delay,
             "initial_delay_seconds": initial_delay,
         }
+
+    # ── Display impressions ──────────────────────────────────────────────────
+
+    def record_impression(
+        self,
+        notification_id: str,
+        *,
+        page: str = "home",
+        customer_id: str | None = None,
+        anonymous_session_id: str | None = None,
+    ) -> None:
+        notification = self._notification(notification_id)
+        if self._was_already_displayed(notification.id, customer_id, anonymous_session_id):
+            return
+
+        page = self._normalize_page(page)
+        source_type = "real" if notification.source_customer_id else "manual"
+        impression = StoreNotificationImpression(
+            id=f"sni-{uuid.uuid4().hex[:12]}",
+            notification_id=notification.id,
+            source_type=source_type,
+            product_id=notification.product_id,
+            neighborhood=notification.neighborhood,
+            page=page,
+            customer_id=customer_id,
+            anonymous_session_id=anonymous_session_id,
+            notification_type=source_type,
+            displayed_at=datetime.now(timezone.utc),
+        )
+        self._db.add(impression)
+        self._db.commit()
 
     # ── Captured notifications ────────────────────────────────────────────────
 
@@ -467,8 +479,6 @@ class StoreNotificationService:
             purchase_minutes = int(item.purchase_minutes_ago or 0)
             if not self._has_complete_display_data(item, product_name, purchase_minutes):
                 continue
-            if not self._purchase_time_is_coherent(current, purchase_minutes):
-                continue
             source_type = "real" if item.source_customer_id else "manual"
             candidates.append({
                 "source_type": source_type,
@@ -540,15 +550,8 @@ class StoreNotificationService:
         return all([
             self._safe_text(notification.display_name),
             self._safe_text(product_name),
-            self._safe_text(notification.neighborhood),
             purchase_minutes > 0,
         ])
-
-    def _purchase_time_is_coherent(self, current: datetime, purchase_minutes: int) -> bool:
-        if purchase_minutes <= 0:
-            return False
-        simulated_purchase = current - timedelta(minutes=purchase_minutes)
-        return simulated_purchase.time() >= STORE_OPEN_TIME
 
     def _display_relative_time(self, purchase_minutes: int | None) -> str:
         minutes = max(1, int(purchase_minutes or 1))
