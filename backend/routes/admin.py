@@ -126,9 +126,6 @@ def _get_or_create_config(db: Session) -> PaymentGatewayConfig:
     if config.gateway != "mercadopago":
         config.gateway = "mercadopago"
         dirty = True
-    if config.accept_cash:
-        config.accept_cash = False
-        dirty = True
     if dirty:
         db.commit()
         db.refresh(config)
@@ -180,7 +177,6 @@ def update_payment_gateway_config(
     for key, value in body.model_dump(exclude_none=True).items():
         setattr(config, key, value if value != "" else None)
     config.gateway = "mercadopago"
-    config.accept_cash = False
     db.commit()
     db.refresh(config)
     return _to_out(config)

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Enum, DateTime, ForeignKey, Text
+from sqlalchemy import Boolean, Column, String, Float, Enum, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -47,6 +47,12 @@ class Payment(Base):
     # Card fields
     payment_url = Column(String(500), nullable=True)
     client_secret = Column(String(300), nullable=True)
+
+    # Pay-on-delivery details
+    pay_on_delivery = Column(Boolean, default=False)
+    delivery_payment_method = Column(String(20), nullable=True)  # cash | card
+    cash_needs_change = Column(Boolean, nullable=True)
+    cash_change_for = Column(Float, nullable=True)
 
     # Webhook
     webhook_data = Column(Text, nullable=True)

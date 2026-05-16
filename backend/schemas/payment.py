@@ -32,6 +32,10 @@ class PaymentOut(BaseModel):
     qr_code: Optional[str] = None
     qr_code_text: Optional[str] = None
     payment_url: Optional[str] = None
+    pay_on_delivery: bool = False
+    delivery_payment_method: Optional[str] = None
+    cash_needs_change: Optional[bool] = None
+    cash_change_for: Optional[float] = None
     created_at: datetime
     paid_at: Optional[datetime] = None
 

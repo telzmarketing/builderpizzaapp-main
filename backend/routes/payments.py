@@ -112,6 +112,19 @@ def confirm_cash(
         return err(exc)
 
 
+@router.post("/approve/{order_id}")
+def approve_payment(
+    order_id: str,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    try:
+        payment = PaymentService(db).approve_manual(order_id)
+        return ok(payment, "Pagamento aprovado manualmente.")
+    except DomainError as exc:
+        return err(exc)
+
+
 @router.post("/webhook")
 async def payment_webhook(
     request: Request,

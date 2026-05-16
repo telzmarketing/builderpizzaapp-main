@@ -50,6 +50,9 @@ class CheckoutIn(BaseModel):
     coupon_code: Optional[str] = None
     customer_id: Optional[str] = None
     payment_method: str = "pix"
+    delivery_payment_method: Optional[str] = None
+    cash_needs_change: Optional[bool] = None
+    cash_change_for: Optional[float] = Field(default=None, ge=0)
     campaign_id: Optional[str] = None
     utm_source: Optional[str] = None
     utm_medium: Optional[str] = None

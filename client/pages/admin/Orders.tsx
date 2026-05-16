@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
-import { ordersApi, deliveryApi, type ApiOrder, type OrderStatus, type DeliveryPerson } from "@/lib/api";
+import { ordersApi, paymentsApi, deliveryApi, type ApiOrder, type OrderStatus, type DeliveryPerson } from "@/lib/api";
 import { loadPrinterSettings, printConfirmedOrder, printOrder, type PrintTemplate } from "@/lib/printing";
 import OrderTimer from "@/components/OrderTimer";
 import { playOrderAlert, loadSoundType } from "@/lib/orderSound";
@@ -123,9 +123,9 @@ const NEXT_STATUS: Partial<Record<string, OrderStatus>> = {
 };
 
 const NEXT_LABEL: Partial<Record<string, string>> = {
-  pending: "Confirmar Pago",
-  waiting_payment: "Confirmar Pago",
-  aguardando_pagamento: "Confirmar Pago",
+  pending: "Aprovar pagamento",
+  waiting_payment: "Aprovar pagamento",
+  aguardando_pagamento: "Aprovar pagamento",
   paid: "Preparando",
   pago: "Preparando",
   preparing: "Pronto",
@@ -312,6 +312,19 @@ export default function AdminOrders() {
       setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
     } catch {
       alert("Erro ao atualizar status.");
+    } finally {
+      setUpdatingId(null);
+    }
+  }, []);
+
+  const handleApprovePayment = useCallback(async (orderId: string) => {
+    setUpdatingId(orderId);
+    try {
+      await paymentsApi.approve(orderId);
+      const updated = await ordersApi.get(orderId);
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+    } catch {
+      alert("Erro ao aprovar pagamento.");
     } finally {
       setUpdatingId(null);
     }
@@ -565,7 +578,11 @@ export default function AdminOrders() {
                                 updating={updatingId === order.id}
                                 onAdvance={() => {
                                   const next = NEXT_STATUS[order.status];
-                                  if (next) handleStatusChange(order.id, next);
+                                  if (WAITING_PAYMENT_STATUSES.has(order.status)) {
+                                    handleApprovePayment(order.id);
+                                  } else if (next) {
+                                    handleStatusChange(order.id, next);
+                                  }
                                 }}
                                 onAssignMotoboy={() => openAssignModal(order)}
                                 onPrint={(tpl) => printOrder(order, tpl)}
@@ -673,7 +690,7 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
   const [printMenuOpen, setPrintMenuOpen] = useState(false);
   const isReadyForPickup = order.status === "ready_for_pickup";
   const isWaitingPayment = WAITING_PAYMENT_STATUSES.has(order.status);
-  const nextLabel = isReadyForPickup || isWaitingPayment ? null : NEXT_LABEL[order.status];
+  const nextLabel = isReadyForPickup ? null : NEXT_LABEL[order.status];
   const unresolvedDeliveryProblem = Boolean(order.delivery?.problem_report && !order.delivery.problem_resolved_at);
 
   const itemSummary = order.items.slice(0, 2).map((item) => {
@@ -734,6 +751,20 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
           <p className="text-parchment text-xs font-semibold">{order.estimated_time} min</p>
         </div>
       </div>
+
+      {order.pay_on_delivery && (
+        <div className="mt-3 rounded-xl border border-gold/25 bg-gold/10 px-3 py-2">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-gold">Pagamento na entrega</p>
+          <p className="mt-1 text-xs font-semibold text-parchment">
+            {order.delivery_payment_method === "cash" ? "Dinheiro" : "Cartao"}
+            {order.delivery_payment_method === "cash" && order.cash_needs_change && order.cash_change_for
+              ? ` - troco para ${formatCurrency(order.cash_change_for)}`
+              : order.delivery_payment_method === "cash"
+                ? " - sem troco"
+                : ""}
+          </p>
+        </div>
+      )}
 
       {/* Quem cancelou — aparece apenas em pedidos cancelados */}
       {order.status === "cancelled" && order.cancelled_by && (

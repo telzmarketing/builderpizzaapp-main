@@ -286,6 +286,10 @@ def _run_migrations():
         "ALTER TABLE payments ADD COLUMN IF NOT EXISTS external_reference VARCHAR(120)",
         "ALTER TABLE payments ADD COLUMN IF NOT EXISTS raw_response TEXT",
         "ALTER TABLE payments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS pay_on_delivery BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS delivery_payment_method VARCHAR(20)",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS cash_needs_change BOOLEAN",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS cash_change_for DOUBLE PRECISION",
         "CREATE TABLE IF NOT EXISTS payment_events (id VARCHAR PRIMARY KEY, provider VARCHAR(50) NOT NULL DEFAULT 'mercado_pago', event_type VARCHAR(100), mercado_pago_payment_id VARCHAR(100), external_reference VARCHAR(120), raw_payload TEXT NOT NULL, processed_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())",
         # Paid traffic core tables (also needed by public store tracking)
         """CREATE TABLE IF NOT EXISTS traffic_campaigns (

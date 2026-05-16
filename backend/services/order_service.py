@@ -25,6 +25,7 @@ from backend.core.events import (
 )
 from backend.models.order import Order, OrderItem, OrderItemFlavor, OrderStatus
 from backend.models.payment import Payment, PaymentMethod, PaymentStatus
+from backend.models.payment_config import PaymentGatewayConfig
 from backend.models.product import Product, MultiFlavorsConfig, PricingRule, ProductCrustType, ProductDrinkVariant, ProductSize
 from backend.models.customer import Address, Customer as CustomerModel
 from backend.schemas.order import CheckoutIn, CartItemIn, FlavorIn, OrderStatusUpdate
@@ -527,16 +528,37 @@ class OrderService:
         self._db.flush()
         self._save_first_delivery_address(payload)
 
-        payment_method = PaymentMethod(payload.payment_method) if payload.payment_method in PaymentMethod._value2member_map_ else PaymentMethod.pix
+        is_pay_on_delivery = payload.payment_method == "pay_on_delivery"
+        delivery_payment_method = (payload.delivery_payment_method or "").strip().lower() if is_pay_on_delivery else None
+        if is_pay_on_delivery:
+            payment_config = self._db.query(PaymentGatewayConfig).filter(PaymentGatewayConfig.id == "default").first()
+            if payment_config and not payment_config.accept_cash:
+                raise DomainError("Pagamento na entrega esta indisponivel no momento.", code="PaymentMethodDisabled")
+        if is_pay_on_delivery and delivery_payment_method not in {"cash", "card"}:
+            raise DomainError("Escolha se o pagamento na entrega sera em cartao ou dinheiro.", code="InvalidDeliveryPaymentMethod")
+        cash_needs_change = bool(payload.cash_needs_change) if delivery_payment_method == "cash" else None
+        cash_change_for = float(payload.cash_change_for or 0) if cash_needs_change else None
+        if cash_change_for is not None and cash_change_for <= total:
+            raise DomainError("O valor para troco deve ser maior que o total do pedido.", code="InvalidCashChange")
+
+        payment_method = (
+            PaymentMethod.cash
+            if is_pay_on_delivery
+            else PaymentMethod(payload.payment_method) if payload.payment_method in PaymentMethod._value2member_map_ else PaymentMethod.pix
+        )
         self._db.add(Payment(
             id=str(uuid.uuid4()),
             order_id=order.id,
             method=payment_method,
             status=PaymentStatus.pending,
             amount=total,
-            gateway="mercadopago",
-            provider="mercado_pago",
+            gateway="on_delivery" if is_pay_on_delivery else "mercadopago",
+            provider="on_delivery" if is_pay_on_delivery else "mercado_pago",
             external_reference=external_reference,
+            pay_on_delivery=is_pay_on_delivery,
+            delivery_payment_method=delivery_payment_method,
+            cash_needs_change=cash_needs_change,
+            cash_change_for=cash_change_for,
         ))
         self._db.flush()
 

@@ -178,8 +178,9 @@ def _ensure_method_enabled(config: PaymentGatewayConfig, method: PaymentMethod) 
         PaymentMethod.pix: config.accept_pix,
         PaymentMethod.credit_card: config.accept_credit_card,
         PaymentMethod.debit_card: config.accept_debit_card,
+        PaymentMethod.cash: config.accept_cash,
     }
-    if method == PaymentMethod.cash or not enabled_by_method.get(method, False):
+    if not enabled_by_method.get(method, False):
         raise DomainError(
             "Forma de pagamento indisponivel. Configure os metodos aceitos em Admin > Pagamentos.",
             code="PaymentMethodDisabled",
@@ -222,7 +223,7 @@ class PaymentService:
             "accept_pix": bool(cfg.accept_pix),
             "accept_credit_card": bool(cfg.accept_credit_card),
             "accept_debit_card": bool(cfg.accept_debit_card),
-            "accept_cash": False,
+            "accept_cash": bool(cfg.accept_cash),
         }
 
     def _get_order(self, order_id: str) -> Order:
@@ -280,6 +281,11 @@ class PaymentService:
             provider = "mercado_pago"
         method = _payment_method(form_data, payload.payment_method)
         _ensure_method_enabled(cfg, method)
+        if method == PaymentMethod.cash:
+            raise DomainError(
+                "Pagamento na entrega deve ser criado junto com o pedido.",
+                code="PaymentMethodDisabled",
+            )
 
         if order.payment and order.payment.mercado_pago_payment_id:
             if order.payment.status == PaymentStatus.approved:
@@ -752,6 +758,35 @@ class PaymentService:
         self._db.refresh(payment)
         return PaymentOut.model_validate(payment)
 
+    def approve_manual(self, order_id: str) -> PaymentOut:
+        order = self._get_order(order_id)
+        current_order_status = order.status.value if hasattr(order.status, "value") else str(order.status)
+        if current_order_status not in {"pending", "waiting_payment", "aguardando_pagamento"}:
+            raise PaymentOrderNotEligible(order.id, current_order_status)
+
+        payment = order.payment or Payment(
+            id=str(uuid.uuid4()),
+            order_id=order.id,
+            method=PaymentMethod.cash,
+            status=PaymentStatus.pending,
+            amount=order.total,
+            gateway="manual",
+            provider="manual",
+            external_reference=order.external_reference or order.id,
+        )
+        if payment.status in {PaymentStatus.approved, PaymentStatus.paid}:
+            return PaymentOut.model_validate(payment)
+        if payment.status != PaymentStatus.pending:
+            raise DomainError("Somente pagamentos pendentes podem ser aprovados manualmente.", code="PaymentNotPending")
+
+        if not payment.transaction_id:
+            payment.transaction_id = f"MANUAL-{uuid.uuid4().hex[:8].upper()}"
+        self._db.add(payment)
+        self._db.flush()
+        self._apply_status(payment, PaymentStatus.approved, source="admin_manual")
+        self._db.refresh(payment)
+        return PaymentOut.model_validate(payment)
+
     def get_by_order(self, order_id: str) -> PaymentOut:
         payment = self._get_payment_by_order(order_id)
         self._sync_pending_mercado_pago_payment(payment, source="status_poll")
@@ -784,6 +819,10 @@ class PaymentService:
             "payment_url": payment.payment_url if payment else None,
             "checkout_locked": checkout_locked,
             "payment_method": payment.method.value if payment else None,
+            "pay_on_delivery": bool(payment.pay_on_delivery) if payment else False,
+            "delivery_payment_method": payment.delivery_payment_method if payment else None,
+            "cash_needs_change": payment.cash_needs_change if payment else None,
+            "cash_change_for": payment.cash_change_for if payment else None,
         }
 
 

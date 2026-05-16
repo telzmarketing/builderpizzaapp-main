@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
+  Banknote,
   Check,
   ChevronLeft,
   Clock,
@@ -44,7 +45,8 @@ import {
 } from "@/lib/api";
 
 type DeliveryMode = "delivery" | "pickup";
-type SelectedPaymentMethod = "pix" | "card";
+type SelectedPaymentMethod = "pix" | "card" | "delivery";
+type DeliveryPaymentMethod = "card" | "cash";
 type PaymentState = "idle" | "loading" | "pending" | "approved" | "rejected" | "expired" | "error";
 
 declare global {
@@ -109,6 +111,9 @@ export default function Checkout() {
   const [apiError, setApiError] = useState("");
   const [createdOrder, setCreatedOrder] = useState<ApiOrder | null>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<SelectedPaymentMethod>("pix");
+  const [deliveryPaymentMethod, setDeliveryPaymentMethod] = useState<DeliveryPaymentMethod>("card");
+  const [cashNeedsChange, setCashNeedsChange] = useState(false);
+  const [cashChangeFor, setCashChangeFor] = useState("");
   const [paymentMethods, setPaymentMethods] = useState<ApiPaymentMethods | null>(null);
   const [payment, setPayment] = useState<ApiPayment | null>(null);
   const [paymentState, setPaymentState] = useState<PaymentState>("idle");
@@ -251,6 +256,8 @@ export default function Checkout() {
       paymentMethodsRef.current = methods;
       if (!methods.accept_pix && (methods.accept_credit_card || methods.accept_debit_card)) {
         setSelectedPaymentMethod("card");
+      } else if (!methods.accept_pix && !methods.accept_credit_card && !methods.accept_debit_card && methods.accept_cash) {
+        setSelectedPaymentMethod("delivery");
       }
     }).catch(() => setPaymentMethods(null));
   }, []);
@@ -293,6 +300,7 @@ export default function Checkout() {
 
   useEffect(() => {
     if (!createdOrder) return;
+    if (selectedPaymentMethod === "delivery") return;
     const deadline = Date.now() + 30 * 60 * 1000; // 30 min
     const id = setInterval(async () => {
       if (Date.now() > deadline) {
@@ -351,7 +359,7 @@ export default function Checkout() {
       }
     }, 8000);
     return () => clearInterval(id);
-  }, [createdOrder, clearCart, navigate]);
+  }, [createdOrder, selectedPaymentMethod, clearCart, navigate]);
 
   // Countdown do PIX (30 min = 1800s)
   useEffect(() => {
@@ -493,8 +501,16 @@ export default function Checkout() {
     if (paymentMethods) {
       const pixDisabled = selectedPaymentMethod === "pix" && !paymentMethods.accept_pix;
       const cardDisabled = selectedPaymentMethod === "card" && !paymentMethods.accept_credit_card && !paymentMethods.accept_debit_card;
-      if (pixDisabled || cardDisabled) {
+      const deliveryDisabled = selectedPaymentMethod === "delivery" && !paymentMethods.accept_cash;
+      if (pixDisabled || cardDisabled || deliveryDisabled) {
         setApiError("Forma de pagamento indisponivel no momento.");
+        return;
+      }
+    }
+    if (selectedPaymentMethod === "delivery" && deliveryPaymentMethod === "cash" && cashNeedsChange) {
+      const changeFor = Number(cashChangeFor.replace(",", "."));
+      if (!Number.isFinite(changeFor) || changeFor <= total) {
+        setApiError("Informe um valor de troco maior que o total do pedido.");
         return;
       }
     }
@@ -509,6 +525,7 @@ export default function Checkout() {
     trackEvent("checkout_start", cartSubtotal);
     firePixelEvent("InitiateCheckout", { value: cartSubtotal });
     const tracking = checkoutTrackingPayload();
+    const changeFor = Number(cashChangeFor.replace(",", "."));
     const payload: CheckoutIn = {
       items: cart.map((item) => ({
         product_id: item.productId,
@@ -542,7 +559,16 @@ export default function Checkout() {
         is_scheduled: mustSchedule,
         scheduled_for: mustSchedule ? new Date(scheduledFor).toISOString() : null,
       },
-      payment_method: selectedPaymentMethod === "pix" ? "pix" : "credit_card",
+      payment_method: selectedPaymentMethod === "pix"
+        ? "pix"
+        : selectedPaymentMethod === "card"
+          ? "credit_card"
+          : "pay_on_delivery",
+      ...(selectedPaymentMethod === "delivery" ? {
+        delivery_payment_method: deliveryPaymentMethod,
+        cash_needs_change: deliveryPaymentMethod === "cash" ? cashNeedsChange : null,
+        cash_change_for: deliveryPaymentMethod === "cash" && cashNeedsChange ? changeFor : null,
+      } : {}),
       ...tracking,
       ...(couponApplied && couponCode && !promotionBlocksCoupons ? { coupon_code: couponCode } : {}),
       ...(customer ? { customer_id: customer.id } : {}),
@@ -560,9 +586,9 @@ export default function Checkout() {
         session_id: _td.session_id,
       }).catch(() => {});
       setCreatedOrder(order);
-      sessionStorage.setItem(LOCKED_ORDER_KEY, order.id);
       setPayment(null);
       if (selectedPaymentMethod === "pix") {
+        sessionStorage.setItem(LOCKED_ORDER_KEY, order.id);
         setPaymentState("loading");
         setPaymentMessage("Gerando PIX seguro...");
         const pixPayment = await paymentsApi.createPix(order.id, order.total);
@@ -575,8 +601,17 @@ export default function Checkout() {
             : "PIX criado. Aguardando retorno do QR Code do Mercado Pago.",
         );
       } else {
-        setPaymentState("pending");
-        setPaymentMessage("Preencha os dados do cartao para concluir.");
+        if (selectedPaymentMethod === "card") {
+          sessionStorage.setItem(LOCKED_ORDER_KEY, order.id);
+          setPaymentState("pending");
+          setPaymentMessage("Preencha os dados do cartao para concluir.");
+        } else {
+          sessionStorage.removeItem(LOCKED_ORDER_KEY);
+          clearCart();
+          setPaymentState("pending");
+          setPaymentMessage("Pedido recebido. O pagamento sera feito na entrega.");
+          setTimeout(() => navigate(`/order-tracking?orderId=${order.id}`), 1200);
+        }
       }
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
     } catch (err) {
@@ -880,17 +915,24 @@ export default function Checkout() {
         {!createdOrder && (
           <section>
             <h2 className="text-cream font-bold text-lg mb-3 flex items-center gap-2">
-              {selectedPaymentMethod === "pix" ? <QrCode size={20} className="text-gold" /> : <CreditCard size={20} className="text-gold" />}
+              {selectedPaymentMethod === "pix"
+                ? <QrCode size={20} className="text-gold" />
+                : selectedPaymentMethod === "card"
+                  ? <CreditCard size={20} className="text-gold" />
+                  : <Banknote size={20} className="text-gold" />}
               Forma de pagamento
             </h2>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {([
                 { value: "pix", label: "PIX", icon: QrCode, helper: "QR Code na tela" },
                 { value: "card", label: "Cartao", icon: CreditCard, helper: "Credito ou debito" },
+                { value: "delivery", label: "Na entrega", icon: Banknote, helper: "Cartao ou dinheiro" },
               ] as { value: SelectedPaymentMethod; label: string; icon: LucideIcon; helper: string }[]).map(({ value, label, icon: Icon, helper }) => {
                 const disabled = value === "pix"
                   ? paymentMethods?.accept_pix === false
-                  : paymentMethods ? !paymentMethods.accept_credit_card && !paymentMethods.accept_debit_card : false;
+                  : value === "card"
+                    ? paymentMethods ? !paymentMethods.accept_credit_card && !paymentMethods.accept_debit_card : false
+                    : paymentMethods?.accept_cash === false;
                 return (
                   <button
                     key={value}
@@ -912,6 +954,52 @@ export default function Checkout() {
                 );
               })}
             </div>
+            {selectedPaymentMethod === "delivery" && (
+              <div className="mt-3 rounded-xl border border-surface-03 bg-surface-02 p-3">
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { value: "card", label: "Cartao" },
+                    { value: "cash", label: "Dinheiro" },
+                  ] as { value: DeliveryPaymentMethod; label: string }[]).map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setDeliveryPaymentMethod(value)}
+                      className={`rounded-xl border px-3 py-2 text-sm font-bold transition-colors ${
+                        deliveryPaymentMethod === value
+                          ? "border-gold bg-gold/10 text-gold-light"
+                          : "border-surface-03 bg-surface-03 text-stone"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {deliveryPaymentMethod === "cash" && (
+                  <div className="mt-3 space-y-3">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-parchment">
+                      <input
+                        type="checkbox"
+                        checked={cashNeedsChange}
+                        onChange={(e) => setCashNeedsChange(e.target.checked)}
+                        className="h-4 w-4 accent-gold"
+                      />
+                      Vou precisar de troco
+                    </label>
+                    {cashNeedsChange && (
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={cashChangeFor}
+                        onChange={(e) => setCashChangeFor(e.target.value.replace(/[^\d,.]/g, ""))}
+                        placeholder="Troco para quanto?"
+                        className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </section>
         )}
 
@@ -994,9 +1082,19 @@ export default function Checkout() {
 
         {createdOrder && (
           <section className="bg-surface-02 rounded-xl p-4 border border-surface-03">
-            <h2 className="text-cream font-bold text-lg mb-3">Pagamento Mercado Pago</h2>
+            <h2 className="text-cream font-bold text-lg mb-3">
+              {selectedPaymentMethod === "delivery" ? "Pagamento na entrega" : "Pagamento Mercado Pago"}
+            </h2>
             <p className={`text-sm mb-3 ${statusClass(paymentState)}`}>{paymentMessage || "Aguardando pagamento."}</p>
-            {selectedPaymentMethod === "pix" ? (
+            {selectedPaymentMethod === "delivery" ? (
+              <div className="rounded-xl border border-gold/25 bg-gold/10 px-4 py-3 text-sm text-parchment">
+                {deliveryPaymentMethod === "cash"
+                  ? cashNeedsChange
+                    ? `Pagamento em dinheiro. Troco para R$ ${Number(cashChangeFor.replace(",", ".")).toFixed(2)}.`
+                    : "Pagamento em dinheiro sem troco."
+                  : "Pagamento com cartao na entrega."}
+              </div>
+            ) : selectedPaymentMethod === "pix" ? (
               <div className="space-y-4">
                 {/* Timer de validade do PIX */}
                 {paymentState === "pending" && pixSecondsLeft !== null && pixSecondsLeft > 0 && (

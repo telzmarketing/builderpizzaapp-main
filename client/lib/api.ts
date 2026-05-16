@@ -829,6 +829,12 @@ export interface ApiOrder {
   coupon_id: string | null;
   pedido_status?: OrderStatus;
   payment_status?: ApiPayment["status"] | "pending";
+  payment_method?: ApiPayment["method"] | null;
+  payment_provider?: string | null;
+  pay_on_delivery?: boolean;
+  delivery_payment_method?: "cash" | "card" | string | null;
+  cash_needs_change?: boolean | null;
+  cash_change_for?: number | null;
   external_reference?: string | null;
   items: ApiOrderItem[];
   created_at: string;
@@ -893,7 +899,10 @@ export interface CheckoutIn {
   };
   coupon_code?: string;
   customer_id?: string;
-  payment_method: "pix" | "credit_card" | "debit_card" | "cash";
+  payment_method: "pix" | "credit_card" | "debit_card" | "cash" | "pay_on_delivery";
+  delivery_payment_method?: "cash" | "card" | null;
+  cash_needs_change?: boolean | null;
+  cash_change_for?: number | null;
   campaign_id?: string | null;
   utm_source?: string | null;
   utm_medium?: string | null;
@@ -991,6 +1000,10 @@ export interface ApiPayment {
   qr_code: string | null;
   qr_code_text: string | null;
   payment_url: string | null;
+  pay_on_delivery?: boolean;
+  delivery_payment_method?: "cash" | "card" | string | null;
+  cash_needs_change?: boolean | null;
+  cash_change_for?: number | null;
   created_at: string;
   paid_at: string | null;
 }
@@ -1006,6 +1019,10 @@ export interface ApiPaymentStatus {
   payment_url?: string | null;
   checkout_locked: boolean;
   payment_method: string | null;
+  pay_on_delivery?: boolean;
+  delivery_payment_method?: "cash" | "card" | string | null;
+  cash_needs_change?: boolean | null;
+  cash_change_for?: number | null;
 }
 
 export interface ApiPaymentMethods {
@@ -2118,6 +2135,8 @@ export const paymentsApi = {
       {},
       orderAccessHeaders(order_id),
     ),
+
+  approve: (order_id: string) => post<ApiPayment>(`/payments/approve/${order_id}`, {}),
 };
 
 // ─── Coupons ──────────────────────────────────────────────────────────────────
