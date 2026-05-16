@@ -11,6 +11,7 @@ from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, 
 from sqlalchemy.orm import Session
 
 from backend.database import get_db, Base
+from backend.models.customer_event import CustomerEvent
 from backend.routes.admin_auth import get_current_admin
 from backend.core.response import ok, created, err_msg
 
@@ -614,6 +615,10 @@ def list_visitors(
     online_minutes = settings.online_visitor_minutes if settings and settings.online_visitor_minutes else 5
     online_since = now - timedelta(minutes=online_minutes)
     online = db.query(func.count(VisitorProfile.id)).filter(VisitorProfile.last_seen_at >= online_since).scalar() or 0
+    online_registered_customers = db.query(func.count(func.distinct(CustomerEvent.customer_id))).filter(
+        CustomerEvent.created_at >= online_since,
+        CustomerEvent.customer_id.isnot(None),
+    ).scalar() or 0
 
     recent = (db.query(VisitorProfile)
               .filter(VisitorProfile.last_seen_at >= since)
@@ -743,6 +748,7 @@ def list_visitors(
         # Flat fields expected by MarketingVisitantes
         "visitors_today": total,
         "online_visitors": online,
+        "online_registered_customers": online_registered_customers,
         "total_sessions": total_sessions,
         "total_events": total_events,
         "bounce_rate": 0,
@@ -765,7 +771,7 @@ def list_visitors(
         "top_products": normalized_products,
         "funnel": normalized_funnel,
         # Legacy nested structure (kept for backward compatibility)
-        "summary": {"total": total, "online": online},
+        "summary": {"total": total, "online": online, "online_registered_customers": online_registered_customers},
         "visitors": [{
             "id": v.id, "city": v.city, "neighborhood": v.neighborhood, "country": v.country, "device_type": v.device_type,
             "browser": v.browser, "total_sessions": v.total_sessions,

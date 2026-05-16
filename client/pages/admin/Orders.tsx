@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, Bell, BellOff, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2,
-  PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Truck, Utensils,
+  PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Trash2, Truck, UserCheck, Users, Utensils,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
-import { ordersApi, paymentsApi, deliveryApi, type ApiOrder, type OrderStatus, type DeliveryPerson } from "@/lib/api";
+import { ordersApi, paymentsApi, deliveryApi, marketingVisitorsApi, type ApiEffectivePermissions, type ApiOrder, type OrderStatus, type DeliveryPerson } from "@/lib/api";
 import { loadPrinterSettings, printConfirmedOrder, printOrder, type PrintTemplate } from "@/lib/printing";
 import OrderTimer from "@/components/OrderTimer";
 import { playOrderAlert, loadSoundType } from "@/lib/orderSound";
@@ -137,6 +137,29 @@ const WAITING_PAYMENT_STATUSES = new Set(["pending", "waiting_payment", "aguarda
 const CONFIRMED_PAYMENT_STATUSES = new Set(["paid", "pago"]);
 const CONFIRMED_PAYMENT_VALUES = new Set(["approved", "paid"]);
 const AUTO_PRINTED_CONFIRMED_ORDERS_KEY = "moschettieri_auto_printed_confirmed_orders";
+const DELETE_CONFIRMATION_TEXT = "excluir";
+
+function loadStoredAdminPermissions(): ApiEffectivePermissions | null {
+  try {
+    const raw = localStorage.getItem("admin_permissions");
+    return raw ? JSON.parse(raw) as ApiEffectivePermissions : null;
+  } catch {
+    return null;
+  }
+}
+
+function canDeleteOrdersFromPermissions(permissions: ApiEffectivePermissions | null) {
+  if (!permissions) return false;
+  if (permissions.is_master) return true;
+  const roleName = (permissions.role_name ?? "").trim().toLowerCase();
+  const roleId = (permissions.role_id ?? "").trim().toLowerCase();
+  return (
+    roleName === "administrador" ||
+    roleName === "administrativo" ||
+    roleId === "administrador" ||
+    roleId === "administrativo"
+  );
+}
 
 function loadAutoPrintedConfirmedOrderIds() {
   try {
@@ -258,6 +281,11 @@ export default function AdminOrders() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [newOrderFlash, setNewOrderFlash] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => todayInputValue());
+  const [onlineStats, setOnlineStats] = useState({ visitors: 0, registeredCustomers: 0 });
+  const [deleteModal, setDeleteModal] = useState<{ order: ApiOrder; confirmation: string } | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const adminPermissions = useMemo(() => loadStoredAdminPermissions(), []);
+  const canDeleteOrders = useMemo(() => canDeleteOrdersFromPermissions(adminPermissions), [adminPermissions]);
 
   // Motoboy assignment modal
   const [assignModal, setAssignModal] = useState<{ order: ApiOrder } | null>(null);
@@ -313,11 +341,28 @@ export default function AdminOrders() {
     }
   }, [selectedDate, soundEnabled]);
 
+  const fetchOnlineStats = useCallback(async () => {
+    try {
+      const data = await marketingVisitorsApi.list("today");
+      setOnlineStats({
+        visitors: data.online_visitors ?? 0,
+        registeredCustomers: data.online_registered_customers ?? 0,
+      });
+    } catch {
+      setOnlineStats({ visitors: 0, registeredCustomers: 0 });
+    }
+  }, []);
+
   useEffect(() => {
     fetchOrders();
+    fetchOnlineStats();
     const id = window.setInterval(() => fetchOrders(true), 15_000);
-    return () => window.clearInterval(id);
-  }, [fetchOrders]);
+    const onlineId = window.setInterval(fetchOnlineStats, 15_000);
+    return () => {
+      window.clearInterval(id);
+      window.clearInterval(onlineId);
+    };
+  }, [fetchOrders, fetchOnlineStats]);
 
   const handleStatusChange = useCallback(async (orderId: string, newStatus: OrderStatus) => {
     setUpdatingId(orderId);
@@ -394,6 +439,21 @@ export default function AdminOrders() {
     }
   }, [assignModal, selectedPersonId, estimatedMinutes, fetchOrders]);
 
+  const handleDeleteOrder = useCallback(async () => {
+    if (!deleteModal || deleteModal.confirmation.trim().toLowerCase() !== DELETE_CONFIRMATION_TEXT) return;
+    setDeletingId(deleteModal.order.id);
+    setError("");
+    try {
+      await ordersApi.remove(deleteModal.order.id);
+      setOrders((prev) => prev.filter((order) => order.id !== deleteModal.order.id));
+      setDeleteModal(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel excluir o pedido.");
+    } finally {
+      setDeletingId(null);
+    }
+  }, [deleteModal]);
+
   const groupedOrders = useMemo(() => {
     const grouped = new Map<string, ApiOrder[]>();
     KANBAN_COLUMNS.forEach((col) => grouped.set(col.id, []));
@@ -454,6 +514,22 @@ export default function AdminOrders() {
           )}
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="relative z-20 flex w-full flex-shrink-0 flex-wrap items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-4 py-3 md:px-6">
+              <div className="flex h-10 min-w-[14rem] shrink-0 items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 px-4">
+                <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-stone">
+                  <Users size={15} className="text-green-400" />
+                  Visitantes online
+                </span>
+                <span className="text-sm font-black text-cream">{onlineStats.visitors}</span>
+              </div>
+              <div className="flex h-10 min-w-[17rem] shrink-0 items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 px-4">
+                <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-stone">
+                  <UserCheck size={15} className="text-blue-400" />
+                  Clientes cadastrados online
+                </span>
+                <span className="text-sm font-black text-cream">{onlineStats.registeredCustomers}</span>
+              </div>
+            </div>
             <div className="relative z-20 flex w-full flex-shrink-0 flex-wrap items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-4 py-4 md:px-6">
               <div className="flex h-11 shrink-0 items-center overflow-hidden rounded-xl border border-surface-03 bg-surface-02">
                 <button
@@ -597,7 +673,7 @@ export default function AdminOrders() {
                               <OrderCard
                                 key={order.id}
                                 order={order}
-                                updating={updatingId === order.id}
+                                updating={updatingId === order.id || deletingId === order.id}
                                 onAdvance={() => {
                                   const next = NEXT_STATUS[order.status];
                                   if (WAITING_PAYMENT_STATUSES.has(order.status)) {
@@ -608,6 +684,8 @@ export default function AdminOrders() {
                                 }}
                                 onAssignMotoboy={() => openAssignModal(order)}
                                 onPrint={(tpl) => printOrder(order, tpl)}
+                                canDelete={canDeleteOrders}
+                                onRequestDelete={() => setDeleteModal({ order, confirmation: "" })}
                                 onDragStart={() => handleDragStart(order.id)}
                                 onDragEnd={handleDragEnd}
                               />
@@ -623,6 +701,66 @@ export default function AdminOrders() {
           </div>
         </div>
       </main>
+
+      {deleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-red-500/30 bg-surface-02 p-6 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 text-red-300">
+                <Trash2 size={18} />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-lg font-bold text-cream">Excluir pedido</h3>
+                <p className="mt-1 text-sm text-stone">
+                  Pedido #{deleteModal.order.id.slice(0, 8).toUpperCase()} de {deleteModal.order.delivery_name}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3">
+              <p className="text-sm font-semibold text-red-100">
+                Esta acao remove o pedido da tela administrativa e nao deve ser usada no lugar de cancelar pedido.
+              </p>
+            </div>
+
+            <label className="mt-5 flex flex-col gap-2">
+              <span className="text-xs font-bold uppercase tracking-widest text-stone">
+                Digite excluir para confirmar
+              </span>
+              <input
+                value={deleteModal.confirmation}
+                onChange={(event) => setDeleteModal((current) => (
+                  current ? { ...current, confirmation: event.target.value } : current
+                ))}
+                autoFocus
+                className="h-11 rounded-xl border border-surface-03 bg-surface-03 px-3 text-sm font-semibold text-cream outline-none transition-colors placeholder:text-stone focus:border-red-400"
+                placeholder="excluir"
+              />
+            </label>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => setDeleteModal(null)}
+                disabled={deletingId === deleteModal.order.id}
+                className="flex-1 rounded-xl border border-surface-03 py-2.5 text-sm text-stone transition-colors hover:text-cream disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDeleteOrder}
+                disabled={
+                  deletingId === deleteModal.order.id ||
+                  deleteModal.confirmation.trim().toLowerCase() !== DELETE_CONFIRMATION_TEXT
+                }
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-red-500 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-500/90 disabled:opacity-50"
+              >
+                {deletingId === deleteModal.order.id && <Loader2 size={14} className="animate-spin" />}
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Motoboy assignment modal */}
       {assignModal && (
@@ -704,11 +842,23 @@ interface OrderCardProps {
   onAdvance: () => void;
   onAssignMotoboy?: () => void;
   onPrint: (template: PrintTemplate) => void;
+  canDelete: boolean;
+  onRequestDelete: () => void;
   onDragStart: () => void;
   onDragEnd: () => void;
 }
 
-function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDragStart, onDragEnd }: OrderCardProps) {
+function OrderCard({
+  order,
+  updating,
+  onAdvance,
+  onAssignMotoboy,
+  onPrint,
+  canDelete,
+  onRequestDelete,
+  onDragStart,
+  onDragEnd,
+}: OrderCardProps) {
   const [printMenuOpen, setPrintMenuOpen] = useState(false);
   const isReadyForPickup = order.status === "ready_for_pickup";
   const isWaitingPayment = WAITING_PAYMENT_STATUSES.has(order.status);
@@ -903,6 +1053,18 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
             <Printer size={14} />
           </button>
         </div>
+
+        {canDelete && (
+          <button
+            onClick={onRequestDelete}
+            disabled={updating}
+            title="Excluir pedido"
+            className="flex items-center justify-center gap-1.5 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+          >
+            <Trash2 size={13} />
+            Excluir
+          </button>
+        )}
       </div>
 
       {printMenuOpen && (

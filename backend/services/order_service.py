@@ -816,6 +816,42 @@ class OrderService:
     def get(self, order_id: str) -> Order:
         return self._get_order(order_id)
 
+    def delete(self, order_id: str) -> None:
+        order = self._get_order(order_id)
+
+        from backend.models.agente_whatsapp import AgenteWhatsAppEvent
+        from backend.models.customer_event import CustomerEvent
+        from backend.models.delivery import Delivery, DeliveryEarning, DeliveryEvent
+        from backend.models.loyalty import LoyaltyBenefitUsage, LoyaltyTransaction
+        from backend.models.store_notification import StoreNotificationCaptured, StoreNotificationImpression
+        from backend.models.upsell import OrderUpsell, UpsellEvent
+
+        delivery = self._db.query(Delivery).filter(Delivery.order_id == order_id).first()
+        if delivery:
+            self._db.query(DeliveryEarning).filter(DeliveryEarning.delivery_id == delivery.id).delete(synchronize_session=False)
+            self._db.query(DeliveryEvent).filter(DeliveryEvent.delivery_id == delivery.id).delete(synchronize_session=False)
+            self._db.delete(delivery)
+
+        self._db.query(Payment).filter(Payment.order_id == order_id).delete(synchronize_session=False)
+        self._db.query(OrderUpsell).filter(OrderUpsell.order_id == order_id).delete(synchronize_session=False)
+        self._db.query(StoreNotificationCaptured).filter(StoreNotificationCaptured.order_id == order_id).delete(synchronize_session=False)
+
+        for model in (
+            AgenteWhatsAppEvent,
+            CustomerEvent,
+            LoyaltyBenefitUsage,
+            LoyaltyTransaction,
+            StoreNotificationImpression,
+            UpsellEvent,
+        ):
+            self._db.query(model).filter(model.order_id == order_id).update(
+                {"order_id": None},
+                synchronize_session=False,
+            )
+
+        self._db.delete(order)
+        self._db.commit()
+
     def list(
         self,
         *,

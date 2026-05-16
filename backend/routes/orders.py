@@ -8,7 +8,7 @@ All business logic lives in OrderService. These handlers only:
 """
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
@@ -20,6 +20,7 @@ from backend.routes.order_access import require_order_or_admin
 from backend.models.order import Order, OrderStatus
 from backend.models.admin import AdminUser
 from backend.models.product import Product
+from backend.models.rbac import Role
 from backend.schemas.order import CheckoutIn, OrderStatusUpdate
 from backend.services.payment_service import PaymentService
 from backend.services.order_service import OrderService
@@ -32,6 +33,19 @@ def _require_admin(request: Request, db: Session) -> AdminUser:
         authorization=request.headers.get("authorization"),
         db=db,
     )
+
+
+def _require_order_delete_access(admin: AdminUser, db: Session) -> None:
+    if not admin.role_id:
+        return
+    role_id = admin.role_id.strip().lower()
+    if role_id in {"master", "administrador", "administrativo"}:
+        return
+    role = db.query(Role).filter(Role.id == admin.role_id).first()
+    role_name = (role.name if role else "").strip().lower()
+    if role_name in {"master", "administrador", "administrativo"}:
+        return
+    raise HTTPException(status_code=403, detail="Apenas administradores e master podem excluir pedidos.")
 
 
 def _build_product_lookup(db: Session, orders: list[Order]) -> dict[str, Product]:
@@ -361,6 +375,19 @@ def cancel_order(
             reason="Cancelado pelo administrador",
         )
         return ok(_serialize_orders(db, [order])[0], "Pedido cancelado.")
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.delete("/{order_id}", status_code=204)
+def delete_order(
+    order_id: str,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    _require_order_delete_access(admin, db)
+    try:
+        OrderService(db).delete(order_id)
     except DomainError as exc:
         return err(exc)
 

@@ -644,6 +644,7 @@ export type MarketingVisitorsPeriod = "today" | "7d" | "30d" | "90d";
 export interface MarketingVisitorData {
   visitors_today: number;
   online_visitors: number;
+  online_registered_customers?: number;
   total_sessions: number;
   total_events: number;
   bounce_rate?: number;
@@ -2075,6 +2076,8 @@ export const ordersApi = {
     put<ApiOrder>(`/orders/${id}/status`, { status }),
 
   cancel: (id: string) => post<ApiOrder>(`/orders/${id}/cancel`, {}),
+
+  remove: (id: string) => del<void>(`/orders/${id}`),
 
   customerCancel: (id: string) =>
     request<ApiOrder>("POST", `/orders/${id}/customer-cancel`, {}, orderAccessHeaders(id)),
