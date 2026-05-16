@@ -607,10 +607,11 @@ export default function Checkout() {
           setPaymentMessage("Preencha os dados do cartao para concluir.");
         } else {
           sessionStorage.removeItem(LOCKED_ORDER_KEY);
+          setPaymentState("approved");
+          setPaymentMessage("Pedido finalizado. O pagamento sera feito na entrega.");
+          navigate(`/order-tracking?orderId=${order.id}`, { replace: true });
           clearCart();
-          setPaymentState("pending");
-          setPaymentMessage("Pedido recebido. O pagamento sera feito na entrega.");
-          setTimeout(() => navigate(`/order-tracking?orderId=${order.id}`), 1200);
+          return;
         }
       }
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
