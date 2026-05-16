@@ -69,6 +69,19 @@ describe("buildEntregaHtml", () => {
     expect(html).not.toContain("(11) 98765-4321");
     expect(html).not.toContain("Telefone");
   });
+
+  it("mantem coluna de valores dentro dos tres tamanhos de papel", () => {
+    const order = deliveryOrder();
+
+    for (const paperWidth of ["58mm", "80mm", "a4"] as const) {
+      const html = buildEntregaHtml(order, { ...DEFAULT_PRINTER_SETTINGS, paperWidth });
+
+      expect(html).toContain("@page{size:");
+      expect(html).toContain("table-layout:fixed");
+      expect(html).toContain('class="b qty"');
+      expect(html).toContain('class="price"');
+    }
+  });
 });
 
 describe("buildPrintHtml", () => {
@@ -82,5 +95,23 @@ describe("buildPrintHtml", () => {
     expect(cozinha).toContain("COMANDA COZINHA");
     expect(completo).toContain("Pedido: ");
     expect(completo).toContain(order.delivery_phone);
+  });
+
+  it("usa medidas reais e colunas fixas para os tres tamanhos de nota", () => {
+    const order = deliveryOrder();
+
+    for (const paperWidth of ["58mm", "80mm", "a4"] as const) {
+      const html = buildPrintHtml(order, "completo", { ...DEFAULT_PRINTER_SETTINGS, paperWidth });
+
+      expect(html).toContain("@page{size:");
+      expect(html).toContain("table-layout:fixed");
+      expect(html).toContain('class="qty"');
+      expect(html).toContain('class="price"');
+      expect(html).toContain('class="totals"');
+    }
+
+    expect(buildPrintHtml(order, "completo", { ...DEFAULT_PRINTER_SETTINGS, paperWidth: "58mm" })).toContain("width:54mm");
+    expect(buildPrintHtml(order, "completo", { ...DEFAULT_PRINTER_SETTINGS, paperWidth: "80mm" })).toContain("width:76mm");
+    expect(buildPrintHtml(order, "completo", { ...DEFAULT_PRINTER_SETTINGS, paperWidth: "a4" })).toContain("width:190mm");
   });
 });

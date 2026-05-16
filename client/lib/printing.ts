@@ -79,25 +79,76 @@ function maskCustomerName(name?: string | null) {
 // ── Paper width → CSS max-width ───────────────────────────────────────────────
 
 function paperCss(width: PaperWidth) {
-  if (width === "58mm") return "max-width:220px";
-  if (width === "80mm") return "max-width:310px";
-  return "max-width:600px";
+  const size = {
+    "58mm": {
+      page: "58mm auto",
+      body: "54mm",
+      padding: "1.5mm",
+      font: "10px",
+      small: "8.5px",
+      qty: "5mm",
+      price: "15mm",
+    },
+    "80mm": {
+      page: "80mm auto",
+      body: "76mm",
+      padding: "2mm",
+      font: "11px",
+      small: "9.5px",
+      qty: "6mm",
+      price: "18mm",
+    },
+    a4: {
+      page: "A4 portrait",
+      body: "190mm",
+      padding: "8mm",
+      font: "12px",
+      small: "10px",
+      qty: "12mm",
+      price: "24mm",
+    },
+  }[width];
+
+  return `
+    @page{size:${size.page};margin:0}
+    html{margin:0;padding:0;width:${size.body}}
+    body{
+      --qty-col:${size.qty};
+      --price-col:${size.price};
+      --receipt-small:${size.small};
+      box-sizing:border-box;
+      width:${size.body};
+      max-width:${size.body};
+      margin:0 auto;
+      padding:${size.padding};
+      font-size:${size.font};
+    }
+    @media print{
+      html,body{width:${size.body};max-width:${size.body}}
+      body{margin:0;padding:${size.padding}}
+    }
+  `;
 }
 
 // ── Base CSS ──────────────────────────────────────────────────────────────────
 
 function baseCss() {
   return `
-    body{font-family:'Courier New',Courier,monospace;font-size:12px;margin:0;padding:12px;color:#000}
+    *,*::before,*::after{box-sizing:border-box}
+    body{font-family:'Courier New',Courier,monospace;line-height:1.25;color:#000}
     p{margin:2px 0}
     hr{border:none;border-top:1px dashed #555;margin:6px 0}
-    table{width:100%;border-collapse:collapse}
-    td{vertical-align:top;padding:1px 2px}
+    table{width:100%;max-width:100%;border-collapse:collapse;table-layout:fixed}
+    td{vertical-align:top;padding:1px 1px;overflow-wrap:anywhere;word-break:break-word}
+    .qty{width:var(--qty-col);white-space:nowrap}
+    .price{width:var(--price-col);white-space:nowrap;text-align:right}
+    .desc{width:auto}
+    .totals td:last-child{width:var(--price-col);white-space:nowrap;text-align:right}
     .c{text-align:center}
     .r{text-align:right}
     .b{font-weight:bold}
-    .s{font-size:10px;color:#444}
-    @media print{body{padding:0}button{display:none}}
+    .s{font-size:var(--receipt-small);color:#444}
+    @media print{button{display:none}}
   `;
 }
 
@@ -154,9 +205,9 @@ export function buildCompletoHtml(order: ApiOrder, settings: PrinterSettings): s
     const subHtml = subLines.map((l) => `<br/><span class="s">${l}</span>`).join("");
 
     return `<tr>
-      <td style="width:22px;padding-top:2px">${item.quantity}</td>
-      <td style="width:100%"><span class="b">${mainName}</span>${subHtml}</td>
-      <td class="r" style="white-space:nowrap;padding-top:2px">${fmt(item.unit_price * item.quantity)}</td>
+      <td class="qty" style="padding-top:2px">${item.quantity}</td>
+      <td class="desc"><span class="b">${mainName}</span>${subHtml}</td>
+      <td class="price" style="padding-top:2px">${fmt(item.unit_price * item.quantity)}</td>
     </tr>`;
   }).join("");
 
@@ -182,7 +233,7 @@ export function buildCompletoHtml(order: ApiOrder, settings: PrinterSettings): s
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <title>Pedido ${num}</title>
-<style>${baseCss()}body{${paperCss(settings.paperWidth)}}</style>
+<style>${baseCss()}${paperCss(settings.paperWidth)}</style>
 </head><body>
 
 ${headerParts}
@@ -210,9 +261,9 @@ ${deliveryLine}
 <hr/>
 <table>
   <tr>
-    <td class="b s" style="width:22px">Qt.</td>
+    <td class="b s qty">Qt.</td>
     <td class="b s">Descrição</td>
-    <td class="b s r">Valor</td>
+    <td class="b s price">Valor</td>
   </tr>
 </table>
 <hr/>
@@ -227,7 +278,7 @@ ${deliveryLine}
 </table>
 <hr/>
 
-<table>${finRows}</table>
+<table class="totals">${finRows}</table>
 <hr/>
 
 <p class="c s">Obrigado pela preferência!</p>
@@ -243,8 +294,8 @@ export function buildCozinhaHtml(order: ApiOrder, settings: PrinterSettings): st
   const items = itemLines(order);
   const rows = items.map((i) => `
     <tr>
-      <td style="font-size:15px;font-weight:bold;padding:4px 2px">${i.qty}x</td>
-      <td style="width:100%;padding:4px 2px">
+      <td class="qty" style="font-size:15px;font-weight:bold;padding:4px 2px">${i.qty}x</td>
+      <td class="desc" style="padding:4px 2px">
         <div style="font-size:14px;font-weight:bold;text-transform:uppercase">${i.name}</div>
         ${i.details ? `<div class="s">${i.details}</div>` : ""}
         ${i.addOns.map((a) => `<div class="s">+ ${a}</div>`).join("")}
@@ -256,7 +307,7 @@ export function buildCozinhaHtml(order: ApiOrder, settings: PrinterSettings): st
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <title>Comanda ${num}</title>
-<style>${baseCss()}body{${paperCss(settings.paperWidth)}}</style>
+<style>${baseCss()}${paperCss(settings.paperWidth)}</style>
 </head><body>
 <p class="c" style="font-size:11px;font-weight:bold;letter-spacing:2px">*** COMANDA COZINHA ***</p>
 <p class="c b" style="font-size:16px">PEDIDO ${num}</p>
@@ -275,13 +326,13 @@ export function buildEntregaHtml(order: ApiOrder, settings: PrinterSettings): st
   const items = itemLines(order);
   const rows = items.map((i) => `
     <tr>
-      <td class="b">${i.qty}x</td>
-      <td style="width:100%">
+      <td class="b qty">${i.qty}x</td>
+      <td class="desc">
         <span class="b">${i.name}</span>
         ${i.details ? `<br/><span class="s">${i.details}</span>` : ""}
         ${i.addOns.map((a) => `<br/><span class="s">+ ${a}</span>`).join("")}
       </td>
-      <td class="r" style="white-space:nowrap">${fmt(i.price)}</td>
+      <td class="price">${fmt(i.price)}</td>
     </tr>`).join("");
 
   const created = new Date(order.created_at);
@@ -289,7 +340,7 @@ export function buildEntregaHtml(order: ApiOrder, settings: PrinterSettings): st
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <title>Entrega ${num}</title>
-<style>${baseCss()}body{${paperCss(settings.paperWidth)}}</style>
+<style>${baseCss()}${paperCss(settings.paperWidth)}</style>
 </head><body>
 <p class="c" style="font-size:11px;font-weight:bold;letter-spacing:2px">*** VIA ENTREGA ***</p>
 <p class="c b" style="font-size:16px">PEDIDO ${num}</p>
