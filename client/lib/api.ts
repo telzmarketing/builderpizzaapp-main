@@ -488,6 +488,7 @@ export interface ApiStoreNotificationInput {
   weight: number;
   display_seconds: number;
   purchase_minutes_ago: number;
+  clear_after_view: boolean;
   start_time: string;
   end_time: string;
   start_date?: string | null;

@@ -88,6 +88,7 @@ const emptyForm = (): ApiStoreNotificationInput => ({
   weight: 1,
   display_seconds: 7,
   purchase_minutes_ago: 14,
+  clear_after_view: false,
   start_time: "18:00",
   end_time: "23:30",
   start_date: null,
@@ -229,6 +230,7 @@ export default function MarketingStoreNotifications() {
       weight: item.weight,
       display_seconds: item.display_seconds,
       purchase_minutes_ago: item.purchase_minutes_ago ?? 14,
+      clear_after_view: item.clear_after_view,
       start_time: item.start_time.slice(0, 5),
       end_time: item.end_time.slice(0, 5),
       start_date: item.start_date ?? null,
@@ -254,6 +256,7 @@ export default function MarketingStoreNotifications() {
       weight: 1,
       display_seconds: 7,
       purchase_minutes_ago: 14,
+      clear_after_view: true,
       start_time: "18:00",
       end_time: "23:30",
       start_date: null,
@@ -488,10 +491,10 @@ export default function MarketingStoreNotifications() {
 
             <div className="overflow-hidden rounded-2xl border border-surface-03 bg-surface-02">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[980px] text-sm">
+                <table className="w-full min-w-[1080px] text-sm">
                   <thead>
                     <tr className="border-b border-surface-03 bg-surface-03/40 text-xs text-stone">
-                      {["Status", "Nome interno", "Tipo", "Produto", "Bairro", "Tempo", "Dias ativos", "Horario", "Prioridade", "Ultima exibicao", "Acoes"].map((header) => (
+                      {["Status", "Nome interno", "Tipo", "Produto", "Bairro", "Tempo", "Limpeza", "Dias ativos", "Horario", "Prioridade", "Ultima exibicao", "Acoes"].map((header) => (
                         <th key={header} className="p-3 text-left font-medium">{header}</th>
                       ))}
                     </tr>
@@ -499,7 +502,7 @@ export default function MarketingStoreNotifications() {
                   <tbody className="divide-y divide-surface-03">
                     {items.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="p-10 text-center text-sm text-stone">
+                        <td colSpan={12} className="p-10 text-center text-sm text-stone">
                           Nenhuma notificacao manual cadastrada.
                         </td>
                       </tr>
@@ -515,6 +518,7 @@ export default function MarketingStoreNotifications() {
                         <td className="p-3 text-stone">{item.product_name ?? productName(products, item.product_id)}</td>
                         <td className="p-3 text-stone">{item.neighborhood || "-"}</td>
                         <td className="p-3 text-stone">{item.purchase_minutes_ago ?? 12} min</td>
+                        <td className="p-3 text-stone">{item.clear_after_view ? "Apos vista" : "Mantem ativa"}</td>
                         <td className="p-3 text-stone">{daysLabel(item.weekdays)}</td>
                         <td className="p-3 text-stone">{item.start_time.slice(0, 5)} - {item.end_time.slice(0, 5)}</td>
                         <td className="p-3 text-stone">{PRIORITY_LABEL[item.priority]}</td>
@@ -764,6 +768,13 @@ export default function MarketingStoreNotifications() {
                   onChange={(e) => setForm((f) => ({ ...f, purchase_minutes_ago: Number(e.target.value) }))}
                 />
               </Field>
+              <div className="md:col-span-2">
+                <ToggleRow
+                  label="Limpar apos ser vista"
+                  checked={form.clear_after_view}
+                  onChange={(clear_after_view) => setForm((f) => ({ ...f, clear_after_view }))}
+                />
+              </div>
               <Field label="Prioridade">
                 <select className={IC} value={form.priority} onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value as ApiStoreNotificationPriority }))}>
                   <option value="low">Baixa</option>

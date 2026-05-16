@@ -45,6 +45,7 @@ class StoreNotification(Base):
     weight = Column(Integer, default=1, nullable=False)
     display_seconds = Column(Integer, default=7, nullable=False)
     purchase_minutes_ago = Column(Integer, default=12, nullable=False)
+    clear_after_view = Column(Boolean, default=False, nullable=False)
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
     start_date = Column(Date, nullable=True)

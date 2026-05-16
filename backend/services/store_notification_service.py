@@ -154,6 +154,7 @@ class StoreNotificationService:
             weight=notification.weight,
             display_seconds=notification.display_seconds,
             purchase_minutes_ago=notification.purchase_minutes_ago or 12,
+            clear_after_view=bool(notification.clear_after_view),
             start_time=notification.start_time,
             end_time=notification.end_time,
             start_date=notification.start_date,
@@ -271,6 +272,9 @@ class StoreNotificationService:
             displayed_at=datetime.now(timezone.utc),
         )
         self._db.add(impression)
+        if notification.clear_after_view:
+            notification.status = "paused"
+            notification.updated_at = datetime.now(timezone.utc)
         self._db.commit()
 
     # ── Captured notifications ────────────────────────────────────────────────
@@ -435,6 +439,7 @@ class StoreNotificationService:
             "weight": notification.weight,
             "display_seconds": notification.display_seconds,
             "purchase_minutes_ago": notification.purchase_minutes_ago or 12,
+            "clear_after_view": bool(notification.clear_after_view),
             "start_time": notification.start_time,
             "end_time": notification.end_time,
             "start_date": notification.start_date,

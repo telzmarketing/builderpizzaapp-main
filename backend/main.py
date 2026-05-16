@@ -981,6 +981,7 @@ def _run_migrations():
         "ALTER TABLE store_notification_settings ADD COLUMN IF NOT EXISTS initial_delay_seconds INTEGER NOT NULL DEFAULT 5",
         "ALTER TABLE store_notifications ADD COLUMN IF NOT EXISTS source_customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL",
         "ALTER TABLE store_notifications ADD COLUMN IF NOT EXISTS purchase_minutes_ago INTEGER NOT NULL DEFAULT 12",
+        "ALTER TABLE store_notifications ADD COLUMN IF NOT EXISTS clear_after_view BOOLEAN NOT NULL DEFAULT FALSE",
         """CREATE TABLE IF NOT EXISTS store_notification_captured (
             id VARCHAR PRIMARY KEY,
             order_id VARCHAR REFERENCES orders(id) ON DELETE CASCADE,

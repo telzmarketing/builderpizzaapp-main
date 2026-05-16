@@ -54,6 +54,7 @@ class StoreNotificationBase(BaseModel):
     weight: int = Field(default=1, ge=1, le=100)
     display_seconds: int = Field(default=7, ge=3, le=60)
     purchase_minutes_ago: int = Field(default=12, gt=0, le=1440)
+    clear_after_view: bool = False
     start_time: time
     end_time: time
     start_date: date | None = None
@@ -94,6 +95,7 @@ class StoreNotificationUpdate(BaseModel):
     weight: int | None = Field(default=None, ge=1, le=100)
     display_seconds: int | None = Field(default=None, ge=3, le=60)
     purchase_minutes_ago: int | None = Field(default=None, gt=0, le=1440)
+    clear_after_view: bool | None = None
     start_time: time | None = None
     end_time: time | None = None
     start_date: date | None = None
