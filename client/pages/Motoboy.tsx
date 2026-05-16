@@ -534,8 +534,14 @@ export default function Motoboy() {
         {/* Header */}
         <header className="sticky top-0 z-30 border-b border-surface-03 bg-surface-01/95 backdrop-blur">
           {/* Barra com logo */}
-          <div className="flex items-center justify-between border-b border-surface-03/50 px-4 py-2">
-            <MoschettieriLogo className="text-cream text-sm scale-110 origin-left" />
+          <div className="flex items-center justify-between gap-3 border-b border-surface-03/50 px-4 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <MoschettieriLogo className="shrink-0 text-cream text-lg leading-none" />
+              <div className="min-w-0 border-l border-gold/25 pl-3">
+                <p className="truncate text-[10px] font-bold uppercase tracking-[0.22em] text-gold">App do Motoboy</p>
+                <p className="truncate text-xs font-medium text-stone">Entregas Moschettieri</p>
+              </div>
+            </div>
             <div className="flex items-center gap-2">
               {/* GPS */}
               <button
