@@ -106,6 +106,7 @@ class DeliveryCompleteIn(BaseModel):
     recipient_name: Optional[str] = None
     delivery_photo_url: Optional[str] = None
     notes: Optional[str] = None
+    payment_received: bool = False
 
 
 class DeliveryRateIn(BaseModel):

@@ -30,6 +30,7 @@ from backend.models.delivery import (
     DeliveryPersonStatus, LogisticsSettings, GeocodeCache,
 )
 from backend.models.order import Order, OrderStatus
+from backend.models.payment import PaymentStatus
 
 _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -716,12 +717,25 @@ class DeliveryService:
         recipient_name: str | None = None,
         delivery_photo_url: str | None = None,
         notes: str | None = None,
+        payment_received: bool = False,
     ) -> Delivery:
         """Driver completes own delivered delivery with proof fields."""
         self._get_delivery_person(person_id)
         owned = self._get_driver_delivery(person_id, delivery_id)
         if owned.status == DeliveryStatus.completed:
             return owned
+        order = self._get_order(owned.order_id)
+        payment = order.payment
+        pending_pay_on_delivery = bool(
+            payment
+            and payment.pay_on_delivery
+            and payment.status not in {PaymentStatus.approved, PaymentStatus.paid}
+        )
+        if pending_pay_on_delivery and not payment_received:
+            raise DomainError("Confirme o recebimento do pagamento na entrega para finalizar.", code="PaymentReceiptRequired")
+        if payment_received and not (payment and payment.pay_on_delivery):
+            raise DomainError("Este pedido nao e pagamento na entrega.", code="PaymentMethodMismatch")
+
         if owned.status != DeliveryStatus.delivered:
             owned = self.mark_driver_delivered(person_id, delivery_id, notes=notes)
         delivery = self.complete(
@@ -730,13 +744,25 @@ class DeliveryService:
             delivery_photo_url=delivery_photo_url,
             notes=notes,
         )
+        if payment_received:
+            from backend.services.payment_service import PaymentService
+
+            PaymentService(self._db).confirm_pay_on_delivery(
+                delivery.order_id,
+                source="driver_delivery",
+            )
         self._add_event(
             delivery_id,
             "driver_completed",
             description="Motoboy concluiu a entrega pelo app.",
             actor_type="driver",
             actor_id=person_id,
-            metadata={"recipient_name": recipient_name, "has_photo": bool(delivery_photo_url), "notes": notes},
+            metadata={
+                "recipient_name": recipient_name,
+                "has_photo": bool(delivery_photo_url),
+                "notes": notes,
+                "payment_received": payment_received,
+            },
         )
         self._db.commit()
         self._db.refresh(delivery)

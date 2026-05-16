@@ -3276,7 +3276,18 @@ export interface OrderAddress {
   notes?: string;
   created_at?: string;
   paid_at?: string;
-  payment?: { method?: string; status?: string };
+  pay_on_delivery?: boolean;
+  delivery_payment_method?: "cash" | "card" | string | null;
+  cash_needs_change?: boolean | null;
+  cash_change_for?: number | null;
+  payment?: {
+    method?: string;
+    status?: string;
+    pay_on_delivery?: boolean;
+    delivery_payment_method?: "cash" | "card" | string | null;
+    cash_needs_change?: boolean | null;
+    cash_change_for?: number | null;
+  };
 }
 
 export interface DeliveryRecord {
@@ -3462,8 +3473,8 @@ export const deliveryApi = {
     driverRequest<DeliveryPerson>("PUT", "/delivery/driver/location", { lat, lng }),
   driverStartDelivery: (deliveryId: string, notes?: string) =>
     driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/start`, { notes }),
-  driverCompleteDelivery: (deliveryId: string, notes?: string) =>
-    driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/complete`, { notes }),
+  driverCompleteDelivery: (deliveryId: string, notes?: string, payment_received = false) =>
+    driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/complete`, { notes, payment_received }),
   driverReportProblem: (deliveryId: string, reason: string, description?: string) =>
     driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/problem`, { reason, description }),
 

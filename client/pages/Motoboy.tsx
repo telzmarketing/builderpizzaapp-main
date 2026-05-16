@@ -86,6 +86,21 @@ function deliveryAddress(delivery: DeliveryRecord): string | null {
     .join(", ");
 }
 
+function isPayOnDelivery(delivery: DeliveryRecord) {
+  return Boolean(delivery.order?.payment?.pay_on_delivery || delivery.order?.pay_on_delivery);
+}
+
+function isDeliveryPaymentConfirmed(delivery: DeliveryRecord) {
+  const status = delivery.order?.payment?.status || delivery.order?.payment_status;
+  return status === "approved" || status === "paid";
+}
+
+function paymentLine(delivery: DeliveryRecord) {
+  if (isPayOnDelivery(delivery)) return "Pagamento na entrega";
+  if (isDeliveryPaymentConfirmed(delivery)) return "Pagamento online efetuado";
+  return "Pagamento online";
+}
+
 function effectiveDate(delivery: DeliveryRecord): string | undefined {
   return delivery.order?.paid_at || delivery.order?.created_at || delivery.assigned_at || delivery.created_at;
 }
@@ -186,10 +201,11 @@ function DeliveryCard({
   currentLocation: { lat: number; lng: number } | null;
   busy: boolean;
   onStart:    (d: DeliveryRecord) => void;
-  onComplete: (d: DeliveryRecord) => void;
+  onComplete: (d: DeliveryRecord, paymentReceived: boolean) => void;
   onProblem:  (d: DeliveryRecord) => void;
   onView:     (d: DeliveryRecord) => void;
 }) {
+  const [paymentReceived, setPaymentReceived] = useState(false);
   const order      = delivery.order;
   const address    = deliveryAddress(delivery);
   const mapsUrl    = address ? googleMapsRouteUrl(address, currentLocation) : null;
@@ -197,6 +213,7 @@ function DeliveryCard({
   const statusCls  = STATUS_CLASSES[delivery.status] || "border-surface-03 bg-surface-03/50 text-stone";
   const canStart   = delivery.status === "assigned" || delivery.status === "picked_up";
   const canComplete= delivery.status === "on_the_way" || delivery.status === "picked_up" || delivery.status === "assigned";
+  const requiresPaymentReceipt = isPayOnDelivery(delivery) && !isDeliveryPaymentConfirmed(delivery);
 
   return (
     <article className="overflow-hidden rounded-xl border border-surface-03 bg-surface-02 shadow-lg shadow-black/20">
@@ -233,6 +250,10 @@ function DeliveryCard({
 
         <div className="flex flex-wrap items-center gap-3 text-xs text-stone">
           <span className="inline-flex items-center gap-1"><Clock3 size={12} /><EtaLine delivery={delivery} /></span>
+        </div>
+
+        <div className="rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-xs">
+          <p className="font-bold text-parchment">{paymentLine(delivery)}</p>
         </div>
       </div>
 
@@ -272,14 +293,27 @@ function DeliveryCard({
         )}
 
         {canComplete && (
-          <button
-            disabled={busy}
-            onClick={() => onComplete(delivery)}
-            className="col-span-2 flex h-12 items-center justify-center gap-2 rounded-lg bg-green-600 font-black text-white disabled:opacity-50 hover:bg-green-700 transition-colors"
-          >
-            {busy ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-            Marcar como entregue
-          </button>
+          <>
+            {requiresPaymentReceipt && (
+              <label className="col-span-2 flex items-center gap-2 rounded-lg border border-gold/25 bg-gold/10 px-3 py-2 text-sm font-bold text-parchment">
+                <input
+                  type="checkbox"
+                  checked={paymentReceived}
+                  onChange={(event) => setPaymentReceived(event.target.checked)}
+                  className="h-4 w-4 accent-gold"
+                />
+                Confirmo que recebi o pagamento na entrega
+              </label>
+            )}
+            <button
+              disabled={busy || (requiresPaymentReceipt && !paymentReceived)}
+              onClick={() => onComplete(delivery, requiresPaymentReceipt ? paymentReceived : false)}
+              className="col-span-2 flex h-12 items-center justify-center gap-2 rounded-lg bg-green-600 font-black text-white disabled:opacity-50 hover:bg-green-700 transition-colors"
+            >
+              {busy ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+              Marcar como entregue
+            </button>
+          </>
         )}
 
         <button
@@ -668,7 +702,7 @@ export default function Motoboy() {
                 currentLocation={mapLocation}
                 busy={actionLoading === activeDeliveries[0].id}
                 onStart={(d) => runAction(d.id, () => deliveryApi.driverStartDelivery(d.id))}
-                onComplete={(d) => runAction(d.id, () => deliveryApi.driverCompleteDelivery(d.id))}
+                onComplete={(d, paymentReceived) => runAction(d.id, () => deliveryApi.driverCompleteDelivery(d.id, undefined, paymentReceived))}
                 onProblem={setProblem}
                 onView={setDetail}
               />
@@ -712,7 +746,7 @@ export default function Motoboy() {
                     currentLocation={mapLocation}
                     busy={actionLoading === delivery.id}
                     onStart={(d) => runAction(d.id, () => deliveryApi.driverStartDelivery(d.id))}
-                    onComplete={(d) => runAction(d.id, () => deliveryApi.driverCompleteDelivery(d.id))}
+                    onComplete={(d, paymentReceived) => runAction(d.id, () => deliveryApi.driverCompleteDelivery(d.id, undefined, paymentReceived))}
                     onProblem={setProblem}
                     onView={setDetail}
                   />

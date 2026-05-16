@@ -787,6 +787,26 @@ class PaymentService:
         self._db.refresh(payment)
         return PaymentOut.model_validate(payment)
 
+    def confirm_pay_on_delivery(self, order_id: str, *, source: str = "pay_on_delivery") -> PaymentOut:
+        order = self._get_order(order_id)
+        payment = order.payment
+        if not payment:
+            raise PaymentNotFound(order_id)
+        if not payment.pay_on_delivery:
+            raise DomainError("Este pedido nao e pagamento na entrega.", code="PaymentMethodMismatch")
+        if payment.status in {PaymentStatus.approved, PaymentStatus.paid}:
+            return PaymentOut.model_validate(payment)
+        if payment.status != PaymentStatus.pending:
+            raise DomainError("Somente pagamentos pendentes podem ser confirmados.", code="PaymentNotPending")
+
+        if not payment.transaction_id:
+            payment.transaction_id = f"DELIVERY-{uuid.uuid4().hex[:8].upper()}"
+        self._db.add(payment)
+        self._db.flush()
+        self._apply_status(payment, PaymentStatus.approved, source=source)
+        self._db.refresh(payment)
+        return PaymentOut.model_validate(payment)
+
     def get_by_order(self, order_id: str) -> PaymentOut:
         payment = self._get_payment_by_order(order_id)
         self._sync_pending_mercado_pago_payment(payment, source="status_poll")

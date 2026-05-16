@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Save, Eye, EyeOff, CheckCircle, AlertCircle, Loader2, CreditCard, QrCode, Wallet } from "lucide-react";
+import { Save, Eye, EyeOff, CheckCircle, AlertCircle, Loader2, CreditCard, QrCode, Wallet, Banknote } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import {
@@ -63,7 +63,7 @@ export default function AdminPagamentos() {
           accept_pix: gatewayData.accept_pix,
           accept_credit_card: gatewayData.accept_credit_card,
           accept_debit_card: gatewayData.accept_debit_card,
-          accept_cash: false,
+          accept_cash: gatewayData.accept_cash,
           mp_public_key: gatewayData.mp_public_key || "",
           mp_access_token: "",
           mp_webhook_secret: "",
@@ -93,7 +93,6 @@ export default function AdminPagamentos() {
       }
 
       payload.gateway = "mercadopago";
-      payload.accept_cash = false;
       const updated = await adminApi.updatePaymentGateway(payload as ApiPaymentGatewayConfigUpdate) as GatewayConfig;
       setConfig(updated);
       setSaved(true);
@@ -219,11 +218,12 @@ export default function AdminPagamentos() {
                   <div className="px-6 py-4 border-b border-surface-03">
                     <h3 className="text-lg font-bold text-cream">Métodos de Pagamento Aceitos</h3>
                   </div>
-                  <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-6 grid grid-cols-1 md:grid-cols-4 gap-4">
                     {[
                       { key: "accept_pix", icon: QrCode, label: "PIX" },
                       { key: "accept_credit_card", icon: CreditCard, label: "Cartão de Crédito" },
                       { key: "accept_debit_card", icon: Wallet, label: "Cartão de Débito" },
+                      { key: "accept_cash", icon: Banknote, label: "Pagamento na Entrega" },
                     ].map(({ key, icon: Icon, label }) => (
                       <button
                         key={key}

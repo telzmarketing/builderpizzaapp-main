@@ -248,6 +248,7 @@ def _mask_customer_name(name: str | None) -> str:
 
 def _driver_delivery_payload(delivery):
     order = getattr(delivery, "order", None)
+    payment = getattr(order, "payment", None) if order else None
     return {
         "id": delivery.id,
         "order_id": delivery.order_id,
@@ -276,13 +277,25 @@ def _driver_delivery_payload(delivery):
             "delivery_city": order.delivery_city,
             "delivery_complement": order.delivery_complement,
             "status": order.status.value if hasattr(order.status, "value") else order.status,
-            "payment_status": order.payment_status.value if hasattr(order.payment_status, "value") else order.payment_status,
+            "payment_status": payment.status.value if payment else None,
             "subtotal": order.subtotal,
             "shipping_fee": order.shipping_fee,
             "total": order.total,
             "notes": order.notes,
             "created_at": order.created_at,
             "paid_at": order.paid_at,
+            "pay_on_delivery": bool(payment.pay_on_delivery) if payment else False,
+            "delivery_payment_method": payment.delivery_payment_method if payment else None,
+            "cash_needs_change": payment.cash_needs_change if payment else None,
+            "cash_change_for": payment.cash_change_for if payment else None,
+            "payment": None if not payment else {
+                "method": payment.method.value if hasattr(payment.method, "value") else payment.method,
+                "status": payment.status.value if hasattr(payment.status, "value") else payment.status,
+                "pay_on_delivery": bool(payment.pay_on_delivery),
+                "delivery_payment_method": payment.delivery_payment_method,
+                "cash_needs_change": payment.cash_needs_change,
+                "cash_change_for": payment.cash_change_for,
+            },
         },
     }
 
@@ -397,6 +410,7 @@ def driver_complete_delivery(
             recipient_name=payload.recipient_name,
             delivery_photo_url=payload.delivery_photo_url,
             notes=payload.notes,
+            payment_received=payload.payment_received,
         )
         return ok(_driver_delivery_payload(delivery), "Entrega marcada como entregue.")
     except (ValueError, DomainError) as exc:

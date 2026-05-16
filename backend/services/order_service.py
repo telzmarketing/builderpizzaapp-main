@@ -486,8 +486,27 @@ class OrderService:
             delivery_fee_final = 0.0
             free_shipping_applied = True
 
-        # 4. Build order
         total = round(subtotal + delivery_fee_final - discount, 2)
+        is_pay_on_delivery = payload.payment_method == "pay_on_delivery"
+        delivery_payment_method = (payload.delivery_payment_method or "").strip().lower() if is_pay_on_delivery else None
+        if is_pay_on_delivery:
+            payment_config = self._db.query(PaymentGatewayConfig).filter(PaymentGatewayConfig.id == "default").first()
+            if payment_config and not payment_config.accept_cash:
+                raise DomainError("Pagamento na entrega esta indisponivel no momento.", code="PaymentMethodDisabled")
+        if is_pay_on_delivery and delivery_payment_method not in {"cash", "card"}:
+            raise DomainError("Escolha se o pagamento na entrega sera em cartao ou dinheiro.", code="InvalidDeliveryPaymentMethod")
+        cash_needs_change = bool(payload.cash_needs_change) if delivery_payment_method == "cash" else None
+        cash_change_for = float(payload.cash_change_for or 0) if cash_needs_change else None
+        if cash_change_for is not None and cash_change_for <= total:
+            raise DomainError("O valor para troco deve ser maior que o total do pedido.", code="InvalidCashChange")
+
+        payment_method = (
+            PaymentMethod.cash
+            if is_pay_on_delivery
+            else PaymentMethod(payload.payment_method) if payload.payment_method in PaymentMethod._value2member_map_ else PaymentMethod.pix
+        )
+
+        # 4. Build order
         order_id = f"order-{uuid.uuid4().hex[:8]}"
         external_reference = order_id
         order_code = self._generate_order_code()
@@ -501,7 +520,7 @@ class OrderService:
             delivery_street=payload.delivery.street,
             delivery_city=payload.delivery.city,
             delivery_complement=payload.delivery.complement,
-            status=OrderStatus.aguardando_pagamento,
+            status=OrderStatus.paid if is_pay_on_delivery else OrderStatus.aguardando_pagamento,
             coupon_id=resolved_coupon_id,
             campaign_id=payload.campaign_id,
             utm_source=payload.utm_source,
@@ -528,24 +547,6 @@ class OrderService:
         self._db.flush()
         self._save_first_delivery_address(payload)
 
-        is_pay_on_delivery = payload.payment_method == "pay_on_delivery"
-        delivery_payment_method = (payload.delivery_payment_method or "").strip().lower() if is_pay_on_delivery else None
-        if is_pay_on_delivery:
-            payment_config = self._db.query(PaymentGatewayConfig).filter(PaymentGatewayConfig.id == "default").first()
-            if payment_config and not payment_config.accept_cash:
-                raise DomainError("Pagamento na entrega esta indisponivel no momento.", code="PaymentMethodDisabled")
-        if is_pay_on_delivery and delivery_payment_method not in {"cash", "card"}:
-            raise DomainError("Escolha se o pagamento na entrega sera em cartao ou dinheiro.", code="InvalidDeliveryPaymentMethod")
-        cash_needs_change = bool(payload.cash_needs_change) if delivery_payment_method == "cash" else None
-        cash_change_for = float(payload.cash_change_for or 0) if cash_needs_change else None
-        if cash_change_for is not None and cash_change_for <= total:
-            raise DomainError("O valor para troco deve ser maior que o total do pedido.", code="InvalidCashChange")
-
-        payment_method = (
-            PaymentMethod.cash
-            if is_pay_on_delivery
-            else PaymentMethod(payload.payment_method) if payload.payment_method in PaymentMethod._value2member_map_ else PaymentMethod.pix
-        )
         self._db.add(Payment(
             id=str(uuid.uuid4()),
             order_id=order.id,

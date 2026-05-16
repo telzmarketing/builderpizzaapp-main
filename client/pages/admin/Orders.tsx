@@ -19,9 +19,9 @@ function playNewOrderAlert() {
 const STATUS_LABELS: Record<string, string> = {
   pending: "Aguardando",
   waiting_payment: "Ag. pagamento",
-  paid: "Pago",
+  paid: "Pedido confirmado",
   aguardando_pagamento: "Ag. pagamento",
-  pago: "Pago",
+  pago: "Pedido confirmado",
   pagamento_recusado: "Pgto recusado",
   pagamento_expirado: "Pgto expirado",
   preparing: "Preparando",
@@ -56,8 +56,8 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
   },
   {
     id: "paid",
-    title: "Pago",
-    description: "Confirmados pelo fluxo de pagamento",
+    title: "Pedido Confirmado",
+    description: "Pedidos confirmados para preparo",
     statuses: ["paid", "pago"],
     icon: CheckCircle2,
     accent: "text-cyan-300 bg-cyan-500/10 border-cyan-500/20",
@@ -233,6 +233,12 @@ function orderTimeLabel(order: ApiOrder) {
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
+
+function paymentInfoLabel(order: ApiOrder) {
+  if (order.pay_on_delivery) return "Pagamento na entrega";
+  if (order.payment_status === "approved" || order.payment_status === "paid") return "Pagamento online efetuado";
+  return null;
+}
 
 export default function AdminOrders() {
   const [orders, setOrders] = useState<ApiOrder[]>([]);
@@ -692,6 +698,7 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
   const isWaitingPayment = WAITING_PAYMENT_STATUSES.has(order.status);
   const nextLabel = isReadyForPickup ? null : NEXT_LABEL[order.status];
   const unresolvedDeliveryProblem = Boolean(order.delivery?.problem_report && !order.delivery.problem_resolved_at);
+  const paymentInfo = paymentInfoLabel(order);
 
   const itemSummary = order.items.slice(0, 2).map((item) => {
     const isMulti = item.flavor_division > 1;
@@ -752,17 +759,9 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
         </div>
       </div>
 
-      {order.pay_on_delivery && (
+      {paymentInfo && (
         <div className="mt-3 rounded-xl border border-gold/25 bg-gold/10 px-3 py-2">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gold">Pagamento na entrega</p>
-          <p className="mt-1 text-xs font-semibold text-parchment">
-            {order.delivery_payment_method === "cash" ? "Dinheiro" : "Cartao"}
-            {order.delivery_payment_method === "cash" && order.cash_needs_change && order.cash_change_for
-              ? ` - troco para ${formatCurrency(order.cash_change_for)}`
-              : order.delivery_payment_method === "cash"
-                ? " - sem troco"
-                : ""}
-          </p>
+          <p className="text-xs font-bold text-gold">{paymentInfo}</p>
         </div>
       )}
 
