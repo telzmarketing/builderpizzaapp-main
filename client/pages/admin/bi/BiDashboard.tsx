@@ -31,6 +31,8 @@ const PERIODS: Array<{ key: ApiBIPeriod; label: string }> = [
 ];
 
 const KPI_ICONS: Record<string, ElementType> = {
+  estimated_revenue: DollarSign,
+  effective_revenue: DollarSign,
   revenue: DollarSign,
   orders: BarChart3,
   average_ticket: Target,

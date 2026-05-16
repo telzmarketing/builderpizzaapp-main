@@ -33,6 +33,9 @@ const statusColor = (s: string) => {
   return "bg-surface-03 text-stone";
 };
 
+const formatMoney = (value: number) =>
+  value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
 export default function AdminDashboard() {
   const [stats, setStats] = useState<ApiDashboard | null>(null);
   const [recentOrders, setRecentOrders] = useState<ApiOrder[]>([]);
@@ -63,13 +66,14 @@ export default function AdminDashboard() {
         { name: "Dom", receita: 0 },
       ];
 
-  // Revenue distribution pie
-  const totalRevenue = stats?.total_revenue ?? 0;
-  const pendingRev = totalRevenue * 0.18;
-  const confirmedRev = totalRevenue * 0.82;
+  const estimatedRevenue = stats?.estimated_revenue ?? stats?.total_revenue ?? 0;
+  const effectiveRevenue = stats?.effective_revenue ?? stats?.total_revenue ?? 0;
+  const pendingRevenue = Math.max(estimatedRevenue - effectiveRevenue, 0);
+  const effectivePct = estimatedRevenue > 0 ? Math.round((effectiveRevenue / estimatedRevenue) * 100) : 0;
+  const pendingPct = estimatedRevenue > 0 ? Math.max(0, 100 - effectivePct) : 0;
   const pieData = [
-    { name: "Confirmada", value: confirmedRev },
-    { name: "Pendente",   value: pendingRev },
+    { name: "Efetivada", value: effectiveRevenue },
+    { name: "A efetivar", value: pendingRevenue },
   ];
   const PIE_COLORS = ["#f97316", "#2d3d56"];
 
@@ -106,7 +110,7 @@ export default function AdminDashboard() {
             <>
               {/* ── Overview cards ─────────────────────────────────────── */}
               <section>
-                <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
                   <OverviewCard
                     label="Pedidos Confirmados"
                     value={stats?.total_orders ?? 0}
@@ -124,11 +128,18 @@ export default function AdminDashboard() {
                     trend="Cardápio ativo"
                   />
                   <OverviewCard
-                    label="Receita Total"
-                    value={`R$${(stats?.total_revenue ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+                    label="Receita Estimada"
+                    value={formatMoney(estimatedRevenue)}
+                    icon={CircleDollarSign}
+                    iconClass="bg-gold/15 text-gold"
+                    trend="Todos os pedidos"
+                  />
+                  <OverviewCard
+                    label="Receita Efetivada"
+                    value={formatMoney(effectiveRevenue)}
                     icon={CircleDollarSign}
                     iconClass="bg-green-500/15 text-green-400"
-                    trend="+8% este mês"
+                    trend="Pagamentos confirmados"
                     trendUp
                   />
                   <OverviewCard
@@ -189,24 +200,25 @@ export default function AdminDashboard() {
                       <div className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-gold flex-shrink-0" />
                         <div>
-                          <p className="text-cream text-sm font-bold">82%</p>
-                          <p className="text-stone text-xs">Confirmada</p>
+                          <p className="text-cream text-sm font-bold">{effectivePct}%</p>
+                          <p className="text-stone text-xs">Efetivada</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-surface-03 flex-shrink-0" />
                         <div>
-                          <p className="text-cream text-sm font-bold">18%</p>
-                          <p className="text-stone text-xs">Pendente</p>
+                          <p className="text-cream text-sm font-bold">{pendingPct}%</p>
+                          <p className="text-stone text-xs">A efetivar</p>
                         </div>
                       </div>
                     </div>
                   </div>
                   <div className="mt-4 pt-4 border-t border-surface-03">
-                    <p className="text-stone text-xs">Receita total</p>
+                    <p className="text-stone text-xs">Receita efetivada</p>
                     <p className="text-gold text-xl font-black mt-0.5">
-                      R${totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      {formatMoney(effectiveRevenue)}
                     </p>
+                    <p className="text-stone text-xs mt-1">Estimado: {formatMoney(estimatedRevenue)}</p>
                   </div>
                 </div>
 
@@ -251,8 +263,8 @@ export default function AdminDashboard() {
               <div className="bg-surface-02 rounded-xl border border-surface-03 p-5">
                 <div className="flex items-center justify-between mb-5">
                   <div>
-                    <p className="text-cream font-semibold">Receita — Últimos 7 dias</p>
-                    <p className="text-stone text-xs mt-0.5">Evolução da receita por dia</p>
+                    <p className="text-cream font-semibold">Receita efetivada — Últimos 7 dias</p>
+                    <p className="text-stone text-xs mt-0.5">Evolução por pagamentos confirmados</p>
                   </div>
                   <BarChart3 size={18} className="text-stone" />
                 </div>

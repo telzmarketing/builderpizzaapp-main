@@ -34,6 +34,7 @@ WAITING_PAYMENT_STATUSES = [
     OrderStatus.waiting_payment,
     OrderStatus.aguardando_pagamento,
 ]
+NON_EFFECTIVE_ORDER_STATUSES = [OrderStatus.cancelled, OrderStatus.refunded]
 
 
 @router.get("/dashboard")
@@ -52,10 +53,12 @@ def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin))
         .scalar()
         or 0
     )
-    total_revenue = (
+    estimated_revenue = db.query(func.sum(Order.total)).scalar() or 0.0
+    effective_revenue = (
         db.query(func.sum(Order.total))
         .join(Payment, Payment.order_id == Order.id)
         .filter(Payment.status.in_(PAID_PAYMENT_STATUSES))
+        .filter(~Order.status.in_(NON_EFFECTIVE_ORDER_STATUSES))
         .scalar()
         or 0.0
     )
@@ -78,6 +81,16 @@ def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin))
         )
         .join(Payment, Payment.order_id == Order.id)
         .filter(Payment.status.in_(PAID_PAYMENT_STATUSES), Order.created_at >= seven_days_ago)
+        .filter(~Order.status.in_(NON_EFFECTIVE_ORDER_STATUSES))
+        .group_by(func.date(Order.created_at))
+        .all()
+    )
+    daily_estimated_revenue = (
+        db.query(
+            func.date(Order.created_at).label("day"),
+            func.sum(Order.total).label("revenue"),
+        )
+        .filter(Order.created_at >= seven_days_ago)
         .group_by(func.date(Order.created_at))
         .all()
     )
@@ -85,13 +98,19 @@ def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin))
     return {
         "total_orders": total_orders,
         "waiting_payment_orders": waiting_payment_orders,
-        "total_revenue": round(total_revenue, 2),
+        "total_revenue": round(effective_revenue, 2),
+        "estimated_revenue": round(estimated_revenue, 2),
+        "effective_revenue": round(effective_revenue, 2),
         "pending_orders": pending_orders,
         "total_products": total_products,
         "total_customers": total_customers,
         "daily_revenue": [
             {"day": str(row.day), "revenue": round(row.revenue or 0, 2)}
             for row in daily_revenue
+        ],
+        "daily_estimated_revenue": [
+            {"day": str(row.day), "revenue": round(row.revenue or 0, 2)}
+            for row in daily_estimated_revenue
         ],
     }
 

@@ -65,6 +65,13 @@ const DRIVER_STATUS_DOT: Record<string, string> = {
   offline:   "bg-stone",
 };
 
+const PAYMENT_DELIVERY_PROBLEM_REASONS = [
+  { value: "cliente_nao_quis_receber", label: "Cliente nao quis receber" },
+  { value: "cliente_recebeu_nao_pagou", label: "Cliente recebeu e nao pagou" },
+  { value: "cliente_devolveu_pedido", label: "Cliente devolveu o pedido" },
+  { value: "problema_pagamento_entrega", label: "Outro problema de pagamento" },
+];
+
 function money(value?: number | null) {
   return (value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
@@ -345,6 +352,7 @@ export default function Motoboy() {
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [detail,        setDetail]        = useState<DeliveryRecord | null>(null);
   const [problem,       setProblem]       = useState<DeliveryRecord | null>(null);
+  const [problemReason, setProblemReason] = useState(PAYMENT_DELIVERY_PROBLEM_REASONS[0].value);
   const [problemText,   setProblemText]   = useState("");
   const gpsWatchRef    = useRef<number | null>(null);
   const gpsIntervalRef = useRef<number | null>(null);
@@ -885,24 +893,43 @@ export default function Motoboy() {
                 <p className="font-black text-cream">Reportar problema</p>
                 <p className="text-xs text-stone">{shortOrder(problem.order_id)}</p>
               </div>
-              <button onClick={() => { setProblem(null); setProblemText(""); }} className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-03 text-stone hover:text-cream transition-colors">
+              <button onClick={() => { setProblem(null); setProblemText(""); setProblemReason(PAYMENT_DELIVERY_PROBLEM_REASONS[0].value); }} className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-03 text-stone hover:text-cream transition-colors">
                 <X size={18} />
               </button>
             </div>
+            <label className="mb-3 block">
+              <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-stone">Motivo</span>
+              <select
+                value={problemReason}
+                onChange={(e) => setProblemReason(e.target.value)}
+                className="w-full rounded-xl border border-surface-03 bg-surface-01 p-3 text-cream outline-none focus:border-red-400 transition-colors"
+              >
+                {PAYMENT_DELIVERY_PROBLEM_REASONS.map((reason) => (
+                  <option key={reason.value} value={reason.value}>{reason.label}</option>
+                ))}
+              </select>
+            </label>
             <textarea
               value={problemText}
               onChange={(e) => setProblemText(e.target.value)}
               rows={4}
-              placeholder="Descreva o que aconteceu..."
+              placeholder="Detalhe o que aconteceu..."
               className="w-full resize-none rounded-xl border border-surface-03 bg-surface-01 p-3 text-cream placeholder-stone/50 outline-none focus:border-red-400 transition-colors"
             />
             <button
-              disabled={problemText.trim().length < 3 || actionLoading === problem.id}
-              onClick={() =>
+              disabled={actionLoading === problem.id}
+              onClick={() => {
+                const reason = PAYMENT_DELIVERY_PROBLEM_REASONS.find((item) => item.value === problemReason);
+                const detail = problemText.trim();
+                const description = detail ? `${reason?.label}: ${detail}` : reason?.label;
                 runAction(problem.id, () =>
-                  deliveryApi.driverReportProblem(problem.id, "problema_na_entrega", problemText)
-                ).then(() => { setProblem(null); setProblemText(""); })
-              }
+                  deliveryApi.driverReportProblem(problem.id, problemReason, description)
+                ).then(() => {
+                  setProblem(null);
+                  setProblemText("");
+                  setProblemReason(PAYMENT_DELIVERY_PROBLEM_REASONS[0].value);
+                });
+              }}
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 py-4 font-black text-white disabled:opacity-50 hover:bg-red-700 transition-colors"
             >
               {actionLoading === problem.id ? <Loader2 size={18} className="animate-spin" /> : <AlertTriangle size={18} />}

@@ -14,7 +14,7 @@ from backend.models.customer_event import CustomerEvent
 from backend.models.delivery import Delivery
 from backend.models.order import Order, OrderItem
 from backend.models.paid_traffic import AdDailyMetric
-from backend.models.payment import Payment
+from backend.models.payment import Payment, PaymentStatus
 from backend.models.product import Product
 
 
@@ -25,9 +25,15 @@ class BusinessIntelligenceService:
     analytics. It does not mutate customers, orders, campaigns, coupons or CRM.
     """
 
-    REVENUE_STATUSES = ("paid", "pago", "preparing", "ready_for_pickup", "on_the_way", "delivered")
     CANCELLED_STATUSES = ("cancelled", "refunded")
-    PAYMENT_PROBLEM_STATUSES = ("rejected", "cancelled", "expired", "failed", "refunded")
+    PAID_PAYMENT_STATUSES = (PaymentStatus.approved, PaymentStatus.paid)
+    PAYMENT_PROBLEM_STATUSES = (
+        PaymentStatus.rejected,
+        PaymentStatus.cancelled,
+        PaymentStatus.expired,
+        PaymentStatus.failed,
+        PaymentStatus.refunded,
+    )
     PERIOD_DAYS = {"7d": 7, "30d": 30, "90d": 90}
 
     def __init__(self, db: Session):
@@ -59,13 +65,14 @@ class BusinessIntelligenceService:
         }
 
     def get_overview(self, start_dt: datetime, end_dt: datetime, period: str) -> dict:
-        valid_orders = self._orders_in_period(start_dt, end_dt).filter(Order.status.in_(self.REVENUE_STATUSES))
+        paid_orders_q = self._paid_orders_in_period(start_dt, end_dt)
         all_orders = self._orders_in_period(start_dt, end_dt)
 
         total_orders = all_orders.count()
-        paid_orders = valid_orders.count()
-        revenue = self._round(valid_orders.with_entities(func.coalesce(func.sum(Order.total), 0)).scalar())
-        avg_ticket = self._round(revenue / paid_orders if paid_orders else 0)
+        paid_orders = paid_orders_q.count()
+        estimated_revenue = self._round(all_orders.with_entities(func.coalesce(func.sum(Order.total), 0)).scalar())
+        effective_revenue = self._round(paid_orders_q.with_entities(func.coalesce(func.sum(Order.total), 0)).scalar())
+        avg_ticket = self._round(effective_revenue / paid_orders if paid_orders else 0)
         cancelled = all_orders.filter(Order.status.in_(self.CANCELLED_STATUSES)).count()
         new_customers = (
             self._db.query(Customer)
@@ -73,7 +80,7 @@ class BusinessIntelligenceService:
             .count()
         )
         recurring_customers = (
-            valid_orders.with_entities(Order.customer_id)
+            paid_orders_q.with_entities(Order.customer_id)
             .filter(Order.customer_id.isnot(None))
             .group_by(Order.customer_id)
             .having(func.count(Order.id) > 1)
@@ -86,24 +93,27 @@ class BusinessIntelligenceService:
             .count()
         )
         delayed_deliveries = self._delayed_deliveries(start_dt, end_dt)
-        loyalty_points = self._round(valid_orders.with_entities(func.coalesce(func.sum(Order.loyalty_points_earned), 0)).scalar())
-        discounts = self._round(valid_orders.with_entities(func.coalesce(func.sum(Order.discount), 0)).scalar())
+        loyalty_points = self._round(paid_orders_q.with_entities(func.coalesce(func.sum(Order.loyalty_points_earned), 0)).scalar())
+        discounts = self._round(paid_orders_q.with_entities(func.coalesce(func.sum(Order.discount), 0)).scalar())
 
         return {
             "kpis": [
-                self._kpi("revenue", "Faturamento analisavel", revenue, "currency", "Pedidos pagos ou em fluxo ativo"),
-                self._kpi("orders", "Pedidos totais", total_orders, "number", f"{paid_orders} pedidos com receita valida"),
-                self._kpi("average_ticket", "Ticket medio", avg_ticket, "currency", "Receita / pedidos validos"),
+                self._kpi("estimated_revenue", "Receita estimada", estimated_revenue, "currency", "Todos os pedidos criados no periodo"),
+                self._kpi("effective_revenue", "Receita efetivada", effective_revenue, "currency", "Pedidos com pagamento confirmado"),
+                self._kpi("orders", "Pedidos totais", total_orders, "number", f"{paid_orders} pedidos com pagamento confirmado"),
+                self._kpi("average_ticket", "Ticket medio", avg_ticket, "currency", "Receita efetivada / pedidos pagos"),
                 self._kpi("new_customers", "Clientes novos", new_customers, "number", "Cadastros no periodo"),
                 self._kpi("recurring_customers", "Clientes recorrentes", recurring_customers, "number", "Compraram mais de uma vez no periodo"),
                 self._kpi("cancelled_orders", "Cancelamentos", cancelled, "number", "Pedidos cancelados/estornados"),
                 self._kpi("payment_problems", "Pagamentos com problema", payment_problems, "number", "Falhas, recusas ou estornos"),
                 self._kpi("delayed_deliveries", "Entregas atrasadas", delayed_deliveries, "number", "Pedidos acima do prazo alvo"),
-                self._kpi("discounts", "Descontos aplicados", discounts, "currency", "Cupons e descontos em pedidos validos"),
-                self._kpi("loyalty_points", "Pontos fidelidade", loyalty_points, "number", "Pontos gerados por pedidos validos"),
+                self._kpi("discounts", "Descontos aplicados", discounts, "currency", "Cupons e descontos em pedidos pagos"),
+                self._kpi("loyalty_points", "Pontos fidelidade", loyalty_points, "number", "Pontos gerados por pedidos pagos"),
             ],
             "raw": {
-                "revenue": revenue,
+                "revenue": effective_revenue,
+                "estimated_revenue": estimated_revenue,
+                "effective_revenue": effective_revenue,
                 "paid_orders": paid_orders,
                 "total_orders": total_orders,
                 "avg_ticket": avg_ticket,
@@ -117,8 +127,7 @@ class BusinessIntelligenceService:
 
     def get_sales(self, start_dt: datetime, end_dt: datetime, period: str, granularity: str = "day") -> dict:
         rows = (
-            self._orders_in_period(start_dt, end_dt)
-            .filter(Order.status.in_(self.REVENUE_STATUSES))
+            self._paid_orders_in_period(start_dt, end_dt)
             .with_entities(
                 func.date(Order.created_at).label("metric_date"),
                 func.count(Order.id).label("orders"),
@@ -140,8 +149,7 @@ class BusinessIntelligenceService:
         ]
 
         hour_rows = (
-            self._orders_in_period(start_dt, end_dt)
-            .filter(Order.status.in_(self.REVENUE_STATUSES))
+            self._paid_orders_in_period(start_dt, end_dt)
             .with_entities(
                 func.extract("hour", Order.created_at).label("hour"),
                 func.count(Order.id).label("orders"),
@@ -168,9 +176,11 @@ class BusinessIntelligenceService:
                 func.coalesce(func.sum(OrderItem.total_price), 0).label("total_revenue"),
             )
             .join(Order, Order.id == OrderItem.order_id)
+            .join(Payment, Payment.order_id == Order.id)
             .outerjoin(Product, Product.id == OrderItem.product_id)
             .filter(Order.created_at >= start_dt, Order.created_at <= end_dt)
-            .filter(Order.status.in_(self.REVENUE_STATUSES))
+            .filter(Payment.status.in_(self.PAID_PAYMENT_STATUSES))
+            .filter(~Order.status.in_(self.CANCELLED_STATUSES))
             .group_by(OrderItem.product_id, Product.name, Product.category)
             .order_by(func.coalesce(func.sum(OrderItem.total_price), 0).desc())
             .limit(limit)
@@ -254,10 +264,9 @@ class BusinessIntelligenceService:
         carts = event_counts.get("add_to_cart", 0) + event_counts.get("cart_opened", 0)
         checkout = event_counts.get("checkout_started", 0)
 
-        paid_orders = self._orders_in_period(start_dt, end_dt).filter(Order.status.in_(self.REVENUE_STATUSES)).count()
+        paid_orders = self._paid_orders_in_period(start_dt, end_dt).count()
         revenue = self._round(
-            self._orders_in_period(start_dt, end_dt)
-            .filter(Order.status.in_(self.REVENUE_STATUSES))
+            self._paid_orders_in_period(start_dt, end_dt)
             .with_entities(func.coalesce(func.sum(Order.total), 0))
             .scalar()
         )
@@ -270,7 +279,7 @@ class BusinessIntelligenceService:
             self._funnel("visitors", "Visitantes/eventos de entrada", visitors, visitors),
             self._funnel("cart", "Carrinhos", carts, visitors),
             self._funnel("checkout", "Checkout iniciado", checkout, visitors),
-            self._funnel("orders", "Pedidos pagos/ativos", paid_orders, visitors),
+            self._funnel("orders", "Pedidos com pagamento confirmado", paid_orders, visitors),
         ]
         return {
             **self._period_payload({"period": period, "start_dt": start_dt, "end_dt": end_dt}),
@@ -353,8 +362,10 @@ class BusinessIntelligenceService:
                 func.coalesce(func.sum(Order.total), 0).label("revenue"),
             )
             .join(Order, Order.address_id == Address.id)
+            .join(Payment, Payment.order_id == Order.id)
             .filter(Order.created_at >= start_dt, Order.created_at <= end_dt)
-            .filter(Order.status.in_(self.REVENUE_STATUSES))
+            .filter(Payment.status.in_(self.PAID_PAYMENT_STATUSES))
+            .filter(~Order.status.in_(self.CANCELLED_STATUSES))
             .filter(Address.neighborhood.isnot(None), func.trim(Address.neighborhood) != "")
             .group_by(Address.neighborhood)
             .all()
@@ -459,7 +470,7 @@ class BusinessIntelligenceService:
                 "insufficient_sales",
                 "sales",
                 "Dados insuficientes para recomendacoes comerciais",
-                "Nao ha pedidos pagos ou ativos no periodo selecionado.",
+                "Nao ha pedidos com pagamento confirmado no periodo selecionado.",
                 "low",
                 "Aumentar o periodo de analise ou validar se existem pedidos concluídos.",
                 actionable=False,
@@ -543,6 +554,14 @@ class BusinessIntelligenceService:
 
     def _orders_in_period(self, start_dt: datetime, end_dt: datetime):
         return self._db.query(Order).filter(Order.created_at >= start_dt, Order.created_at <= end_dt)
+
+    def _paid_orders_in_period(self, start_dt: datetime, end_dt: datetime):
+        return (
+            self._orders_in_period(start_dt, end_dt)
+            .join(Payment, Payment.order_id == Order.id)
+            .filter(Payment.status.in_(self.PAID_PAYMENT_STATUSES))
+            .filter(~Order.status.in_(self.CANCELLED_STATUSES))
+        )
 
     def _merge_persisted_insights(self, insights: list[dict], bounds: dict) -> list[dict]:
         merged: list[dict] = []

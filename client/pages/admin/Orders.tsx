@@ -135,6 +135,7 @@ const NEXT_LABEL: Partial<Record<string, string>> = {
 
 const WAITING_PAYMENT_STATUSES = new Set(["pending", "waiting_payment", "aguardando_pagamento"]);
 const CONFIRMED_PAYMENT_STATUSES = new Set(["paid", "pago"]);
+const CONFIRMED_PAYMENT_VALUES = new Set(["approved", "paid"]);
 const AUTO_PRINTED_CONFIRMED_ORDERS_KEY = "moschettieri_auto_printed_confirmed_orders";
 
 function loadAutoPrintedConfirmedOrderIds() {
@@ -238,6 +239,13 @@ function paymentInfoLabel(order: ApiOrder) {
   if (order.pay_on_delivery) return "Pagamento na entrega";
   if (order.payment_status === "approved" || order.payment_status === "paid") return "Pagamento online efetuado";
   return null;
+}
+
+function isEffectiveRevenueOrder(order: ApiOrder) {
+  return (
+    CONFIRMED_PAYMENT_VALUES.has(order.payment_status ?? "") &&
+    !["cancelled", "refunded"].includes(order.status)
+  );
 }
 
 export default function AdminOrders() {
@@ -397,7 +405,11 @@ export default function AdminOrders() {
   }, [orders]);
 
   const activeOrders = orders.filter((o) => !["delivered", "cancelled", "refunded"].includes(o.status)).length;
-  const dayRevenue = useMemo(() => orders.reduce((sum, order) => sum + order.total, 0), [orders]);
+  const estimatedDayRevenue = useMemo(() => orders.reduce((sum, order) => sum + order.total, 0), [orders]);
+  const effectiveDayRevenue = useMemo(
+    () => orders.reduce((sum, order) => sum + (isEffectiveRevenueOrder(order) ? order.total : 0), 0),
+    [orders],
+  );
   const selectedDateLabel = useMemo(() => formatDayLabel(selectedDate), [selectedDate]);
   const isToday = selectedDate === todayInputValue();
 
@@ -484,8 +496,12 @@ export default function AdminOrders() {
                 <span className="text-cream text-sm font-black">{orders.length}</span>
               </div>
               <div className="flex h-11 shrink-0 items-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4">
-                <span className="text-stone text-[10px] uppercase tracking-widest">Receita</span>
-                <span className="text-cream text-sm font-black">{formatCurrency(dayRevenue)}</span>
+                <span className="text-stone text-[10px] uppercase tracking-widest">Receita estimada</span>
+                <span className="text-cream text-sm font-black">{formatCurrency(estimatedDayRevenue)}</span>
+              </div>
+              <div className="flex h-11 shrink-0 items-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4">
+                <span className="text-stone text-[10px] uppercase tracking-widest">Receita efetivada</span>
+                <span className="text-cream text-sm font-black">{formatCurrency(effectiveDayRevenue)}</span>
               </div>
               <button
                 onClick={() => setSoundEnabled((v) => !v)}
@@ -698,6 +714,10 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
   const isWaitingPayment = WAITING_PAYMENT_STATUSES.has(order.status);
   const nextLabel = isReadyForPickup ? null : NEXT_LABEL[order.status];
   const unresolvedDeliveryProblem = Boolean(order.delivery?.problem_report && !order.delivery.problem_resolved_at);
+  const payOnDeliveryPaymentProblem = Boolean(
+    order.pay_on_delivery &&
+    (order.payment_status === "failed" || order.payment_status === "rejected" || unresolvedDeliveryProblem),
+  );
   const paymentInfo = paymentInfoLabel(order);
 
   const itemSummary = order.items.slice(0, 2).map((item) => {
@@ -762,6 +782,18 @@ function OrderCard({ order, updating, onAdvance, onAssignMotoboy, onPrint, onDra
       {paymentInfo && (
         <div className="mt-3 rounded-xl border border-gold/25 bg-gold/10 px-3 py-2">
           <p className="text-xs font-bold text-gold">{paymentInfo}</p>
+        </div>
+      )}
+
+      {payOnDeliveryPaymentProblem && (
+        <div className="mt-3 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-red-300">Problema no pagamento na entrega</p>
+          <p className="mt-1 text-xs font-semibold text-red-100">
+            Este pedido nao entra na receita efetivada enquanto o pagamento nao for confirmado.
+          </p>
+          {order.delivery?.problem_report && (
+            <p className="mt-1 line-clamp-2 text-xs text-parchment">{order.delivery.problem_report}</p>
+          )}
         </div>
       )}
 

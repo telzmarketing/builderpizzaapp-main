@@ -1769,10 +1769,13 @@ export interface ApiDashboard {
   total_orders: number;
   waiting_payment_orders: number;
   total_revenue: number;
+  estimated_revenue: number;
+  effective_revenue: number;
   pending_orders: number;
   total_products: number;
   total_customers: number;
   daily_revenue: { day: string; revenue: number }[];
+  daily_estimated_revenue?: { day: string; revenue: number }[];
 }
 
 export interface ApiPaymentGatewayConfig {

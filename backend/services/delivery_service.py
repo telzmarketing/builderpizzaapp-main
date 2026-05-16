@@ -21,7 +21,7 @@ from backend.core.exceptions import (
     OrderNotReadyForDelivery, DeliveryAlreadyAssigned, OrderNotFound,
     DomainError,
 )
-from backend.core.state_machine import delivery_sm, order_sm
+from backend.core.state_machine import delivery_sm, order_sm, payment_sm
 from backend.core.events import (
     bus, DeliveryAssigned, DeliveryStatusChanged, DeliveryCompleted,
 )
@@ -786,6 +786,13 @@ class DeliveryService:
         delivery.problem_reported_at = datetime.now(timezone.utc)
         if description:
             delivery.notes = description
+
+        order = self._get_order(delivery.order_id)
+        payment = order.payment
+        if payment and payment.pay_on_delivery and payment.status == PaymentStatus.pending:
+            payment_sm.transition(payment.id, payment.status.value, PaymentStatus.failed.value)
+            payment.status = PaymentStatus.failed
+            payment.updated_at = delivery.problem_reported_at
 
         person = self._db.query(DeliveryPerson).filter(DeliveryPerson.id == person_id).first()
         if person:
