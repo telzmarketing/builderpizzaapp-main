@@ -655,7 +655,7 @@ class BusinessIntelligenceService:
         customers = self._db.execute(
             text("""
             SELECT COUNT(DISTINCT customer_id)
-            FROM visitor_events
+            FROM customer_events
             WHERE created_at >= :online_since
               AND customer_id IS NOT NULL
             """),

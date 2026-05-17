@@ -225,6 +225,7 @@ export default function App() {
 
               {/* ── Admin routes (protected by JWT guard) ── */}
               <Route element={<AdminGuard />}>
+                <Route path="/painel/bi-mobile" element={<AdminBIMobile />} />
                 <Route element={<AdminLayout />}>
                 <Route path="/painel" element={<AdminDashboard />} />
                 <Route path="/painel/products" element={<AdminProducts />} />
@@ -249,7 +250,6 @@ export default function App() {
                 <Route path="/painel/popup-saida" element={<AdminExitPopup />} />
                 <Route path="/painel/usuarios" element={<AdminUsuarios />} />
                 <Route path="/painel/bi" element={<AdminBI />} />
-                <Route path="/painel/bi-mobile" element={<AdminBIMobile />} />
                 {/* ── Marketing routes ── */}
                 <Route path="/painel/marketing" element={<MarketingDashboard />} />
                 <Route path="/painel/marketing/campanhas" element={<MarketingCampanhas />} />
