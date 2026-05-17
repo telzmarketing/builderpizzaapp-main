@@ -61,6 +61,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     label: "BI & Relatorios",
     children: [
       { path: "/painel/bi", icon: TrendingUp, label: "Inteligencia BI", exact: true, permissions: ["relatorios"] },
+      { path: "/painel/bi-mobile", icon: BarChart3, label: "BI Mobile", exact: true, permissions: ["relatorios"] },
     ],
   },
   {

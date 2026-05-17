@@ -28,6 +28,14 @@ def dashboard(
     return ok(_service(db).dashboard(period=period, date_from=date_from, date_to=date_to))
 
 
+@router.get("/mobile")
+def mobile(
+    selected_date: date | None = Query(default=None, alias="date"),
+    db: Session = Depends(get_db),
+):
+    return ok(_service(db).mobile(selected_date or date.today()))
+
+
 @router.get("/overview")
 def overview(
     period: PeriodKey = Query(default="30d"),

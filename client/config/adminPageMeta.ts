@@ -24,6 +24,7 @@ export type PageMeta = {
 export const adminPageMeta: Record<string, PageMeta> = {
   "/painel": { eyebrow: "Visao geral", title: "Dashboard", subtitle: "Resumo operacional da loja em tempo real" },
   "/painel/bi": { eyebrow: "Business Intelligence", title: "BI", subtitle: "Motor de analise, recomendacao e acao do negocio" },
+  "/painel/bi-mobile": { eyebrow: "Business Intelligence", title: "BI Mobile", subtitle: "Resumo operacional do dia" },
   "/painel/products": { eyebrow: "Catalogo", title: "Produtos", subtitle: "Gestao do cardapio e categorias" },
   "/painel/products/landing": { eyebrow: "Catalogo", title: "Landing Promocional", subtitle: "Pagina de conversao vinculada a promocao da pizza" },
   "/painel/home-config": { eyebrow: "Catalogo", title: "Catalogo da Home", subtitle: "Organizacao da vitrine da loja" },

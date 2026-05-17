@@ -12,7 +12,7 @@ from backend.models.business_intelligence import BusinessInsight, ProductPerform
 from backend.models.customer import Address, Customer
 from backend.models.customer_event import CustomerEvent
 from backend.models.delivery import Delivery
-from backend.models.order import Order, OrderItem
+from backend.models.order import Order, OrderItem, OrderStatus
 from backend.models.paid_traffic import AdDailyMetric
 from backend.models.payment import Payment, PaymentStatus
 from backend.models.product import Product
@@ -27,6 +27,29 @@ class BusinessIntelligenceService:
 
     CANCELLED_STATUSES = ("cancelled", "refunded")
     PAID_PAYMENT_STATUSES = (PaymentStatus.approved, PaymentStatus.paid)
+    MOBILE_EFFECTIVE_ORDER_STATUSES = (
+        OrderStatus.paid,
+        OrderStatus.pago,
+        OrderStatus.preparing,
+        OrderStatus.ready_for_pickup,
+        OrderStatus.on_the_way,
+        OrderStatus.delivered,
+    )
+    MOBILE_STATUS_BUCKETS = {
+        "aguardando_pagamento": (
+            OrderStatus.pending.value,
+            OrderStatus.waiting_payment.value,
+            OrderStatus.aguardando_pagamento.value,
+            OrderStatus.pagamento_recusado.value,
+            OrderStatus.pagamento_expirado.value,
+        ),
+        "pedido_confirmado": (OrderStatus.paid.value, OrderStatus.pago.value),
+        "em_preparacao": (OrderStatus.preparing.value,),
+        "pronto_para_entrega": (OrderStatus.ready_for_pickup.value,),
+        "em_entrega": (OrderStatus.on_the_way.value,),
+        "entregue": (OrderStatus.delivered.value,),
+        "cancelado": (OrderStatus.cancelled.value, OrderStatus.refunded.value),
+    }
     PAYMENT_PROBLEM_STATUSES = (
         PaymentStatus.rejected,
         PaymentStatus.cancelled,
@@ -62,6 +85,49 @@ class BusinessIntelligenceService:
             "neighborhoods": neighborhoods["neighborhoods"],
             "insights": insights,
             "recommendations": recommendations,
+        }
+
+    def mobile(self, selected_date: date) -> dict:
+        bounds = self.resolve_bounds("today", selected_date, selected_date)
+        start_dt = bounds["start_dt"]
+        end_dt = bounds["end_dt"]
+        orders_q = self._orders_in_period(start_dt, end_dt)
+        paid_orders_q = self._paid_orders_in_period(start_dt, end_dt)
+
+        status_counts = {key: 0 for key in self.MOBILE_STATUS_BUCKETS}
+        status_rows = (
+            orders_q.with_entities(Order.status, func.count(Order.id))
+            .group_by(Order.status)
+            .all()
+        )
+        for raw_status, total in status_rows:
+            status = getattr(raw_status, "value", raw_status)
+            for key, bucket in self.MOBILE_STATUS_BUCKETS.items():
+                if status in bucket:
+                    status_counts[key] += int(total or 0)
+                    break
+
+        forecast_revenue = self._round(
+            orders_q
+            .filter(~Order.status.in_(self.CANCELLED_STATUSES))
+            .with_entities(func.coalesce(func.sum(Order.total), 0))
+            .scalar()
+        )
+        confirmed_revenue = self._round(
+            paid_orders_q.with_entities(func.coalesce(func.sum(Order.total), 0)).scalar()
+        )
+        online_counts = self._online_presence_counts()
+
+        return {
+            "date": selected_date.isoformat(),
+            "visitorsOnline": online_counts["visitors"],
+            "customersOnline": online_counts["customers"],
+            "forecastRevenue": forecast_revenue,
+            "confirmedRevenue": confirmed_revenue,
+            "ordersToday": orders_q.count(),
+            "confirmedOrders": orders_q.filter(Order.status.in_(self.MOBILE_EFFECTIVE_ORDER_STATUSES)).count(),
+            "ordersByStatus": status_counts,
+            "generatedAt": datetime.now(timezone.utc).isoformat(),
         }
 
     def get_overview(self, start_dt: datetime, end_dt: datetime, period: str) -> dict:
@@ -562,6 +628,40 @@ class BusinessIntelligenceService:
             .filter(Payment.status.in_(self.PAID_PAYMENT_STATUSES))
             .filter(~Order.status.in_(self.CANCELLED_STATUSES))
         )
+
+    def _online_presence_counts(self) -> dict[str, int]:
+        # visitor_profiles and marketing_settings are owned by the marketing route module.
+        online_minutes = self._db.execute(
+            text("""
+            SELECT COALESCE(online_visitor_minutes, 5)
+            FROM marketing_settings
+            WHERE id = 'default'
+            """)
+        ).scalar() or 5
+        try:
+            online_minutes = max(int(online_minutes), 1)
+        except (TypeError, ValueError):
+            online_minutes = 5
+
+        online_since = datetime.now(timezone.utc) - timedelta(minutes=online_minutes)
+        visitors = self._db.execute(
+            text("""
+            SELECT COUNT(*)
+            FROM visitor_profiles
+            WHERE last_seen_at >= :online_since
+            """),
+            {"online_since": online_since},
+        ).scalar() or 0
+        customers = self._db.execute(
+            text("""
+            SELECT COUNT(DISTINCT customer_id)
+            FROM visitor_events
+            WHERE created_at >= :online_since
+              AND customer_id IS NOT NULL
+            """),
+            {"online_since": online_since},
+        ).scalar() or 0
+        return {"visitors": int(visitors), "customers": int(customers)}
 
     def _merge_persisted_insights(self, insights: list[dict], bounds: dict) -> list[dict]:
         merged: list[dict] = []

@@ -3319,6 +3319,27 @@ export interface ApiBIRunAnalysis {
   recommendations: ApiBIRecommendation[];
 }
 
+export type ApiBIMobileStatusKey =
+  | "aguardando_pagamento"
+  | "pedido_confirmado"
+  | "em_preparacao"
+  | "pronto_para_entrega"
+  | "em_entrega"
+  | "entregue"
+  | "cancelado";
+
+export interface ApiBIMobile {
+  date: string;
+  visitorsOnline: number;
+  customersOnline: number;
+  forecastRevenue: number;
+  confirmedRevenue: number;
+  ordersToday: number;
+  confirmedOrders: number;
+  ordersByStatus: Record<ApiBIMobileStatusKey, number>;
+  generatedAt?: string;
+}
+
 function biQuery(params?: { period?: ApiBIPeriod; date_from?: string; date_to?: string }) {
   const qs = new URLSearchParams();
   if (params?.period) qs.set("period", params.period);
@@ -3331,6 +3352,7 @@ function biQuery(params?: { period?: ApiBIPeriod; date_from?: string; date_to?: 
 export const biApi = {
   dashboard: (params?: { period?: ApiBIPeriod; date_from?: string; date_to?: string }) =>
     get<ApiBIDashboard>(`/bi/dashboard${biQuery(params)}`),
+  mobile: (date: string) => get<ApiBIMobile>(`/bi/mobile?date=${encodeURIComponent(date)}`),
   runAnalysis: (params?: { period?: ApiBIPeriod; date_from?: string; date_to?: string }) =>
     post<ApiBIRunAnalysis>(`/bi/run-analysis${biQuery(params)}`, {}),
   updateInsightStatus: (insightId: string, status: "resolved" | "ignored" | "postponed" | "active") =>
