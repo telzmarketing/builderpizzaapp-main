@@ -24,6 +24,7 @@ from backend.schemas.product import (
 from backend.routes.admin_auth import get_current_admin
 from backend.services import product_category_service
 from backend.services.product_pricing_service import ProductPricingService
+from backend.services.promotion_landing_service import PromotionLandingService
 
 _VALID_BADGE_STATUSES = [
     OrderStatus.paid, OrderStatus.pago, OrderStatus.preparing,
@@ -135,6 +136,7 @@ def _product_payload(product: Product, db: Session, auto_badge_ids: set[str] | N
     ]
     if promotion_quotes:
         quote = min(promotion_quotes, key=lambda candidate: candidate.final_price)
+    landing = PromotionLandingService(db).active_landing_for_product(product) if promotion_quotes else None
 
     mode = product.best_seller_badge_mode or "off"
     if mode == "manual":
@@ -159,6 +161,9 @@ def _product_payload(product: Product, db: Session, auto_badge_ids: set[str] | N
         "promotion_gift_name": quote.gift_name,
         "promotion_gift_icon": quote.gift_icon,
         "promotion_blocks_other_coupons": quote.blocks_other_coupons,
+        "promotion_landing_page_id": landing.id if landing else None,
+        "promotion_landing_slug": landing.slug if landing else None,
+        "promotion_landing_url": f"/promocao/{landing.slug}" if landing else None,
         "show_best_seller_badge": show_badge,
     })
     return payload

@@ -45,12 +45,15 @@ export default function Cardapio() {
     return matchSearch && matchCat && p.active;
   });
 
+  const productTarget = (product: typeof products[0]) =>
+    product.promotion_landing_url || `/product/${product.id}`;
+
   const handleQuickAdd = (e: React.MouseEvent, product: typeof products[0]) => {
     e.stopPropagation();
     const productType = (product as any).product_type as string | null | undefined;
     const isPizza = !productType || productType === "pizza";
     if (isPizza) {
-      navigate(`/product/${product.id}`);
+      navigate(productTarget(product));
       return;
     }
     const unitPrice = product.current_price ?? product.price;
@@ -141,7 +144,7 @@ export default function Cardapio() {
                 className="bg-surface-02 rounded-2xl p-4 border border-surface-03 hover:border-gold/40 transition-all"
               >
                 <button
-                  onClick={() => navigate(`/product/${product.id}`)}
+                  onClick={() => navigate(productTarget(product))}
                   className="w-full text-left"
                 >
                   {/* Image wrapper — outer is relative for BestSellerSeal positioning */}

@@ -27,6 +27,7 @@ function StoreWidget() {
     "/localizacao",
     "/cardapio",
     "/campanha",
+    "/promocao",
   ];
   const isStoreRoute = storeRoutes.some((route) => (
     route === "/" ? pathname === "/" : pathname === route || pathname.startsWith(`${route}/`)
@@ -174,8 +175,10 @@ import CrmTarefas from "./pages/admin/crm/CrmTarefas";
 import CrmInteligencia from "./pages/admin/crm/CrmInteligencia";
 import CrmAgenteWhatsApp from "./pages/admin/crm/CrmAgenteWhatsApp";
 import AdminLogistica from "./pages/admin/logistica/AdminLogistica";
+import PromotionalLandingEditor from "./pages/admin/PromotionalLandingEditor";
 import Motoboy from "./pages/Motoboy";
 import Campanha from "./pages/Campanha";
+import PromocaoLanding from "./pages/PromocaoLanding";
 import Fidelidade from "./pages/Fidelidade";
 import Cupons from "./pages/Cupons";
 import Pedidos from "./pages/Pedidos";
@@ -213,6 +216,7 @@ export default function App() {
               <Route path="/localizacao" element={<Localizacao />} />
               <Route path="/cardapio" element={<Cardapio />} />
               <Route path="/campanha/:slug" element={<Campanha />} />
+              <Route path="/promocao/:slug" element={<PromocaoLanding />} />
 
               {/* ── Admin login (public) ── */}
               <Route path="/painel/login" element={<AdminLogin />} />
@@ -223,6 +227,7 @@ export default function App() {
                 <Route element={<AdminLayout />}>
                 <Route path="/painel" element={<AdminDashboard />} />
                 <Route path="/painel/products" element={<AdminProducts />} />
+                <Route path="/painel/products/landing/:productId/:promotionId" element={<PromotionalLandingEditor />} />
                 <Route path="/painel/orders" element={<AdminOrders />} />
                 <Route path="/painel/cozinha" element={<AdminCozinha />} />
                 <Route path="/painel/fidelidade" element={<AdminFidelidade />} />

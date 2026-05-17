@@ -166,6 +166,9 @@ class ProductOut(ProductBase):
     promotion_gift_name: Optional[str] = None
     promotion_gift_icon: Optional[str] = None
     promotion_blocks_other_coupons: bool = False
+    promotion_landing_page_id: Optional[str] = None
+    promotion_landing_slug: Optional[str] = None
+    promotion_landing_url: Optional[str] = None
     show_best_seller_badge: bool = False
 
     model_config = {"from_attributes": True}

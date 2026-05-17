@@ -149,7 +149,8 @@ export default function Home() {
   const handlePizzaClick = (productId: string) => {
     setClickedPizza(productId);
     setTimeout(() => {
-      navigate(`/product/${productId}`);
+      const product = products.find((item) => item.id === productId);
+      navigate(product?.promotion_landing_url || `/product/${productId}`);
     }, 300);
   };
 
@@ -224,7 +225,7 @@ export default function Home() {
                 {filteredProducts.map((product) => (
                   <button
                     key={product.id}
-                    onClick={() => { setSearchOpen(false); setSearchQuery(""); navigate(`/product/${product.id}`); }}
+                    onClick={() => { setSearchOpen(false); setSearchQuery(""); navigate(product.promotion_landing_url || `/product/${product.id}`); }}
                     className="w-full bg-surface-02 rounded-xl p-4 flex items-center gap-4 hover:bg-surface-03 transition-colors text-left"
                   >
                     <div className="w-12 h-12 rounded-xl bg-surface-03 flex items-center justify-center overflow-hidden flex-shrink-0">

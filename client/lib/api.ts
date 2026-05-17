@@ -266,6 +266,9 @@ export interface ApiProduct {
   promotion_gift_name?: string | null;
   promotion_gift_icon?: string | null;
   promotion_blocks_other_coupons?: boolean;
+  promotion_landing_page_id?: string | null;
+  promotion_landing_slug?: string | null;
+  promotion_landing_url?: string | null;
   best_seller_badge_mode?: "off" | "manual" | "auto";
   show_best_seller_badge?: boolean;
 }
@@ -312,6 +315,62 @@ export interface ApiProductPromotion {
   created_at: string;
   updated_at: string;
 }
+
+export type ApiPromotionLandingStatus = "draft" | "published";
+export type ApiPromotionLandingImagePosition = "center" | "top" | "bottom" | "left" | "right";
+export type ApiPromotionLandingAlignment = "left" | "center" | "right";
+export type ApiPromotionLandingOverlay = "dark-gradient" | "dark" | "light" | "brand";
+
+export interface ApiPromotionLandingPage {
+  id: string;
+  product_id: string;
+  promotion_id: string;
+  title: string;
+  subtitle: string | null;
+  description: string | null;
+  cta_text: string;
+  image_url: string | null;
+  image_position: ApiPromotionLandingImagePosition;
+  content_alignment: ApiPromotionLandingAlignment;
+  overlay_style: ApiPromotionLandingOverlay;
+  badge_text: string | null;
+  slug: string;
+  status: ApiPromotionLandingStatus;
+  is_active: boolean;
+  public_url: string;
+  product_name: string | null;
+  promotion_name: string | null;
+  promotion_active_now: boolean;
+  created_at: string;
+  updated_at: string;
+  published_at: string | null;
+}
+
+export interface ApiPromotionLandingDecision {
+  product_id: string;
+  promotion_id: string | null;
+  landing_page_id: string | null;
+  slug: string | null;
+  url: string | null;
+  should_redirect: boolean;
+}
+
+export type ApiPromotionLandingPayload = {
+  product_id: string;
+  promotion_id: string;
+  title: string;
+  subtitle?: string | null;
+  description?: string | null;
+  cta_text?: string;
+  image_url?: string | null;
+  image_position?: ApiPromotionLandingImagePosition;
+  content_alignment?: ApiPromotionLandingAlignment;
+  overlay_style?: ApiPromotionLandingOverlay;
+  badge_text?: string | null;
+  slug?: string | null;
+  status?: ApiPromotionLandingStatus;
+  is_active?: boolean;
+};
 
 export interface ApiProductPriceQuote {
   standard_price: number;
@@ -1998,6 +2057,33 @@ export const productPromotionsApi = {
     const suffix = search.toString() ? `?${search.toString()}` : "";
     return get<ApiProductPriceQuote>(`/products/${productId}/price${suffix}`);
   },
+};
+
+export const promotionLandingsApi = {
+  list: () => get<ApiPromotionLandingPage[]>("/promotion-landings"),
+
+  get: (id: string) => get<ApiPromotionLandingPage>(`/promotion-landings/${id}`),
+
+  getByProductPromotion: (productId: string, promotionId: string) =>
+    get<ApiPromotionLandingPage | null>(`/promotion-landings/by-product/${productId}/promotion/${promotionId}`),
+
+  getBySlug: (slug: string) =>
+    get<ApiPromotionLandingPage>(`/promotion-landings/slug/${slug}`),
+
+  decision: (productId: string) =>
+    get<ApiPromotionLandingDecision>(`/promotion-landings/decision/${productId}`),
+
+  create: (data: ApiPromotionLandingPayload) =>
+    post<ApiPromotionLandingPage>("/promotion-landings", data),
+
+  update: (id: string, data: Partial<Omit<ApiPromotionLandingPayload, "product_id" | "promotion_id">>) =>
+    put<ApiPromotionLandingPage>(`/promotion-landings/${id}`, data),
+
+  publish: (id: string) =>
+    post<ApiPromotionLandingPage>(`/promotion-landings/${id}/publish`, {}),
+
+  unpublish: (id: string) =>
+    post<ApiPromotionLandingPage>(`/promotion-landings/${id}/unpublish`, {}),
 };
 
 export const drinkVariantApi = {

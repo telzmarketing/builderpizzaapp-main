@@ -25,6 +25,7 @@ export const adminPageMeta: Record<string, PageMeta> = {
   "/painel": { eyebrow: "Visao geral", title: "Dashboard", subtitle: "Resumo operacional da loja em tempo real" },
   "/painel/bi": { eyebrow: "Business Intelligence", title: "BI", subtitle: "Motor de analise, recomendacao e acao do negocio" },
   "/painel/products": { eyebrow: "Catalogo", title: "Produtos", subtitle: "Gestao do cardapio e categorias" },
+  "/painel/products/landing": { eyebrow: "Catalogo", title: "Landing Promocional", subtitle: "Pagina de conversao vinculada a promocao da pizza" },
   "/painel/home-config": { eyebrow: "Catalogo", title: "Catalogo da Home", subtitle: "Organizacao da vitrine da loja" },
   "/painel/orders": { eyebrow: "Operacoes", title: "Pedidos", subtitle: "Acompanhamento e gestao dos pedidos" },
   "/painel/cozinha": { eyebrow: "Operacoes", title: "Cozinha", subtitle: "Fila de preparo e expedicao" },
@@ -67,6 +68,7 @@ export const adminPageMeta: Record<string, PageMeta> = {
 export function getAdminPageMeta(pathname: string): PageMeta {
   if (adminPageMeta[pathname]) return adminPageMeta[pathname];
   if (pathname.startsWith("/painel/clientes/")) return adminPageMeta["/painel/clientes/:id"];
+  if (pathname.startsWith("/painel/products/landing/")) return adminPageMeta["/painel/products/landing"];
 
   const fallback = Object.entries(adminPageMeta)
     .filter(([path]) => pathname.startsWith(`${path}/`))

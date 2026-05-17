@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat, Droplets, Gift, Search, ChevronUp, ChevronDown, Truck } from "lucide-react";
 import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
@@ -119,6 +120,7 @@ const PRODUCT_SORT_LABELS: Record<ProductSortMode, string> = {
 };
 
 export default function AdminProducts() {
+  const navigate = useNavigate();
   const { products, addProduct, updateProduct, deleteProduct, multiFlavorsConfig, updateMultiFlavorsConfig } = useApp();
   const [activeTab, setActiveTab] = useState<PTab>("produtos");
   const [tabSearch, setTabSearch] = useState("");
@@ -879,6 +881,13 @@ export default function AdminProducts() {
     setEditingPromotionId(null);
     setPromotionForm(emptyPromotionForm());
     setPromoCombinations(buildPromotionCombinations(promoSizes, promoCrusts));
+  };
+
+  const openPromotionLandingEditor = (promotionId: string) => {
+    if (!promotionModalProduct) return;
+    const productId = promotionModalProduct.id;
+    closePromotionModal();
+    navigate(`/painel/products/landing/${productId}/${promotionId}`);
   };
 
   const handleTogglePromotionWeekday = (day: number) => {
@@ -1994,6 +2003,27 @@ export default function AdminProducts() {
                   </label>
                   <span className="text-stone text-xs">Timezone: America/Sao_Paulo</span>
                 </div>
+
+                {editingPromotionId ? (
+                  <div className="flex flex-col gap-3 rounded-xl border border-gold/25 bg-gold/10 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-cream text-sm font-bold">Essa pizza esta em promocao.</p>
+                      <p className="text-stone text-xs">Crie uma landing page para aumentar a conversao nos dias e horarios configurados.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openPromotionLandingEditor(editingPromotionId)}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-4 py-2 text-sm font-bold text-cream transition-colors hover:bg-gold/90"
+                    >
+                      <Edit2 size={15} />
+                      Criar Landing Page Promocional
+                    </button>
+                  </div>
+                ) : productPromotions.length > 0 ? (
+                  <div className="rounded-xl border border-surface-03 bg-surface-03 p-3 text-xs text-stone">
+                    Selecione uma promocao cadastrada para configurar a landing page promocional.
+                  </div>
+                ) : null}
 
                 <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3 sm:p-4 space-y-3">
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">

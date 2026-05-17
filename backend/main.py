@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.config import get_settings
 from backend.database import create_all_tables, SessionLocal, engine
 from backend.routes import products, orders, payments, shipping, coupons, loyalty, customers, promotions, admin, delivery, auth, admin_auth, campaigns, webhooks, store_operation
+from backend.routes import promotion_landings as promotion_landings_routes
 from backend.routes import chatbot as chatbot_routes, admin_chatbot as admin_chatbot_routes
 from backend.routes import upload as upload_routes
 from backend.routes import theme as theme_routes
@@ -1004,6 +1005,30 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_store_notification_impressions_customer_id ON store_notification_impressions(customer_id)",
         "CREATE INDEX IF NOT EXISTS ix_store_notification_impressions_anonymous_session_id ON store_notification_impressions(anonymous_session_id)",
         "CREATE INDEX IF NOT EXISTS ix_store_notification_impressions_identity_notification ON store_notification_impressions(notification_id, customer_id, anonymous_session_id)",
+        """CREATE TABLE IF NOT EXISTS promotion_landing_pages (
+            id VARCHAR PRIMARY KEY,
+            product_id VARCHAR NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            promotion_id VARCHAR NOT NULL REFERENCES product_promotions(id) ON DELETE CASCADE,
+            title VARCHAR(220) NOT NULL,
+            subtitle VARCHAR(500),
+            description TEXT,
+            cta_text VARCHAR(80) NOT NULL DEFAULT 'Quero essa pizza',
+            image_url TEXT,
+            image_position VARCHAR(40) NOT NULL DEFAULT 'center',
+            content_alignment VARCHAR(20) NOT NULL DEFAULT 'center',
+            overlay_style VARCHAR(40) NOT NULL DEFAULT 'dark-gradient',
+            badge_text VARCHAR(80),
+            slug VARCHAR(160) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'draft',
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            published_at TIMESTAMPTZ
+        )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_promotion_landing_pages_slug ON promotion_landing_pages(slug)",
+        "CREATE INDEX IF NOT EXISTS ix_promotion_landing_pages_product_id ON promotion_landing_pages(product_id)",
+        "CREATE INDEX IF NOT EXISTS ix_promotion_landing_pages_promotion_id ON promotion_landing_pages(promotion_id)",
+        "CREATE INDEX IF NOT EXISTS ix_promotion_landing_pages_status ON promotion_landing_pages(status)",
     ]
     for stmt in stmts:
         try:
@@ -1042,6 +1067,7 @@ app.include_router(loyalty.router)
 app.include_router(customers.router)
 app.include_router(customers.suggestions_router)
 app.include_router(promotions.router)
+app.include_router(promotion_landings_routes.router)
 app.include_router(admin.router)
 app.include_router(delivery.router)
 app.include_router(auth.router)
@@ -1086,6 +1112,7 @@ app.include_router(loyalty.router, prefix="/api")
 app.include_router(customers.router, prefix="/api")
 app.include_router(customers.suggestions_router, prefix="/api")
 app.include_router(promotions.router, prefix="/api")
+app.include_router(promotion_landings_routes.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(delivery.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")

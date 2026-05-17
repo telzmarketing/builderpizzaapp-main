@@ -168,6 +168,7 @@ export default function Product() {
       session_id: td.session_id,
       page_url: window.location.href,
     }).catch(() => {});
+    trackEvent("product_config_view", undefined, { product_id: product.id });
     trackEvent("product_viewed", undefined, { product_id: product.id });
     firePixelEvent("ViewContent", {
       value: product.current_price ?? product.price,
