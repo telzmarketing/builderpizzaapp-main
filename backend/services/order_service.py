@@ -26,6 +26,7 @@ from backend.core.events import (
 from backend.models.order import Order, OrderItem, OrderItemFlavor, OrderStatus
 from backend.models.payment import Payment, PaymentMethod, PaymentStatus
 from backend.models.payment_config import PaymentGatewayConfig
+from backend.models.paid_traffic import CampaignLink, TrafficCampaign
 from backend.models.product import Product, MultiFlavorsConfig, PricingRule, ProductCrustType, ProductDrinkVariant, ProductSize
 from backend.models.customer import Address, Customer as CustomerModel
 from backend.schemas.order import CheckoutIn, CartItemIn, FlavorIn, OrderStatusUpdate
@@ -53,6 +54,15 @@ def _compute_flavor_price(
 
 def _normalize_crust_price_addition(price_addition: float | None, product_base_price: float | None) -> float:
     return normalize_crust_price_addition(price_addition, product_base_price)
+
+
+def _clip_text(value: str | None, max_len: int) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return text[:max_len]
 
 
 class OrderService:
@@ -101,6 +111,35 @@ class OrderService:
             self._db.flush()
         return config
 
+    def _resolve_campaign_id(self, campaign_id: str | None, utm_campaign: str | None) -> str | None:
+        candidate = _clip_text(campaign_id, 120)
+        if candidate:
+            exists = self._db.query(TrafficCampaign.id).filter(TrafficCampaign.id == candidate).first()
+            if exists:
+                return candidate
+
+        utm = _clip_text(utm_campaign, 200)
+        if utm:
+            link = self._db.query(CampaignLink).filter(CampaignLink.utm_campaign == utm).first()
+            if link:
+                return link.campaign_id
+
+        return None
+
+    def _tracking_fields(self, payload: CheckoutIn) -> dict[str, str | None]:
+        utm_campaign = _clip_text(payload.utm_campaign, 200)
+        return {
+            "campaign_id": self._resolve_campaign_id(payload.campaign_id, utm_campaign),
+            "utm_source": _clip_text(payload.utm_source, 100),
+            "utm_medium": _clip_text(payload.utm_medium, 100),
+            "utm_campaign": utm_campaign,
+            "utm_content": _clip_text(payload.utm_content, 200),
+            "utm_term": _clip_text(payload.utm_term, 200),
+            "session_id": _clip_text(payload.session_id, 120),
+            "landing_page": _clip_text(payload.landing_page, 4000),
+            "referrer": _clip_text(payload.referrer, 4000),
+        }
+
     def _save_first_delivery_address(self, payload: CheckoutIn) -> None:
         if not payload.customer_id or not payload.delivery or payload.delivery.is_pickup:
             return
@@ -118,12 +157,12 @@ class OrderService:
             id=str(uuid.uuid4()),
             customer_id=payload.customer_id,
             label="Primeiro pedido",
-            street=payload.delivery.street.strip(),
+            street=_clip_text(payload.delivery.street, 300) or "",
             number=None,
-            complement=payload.delivery.complement,
-            neighborhood=payload.delivery.neighborhood,
-            city=payload.delivery.city.strip(),
-            zip_code=payload.delivery.zip_code,
+            complement=_clip_text(payload.delivery.complement, 100),
+            neighborhood=_clip_text(payload.delivery.neighborhood, 100),
+            city=_clip_text(payload.delivery.city, 100) or "",
+            zip_code=_clip_text(payload.delivery.zip_code, 20),
             is_default=True,
         ))
 
@@ -510,27 +549,28 @@ class OrderService:
         order_id = f"order-{uuid.uuid4().hex[:8]}"
         external_reference = order_id
         order_code = self._generate_order_code()
+        tracking = self._tracking_fields(payload)
         order = Order(
             id=order_id,
             order_code=order_code,
             external_reference=external_reference,
             customer_id=payload.customer_id,
-            delivery_name=payload.delivery.name,
-            delivery_phone=payload.delivery.phone,
-            delivery_street=payload.delivery.street,
-            delivery_city=payload.delivery.city,
-            delivery_complement=payload.delivery.complement,
+            delivery_name=_clip_text(payload.delivery.name, 200) or "",
+            delivery_phone=_clip_text(payload.delivery.phone, 30) or "",
+            delivery_street=_clip_text(payload.delivery.street, 300) or "",
+            delivery_city=_clip_text(payload.delivery.city, 100) or "",
+            delivery_complement=_clip_text(payload.delivery.complement, 100),
             status=OrderStatus.paid if is_pay_on_delivery else OrderStatus.aguardando_pagamento,
             coupon_id=resolved_coupon_id,
-            campaign_id=payload.campaign_id,
-            utm_source=payload.utm_source,
-            utm_medium=payload.utm_medium,
-            utm_campaign=payload.utm_campaign,
-            utm_content=payload.utm_content,
-            utm_term=payload.utm_term,
-            session_id=payload.session_id,
-            landing_page=payload.landing_page,
-            referrer=payload.referrer,
+            campaign_id=tracking["campaign_id"],
+            utm_source=tracking["utm_source"],
+            utm_medium=tracking["utm_medium"],
+            utm_campaign=tracking["utm_campaign"],
+            utm_content=tracking["utm_content"],
+            utm_term=tracking["utm_term"],
+            session_id=tracking["session_id"],
+            landing_page=tracking["landing_page"],
+            referrer=tracking["referrer"],
             subtotal=subtotal,
             shipping_fee=delivery_fee_final,
             delivery_fee_original=delivery_fee_original,
@@ -570,13 +610,13 @@ class OrderService:
                 order_id=order.id,
                 product_id=item.product_id,
                 quantity=item.quantity,
-                selected_size=item.selected_size,
+                selected_size=_clip_text(item.selected_size, 50),
                 selected_size_id=size_obj.id if size_obj else item.selected_size_id,
                 flavor_division=item.flavor_division,
                 flavor_count=item.flavor_division,
                 selected_crust_type_id=crust_obj.id if crust_obj else item.selected_crust_type_id,
-                selected_crust_type=item.selected_crust_type_name,
-                selected_drink_variant=item.selected_drink_variant_name,
+                selected_crust_type=_clip_text(item.selected_crust_type_name, 100),
+                selected_drink_variant=_clip_text(item.selected_drink_variant_name, 100),
                 notes=item.notes,
                 unit_price=unit_price,
                 total_price=round(unit_price * item.quantity, 2),
@@ -662,7 +702,7 @@ class OrderService:
         self._db.commit()
         self._db.refresh(order)
 
-        if payload.session_id:
+        if tracking["session_id"]:
             try:
                 from backend.schemas.paid_traffic import TrackingEventIn
                 from backend.services.paid_traffic_service import PaidTrafficService
@@ -670,18 +710,18 @@ class OrderService:
 
                 with SessionLocal() as tracking_db:
                     PaidTrafficService(tracking_db).record_event(TrackingEventIn(
-                        session_id=payload.session_id,
-                        campaign_id=payload.campaign_id,
+                        session_id=tracking["session_id"],
+                        campaign_id=tracking["campaign_id"],
                         event_type="order_created",
                         value=order.total,
-                        path=payload.landing_page,
-                        landing_page=payload.landing_page,
-                        referrer=payload.referrer,
-                        utm_source=payload.utm_source,
-                        utm_medium=payload.utm_medium,
-                        utm_campaign=payload.utm_campaign,
-                        utm_content=payload.utm_content,
-                        utm_term=payload.utm_term,
+                        path=tracking["landing_page"],
+                        landing_page=tracking["landing_page"],
+                        referrer=tracking["referrer"],
+                        utm_source=tracking["utm_source"],
+                        utm_medium=tracking["utm_medium"],
+                        utm_campaign=tracking["utm_campaign"],
+                        utm_content=tracking["utm_content"],
+                        utm_term=tracking["utm_term"],
                         metadata={"order_id": order.id},
                     ))
             except Exception:
