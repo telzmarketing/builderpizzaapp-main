@@ -32,6 +32,47 @@ const PRICING_LABELS: Record<PricingRule, string> = {
   proportional: "Preço proporcional a cada parte",
 };
 
+const DRINK_PRODUCT_HINTS = [
+  "agua",
+  "bebida",
+  "cerveja",
+  "chopp",
+  "coca",
+  "drink",
+  "fanta",
+  "guarana",
+  "lata",
+  "litro",
+  "ml",
+  "refrigerante",
+  "sprite",
+  "suco",
+];
+
+const normalizeProductText = (value?: string | null) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+const isPizzaFlavorCandidate = (candidate?: Pizza | null) => {
+  if (!candidate || candidate.active === false) return false;
+
+  const productType = normalizeProductText(candidate.product_type);
+  if (productType) return productType === "pizza";
+
+  if (Array.isArray(candidate.drink_variants) && candidate.drink_variants.length > 0) {
+    return false;
+  }
+
+  const searchableText = normalizeProductText(
+    [candidate.name, candidate.category, candidate.subcategory].filter(Boolean).join(" ")
+  );
+
+  return !DRINK_PRODUCT_HINTS.some((hint) => searchableText.includes(hint));
+};
+
 function computeFlavorPrice(slots: (Pizza | null)[], division: number, rule: PricingRule): number {
   const filled = slots.slice(0, division).filter((f): f is Pizza => f !== null);
   if (filled.length === 0) return 0;
@@ -342,6 +383,8 @@ export default function Product() {
   };
 
   const handleSelectFlavor = (slotIndex: number, p: Pizza) => {
+    if (!isPizzaFlavorCandidate(p)) return;
+
     setFlavorSlots((prev) => {
       const next = [...prev];
       next[slotIndex] = p;
@@ -454,9 +497,7 @@ export default function Product() {
 
   const availableForSlot = (slotIndex: number) =>
     products.filter((p) => {
-      const productType = (p as any).product_type as string | null | undefined;
-      const canBePizzaFlavor = !productType || productType === "pizza";
-      return canBePizzaFlavor && !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id);
+      return isPizzaFlavorCandidate(p) && !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id);
     });
 
   const canAddToCart = isDrink ? true : (allFilled && (regularCrusts.length === 0 || selectedCrust !== null));
