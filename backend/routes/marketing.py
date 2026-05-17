@@ -4,7 +4,7 @@ import hashlib
 import json
 import uuid
 import requests
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, time, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from pydantic import BaseModel
 from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, Date, ForeignKey, func, text
@@ -602,15 +602,47 @@ async def track_event(body: VisitorEventIn, request: Request, db: Session = Depe
 
 @router.get("/visitors")
 def list_visitors(
-    period: str = "7d", limit: int = 100,
+    period: str = Query("today", regex="^(today|7d|30d|90d)$"),
+    selected_date: date | None = Query(default=None, alias="date"),
+    limit: int = 100,
     db: Session = Depends(get_db), _=Depends(get_current_admin)
 ):
     now = datetime.now(timezone.utc)
-    _period_days = {"today": 1, "7d": 7, "30d": 30, "90d": 90}
-    days = _period_days.get(period, 7)
-    since = now - timedelta(days=days)
+    if selected_date:
+        start_dt = datetime.combine(selected_date, time.min, tzinfo=timezone.utc)
+        end_dt = datetime.combine(selected_date, time.max, tzinfo=timezone.utc)
+        period_label = "date"
+    else:
+        _period_days = {"today": 1, "7d": 7, "30d": 30, "90d": 90}
+        days = _period_days.get(period, 1)
+        start_date = now.date() - timedelta(days=days - 1)
+        start_dt = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
+        end_dt = datetime.combine(now.date(), time.max, tzinfo=timezone.utc)
+        period_label = period
 
-    total = db.query(func.count(VisitorProfile.id)).filter(VisitorProfile.last_seen_at >= since).scalar() or 0
+    params = {"start_dt": start_dt, "end_dt": end_dt}
+    period_visitors_cte = """
+        SELECT DISTINCT visitor_id
+        FROM visitor_events
+        WHERE created_at >= :start_dt AND created_at <= :end_dt
+        UNION
+        SELECT DISTINCT visitor_id
+        FROM visitor_sessions
+        WHERE started_at >= :start_dt AND started_at <= :end_dt
+        UNION
+        SELECT id AS visitor_id
+        FROM visitor_profiles
+        WHERE first_seen_at >= :start_dt AND first_seen_at <= :end_dt
+        UNION
+        SELECT id AS visitor_id
+        FROM visitor_profiles
+        WHERE last_seen_at >= :start_dt AND last_seen_at <= :end_dt
+    """
+
+    total = db.execute(
+        text(f"SELECT COUNT(*) FROM ({period_visitors_cte}) period_visitors"),
+        params,
+    ).scalar() or 0
     settings = db.query(MarketingSettings).filter(MarketingSettings.id == "default").first()
     online_minutes = settings.online_visitor_minutes if settings and settings.online_visitor_minutes else 5
     online_since = now - timedelta(minutes=online_minutes)
@@ -620,18 +652,55 @@ def list_visitors(
         CustomerEvent.customer_id.isnot(None),
     ).scalar() or 0
 
-    recent = (db.query(VisitorProfile)
-              .filter(VisitorProfile.last_seen_at >= since)
-              .order_by(VisitorProfile.last_seen_at.desc())
-              .limit(limit).all())
+    recent_rows = db.execute(text(f"""
+        WITH period_visitors AS ({period_visitors_cte}),
+        period_sessions AS (
+            SELECT visitor_id, COUNT(*) AS sessions, COALESCE(SUM(pageviews), 0) AS session_pageviews
+            FROM visitor_sessions
+            WHERE started_at >= :start_dt AND started_at <= :end_dt
+            GROUP BY visitor_id
+        ),
+        period_events AS (
+            SELECT
+                visitor_id,
+                COUNT(*) AS events,
+                COUNT(*) FILTER (WHERE event_type = 'page_view') AS event_pageviews,
+                MAX(created_at) AS last_event_at
+            FROM visitor_events
+            WHERE created_at >= :start_dt AND created_at <= :end_dt
+            GROUP BY visitor_id
+        )
+        SELECT
+            vp.id,
+            vp.city,
+            vp.neighborhood,
+            vp.country,
+            vp.device_type,
+            vp.browser,
+            vp.latitude,
+            vp.longitude,
+            vp.location_accuracy_m,
+            vp.location_captured_at,
+            vp.last_seen_at,
+            COALESCE(ps.sessions, 0) AS sessions,
+            GREATEST(COALESCE(ps.session_pageviews, 0), COALESCE(pe.event_pageviews, 0)) AS pageviews,
+            COALESCE(pe.events, 0) AS events,
+            COALESCE(pe.last_event_at, vp.last_seen_at) AS period_last_seen
+        FROM visitor_profiles vp
+        JOIN period_visitors pv ON pv.visitor_id = vp.id
+        LEFT JOIN period_sessions ps ON ps.visitor_id = vp.id
+        LEFT JOIN period_events pe ON pe.visitor_id = vp.id
+        ORDER BY period_last_seen DESC
+        LIMIT :limit
+    """), {**params, "limit": limit}).fetchall()
 
     # Top events
     top_events = db.execute(text("""
         SELECT event_type, COUNT(*) as cnt
         FROM visitor_events
-        WHERE created_at >= :since
+        WHERE created_at >= :start_dt AND created_at <= :end_dt
         GROUP BY event_type ORDER BY cnt DESC LIMIT 10
-    """), {"since": since}).fetchall()
+    """), params).fetchall()
 
     # UTM breakdown
     try:
@@ -643,11 +712,11 @@ def list_visitors(
                 COUNT(*) FILTER (WHERE total_orders > 0) AS conversions
             FROM visitor_sessions vs
             JOIN visitor_profiles vp ON vp.id = vs.visitor_id
-            WHERE vs.started_at >= :since
+            WHERE vs.started_at >= :start_dt AND vs.started_at <= :end_dt
             GROUP BY utm_source, utm_medium, utm_campaign
             ORDER BY sessions DESC
             LIMIT 20
-        """), {"since": since}).fetchall()
+        """), params).fetchall()
         utm_breakdown = [{
             "utm_source": r[0], "utm_medium": r[1], "utm_campaign": r[2],
             "sessions": r[3] or 0, "conversions": r[4] or 0,
@@ -658,12 +727,13 @@ def list_visitors(
 
     # Device breakdown
     try:
-        dev_rows = db.execute(text("""
+        dev_rows = db.execute(text(f"""
+            WITH period_visitors AS ({period_visitors_cte})
             SELECT COALESCE(device_type, 'unknown') AS device_type, COUNT(*) AS sessions
-            FROM visitor_profiles
-            WHERE last_seen_at >= :since
+            FROM visitor_profiles vp
+            JOIN period_visitors pv ON pv.visitor_id = vp.id
             GROUP BY device_type ORDER BY sessions DESC
-        """), {"since": since}).fetchall()
+        """), params).fetchall()
         total_dev = sum(r[1] for r in dev_rows) or 1
         devices = [{"device_type": r[0], "sessions": r[1] or 0,
                     "percentage": round((r[1] or 0) / total_dev * 100, 1)} for r in dev_rows]
@@ -680,9 +750,9 @@ def list_visitors(
                    0 AS revenue
             FROM visitor_events ve
             JOIN products p ON p.id = ve.product_id
-            WHERE ve.created_at >= :since AND ve.product_id IS NOT NULL
+            WHERE ve.created_at >= :start_dt AND ve.created_at <= :end_dt AND ve.product_id IS NOT NULL
             GROUP BY p.name ORDER BY views DESC LIMIT 10
-        """), {"since": since}).fetchall()
+        """), params).fetchall()
         top_products = [{"name": r[0], "views": r[1] or 0, "add_to_cart": r[2] or 0, "orders": r[3] or 0,
                          "revenue": float(r[4] or 0)} for r in prod_rows]
     except Exception:
@@ -692,22 +762,23 @@ def list_visitors(
     try:
         funnel_data = db.execute(text("""
             SELECT
-                COUNT(DISTINCT id) FILTER (WHERE total_sessions > 0) AS visited,
-                COUNT(DISTINCT id) FILTER (WHERE total_pageviews > 1) AS engaged,
-                COUNT(DISTINCT id) FILTER (WHERE total_orders > 0) AS converted
-            FROM visitor_profiles
-            WHERE last_seen_at >= :since
-        """), {"since": since}).fetchone()
-        visited = funnel_data[0] or 0
-        engaged = funnel_data[1] or 0
-        converted = funnel_data[2] or 0
+                COUNT(DISTINCT visitor_id) FILTER (WHERE event_type IN ('product_view', 'product_viewed', 'product_config_view')) AS product_views,
+                COUNT(DISTINCT visitor_id) FILTER (WHERE event_type IN ('add_to_cart', 'cart_item_added', 'cart_opened')) AS carts,
+                COUNT(DISTINCT visitor_id) FILTER (WHERE event_type IN ('checkout_start', 'checkout_started')) AS checkouts,
+                COUNT(DISTINCT visitor_id) FILTER (WHERE event_type = 'order_created') AS orders
+            FROM visitor_events
+            WHERE created_at >= :start_dt AND created_at <= :end_dt
+        """), params).fetchone()
+        product_views = funnel_data[0] or 0
+        carts = funnel_data[1] or 0
+        checkouts = funnel_data[2] or 0
+        orders = funnel_data[3] or 0
         funnel = [
-            {"step": "Visitantes", "count": visited,
-             "drop_rate": 0},
-            {"step": "Engajados", "count": engaged,
-             "drop_rate": round((visited - engaged) / visited * 100, 1) if visited > 0 else 0},
-            {"step": "Convertidos", "count": converted,
-             "drop_rate": round((engaged - converted) / engaged * 100, 1) if engaged > 0 else 0},
+            {"step": "Visitantes", "count": total},
+            {"step": "Produtos vistos", "count": product_views},
+            {"step": "Carrinho", "count": carts},
+            {"step": "Checkout", "count": checkouts},
+            {"step": "Pedido finalizado", "count": orders},
         ]
     except Exception:
         funnel = []
@@ -715,17 +786,44 @@ def list_visitors(
     # Count total sessions and events in period
     try:
         total_sessions = db.execute(
-            text("SELECT COUNT(*) FROM visitor_sessions WHERE started_at >= :since"), {"since": since}
+            text("SELECT COUNT(*) FROM visitor_sessions WHERE started_at >= :start_dt AND started_at <= :end_dt"),
+            params,
         ).scalar() or 0
     except Exception:
         total_sessions = 0
 
     try:
         total_events = db.execute(
-            text("SELECT COUNT(*) FROM visitor_events WHERE created_at >= :since"), {"since": since}
+            text("SELECT COUNT(*) FROM visitor_events WHERE created_at >= :start_dt AND created_at <= :end_dt"),
+            params,
         ).scalar() or 0
     except Exception:
         total_events = 0
+
+    try:
+        bounce_rows = db.execute(text("""
+            SELECT
+                COUNT(*) FILTER (WHERE COALESCE(pageviews, 0) <= 1) AS bounced,
+                COUNT(*) AS total
+            FROM visitor_sessions
+            WHERE started_at >= :start_dt AND started_at <= :end_dt
+        """), params).fetchone()
+        bounced_sessions = bounce_rows[0] or 0
+        sessions_for_bounce = bounce_rows[1] or 0
+        bounce_rate = (bounced_sessions / sessions_for_bounce) if sessions_for_bounce else 0
+    except Exception:
+        bounce_rate = 0
+
+    try:
+        avg_session_duration = db.execute(text("""
+            SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (ended_at - started_at))), 0)
+            FROM visitor_sessions
+            WHERE started_at >= :start_dt
+              AND started_at <= :end_dt
+              AND ended_at IS NOT NULL
+        """), params).scalar() or 0
+    except Exception:
+        avg_session_duration = 0
 
     # Normalize devices to match frontend {device_type, count, pct}
     normalized_devices = [{"device_type": d["device_type"], "count": d["sessions"], "pct": d["percentage"]}
@@ -746,25 +844,32 @@ def list_visitors(
 
     return ok({
         # Flat fields expected by MarketingVisitantes
+        "period": period_label,
+        "date_from": start_dt.date().isoformat(),
+        "date_to": end_dt.date().isoformat(),
         "visitors_today": total,
         "online_visitors": online,
         "online_registered_customers": online_registered_customers,
         "total_sessions": total_sessions,
         "total_events": total_events,
-        "bounce_rate": 0,
-        "avg_session_duration": 0,
+        "bounce_rate": bounce_rate,
+        "avg_session_duration": int(avg_session_duration or 0),
         "recent_visitors": [{
-            "id": v.id, "city": v.city or "", "neighborhood": v.neighborhood or "", "browser": v.browser or "",
-            "device": v.device_type or "desktop",
-            "sessions": v.total_sessions or 0, "pageviews": v.total_pageviews or 0,
-            "last_seen": v.last_seen_at.isoformat(),
-            "status": "online" if v.last_seen_at and v.last_seen_at >= online_since else "offline",
-            "is_online": bool(v.last_seen_at and v.last_seen_at >= online_since),
-            "latitude": v.latitude,
-            "longitude": v.longitude,
-            "location_accuracy_m": v.location_accuracy_m,
-            "location_captured_at": v.location_captured_at.isoformat() if v.location_captured_at else None,
-        } for v in recent],
+            "id": v[0],
+            "city": v[1] or "",
+            "neighborhood": v[2] or "",
+            "browser": v[5] or "",
+            "device": v[4] or "desktop",
+            "sessions": int(v[11] or 0),
+            "pageviews": int(v[12] or 0),
+            "last_seen": (v[14] or v[10]).isoformat() if (v[14] or v[10]) else None,
+            "status": "online" if v[10] and v[10] >= online_since else "offline",
+            "is_online": bool(v[10] and v[10] >= online_since),
+            "latitude": v[6],
+            "longitude": v[7],
+            "location_accuracy_m": v[8],
+            "location_captured_at": v[9].isoformat() if v[9] else None,
+        } for v in recent_rows],
         "common_events": [{"name": r[0], "count": r[1]} for r in top_events],
         "utm_breakdown": normalized_utm,
         "devices": normalized_devices,
@@ -773,17 +878,17 @@ def list_visitors(
         # Legacy nested structure (kept for backward compatibility)
         "summary": {"total": total, "online": online, "online_registered_customers": online_registered_customers},
         "visitors": [{
-            "id": v.id, "city": v.city, "neighborhood": v.neighborhood, "country": v.country, "device_type": v.device_type,
-            "browser": v.browser, "total_sessions": v.total_sessions,
-            "total_pageviews": v.total_pageviews, "total_orders": v.total_orders,
-            "last_seen_at": v.last_seen_at.isoformat(),
-            "status": "online" if v.last_seen_at and v.last_seen_at >= online_since else "offline",
-            "is_online": bool(v.last_seen_at and v.last_seen_at >= online_since),
-            "latitude": v.latitude,
-            "longitude": v.longitude,
-            "location_accuracy_m": v.location_accuracy_m,
-            "location_captured_at": v.location_captured_at.isoformat() if v.location_captured_at else None,
-        } for v in recent],
+            "id": v[0], "city": v[1], "neighborhood": v[2], "country": v[3], "device_type": v[4],
+            "browser": v[5], "total_sessions": int(v[11] or 0),
+            "total_pageviews": int(v[12] or 0), "total_orders": 0,
+            "last_seen_at": (v[14] or v[10]).isoformat() if (v[14] or v[10]) else None,
+            "status": "online" if v[10] and v[10] >= online_since else "offline",
+            "is_online": bool(v[10] and v[10] >= online_since),
+            "latitude": v[6],
+            "longitude": v[7],
+            "location_accuracy_m": v[8],
+            "location_captured_at": v[9].isoformat() if v[9] else None,
+        } for v in recent_rows],
         "top_events": [{"event": r[0], "count": r[1]} for r in top_events],
     })
 

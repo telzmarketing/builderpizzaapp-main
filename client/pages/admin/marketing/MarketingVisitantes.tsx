@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import {
   ArrowRight,
+  CalendarDays,
   Loader2,
   MapPin,
   Monitor,
@@ -68,6 +69,12 @@ const PERIOD_LABELS: Record<Period, string> = {
   "90d": "90 dias",
 };
 
+function todayInputValue() {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().slice(0, 10);
+}
+
 function fmtDuration(seconds?: number) {
   if (!seconds) return "-";
   const m = Math.floor(seconds / 60);
@@ -89,7 +96,9 @@ function EmptyState({ label }: { label: string }) {
 }
 
 export default function MarketingVisitantes() {
-  const [period, setPeriod] = useState<Period>("7d");
+  const [period, setPeriod] = useState<Period>("today");
+  const [selectedDate, setSelectedDate] = useState(todayInputValue);
+  const [dateMode, setDateMode] = useState(true);
   const [data, setData] = useState<MarketingVisitorData>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [warn, setWarn] = useState("");
@@ -108,10 +117,10 @@ export default function MarketingVisitantes() {
   const maxProductViews = Math.max(...topProducts.map((p) => p.views), 1);
   const maxFunnel = Math.max(...funnel.map((f) => f.value), 1);
 
-  const fetchData = (p: Period, silent = false) => {
+  const fetchData = (p: Period, date: string, useDate: boolean, silent = false) => {
     if (!silent) setLoading(true);
     if (!silent) setWarn("");
-    marketingVisitorsApi.list(p)
+    marketingVisitorsApi.list({ period: p, date: useDate ? date : undefined })
       .then((d) => setData({ ...EMPTY, ...d }))
       .catch(() => {
         if (!silent) setWarn("Nao foi possivel carregar dados de visitantes.");
@@ -122,10 +131,21 @@ export default function MarketingVisitantes() {
   };
 
   useEffect(() => {
-    fetchData(period);
-    const timer = window.setInterval(() => fetchData(period, true), 15000);
+    fetchData(period, selectedDate, dateMode);
+    const timer = window.setInterval(() => fetchData(period, selectedDate, dateMode, true), 15000);
     return () => window.clearInterval(timer);
-  }, [period]); // eslint-disable-line
+  }, [period, selectedDate, dateMode]); // eslint-disable-line
+
+  const setQuickPeriod = (nextPeriod: Period) => {
+    setPeriod(nextPeriod);
+    setDateMode(false);
+    if (nextPeriod === "today") setSelectedDate(todayInputValue());
+  };
+
+  const setExactDate = (value: string) => {
+    setSelectedDate(value || todayInputValue());
+    setDateMode(true);
+  };
 
   const deviceIcon = (d: string) => {
     const dl = d?.toLowerCase();
@@ -146,6 +166,8 @@ export default function MarketingVisitantes() {
       ? `https://www.google.com/maps?q=${v.latitude},${v.longitude}`
       : "";
 
+  const metricPeriodLabel = dateMode ? "no dia" : period === "today" ? "hoje" : "no periodo";
+
   return (
     <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-surface-00 overflow-hidden">
       <AdminSidebar />
@@ -156,19 +178,28 @@ export default function MarketingVisitantes() {
             <h1 className="text-2xl font-bold text-cream">Analise de Visitantes</h1>
             <p className="text-sm text-stone mt-1">Origem, comportamento e presenca na loja.</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-2">
+            <label className="flex items-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-3 py-2 text-sm text-stone">
+              <CalendarDays size={15} className="text-gold" />
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(event) => setExactDate(event.target.value)}
+                className="bg-transparent text-cream outline-none"
+              />
+            </label>
             <div className="flex bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
               {(["today", "7d", "30d", "90d"] as Period[]).map((p) => (
                 <button
                   key={p}
-                  onClick={() => setPeriod(p)}
-                  className={`px-3 py-2 text-sm font-medium transition-colors ${period === p ? "bg-gold text-black" : "text-stone hover:text-cream"}`}
+                  onClick={() => setQuickPeriod(p)}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${!dateMode && period === p ? "bg-gold text-black" : "text-stone hover:text-cream"}`}
                 >
                   {PERIOD_LABELS[p]}
                 </button>
               ))}
             </div>
-            <button onClick={() => fetchData(period)} className="p-2 rounded-xl bg-surface-02 border border-surface-03 text-stone hover:text-cream transition-colors">
+            <button onClick={() => fetchData(period, selectedDate, dateMode)} className="p-2 rounded-xl bg-surface-02 border border-surface-03 text-stone hover:text-cream transition-colors">
               <RefreshCw size={16} />
             </button>
             <AdminTopActions />
@@ -182,7 +213,7 @@ export default function MarketingVisitantes() {
           <>
             <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
               {[
-                { label: "Visitantes Hoje", value: data.visitors_today.toLocaleString("pt-BR"), cls: "text-gold" },
+                { label: `Visitantes ${metricPeriodLabel}`, value: data.visitors_today.toLocaleString("pt-BR"), cls: "text-gold" },
                 { label: "Online Agora", value: data.online_visitors.toLocaleString("pt-BR"), cls: "text-green-400" },
                 { label: "Total Sessoes", value: data.total_sessions.toLocaleString("pt-BR"), cls: "text-blue-400" },
                 { label: "Total Eventos", value: data.total_events.toLocaleString("pt-BR"), cls: "text-purple-400" },

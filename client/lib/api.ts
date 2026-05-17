@@ -705,6 +705,9 @@ export interface PaidTrafficRealtime {
 export type MarketingVisitorsPeriod = "today" | "7d" | "30d" | "90d";
 
 export interface MarketingVisitorData {
+  period?: string;
+  date_from?: string;
+  date_to?: string;
   visitors_today: number;
   online_visitors: number;
   online_registered_customers?: number;
@@ -3137,8 +3140,16 @@ export const marketingTrackApi = {
 };
 
 export const marketingVisitorsApi = {
-  list: (period: MarketingVisitorsPeriod) =>
-    get<MarketingVisitorData>(`/marketing/visitors?period=${period}`),
+  list: (params: MarketingVisitorsPeriod | { period?: MarketingVisitorsPeriod; date?: string } = "today") => {
+    const qs = new URLSearchParams();
+    if (typeof params === "string") {
+      qs.set("period", params);
+    } else {
+      if (params.period) qs.set("period", params.period);
+      if (params.date) qs.set("date", params.date);
+    }
+    return get<MarketingVisitorData>(`/marketing/visitors?${qs.toString()}`);
+  },
 };
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
