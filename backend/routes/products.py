@@ -136,7 +136,10 @@ def _product_payload(product: Product, db: Session, auto_badge_ids: set[str] | N
     ]
     if promotion_quotes:
         quote = min(promotion_quotes, key=lambda candidate: candidate.final_price)
-    landing = PromotionLandingService(db).active_landing_for_product(product) if promotion_quotes else None
+    try:
+        landing = PromotionLandingService(db).active_landing_for_product(product) if promotion_quotes else None
+    except Exception:
+        landing = None
 
     mode = product.best_seller_badge_mode or "off"
     if mode == "manual":

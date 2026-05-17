@@ -49,7 +49,7 @@ const inputClass = "w-full rounded-lg border border-surface-03 bg-surface-03 px-
 const labelClass = "mb-1 block text-xs font-semibold text-parchment";
 
 export default function PromotionalLandingEditor() {
-  const { productId, promotionId } = useParams<{ productId: string; promotionId: string }>();
+  const { productId: routeProductId, promotionId: routePromotionId } = useParams<{ productId: string; promotionId: string }>();
   const navigate = useNavigate();
   const [product, setProduct] = useState<ApiProduct | null>(null);
   const [promotion, setPromotion] = useState<ApiProductPromotion | null>(null);
@@ -59,16 +59,38 @@ export default function PromotionalLandingEditor() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const pathLandingIds = useMemo(() => {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    const landingIndex = parts.lastIndexOf("landing");
+    if (landingIndex < 0) return { productId: routeProductId, promotionId: routePromotionId };
+    return {
+      productId: parts[landingIndex + 1] || routeProductId,
+      promotionId: parts[landingIndex + 2] || routePromotionId,
+    };
+  }, [routeProductId, routePromotionId]);
+
+  const productId = routeProductId?.startsWith("prod-") ? routeProductId : pathLandingIds.productId;
+  const promotionId = routePromotionId?.startsWith("pp-") ? routePromotionId : pathLandingIds.promotionId;
+
   useEffect(() => {
     if (!productId || !promotionId) return;
     setLoading(true);
     setError("");
-    Promise.all([
+    Promise.allSettled([
       productsApi.get(productId),
       productPromotionsApi.list(productId),
       promotionLandingsApi.getByProductPromotion(productId, promotionId),
     ])
-      .then(([prod, promotions, existing]) => {
+      .then(([prodResult, promotionsResult, existingResult]) => {
+        if (prodResult.status !== "fulfilled") {
+          throw prodResult.reason;
+        }
+        if (promotionsResult.status !== "fulfilled") {
+          throw promotionsResult.reason;
+        }
+        const prod = prodResult.value;
+        const promotions = promotionsResult.value;
+        const existing = existingResult.status === "fulfilled" ? existingResult.value : null;
         const promo = promotions.find((item) => item.id === promotionId) ?? null;
         setProduct(prod);
         setPromotion(promo);
