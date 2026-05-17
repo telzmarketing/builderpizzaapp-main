@@ -19,7 +19,7 @@ const UPLOAD_ASSET_BASE = BASE.endsWith("/api")
 const IMAGE_FILE_RE = /\.(apng|avif|gif|jpe?g|jfif|pjpeg|pjp|png|svg|webp)$/i;
 
 export function isAssetUrl(value?: string | null): boolean {
-  const trimmed = value?.trim();
+  const trimmed = value?.trim().replace(/\\/g, "/");
   return !!trimmed && (
     IMAGE_FILE_RE.test(trimmed) ||
     trimmed.startsWith("data:") ||
@@ -29,7 +29,7 @@ export function isAssetUrl(value?: string | null): boolean {
 }
 
 export function resolveAssetUrl(value?: string | null): string {
-  const trimmed = value?.trim();
+  const trimmed = value?.trim().replace(/\\/g, "/");
   if (!trimmed) return "";
   if (trimmed.startsWith("http") || trimmed.startsWith("data:")) return trimmed;
   if (trimmed.startsWith("/api/uploads/")) return `${UPLOAD_ASSET_BASE}${trimmed.replace(/^\/api/, "")}`;

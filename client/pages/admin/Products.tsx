@@ -54,23 +54,57 @@ const isBrokenIconValue = (value?: string | null) => {
   return !trimmed || trimmed.includes("ðŸ") || trimmed.includes("�");
 };
 
-function ProductIconPreview({ icon, name, type }: { icon?: string | null; name: string; type?: string | null }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const cleanIcon = (icon || "").trim();
-  const canRenderImage = cleanIcon && !isBrokenIconValue(cleanIcon) && isAssetUrl(cleanIcon) && !imageFailed;
+const normalizeUploadReference = (value: string) =>
+  value.replace(/\\/g, "/").replace(/^\/+/, "");
 
-  if (canRenderImage) {
+const looksLikeUploadToken = (value: string) =>
+  /^[a-f0-9-]{8,}$/i.test(value) || /^uploads\//i.test(value) || /^api\/uploads\//i.test(value);
+
+const productImageCandidates = (value?: string | null) => {
+  const trimmed = (value || "").trim();
+  if (!trimmed || isBrokenIconValue(trimmed)) return [];
+
+  const normalized = normalizeUploadReference(trimmed);
+  if (isAssetUrl(normalized) || isAssetUrl(trimmed)) {
+    return [resolveAssetUrl(normalized)];
+  }
+
+  if (!looksLikeUploadToken(normalized)) return [];
+
+  const filename = normalized.replace(/^api\/uploads\//i, "").replace(/^uploads\//i, "");
+  const basePath = `/uploads/${filename}`;
+  const hasExtension = /\.[a-z0-9]{2,5}$/i.test(filename);
+  const candidates = hasExtension
+    ? [basePath]
+    : [basePath, `${basePath}.webp`, `${basePath}.png`, `${basePath}.jpg`, `${basePath}.jpeg`];
+
+  return candidates.map((candidate) => resolveAssetUrl(candidate));
+};
+
+function ProductIconPreview({ icon, name, type }: { icon?: string | null; name: string; type?: string | null }) {
+  const [imageIndex, setImageIndex] = useState(0);
+  const cleanIcon = (icon || "").trim();
+  const imageCandidates = productImageCandidates(cleanIcon);
+  const currentImage = imageCandidates[imageIndex];
+
+  useEffect(() => {
+    setImageIndex(0);
+  }, [cleanIcon]);
+
+  if (currentImage) {
     return (
       <img
-        src={resolveAssetUrl(cleanIcon)}
+        src={currentImage}
         alt={name}
-        className="w-full h-full object-contain"
-        onError={() => setImageFailed(true)}
+        className="h-full w-full object-cover"
+        onError={() => setImageIndex((index) => index + 1)}
       />
     );
   }
 
-  return <span className="text-3xl">{isBrokenIconValue(cleanIcon) ? getTypeIcon(type) : cleanIcon}</span>;
+  const normalized = normalizeUploadReference(cleanIcon);
+  const shouldFallback = isBrokenIconValue(cleanIcon) || looksLikeUploadToken(normalized) || cleanIcon.length > 6;
+  return <span className="text-3xl">{shouldFallback ? getTypeIcon(type) : cleanIcon}</span>;
 }
 
 type PromotionFormState = {
@@ -1922,7 +1956,7 @@ export default function AdminProducts() {
       {/* ── Sizes Modal ───────────────────────────────────────────────────────── */}
       {promotionModalProduct && (
         <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 backdrop-blur-sm p-2 sm:items-center sm:p-4" onClick={closePromotionModal}>
-          <div className="flex h-[calc(100dvh-1rem)] w-full max-w-[1180px] flex-col overflow-hidden rounded-xl border border-surface-03 bg-surface-02 shadow-2xl sm:h-auto sm:max-h-[92dvh] sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="flex h-[calc(100dvh-1rem)] w-full max-w-[1180px] flex-col overflow-hidden rounded-xl border border-surface-03 bg-surface-02 shadow-2xl sm:h-[calc(100dvh-2rem)] sm:max-h-[92dvh] sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex shrink-0 items-center justify-between gap-3 border-b border-surface-03 bg-surface-02 px-4 py-3 sm:px-6 sm:py-4">
               <div className="flex min-w-0 items-center gap-3">
                 <Tag size={18} className="text-emerald-300" />
