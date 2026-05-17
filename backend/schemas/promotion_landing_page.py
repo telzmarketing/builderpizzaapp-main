@@ -12,6 +12,8 @@ class PromotionLandingPageBase(BaseModel):
     description: Optional[str] = None
     cta_text: str = Field(default="Quero essa pizza", min_length=1, max_length=80)
     image_url: Optional[str] = None
+    image_url_2: Optional[str] = None
+    video_url: Optional[str] = None
     image_position: str = Field(default="center", pattern=r"^(center|top|bottom|left|right)$")
     content_alignment: str = Field(default="center", pattern=r"^(left|center|right)$")
     overlay_style: str = Field(default="dark-gradient", pattern=r"^(dark-gradient|dark|light|brand)$")
@@ -31,6 +33,8 @@ class PromotionLandingPageUpdate(BaseModel):
     description: Optional[str] = None
     cta_text: Optional[str] = Field(default=None, min_length=1, max_length=80)
     image_url: Optional[str] = None
+    image_url_2: Optional[str] = None
+    video_url: Optional[str] = None
     image_position: Optional[str] = Field(default=None, pattern=r"^(center|top|bottom|left|right)$")
     content_alignment: Optional[str] = Field(default=None, pattern=r"^(left|center|right)$")
     overlay_style: Optional[str] = Field(default=None, pattern=r"^(dark-gradient|dark|light|brand)$")

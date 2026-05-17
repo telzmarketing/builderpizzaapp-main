@@ -330,6 +330,8 @@ export interface ApiPromotionLandingPage {
   description: string | null;
   cta_text: string;
   image_url: string | null;
+  image_url_2: string | null;
+  video_url: string | null;
   image_position: ApiPromotionLandingImagePosition;
   content_alignment: ApiPromotionLandingAlignment;
   overlay_style: ApiPromotionLandingOverlay;
@@ -363,6 +365,8 @@ export type ApiPromotionLandingPayload = {
   description?: string | null;
   cta_text?: string;
   image_url?: string | null;
+  image_url_2?: string | null;
+  video_url?: string | null;
   image_position?: ApiPromotionLandingImagePosition;
   content_alignment?: ApiPromotionLandingAlignment;
   overlay_style?: ApiPromotionLandingOverlay;

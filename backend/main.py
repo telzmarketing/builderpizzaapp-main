@@ -1014,6 +1014,8 @@ def _run_migrations():
             description TEXT,
             cta_text VARCHAR(80) NOT NULL DEFAULT 'Quero essa pizza',
             image_url TEXT,
+            image_url_2 TEXT,
+            video_url TEXT,
             image_position VARCHAR(40) NOT NULL DEFAULT 'center',
             content_alignment VARCHAR(20) NOT NULL DEFAULT 'center',
             overlay_style VARCHAR(40) NOT NULL DEFAULT 'dark-gradient',
@@ -1029,6 +1031,8 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_promotion_landing_pages_product_id ON promotion_landing_pages(product_id)",
         "CREATE INDEX IF NOT EXISTS ix_promotion_landing_pages_promotion_id ON promotion_landing_pages(promotion_id)",
         "CREATE INDEX IF NOT EXISTS ix_promotion_landing_pages_status ON promotion_landing_pages(status)",
+        "ALTER TABLE promotion_landing_pages ADD COLUMN IF NOT EXISTS image_url_2 TEXT",
+        "ALTER TABLE promotion_landing_pages ADD COLUMN IF NOT EXISTS video_url TEXT",
     ]
     for stmt in stmts:
         try:

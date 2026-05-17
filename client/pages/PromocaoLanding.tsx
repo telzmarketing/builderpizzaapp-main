@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ChevronLeft, Clock, Flame, Gift, Truck } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, Flame, Gift, Truck } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import {
   promotionLandingsApi,
@@ -33,6 +33,16 @@ const overlayClass: Record<string, string> = {
   brand: "bg-gradient-to-t from-brand-dark via-brand-dark/70 to-gold/20",
 };
 
+type LandingMedia = {
+  type: "image" | "video";
+  url: string;
+};
+
+const advanceIntervalMs = {
+  image: 4500,
+  video: 5000,
+};
+
 export default function PromocaoLanding() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -40,6 +50,7 @@ export default function PromocaoLanding() {
   const [product, setProduct] = useState<ApiProduct | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
 
   useEffect(() => {
     if (!slug) return;
@@ -64,11 +75,36 @@ export default function PromocaoLanding() {
       .finally(() => setLoading(false));
   }, [slug]);
 
-  const imageUrl = useMemo(() => {
-    if (landing?.image_url) return resolveAssetUrl(landing.image_url);
-    if (isAssetUrl(product?.icon)) return resolveAssetUrl(product?.icon);
-    return "";
-  }, [landing?.image_url, product?.icon]);
+  const mediaItems = useMemo<LandingMedia[]>(() => {
+    const items: LandingMedia[] = [];
+    if (landing?.image_url) items.push({ type: "image", url: resolveAssetUrl(landing.image_url) });
+    if (landing?.image_url_2) items.push({ type: "image", url: resolveAssetUrl(landing.image_url_2) });
+    if (landing?.video_url) items.push({ type: "video", url: resolveAssetUrl(landing.video_url) });
+    if (items.length === 0 && isAssetUrl(product?.icon)) {
+      items.push({ type: "image", url: resolveAssetUrl(product?.icon) });
+    }
+    return items;
+  }, [landing?.image_url, landing?.image_url_2, landing?.video_url, product?.icon]);
+
+  const activeMedia = mediaItems[activeMediaIndex % Math.max(mediaItems.length, 1)];
+  const hasCarousel = mediaItems.length > 1;
+
+  useEffect(() => {
+    setActiveMediaIndex(0);
+  }, [landing?.id]);
+
+  useEffect(() => {
+    if (!hasCarousel || !activeMedia) return;
+    const timer = window.setTimeout(() => {
+      setActiveMediaIndex((index) => (index + 1) % mediaItems.length);
+    }, advanceIntervalMs[activeMedia.type]);
+    return () => window.clearTimeout(timer);
+  }, [activeMedia?.type, activeMediaIndex, hasCarousel, mediaItems.length]);
+
+  const changeMedia = (direction: 1 | -1) => {
+    if (!hasCarousel) return;
+    setActiveMediaIndex((index) => (index + direction + mediaItems.length) % mediaItems.length);
+  };
 
   const cta = () => {
     if (!landing) return;
@@ -116,16 +152,61 @@ export default function PromocaoLanding() {
   return (
     <div className="min-h-screen bg-surface-00 text-cream">
       <main className="relative min-h-screen overflow-hidden">
-        {imageUrl ? (
+        {activeMedia ? (
+          activeMedia.type === "video" ? (
+            <video
+              key={`${activeMedia.url}-${activeMediaIndex}`}
+              src={activeMedia.url}
+              className={`absolute inset-0 h-full w-full object-cover ${position}`}
+              muted
+              playsInline
+              autoPlay
+              loop={false}
+            />
+          ) : (
           <img
-            src={imageUrl}
+            key={`${activeMedia.url}-${activeMediaIndex}`}
+            src={activeMedia.url}
             alt={landing.title}
             className={`absolute inset-0 h-full w-full object-cover ${position}`}
           />
+          )
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-brand-dark via-surface-02 to-surface-00" />
         )}
         <div className={`absolute inset-0 ${overlay}`} />
+
+        {hasCarousel && (
+          <>
+            <button
+              type="button"
+              onClick={() => changeMedia(-1)}
+              className="absolute left-3 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/35 text-cream shadow-lg backdrop-blur transition-colors hover:bg-black/50"
+              aria-label="Mídia anterior"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <button
+              type="button"
+              onClick={() => changeMedia(1)}
+              className="absolute right-3 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/35 text-cream shadow-lg backdrop-blur transition-colors hover:bg-black/50"
+              aria-label="Próxima mídia"
+            >
+              <ChevronRight size={24} />
+            </button>
+            <div className="absolute bottom-24 left-1/2 z-20 flex -translate-x-1/2 gap-2">
+              {mediaItems.map((item, index) => (
+                <button
+                  key={`${item.type}-${item.url}`}
+                  type="button"
+                  onClick={() => setActiveMediaIndex(index)}
+                  className={`h-2 rounded-full transition-all ${index === activeMediaIndex ? "w-7 bg-gold" : "w-2 bg-white/50"}`}
+                  aria-label={`Mostrar mídia ${index + 1}`}
+                />
+              ))}
+            </div>
+          </>
+        )}
 
         <header className="relative z-10 flex items-center justify-between px-4 py-4">
           <button

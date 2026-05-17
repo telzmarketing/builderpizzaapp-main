@@ -20,6 +20,8 @@ class PromotionLandingPage(Base):
     description = Column(Text, nullable=True)
     cta_text = Column(String(80), nullable=False, default="Quero essa pizza")
     image_url = Column(Text, nullable=True)
+    image_url_2 = Column(Text, nullable=True)
+    video_url = Column(Text, nullable=True)
     image_position = Column(String(40), nullable=False, default="center")
     content_alignment = Column(String(20), nullable=False, default="center")
     overlay_style = Column(String(40), nullable=False, default="dark-gradient")

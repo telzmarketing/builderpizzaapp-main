@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Eye, Loader2, Save, Send } from "lucide-react";
-import ImageUpload from "@/components/admin/ImageUpload";
+import MediaUpload from "@/components/admin/MediaUpload";
 import {
   productsApi,
   productPromotionsApi,
@@ -21,6 +21,8 @@ type FormState = {
   description: string;
   cta_text: string;
   image_url: string;
+  image_url_2: string;
+  video_url: string;
   image_position: ApiPromotionLandingImagePosition;
   content_alignment: ApiPromotionLandingAlignment;
   overlay_style: ApiPromotionLandingOverlay;
@@ -36,6 +38,8 @@ const emptyForm = (productName = ""): FormState => ({
   description: "",
   cta_text: "Quero essa pizza",
   image_url: "",
+  image_url_2: "",
+  video_url: "",
   image_position: "center",
   content_alignment: "center",
   overlay_style: "dark-gradient",
@@ -102,6 +106,8 @@ export default function PromotionalLandingEditor() {
             description: existing.description ?? "",
             cta_text: existing.cta_text || "Quero essa pizza",
             image_url: existing.image_url ?? "",
+            image_url_2: existing.image_url_2 ?? "",
+            video_url: existing.video_url ?? "",
             image_position: existing.image_position,
             content_alignment: existing.content_alignment,
             overlay_style: existing.overlay_style,
@@ -134,6 +140,8 @@ export default function PromotionalLandingEditor() {
     description: form.description.trim() || null,
     cta_text: form.cta_text.trim() || "Quero essa pizza",
     image_url: form.image_url || null,
+    image_url_2: form.image_url_2 || null,
+    video_url: form.video_url || null,
     image_position: form.image_position,
     content_alignment: form.content_alignment,
     overlay_style: form.overlay_style,
@@ -286,13 +294,32 @@ export default function PromotionalLandingEditor() {
           </div>
 
           <div className="rounded-lg border border-surface-03 bg-surface-02 p-4 space-y-4">
-            <ImageUpload
+            <MediaUpload
               value={form.image_url}
               onChange={(value) => setForm((current) => ({ ...current, image_url: value }))}
+              mediaType="image"
               label="Imagem principal"
-              hint="Imagem vertical ou quadrada funciona melhor no mobile."
+              hint="Primeira mídia exibida no carrossel da landing."
               sizeGuide="Recomendado: 1080x1350 ou 1200x1200"
-              maxKB={1500}
+              maxKBImage={1500}
+            />
+            <MediaUpload
+              value={form.image_url_2}
+              onChange={(value) => setForm((current) => ({ ...current, image_url_2: value }))}
+              mediaType="image"
+              label="Segunda imagem"
+              hint="Aparece como segunda lâmina do carrossel."
+              sizeGuide="Recomendado: 1080x1350 ou 1200x1200"
+              maxKBImage={1500}
+            />
+            <MediaUpload
+              value={form.video_url}
+              onChange={(value) => setForm((current) => ({ ...current, video_url: value }))}
+              mediaType="video"
+              label="Vídeo curto"
+              hint="O carrossel exibe o vídeo por até 5 segundos e passa para a próxima mídia."
+              sizeGuide="Recomendado: MP4/WebM vertical, até 5 segundos"
+              maxKBVideo={12000}
             />
 
             <div className="grid gap-3 md:grid-cols-3">
