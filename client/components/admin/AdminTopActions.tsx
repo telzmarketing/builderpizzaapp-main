@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Bell, CheckCircle2, MessageCircle, PackageCheck, RefreshCw, Search, Truck, X } from "lucide-react";
 import { agenteWhatsAppApi, ordersApi, type ApiAgenteWhatsAppInternalAlert, type ApiOrder } from "@/lib/api";
@@ -16,6 +16,8 @@ type AdminNotification = {
 };
 
 const NOTIFICATION_ORDER_STATUSES = new Set(["paid", "pago", "ready_for_pickup", "delivered"]);
+const DISMISSED_NOTIFICATIONS_KEY = "admin.dismissed_notifications";
+const MAX_DISMISSED_NOTIFICATIONS = 250;
 
 function timeAgo(iso: string): string {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
@@ -96,6 +98,19 @@ function NotificationIcon({ icon }: { icon: AdminNotification["icon"] }) {
   return <span className={`${cls} bg-gold/15 text-gold`}><CheckCircle2 size={14} /></span>;
 }
 
+function loadDismissedNotificationIds(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DISMISSED_NOTIFICATIONS_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveDismissedNotificationIds(ids: string[]) {
+  localStorage.setItem(DISMISSED_NOTIFICATIONS_KEY, JSON.stringify(ids.slice(-MAX_DISMISSED_NOTIFICATIONS)));
+}
+
 function AdminTopActionsContent() {
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
@@ -106,34 +121,37 @@ function AdminTopActionsContent() {
 
   const bellRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const dismissedRef = useRef<Set<string>>(new Set(loadDismissedNotificationIds()));
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const [orders, conversations, agenteAlerts] = await Promise.all([
+        ordersApi.list({ limit: 50 }),
+        chatbotAdminApi.listConversations(undefined, 1).catch(() => ({ items: [] })),
+        agenteWhatsAppApi.listInternalAlerts({ status: "active", limit: 10 }).catch(() => []),
+      ]);
+      const orderNotifications = (orders ?? [])
+        .filter((order) => NOTIFICATION_ORDER_STATUSES.has(order.status))
+        .map(orderNotification)
+        .filter((item): item is AdminNotification => Boolean(item));
+      const chatNotifications = (conversations.items ?? [])
+        .filter((conversation) => conversation.status === "aberta" || conversation.status === "em_humano")
+        .map(chatNotification);
+      const agenteNotifications = (agenteAlerts ?? []).map(agenteWhatsAppNotification);
+      setNotifications([...agenteNotifications, ...orderNotifications, ...chatNotifications]
+        .filter((notification) => !dismissedRef.current.has(notification.id))
+        .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+        .slice(0, 30));
+    } catch {
+      /* keep previous notifications */
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchNotifications = async () => {
-      try {
-        const [orders, conversations, agenteAlerts] = await Promise.all([
-          ordersApi.list({ limit: 50 }),
-          chatbotAdminApi.listConversations(undefined, 1).catch(() => ({ items: [] })),
-          agenteWhatsAppApi.listInternalAlerts({ status: "active", limit: 10 }).catch(() => []),
-        ]);
-        const orderNotifications = (orders ?? [])
-          .filter((order) => NOTIFICATION_ORDER_STATUSES.has(order.status))
-          .map(orderNotification)
-          .filter((item): item is AdminNotification => Boolean(item));
-        const chatNotifications = (conversations.items ?? [])
-          .filter((conversation) => conversation.status === "aberta" || conversation.status === "em_humano")
-          .map(chatNotification);
-        const agenteNotifications = (agenteAlerts ?? []).map(agenteWhatsAppNotification);
-        setNotifications([...agenteNotifications, ...orderNotifications, ...chatNotifications]
-          .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
-          .slice(0, 30));
-      } catch {
-        /* keep previous notifications */
-      }
-    };
     fetchNotifications();
     const id = window.setInterval(fetchNotifications, 30_000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [fetchNotifications]);
 
   useEffect(() => {
     if (searchOpen) searchRef.current?.focus();
@@ -157,6 +175,16 @@ function AdminTopActionsContent() {
   };
 
   const count = notifications.length;
+
+  const handleClearNotifications = () => {
+    const nextDismissed = new Set([...dismissedRef.current, ...notifications.map((notification) => notification.id)]);
+    dismissedRef.current = nextDismissed;
+    saveDismissedNotificationIds([...nextDismissed]);
+    notifications
+      .filter((notification) => notification.ackId)
+      .forEach((notification) => agenteWhatsAppApi.acknowledgeInternalAlert(notification.ackId!).catch(() => {}));
+    setNotifications([]);
+  };
 
   return (
     <div className="flex items-center gap-1.5 flex-shrink-0 rounded-xl border border-surface-03 bg-surface-01/70 p-1 shadow-sm">
@@ -217,8 +245,21 @@ function AdminTopActionsContent() {
         {bellOpen && (
           <div className="absolute top-10 right-0 z-50 w-80 overflow-hidden rounded-2xl border border-surface-03 bg-surface-02 shadow-2xl">
             <div className="flex items-center justify-between border-b border-surface-03 px-4 py-3">
-              <p className="text-cream font-bold text-sm">Notificacoes</p>
-              <span className="text-[11px] text-stone">{count} ativa{count !== 1 ? "s" : ""}</span>
+              <div>
+                <p className="text-cream font-bold text-sm">Notificacoes</p>
+                <span className="text-[11px] text-stone">{count} ativa{count !== 1 ? "s" : ""}</span>
+              </div>
+              {notifications.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearNotifications}
+                  className="inline-flex items-center gap-1 rounded-lg border border-surface-03 px-2 py-1 text-[11px] font-bold text-stone transition-colors hover:border-gold/50 hover:text-gold"
+                  title="Limpar notificacoes"
+                >
+                  <X size={12} />
+                  Limpar
+                </button>
+              )}
             </div>
             <div className="max-h-72 overflow-y-auto">
               {notifications.length === 0 ? (
