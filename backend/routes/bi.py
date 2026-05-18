@@ -5,6 +5,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from backend.core.local_time import local_today
 from backend.core.response import ok
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
@@ -33,7 +34,7 @@ def mobile(
     selected_date: date | None = Query(default=None, alias="date"),
     db: Session = Depends(get_db),
 ):
-    return ok(_service(db).mobile(selected_date or date.today()))
+    return ok(_service(db).mobile(selected_date or local_today()))
 
 
 @router.get("/overview")

@@ -141,11 +141,11 @@ export default function Cardapio() {
             {filtered.map((product) => (
               <div
                 key={product.id}
-                className="bg-surface-02 rounded-2xl p-4 border border-surface-03 hover:border-gold/40 transition-all"
+                className="min-w-0 overflow-hidden bg-surface-02 rounded-2xl p-3 sm:p-4 border border-surface-03 hover:border-gold/40 transition-all"
               >
                 <button
                   onClick={() => navigate(productTarget(product))}
-                  className="w-full text-left"
+                  className="w-full min-w-0 text-left"
                 >
                   {/* Image wrapper — outer is relative for BestSellerSeal positioning */}
                   <div className="relative w-full aspect-square mb-3">
@@ -164,16 +164,16 @@ export default function Cardapio() {
                         <img
                           src={resolveAssetUrl(product.icon)}
                           alt={product.name}
-                          className="relative z-[1] w-full h-full object-cover scale-[1.10] transition-transform duration-300"
+                          className="relative z-[1] w-full h-full object-contain p-1 transition-transform duration-300"
                         />
                       ) : (
-                        <span className="relative z-[1] text-5xl scale-[1.10] inline-block">
+                        <span className="relative z-[1] text-4xl sm:text-5xl inline-block">
                           {product.icon || "🍕"}
                         </span>
                       )}
                     </div>
                     {/* Best seller seal floats over bottom-right corner */}
-                    <BestSellerSeal show={(product as any).show_best_seller_badge} />
+                    <BestSellerSeal show={(product as any).show_best_seller_badge} compact />
                   </div>
                   <h3 className="text-cream font-semibold text-sm leading-tight line-clamp-1">
                     {product.name}
@@ -186,9 +186,9 @@ export default function Cardapio() {
                     {product.description}
                   </p>
                 </button>
-                <div className="flex items-center justify-between mt-3">
-                  <div>
-                    <span className="text-gold font-bold text-sm">
+                <div className="flex items-center justify-between gap-2 mt-3">
+                  <div className="min-w-0">
+                    <span className="block truncate text-gold font-bold text-sm">
                       R$ {(product.current_price ?? product.price).toFixed(2)}
                     </span>
                     {product.promotion_applied && product.standard_price && (
@@ -199,7 +199,7 @@ export default function Cardapio() {
                   </div>
                   <button
                     onClick={(e) => handleQuickAdd(e, product)}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-90 ${
+                    className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center transition-all active:scale-90 ${
                       justAdded === product.id
                         ? "bg-green-500 scale-110"
                         : "bg-gold hover:bg-gold/80"

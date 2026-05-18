@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
+from backend.core.local_time import local_period_bounds, local_today, to_store_datetime
 from backend.database import get_db
 from backend.models.order import Order, OrderStatus
 from backend.models.product import Product
@@ -72,28 +73,42 @@ def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin))
     total_customers = db.query(func.count(Customer.id)).scalar() or 0
 
     # Revenue by day (last 7 days)
-    from datetime import datetime, timezone, timedelta
-    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
-    daily_revenue = (
+    from datetime import timedelta
+    end_date = local_today()
+    start_date = end_date - timedelta(days=6)
+    start_dt, end_dt = local_period_bounds(start_date, end_date)
+    daily_revenue_rows = (
         db.query(
-            func.date(Order.created_at).label("day"),
-            func.sum(Order.total).label("revenue"),
+            Order.id.label("order_id"),
+            Order.created_at.label("created_at"),
+            Order.total.label("total"),
         )
         .join(Payment, Payment.order_id == Order.id)
-        .filter(Payment.status.in_(PAID_PAYMENT_STATUSES), Order.created_at >= seven_days_ago)
+        .filter(Payment.status.in_(PAID_PAYMENT_STATUSES))
+        .filter(Order.created_at >= start_dt, Order.created_at <= end_dt)
         .filter(~Order.status.in_(NON_EFFECTIVE_ORDER_STATUSES))
-        .group_by(func.date(Order.created_at))
+        .group_by(Order.id, Order.created_at, Order.total)
         .all()
     )
-    daily_estimated_revenue = (
+    daily_estimated_rows = (
         db.query(
-            func.date(Order.created_at).label("day"),
-            func.sum(Order.total).label("revenue"),
+            Order.id.label("order_id"),
+            Order.created_at.label("created_at"),
+            Order.total.label("total"),
         )
-        .filter(Order.created_at >= seven_days_ago)
-        .group_by(func.date(Order.created_at))
+        .filter(Order.created_at >= start_dt, Order.created_at <= end_dt)
         .all()
     )
+
+    def _daily_revenue_payload(rows):
+        totals: dict[str, float] = {}
+        for row in rows:
+            day = to_store_datetime(row.created_at).date().isoformat()
+            totals[day] = totals.get(day, 0.0) + float(row.total or 0)
+        return [
+            {"day": day, "revenue": round(revenue, 2)}
+            for day, revenue in sorted(totals.items())
+        ]
 
     return {
         "total_orders": total_orders,
@@ -104,14 +119,8 @@ def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin))
         "pending_orders": pending_orders,
         "total_products": total_products,
         "total_customers": total_customers,
-        "daily_revenue": [
-            {"day": str(row.day), "revenue": round(row.revenue or 0, 2)}
-            for row in daily_revenue
-        ],
-        "daily_estimated_revenue": [
-            {"day": str(row.day), "revenue": round(row.revenue or 0, 2)}
-            for row in daily_estimated_revenue
-        ],
+        "daily_revenue": _daily_revenue_payload(daily_revenue_rows),
+        "daily_estimated_revenue": _daily_revenue_payload(daily_estimated_rows),
     }
 
 

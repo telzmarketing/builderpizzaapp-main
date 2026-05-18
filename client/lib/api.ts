@@ -1308,6 +1308,27 @@ export interface ApiAgenteWhatsAppSessionDetail {
   messages: ApiAgenteWhatsAppMessage[];
 }
 
+export interface ApiAgenteWhatsAppConversation extends ApiAgenteWhatsAppSession {
+  last_message: ApiAgenteWhatsAppMessage | null;
+  unread_count: number;
+  attendance_mode: "ai" | "human";
+}
+
+export interface ApiAgenteWhatsAppOperationalMetrics {
+  chatbots_online: number;
+  conversations_online: number;
+  active_attendances: number;
+  waiting_response: number;
+  finalized_today: number;
+  unread_messages: number;
+  avg_response_time_seconds: number;
+  avg_attendance_time_seconds: number;
+  simultaneous_attendances: number;
+  active_ai_agents: number;
+  human_attendants_online: number;
+  generated_at: string | null;
+}
+
 export interface ApiAgenteWhatsAppTool {
   name: string;
   description: string;
@@ -2795,6 +2816,7 @@ export const customersApi = {
 
 export const agenteWhatsAppApi = {
   dashboard: () => get<ApiAgenteWhatsAppDashboard>("/agente-whatsapp/dashboard"),
+  operationalMetrics: () => get<ApiAgenteWhatsAppOperationalMetrics>("/agente-whatsapp/operational-metrics"),
   observability: () => get<ApiAgenteWhatsAppObservability>("/agente-whatsapp/observability"),
   listAutomationTemplates: () => get<ApiAgenteWhatsAppAutomationTemplate[]>("/agente-whatsapp/automations/templates"),
   runAutomation: (data: { key: string; limit?: number; dry_run?: boolean; message_template?: string | null }) =>
@@ -2903,6 +2925,23 @@ export const agenteWhatsAppApi = {
     if (params?.status) qs.set("status", params.status);
     if (params?.limit) qs.set("limit", String(params.limit));
     return get<ApiAgenteWhatsAppSession[]>(`/agente-whatsapp/sessions${qs.toString() ? `?${qs}` : ""}`);
+  },
+  listConversations: (params?: {
+    status?: string;
+    search?: string;
+    assigned_admin_id?: string;
+    date_from?: string;
+    date_to?: string;
+    limit?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.search) qs.set("search", params.search);
+    if (params?.assigned_admin_id) qs.set("assigned_admin_id", params.assigned_admin_id);
+    if (params?.date_from) qs.set("date_from", params.date_from);
+    if (params?.date_to) qs.set("date_to", params.date_to);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    return get<ApiAgenteWhatsAppConversation[]>(`/agente-whatsapp/conversations${qs.toString() ? `?${qs}` : ""}`);
   },
   createSession: (data: {
     phone: string;
@@ -3349,6 +3388,7 @@ export interface ApiBIMobile {
   ordersToday: number;
   confirmedOrders: number;
   ordersByStatus: Record<ApiBIMobileStatusKey, number>;
+  whatsapp?: ApiAgenteWhatsAppOperationalMetrics;
   generatedAt?: string;
 }
 

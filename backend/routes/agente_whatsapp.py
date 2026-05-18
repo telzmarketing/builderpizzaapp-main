@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
@@ -23,11 +25,13 @@ from backend.schemas.agente_whatsapp import (
     AgenteWhatsAppAutomationRunIn,
     AgenteWhatsAppAutomationRunOut,
     AgenteWhatsAppAutomationTemplateOut,
+    AgenteWhatsAppConversationOut,
     AgenteWhatsAppDashboardOut,
     AgenteWhatsAppInternalAlertOut,
     AgenteWhatsAppMessageCreate,
     AgenteWhatsAppMessageOut,
     AgenteWhatsAppObservabilityOut,
+    AgenteWhatsAppOperationalMetricsOut,
     AgenteWhatsAppOutboxAlertsOut,
     AgenteWhatsAppOutboxMetricsOut,
     AgenteWhatsAppOutboxOut,
@@ -95,6 +99,33 @@ async def receive_evolution_webhook(request: Request, db: Session = Depends(get_
 @router.get("/dashboard", response_model=AgenteWhatsAppDashboardOut)
 def dashboard(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     return AgenteWhatsAppService(db).dashboard()
+
+
+@router.get("/operational-metrics", response_model=AgenteWhatsAppOperationalMetricsOut)
+def operational_metrics(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    return AgenteWhatsAppService(db).operational_metrics()
+
+
+@router.get("/conversations", response_model=list[AgenteWhatsAppConversationOut])
+def list_conversations(
+    status: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    assigned_admin_id: str | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    limit: int = Query(default=80, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    normalized_status = None if status in (None, "", "all") else status
+    return AgenteWhatsAppService(db).list_conversations(
+        status=normalized_status,
+        search=search,
+        assigned_admin_id=assigned_admin_id,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+    )
 
 
 @router.get("/automations/templates", response_model=list[AgenteWhatsAppAutomationTemplateOut])

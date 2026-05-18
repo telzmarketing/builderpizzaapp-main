@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from backend.core.local_time import local_period_bounds, local_today
 from backend.models.agente_whatsapp import (
+    AgenteWhatsAppAISettings,
     AgenteWhatsAppCampaign,
     AgenteWhatsAppContext,
     AgenteWhatsAppEvent,
@@ -45,7 +47,7 @@ class AgenteWhatsAppService:
         self._db = db
 
     def dashboard(self) -> dict[str, int]:
-        today_start = datetime.combine(date.today(), time.min, tzinfo=timezone.utc)
+        today_start, _today_end = local_period_bounds(local_today(), local_today())
         return {
             "sessions_open": self._count_sessions("open"),
             "sessions_human": self._count_sessions("human"),
@@ -55,6 +57,78 @@ class AgenteWhatsAppService:
             "outbound_today": self._count_messages(today_start, "outbound"),
             "campaigns_total": self._db.query(func.count(AgenteWhatsAppCampaign.id)).scalar() or 0,
             "stories_total": self._db.query(func.count(AgenteWhatsAppStory.id)).scalar() or 0,
+        }
+
+    def operational_metrics(self) -> dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        start_dt, end_dt = local_period_bounds(local_today(), local_today())
+        active_statuses = ["open", "waiting_human", "human", "ai_paused"]
+        online_since = now - timedelta(minutes=5)
+
+        open_q = self._db.query(AgenteWhatsAppSession).filter(AgenteWhatsAppSession.status.in_(active_statuses))
+        waiting_response = (
+            self._db.query(func.count(AgenteWhatsAppSession.id))
+            .filter(AgenteWhatsAppSession.status == "waiting_human")
+            .scalar()
+            or 0
+        )
+        finalized_today = (
+            self._db.query(func.count(AgenteWhatsAppSession.id))
+            .filter(
+                AgenteWhatsAppSession.status == "closed",
+                AgenteWhatsAppSession.updated_at >= start_dt,
+                AgenteWhatsAppSession.updated_at <= end_dt,
+            )
+            .scalar()
+            or 0
+        )
+        unread_messages = (
+            self._db.query(func.count(AgenteWhatsAppMessage.id))
+            .filter(
+                AgenteWhatsAppMessage.direction == "inbound",
+                AgenteWhatsAppMessage.read_at.is_(None),
+            )
+            .scalar()
+            or 0
+        )
+        ai_settings = self._db.query(AgenteWhatsAppAISettings).filter(AgenteWhatsAppAISettings.id == "default").first()
+        chatbots_online = 1 if ai_settings is None or ai_settings.enabled else 0
+        active_ai_agents = (
+            open_q.filter(AgenteWhatsAppSession.ai_enabled.is_(True)).count()
+        )
+        human_attendants_online = (
+            self._db.query(func.count(func.distinct(AgenteWhatsAppSession.assigned_admin_id)))
+            .filter(
+                AgenteWhatsAppSession.status == "human",
+                AgenteWhatsAppSession.assigned_admin_id.isnot(None),
+                AgenteWhatsAppSession.last_message_at >= online_since,
+            )
+            .scalar()
+            or 0
+        )
+        conversations_online = (
+            self._db.query(func.count(AgenteWhatsAppSession.id))
+            .filter(
+                AgenteWhatsAppSession.status.in_(active_statuses),
+                AgenteWhatsAppSession.last_message_at >= online_since,
+            )
+            .scalar()
+            or 0
+        )
+
+        return {
+            "chatbots_online": chatbots_online,
+            "conversations_online": conversations_online,
+            "active_attendances": open_q.count(),
+            "waiting_response": waiting_response,
+            "finalized_today": finalized_today,
+            "unread_messages": unread_messages,
+            "avg_response_time_seconds": self._avg_response_time_seconds(start_dt, end_dt),
+            "avg_attendance_time_seconds": self._avg_attendance_time_seconds(start_dt, end_dt),
+            "simultaneous_attendances": open_q.count(),
+            "active_ai_agents": active_ai_agents,
+            "human_attendants_online": human_attendants_online,
+            "generated_at": now,
         }
 
     def _count_sessions(self, status: str) -> int:
@@ -255,7 +329,7 @@ class AgenteWhatsAppService:
             cutoff = datetime.now(timezone.utc) - timedelta(days=30)
             q = self._base_customer_query().filter(Customer.last_order_at.isnot(None), Customer.last_order_at <= cutoff)
         elif key == "aniversario":
-            today = date.today()
+            today = local_today()
             q = self._base_customer_query().filter(
                 Customer.birth_date.isnot(None),
                 func.extract("month", Customer.birth_date) == today.month,
@@ -721,15 +795,64 @@ class AgenteWhatsAppService:
             "updated_at": story.updated_at,
         }
 
-    def list_sessions(self, *, status: str | None = None, limit: int = 50) -> list[AgenteWhatsAppSession]:
+    def list_sessions(
+        self,
+        *,
+        status: str | None = None,
+        limit: int = 50,
+        search: str | None = None,
+        assigned_admin_id: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[AgenteWhatsAppSession]:
         q = self._db.query(AgenteWhatsAppSession)
         if status:
             q = q.filter(AgenteWhatsAppSession.status == status)
+        if assigned_admin_id:
+            q = q.filter(AgenteWhatsAppSession.assigned_admin_id == assigned_admin_id)
+        if date_from or date_to:
+            start_date = date_from or local_today()
+            end_date = date_to or start_date
+            start_dt, end_dt = local_period_bounds(start_date, end_date)
+            q = q.filter(
+                AgenteWhatsAppSession.updated_at >= start_dt,
+                AgenteWhatsAppSession.updated_at <= end_dt,
+            )
+        if search:
+            term = f"%{search.strip()}%"
+            q = q.outerjoin(Customer, Customer.id == AgenteWhatsAppSession.customer_id).filter(
+                or_(
+                    AgenteWhatsAppSession.phone.ilike(term),
+                    AgenteWhatsAppSession.current_intent.ilike(term),
+                    AgenteWhatsAppSession.provider.ilike(term),
+                    Customer.name.ilike(term),
+                )
+            )
         return (
             q.order_by(AgenteWhatsAppSession.last_message_at.desc().nullslast(), AgenteWhatsAppSession.created_at.desc())
             .limit(limit)
             .all()
         )
+
+    def list_conversations(
+        self,
+        *,
+        status: str | None = None,
+        limit: int = 80,
+        search: str | None = None,
+        assigned_admin_id: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[dict[str, Any]]:
+        sessions = self.list_sessions(
+            status=status,
+            limit=limit,
+            search=search,
+            assigned_admin_id=assigned_admin_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        return [self.serialize_conversation(session) for session in sessions]
 
     def get_session(self, session_id: str) -> AgenteWhatsAppSession | None:
         return self._db.query(AgenteWhatsAppSession).filter(AgenteWhatsAppSession.id == session_id).first()
@@ -824,6 +947,64 @@ class AgenteWhatsAppService:
             .limit(limit)
             .all()
         )
+
+    def latest_message(self, session_id: str) -> AgenteWhatsAppMessage | None:
+        return (
+            self._db.query(AgenteWhatsAppMessage)
+            .filter(AgenteWhatsAppMessage.session_id == session_id)
+            .order_by(AgenteWhatsAppMessage.created_at.desc())
+            .first()
+        )
+
+    def unread_count(self, session_id: str) -> int:
+        return (
+            self._db.query(func.count(AgenteWhatsAppMessage.id))
+            .filter(
+                AgenteWhatsAppMessage.session_id == session_id,
+                AgenteWhatsAppMessage.direction == "inbound",
+                AgenteWhatsAppMessage.read_at.is_(None),
+            )
+            .scalar()
+            or 0
+        )
+
+    def _avg_response_time_seconds(self, start_dt: datetime, end_dt: datetime) -> float:
+        rows = (
+            self._db.query(AgenteWhatsAppMessage)
+            .filter(
+                AgenteWhatsAppMessage.created_at >= start_dt,
+                AgenteWhatsAppMessage.created_at <= end_dt,
+            )
+            .order_by(AgenteWhatsAppMessage.session_id.asc(), AgenteWhatsAppMessage.created_at.asc())
+            .all()
+        )
+        pending_inbound: dict[str, datetime] = {}
+        response_times: list[float] = []
+        for message in rows:
+            if message.direction == "inbound":
+                pending_inbound[message.session_id] = message.created_at
+            elif message.direction == "outbound" and message.session_id in pending_inbound:
+                delta = (message.created_at - pending_inbound.pop(message.session_id)).total_seconds()
+                if delta >= 0:
+                    response_times.append(delta)
+        return round(sum(response_times) / len(response_times), 2) if response_times else 0.0
+
+    def _avg_attendance_time_seconds(self, start_dt: datetime, end_dt: datetime) -> float:
+        rows = (
+            self._db.query(AgenteWhatsAppSession)
+            .filter(
+                AgenteWhatsAppSession.status == "closed",
+                AgenteWhatsAppSession.updated_at >= start_dt,
+                AgenteWhatsAppSession.updated_at <= end_dt,
+            )
+            .all()
+        )
+        durations = [
+            (row.updated_at - row.created_at).total_seconds()
+            for row in rows
+            if row.created_at and row.updated_at and row.updated_at >= row.created_at
+        ]
+        return round(sum(durations) / len(durations), 2) if durations else 0.0
 
     def add_message(
         self,
@@ -1114,6 +1295,16 @@ class AgenteWhatsAppService:
             "metadata": _json_load(session.metadata_json),
             "created_at": session.created_at,
             "updated_at": session.updated_at,
+        }
+
+    def serialize_conversation(self, session: AgenteWhatsAppSession) -> dict[str, Any]:
+        last_message = self.latest_message(session.id)
+        attendance_mode = "human" if session.status == "human" or not session.ai_enabled else "ai"
+        return {
+            **self.serialize_session(session),
+            "last_message": self.serialize_message(last_message) if last_message else None,
+            "unread_count": self.unread_count(session.id),
+            "attendance_mode": attendance_mode,
         }
 
     def serialize_message(self, message: AgenteWhatsAppMessage) -> dict[str, Any]:

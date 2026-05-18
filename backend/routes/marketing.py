@@ -4,15 +4,19 @@ import hashlib
 import json
 import uuid
 import requests
-from datetime import date, datetime, time, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from pydantic import BaseModel
 from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, Date, ForeignKey, func, text
 from sqlalchemy.orm import Session
 
+from backend.core.local_time import local_period_bounds, local_today
 from backend.database import get_db, Base
 from backend.models.customer_event import CustomerEvent
+from backend.models.paid_traffic import TrafficCampaign
 from backend.routes.admin_auth import get_current_admin
+from backend.routes.email_marketing import EmailCampaign
+from backend.routes.whatsapp_marketing import WhatsAppCampaign
 from backend.core.response import ok, created, err_msg
 
 router = APIRouter(prefix="/marketing", tags=["marketing"])
@@ -170,6 +174,145 @@ def _load_credentials(conn: IntegrationConnection) -> dict:
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
+
+
+def _date_iso(value) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _campaign_roas(revenue: float | None, spend: float | None) -> float:
+    return round((revenue or 0) / spend, 2) if spend and spend > 0 else 0
+
+
+def _marketing_campaign_to_dict(c: MarketingCampaign) -> dict:
+    spend = c.spend or 0
+    revenue = c.revenue or 0
+    return {
+        "id": c.id,
+        "external_id": c.id,
+        "source": "marketing",
+        "source_label": "Central de Campanhas",
+        "source_url": "/painel/marketing/campanhas",
+        "read_only": False,
+        "name": c.name,
+        "campaign_type": c.campaign_type,
+        "type": c.campaign_type,
+        "channel": c.channel or "internal",
+        "status": c.status,
+        "budget": c.budget or 0,
+        "spend": spend,
+        "spent": spend,
+        "revenue": revenue,
+        "orders_count": c.orders_count or 0,
+        "orders": c.orders_count or 0,
+        "leads": c.leads or 0,
+        "clicks": c.clicks or 0,
+        "impressions": c.impressions or 0,
+        "roas": _campaign_roas(revenue, spend),
+        "start_date": _date_iso(c.start_date),
+        "end_date": _date_iso(c.end_date),
+        "description": c.description,
+        "target_url": c.target_url,
+        "destination_url": c.target_url,
+        "created_at": _date_iso(c.created_at),
+    }
+
+
+def _traffic_campaign_to_marketing_dict(c: TrafficCampaign) -> dict:
+    budget = c.total_budget if c.total_budget is not None else c.daily_budget
+    return {
+        "id": f"paid_traffic:{c.id}",
+        "external_id": c.id,
+        "source": "paid_traffic",
+        "source_label": "Trafego Pago",
+        "source_url": "/painel/trafego-pago",
+        "read_only": True,
+        "name": c.name,
+        "campaign_type": "paid_traffic",
+        "type": "paid_traffic",
+        "channel": "paid_traffic",
+        "status": c.status or "draft",
+        "budget": budget or 0,
+        "spend": 0,
+        "spent": 0,
+        "revenue": 0,
+        "orders_count": 0,
+        "orders": 0,
+        "leads": 0,
+        "clicks": 0,
+        "impressions": 0,
+        "roas": 0,
+        "start_date": _date_iso(c.start_date),
+        "end_date": _date_iso(c.end_date),
+        "description": c.notes,
+        "target_url": c.destination_url,
+        "destination_url": c.destination_url,
+        "created_at": _date_iso(c.created_at),
+    }
+
+
+def _whatsapp_campaign_to_marketing_dict(c: WhatsAppCampaign) -> dict:
+    return {
+        "id": f"whatsapp:{c.id}",
+        "external_id": c.id,
+        "source": "whatsapp",
+        "source_label": "Disparador de WhatsApp",
+        "source_url": "/painel/marketing/whatsapp",
+        "read_only": True,
+        "name": c.name,
+        "campaign_type": "whatsapp",
+        "type": "whatsapp",
+        "channel": "whatsapp",
+        "status": c.status or "draft",
+        "budget": 0,
+        "spend": 0,
+        "spent": 0,
+        "revenue": 0,
+        "orders_count": 0,
+        "orders": 0,
+        "leads": c.sent_count or 0,
+        "clicks": c.read_count or 0,
+        "impressions": c.delivered_count or 0,
+        "roas": 0,
+        "start_date": _date_iso(c.scheduled_at),
+        "end_date": None,
+        "description": "Campanha criada no Disparador de WhatsApp.",
+        "target_url": None,
+        "destination_url": None,
+        "created_at": _date_iso(c.created_at),
+    }
+
+
+def _email_campaign_to_marketing_dict(c: EmailCampaign) -> dict:
+    return {
+        "id": f"email:{c.id}",
+        "external_id": c.id,
+        "source": "email",
+        "source_label": "Disparador de Email",
+        "source_url": "/painel/marketing/email",
+        "read_only": True,
+        "name": c.name,
+        "campaign_type": "email",
+        "type": "email",
+        "channel": "email",
+        "status": c.status or "draft",
+        "budget": 0,
+        "spend": 0,
+        "spent": 0,
+        "revenue": 0,
+        "orders_count": 0,
+        "orders": 0,
+        "leads": c.sent_count or 0,
+        "clicks": c.click_count or 0,
+        "impressions": c.delivered_count or 0,
+        "roas": 0,
+        "start_date": _date_iso(c.scheduled_at),
+        "end_date": None,
+        "description": "Campanha criada no Disparador de Email.",
+        "target_url": None,
+        "destination_url": None,
+        "created_at": _date_iso(c.created_at),
+    }
 
 
 def _public_credentials(creds: dict) -> dict:
@@ -352,16 +495,26 @@ def list_campaigns(
     if channel:
         q = q.filter(MarketingCampaign.channel == channel)
     campaigns = q.order_by(MarketingCampaign.created_at.desc()).all()
-    return ok([{
-        "id": c.id, "name": c.name, "campaign_type": c.campaign_type, "channel": c.channel,
-        "status": c.status, "budget": c.budget, "spend": c.spend, "revenue": c.revenue,
-        "orders_count": c.orders_count, "leads": c.leads, "clicks": c.clicks,
-        "roas": round(c.revenue / c.spend, 2) if c.spend and c.spend > 0 else None,
-        "start_date": c.start_date.isoformat() if c.start_date else None,
-        "end_date": c.end_date.isoformat() if c.end_date else None,
-        "description": c.description, "target_url": c.target_url,
-        "created_at": c.created_at.isoformat(),
-    } for c in campaigns])
+    return ok([_marketing_campaign_to_dict(c) for c in campaigns])
+
+
+@router.get("/campaigns/aggregate")
+def list_campaigns_aggregate(
+    status: str | None = None, channel: str | None = None,
+    db: Session = Depends(get_db), _=Depends(get_current_admin)
+):
+    campaigns = [
+        *[_marketing_campaign_to_dict(c) for c in db.query(MarketingCampaign).all()],
+        *[_traffic_campaign_to_marketing_dict(c) for c in db.query(TrafficCampaign).all()],
+        *[_whatsapp_campaign_to_marketing_dict(c) for c in db.query(WhatsAppCampaign).all()],
+        *[_email_campaign_to_marketing_dict(c) for c in db.query(EmailCampaign).all()],
+    ]
+    if status:
+        campaigns = [c for c in campaigns if c["status"] == status]
+    if channel:
+        campaigns = [c for c in campaigns if c["channel"] == channel]
+    campaigns.sort(key=lambda c: c.get("created_at") or "", reverse=True)
+    return ok(campaigns)
 
 
 @router.post("/campaigns")
@@ -411,16 +564,23 @@ def marketing_dashboard(
     db: Session = Depends(get_db), _=Depends(get_current_admin)
 ):
     now = datetime.now(timezone.utc)
+    today = local_today()
     if period == "today":
-        since = now.replace(hour=0, minute=0, second=0)
+        start_date = today
+        end_date = today
     elif period == "yesterday":
-        since = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0)
+        start_date = today - timedelta(days=1)
+        end_date = start_date
     elif period == "30d":
-        since = now - timedelta(days=30)
+        start_date = today - timedelta(days=29)
+        end_date = today
     elif period == "90d":
-        since = now - timedelta(days=90)
+        start_date = today - timedelta(days=89)
+        end_date = today
     else:
-        since = now - timedelta(days=7)
+        start_date = today - timedelta(days=6)
+        end_date = today
+    since, period_end = local_period_bounds(start_date, end_date)
 
     total_campaigns = db.query(func.count(MarketingCampaign.id)).scalar() or 0
     active_campaigns = db.query(func.count(MarketingCampaign.id)).filter(MarketingCampaign.status == "active").scalar() or 0
@@ -431,7 +591,8 @@ def marketing_dashboard(
     total_leads = db.query(func.sum(MarketingCampaign.leads)).scalar() or 0
 
     visitors_period = db.query(func.count(VisitorProfile.id)).filter(
-        VisitorProfile.last_seen_at >= since
+        VisitorProfile.last_seen_at >= since,
+        VisitorProfile.last_seen_at <= period_end,
     ).scalar() or 0
     online_since = now - timedelta(minutes=5)
     visitors_online = db.query(func.count(VisitorProfile.id)).filter(
@@ -609,15 +770,16 @@ def list_visitors(
 ):
     now = datetime.now(timezone.utc)
     if selected_date:
-        start_dt = datetime.combine(selected_date, time.min, tzinfo=timezone.utc)
-        end_dt = datetime.combine(selected_date, time.max, tzinfo=timezone.utc)
+        start_date = selected_date
+        end_date = selected_date
+        start_dt, end_dt = local_period_bounds(start_date, end_date)
         period_label = "date"
     else:
         _period_days = {"today": 1, "7d": 7, "30d": 30, "90d": 90}
         days = _period_days.get(period, 1)
-        start_date = now.date() - timedelta(days=days - 1)
-        start_dt = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
-        end_dt = datetime.combine(now.date(), time.max, tzinfo=timezone.utc)
+        end_date = local_today()
+        start_date = end_date - timedelta(days=days - 1)
+        start_dt, end_dt = local_period_bounds(start_date, end_date)
         period_label = period
 
     params = {"start_dt": start_dt, "end_dt": end_dt}
@@ -845,8 +1007,8 @@ def list_visitors(
     return ok({
         # Flat fields expected by MarketingVisitantes
         "period": period_label,
-        "date_from": start_dt.date().isoformat(),
-        "date_to": end_dt.date().isoformat(),
+        "date_from": start_date.isoformat(),
+        "date_to": end_date.isoformat(),
         "visitors_today": total,
         "online_visitors": online,
         "online_registered_customers": online_registered_customers,

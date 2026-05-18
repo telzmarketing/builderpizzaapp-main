@@ -1970,7 +1970,7 @@ export default function AdminProducts() {
               </button>
             </div>
 
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-3 sm:p-5 lg:grid-cols-[260px,minmax(0,1fr)] lg:p-6">
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-scroll overscroll-contain p-3 [scrollbar-gutter:stable] sm:p-5 lg:grid-cols-[260px,minmax(0,1fr)] lg:p-6">
               <aside className="space-y-3 lg:sticky lg:top-0 lg:self-start">
                 <button onClick={handleNewPromotion} className="w-full flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2.5 rounded-xl transition-colors text-sm">
                   <Plus size={15} /> Nova Promoção
@@ -2014,7 +2014,7 @@ export default function AdminProducts() {
                 )}
               </aside>
 
-              <section className="min-w-0 space-y-5">
+              <section className="min-h-0 min-w-0 space-y-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-parchment text-xs font-medium mb-1">Nome da promoção *</label>

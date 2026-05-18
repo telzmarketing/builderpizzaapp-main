@@ -4,12 +4,11 @@ import {
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
+import { apiRequest } from "@/lib/api";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const unwrap = (json: any) => json?.data ?? json;
 
-type CampaignStatus = "draft" | "active" | "paused" | "ended";
+type CampaignStatus = "draft" | "active" | "paused" | "ended" | "scheduled" | "sent";
 type CampaignChannel = "whatsapp" | "email" | "paid_traffic" | "internal";
 type CampaignType =
   | "paid_traffic"
@@ -23,8 +22,14 @@ type CampaignType =
 
 interface Campaign {
   id: string;
+  external_id?: string;
+  source?: string;
+  source_label?: string;
+  source_url?: string;
+  read_only?: boolean;
   name: string;
   type: CampaignType;
+  campaign_type?: CampaignType;
   channel: CampaignChannel;
   status: CampaignStatus;
   budget: number;
@@ -35,6 +40,7 @@ interface Campaign {
   start_date: string;
   end_date: string;
   destination_url?: string;
+  target_url?: string;
   description?: string;
 }
 
@@ -43,12 +49,16 @@ const STATUS_COLORS: Record<CampaignStatus, string> = {
   active: "bg-green-500/20 text-green-400",
   paused: "bg-yellow-500/20 text-yellow-400",
   ended: "bg-red-500/20 text-red-400",
+  scheduled: "bg-blue-500/20 text-blue-300",
+  sent: "bg-emerald-500/20 text-emerald-300",
 };
 const STATUS_LABELS: Record<CampaignStatus, string> = {
   draft: "Rascunho",
   active: "Ativo",
   paused: "Pausado",
   ended: "Encerrado",
+  scheduled: "Agendado",
+  sent: "Enviado",
 };
 const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: "WhatsApp",
@@ -99,9 +109,7 @@ export default function MarketingCampanhas() {
   const fetchCampaigns = () => {
     setLoading(true);
     setError("");
-    fetch(`${BASE}/marketing/campaigns`, { headers })
-      .then((r) => { if (!r.ok) throw new Error("Falha ao carregar campanhas."); return r.json(); })
-      .then(unwrap)
+    apiRequest<Campaign[]>("GET", "/marketing/campaigns/aggregate")
       .then(setCampaigns)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -122,6 +130,10 @@ export default function MarketingCampanhas() {
   };
 
   const openEdit = (c: Campaign) => {
+    if (c.read_only) {
+      window.location.href = c.source_url || "/painel/marketing/campanhas";
+      return;
+    }
     setEditingId(c.id);
     setForm({ ...c });
     setShowModal(true);
@@ -155,6 +167,11 @@ export default function MarketingCampanhas() {
   };
 
   const handleDelete = async (id: string) => {
+    const campaign = campaigns.find((c) => c.id === id);
+    if (campaign?.read_only) {
+      window.location.href = campaign.source_url || "/painel/marketing/campanhas";
+      return;
+    }
     if (!confirm("Excluir campanha?")) return;
     await fetch(`${BASE}/marketing/campaigns/${id}`, { method: "DELETE", headers });
     fetchCampaigns();
@@ -197,7 +214,7 @@ export default function MarketingCampanhas() {
         {/* Filters */}
         <div className="flex flex-wrap gap-3">
           <div className="flex bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
-            {["all", "active", "paused", "draft", "ended"].map((s) => (
+            {["all", "active", "scheduled", "paused", "draft", "ended", "sent"].map((s) => (
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
@@ -248,6 +265,7 @@ export default function MarketingCampanhas() {
                       <th className="text-left p-3">Nome</th>
                       <th className="text-left p-3">Tipo</th>
                       <th className="text-left p-3">Canal</th>
+                      <th className="text-left p-3">Origem</th>
                       <th className="text-left p-3">Status</th>
                       <th className="text-right p-3">Orçamento</th>
                       <th className="text-right p-3">Gasto</th>
@@ -262,8 +280,9 @@ export default function MarketingCampanhas() {
                     {filtered.map((c) => (
                       <tr key={c.id} className="hover:bg-surface-03/30 transition-colors">
                         <td className="p-3 font-medium text-cream">{c.name}</td>
-                        <td className="p-3 text-stone">{TYPE_LABELS[c.type] ?? c.type}</td>
+                        <td className="p-3 text-stone">{TYPE_LABELS[c.type ?? c.campaign_type] ?? c.type ?? c.campaign_type}</td>
                         <td className="p-3 text-stone">{CHANNEL_LABELS[c.channel] ?? c.channel}</td>
+                        <td className="p-3 text-stone whitespace-nowrap">{c.source_label ?? "Central"}</td>
                         <td className="p-3">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[c.status]}`}>
                             {STATUS_LABELS[c.status]}
@@ -272,7 +291,7 @@ export default function MarketingCampanhas() {
                         <td className="p-3 text-right text-stone">{fmt(c.budget)}</td>
                         <td className="p-3 text-right text-red-400">{fmt(c.spent)}</td>
                         <td className="p-3 text-right text-green-400">{fmt(c.revenue)}</td>
-                        <td className="p-3 text-right text-gold font-semibold">{c.roas.toFixed(2)}x</td>
+                        <td className="p-3 text-right text-gold font-semibold">{(c.roas ?? 0).toFixed(2)}x</td>
                         <td className="p-3 text-right text-cream">{c.orders}</td>
                         <td className="p-3 text-stone text-xs whitespace-nowrap">
                           {c.start_date?.slice(0, 10)} → {c.end_date?.slice(0, 10)}
@@ -282,15 +301,18 @@ export default function MarketingCampanhas() {
                             <button
                               onClick={() => openEdit(c)}
                               className="p-1.5 rounded-lg hover:bg-surface-03 text-stone hover:text-cream transition-colors"
+                              title={c.read_only ? "Abrir no modulo de origem" : "Editar"}
                             >
                               <Pencil size={14} />
                             </button>
-                            <button
-                              onClick={() => handleDelete(c.id)}
-                              className="p-1.5 rounded-lg hover:bg-red-500/10 text-stone hover:text-red-400 transition-colors"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            {!c.read_only && (
+                              <button
+                                onClick={() => handleDelete(c.id)}
+                                className="p-1.5 rounded-lg hover:bg-red-500/10 text-stone hover:text-red-400 transition-colors"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

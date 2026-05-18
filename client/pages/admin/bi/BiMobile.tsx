@@ -7,17 +7,22 @@ import {
 } from "react";
 import {
   AlertCircle,
+  Activity,
+  Bot,
   CalendarDays,
   CheckCircle2,
   Clock3,
   DollarSign,
+  Headphones,
   Loader2,
+  MessageCircle,
   PackageCheck,
   RefreshCw,
   ShoppingBag,
   Truck,
   Users,
 } from "lucide-react";
+import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { biApi, type ApiBIMobile, type ApiBIMobileStatusKey } from "@/lib/api";
 
 type MetricCard = {
@@ -65,20 +70,20 @@ function number(value: number) {
 function MetricCard({ item }: { item: MetricCard }) {
   const Icon = item.icon;
   return (
-    <div className="min-h-[104px] rounded-lg border border-surface-03 bg-surface-02 p-3">
+    <div className="min-h-[72px] rounded-lg border border-surface-03 bg-surface-02 p-2">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-[11px] font-bold uppercase leading-snug text-stone">
+        <p className="text-[9px] font-bold uppercase leading-snug text-stone">
           {item.label}
         </p>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gold/10 text-gold">
-          <Icon size={16} />
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gold/10 text-gold">
+          <Icon size={13} />
         </span>
       </div>
-      <p className="mt-3 break-words text-xl font-black leading-tight text-cream">
+      <p className="mt-1.5 break-words text-base font-black leading-tight text-cream">
         {item.value}
       </p>
       {item.helper && (
-        <p className="mt-1 text-[11px] leading-snug text-stone">
+        <p className="mt-0.5 truncate text-[9px] leading-snug text-stone">
           {item.helper}
         </p>
       )}
@@ -93,6 +98,15 @@ function LoadingBlock() {
       Carregando resumo do dia...
     </div>
   );
+}
+
+function secondsLabel(value?: number | null) {
+  if (value === null || value === undefined) return "-";
+  if (value < 60) return `${Math.round(value)}s`;
+  const minutes = Math.floor(value / 60);
+  const seconds = Math.round(value % 60);
+  if (minutes < 60) return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 export default function BiMobile() {
@@ -128,13 +142,20 @@ export default function BiMobile() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      loadData("refresh");
+    }, 10000);
+    return () => window.clearInterval(interval);
+  }, [loadData]);
+
   const metrics = useMemo<MetricCard[]>(() => {
     const current = data;
     return [
       {
-        label: "Acessos do dia",
+        label: "Visitantes",
         value: number(current?.visitorsToday ?? 0),
-        helper: "Visitantes unicos",
+        helper: "Acessos do dia",
         icon: Users,
       },
       {
@@ -150,28 +171,82 @@ export default function BiMobile() {
         icon: Users,
       },
       {
-        label: "Previsao do dia",
+        label: "Previsao",
         value: money(current?.forecastRevenue ?? 0),
         helper: "Pedidos nao cancelados",
         icon: DollarSign,
       },
       {
-        label: "Faturamento efetivado",
+        label: "Faturamento",
         value: money(current?.confirmedRevenue ?? 0),
         helper: "Pagamentos confirmados",
         icon: DollarSign,
       },
       {
-        label: "Pedidos do dia",
+        label: "Pedidos",
         value: number(current?.ordersToday ?? 0),
         helper: "Criados na data",
         icon: ShoppingBag,
       },
       {
-        label: "Pedidos efetivados",
+        label: "Efetivados",
         value: number(current?.confirmedOrders ?? 0),
         helper: "Confirmados ou em fluxo",
         icon: CheckCircle2,
+      },
+      {
+        label: "Chatbots online",
+        value: number(current?.whatsapp?.chatbots_online ?? 0),
+        helper: "IA operacional",
+        icon: Bot,
+      },
+      {
+        label: "WhatsApp online",
+        value: number(current?.whatsapp?.conversations_online ?? 0),
+        helper: "Conversas ativas",
+        icon: MessageCircle,
+      },
+      {
+        label: "Atendimentos",
+        value: number(current?.whatsapp?.active_attendances ?? 0),
+        helper: "Em andamento",
+        icon: Headphones,
+      },
+      {
+        label: "Aguardando",
+        value: number(current?.whatsapp?.waiting_response ?? 0),
+        helper: "Resposta humana/IA",
+        icon: Clock3,
+      },
+      {
+        label: "Finalizadas",
+        value: number(current?.whatsapp?.finalized_today ?? 0),
+        helper: "No dia",
+        icon: CheckCircle2,
+      },
+      {
+        label: "Resp. media",
+        value: secondsLabel(current?.whatsapp?.avg_response_time_seconds),
+        helper: "Primeira resposta",
+        icon: Activity,
+      },
+      {
+        label: "Atend. medio",
+        value: secondsLabel(current?.whatsapp?.avg_attendance_time_seconds),
+        helper: "Conversas fechadas",
+        icon: Activity,
+      },
+      {
+        label: "IA ativa",
+        value: number(current?.whatsapp?.active_ai_agents ?? 0),
+        helper: "Agentes simultaneos",
+        icon: Bot,
+      },
+      {
+        label: "Humanos online",
+        value: number(current?.whatsapp?.human_attendants_online ?? 0),
+        helper: "Atendentes",
+        icon: Users,
       },
     ];
   }, [data]);
@@ -183,21 +258,26 @@ export default function BiMobile() {
   const hasOrders = (data?.ordersToday ?? 0) > 0;
 
   return (
-    <main className="min-h-screen bg-surface-01 px-3 py-4 text-cream">
-      <div className="mx-auto flex w-full max-w-md flex-col gap-4 pb-6">
-        <header className="rounded-lg border border-surface-03 bg-surface-02 p-4">
-          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gold">
-            Business Intelligence
-          </p>
-          <h1 className="mt-2 text-2xl font-black leading-tight text-cream">
-            BI Mobile
-          </h1>
-          <p className="mt-1 text-sm leading-snug text-stone">
-            Resumo operacional do dia
-          </p>
+    <main className="min-h-screen bg-surface-01 px-2.5 py-3 text-cream">
+      <div className="mx-auto flex w-full max-w-md flex-col gap-3 pb-4">
+        <header className="rounded-lg border border-surface-03 bg-surface-02 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <MoschettieriLogo className="h-11 shrink-0 text-[32px] text-gold" />
+            <div className="min-w-0 text-right">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gold">
+                Business Intelligence
+              </p>
+              <h1 className="mt-1 text-xl font-black leading-tight text-cream">
+                BI Mobile
+              </h1>
+              <p className="text-xs leading-snug text-stone">
+                Operacao em tempo real
+              </p>
+            </div>
+          </div>
         </header>
 
-        <section className="rounded-lg border border-surface-03 bg-surface-02 p-3">
+        <section className="rounded-lg border border-surface-03 bg-surface-02 p-2.5">
           <div className="flex items-center gap-2">
             <CalendarDays size={16} className="text-gold" />
             <label
@@ -207,7 +287,7 @@ export default function BiMobile() {
               Data
             </label>
           </div>
-          <div className="mt-3 flex gap-2">
+          <div className="mt-2 flex gap-2">
             <input
               id="bi-mobile-date"
               type="date"
@@ -215,13 +295,13 @@ export default function BiMobile() {
               onChange={(event) =>
                 setSelectedDate(event.target.value || todayInputValue())
               }
-              className="min-h-11 flex-1 rounded-lg border border-surface-03 bg-surface-01 px-3 text-sm font-semibold text-cream outline-none focus:border-gold"
+              className="min-h-10 flex-1 rounded-lg border border-surface-03 bg-surface-01 px-3 text-sm font-semibold text-cream outline-none focus:border-gold"
             />
             <button
               type="button"
               onClick={() => loadData("refresh")}
               disabled={loading || refreshing}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-surface-03 bg-surface-01 text-gold transition hover:border-gold/60 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-surface-03 bg-surface-01 text-gold transition hover:border-gold/60 disabled:cursor-not-allowed disabled:opacity-60"
               aria-label="Atualizar BI Mobile"
               title="Atualizar"
             >
@@ -247,15 +327,15 @@ export default function BiMobile() {
           </section>
         ) : (
           <>
-            <section className="grid grid-cols-2 gap-2">
+            <section className="grid grid-cols-3 gap-1.5">
               {metrics.map((item) => (
                 <MetricCard key={item.label} item={item} />
               ))}
             </section>
 
-            <section className="rounded-lg border border-surface-03 bg-surface-02 p-3">
+            <section className="rounded-lg border border-surface-03 bg-surface-02 p-2.5">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-sm font-black text-cream">
+                <h2 className="text-xs font-black text-cream">
                   Status dos pedidos
                 </h2>
                 <span className="rounded-full bg-gold/10 px-2 py-1 text-[11px] font-bold text-gold">
@@ -268,7 +348,7 @@ export default function BiMobile() {
                   Nenhum pedido no dia selecionado.
                 </div>
               ) : (
-                <div className="mt-3 space-y-2">
+                <div className="mt-2 space-y-1.5">
                   {STATUS_ITEMS.map((item) => {
                     const Icon = item.icon;
                     const total = data?.ordersByStatus[item.key] ?? 0;
@@ -276,7 +356,7 @@ export default function BiMobile() {
                     return (
                       <div
                         key={item.key}
-                        className="rounded-lg border border-surface-03 bg-surface-01 p-2.5"
+                        className="rounded-lg border border-surface-03 bg-surface-01 p-2"
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex min-w-0 items-center gap-2">

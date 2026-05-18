@@ -77,6 +77,27 @@ class AgenteWhatsAppMessageOut(BaseModel):
     read_at: datetime | None
 
 
+class AgenteWhatsAppConversationOut(AgenteWhatsAppSessionOut):
+    last_message: AgenteWhatsAppMessageOut | None = None
+    unread_count: int = 0
+    attendance_mode: Literal["ai", "human"] = "ai"
+
+
+class AgenteWhatsAppOperationalMetricsOut(BaseModel):
+    chatbots_online: int = 0
+    conversations_online: int = 0
+    active_attendances: int = 0
+    waiting_response: int = 0
+    finalized_today: int = 0
+    unread_messages: int = 0
+    avg_response_time_seconds: float = 0
+    avg_attendance_time_seconds: float = 0
+    simultaneous_attendances: int = 0
+    active_ai_agents: int = 0
+    human_attendants_online: int = 0
+    generated_at: datetime | None = None
+
+
 class AgenteWhatsAppEventCreate(BaseModel):
     session_id: str | None = None
     customer_id: str | None = None

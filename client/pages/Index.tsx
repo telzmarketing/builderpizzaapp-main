@@ -313,7 +313,7 @@ export default function Home() {
               }}
             >
               <div
-                className="rounded-2xl overflow-hidden relative h-[10.35rem] lg:h-[16.1rem]"
+                className="rounded-2xl overflow-hidden relative aspect-[16/9] lg:aspect-[21/9] max-h-[13.5rem] lg:max-h-[16.1rem] bg-surface-02"
                 style={
                   displayBanner?.card_bg_color
                     ? { background: displayBanner.card_bg_color }
@@ -336,7 +336,7 @@ export default function Home() {
                   <img
                     src={resolveAssetUrl((displayBanner?.banner || media.heroBannerImage)!)}
                     alt="Banner promocional"
-                    className="absolute inset-0 w-full h-full object-cover object-center"
+                    className="absolute inset-0 w-full h-full object-contain object-center"
                     loading="eager"
                     decoding="async"
                   />
@@ -468,7 +468,7 @@ export default function Home() {
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
-            <div className="grid grid-cols-[64px_minmax(0,1fr)_64px] min-[390px]:grid-cols-[72px_minmax(0,1fr)_72px] items-start gap-2">
+            <div className="grid grid-cols-[48px_minmax(0,1fr)_48px] min-[360px]:grid-cols-[56px_minmax(0,1fr)_56px] min-[390px]:grid-cols-[72px_minmax(0,1fr)_72px] items-start gap-2">
               {/* Previous (partially visible) */}
               <div className="w-full mt-16 opacity-35 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
@@ -477,21 +477,21 @@ export default function Home() {
               </div>
 
               {/* Featured center card */}
-              <div className="w-full max-w-[236px] mx-auto">
+              <div className="w-full max-w-[220px] min-[390px]:max-w-[236px] mx-auto min-w-0">
                 <button
                   onTouchStart={handleTouchStart}
                   onTouchEnd={handleTouchEnd}
                   onClick={() => handlePizzaClick(currentPizza.id)}
-                  className={`w-full bg-surface-02 rounded-2xl p-4 shadow-2xl transition-all duration-300 ${
+                  className={`w-full overflow-hidden bg-surface-02 rounded-2xl p-3 min-[390px]:p-4 shadow-2xl transition-all duration-300 ${
                     clickedPizza === currentPizza.id ? "scale-105 shadow-gold/30" : "active:scale-95"
                   }`}
                 >
-                  <div className="relative w-[min(156px,42vw)] h-[min(156px,42vw)] mx-auto mb-3">
+                  <div className="relative w-[min(144px,40vw)] h-[min(144px,40vw)] min-[390px]:w-[min(156px,42vw)] min-[390px]:h-[min(156px,42vw)] mx-auto mb-3">
                     <CategorySeal product={currentPizza} className="left-2 top-2" compact />
                     <div className="h-full w-full rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
                       {renderIcon(currentPizza?.icon, carouselPosition, "lg")}
                     </div>
-                    <BestSellerSeal show={(currentPizza as any)?.show_best_seller_badge} />
+                    <BestSellerSeal show={(currentPizza as any)?.show_best_seller_badge} compact />
                   </div>
                   <p className="text-cream font-bold text-center text-sm leading-snug line-clamp-1">
                     {currentPizza?.name}

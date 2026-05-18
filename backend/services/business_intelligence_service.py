@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Iterable
 
 from sqlalchemy import distinct, func, text
 from sqlalchemy.orm import Session
 
+from backend.core.local_time import local_period_bounds, local_today, to_store_datetime
 from backend.models.business_intelligence import BusinessInsight, ProductPerformance
 from backend.models.customer import Address, Customer
 from backend.models.customer_event import CustomerEvent
@@ -16,6 +17,7 @@ from backend.models.order import Order, OrderItem, OrderStatus
 from backend.models.paid_traffic import AdDailyMetric
 from backend.models.payment import Payment, PaymentStatus
 from backend.models.product import Product
+from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 
 
 class BusinessIntelligenceService:
@@ -118,6 +120,7 @@ class BusinessIntelligenceService:
         )
         visitors_today = self._visitor_access_count(start_dt, end_dt)
         online_counts = self._online_presence_counts()
+        whatsapp_metrics = AgenteWhatsAppService(self._db).operational_metrics()
 
         return {
             "date": selected_date.isoformat(),
@@ -129,10 +132,18 @@ class BusinessIntelligenceService:
             "ordersToday": orders_q.count(),
             "confirmedOrders": orders_q.filter(Order.status.in_(self.MOBILE_EFFECTIVE_ORDER_STATUSES)).count(),
             "ordersByStatus": status_counts,
+            "whatsapp": whatsapp_metrics,
             "generatedAt": datetime.now(timezone.utc).isoformat(),
         }
 
-    def get_overview(self, start_dt: datetime, end_dt: datetime, period: str) -> dict:
+    def get_overview(
+        self,
+        start_dt: datetime,
+        end_dt: datetime,
+        period: str,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> dict:
         paid_orders_q = self._paid_orders_in_period(start_dt, end_dt)
         all_orders = self._orders_in_period(start_dt, end_dt)
 
@@ -193,47 +204,78 @@ class BusinessIntelligenceService:
             },
         }
 
-    def get_sales(self, start_dt: datetime, end_dt: datetime, period: str, granularity: str = "day") -> dict:
-        rows = (
+    def get_sales(
+        self,
+        start_dt: datetime,
+        end_dt: datetime,
+        period: str,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        granularity: str = "day",
+    ) -> dict:
+        order_rows = (
             self._paid_orders_in_period(start_dt, end_dt)
             .with_entities(
-                func.date(Order.created_at).label("metric_date"),
-                func.count(Order.id).label("orders"),
-                func.coalesce(func.sum(Order.total), 0).label("revenue"),
+                Order.id.label("order_id"),
+                Order.created_at.label("created_at"),
+                Order.total.label("total"),
             )
-            .group_by(func.date(Order.created_at))
-            .order_by(func.date(Order.created_at))
+            .group_by(Order.id, Order.created_at, Order.total)
+            .order_by(Order.created_at)
             .all()
         )
+
+        day_totals: dict[str, dict[str, float | int]] = {}
+        hour_totals: dict[int, dict[str, float | int]] = {}
+        for row in order_rows:
+            local_created_at = to_store_datetime(row.created_at)
+            day_key = local_created_at.date().isoformat()
+            hour_key = local_created_at.hour
+            total = float(row.total or 0)
+
+            day_bucket = day_totals.setdefault(day_key, {"orders": 0, "revenue": 0.0})
+            day_bucket["orders"] = int(day_bucket["orders"]) + 1
+            day_bucket["revenue"] = float(day_bucket["revenue"]) + total
+
+            hour_bucket = hour_totals.setdefault(hour_key, {"orders": 0, "revenue": 0.0})
+            hour_bucket["orders"] = int(hour_bucket["orders"]) + 1
+            hour_bucket["revenue"] = float(hour_bucket["revenue"]) + total
+
         by_day = [
             {
-                "label": str(row.metric_date),
-                "date": str(row.metric_date),
-                "orders": int(row.orders or 0),
-                "revenue": self._round(row.revenue),
-                "average_ticket": self._round((row.revenue or 0) / row.orders) if row.orders else 0,
+                "label": day,
+                "date": day,
+                "orders": int(bucket["orders"] or 0),
+                "revenue": self._round(bucket["revenue"]),
+                "average_ticket": self._round(bucket["revenue"] / bucket["orders"]) if bucket["orders"] else 0,
             }
-            for row in rows
+            for day, bucket in sorted(day_totals.items())
         ]
-
-        hour_rows = (
-            self._paid_orders_in_period(start_dt, end_dt)
-            .with_entities(
-                func.extract("hour", Order.created_at).label("hour"),
-                func.count(Order.id).label("orders"),
-                func.coalesce(func.sum(Order.total), 0).label("revenue"),
-            )
-            .group_by(func.extract("hour", Order.created_at))
-            .order_by(func.extract("hour", Order.created_at))
-            .all()
-        )
         by_hour = [
-            {"hour": int(row.hour or 0), "orders": int(row.orders or 0), "revenue": self._round(row.revenue)}
-            for row in hour_rows
+            {"hour": hour, "orders": int(bucket["orders"] or 0), "revenue": self._round(bucket["revenue"])}
+            for hour, bucket in sorted(hour_totals.items())
         ]
-        return {**self._period_payload({"period": period, "start_dt": start_dt, "end_dt": end_dt}), "by_day": by_day, "by_hour": by_hour}
+        return {
+            **self._period_payload({
+                "period": period,
+                "date_from": date_from,
+                "date_to": date_to,
+                "start_dt": start_dt,
+                "end_dt": end_dt,
+            }),
+            "by_day": by_day,
+            "by_hour": by_hour,
+        }
 
-    def get_products(self, start_dt: datetime, end_dt: datetime, period: str, limit: int = 20) -> dict:
+    def get_products(
+        self,
+        start_dt: datetime,
+        end_dt: datetime,
+        period: str,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        limit: int = 20,
+    ) -> dict:
         rows = (
             self._db.query(
                 OrderItem.product_id,
@@ -269,9 +311,25 @@ class BusinessIntelligenceService:
             }
             for index, row in enumerate(rows)
         ]
-        return {**self._period_payload({"period": period, "start_dt": start_dt, "end_dt": end_dt}), "products": products}
+        return {
+            **self._period_payload({
+                "period": period,
+                "date_from": date_from,
+                "date_to": date_to,
+                "start_dt": start_dt,
+                "end_dt": end_dt,
+            }),
+            "products": products,
+        }
 
-    def get_customers(self, start_dt: datetime, end_dt: datetime, period: str) -> dict:
+    def get_customers(
+        self,
+        start_dt: datetime,
+        end_dt: datetime,
+        period: str,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> dict:
         now = datetime.now(timezone.utc)
         inactive_cutoff = now - timedelta(days=30)
         total_customers = self._db.query(Customer).count()
@@ -313,12 +371,25 @@ class BusinessIntelligenceService:
             self._segment("base", "Base total", "Total de clientes cadastrados", total_customers),
         ]
         return {
-            **self._period_payload({"period": period, "start_dt": start_dt, "end_dt": end_dt}),
+            **self._period_payload({
+                "period": period,
+                "date_from": date_from,
+                "date_to": date_to,
+                "start_dt": start_dt,
+                "end_dt": end_dt,
+            }),
             "segments": segments,
             "top_customers": top_customers,
         }
 
-    def get_marketing(self, start_dt: datetime, end_dt: datetime, period: str) -> dict:
+    def get_marketing(
+        self,
+        start_dt: datetime,
+        end_dt: datetime,
+        period: str,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> dict:
         events_q = self._db.query(CustomerEvent).filter(CustomerEvent.created_at >= start_dt, CustomerEvent.created_at <= end_dt)
         events_rows = (
             events_q.with_entities(CustomerEvent.event_type, func.count(CustomerEvent.id))
@@ -340,7 +411,10 @@ class BusinessIntelligenceService:
         )
         spend = self._round(
             self._db.query(func.coalesce(func.sum(AdDailyMetric.spend), 0))
-            .filter(AdDailyMetric.metric_date >= start_dt.date(), AdDailyMetric.metric_date <= end_dt.date())
+            .filter(
+                AdDailyMetric.metric_date >= (date_from or start_dt.date()),
+                AdDailyMetric.metric_date <= (date_to or end_dt.date()),
+            )
             .scalar()
         )
         funnel = [
@@ -350,7 +424,13 @@ class BusinessIntelligenceService:
             self._funnel("orders", "Pedidos com pagamento confirmado", paid_orders, visitors),
         ]
         return {
-            **self._period_payload({"period": period, "start_dt": start_dt, "end_dt": end_dt}),
+            **self._period_payload({
+                "period": period,
+                "date_from": date_from,
+                "date_to": date_to,
+                "start_dt": start_dt,
+                "end_dt": end_dt,
+            }),
             "spend": spend,
             "revenue": revenue,
             "roas": self._round(revenue / spend if spend else 0),
@@ -358,7 +438,15 @@ class BusinessIntelligenceService:
             "funnel": funnel,
         }
 
-    def get_neighborhoods(self, start_dt: datetime, end_dt: datetime, period: str, limit: int = 12) -> dict:
+    def get_neighborhoods(
+        self,
+        start_dt: datetime,
+        end_dt: datetime,
+        period: str,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        limit: int = 12,
+    ) -> dict:
         # Use raw SQL here because visitor_profiles is owned by the marketing route module.
         raw_visitor_rows = self._db.execute(
             text("""
@@ -464,11 +552,24 @@ class BusinessIntelligenceService:
             })
         neighborhoods.sort(key=lambda item: (item["orders"], item["visitor_orders"], item["visitors"], item["revenue"]), reverse=True)
         return {
-            **self._period_payload({"period": period, "start_dt": start_dt, "end_dt": end_dt}),
+            **self._period_payload({
+                "period": period,
+                "date_from": date_from,
+                "date_to": date_to,
+                "start_dt": start_dt,
+                "end_dt": end_dt,
+            }),
             "neighborhoods": neighborhoods[:limit],
         }
 
-    def get_operations(self, start_dt: datetime, end_dt: datetime, period: str) -> dict:
+    def get_operations(
+        self,
+        start_dt: datetime,
+        end_dt: datetime,
+        period: str,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> dict:
         orders_q = self._orders_in_period(start_dt, end_dt)
         status_rows = (
             orders_q.with_entities(Order.status, func.count(Order.id))
@@ -479,7 +580,13 @@ class BusinessIntelligenceService:
         avg_total_time = orders_q.with_entities(func.coalesce(func.avg(Order.total_time_minutes), 0)).scalar()
         avg_delivery_time = orders_q.with_entities(func.coalesce(func.avg(Order.delivery_time_minutes), 0)).scalar()
         return {
-            **self._period_payload({"period": period, "start_dt": start_dt, "end_dt": end_dt}),
+            **self._period_payload({
+                "period": period,
+                "date_from": date_from,
+                "date_to": date_to,
+                "start_dt": start_dt,
+                "end_dt": end_dt,
+            }),
             "delayed_deliveries": self._delayed_deliveries(start_dt, end_dt),
             "avg_total_time_minutes": self._round(avg_total_time),
             "avg_delivery_time_minutes": self._round(avg_delivery_time),
@@ -732,8 +839,8 @@ class BusinessIntelligenceService:
             row.recommendation = item["recommendation"]
             row.actionable = bool(item.get("actionable", True))
             row.period = bounds["period"]
-            row.date_from = bounds["start_dt"].date()
-            row.date_to = bounds["end_dt"].date()
+            row.date_from = bounds["date_from"]
+            row.date_to = bounds["date_to"]
             row.source = "rules"
             row.metadata_json = json.dumps({"generated_id": item["id"]}, ensure_ascii=False)
             row.updated_at = datetime.now(timezone.utc)
@@ -744,7 +851,7 @@ class BusinessIntelligenceService:
         return saved
 
     def _save_product_performance(self, products: list[dict], bounds: dict) -> None:
-        metric_date = bounds["end_dt"].date()
+        metric_date = bounds["date_to"]
         self._db.query(ProductPerformance).filter(ProductPerformance.metric_date == metric_date).delete(synchronize_session=False)
         now = datetime.now(timezone.utc)
         for item in products:
@@ -766,8 +873,8 @@ class BusinessIntelligenceService:
     def _dedupe_key(self, item: dict, bounds: dict) -> str:
         return "|".join([
             bounds["period"],
-            bounds["start_dt"].date().isoformat(),
-            bounds["end_dt"].date().isoformat(),
+            bounds["date_from"].isoformat(),
+            bounds["date_to"].isoformat(),
             item["insight_type"],
             item["title"].strip().lower(),
         ])[:300]
@@ -786,7 +893,7 @@ class BusinessIntelligenceService:
         }
 
     def _bounds(self, period: str, date_from: date | None, date_to: date | None) -> dict:
-        today = datetime.now(timezone.utc).date()
+        today = local_today()
         if date_from or date_to:
             start_date = date_from or today
             end_date = date_to or today
@@ -805,17 +912,22 @@ class BusinessIntelligenceService:
             start_date = today - timedelta(days=days - 1)
             end_date = today
 
+        start_dt, end_dt = local_period_bounds(start_date, end_date)
         return {
             "period": period,
-            "start_dt": datetime.combine(start_date, time.min, tzinfo=timezone.utc),
-            "end_dt": datetime.combine(end_date, time.max, tzinfo=timezone.utc),
+            "date_from": start_date,
+            "date_to": end_date,
+            "start_dt": start_dt,
+            "end_dt": end_dt,
         }
 
     def _period_payload(self, bounds: dict) -> dict:
+        date_from = bounds.get("date_from") or bounds["start_dt"].date()
+        date_to = bounds.get("date_to") or bounds["end_dt"].date()
         return {
             "period": bounds["period"],
-            "date_from": bounds["start_dt"].date().isoformat(),
-            "date_to": bounds["end_dt"].date().isoformat(),
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
         }
 
     def _delayed_deliveries(self, start_dt: datetime, end_dt: datetime) -> int:

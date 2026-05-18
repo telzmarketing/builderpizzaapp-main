@@ -32,6 +32,7 @@ import {
   type ApiAgenteWhatsAppAITest,
   type ApiAgenteWhatsAppCampaign,
   type ApiAgenteWhatsAppCampaignTemplate,
+  type ApiAgenteWhatsAppConversation,
   type ApiAgenteWhatsAppAutomationRun,
   type ApiAgenteWhatsAppAutomationTemplate,
   type ApiAgenteWhatsAppDashboard,
@@ -40,20 +41,20 @@ import {
   type ApiAgenteWhatsAppOutboxAlert,
   type ApiAgenteWhatsAppOutbox,
   type ApiAgenteWhatsAppOutboxMetrics,
+  type ApiAgenteWhatsAppOperationalMetrics,
   type ApiAgenteWhatsAppProviderState,
-  type ApiAgenteWhatsAppSession,
   type ApiAgenteWhatsAppStory,
   type ApiAgenteWhatsAppStoryTemplate,
   resolveAssetUrl,
 } from "@/lib/api";
 
-type StatusFilter = "all" | ApiAgenteWhatsAppSession["status"];
+type StatusFilter = "all" | ApiAgenteWhatsAppConversation["status"];
 type OutboxFilter = "all" | "pending" | "processing" | "sent" | "failed" | "dead";
 type CampaignAudience = "manual" | "customers" | "leads";
 type StoryMediaType = "image" | "video";
-type ModuleTab = "operation" | "stories" | "ai_settings";
+type ModuleTab = "conversations" | "automation" | "campaigns" | "settings" | "chatbot" | "metrics";
 
-const statusLabels: Record<ApiAgenteWhatsAppSession["status"], string> = {
+const statusLabels: Record<ApiAgenteWhatsAppConversation["status"], string> = {
   open: "Aberta",
   waiting_human: "Fila",
   human: "Humano",
@@ -61,7 +62,7 @@ const statusLabels: Record<ApiAgenteWhatsAppSession["status"], string> = {
   closed: "Encerrada",
 };
 
-const statusClasses: Record<ApiAgenteWhatsAppSession["status"], string> = {
+const statusClasses: Record<ApiAgenteWhatsAppConversation["status"], string> = {
   open: "bg-green-500/10 text-green-300 border-green-500/30",
   waiting_human: "bg-amber-500/10 text-amber-300 border-amber-500/30",
   human: "bg-blue-500/10 text-blue-300 border-blue-500/30",
@@ -265,12 +266,16 @@ export default function CrmAgenteWhatsApp() {
   const [providerStates, setProviderStates] = useState<ApiAgenteWhatsAppProviderState[]>([]);
   const [outboxFilter, setOutboxFilter] = useState<OutboxFilter>("failed");
   const [selectedOutbox, setSelectedOutbox] = useState<ApiAgenteWhatsAppOutbox | null>(null);
-  const [sessions, setSessions] = useState<ApiAgenteWhatsAppSession[]>([]);
+  const [sessions, setSessions] = useState<ApiAgenteWhatsAppConversation[]>([]);
+  const [operationalMetrics, setOperationalMetrics] = useState<ApiAgenteWhatsAppOperationalMetrics | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ApiAgenteWhatsAppMessage[]>([]);
   const [filter, setFilter] = useState<StatusFilter>("all");
-  const [moduleTab, setModuleTab] = useState<ModuleTab>("operation");
+  const [moduleTab, setModuleTab] = useState<ModuleTab>("conversations");
   const [search, setSearch] = useState("");
+  const [agentFilter, setAgentFilter] = useState("");
+  const [periodFrom, setPeriodFrom] = useState("");
+  const [periodTo, setPeriodTo] = useState("");
   const [reply, setReply] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [loading, setLoading] = useState(true);
@@ -314,9 +319,14 @@ export default function CrmAgenteWhatsApp() {
   }, [filter, search, sessions]);
 
   const lastMessageBySession = useMemo(() => {
-    if (!selected) return new Map<string, ApiAgenteWhatsAppMessage>();
-    return new Map([[selected.id, messages[messages.length - 1]]]);
-  }, [messages, selected]);
+    const pairs = sessions
+      .filter((session) => session.last_message)
+      .map((session) => [session.id, session.last_message as ApiAgenteWhatsAppMessage] as const);
+    if (selected && messages.length > 0) {
+      return new Map([...pairs, [selected.id, messages[messages.length - 1]] as const]);
+    }
+    return new Map(pairs);
+  }, [messages, selected, sessions]);
 
   const latestInboundMessage = useMemo(() => {
     return [...messages].reverse().find((message) => message.direction === "inbound" && !!message.body) ?? null;
@@ -328,11 +338,19 @@ export default function CrmAgenteWhatsApp() {
     try {
       const [dash, rows] = await Promise.all([
         agenteWhatsAppApi.dashboard(),
-        agenteWhatsAppApi.listSessions({ limit: 100 }),
+        agenteWhatsAppApi.listConversations({
+          status: filter === "all" ? undefined : filter,
+          search: search.trim() || undefined,
+          assigned_admin_id: agentFilter.trim() || undefined,
+          date_from: periodFrom || undefined,
+          date_to: periodTo || undefined,
+          limit: 120,
+        }),
       ]);
       const [
         outbox,
         obs,
+        liveMetrics,
         campaignRows,
         templates,
         automationTemplateRows,
@@ -343,6 +361,7 @@ export default function CrmAgenteWhatsApp() {
       ] = await Promise.all([
         agenteWhatsAppApi.outboxMetrics().catch(() => null),
         agenteWhatsAppApi.observability().catch(() => null),
+        agenteWhatsAppApi.operationalMetrics().catch(() => null),
         agenteWhatsAppApi.listCampaigns().catch(() => []),
         agenteWhatsAppApi.listCampaignTemplates().catch(() => []),
         agenteWhatsAppApi.listAutomationTemplates().catch(() => []),
@@ -355,6 +374,7 @@ export default function CrmAgenteWhatsApp() {
       setSessions(rows);
       setOutboxSummary(outbox);
       setObservability(obs);
+      setOperationalMetrics(liveMetrics);
       setCampaigns(campaignRows);
       setCampaignTemplates(templates);
       setAutomationTemplates(automationTemplateRows);
@@ -386,7 +406,14 @@ export default function CrmAgenteWhatsApp() {
       setMessages(detail.messages);
       setAiGuardrails(guardrails);
       setSessions((current) => current.map((session) => (
-        session.id === detail.session.id ? detail.session : session
+        session.id === detail.session.id
+          ? {
+              ...session,
+              ...detail.session,
+              last_message: detail.messages[detail.messages.length - 1] ?? session.last_message,
+              attendance_mode: detail.session.status === "human" || !detail.session.ai_enabled ? "human" : "ai",
+            }
+          : session
       )));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar conversa.");
@@ -426,7 +453,15 @@ export default function CrmAgenteWhatsApp() {
   useEffect(() => {
     loadSessions();
     const interval = window.setInterval(() => {
-      agenteWhatsAppApi.listSessions({ limit: 100 }).then(setSessions).catch(() => {});
+      agenteWhatsAppApi.listConversations({
+        status: filter === "all" ? undefined : filter,
+        search: search.trim() || undefined,
+        assigned_admin_id: agentFilter.trim() || undefined,
+        date_from: periodFrom || undefined,
+        date_to: periodTo || undefined,
+        limit: 120,
+      }).then(setSessions).catch(() => {});
+      agenteWhatsAppApi.operationalMetrics().then(setOperationalMetrics).catch(() => {});
       agenteWhatsAppApi.outboxAlerts().then((payload) => {
         setOutboxSummary(payload.metrics);
         setOutboxAlerts(payload.alerts);
@@ -452,12 +487,16 @@ export default function CrmAgenteWhatsApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outboxFilter]);
 
-  async function updateSession(data: Partial<Pick<ApiAgenteWhatsAppSession, "status" | "ai_enabled" | "automation_blocked">>) {
+  async function updateSession(data: Partial<Pick<ApiAgenteWhatsAppConversation, "status" | "ai_enabled" | "automation_blocked">>) {
     if (!selected) return;
     setSaving(true);
     try {
       const updated = await agenteWhatsAppApi.updateSession(selected.id, data);
-      setSessions((current) => current.map((session) => session.id === updated.id ? updated : session));
+      setSessions((current) => current.map((session) => session.id === updated.id ? {
+        ...session,
+        ...updated,
+        attendance_mode: updated.status === "human" || !updated.ai_enabled ? "human" : "ai",
+      } : session));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao atualizar conversa.");
     } finally {
@@ -848,9 +887,12 @@ export default function CrmAgenteWhatsApp() {
 
       <div className="bg-surface-02 border border-surface-03 rounded-xl p-1 flex gap-1 overflow-x-auto">
         {[
-          { value: "operation" as ModuleTab, label: "Operacao", icon: MessageCircle },
-          { value: "stories" as ModuleTab, label: "Stories", icon: ImageIcon },
-          { value: "ai_settings" as ModuleTab, label: "Configuracoes da IA", icon: Bot },
+          { value: "conversations" as ModuleTab, label: "Conversas", icon: MessageCircle },
+          { value: "automation" as ModuleTab, label: "Automacao", icon: RefreshCw },
+          { value: "campaigns" as ModuleTab, label: "Campanhas", icon: Send },
+          { value: "settings" as ModuleTab, label: "Configuracoes", icon: Bot },
+          { value: "chatbot" as ModuleTab, label: "Chatbot", icon: Bot },
+          { value: "metrics" as ModuleTab, label: "Metricas", icon: BarChart3 },
         ].map((tab) => {
           const Icon = tab.icon;
           return (
@@ -870,18 +912,18 @@ export default function CrmAgenteWhatsApp() {
         })}
       </div>
 
-      {moduleTab === "operation" && (
+      {moduleTab === "conversations" && (
         <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard icon={MessageCircle} label="Conversas abertas" value={dashboard?.sessions_open ?? 0} />
         <StatCard icon={Users} label="Atendimento humano" value={dashboard?.sessions_human ?? 0} />
-        <StatCard icon={PauseCircle} label="IA pausada" value={dashboard?.sessions_ai_paused ?? 0} />
-        <StatCard icon={Clock3} label="Mensagens hoje" value={dashboard?.messages_today ?? 0} />
+        <StatCard icon={Clock3} label="Aguardando resposta" value={operationalMetrics?.waiting_response ?? 0} />
+        <StatCard icon={Eye} label="Nao lidas" value={operationalMetrics?.unread_messages ?? 0} />
       </div>
         </>
       )}
 
-      {moduleTab === "ai_settings" && (
+      {moduleTab === "settings" && (
       <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div>
@@ -1098,7 +1140,31 @@ export default function CrmAgenteWhatsApp() {
       </section>
       )}
 
-      {moduleTab === "operation" && (
+      {moduleTab === "chatbot" && (
+        <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
+          <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-cream">Chatbot</h2>
+              <p className="text-xs text-stone mt-1">Operacao do chatbot conectada ao atendimento WhatsApp</p>
+            </div>
+            <a
+              href="/painel/chatbot"
+              className="h-9 px-3 rounded-xl border border-gold/40 bg-gold/10 text-gold text-xs font-semibold flex items-center justify-center gap-2"
+            >
+              <Bot size={14} />
+              Abrir Chatbot
+            </a>
+          </div>
+          <div className="p-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatCard icon={Bot} label="Chatbots online" value={operationalMetrics?.chatbots_online ?? 0} />
+            <StatCard icon={Activity} label="Agentes IA ativos" value={operationalMetrics?.active_ai_agents ?? 0} />
+            <StatCard icon={MessageCircle} label="Conversas online" value={operationalMetrics?.conversations_online ?? 0} />
+            <StatCard icon={Clock3} label="Tempo resposta" value={secondsLabel(operationalMetrics?.avg_response_time_seconds)} />
+          </div>
+        </section>
+      )}
+
+      {moduleTab === "metrics" && (
         <>
       <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
@@ -1254,7 +1320,10 @@ export default function CrmAgenteWhatsApp() {
         </div>
       </section>
 
-      {false && (
+      </>
+      )}
+
+      {moduleTab === "campaigns" && (
       <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div>
@@ -1431,10 +1500,7 @@ export default function CrmAgenteWhatsApp() {
       </section>
       )}
 
-        </>
-      )}
-
-      {moduleTab === "stories" && (
+      {moduleTab === "campaigns" && (
 
       <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
@@ -1646,10 +1712,10 @@ export default function CrmAgenteWhatsApp() {
       </section>
       )}
 
-      {moduleTab === "operation" && (
+      {(moduleTab === "conversations" || moduleTab === "automation" || moduleTab === "metrics") && (
         <>
 
-      {false && (
+      {moduleTab === "automation" && (
       <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div>
@@ -1793,6 +1859,8 @@ export default function CrmAgenteWhatsApp() {
       </section>
       )}
 
+      {moduleTab === "metrics" && (
+      <>
       <div className="bg-surface-02 border border-surface-03 rounded-xl px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3 text-xs text-stone">
           <span className="text-cream font-semibold">Fila de envio</span>
@@ -2010,6 +2078,10 @@ export default function CrmAgenteWhatsApp() {
         )}
       </section>
 
+      </>
+      )}
+
+      {moduleTab === "conversations" && (
       <div className="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-4 min-h-[640px]">
         <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden flex flex-col min-h-[640px]">
           <div className="p-4 border-b border-surface-03 space-y-3">
@@ -2046,6 +2118,27 @@ export default function CrmAgenteWhatsApp() {
                   {option.label}
                 </button>
               ))}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <input
+                value={agentFilter}
+                onChange={(event) => setAgentFilter(event.target.value)}
+                placeholder="Atendente/agente"
+                className="h-9 bg-surface-03 border border-surface-03 rounded-xl px-3 text-xs text-cream outline-none focus:border-gold"
+              />
+              <input
+                type="date"
+                value={periodFrom}
+                onChange={(event) => setPeriodFrom(event.target.value)}
+                className="h-9 bg-surface-03 border border-surface-03 rounded-xl px-3 text-xs text-cream outline-none focus:border-gold"
+              />
+              <input
+                type="date"
+                value={periodTo}
+                onChange={(event) => setPeriodTo(event.target.value)}
+                className="h-9 bg-surface-03 border border-surface-03 rounded-xl px-3 text-xs text-cream outline-none focus:border-gold"
+              />
             </div>
 
             <div className="flex gap-2">
@@ -2105,6 +2198,20 @@ export default function CrmAgenteWhatsApp() {
                   <div className="mt-2 flex items-center justify-between gap-3">
                     <p className="text-xs text-stone truncate">{firstLine(last)}</p>
                     <span className="text-[11px] text-stone shrink-0">{fmtDate(session.last_message_at || session.updated_at)}</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className={`text-[11px] border rounded-full px-2 py-0.5 ${
+                      session.attendance_mode === "human"
+                        ? "border-blue-500/30 bg-blue-500/10 text-blue-300"
+                        : "border-green-500/30 bg-green-500/10 text-green-300"
+                    }`}>
+                      {session.attendance_mode === "human" ? "Humano" : "IA"}
+                    </span>
+                    {session.unread_count > 0 && (
+                      <span className="rounded-full bg-gold px-2 py-0.5 text-[11px] font-bold text-black">
+                        {session.unread_count} nao lida(s)
+                      </span>
+                    )}
                   </div>
                 </button>
               );
@@ -2269,6 +2376,7 @@ export default function CrmAgenteWhatsApp() {
           )}
         </section>
       </div>
+      )}
         </>
       )}
     </div>
