@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Motoboy Delivery</string>
+    <string name="title_activity_main">Motoboy Delivery</string>
+    <string name="package_name">com.moschettieri.motoboy</string>
+    <string name="custom_url_scheme">com.moschettieri.motoboy</string>
+</resources>

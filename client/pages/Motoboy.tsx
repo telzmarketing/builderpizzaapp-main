@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
+import MotoboyInstallButton from "@/components/MotoboyInstallButton";
 import {
   deliveryApi,
   type DeliveryEarning,
@@ -474,6 +475,7 @@ export default function Motoboy() {
   if (!token) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-surface-00 to-surface-01 px-6 py-10">
+        <MotoboyInstallButton />
         <div className="w-full max-w-sm">
           {/* Logo */}
           <div className="mb-10 flex flex-col items-center gap-4">
@@ -537,6 +539,7 @@ export default function Motoboy() {
   /* ── App principal ── */
   return (
     <div className="min-h-screen bg-surface-00 text-cream">
+      <MotoboyInstallButton />
       <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col">
 
         {/* Header */}

@@ -11,6 +11,7 @@ import { customerEventsApi, resolveAssetUrl } from "./lib/api";
 
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
 const StoreSocialProofNotification = lazy(() => import("./components/StoreSocialProofNotification"));
+const CapacitorMotoboyEntry = lazy(() => import("./components/CapacitorMotoboyEntry"));
 
 function StoreWidget() {
   const { pathname } = useLocation();
@@ -200,6 +201,9 @@ export default function App() {
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <Suspense fallback={null}>
+              <CapacitorMotoboyEntry />
+            </Suspense>
             <StoreWidget />
             <TrackingInjector />
             <ExitPopup />
