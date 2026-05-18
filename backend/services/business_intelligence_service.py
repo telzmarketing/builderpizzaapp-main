@@ -116,10 +116,12 @@ class BusinessIntelligenceService:
         confirmed_revenue = self._round(
             paid_orders_q.with_entities(func.coalesce(func.sum(Order.total), 0)).scalar()
         )
+        visitors_today = self._visitor_access_count(start_dt, end_dt)
         online_counts = self._online_presence_counts()
 
         return {
             "date": selected_date.isoformat(),
+            "visitorsToday": visitors_today,
             "visitorsOnline": online_counts["visitors"],
             "customersOnline": online_counts["customers"],
             "forecastRevenue": forecast_revenue,
@@ -662,6 +664,33 @@ class BusinessIntelligenceService:
             {"online_since": online_since},
         ).scalar() or 0
         return {"visitors": int(visitors), "customers": int(customers)}
+
+    def _visitor_access_count(self, start_dt: datetime, end_dt: datetime) -> int:
+        # Mirrors Marketing > Visitantes so BI Mobile counts people who accessed the store in the selected day.
+        total = self._db.execute(
+            text("""
+            SELECT COUNT(*)
+            FROM (
+                SELECT DISTINCT visitor_id
+                FROM visitor_events
+                WHERE created_at >= :start_dt AND created_at <= :end_dt
+                UNION
+                SELECT DISTINCT visitor_id
+                FROM visitor_sessions
+                WHERE started_at >= :start_dt AND started_at <= :end_dt
+                UNION
+                SELECT id AS visitor_id
+                FROM visitor_profiles
+                WHERE first_seen_at >= :start_dt AND first_seen_at <= :end_dt
+                UNION
+                SELECT id AS visitor_id
+                FROM visitor_profiles
+                WHERE last_seen_at >= :start_dt AND last_seen_at <= :end_dt
+            ) period_visitors
+            """),
+            {"start_dt": start_dt, "end_dt": end_dt},
+        ).scalar()
+        return int(total or 0)
 
     def _merge_persisted_insights(self, insights: list[dict], bounds: dict) -> list[dict]:
         merged: list[dict] = []

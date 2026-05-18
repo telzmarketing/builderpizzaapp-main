@@ -132,6 +132,12 @@ export default function BiMobile() {
     const current = data;
     return [
       {
+        label: "Acessos do dia",
+        value: number(current?.visitorsToday ?? 0),
+        helper: "Visitantes unicos",
+        icon: Users,
+      },
+      {
         label: "Visitantes online",
         value: number(current?.visitorsOnline ?? 0),
         helper: "Agora",

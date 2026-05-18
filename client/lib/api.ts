@@ -3341,6 +3341,7 @@ export type ApiBIMobileStatusKey =
 
 export interface ApiBIMobile {
   date: string;
+  visitorsToday: number;
   visitorsOnline: number;
   customersOnline: number;
   forecastRevenue: number;
