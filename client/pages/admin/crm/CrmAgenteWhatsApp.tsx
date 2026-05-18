@@ -52,7 +52,7 @@ type StatusFilter = "all" | ApiAgenteWhatsAppConversation["status"];
 type OutboxFilter = "all" | "pending" | "processing" | "sent" | "failed" | "dead";
 type CampaignAudience = "manual" | "customers" | "leads";
 type StoryMediaType = "image" | "video";
-type ModuleTab = "conversations" | "automation" | "campaigns" | "settings" | "chatbot" | "metrics";
+type ModuleTab = "conversations" | "settings";
 
 const statusLabels: Record<ApiAgenteWhatsAppConversation["status"], string> = {
   open: "Aberta",
@@ -195,9 +195,9 @@ function storyStatusLabel(status: string) {
 function messageSourceLabel(source: unknown) {
   if (typeof source !== "string") return "";
   const normalized = source.toLowerCase();
-  if (normalized.includes("campaign")) return "Campanha WhatsApp";
-  if (normalized.includes("automation")) return "Automacao";
-  if (normalized.includes("story")) return "Story WhatsApp";
+  if (normalized.includes("campaign")) return "";
+  if (normalized.includes("automation")) return "";
+  if (normalized.includes("story")) return "";
   if (normalized.includes("order")) return "Pedido";
   if (normalized.includes("crm_agente_whatsapp")) return "Atendimento";
   if (normalized.includes("ai")) return "IA";
@@ -347,39 +347,14 @@ export default function CrmAgenteWhatsApp() {
           limit: 120,
         }),
       ]);
-      const [
-        outbox,
-        obs,
-        liveMetrics,
-        campaignRows,
-        templates,
-        automationTemplateRows,
-        storyRows,
-        storyTemplateRows,
-        aiSettingsPayload,
-        aiStatusPayload,
-      ] = await Promise.all([
-        agenteWhatsAppApi.outboxMetrics().catch(() => null),
-        agenteWhatsAppApi.observability().catch(() => null),
+      const [liveMetrics, aiSettingsPayload, aiStatusPayload] = await Promise.all([
         agenteWhatsAppApi.operationalMetrics().catch(() => null),
-        agenteWhatsAppApi.listCampaigns().catch(() => []),
-        agenteWhatsAppApi.listCampaignTemplates().catch(() => []),
-        agenteWhatsAppApi.listAutomationTemplates().catch(() => []),
-        agenteWhatsAppApi.listStories().catch(() => []),
-        agenteWhatsAppApi.listStoryTemplates().catch(() => []),
         agenteWhatsAppApi.getAISettings().catch(() => null),
         agenteWhatsAppApi.aiProviderStatus().catch(() => null),
       ]);
       setDashboard(dash);
       setSessions(rows);
-      setOutboxSummary(outbox);
-      setObservability(obs);
       setOperationalMetrics(liveMetrics);
-      setCampaigns(campaignRows);
-      setCampaignTemplates(templates);
-      setAutomationTemplates(automationTemplateRows);
-      setStories(storyRows);
-      setStoryTemplates(storyTemplateRows);
       setAiSettings(aiSettingsPayload);
       setAiProviderStatus(aiStatusPayload);
       const nextId = preferredId ?? selectedId ?? rows[0]?.id ?? null;
@@ -437,8 +412,6 @@ export default function CrmAgenteWhatsApp() {
       setOutboxAlerts(metrics.alerts);
       setProviderStates(metrics.providers);
       agenteWhatsAppApi.observability().then(setObservability).catch(() => {});
-      agenteWhatsAppApi.listCampaigns().then(setCampaigns).catch(() => {});
-      agenteWhatsAppApi.listStories().then(setStories).catch(() => {});
       setSelectedOutbox((current) => {
         if (!current) return null;
         return rows.find((item) => item.id === current.id) ?? null;
@@ -462,30 +435,11 @@ export default function CrmAgenteWhatsApp() {
         limit: 120,
       }).then(setSessions).catch(() => {});
       agenteWhatsAppApi.operationalMetrics().then(setOperationalMetrics).catch(() => {});
-      agenteWhatsAppApi.outboxAlerts().then((payload) => {
-        setOutboxSummary(payload.metrics);
-        setOutboxAlerts(payload.alerts);
-        setProviderStates(payload.providers);
-      }).catch(() => {});
-      agenteWhatsAppApi.observability().then(setObservability).catch(() => {});
       if (selectedId) loadDetail(selectedId);
     }, 15000);
     return () => window.clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
-
-  useEffect(() => {
-    loadOutbox(outboxFilter);
-    const interval = window.setInterval(() => {
-      agenteWhatsAppApi.listOutbox({
-        status: outboxFilter === "all" ? undefined : outboxFilter,
-        limit: 80,
-      }).then(setOutboxItems).catch(() => {});
-      agenteWhatsAppApi.observability().then(setObservability).catch(() => {});
-    }, 15000);
-    return () => window.clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outboxFilter]);
 
   async function updateSession(data: Partial<Pick<ApiAgenteWhatsAppConversation, "status" | "ai_enabled" | "automation_blocked">>) {
     if (!selected) return;
@@ -519,7 +473,6 @@ export default function CrmAgenteWhatsApp() {
       await agenteWhatsAppApi.processOutbox(10).catch(() => null);
       const outbox = await agenteWhatsAppApi.outboxMetrics().catch(() => null);
       if (outbox) setOutboxSummary(outbox);
-      await loadOutbox();
       setReply("");
       setAiSuggestion("");
       await loadDetail(selected.id);
@@ -888,11 +841,7 @@ export default function CrmAgenteWhatsApp() {
       <div className="bg-surface-02 border border-surface-03 rounded-xl p-1 flex gap-1 overflow-x-auto">
         {[
           { value: "conversations" as ModuleTab, label: "Conversas", icon: MessageCircle },
-          { value: "automation" as ModuleTab, label: "Automacao", icon: RefreshCw },
-          { value: "campaigns" as ModuleTab, label: "Campanhas", icon: Send },
           { value: "settings" as ModuleTab, label: "Configuracoes", icon: Bot },
-          { value: "chatbot" as ModuleTab, label: "Chatbot", icon: Bot },
-          { value: "metrics" as ModuleTab, label: "Metricas", icon: BarChart3 },
         ].map((tab) => {
           const Icon = tab.icon;
           return (
@@ -1140,31 +1089,7 @@ export default function CrmAgenteWhatsApp() {
       </section>
       )}
 
-      {moduleTab === "chatbot" && (
-        <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
-          <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-            <div>
-              <h2 className="text-base font-bold text-cream">Chatbot</h2>
-              <p className="text-xs text-stone mt-1">Operacao do chatbot conectada ao atendimento WhatsApp</p>
-            </div>
-            <a
-              href="/painel/chatbot"
-              className="h-9 px-3 rounded-xl border border-gold/40 bg-gold/10 text-gold text-xs font-semibold flex items-center justify-center gap-2"
-            >
-              <Bot size={14} />
-              Abrir Chatbot
-            </a>
-          </div>
-          <div className="p-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatCard icon={Bot} label="Chatbots online" value={operationalMetrics?.chatbots_online ?? 0} />
-            <StatCard icon={Activity} label="Agentes IA ativos" value={operationalMetrics?.active_ai_agents ?? 0} />
-            <StatCard icon={MessageCircle} label="Conversas online" value={operationalMetrics?.conversations_online ?? 0} />
-            <StatCard icon={Clock3} label="Tempo resposta" value={secondsLabel(operationalMetrics?.avg_response_time_seconds)} />
-          </div>
-        </section>
-      )}
-
-      {moduleTab === "metrics" && (
+      {false && (
         <>
       <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
@@ -1323,7 +1248,7 @@ export default function CrmAgenteWhatsApp() {
       </>
       )}
 
-      {moduleTab === "campaigns" && (
+      {false && (
       <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div>
@@ -1500,7 +1425,7 @@ export default function CrmAgenteWhatsApp() {
       </section>
       )}
 
-      {moduleTab === "campaigns" && (
+      {false && (
 
       <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
@@ -1712,10 +1637,10 @@ export default function CrmAgenteWhatsApp() {
       </section>
       )}
 
-      {(moduleTab === "conversations" || moduleTab === "automation" || moduleTab === "metrics") && (
+      {moduleTab === "conversations" && (
         <>
 
-      {moduleTab === "automation" && (
+      {false && (
       <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div>
@@ -1859,7 +1784,7 @@ export default function CrmAgenteWhatsApp() {
       </section>
       )}
 
-      {moduleTab === "metrics" && (
+      {false && (
       <>
       <div className="bg-surface-02 border border-surface-03 rounded-xl px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3 text-xs text-stone">
@@ -2104,18 +2029,18 @@ export default function CrmAgenteWhatsApp() {
               </button>
             </div>
 
-            <div className="flex gap-1.5 overflow-x-auto pb-1">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
               {filterOptions.map((option) => (
                 <button
                   key={option.value}
                   onClick={() => setFilter(option.value)}
-                  className={`px-3 py-1.5 rounded-full text-xs border whitespace-nowrap transition-colors ${
+                  className={`min-w-0 h-8 px-2 rounded-lg text-[11px] leading-tight border text-center transition-colors overflow-hidden ${
                     filter === option.value
                       ? "border-gold bg-gold text-black"
-                      : "border-surface-03 text-stone hover:text-cream"
+                      : "border-surface-03 bg-surface-03/60 text-stone hover:text-cream"
                   }`}
                 >
-                  {option.label}
+                  <span className="block truncate">{option.label}</span>
                 </button>
               ))}
             </div>
