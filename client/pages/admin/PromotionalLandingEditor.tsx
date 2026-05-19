@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Eye, Loader2, Save, Send } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Eye, Image, Loader2, Save, Send, Video } from "lucide-react";
 import MediaUpload from "@/components/admin/MediaUpload";
 import {
   productsApi,
@@ -10,6 +10,7 @@ import {
   type ApiProductPromotion,
   type ApiPromotionLandingAlignment,
   type ApiPromotionLandingImagePosition,
+  type ApiPromotionLandingMediaSlot,
   type ApiPromotionLandingOverlay,
   type ApiPromotionLandingPage,
   type ApiPromotionLandingStatus,
@@ -23,6 +24,7 @@ type FormState = {
   image_url: string;
   image_url_2: string;
   video_url: string;
+  media_order: ApiPromotionLandingMediaSlot[];
   image_position: ApiPromotionLandingImagePosition;
   content_alignment: ApiPromotionLandingAlignment;
   overlay_style: ApiPromotionLandingOverlay;
@@ -30,6 +32,40 @@ type FormState = {
   slug: string;
   status: ApiPromotionLandingStatus;
   is_active: boolean;
+};
+
+const DEFAULT_MEDIA_ORDER: ApiPromotionLandingMediaSlot[] = ["image_url", "image_url_2", "video_url"];
+const MEDIA_SLOT_CONFIG: Record<ApiPromotionLandingMediaSlot, {
+  label: string;
+  mediaType: "image" | "video";
+  hint: string;
+  sizeGuide: string;
+}> = {
+  image_url: {
+    label: "Imagem principal",
+    mediaType: "image",
+    hint: "Imagem promocional usada no carrossel da landing.",
+    sizeGuide: "Recomendado: 1080x1350 ou 1200x1200",
+  },
+  image_url_2: {
+    label: "Segunda imagem",
+    mediaType: "image",
+    hint: "Imagem complementar da landing promocional.",
+    sizeGuide: "Recomendado: 1080x1350 ou 1200x1200",
+  },
+  video_url: {
+    label: "Video curto",
+    mediaType: "video",
+    hint: "O carrossel exibe o video por ate 5 segundos e passa para a proxima midia.",
+    sizeGuide: "Recomendado: MP4/WebM vertical, ate 5 segundos",
+  },
+};
+
+const normalizeMediaOrder = (order?: ApiPromotionLandingMediaSlot[] | null) => {
+  const unique = (order || []).filter((slot, index, all) =>
+    DEFAULT_MEDIA_ORDER.includes(slot) && all.indexOf(slot) === index
+  );
+  return [...unique, ...DEFAULT_MEDIA_ORDER.filter((slot) => !unique.includes(slot))];
 };
 
 const emptyForm = (productName = ""): FormState => ({
@@ -40,6 +76,7 @@ const emptyForm = (productName = ""): FormState => ({
   image_url: "",
   image_url_2: "",
   video_url: "",
+  media_order: DEFAULT_MEDIA_ORDER,
   image_position: "center",
   content_alignment: "center",
   overlay_style: "dark-gradient",
@@ -108,6 +145,7 @@ export default function PromotionalLandingEditor() {
             image_url: existing.image_url ?? "",
             image_url_2: existing.image_url_2 ?? "",
             video_url: existing.video_url ?? "",
+            media_order: normalizeMediaOrder(existing.media_order),
             image_position: existing.image_position,
             content_alignment: existing.content_alignment,
             overlay_style: existing.overlay_style,
@@ -142,6 +180,7 @@ export default function PromotionalLandingEditor() {
     image_url: form.image_url || null,
     image_url_2: form.image_url_2 || null,
     video_url: form.video_url || null,
+    media_order: normalizeMediaOrder(form.media_order),
     image_position: form.image_position,
     content_alignment: form.content_alignment,
     overlay_style: form.overlay_style,
@@ -167,6 +206,22 @@ export default function PromotionalLandingEditor() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const moveMediaSlot = (slot: ApiPromotionLandingMediaSlot, direction: -1 | 1) => {
+    setForm((current) => {
+      const mediaOrder = normalizeMediaOrder(current.media_order);
+      const index = mediaOrder.indexOf(slot);
+      const targetIndex = index + direction;
+      if (index < 0 || targetIndex < 0 || targetIndex >= mediaOrder.length) return current;
+      const nextOrder = [...mediaOrder];
+      [nextOrder[index], nextOrder[targetIndex]] = [nextOrder[targetIndex], nextOrder[index]];
+      return { ...current, media_order: nextOrder };
+    });
+  };
+
+  const setMediaSlotValue = (slot: ApiPromotionLandingMediaSlot, value: string) => {
+    setForm((current) => ({ ...current, [slot]: value }));
   };
 
   const preview = () => {
@@ -294,6 +349,50 @@ export default function PromotionalLandingEditor() {
           </div>
 
           <div className="rounded-lg border border-surface-03 bg-surface-02 p-4 space-y-4">
+            <div className="rounded-lg border border-surface-03 bg-surface-01 p-3">
+              <p className="text-sm font-bold text-cream">Ordem do carrossel</p>
+              <p className="mb-3 text-xs text-stone">Use as setas para definir a ordem em que imagens e video aparecem na landing.</p>
+              <div className="space-y-2">
+                {normalizeMediaOrder(form.media_order).map((slot, index, order) => {
+                  const config = MEDIA_SLOT_CONFIG[slot];
+                  const SlotIcon = config.mediaType === "video" ? Video : Image;
+                  return (
+                    <div key={slot} className="flex items-center justify-between gap-3 rounded-lg border border-surface-03 bg-surface-02 px-3 py-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gold/15 text-gold">
+                          <SlotIcon size={16} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-cream">{index + 1}. {config.label}</p>
+                          <p className="text-xs text-stone">Posicao {index + 1} no carrossel</p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => moveMediaSlot(slot, -1)}
+                          disabled={index === 0}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-surface-03 bg-surface-03 text-parchment transition-colors hover:text-gold disabled:cursor-not-allowed disabled:opacity-40"
+                          title="Subir midia"
+                        >
+                          <ArrowUp size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveMediaSlot(slot, 1)}
+                          disabled={index === order.length - 1}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-surface-03 bg-surface-03 text-parchment transition-colors hover:text-gold disabled:cursor-not-allowed disabled:opacity-40"
+                          title="Descer midia"
+                        >
+                          <ArrowDown size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             <MediaUpload
               value={form.image_url}
               onChange={(value) => setForm((current) => ({ ...current, image_url: value }))}

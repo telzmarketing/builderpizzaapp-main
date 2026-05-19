@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -22,6 +22,7 @@ class PromotionLandingPage(Base):
     image_url = Column(Text, nullable=True)
     image_url_2 = Column(Text, nullable=True)
     video_url = Column(Text, nullable=True)
+    media_order = Column(JSON, nullable=False, default=lambda: ["image_url", "image_url_2", "video_url"])
     image_position = Column(String(40), nullable=False, default="center")
     content_alignment = Column(String(20), nullable=False, default="center")
     overlay_style = Column(String(40), nullable=False, default="dark-gradient")

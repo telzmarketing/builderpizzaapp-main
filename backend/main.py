@@ -1016,6 +1016,7 @@ def _run_migrations():
             image_url TEXT,
             image_url_2 TEXT,
             video_url TEXT,
+            media_order JSONB NOT NULL DEFAULT '["image_url", "image_url_2", "video_url"]'::jsonb,
             image_position VARCHAR(40) NOT NULL DEFAULT 'center',
             content_alignment VARCHAR(20) NOT NULL DEFAULT 'center',
             overlay_style VARCHAR(40) NOT NULL DEFAULT 'dark-gradient',
@@ -1033,6 +1034,7 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_promotion_landing_pages_status ON promotion_landing_pages(status)",
         "ALTER TABLE promotion_landing_pages ADD COLUMN IF NOT EXISTS image_url_2 TEXT",
         "ALTER TABLE promotion_landing_pages ADD COLUMN IF NOT EXISTS video_url TEXT",
+        "ALTER TABLE promotion_landing_pages ADD COLUMN IF NOT EXISTS media_order JSONB NOT NULL DEFAULT '[\"image_url\", \"image_url_2\", \"video_url\"]'::jsonb",
     ]
     for stmt in stmts:
         try:

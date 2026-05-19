@@ -1,7 +1,10 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
+
+PromotionLandingMediaSlot = Literal["image_url", "image_url_2", "video_url"]
+DEFAULT_MEDIA_ORDER: list[PromotionLandingMediaSlot] = ["image_url", "image_url_2", "video_url"]
 
 
 class PromotionLandingPageBase(BaseModel):
@@ -14,6 +17,7 @@ class PromotionLandingPageBase(BaseModel):
     image_url: Optional[str] = None
     image_url_2: Optional[str] = None
     video_url: Optional[str] = None
+    media_order: list[PromotionLandingMediaSlot] = Field(default_factory=lambda: DEFAULT_MEDIA_ORDER.copy())
     image_position: str = Field(default="center", pattern=r"^(center|top|bottom|left|right)$")
     content_alignment: str = Field(default="center", pattern=r"^(left|center|right)$")
     overlay_style: str = Field(default="dark-gradient", pattern=r"^(dark-gradient|dark|light|brand)$")
@@ -35,6 +39,7 @@ class PromotionLandingPageUpdate(BaseModel):
     image_url: Optional[str] = None
     image_url_2: Optional[str] = None
     video_url: Optional[str] = None
+    media_order: Optional[list[PromotionLandingMediaSlot]] = None
     image_position: Optional[str] = Field(default=None, pattern=r"^(center|top|bottom|left|right)$")
     content_alignment: Optional[str] = Field(default=None, pattern=r"^(left|center|right)$")
     overlay_style: Optional[str] = Field(default=None, pattern=r"^(dark-gradient|dark|light|brand)$")

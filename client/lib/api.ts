@@ -320,6 +320,7 @@ export type ApiPromotionLandingStatus = "draft" | "published";
 export type ApiPromotionLandingImagePosition = "center" | "top" | "bottom" | "left" | "right";
 export type ApiPromotionLandingAlignment = "left" | "center" | "right";
 export type ApiPromotionLandingOverlay = "dark-gradient" | "dark" | "light" | "brand";
+export type ApiPromotionLandingMediaSlot = "image_url" | "image_url_2" | "video_url";
 
 export interface ApiPromotionLandingPage {
   id: string;
@@ -332,6 +333,7 @@ export interface ApiPromotionLandingPage {
   image_url: string | null;
   image_url_2: string | null;
   video_url: string | null;
+  media_order: ApiPromotionLandingMediaSlot[];
   image_position: ApiPromotionLandingImagePosition;
   content_alignment: ApiPromotionLandingAlignment;
   overlay_style: ApiPromotionLandingOverlay;
@@ -367,6 +369,7 @@ export type ApiPromotionLandingPayload = {
   image_url?: string | null;
   image_url_2?: string | null;
   video_url?: string | null;
+  media_order?: ApiPromotionLandingMediaSlot[];
   image_position?: ApiPromotionLandingImagePosition;
   content_alignment?: ApiPromotionLandingAlignment;
   overlay_style?: ApiPromotionLandingOverlay;

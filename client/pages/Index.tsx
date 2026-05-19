@@ -325,13 +325,13 @@ export default function Home() {
       </div>
 
       {/* Aviso de horário de funcionamento */}
-      <div className="px-4 sm:px-6 lg:px-8 pt-3 max-w-xl md:max-w-3xl lg:max-w-6xl 2xl:max-w-7xl mx-auto w-full">
+      <div className="px-4 sm:px-6 lg:px-8 pt-3 max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto w-full">
         <StoreStatusBanner />
       </div>
 
       {homeConfig.showPromotions && activeBanners.length > 0 && (
         <div className="px-4 sm:px-6 lg:px-8 pt-4 pb-3">
-          <div className="max-w-xl md:max-w-3xl lg:max-w-6xl 2xl:max-w-7xl mx-auto">
+          <div className="max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto">
             <button
               className="w-full text-left focus:outline-none"
               onClick={() => {
@@ -344,7 +344,7 @@ export default function Home() {
               }}
             >
               <div
-                className="rounded-2xl overflow-hidden relative aspect-[16/9] sm:aspect-[2.2/1] lg:aspect-[3.8/1] max-h-[13.5rem] sm:max-h-[18rem] lg:max-h-[22rem] bg-surface-02"
+                className="rounded-2xl overflow-hidden relative aspect-[16/9] sm:aspect-[2.15/1] lg:aspect-[2.8/1] max-h-[13.5rem] sm:max-h-[15rem] lg:max-h-[18rem] bg-surface-02"
                 style={
                   displayBanner?.card_bg_color
                     ? { background: displayBanner.card_bg_color }
@@ -422,7 +422,7 @@ export default function Home() {
       )}
 
       {/* ── Content ── */}
-      <div className="px-4 sm:px-6 lg:px-8 pb-28 lg:pb-12 max-w-xl md:max-w-3xl lg:max-w-6xl 2xl:max-w-7xl mx-auto w-full">
+      <div className="px-4 sm:px-6 lg:px-8 pb-28 lg:pb-12 max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto w-full">
         {/* Section Title */}
         <div className="mt-4 mb-3">
           <p className="text-stone text-xs lg:text-sm">{sectionSubtitle}</p>
@@ -456,16 +456,16 @@ export default function Home() {
 
         {/* ── Desktop Grid (lg+) ── */}
         {categoryProducts.length > 0 && (
-          <div className="hidden lg:grid lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 xl:gap-5">
+          <div className="hidden lg:grid lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-5">
             {categoryProducts.map((product, index) => (
               <button
                 key={product.id}
                 onClick={() => handlePizzaClick(product.id)}
-                className={`w-full bg-surface-02 rounded-2xl p-4 xl:p-5 shadow-lg hover:shadow-xl border border-surface-03 hover:border-gold/30 transition-all duration-300 text-left ${
+                className={`w-full bg-surface-02 rounded-2xl p-5 shadow-lg hover:shadow-xl border border-surface-03 hover:border-gold/30 transition-all duration-300 text-left ${
                   clickedPizza === product.id ? "scale-105 shadow-gold/30" : "hover:scale-[1.02]"
                 }`}
               >
-                <div className="relative w-36 h-36 xl:w-40 xl:h-40 2xl:w-44 2xl:h-44 mx-auto mb-4">
+                <div className="relative w-40 h-40 xl:w-44 xl:h-44 mx-auto mb-4">
                   <CategorySeal product={product} className="left-2 top-2" />
                   <div className="h-full w-full rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
                     {renderIcon(product.icon, index, "lg")}

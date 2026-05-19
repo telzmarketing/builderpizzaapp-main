@@ -83,7 +83,7 @@ const emptyForm = (): ApiStoreNotificationInput => ({
   display_name: "",
   product_id: "",
   neighborhood: "",
-  template_text: "{nome}, do {bairro}, comprou {produto} {tempo}",
+  template_text: "{nome}, {bairro}. Comprou hoje {produto_com_artigo}",
   priority: "medium",
   weight: 1,
   display_seconds: 7,
@@ -251,7 +251,7 @@ export default function MarketingStoreNotifications() {
       display_name: cap.buyer_name ?? "Cliente",
       product_id: firstProduct?.id ?? "",
       neighborhood: cap.neighborhood ?? "",
-      template_text: "{nome}, do {bairro}, comprou {produto} {tempo}",
+      template_text: "{nome}, {bairro}. Comprou hoje {produto_com_artigo}",
       priority: "medium",
       weight: 1,
       display_seconds: 7,
@@ -274,6 +274,10 @@ export default function MarketingStoreNotifications() {
     }
     if (!Number.isInteger(form.purchase_minutes_ago) || form.purchase_minutes_ago <= 0) {
       alert("Informe ha quantos minutos a compra foi realizada usando um numero inteiro positivo.");
+      return;
+    }
+    if (!form.neighborhood?.trim()) {
+      alert("Informe o bairro exibido para usar o novo formato da notificacao.");
       return;
     }
     setSaving(true);
@@ -494,7 +498,7 @@ export default function MarketingStoreNotifications() {
                 <table className="w-full min-w-[1080px] text-sm">
                   <thead>
                     <tr className="border-b border-surface-03 bg-surface-03/40 text-xs text-stone">
-                      {["Status", "Nome interno", "Tipo", "Produto", "Bairro", "Tempo", "Limpeza", "Dias ativos", "Horario", "Prioridade", "Ultima exibicao", "Acoes"].map((header) => (
+                      {["Status", "Nome interno", "Tipo", "Produto", "Bairro", "Ref.", "Limpeza", "Dias ativos", "Horario", "Prioridade", "Ultima exibicao", "Acoes"].map((header) => (
                         <th key={header} className="p-3 text-left font-medium">{header}</th>
                       ))}
                     </tr>
@@ -757,7 +761,7 @@ export default function MarketingStoreNotifications() {
               <Field label="Tempo de apresentacao (seg)">
                 <input className={IC} required min={3} type="number" value={form.display_seconds} onChange={(e) => setForm((f) => ({ ...f, display_seconds: Number(e.target.value) }))} />
               </Field>
-              <Field label="Exibir como compra realizada há X minutos">
+              <Field label="Referencia interna da compra (min)">
                 <input
                   className={IC}
                   required
@@ -808,6 +812,9 @@ export default function MarketingStoreNotifications() {
               </div>
               <Field label="Texto / modelo da notificacao" className="md:col-span-2">
                 <textarea className={`${IC} min-h-24`} required value={form.template_text} onChange={(e) => setForm((f) => ({ ...f, template_text: e.target.value }))} />
+                <p className="mt-1 text-xs text-stone">
+                  Padrao atual: {"{nome}, {bairro}. Comprou hoje {produto_com_artigo}"}
+                </p>
               </Field>
               {preview && (
                 <div className="rounded-xl border border-gold/20 bg-gold/10 p-3 text-sm text-cream md:col-span-2">

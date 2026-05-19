@@ -114,4 +114,12 @@ describe("buildPrintHtml", () => {
     expect(buildPrintHtml(order, "completo", { ...DEFAULT_PRINTER_SETTINGS, paperWidth: "80mm" })).toContain("width:76mm");
     expect(buildPrintHtml(order, "completo", { ...DEFAULT_PRINTER_SETTINGS, paperWidth: "a4" })).toContain("width:190mm");
   });
+
+  it("mantem textos pequenos fortes para impressao termica", () => {
+    const html = buildPrintHtml(deliveryOrder(), "completo", DEFAULT_PRINTER_SETTINGS);
+
+    expect(html).toContain(".s{font-size:var(--receipt-small);color:#000;font-weight:600}");
+    expect(html).toContain("*{color:#000!important;text-shadow:none!important}");
+    expect(html).not.toContain("color:#444");
+  });
 });

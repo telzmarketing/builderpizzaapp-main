@@ -13,9 +13,8 @@ import BestSellerSeal from "@/components/BestSellerSeal";
 export default function Cardapio() {
   const navigate = useNavigate();
   const { products, addToCart } = useApp();
-  const ALL_LABEL = "Todas";
   const PROMO_LABEL = "Promoções";
-  const [activeCategory, setActiveCategory] = useState(ALL_LABEL);
+  const [activeCategory, setActiveCategory] = useState("");
   const [search, setSearch] = useState("");
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
@@ -33,14 +32,33 @@ export default function Cardapio() {
     )];
     return sortCategoryNamesByCatalogOrder(categoryNames, catalogCategories);
   }, [products, catalogCategories]);
-  const hasPromos = products.some(p => p.active && p.promotion_applied);
-  const effectiveCategories = [ALL_LABEL, ...(hasPromos ? [PROMO_LABEL] : []), ...productCats];
+  const hasPromos = useMemo(
+    () => products.some(p => p.active && p.promotion_applied),
+    [products]
+  );
+  const effectiveCategories = useMemo(
+    () => [...(hasPromos ? [PROMO_LABEL] : []), ...productCats],
+    [hasPromos, productCats]
+  );
+
+  useEffect(() => {
+    if (effectiveCategories.length === 0) {
+      if (activeCategory !== "") {
+        setActiveCategory("");
+      }
+      return;
+    }
+
+    if (!effectiveCategories.includes(activeCategory)) {
+      setActiveCategory(effectiveCategories[0]);
+    }
+  }, [activeCategory, effectiveCategories]);
 
   const filtered = products.filter((p) => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.description.toLowerCase().includes(search.toLowerCase());
     const matchCat =
-      activeCategory === ALL_LABEL ||
+      activeCategory !== "" &&
       (activeCategory === PROMO_LABEL ? p.promotion_applied : ((p.subcategory || p.category) ?? "").toLowerCase() === activeCategory.toLowerCase());
     return matchSearch && matchCat && p.active;
   });

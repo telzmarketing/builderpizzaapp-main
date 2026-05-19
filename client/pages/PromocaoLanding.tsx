@@ -12,6 +12,15 @@ import {
 } from "@/lib/api";
 import { getTrackingData, trackEvent } from "@/lib/tracking";
 
+type LandingMediaSlot = "image_url" | "image_url_2" | "video_url";
+const DEFAULT_MEDIA_ORDER: LandingMediaSlot[] = ["image_url", "image_url_2", "video_url"];
+const normalizeMediaOrder = (order?: LandingMediaSlot[] | null) => {
+  const unique = (order || []).filter((slot, index, all) =>
+    DEFAULT_MEDIA_ORDER.includes(slot) && all.indexOf(slot) === index
+  );
+  return [...unique, ...DEFAULT_MEDIA_ORDER.filter((slot) => !unique.includes(slot))];
+};
+
 const alignClass: Record<string, string> = {
   left: "items-start text-left",
   center: "items-center text-center",
@@ -36,6 +45,7 @@ const overlayClass: Record<string, string> = {
 type LandingMedia = {
   type: "image" | "video";
   url: string;
+  slot: LandingMediaSlot;
 };
 
 const advanceIntervalMs = {
@@ -76,15 +86,16 @@ export default function PromocaoLanding() {
   }, [slug]);
 
   const mediaItems = useMemo<LandingMedia[]>(() => {
-    const items: LandingMedia[] = [];
-    if (landing?.image_url) items.push({ type: "image", url: resolveAssetUrl(landing.image_url) });
-    if (landing?.image_url_2) items.push({ type: "image", url: resolveAssetUrl(landing.image_url_2) });
-    if (landing?.video_url) items.push({ type: "video", url: resolveAssetUrl(landing.video_url) });
+    const mediaBySlot: Partial<Record<LandingMediaSlot, LandingMedia>> = {};
+    if (landing?.image_url) mediaBySlot.image_url = { type: "image", url: resolveAssetUrl(landing.image_url), slot: "image_url" };
+    if (landing?.image_url_2) mediaBySlot.image_url_2 = { type: "image", url: resolveAssetUrl(landing.image_url_2), slot: "image_url_2" };
+    if (landing?.video_url) mediaBySlot.video_url = { type: "video", url: resolveAssetUrl(landing.video_url), slot: "video_url" };
+    const items = normalizeMediaOrder(landing?.media_order).flatMap((slot) => mediaBySlot[slot] ? [mediaBySlot[slot]!] : []);
     if (items.length === 0 && isAssetUrl(product?.icon)) {
-      items.push({ type: "image", url: resolveAssetUrl(product?.icon) });
+      items.push({ type: "image", url: resolveAssetUrl(product?.icon), slot: "image_url" });
     }
     return items;
-  }, [landing?.image_url, landing?.image_url_2, landing?.video_url, product?.icon]);
+  }, [landing?.image_url, landing?.image_url_2, landing?.video_url, landing?.media_order, product?.icon]);
 
   const activeMedia = mediaItems[activeMediaIndex % Math.max(mediaItems.length, 1)];
   const hasCarousel = mediaItems.length > 1;

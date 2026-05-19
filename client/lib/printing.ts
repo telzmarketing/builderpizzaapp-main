@@ -85,7 +85,7 @@ function paperCss(width: PaperWidth) {
       body: "54mm",
       padding: "1.5mm",
       font: "10px",
-      small: "8.5px",
+      small: "9.5px",
       qty: "5mm",
       price: "15mm",
     },
@@ -94,7 +94,7 @@ function paperCss(width: PaperWidth) {
       body: "76mm",
       padding: "2mm",
       font: "11px",
-      small: "9.5px",
+      small: "10.5px",
       qty: "6mm",
       price: "18mm",
     },
@@ -103,7 +103,7 @@ function paperCss(width: PaperWidth) {
       body: "190mm",
       padding: "8mm",
       font: "12px",
-      small: "10px",
+      small: "11px",
       qty: "12mm",
       price: "24mm",
     },
@@ -147,8 +147,13 @@ function baseCss() {
     .c{text-align:center}
     .r{text-align:right}
     .b{font-weight:bold}
-    .s{font-size:var(--receipt-small);color:#444}
-    @media print{button{display:none}}
+    .s{font-size:var(--receipt-small);color:#000;font-weight:600}
+    @media print{
+      *{color:#000!important;text-shadow:none!important}
+      body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      hr{border-top-color:#000}
+      button{display:none}
+    }
   `;
 }
 

@@ -145,6 +145,13 @@ const emptyPromotionForm = (): PromotionFormState => ({
 
 type PTab = "produtos" | "brindes" | "categorias" | "config";
 type ProductSortMode = "recent" | "date" | "name" | "type";
+type ProductCategoryTab = {
+  id: string;
+  label: string;
+  count: number;
+  kind: "all" | "category" | "legacy" | "uncategorized";
+  category?: ApiProductCategory;
+};
 
 const PRODUCT_SORT_LABELS: Record<ProductSortMode, string> = {
   recent: "Recente",
@@ -152,6 +159,9 @@ const PRODUCT_SORT_LABELS: Record<ProductSortMode, string> = {
   name: "Nome",
   type: "Tipo",
 };
+const PRODUCT_CATEGORY_ALL = "__all__";
+const PRODUCT_CATEGORY_UNCATEGORIZED = "__uncategorized__";
+const PRODUCT_CATEGORY_LEGACY_PREFIX = "legacy:";
 
 export default function AdminProducts() {
   const navigate = useNavigate();
@@ -159,6 +169,8 @@ export default function AdminProducts() {
   const [activeTab, setActiveTab] = useState<PTab>("produtos");
   const [tabSearch, setTabSearch] = useState("");
   const [productSort, setProductSort] = useState<ProductSortMode>("recent");
+  const [activeProductCategory, setActiveProductCategory] = useState(PRODUCT_CATEGORY_ALL);
+  const [activeProductSubcategory, setActiveProductSubcategory] = useState("");
   const [configSaved, setConfigSaved] = useState(false);
   const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -1108,8 +1120,81 @@ export default function AdminProducts() {
   };
   const productTypeLabel = (type?: string | null) =>
     type === "drink" ? "Bebida" : type === "other" ? "Outros" : type === "brinde" ? "Brinde" : "Pizza";
+  const getProductCategoryValue = (product: Pizza) => ((product as any).category || "").trim();
+  const getProductSubcategoryValue = (product: Pizza) => ((product as any).subcategory || "").trim();
+  const categoryOwnsProduct = (category: ApiProductCategory, product: Pizza) => {
+    const productCategory = getProductCategoryValue(product);
+    const productSubcategory = getProductSubcategoryValue(product);
+    const childNames = getSubcategoriesForCategory(category.id).map((item) => item.name);
+    return productCategory === category.name || (!productCategory && childNames.includes(productSubcategory));
+  };
+  const productCategoryTabs: ProductCategoryTab[] = [
+    { id: PRODUCT_CATEGORY_ALL, label: "Todos", count: products.length, kind: "all" },
+    ...parentCategories.map((category) => ({
+      id: category.id,
+      label: category.name,
+      count: products.filter((product) => categoryOwnsProduct(category, product)).length,
+      kind: "category" as const,
+      category,
+    })),
+    ...legacyProductCategories.map((categoryName) => ({
+      id: `${PRODUCT_CATEGORY_LEGACY_PREFIX}${categoryName}`,
+      label: categoryName,
+      count: products.filter((product) => getProductCategoryValue(product) === categoryName).length,
+      kind: "legacy" as const,
+    })),
+  ];
+  const uncategorizedProductsCount = products.filter(
+    (product) => !getProductCategoryValue(product) && !getProductSubcategoryValue(product)
+  ).length;
+  if (uncategorizedProductsCount > 0) {
+    productCategoryTabs.push({
+      id: PRODUCT_CATEGORY_UNCATEGORIZED,
+      label: "Sem categoria",
+      count: uncategorizedProductsCount,
+      kind: "uncategorized",
+    });
+  }
+  const selectedProductCategory = productCategoryTabs.some((tab) => tab.id === activeProductCategory)
+    ? activeProductCategory
+    : PRODUCT_CATEGORY_ALL;
+  const selectedCategoryTab = productCategoryTabs.find((tab) => tab.id === selectedProductCategory);
+  const selectedCategory = selectedCategoryTab?.kind === "category" ? selectedCategoryTab.category : undefined;
+  const selectedSubcategoryTabs = selectedCategory
+    ? getSubcategoriesForCategory(selectedCategory.id).map((subcategory) => ({
+      id: subcategory.name,
+      label: subcategory.name,
+      count: products.filter((product) =>
+        categoryOwnsProduct(selectedCategory, product) && getProductSubcategoryValue(product) === subcategory.name
+      ).length,
+    }))
+    : [];
+  const selectedProductSubcategory = selectedSubcategoryTabs.some((tab) => tab.id === activeProductSubcategory)
+    ? activeProductSubcategory
+    : "";
+  const productMatchesCategoryFilter = (product: Pizza) => {
+    if (selectedProductCategory === PRODUCT_CATEGORY_ALL) return true;
+
+    if (selectedProductCategory === PRODUCT_CATEGORY_UNCATEGORIZED) {
+      return !getProductCategoryValue(product) && !getProductSubcategoryValue(product);
+    }
+
+    if (selectedCategory) {
+      const matchesCategory = categoryOwnsProduct(selectedCategory, product);
+      const matchesSubcategory = !selectedProductSubcategory || getProductSubcategoryValue(product) === selectedProductSubcategory;
+      return matchesCategory && matchesSubcategory;
+    }
+
+    if (selectedProductCategory.startsWith(PRODUCT_CATEGORY_LEGACY_PREFIX)) {
+      const legacyName = selectedProductCategory.replace(PRODUCT_CATEGORY_LEGACY_PREFIX, "");
+      return getProductCategoryValue(product) === legacyName;
+    }
+
+    return true;
+  };
   const filteredProducts = products
     .filter((product) =>
+      productMatchesCategoryFilter(product) &&
       matchesSearch(
         product.name,
         product.description,
@@ -1254,6 +1339,83 @@ export default function AdminProducts() {
             {/* ── TAB: PRODUTOS ── */}
             {activeTab === "produtos" && (
               <>
+                <div className="mb-5 space-y-3 rounded-xl border border-surface-03 bg-surface-02/70 p-3">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-cream">Produtos por categoria</p>
+                      <p className="text-xs text-stone">
+                        {filteredProducts.length} produto{filteredProducts.length === 1 ? "" : "s"} nesta visualizacao
+                      </p>
+                    </div>
+                    {selectedCategoryTab && selectedCategoryTab.kind !== "all" && (
+                      <span className="w-fit rounded-full border border-gold/30 bg-gold/10 px-3 py-1 text-xs font-semibold text-gold">
+                        {selectedCategoryTab.label}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                    {productCategoryTabs.map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveProductCategory(tab.id);
+                          setActiveProductSubcategory("");
+                        }}
+                        className={`flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-all ${
+                          selectedProductCategory === tab.id
+                            ? "border-gold bg-gold text-cream shadow-lg shadow-gold/20"
+                            : "border-surface-03 bg-surface-03 text-parchment hover:border-gold/40 hover:text-gold"
+                        }`}
+                      >
+                        <span>{tab.label}</span>
+                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${
+                          selectedProductCategory === tab.id
+                            ? "bg-cream/15 text-cream"
+                            : "bg-surface-01 text-stone"
+                        }`}>
+                          {tab.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {selectedSubcategoryTabs.length > 0 && (
+                    <div className="flex flex-col gap-2 border-t border-surface-03 pt-3 sm:flex-row sm:items-center">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-stone">Subcategorias</span>
+                      <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                        <button
+                          type="button"
+                          onClick={() => setActiveProductSubcategory("")}
+                          className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                            selectedProductSubcategory === ""
+                              ? "border-gold/60 bg-gold/15 text-gold"
+                              : "border-surface-03 bg-surface-01 text-parchment hover:border-gold/40 hover:text-gold"
+                          }`}
+                        >
+                          Categoria completa
+                        </button>
+                        {selectedSubcategoryTabs.map((tab) => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setActiveProductSubcategory(tab.id)}
+                            className={`flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                              selectedProductSubcategory === tab.id
+                                ? "border-gold/60 bg-gold/15 text-gold"
+                                : "border-surface-03 bg-surface-01 text-parchment hover:border-gold/40 hover:text-gold"
+                            }`}
+                          >
+                            <span>{tab.label}</span>
+                            <span className="rounded-full bg-surface-03 px-1.5 py-0.5 text-[10px] text-stone">{tab.count}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredProducts.map((product) => {
                     const pType = (product as any).product_type as string | null | undefined;

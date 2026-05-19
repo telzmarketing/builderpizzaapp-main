@@ -31,7 +31,7 @@ from backend.services.store_operation_service import StoreOperationService
 
 
 ALLOWED_PAGES = {"home", "cardapio", "product", "cart"}
-DEFAULT_TEMPLATE = "{nome}, do {bairro}, comprou {produto} {tempo}"
+DEFAULT_TEMPLATE = "{nome}, {bairro}. Comprou hoje {produto_com_artigo}"
 PAID_ORDER_STATUSES = {
     OrderStatus.paid,
     OrderStatus.pago,
@@ -188,6 +188,7 @@ class StoreNotificationService:
             payload.template_text,
             name=self._first_name(payload.display_name),
             product=product_name,
+            product_with_article=self._product_with_article(product_name),
             neighborhood=self._safe_text(payload.neighborhood),
             relative_time=self._display_relative_time(payload.purchase_minutes_ago)
             if payload.purchase_minutes_ago
@@ -496,6 +497,7 @@ class StoreNotificationService:
                     item.template_text,
                     name=self._first_name(item.display_name),
                     product=product_name,
+                    product_with_article=self._product_with_article(product_name),
                     neighborhood=self._safe_text(item.neighborhood),
                     relative_time=self._display_relative_time(purchase_minutes),
                 ),
@@ -555,6 +557,7 @@ class StoreNotificationService:
         return all([
             self._safe_text(notification.display_name),
             self._safe_text(product_name),
+            self._safe_text(notification.neighborhood),
             purchase_minutes > 0,
         ])
 
@@ -701,7 +704,16 @@ class StoreNotificationService:
                 return self._safe_text(address.neighborhood)
         return None
 
-    def _render_template(self, template: str, *, name: str, product: str, neighborhood: str | None, relative_time: str) -> str:
+    def _render_template(
+        self,
+        template: str,
+        *,
+        name: str,
+        product: str,
+        product_with_article: str,
+        neighborhood: str | None,
+        relative_time: str,
+    ) -> str:
         template = template or DEFAULT_TEMPLATE
         if not neighborhood:
             template = re.sub(r",?\s*\{bairro\},?", "", template, flags=re.IGNORECASE)
@@ -709,6 +721,7 @@ class StoreNotificationService:
             template = re.sub(r",?\s*do\s+\{bairro\},?", "", template, flags=re.IGNORECASE)
         rendered = (
             template.replace("{nome}", name or "Cliente")
+            .replace("{produto_com_artigo}", product_with_article or product or "um produto")
             .replace("{produto}", product or "um produto")
             .replace("{bairro}", neighborhood or "")
             .replace("{tempo}", relative_time or "2min")
@@ -723,6 +736,13 @@ class StoreNotificationService:
         rendered = re.sub(r"\s+-\s+(\d+\s+minutos?|\d+\s+horas?)", r" há \1", rendered, flags=re.IGNORECASE)
         rendered = re.sub(r"\s+", " ", rendered).strip(" ,")
         return rendered
+
+    def _product_with_article(self, product_name: str | None) -> str:
+        product = self._safe_text(product_name) or "produto"
+        normalized = product.lower()
+        if normalized.startswith(("pizza", "bebida", "agua", "água", "coca", "fanta", "sprite")):
+            return f"uma {product}"
+        return f"um {product}"
 
     def _product_display_name(self, product: Product | None, fallback: str | None) -> str | None:
         name = self._safe_text(product.name if product else fallback)

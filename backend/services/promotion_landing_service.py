@@ -13,6 +13,9 @@ from backend.models.product_promotion import ProductPromotion
 from backend.models.promotion_landing_page import PromotionLandingPage
 from backend.services.product_pricing_service import ProductPricingService
 
+MEDIA_ORDER_DEFAULT = ["image_url", "image_url_2", "video_url"]
+MEDIA_ORDER_ALLOWED = set(MEDIA_ORDER_DEFAULT)
+
 
 class PromotionLandingNotFound(DomainError):
     http_status = 404
@@ -72,6 +75,7 @@ class PromotionLandingService:
         product, promotion = self._validate_product_promotion(data["product_id"], data["promotion_id"])
         base_slug = data.get("slug") or product.name
         status = data.get("status") or "draft"
+        data["media_order"] = self._normalize_media_order(data.get("media_order"))
         landing = PromotionLandingPage(
             id=f"plp-{uuid.uuid4().hex[:10]}",
             **{
@@ -89,6 +93,8 @@ class PromotionLandingService:
     def update(self, landing_id: str, data: dict) -> PromotionLandingPage:
         landing = self.get(landing_id)
         previous_status = landing.status
+        if "media_order" in data:
+            data["media_order"] = self._normalize_media_order(data.get("media_order"))
         if "slug" in data and data["slug"]:
             data["slug"] = self._unique_slug(data["slug"], current_id=landing.id)
         if "status" in data and data["status"] == "published" and previous_status != "published":
@@ -138,6 +144,16 @@ class PromotionLandingService:
         if not promotion or not promotion.active or not promotion.product:
             return False
         return promotion.id in self._active_promotion_ids_for_product(promotion.product)
+
+    def _normalize_media_order(self, media_order: list[str] | None) -> list[str]:
+        ordered: list[str] = []
+        for key in media_order or []:
+            if key in MEDIA_ORDER_ALLOWED and key not in ordered:
+                ordered.append(key)
+        for key in MEDIA_ORDER_DEFAULT:
+            if key not in ordered:
+                ordered.append(key)
+        return ordered
 
     def _validate_product_promotion(self, product_id: str, promotion_id: str) -> tuple[Product, ProductPromotion]:
         product = self._db.query(Product).filter(Product.id == product_id).first()
