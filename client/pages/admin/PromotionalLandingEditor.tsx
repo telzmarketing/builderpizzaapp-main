@@ -400,7 +400,7 @@ export default function PromotionalLandingEditor() {
               label="Imagem principal"
               hint="Primeira mídia exibida no carrossel da landing."
               sizeGuide="Recomendado: 1080x1350 ou 1200x1200"
-              maxKBImage={1500}
+              maxKBImage={3000}
             />
             <MediaUpload
               value={form.image_url_2}
@@ -409,7 +409,7 @@ export default function PromotionalLandingEditor() {
               label="Segunda imagem"
               hint="Aparece como segunda lâmina do carrossel."
               sizeGuide="Recomendado: 1080x1350 ou 1200x1200"
-              maxKBImage={1500}
+              maxKBImage={3000}
             />
             <MediaUpload
               value={form.video_url}
