@@ -514,15 +514,15 @@ export default function AdminOrders() {
           )}
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            <div className="relative z-20 flex w-full flex-shrink-0 flex-wrap items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-4 py-3 md:px-6">
-              <div className="flex h-10 min-w-[14rem] shrink-0 items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 px-4">
+            <div className="relative z-20 grid w-full flex-shrink-0 grid-cols-1 gap-2 border-b border-surface-03 bg-surface-01/95 px-3 py-3 sm:grid-cols-2 md:px-4 xl:grid-cols-[minmax(0,14rem)_minmax(0,17rem)_1fr]">
+              <div className="flex h-10 min-w-0 items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 px-3">
                 <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-stone">
                   <Users size={15} className="text-green-400" />
                   Visitantes online
                 </span>
                 <span className="text-sm font-black text-cream">{onlineStats.visitors}</span>
               </div>
-              <div className="flex h-10 min-w-[17rem] shrink-0 items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 px-4">
+              <div className="flex h-10 min-w-0 items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 px-3">
                 <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-stone">
                   <UserCheck size={15} className="text-blue-400" />
                   Clientes cadastrados online
@@ -530,8 +530,8 @@ export default function AdminOrders() {
                 <span className="text-sm font-black text-cream">{onlineStats.registeredCustomers}</span>
               </div>
             </div>
-            <div className="relative z-20 flex w-full flex-shrink-0 flex-wrap items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-4 py-4 md:px-6">
-              <div className="flex h-11 shrink-0 items-center overflow-hidden rounded-xl border border-surface-03 bg-surface-02">
+            <div className="relative z-20 grid w-full flex-shrink-0 grid-cols-2 items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-3 py-3 md:grid-cols-[auto_auto_repeat(4,minmax(0,1fr))_auto_auto] md:px-4 xl:grid-cols-[auto_auto_repeat(4,minmax(0,1fr))_auto_minmax(8rem,auto)]">
+              <div className="col-span-2 flex h-11 min-w-0 items-center overflow-hidden rounded-xl border border-surface-03 bg-surface-02 md:col-span-1">
                 <button
                   onClick={() => setSelectedDate((value) => shiftDateInput(value, -1))}
                   title="Dia anterior"
@@ -559,30 +559,30 @@ export default function AdminOrders() {
               <button
                 onClick={() => setSelectedDate(todayInputValue())}
                 disabled={isToday}
-                className="flex h-11 shrink-0 items-center justify-center rounded-xl border border-surface-03 bg-surface-02 px-4 text-sm font-semibold text-stone transition-colors hover:text-cream disabled:opacity-50"
+                className="flex h-11 min-w-0 items-center justify-center rounded-xl border border-surface-03 bg-surface-02 px-3 text-sm font-semibold text-stone transition-colors hover:text-cream disabled:opacity-50"
               >
                 Hoje
               </button>
-              <div className={`flex h-11 shrink-0 items-center gap-2 rounded-xl border px-4 transition-colors ${newOrderFlash ? "border-gold bg-gold/20" : "border-surface-03 bg-surface-02"}`}>
+              <div className={`flex h-11 min-w-0 items-center justify-between gap-2 rounded-xl border px-3 transition-colors ${newOrderFlash ? "border-gold bg-gold/20" : "border-surface-03 bg-surface-02"}`}>
                 <span className="text-stone text-[10px] uppercase tracking-widest">Ativos</span>
                 <span className="text-cream text-sm font-black">{activeOrders}</span>
               </div>
-              <div className="flex h-11 shrink-0 items-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4">
+              <div className="flex h-11 min-w-0 items-center justify-between gap-2 rounded-xl border border-surface-03 bg-surface-02 px-3">
                 <span className="text-stone text-[10px] uppercase tracking-widest">No dia</span>
                 <span className="text-cream text-sm font-black">{orders.length}</span>
               </div>
-              <div className="flex h-11 shrink-0 items-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4">
-                <span className="text-stone text-[10px] uppercase tracking-widest">Receita estimada</span>
+              <div className="flex h-11 min-w-0 items-center justify-between gap-2 rounded-xl border border-surface-03 bg-surface-02 px-3">
+                <span className="min-w-0 truncate text-stone text-[10px] uppercase tracking-widest">Receita estimada</span>
                 <span className="text-cream text-sm font-black">{formatCurrency(estimatedDayRevenue)}</span>
               </div>
-              <div className="flex h-11 shrink-0 items-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4">
-                <span className="text-stone text-[10px] uppercase tracking-widest">Receita efetivada</span>
+              <div className="flex h-11 min-w-0 items-center justify-between gap-2 rounded-xl border border-surface-03 bg-surface-02 px-3">
+                <span className="min-w-0 truncate text-stone text-[10px] uppercase tracking-widest">Receita efetivada</span>
                 <span className="text-cream text-sm font-black">{formatCurrency(effectiveDayRevenue)}</span>
               </div>
               <button
                 onClick={() => setSoundEnabled((v) => !v)}
                 title={soundEnabled ? "Silenciar alertas de novo pedido" : "Ativar alertas de novo pedido"}
-                className={`flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold transition-colors ${
+                className={`flex h-11 min-w-0 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition-colors ${
                   soundEnabled
                     ? "border-gold/40 text-gold bg-gold/10"
                     : "border-surface-03 bg-surface-02 text-stone hover:text-cream"
@@ -595,12 +595,12 @@ export default function AdminOrders() {
                 onClick={() => fetchOrders(true)}
                 disabled={loading || refreshing}
                 title="Atualizar agora"
-                className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4 text-sm font-semibold text-stone transition-colors hover:text-cream disabled:opacity-60"
+                className="flex h-11 min-w-0 items-center justify-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-3 text-sm font-semibold text-stone transition-colors hover:text-cream disabled:opacity-60"
               >
                 <RefreshCw size={16} className={loading || refreshing ? "animate-spin" : ""} />
                 Atualizar
               </button>
-              <p className="ml-auto min-w-[10rem] truncate text-right text-[11px] text-stone">
+              <p className="col-span-2 min-w-0 truncate text-right text-[11px] text-stone md:col-span-1">
                 {lastUpdated
                   ? `Atualizado as ${lastUpdated.toLocaleTimeString("pt-BR", {
                       hour: "2-digit",
@@ -622,8 +622,8 @@ export default function AdminOrders() {
                 <p className="text-stone text-sm mt-2">Os pedidos de {selectedDateLabel} aparecem aqui automaticamente.</p>
               </div>
             ) : (
-              <div className="w-full min-w-0 flex-1 overflow-x-auto overflow-y-hidden px-4 pb-4 pt-4 md:px-6 md:pb-6">
-                <div className="flex h-full gap-4 min-w-max">
+              <div className="w-full min-w-0 flex-1 overflow-hidden px-3 pb-3 pt-3 md:px-4 md:pb-4">
+                <div className="grid h-full min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
                   {KANBAN_COLUMNS.map((column) => {
                     const Icon = column.icon;
                     const columnOrders = groupedOrders.get(column.id) ?? [];
@@ -631,7 +631,7 @@ export default function AdminOrders() {
                     return (
                       <section
                         key={column.id}
-                        className={`flex h-full w-[300px] flex-col rounded-2xl border transition-colors ${
+                        className={`flex min-h-[15rem] min-w-0 flex-col rounded-2xl border transition-colors xl:h-full ${
                           isDragOver
                             ? "border-gold bg-gold/5"
                             : "border-surface-03 bg-surface-02"
@@ -645,25 +645,25 @@ export default function AdminOrders() {
                         onDrop={() => handleDrop(column)}
                       >
                         {/* Column header */}
-                        <header className="border-b border-surface-03 p-4">
-                          <div className="flex items-start justify-between gap-3">
+                        <header className="border-b border-surface-03 p-3">
+                          <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
-                                <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border ${column.accent}`}>
-                                  <Icon size={16} />
+                                <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${column.accent}`}>
+                                  <Icon size={14} />
                                 </span>
-                                <h2 className="text-cream text-sm font-black truncate">{column.title}</h2>
+                                <h2 className="min-w-0 truncate text-xs font-black text-cream 2xl:text-sm">{column.title}</h2>
                               </div>
-                              <p className="text-stone text-xs mt-2 leading-snug">{column.description}</p>
+                              <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-stone 2xl:text-xs">{column.description}</p>
                             </div>
-                            <span className="rounded-full bg-surface-03 px-2.5 py-1 text-xs font-bold text-parchment flex-shrink-0">
+                            <span className="flex-shrink-0 rounded-full bg-surface-03 px-2 py-1 text-[10px] font-bold text-parchment">
                               {columnOrders.length}
                             </span>
                           </div>
                         </header>
 
                         {/* Cards */}
-                        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                        <div className="flex-1 overflow-y-auto p-2 space-y-2 2xl:p-3 2xl:space-y-3">
                           {columnOrders.length === 0 ? (
                             <div className={`rounded-xl border border-dashed p-6 text-center text-xs text-stone transition-colors ${isDragOver ? "border-gold/50 bg-gold/5 text-gold" : "border-surface-03"}`}>
                               {isDragOver ? "Soltar aqui" : "Sem pedidos"}
@@ -882,21 +882,21 @@ function OrderCard({
       draggable={!isWaitingPayment}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className={`rounded-2xl border border-surface-03 bg-surface-03/45 p-4 shadow-sm select-none transition-opacity cursor-grab active:cursor-grabbing ${updating ? "opacity-50 pointer-events-none" : ""}`}
+      className={`rounded-2xl border border-surface-03 bg-surface-03/45 p-2.5 shadow-sm select-none transition-opacity cursor-grab active:cursor-grabbing 2xl:p-4 ${updating ? "opacity-50 pointer-events-none" : ""}`}
     >
       {/* Top row: ID + status badge */}
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex min-w-0 flex-col gap-2 2xl:flex-row 2xl:items-start 2xl:justify-between 2xl:gap-3">
         <div className="min-w-0">
           <h3 className="text-cream font-mono text-sm font-black">#{order.id.slice(0, 8).toUpperCase()}</h3>
           <p className="text-stone text-xs mt-1">{formatDateTime(order.created_at)} · {orderTimeLabel(order)}</p>
         </div>
-        <span className={`rounded-full px-2 py-1 text-[10px] font-bold whitespace-nowrap flex-shrink-0 ${statusColor(order.status)}`}>
+        <span className={`max-w-full self-start truncate rounded-full px-2 py-1 text-[10px] font-bold flex-shrink-0 ${statusColor(order.status)}`}>
           {STATUS_LABELS[order.status] ?? order.status}
         </span>
       </div>
 
       {/* Customer */}
-      <div className="mt-3">
+      <div className="mt-2 2xl:mt-3">
         <p className="text-cream text-sm font-bold truncate">{order.delivery_name}</p>
         <p className="text-stone text-xs mt-0.5 truncate">{order.delivery_phone}</p>
         <p className="text-stone/80 text-xs mt-0.5 line-clamp-2">
@@ -907,7 +907,7 @@ function OrderCard({
       </div>
 
       {/* Items */}
-      <div className="mt-3 rounded-xl bg-surface-02/80 p-3">
+      <div className="mt-2 rounded-xl bg-surface-02/80 p-2.5 2xl:mt-3 2xl:p-3">
         <p className="text-parchment text-xs font-bold mb-1.5">Itens</p>
         <div className="space-y-0.5">
           {itemSummary.map((item, i) => (
@@ -918,10 +918,10 @@ function OrderCard({
       </div>
 
       {/* Total */}
-      <div className="mt-3 flex items-center justify-between border-t border-surface-03 pt-3">
+      <div className="mt-2 flex items-center justify-between gap-2 border-t border-surface-03 pt-2 2xl:mt-3 2xl:pt-3">
         <div>
           <p className="text-stone text-[10px] uppercase tracking-widest">Total</p>
-          <p className="text-gold text-base font-black">{formatCurrency(order.total)}</p>
+          <p className="text-gold text-sm font-black 2xl:text-base">{formatCurrency(order.total)}</p>
         </div>
         <div className="text-right">
           <p className="text-stone text-[10px] uppercase tracking-widest">Entrega</p>
@@ -1014,16 +1014,16 @@ function OrderCard({
       )}
 
       {/* Action buttons */}
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         {/* Assign motoboy — for ready_for_pickup orders */}
         {isReadyForPickup && !order.delivery && (
           <button
             onClick={onAssignMotoboy}
             disabled={updating}
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs font-bold py-2 px-3 transition-colors disabled:opacity-50"
+            className="flex min-w-0 flex-[1_1_100%] items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 px-2 py-2 text-xs font-bold text-blue-300 transition-colors hover:bg-blue-500/25 disabled:opacity-50 2xl:flex-1 2xl:px-3"
           >
             <Truck size={13} />
-            Atribuir Motoboy
+            <span className="truncate">Atribuir Motoboy</span>
           </button>
         )}
 
@@ -1032,14 +1032,14 @@ function OrderCard({
           <button
             onClick={onAdvance}
             disabled={updating}
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-gold/15 hover:bg-gold/25 text-gold text-xs font-bold py-2 px-3 transition-colors disabled:opacity-50"
+            className="flex min-w-0 flex-[1_1_100%] items-center justify-center gap-1.5 rounded-lg bg-gold/15 px-2 py-2 text-xs font-bold text-gold transition-colors hover:bg-gold/25 disabled:opacity-50 2xl:flex-1 2xl:px-3"
           >
             {updating ? (
               <Loader2 size={12} className="animate-spin" />
             ) : (
               <ChevronRight size={13} />
             )}
-            {nextLabel}
+            <span className="truncate">{nextLabel}</span>
           </button>
         )}
 
@@ -1059,16 +1059,16 @@ function OrderCard({
             onClick={onRequestDelete}
             disabled={updating}
             title="Excluir pedido"
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+            className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-500/25 bg-red-500/10 px-2 py-2 text-xs font-bold text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50 2xl:px-3"
           >
             <Trash2 size={13} />
-            Excluir
+            <span className="truncate">Excluir</span>
           </button>
         )}
       </div>
 
       {printMenuOpen && (
-        <div className="mt-2 grid grid-cols-3 gap-2 rounded-xl border border-surface-03 bg-surface-02 p-2">
+        <div className="mt-2 grid grid-cols-1 gap-2 rounded-xl border border-surface-03 bg-surface-02 p-2 2xl:grid-cols-3">
           {(
             [
               { tpl: "completo" as PrintTemplate, label: "Completo" },

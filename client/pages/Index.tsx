@@ -3,8 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Menu, Search, Star, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, Tag, Heart, UtensilsCrossed } from "lucide-react";
 
 import { useApp } from "@/context/AppContext";
-import { categoriesApi, homeCatalogApi, isAssetUrl, resolveAssetUrl, type ApiProductCategory } from "@/lib/api";
-import { sortCategoryNamesByCatalogOrder } from "@/lib/catalogOrdering";
+import { homeCatalogApi, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import StoreStatusBanner from "@/components/StoreStatusBanner";
@@ -13,14 +12,55 @@ import BestSellerSeal from "@/components/BestSellerSeal";
 
 const PIZZA_FALLBACKS = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🍖", "🍄", "🫒", "🔥", "🥩", "🌿", "🫑"];
 
+const HOME_CATALOG_CATEGORY_ORDER = [
+  "Promoções",
+  "Mais Pedidas",
+  "Novidades",
+  "Tradicionais",
+  "Especiais",
+  "Doces",
+  "Bebidas",
+] as const;
+
+type HomeCatalogCategory = typeof HOME_CATALOG_CATEGORY_ORDER[number];
+type HomeCatalogProduct = {
+  category?: string | null;
+  subcategory?: string | null;
+  product_type?: string | null;
+  promotion_applied?: boolean;
+  show_best_seller_badge?: boolean;
+};
+
+function normalizeHomeCategory(value?: string | null) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function productMatchesHomeCategory(product: HomeCatalogProduct, category: HomeCatalogCategory) {
+  const normalizedCategory = normalizeHomeCategory(category);
+  const productCategories = [
+    normalizeHomeCategory(product.subcategory),
+    normalizeHomeCategory(product.category),
+  ].filter(Boolean);
+
+  if (category === "Promoções") return !!product.promotion_applied;
+  if (category === "Mais Pedidas") return !!product.show_best_seller_badge;
+  if (category === "Bebidas") {
+    return product.product_type === "drink" || productCategories.includes(normalizedCategory);
+  }
+
+  return productCategories.includes(normalizedCategory);
+}
+
 export default function Home() {
   const navigate = useNavigate();
   const { products, campaignBanners, siteContent, loyaltySettings } = useApp();
   const { sectionSubtitle, sectionTitle, bannerRotationInterval } = siteContent.home;
   const rotationInterval = (bannerRotationInterval ?? 5) * 1000;
-  const ALL_LABEL = "Todas";
-
-  const [activeCategory, setActiveCategory] = useState(ALL_LABEL);
+  const [activeCategory, setActiveCategory] = useState<HomeCatalogCategory>(HOME_CATALOG_CATEGORY_ORDER[0]);
   const [carouselPosition, setCarouselPosition] = useState(0);
   const [clickedPizza, setClickedPizza] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -28,7 +68,6 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
-  const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
 
   // Home catalog config
   const [homeConfig, setHomeConfig] = useState<{
@@ -49,12 +88,6 @@ export default function Home() {
         });
       } catch { /* use defaults on parse error */ }
     }).catch(() => { /* use defaults if backend unavailable */ });
-  }, []);
-
-  useEffect(() => {
-    categoriesApi.list(true)
-      .then(setCatalogCategories)
-      .catch(() => setCatalogCategories([]));
   }, []);
 
   const todayDay = new Date().getDay(); // 0=Dom … 6=Sáb
@@ -87,40 +120,38 @@ export default function Home() {
 
   const PROMO_LABEL = "Promoções";
 
-  // Apply home catalog config filter on top of all active products (drinks excluded from home)
+  // Apply home catalog config filter on top of all active products.
   const catalogProducts = useMemo(() => {
-    const nonDrinks = products.filter(p =>
-      p.product_type !== "drink" &&
-      (p.category ?? "").toLowerCase() !== "bebidas"
-    );
+    const selectedCategoryKeys = homeConfig.selectedCategories.map(normalizeHomeCategory);
     if (homeConfig.mode === "categories" && homeConfig.selectedCategories.length > 0) {
-      return nonDrinks.filter(p => {
-        if (homeConfig.selectedCategories.includes(PROMO_LABEL) && p.promotion_applied) return true;
-        return homeConfig.selectedCategories.includes(p.category ?? "");
+      return products.filter(p => {
+        if (selectedCategoryKeys.includes(normalizeHomeCategory(PROMO_LABEL)) && p.promotion_applied) return true;
+        return [
+          normalizeHomeCategory(p.category),
+          normalizeHomeCategory(p.subcategory),
+        ].some((category) => selectedCategoryKeys.includes(category));
       });
     }
     if (homeConfig.mode === "products" && homeConfig.selectedProductIds.length > 0) {
-      return nonDrinks.filter(p => homeConfig.selectedProductIds.includes(p.id));
+      return products.filter(p => homeConfig.selectedProductIds.includes(p.id));
     }
-    return nonDrinks;
+    return products;
   }, [products, homeConfig]);
 
-  // Categories derived from catalogProducts (respect home config)
-  const productCats = useMemo(() => {
-    const categoryNames = [...new Set(
-      catalogProducts.filter(p => p.active && (p.subcategory || p.category)).map(p => (p.subcategory || p.category) as string)
-    )];
-    return sortCategoryNamesByCatalogOrder(categoryNames, catalogCategories);
-  }, [catalogProducts, catalogCategories]);
-  const hasPromos = catalogProducts.some(p => p.active && p.promotion_applied);
-  const effectiveCategories = [ALL_LABEL, ...(hasPromos ? [PROMO_LABEL] : []), ...productCats];
+  const effectiveCategories = useMemo(() => {
+    return [...HOME_CATALOG_CATEGORY_ORDER];
+  }, []);
+
+  useEffect(() => {
+    if (effectiveCategories.length > 0 && !effectiveCategories.includes(activeCategory)) {
+      setActiveCategory(effectiveCategories[0]);
+    }
+  }, [activeCategory, effectiveCategories]);
 
   const categoryProducts =
-    activeCategory === ALL_LABEL || !activeCategory
-      ? catalogProducts
-      : activeCategory === PROMO_LABEL
-        ? catalogProducts.filter((p) => p.active && p.promotion_applied)
-        : catalogProducts.filter((p) => ((p.subcategory || p.category) ?? "").toLowerCase() === activeCategory.toLowerCase());
+    activeCategory
+      ? catalogProducts.filter((p) => p.active && productMatchesHomeCategory(p, activeCategory))
+      : [];
 
   const { home, media } = siteContent;
 
@@ -294,13 +325,13 @@ export default function Home() {
       </div>
 
       {/* Aviso de horário de funcionamento */}
-      <div className="px-4 lg:px-8 pt-3 max-w-sm lg:max-w-4xl mx-auto w-full">
+      <div className="px-4 sm:px-6 lg:px-8 pt-3 max-w-xl md:max-w-3xl lg:max-w-6xl 2xl:max-w-7xl mx-auto w-full">
         <StoreStatusBanner />
       </div>
 
       {homeConfig.showPromotions && activeBanners.length > 0 && (
-        <div className="px-4 lg:px-8 pt-4 pb-3">
-          <div className="max-w-sm lg:max-w-4xl mx-auto">
+        <div className="px-4 sm:px-6 lg:px-8 pt-4 pb-3">
+          <div className="max-w-xl md:max-w-3xl lg:max-w-6xl 2xl:max-w-7xl mx-auto">
             <button
               className="w-full text-left focus:outline-none"
               onClick={() => {
@@ -313,7 +344,7 @@ export default function Home() {
               }}
             >
               <div
-                className="rounded-2xl overflow-hidden relative aspect-[16/9] lg:aspect-[21/9] max-h-[13.5rem] lg:max-h-[16.1rem] bg-surface-02"
+                className="rounded-2xl overflow-hidden relative aspect-[16/9] sm:aspect-[2.2/1] lg:aspect-[3.8/1] max-h-[13.5rem] sm:max-h-[18rem] lg:max-h-[22rem] bg-surface-02"
                 style={
                   displayBanner?.card_bg_color
                     ? { background: displayBanner.card_bg_color }
@@ -391,7 +422,7 @@ export default function Home() {
       )}
 
       {/* ── Content ── */}
-      <div className="px-4 lg:px-8 pb-32 max-w-lg lg:max-w-5xl mx-auto w-full">
+      <div className="px-4 sm:px-6 lg:px-8 pb-28 lg:pb-12 max-w-xl md:max-w-3xl lg:max-w-6xl 2xl:max-w-7xl mx-auto w-full">
         {/* Section Title */}
         <div className="mt-4 mb-3">
           <p className="text-stone text-xs lg:text-sm">{sectionSubtitle}</p>
@@ -425,16 +456,16 @@ export default function Home() {
 
         {/* ── Desktop Grid (lg+) ── */}
         {categoryProducts.length > 0 && (
-          <div className="hidden lg:grid lg:grid-cols-3 xl:grid-cols-4 gap-5">
+          <div className="hidden lg:grid lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 xl:gap-5">
             {categoryProducts.map((product, index) => (
               <button
                 key={product.id}
                 onClick={() => handlePizzaClick(product.id)}
-                className={`w-full bg-surface-02 rounded-2xl p-5 shadow-lg hover:shadow-xl border border-surface-03 hover:border-gold/30 transition-all duration-300 text-left ${
+                className={`w-full bg-surface-02 rounded-2xl p-4 xl:p-5 shadow-lg hover:shadow-xl border border-surface-03 hover:border-gold/30 transition-all duration-300 text-left ${
                   clickedPizza === product.id ? "scale-105 shadow-gold/30" : "hover:scale-[1.02]"
                 }`}
               >
-                <div className="relative w-44 h-44 mx-auto mb-4">
+                <div className="relative w-36 h-36 xl:w-40 xl:h-40 2xl:w-44 2xl:h-44 mx-auto mb-4">
                   <CategorySeal product={product} className="left-2 top-2" />
                   <div className="h-full w-full rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
                     {renderIcon(product.icon, index, "lg")}
