@@ -1,0 +1,20 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg">
+<metadata>Copyright (C) 2023 by original authors @ fontello.com</metadata>
+<defs>
+<font id="wdt-ext-icon" horiz-adv-x="1000" >
+<font-face font-family="wdt-ext-icon" font-weight="400" font-stretch="normal" units-per-em="1000" ascent="850" descent="-150" />
+<missing-glyph horiz-adv-x="1000" />
+<glyph glyph-name="star-empty" unicode="&#xe800;" d="M880 454l-262-196 94-348-272 208-272-208 94 348-262 196 320 0 120 336 120-336 320 0z m-440-238l150-124-62 178 144 114-176-4-56 202-54-202-176 4 142-114-62-178z" horiz-adv-x="880" />
+
+<glyph glyph-name="star" unicode="&#xe801;" d="M440 790l120-336 320 0-262-196 94-348-272 208-272-208 94 348-262 196 320 0z" horiz-adv-x="880" />
+
+<glyph glyph-name="triangle-left" unicode="&#xe802;" d="M0 350l893 500v-1000l-893 500z m36 0l839-470v940l-839-470z" horiz-adv-x="893" />
+
+<glyph glyph-name="triangle-right" unicode="&#xe803;" d="M0-150v1000l893-500-893-500z m18 970v-940l839 470-839 470z" horiz-adv-x="893" />
+
+<glyph glyph-name="x-icon" unicode="&#xe804;" d="M7 813l383-511-385-415h87l336 363 272-363h295l-404 540 358 386h-87l-310-335-250 335h-295z m128-63h135l598-800h-136l-597 800z" horiz-adv-x="1000" />
+</font>
+</defs>
+</svg>

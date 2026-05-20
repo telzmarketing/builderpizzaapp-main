@@ -1,0 +1,46 @@
+
+
+    .elementor .e-con .elementor-background-slideshow { z-index: -1; }
+
+
+    /** 
+        Layout Responsive 
+    */
+
+    @media (max-width: 1540px) {
+        body .wdt-elementor-container-fluid .elementor-element.e-con-boxed.e-con.e-parent:not(.wdt-no-full-section) > .e-con-inner { width: 100%; }
+        body .container .elementor-element.e-con-boxed.e-con.e-parent { padding: 0; }
+    }
+
+    @media (min-width: 1025px) {
+        body .wdt-elementor-container-fluid .elementor-element.e-con-boxed.e-con.e-parent { padding: 0 30px; }
+        body .container .elementor-element.e-con-boxed.e-con.e-parent { padding: 0; }
+    }
+
+    @media (max-width: 1024px) {
+        body .wdt-elementor-container-fluid .elementor-element.e-con-boxed.e-con.e-parent { padding: 0 20px; }
+        body .container .elementor-element.e-con-boxed.e-con.e-parent { padding: 0; }
+    }
+
+
+    /*--------------------------------------------------------------
+        Main - Default-Value
+    --------------------------------------------------------------*/
+
+    .e-con.e-parent.wdt-header-with-section:first-child { margin-top: calc(calc(var(--header-height) / -1) - 130px); }
+
+    @media only screen and (min-width:1281px) and (max-width:1540px) { 
+        .e-con.e-parent.wdt-header-with-section:first-child { margin-top: calc(calc(var(--header-height) / -1) - 100px); }
+    }
+    @media only screen and (min-width:1025px) and (max-width:1280px) { 
+        .e-con.e-parent.wdt-header-with-section:first-child { margin-top: calc(calc(var(--header-height) / -1) - 80px); }
+    }
+    @media only screen and (min-width:768px) and (max-width:1024px) { 
+        .e-con.e-parent.wdt-header-with-section:first-child { margin-top: calc(calc(var(--header-height) / -1) - 70px); }
+    }
+    @media only screen and (min-width:480px) and (max-width:767px) { 
+        .e-con.e-parent.wdt-header-with-section:first-child { margin-top: calc(calc(var(--header-height) / -1) - 60px); }
+    }
+    @media only screen and (max-width: 479px) { 
+        .e-con.e-parent.wdt-header-with-section:first-child { margin-top: calc(calc(var(--header-height) / -1) - 50px); }
+    }

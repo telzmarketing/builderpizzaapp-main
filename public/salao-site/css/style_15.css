@@ -1,0 +1,90 @@
+/*================================
+    Marquee Animation Style 
+================================*/
+
+.wdt-animation-wrapper { position: relative; display: flex; flex-flow: row nowrap; overflow: visible; }
+
+.wdt-animation-wrapper div[class*="-marqee"] { width: auto; flex: 0 0 auto; display: grid; grid-auto-flow: column; align-items: center; }
+
+.wdt-animation-wrapper div[class*="-marqee"] .wdt-animation-item { display: inline-flex; flex: 0 0 auto; text-align: center; position: relative; }
+.wdt-animation-wrapper .wdt-animation-item { padding: 0 clamp(0.875rem, 0.7308rem + 0.641vw, 1.5rem); /*  Min-14 & Max-24 */ }
+
+.wdt-animation-wrapper div[class*="-marqee"].right-to-left { 
+    -webkit-animation: MarqueeLeft 24s linear infinite 0ms; animation: MarqueeLeft 24s linear infinite 0ms; }
+.wdt-animation-wrapper div[class*="-marqee"].left-to-right { 
+    -webkit-animation: MarqueeRight 24s linear infinite 0ms; animation: MarqueeRight 24s linear infinite 0ms; }
+  
+.wdt-animation-wrapper:hover div[class*="-marqee"] { -webkit-animation-play-state: paused; animation-play-state: paused; }
+
+@keyframes MarqueeLeft { 
+    from { margin-left: 0; } 
+    to { margin-left: var(--wdt-marque-Margin-Width); } 
+}
+@keyframes MarqueeRight { 
+    from { margin-left: var(--wdt-marque-Margin-Width); } 
+    to { margin-left: 0; } 
+}
+
+/* ===========================
+    Animation Text Style 
+=========================== */
+
+.wdt-animation-item.text-item { display: inline-block; }
+.wdt-animation-item.text-item .wdt-animation-text { 
+    font-size: clamp(1.75rem, 1.5769rem + 0.7692vw, 2.5rem); /* Min-28 & Max-40 */ color: var(--wdtHeadAltColor); font-style: italic;
+    font-weight: var(--wdtFontWeight_Alt); font-family: var(--wdtFontTypo_Alt); text-transform: capitalize; line-height: 1; 
+}
+
+.wdt-animation-item.text-item .wdt-animation-text a { text-decoration: none !important; color: inherit; }   
+.wdt-animation-item.text-item .wdt-animation-text a:hover { color: inherit; }
+
+/* ===========================
+    Animation Icon Style 
+=========================== */
+
+.wdt-animation-item.icon-item i { 
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(1.75rem, 1.5769rem + 0.7692vw, 2.5rem); /* Min-28 & Max-40 */
+    width: clamp(1.75rem, 1.5769rem + 0.7692vw, 2.5rem); /* Min-28 & Max-40 */
+    height: clamp(1.75rem, 1.5769rem + 0.7692vw, 2.5rem); /* Min-28 & Max-40 */ }
+
+/* ===========================
+    Animation Image Style 
+=========================== */
+
+.wdt-animation-item.image-item img { object-fit: cover; object-position: center;
+    width: clamp(1.75rem, 1.5769rem + 0.7692vw, 2.5rem); /* Min-28 & Max-40 */
+    height: clamp(1.75rem, 1.5769rem + 0.7692vw, 2.5rem); /* Min-28 & Max-40 */ }
+
+
+
+
+/* ===========================
+    Alter Style
+=========================== */
+
+.wdt-animation-marquee-alter-style .wdt-animation-item.text-item .wdt-animation-text { 
+    font-size: clamp(1.5rem, 1.4135rem + 0.3846vw, 1.875rem); /* Min-24 & Max-30 */ 
+    font-weight: var(--wdtFontWeight_Alt); font-family: var(--wdtFontTypo_Alt); font-style: normal;
+}
+
+.wdt-animation-marquee-alter-style .wdt-animation-item.icon-item i {
+    width: clamp(1.5rem, 1.4135rem + 0.3846vw, 1.875rem); /* Min-24 & Max-30 */
+    height: clamp(1.5rem, 1.4135rem + 0.3846vw, 1.875rem); /* Min-24 & Max-30 */
+    font-size: clamp(1.5rem, 1.4135rem + 0.3846vw, 1.875rem); /* Min-24 & Max-30 */
+}
+
+.wdt-animation-marquee-alter-style .wdt-animation-item.image-item img {
+    width: clamp(1.5rem, 1.4135rem + 0.3846vw, 1.875rem); /* Min-24 & Max-30 */
+    height: clamp(1.5rem, 1.4135rem + 0.3846vw, 1.875rem); /* Min-24 & Max-30 */
+}
+
+.wdt-animation-marquee-alter-style .wdt-animation-wrapper .wdt-animation-item { padding: 0 clamp(0.625rem, 0.5rem + 0.625vw, 1.25rem); /*  Min-10 & Max-20 */ }
+
+/* ------ Home 4 Marquee--------- */
+
+.wdt-animation-marquee-h4 .wdt-animation-item.image-item img { 
+    border-radius: var(--wdtRadius_Full); -webkit-border-radius: var(--wdtRadius_Full); 
+    width: clamp(3rem, 2.85rem + 0.75vw, 3.75rem); /* Min-48 & Max-60 */
+    height: clamp(3rem, 2.85rem + 0.75vw, 3.75rem); /* Min-48 & Max-60 */
+}

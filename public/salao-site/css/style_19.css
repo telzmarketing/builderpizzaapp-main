@@ -1,0 +1,21 @@
+
+/* Default Template */
+.wdt-advanced-carousel-holder.wdt-rc-template-default .wdt-content-item { text-align: center; }
+.wdt-advanced-carousel-holder.wdt-rc-template-default .wdt-content-item .wdt-content-image > span, .wdt-advanced-carousel-holder.wdt-rc-template-default .wdt-content-item .wdt-content-image > a { -webkit-border-radius: 1em; border-radius: 1em; }
+.wdt-advanced-carousel-holder.wdt-rc-template-default .wdt-content-item .wdt-content-media-group .wdt-content-image-wrapper { margin-bottom: 0; }
+.wdt-advanced-carousel-holder.wdt-rc-template-default .wdt-content-item .wdt-content-media-group .wdt-content-image-wrapper + .wdt-content-icon-wrapper { display: block; font-size: 60px; line-height: 0; margin-top: -8px; margin-bottom: -0.4em; -webkit-transform: translateY(-50%); transform: translateY(-50%); }
+.wdt-advanced-carousel-holder.wdt-rc-template-default .wdt-content-item .wdt-content-media-group .wdt-content-icon-wrapper .wdt-content-icon span { background-color: var(--wdt-elementor-color-white); color: rgba(var(--wdt-elementor-color-accent-rgb),0.85); font-size: 24px; height: 60px; width: 60px; -webkit-border-radius: 50%; border-radius: 50%; -webkit-box-shadow: 0 0 3px 0 rgba(var(--wdt-elementor-color-secondary-rgb),0.15); box-shadow: 0 0 3px 0 rgba(var(--wdt-elementor-color-secondary-rgb),0.15); }
+.wdt-advanced-carousel-holder.wdt-rc-template-default .wdt-content-item:hover .wdt-content-media-group .wdt-content-icon-wrapper .wdt-content-icon span { background-color: var(--wdt-elementor-color-accent); color: var(--wdt-elementor-color-white); }
+
+/** 
+    Standard Template 
+*/
+
+.wdt-advanced-carousel-holder.wdt-rc-template-standard .wdt-content-item { text-align: center; 
+    -webkit-box-shadow: none; box-shadow: none; border: 1px solid var(--wdtPrimaryColor); 
+    border-radius: var(--wdtRadius_3X); overflow: hidden; will-change: transform; }
+
+.wdt-advanced-carousel-holder.wdt-rc-template-standard .wdt-content-item .wdt-content-image-wrapper, 
+.wdt-advanced-carousel-holder.wdt-rc-template-standard .wdt-content-item .wdt-content-image-wrapper .wdt-content-image, 
+.wdt-advanced-carousel-holder.wdt-rc-template-standard .wdt-content-item .wdt-content-image > span, 
+.wdt-advanced-carousel-holder.wdt-rc-template-standard .wdt-content-item .wdt-content-image > a { display: flex; }

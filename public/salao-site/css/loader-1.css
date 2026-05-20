@@ -1,0 +1,87 @@
+/*--------------------------------------------------------------
+    Loader
+--------------------------------------------------------------*/
+
+    .pre-loader { height: 100%; left: 0; position: fixed; top: 0; width: 100%; z-index: 999991; background-color: #fff; }
+
+    .pre-loader .loader-inner { padding: 25px; position: absolute; left: 50%; top: 50%; text-align: center; width: 100%; 
+        -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); }
+
+
+    /* #loader { position: fixed; margin: auto; left: 0; right: 0; top: 50%; width: 90px; } */
+    .pre-loader .loader-inner { margin: 0; list-style: none; width: 90px; position: relative; padding: 0; height: 10px; }
+    .pre-loader .loader-inner span { position: absolute; width: 1px; height: 0; background-color: var(--wdtAccentTxtColor); bottom: 0; }
+
+    @keyframes sequence1 {
+        0% { height: 10px; }
+        50% { height: 50px; }
+        100% { height: 10px; }
+    }
+    @keyframes sequence2 {
+        0% { height: 20px; }
+        50% { height: 65px; }
+        100% { height: 20px; }
+    }
+    .pre-loader .loader-inner span:nth-child(1) { left: 0; animation: sequence1 1s ease infinite 0; }
+    .pre-loader .loader-inner span:nth-child(2) { left: 15px; animation: sequence2 1s ease infinite 0.1s; }
+    .pre-loader .loader-inner span:nth-child(3) { left: 30px; animation: sequence1 1s ease-in-out infinite 0.2s; }
+    .pre-loader .loader-inner span:nth-child(4) { left: 45px; animation: sequence2 1s ease-in infinite 0.3s; }
+    .pre-loader .loader-inner span:nth-child(5) { left: 60px; animation: sequence1 1s ease-in-out infinite 0.4s; }
+    .pre-loader .loader-inner span:nth-child(6) { left: 75px; animation: sequence2 1s ease infinite 0.5s; }
+
+    /* .loader-text {
+        display: inline-block;
+        font-family: var(--wdtFontTypo_Alt);
+        font-size: 3.75rem;
+        font-weight: bold !important;
+        letter-spacing: 1px;
+        line-height: normal;
+        text-transform: uppercase;
+        background-size: 200% auto;
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-fill-color: transparent;
+        -webkit-animation: textclip 1.5s linear infinite;
+        animation: textclip 1.5s linear infinite;
+    } */
+
+    /* @-webkit-keyframes textclip {
+        to {
+            background-position: 200% center;
+        }
+    }
+
+    @keyframes textclip {
+        to {
+            background-position: 200% center;
+        }
+    } */
+
+
+/*--------------------------------------------------------------
+    Accents
+--------------------------------------------------------------*/
+
+    .pre-loader { background-color: var(--wdtBodyBGColor); }
+    .loader-text { background-image: linear-gradient(to right, var(--wdtPrimaryColor) 10%, var(--wdtHeadAltColor) 50%, var(--wdtPrimaryColor) 60%); }
+
+
+/*--------------------------------------------------------------
+    Responsive
+--------------------------------------------------------------*/
+
+    /*----*****---- << Mobile (Landscape) >> ----*****----*/
+
+    /* Note: Design for a width of 480px */
+
+    @media only screen and (min-width: 480px) and (max-width: 767px) {
+
+    }
+
+
+    /* Common Styles for the devices below 479px width */
+
+    @media only screen and (max-width: 479px) {
+
+    }

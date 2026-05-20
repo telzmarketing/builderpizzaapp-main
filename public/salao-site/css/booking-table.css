@@ -1,0 +1,116 @@
+
+/** 
+    Table Booking form Style
+*/
+
+.wdt-opentable-booking-form > div:not(:last-child) { margin: 0 0 20px; }
+.wdt-opentable-booking-form ~ .reserve-copyright { margin-top: 14px; margin-bottom: 0px; } 
+
+.wdt-opentable-booking-form .wdt-date-selection:has(> .wdt-date-bottom) ~ #ui-datepicker-div { transform: translateY(calc(100% + 56px)); }
+.wdt-opentable-booking-form .wdt-date-selection:has(> .wdt-date-top) ~ #ui-datepicker-div { transform: translateY(0px); }
+
+
+/* Date Icon style */
+
+.wdt-opentable-booking-form .wdt-date-selection { position: relative; }
+.wdt-opentable-booking-form .wdt-date-selection > .wdt-icon-calendar { 
+    width: 1em; height: 1em; position: absolute; top: 50%; right: 20px; -webkit-transform: translateY(-50%); 
+    transform: translateY(-50%); pointer-events: none; -webkit-user-select: none; user-select: none; font-size: 1rem; }
+.wdt-opentable-booking-form .wdt-date-selection > .wdt-icon-calendar i { display: flex; }
+
+/** 
+    Heading Style
+*/
+
+.wdt-opentable-booking-content { margin-bottom: clamp(2rem, 1.5962rem + 1.7949vw, 3.75rem); /* 32px - 60px */ }
+.wdt-opentable-booking-content:empty { display: none; }
+
+.wdt-opentable-booking .table-title-group > *:not(:last-child) { margin: 0 0 8px; line-height: normal; }
+.wdt-opentable-booking .table-title-group > *:last-child { margin: 0px; }
+
+.wdt-opentable-booking:not(.type1) .table-title-group > .table-title { line-height: 1;
+    font-size: clamp(2.5rem, 1.9231rem + 2.5641vw, 5rem); /* 40px - 80px */ }
+
+.wdt-opentable-booking .table-title-group > .table-title-msg { font-size: 1.1em; 
+    font-family: var(--wdtFontTypo_Alt); line-height: normal; }
+
+
+    
+/** 
+    Table Type Style-1
+*/
+
+.wdt-opentable-booking.type1 .wdt-opentable-booking-form input:not([type="submit"]),
+.wdt-opentable-booking.type1 .wdt-opentable-booking-form select { background-color: var(--wdtTertiaryColor); }
+.wdt-opentable-booking.type1 .wdt-opentable-booking-form ~ .reserve-copyright { text-align: center; }
+.wdt-opentable-booking.type1 { text-align: center; }
+.wdt-opentable-booking.type1 .wdt-opentable-booking-form > div:not(:last-child) { margin-bottom: 0; }
+.wdt-opentable-booking.type1 .wdt-opentable-booking-form { display: grid; gap: 20px; justify-content: center; grid-template-columns: 1fr; }
+
+
+/** 
+    Table Type Style-2
+*/
+
+.wdt-opentable-booking.type2 { text-align: center; height: 100%; display: flex; flex-direction: column; }
+.wdt-opentable-booking.type2 .wdt-opentable-booking-content.media-type { display: grid; margin-bottom: 20px; flex-grow: 1; }
+.wdt-opentable-booking.type2 .wdt-opentable-booking-content.media-type > div { grid-area: 1/-1; margin: 0px;
+    border-radius: var(--wdtRadius_3X); overflow: hidden; will-change: transform; }
+
+.wdt-opentable-booking.type2 .wdt-opentable-booking-content.media-type > div.table-title-group { position: relative; z-index: 1; padding: 30px; }
+.wdt-opentable-booking.type2 .wdt-opentable-booking-content.media-type .table-media-image img { width: 100%; height: 100%; object-fit: cover; object-position: center center; }
+
+.wdt-opentable-booking.type2 .wdt-opentable-booking-form { display: flex; flex-wrap: wrap; gap: 20px; }
+.wdt-opentable-booking.type2 .wdt-opentable-booking-form > div { flex: 0 0 calc(33.33% - 13.333px); margin: 0px; }
+.wdt-opentable-booking.type2 .wdt-opentable-booking-form > input[type="submit"] { flex: 1 1 100%; min-height: 52px; margin: 0px; }
+
+
+.wdt-opentable-booking.type2 .wdt-opentable-booking-content.media-type .table-title { position: absolute;
+    top: 50%; writing-mode: sideways-lr; -webkit-transform: translateY(-50%); transform: translateY(-50%); 
+    height: calc(100% - 40px); margin: 0px; }
+
+
+/** 
+    Table Type Style-3
+*/
+
+.wdt-opentable-booking.type3 { text-align: center; }
+
+.wdt-opentable-booking.type3 .wdt-opentable-booking-form { display: flex; flex-wrap: nowrap; gap: 20px; }
+.wdt-opentable-booking.type3 .wdt-opentable-booking-form > div { flex: 1 1 100%; margin: 0px; }
+.wdt-opentable-booking.type3 .wdt-opentable-booking-form > input[type="submit"] { flex: 1 1 80%; min-height: 50px; margin: 0px; }
+
+.wdt-opentable-booking.type3 .wdt-opentable-booking-form input:not([type="submit"]),
+.wdt-opentable-booking.type3 .wdt-opentable-booking-form select { background-color: var(--wdtBodyBGColor); }
+
+
+
+/** 
+    AT Media Query
+*/
+
+@media (min-width: 1025px) {
+    /* type 1 */
+    .wdt-opentable-booking.type1 .wdt-opentable-booking-form {grid-template-columns: repeat(3,1fr); }
+
+    .wdt-opentable-booking.type1 .wdt-opentable-booking-form > input[type="submit"] { grid-column: 2/2; }
+}
+
+@media screen and (max-width: 767px) {
+    .wdt-opentable-booking.type2 .wdt-opentable-booking-form > div { flex: 0 0 calc(50% - 10px); }
+    .wdt-opentable-booking.type2 .wdt-opentable-booking-form > input[type="submit"] { flex: 0 0 calc(50% - 10px); }
+
+    .wdt-opentable-booking.type3 .wdt-opentable-booking-form { flex-wrap: wrap; }
+    .wdt-opentable-booking.type3 .wdt-opentable-booking-form > div,
+    .wdt-opentable-booking.type3 .wdt-opentable-booking-form > input[type="submit"] { flex: 0 0 calc(50% - 10px); }
+    
+}
+
+@media screen and (max-width: 480px) {
+    .wdt-opentable-booking.type2 .wdt-opentable-booking-form > div,
+    .wdt-opentable-booking.type2 .wdt-opentable-booking-form > input[type="submit"],
+
+    .wdt-opentable-booking.type3 .wdt-opentable-booking-form > div,
+    .wdt-opentable-booking.type3 .wdt-opentable-booking-form > input[type="submit"] { flex: 0 0 100%; }
+    
+}
