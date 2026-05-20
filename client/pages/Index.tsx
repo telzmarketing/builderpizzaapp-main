@@ -344,7 +344,7 @@ export default function Home() {
               }}
             >
               <div
-                className="rounded-2xl overflow-hidden relative aspect-[16/9] sm:aspect-[2.15/1] lg:aspect-[2.8/1] max-h-[13.5rem] sm:max-h-[15rem] lg:max-h-[18rem] bg-surface-02"
+                className="rounded-xl sm:rounded-2xl overflow-hidden relative aspect-[2/1] sm:aspect-[2.15/1] lg:aspect-[2.8/1] max-h-[11.75rem] sm:max-h-[15rem] lg:max-h-[18rem] bg-black"
                 style={
                   displayBanner?.card_bg_color
                     ? { background: displayBanner.card_bg_color }
@@ -357,7 +357,7 @@ export default function Home() {
                 {displayBanner?.media_type === "video" && displayBanner?.video_url ? (
                   <video
                     src={resolveAssetUrl(displayBanner.video_url)}
-                    className="absolute inset-0 w-full h-full object-cover object-center"
+                    className="absolute inset-0 w-full h-full object-contain object-center"
                     autoPlay
                     muted
                     loop
@@ -373,10 +373,10 @@ export default function Home() {
                   />
                 ) : null}
                 {/* Gradient overlay */}
-                <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/40 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/10 via-transparent to-transparent sm:from-black/75 sm:via-black/40 sm:to-transparent" />
 
                 {/* Text */}
-                <div className="absolute inset-0 flex flex-col justify-end px-5 pb-5 lg:px-10 lg:pb-8">
+                <div className="absolute inset-0 hidden sm:flex flex-col justify-end px-5 pb-5 lg:px-10 lg:pb-8">
                   {displayBanner?.display_title && (
                     <p className="text-xs lg:text-sm text-parchment/80 truncate mb-0.5">
                       {displayBanner.display_title}
@@ -391,10 +391,10 @@ export default function Home() {
 
                 {/* Navigation dots */}
                 {activeBanners.length > 1 && (
-                  <div className="absolute bottom-3 right-3 flex items-center gap-2">
+                  <div className="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 flex items-center gap-1.5 sm:gap-2">
                     <button
                       onClick={(e) => { e.stopPropagation(); setActiveBannerIndex((prev) => (prev - 1 + activeBanners.length) % activeBanners.length); }}
-                      className="w-6 h-6 rounded-full bg-black/50 text-stone hover:text-cream flex items-center justify-center"
+                      className="w-6 h-6 rounded-full bg-black/55 text-stone hover:text-cream flex items-center justify-center"
                     >
                       <ChevronLeft size={13} />
                     </button>
@@ -409,7 +409,7 @@ export default function Home() {
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); setActiveBannerIndex((prev) => (prev + 1) % activeBanners.length); }}
-                      className="w-6 h-6 rounded-full bg-black/50 text-stone hover:text-cream flex items-center justify-center"
+                      className="w-6 h-6 rounded-full bg-black/55 text-stone hover:text-cream flex items-center justify-center"
                     >
                       <ChevronRight size={13} />
                     </button>
@@ -430,12 +430,12 @@ export default function Home() {
         </div>
 
         {/* Category Pills */}
-        <div className="flex gap-2 mb-5 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4 lg:mx-0 lg:px-0 lg:flex-wrap">
+        <div className="flex flex-wrap justify-center gap-2 mb-5 pb-1 sm:justify-start lg:justify-start lg:flex-wrap">
           {effectiveCategories.map((category) => (
             <button
               key={category}
               onClick={() => setActiveCategory(category)}
-              className={`px-3.5 py-1.5 lg:px-5 lg:py-2 rounded-full text-sm lg:text-base font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+              className={`px-3 py-1.5 min-[390px]:px-3.5 lg:px-5 lg:py-2 rounded-full text-[11px] min-[390px]:text-xs lg:text-base font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                 activeCategory === category
                   ? "bg-gold text-cream shadow-lg shadow-gold/20"
                   : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
@@ -499,9 +499,9 @@ export default function Home() {
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
-            <div className="grid grid-cols-[48px_minmax(0,1fr)_48px] min-[360px]:grid-cols-[56px_minmax(0,1fr)_56px] min-[390px]:grid-cols-[72px_minmax(0,1fr)_72px] items-start gap-2">
+            <div className="grid grid-cols-[42px_minmax(0,1fr)_42px] min-[360px]:grid-cols-[52px_minmax(0,1fr)_52px] min-[390px]:grid-cols-[64px_minmax(0,1fr)_64px] items-center gap-2">
               {/* Previous (partially visible) */}
-              <div className="w-full mt-16 opacity-35 pointer-events-none">
+              <div className="w-full opacity-30 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
                   {renderIcon(prevPizza?.icon, getPizzaIndex(-1), "sm")}
                 </div>
@@ -543,7 +543,7 @@ export default function Home() {
               </div>
 
               {/* Next (partially visible) */}
-              <div className="w-full mt-16 opacity-35 pointer-events-none">
+              <div className="w-full opacity-30 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
                   {renderIcon(nextPizza?.icon, getPizzaIndex(1), "sm")}
                 </div>

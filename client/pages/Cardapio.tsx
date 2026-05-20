@@ -110,28 +110,30 @@ export default function Cardapio() {
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
       {/* Header */}
       <div className="bg-brand-dark px-4 py-3 sticky top-0 z-30 border-b border-surface-02">
-        <div className="flex items-center justify-between mb-3">
-          <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
-            <ChevronLeft size={24} />
-          </button>
-          <button onClick={() => navigate("/")} aria-label="Ir para a home da loja">
-            <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />
-          </button>
-          <div className="w-6" />
-        </div>
-        <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone/70" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar produtos..."
-            className="w-full bg-surface-02 text-cream placeholder-stone/70 rounded-full py-2.5 pl-9 pr-4 text-sm border border-surface-03 focus:outline-none focus:border-gold transition-colors"
-          />
+        <div className="mx-auto w-full max-w-6xl">
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
+              <ChevronLeft size={24} />
+            </button>
+            <button onClick={() => navigate("/")} aria-label="Ir para a home da loja">
+              <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />
+            </button>
+            <div className="w-6" />
+          </div>
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone/70" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar produtos..."
+              className="w-full bg-surface-02 text-cream placeholder-stone/70 rounded-full py-2.5 pl-9 pr-4 text-sm border border-surface-03 focus:outline-none focus:border-gold transition-colors"
+            />
+          </div>
         </div>
       </div>
 
       {/* Category Pills */}
-      <div className="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-hide max-w-2xl mx-auto">
+      <div className="flex w-full max-w-6xl gap-2 px-4 py-3 mx-auto overflow-x-auto scrollbar-hide lg:flex-wrap lg:overflow-visible">
         {effectiveCategories.map((cat) => (
           <button
             key={cat}
@@ -148,14 +150,14 @@ export default function Cardapio() {
       </div>
 
       {/* Products Grid */}
-      <div className="px-4 pb-32 max-w-2xl mx-auto w-full">
+      <div className="px-4 pb-32 lg:pb-12 max-w-6xl mx-auto w-full">
         {filtered.length === 0 ? (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">🍕</div>
             <p className="text-stone">Nenhum produto encontrado</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 lg:gap-4">
             {filtered.map((product) => (
               <div
                 key={product.id}

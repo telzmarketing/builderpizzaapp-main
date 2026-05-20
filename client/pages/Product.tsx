@@ -540,7 +540,7 @@ export default function Product() {
       </div>
 
       {/* Content */}
-      <div className="px-4 pt-6 pb-36">
+      <div className="px-4 pt-6 pb-36 lg:pb-40 max-w-3xl mx-auto w-full">
 
         {/* ── Hero Product Image ───────────────────────────────────────────── */}
         <div className="flex flex-col items-center mb-6">
@@ -1003,6 +1003,7 @@ export default function Product() {
       )}
 
       <div className="fixed bottom-0 left-0 right-0 bg-surface-00 border-t border-surface-03 px-4 py-4 shadow-[0_-18px_40px_rgba(0,0,0,0.45)]">
+        <div className="mx-auto w-full max-w-3xl">
         <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-stone text-xs">Total ({quantity}x)</p>
@@ -1046,6 +1047,7 @@ export default function Product() {
             ? `${p.addToCartButton} · R$ ${totalPrice.toFixed(2)}`
             : `Escolha ${activeFlavors.filter((f) => !f).length} sabor(es) restante(s)`}
         </button>
+        </div>
       </div>
     </div>
   );
