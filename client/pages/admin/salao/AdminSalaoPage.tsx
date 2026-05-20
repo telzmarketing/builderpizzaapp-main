@@ -14,6 +14,12 @@ import {
   buildSalaoSiteBlocks,
   extractSalaoSiteImageTargets,
   extractSalaoSiteTextTargets,
+  getSalaoOverrideValue,
+  getSalaoPageOverrides,
+  removeSalaoPageOverride,
+  SALAO_PUBLIC_PAGES,
+  setSalaoPageOverride,
+  type SalaoPublicPageKey,
   type SalaoSiteBlock,
   type SalaoSiteImageTarget,
   type SalaoSiteTextTarget,
@@ -36,6 +42,7 @@ export default function AdminSalaoPage() {
   const [textTargets, setTextTargets] = useState<SalaoSiteTextTarget[]>([]);
   const [imageTargets, setImageTargets] = useState<SalaoSiteImageTarget[]>([]);
   const [activeBlockId, setActiveBlockId] = useState("");
+  const [activePageKey, setActivePageKey] = useState<SalaoPublicPageKey>("home");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -81,9 +88,9 @@ export default function AdminSalaoPage() {
       .filter((item): item is SalaoSiteTextTarget => Boolean(item))
       .filter((item) => {
         if (!term) return true;
-        return `${getTextValue(draft, item)} ${item.context}`.toLowerCase().includes(term);
+        return `${getTextValue(draft, activePageKey, item)} ${item.context}`.toLowerCase().includes(term);
       });
-  }, [activeBlock, draft, query, textById]);
+  }, [activeBlock, activePageKey, draft, query, textById]);
 
   const filteredBlockImages = useMemo(() => {
     if (!activeBlock) return [];
@@ -93,14 +100,18 @@ export default function AdminSalaoPage() {
       .filter((item): item is SalaoSiteImageTarget => Boolean(item))
       .filter((item) => {
         if (!term) return true;
-        return `${item.src} ${item.alt} ${item.context} ${draft?.site_image_overrides[item.id] ?? ""}`.toLowerCase().includes(term);
+        return `${item.src} ${item.alt} ${item.context} ${getImageValue(draft, activePageKey, item)}`.toLowerCase().includes(term);
       });
-  }, [activeBlock, draft, imageById, query]);
+  }, [activeBlock, activePageKey, draft, imageById, query]);
 
   const previewHtml = useMemo(() => {
     if (!draft || !siteHtml) return "";
-    return applySalaoSiteOverrides(siteHtml, draft.site_text_overrides, draft.site_image_overrides);
-  }, [draft, siteHtml]);
+    return applySalaoSiteOverrides(
+      siteHtml,
+      getSalaoPageOverrides(draft.site_text_overrides, activePageKey),
+      getSalaoPageOverrides(draft.site_image_overrides, activePageKey),
+    );
+  }, [activePageKey, draft, siteHtml]);
 
   const setField = <K extends keyof ApiSalaoPageSettings>(key: K, value: ApiSalaoPageSettings[K]) => {
     setDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -108,26 +119,22 @@ export default function AdminSalaoPage() {
 
   const updateText = (id: string, value: string) => {
     if (!draft) return;
-    setField("site_text_overrides", { ...draft.site_text_overrides, [id]: value });
+    setField("site_text_overrides", setSalaoPageOverride(draft.site_text_overrides, activePageKey, id, value));
   };
 
   const restoreText = (id: string) => {
     if (!draft) return;
-    const next = { ...draft.site_text_overrides };
-    delete next[id];
-    setField("site_text_overrides", next);
+    setField("site_text_overrides", removeSalaoPageOverride(draft.site_text_overrides, activePageKey, id));
   };
 
   const updateImage = (id: string, value: string) => {
     if (!draft) return;
-    setField("site_image_overrides", { ...draft.site_image_overrides, [id]: value });
+    setField("site_image_overrides", setSalaoPageOverride(draft.site_image_overrides, activePageKey, id, value));
   };
 
   const restoreImage = (id: string) => {
     if (!draft) return;
-    const next = { ...draft.site_image_overrides };
-    delete next[id];
-    setField("site_image_overrides", next);
+    setField("site_image_overrides", removeSalaoPageOverride(draft.site_image_overrides, activePageKey, id));
   };
 
   const save = async () => {
@@ -178,12 +185,21 @@ export default function AdminSalaoPage() {
         ) : (
           <>
             {tab === "blocks" && activeBlock && (
-              <Toolbar
-                query={query}
-                onQuery={setQuery}
-                total={filteredBlockTexts.length + filteredBlockImages.length}
-                label="itens neste bloco"
-              />
+              <>
+                <PublicPageSelector
+                  activePageKey={activePageKey}
+                  onSelect={(key) => {
+                    setActivePageKey(key);
+                    setQuery("");
+                  }}
+                />
+                <Toolbar
+                  query={query}
+                  onQuery={setQuery}
+                  total={filteredBlockTexts.length + filteredBlockImages.length}
+                  label="itens neste bloco"
+                />
+              </>
             )}
 
             {tab === "blocks" && activeBlock && (
@@ -198,6 +214,7 @@ export default function AdminSalaoPage() {
                 />
                 <BlockEditor
                   block={activeBlock}
+                  pageKey={activePageKey}
                   texts={filteredBlockTexts}
                   images={filteredBlockImages}
                   draft={draft}
@@ -245,6 +262,43 @@ function normalizeSettings(settings: ApiSalaoPageSettings): ApiSalaoPageSettings
   };
 }
 
+function PublicPageSelector({
+  activePageKey,
+  onSelect,
+}: {
+  activePageKey: SalaoPublicPageKey;
+  onSelect: (key: SalaoPublicPageKey) => void;
+}) {
+  return (
+    <section className="grid gap-3 rounded-xl border border-surface-03 bg-surface-02 p-3">
+      <div>
+        <h2 className="text-sm font-black uppercase tracking-[0.16em] text-gold">Paginas do site</h2>
+        <p className="text-xs text-stone">Home 1, Menu 2, Blog List, Pages e Contato possuem textos e imagens editaveis separadamente.</p>
+      </div>
+      <div className="grid gap-2 md:grid-cols-5">
+        {SALAO_PUBLIC_PAGES.map((page) => {
+          const active = page.key === activePageKey;
+          return (
+            <button
+              key={page.key}
+              type="button"
+              onClick={() => onSelect(page.key)}
+              className={`rounded-xl border p-3 text-left transition ${
+                active
+                  ? "border-gold/60 bg-gold/10 text-cream"
+                  : "border-surface-03 bg-surface-01 text-stone hover:border-gold/30 hover:text-cream"
+              }`}
+            >
+              <span className="block text-sm font-black">{page.title}</span>
+              <span className="mt-1 block line-clamp-2 text-xs">{page.description}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function BlockNavigation({
   blocks,
   activeBlockId,
@@ -290,6 +344,7 @@ function BlockNavigation({
 
 function BlockEditor({
   block,
+  pageKey,
   texts,
   images,
   draft,
@@ -299,6 +354,7 @@ function BlockEditor({
   onImageRestore,
 }: {
   block: SalaoSiteBlock;
+  pageKey: SalaoPublicPageKey;
   texts: SalaoSiteTextTarget[];
   images: SalaoSiteImageTarget[];
   draft: ApiSalaoPageSettings;
@@ -319,8 +375,8 @@ function BlockEditor({
                   key={item.id}
                   index={targetNumber(item.id)}
                   target={item}
-                  value={getTextValue(draft, item)}
-                  changed={draft.site_text_overrides[item.id] !== undefined}
+                  value={getTextValue(draft, pageKey, item)}
+                  changed={getTextChanged(draft, pageKey, item.id)}
                   onChange={(value) => onTextChange(item.id, value)}
                   onRestore={() => onTextRestore(item.id)}
                 />
@@ -340,7 +396,7 @@ function BlockEditor({
                   key={item.id}
                   index={targetNumber(item.id)}
                   target={item}
-                  value={draft.site_image_overrides[item.id] ?? ""}
+                  value={getImageValue(draft, pageKey, item)}
                   onChange={(value) => onImageChange(item.id, value)}
                   onRestore={() => onImageRestore(item.id)}
                 />
@@ -377,8 +433,18 @@ function EmptyBlockMessage({ message }: { message: string }) {
   );
 }
 
-function getTextValue(settings: ApiSalaoPageSettings | null, target: SalaoSiteTextTarget) {
-  return settings?.site_text_overrides[target.id] ?? target.value;
+function getTextValue(settings: ApiSalaoPageSettings | null, pageKey: SalaoPublicPageKey, target: SalaoSiteTextTarget) {
+  if (!settings) return target.value;
+  return getSalaoOverrideValue(settings.site_text_overrides, pageKey, target.id) ?? target.value;
+}
+
+function getImageValue(settings: ApiSalaoPageSettings | null, pageKey: SalaoPublicPageKey, target: SalaoSiteImageTarget) {
+  if (!settings) return "";
+  return getSalaoOverrideValue(settings.site_image_overrides, pageKey, target.id) ?? "";
+}
+
+function getTextChanged(settings: ApiSalaoPageSettings, pageKey: SalaoPublicPageKey, targetId: string) {
+  return getSalaoOverrideValue(settings.site_text_overrides, pageKey, targetId) !== undefined;
 }
 
 function targetNumber(id: string) {

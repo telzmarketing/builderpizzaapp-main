@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { salaoPageApi } from "@/lib/api";
-import { applySalaoSiteOverrides } from "@/lib/salaoSiteCms";
+import { applySalaoSiteOverrides, getSalaoPageOverrides, getSalaoPublicPageKey } from "@/lib/salaoSiteCms";
 
 const SALAO_SITE_URL = "/salao-site/index.html";
 
@@ -31,10 +31,11 @@ export default function SalaoHome() {
         if (metaDescription) {
           metaDescription.content = settings.seo_description || "";
         }
+        const pageKey = getSalaoPublicPageKey(window.location.pathname);
         setSrcDoc(applySalaoSiteOverrides(
           html,
-          settings.site_text_overrides,
-          settings.site_image_overrides,
+          getSalaoPageOverrides(settings.site_text_overrides, pageKey),
+          getSalaoPageOverrides(settings.site_image_overrides, pageKey),
         ));
       })
       .catch(() => {
