@@ -156,9 +156,9 @@ export default function PromocaoLanding() {
   const overlay = overlayClass[landing.overlay_style] ?? overlayClass["dark-gradient"];
   const giftText = product?.promotion_gift_name
     ? `${landing.gift_label_prefix || "Brinde"}: ${product.promotion_gift_name}`
-    : landing.gift_fallback_label || "Brinde incluido";
+    : landing.gift_fallback_label || "Brinde incluído";
   const promoBenefits = [
-    product?.promotion_free_shipping ? { icon: Truck, text: landing.free_shipping_label || "Frete gratis na promocao" } : null,
+    product?.promotion_free_shipping ? { icon: Truck, text: landing.free_shipping_label || "Frete grátis na promoção" } : null,
     product?.promotion_gift_enabled ? { icon: Gift, text: giftText } : null,
     landing.promotion_active_now ? { icon: Clock, text: landing.active_offer_label || "Oferta ativa agora" } : null,
   ].filter(Boolean) as { icon: typeof Truck; text: string }[];

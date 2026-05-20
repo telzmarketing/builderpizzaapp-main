@@ -1052,9 +1052,9 @@ def _run_migrations():
             content_alignment VARCHAR(20) NOT NULL DEFAULT 'center',
             overlay_style VARCHAR(40) NOT NULL DEFAULT 'dark-gradient',
             badge_text VARCHAR(80),
-            free_shipping_label VARCHAR(160) NOT NULL DEFAULT 'Frete gratis na promocao',
+            free_shipping_label VARCHAR(160) NOT NULL DEFAULT 'Frete grátis na promoção',
             gift_label_prefix VARCHAR(80) NOT NULL DEFAULT 'Brinde',
-            gift_fallback_label VARCHAR(160) NOT NULL DEFAULT 'Brinde incluido',
+            gift_fallback_label VARCHAR(160) NOT NULL DEFAULT 'Brinde incluído',
             active_offer_label VARCHAR(160) NOT NULL DEFAULT 'Oferta ativa agora',
             slug VARCHAR(160) NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'draft',
@@ -1070,9 +1070,9 @@ def _run_migrations():
         "ALTER TABLE promotion_landing_pages ADD COLUMN IF NOT EXISTS image_url_2 TEXT",
         "ALTER TABLE promotion_landing_pages ADD COLUMN IF NOT EXISTS video_url TEXT",
         "ALTER TABLE promotion_landing_pages ADD COLUMN IF NOT EXISTS media_order JSONB NOT NULL DEFAULT '[\"image_url\", \"image_url_2\", \"video_url\"]'::jsonb",
-        "ALTER TABLE promotion_landing_pages ADD COLUMN IF NOT EXISTS free_shipping_label VARCHAR(160) NOT NULL DEFAULT 'Frete gratis na promocao'",
+        "ALTER TABLE promotion_landing_pages ADD COLUMN IF NOT EXISTS free_shipping_label VARCHAR(160) NOT NULL DEFAULT 'Frete grátis na promoção'",
         "ALTER TABLE promotion_landing_pages ADD COLUMN IF NOT EXISTS gift_label_prefix VARCHAR(80) NOT NULL DEFAULT 'Brinde'",
-        "ALTER TABLE promotion_landing_pages ADD COLUMN IF NOT EXISTS gift_fallback_label VARCHAR(160) NOT NULL DEFAULT 'Brinde incluido'",
+        "ALTER TABLE promotion_landing_pages ADD COLUMN IF NOT EXISTS gift_fallback_label VARCHAR(160) NOT NULL DEFAULT 'Brinde incluído'",
         "ALTER TABLE promotion_landing_pages ADD COLUMN IF NOT EXISTS active_offer_label VARCHAR(160) NOT NULL DEFAULT 'Oferta ativa agora'",
     ]
     for stmt in stmts:
