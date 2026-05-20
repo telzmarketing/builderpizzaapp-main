@@ -344,7 +344,7 @@ export default function Home() {
               }}
             >
               <div
-                className="rounded-xl sm:rounded-2xl overflow-hidden relative aspect-[2/1] sm:aspect-[2.15/1] lg:aspect-[2.8/1] max-h-[11.75rem] sm:max-h-[15rem] lg:max-h-[18rem] bg-black"
+                className="w-full rounded-xl sm:rounded-2xl overflow-hidden relative aspect-[2/1] sm:aspect-[2.15/1] lg:aspect-[2.8/1] max-h-[11.75rem] sm:max-h-[15rem] lg:max-h-[18rem] bg-black"
                 style={
                   displayBanner?.card_bg_color
                     ? { background: displayBanner.card_bg_color }
@@ -373,7 +373,7 @@ export default function Home() {
                   />
                 ) : null}
                 {/* Gradient overlay */}
-                <div className="absolute inset-0 bg-gradient-to-r from-black/10 via-transparent to-transparent sm:from-black/75 sm:via-black/40 sm:to-transparent" />
+                <div className="absolute inset-0 hidden sm:block bg-gradient-to-r from-black/75 via-black/40 to-transparent" />
 
                 {/* Text */}
                 <div className="absolute inset-0 hidden sm:flex flex-col justify-end px-5 pb-5 lg:px-10 lg:pb-8">
@@ -430,12 +430,12 @@ export default function Home() {
         </div>
 
         {/* Category Pills */}
-        <div className="flex flex-wrap justify-center gap-2 mb-5 pb-1 sm:justify-start lg:justify-start lg:flex-wrap">
+        <div className="flex gap-2 mb-5 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4 lg:mx-0 lg:px-0 lg:flex-wrap">
           {effectiveCategories.map((category) => (
             <button
               key={category}
               onClick={() => setActiveCategory(category)}
-              className={`px-3 py-1.5 min-[390px]:px-3.5 lg:px-5 lg:py-2 rounded-full text-[11px] min-[390px]:text-xs lg:text-base font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+              className={`px-3.5 py-1.5 lg:px-5 lg:py-2 rounded-full text-xs lg:text-base font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                 activeCategory === category
                   ? "bg-gold text-cream shadow-lg shadow-gold/20"
                   : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
@@ -499,9 +499,9 @@ export default function Home() {
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
-            <div className="grid grid-cols-[42px_minmax(0,1fr)_42px] min-[360px]:grid-cols-[52px_minmax(0,1fr)_52px] min-[390px]:grid-cols-[64px_minmax(0,1fr)_64px] items-center gap-2">
+            <div className="grid grid-cols-1 min-[430px]:grid-cols-[64px_minmax(0,1fr)_64px] items-center gap-2">
               {/* Previous (partially visible) */}
-              <div className="w-full opacity-30 pointer-events-none">
+              <div className="hidden min-[430px]:block w-full opacity-30 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
                   {renderIcon(prevPizza?.icon, getPizzaIndex(-1), "sm")}
                 </div>
@@ -543,7 +543,7 @@ export default function Home() {
               </div>
 
               {/* Next (partially visible) */}
-              <div className="w-full opacity-30 pointer-events-none">
+              <div className="hidden min-[430px]:block w-full opacity-30 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
                   {renderIcon(nextPizza?.icon, getPizzaIndex(1), "sm")}
                 </div>
