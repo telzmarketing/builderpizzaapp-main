@@ -137,6 +137,9 @@ class OrderOut(BaseModel):
     session_id: Optional[str] = None
     landing_page: Optional[str] = None
     referrer: Optional[str] = None
+    sales_channel: str = "delivery"
+    table_id: Optional[str] = None
+    table_session_id: Optional[str] = None
     items: list[OrderItemOut] = []
     created_at: datetime
     updated_at: datetime

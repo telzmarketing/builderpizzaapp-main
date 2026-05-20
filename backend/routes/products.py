@@ -257,6 +257,7 @@ def list_products(
     request: Request,
     active_only: bool = True,
     product_type: str | None = Query(default=None),
+    channel: str | None = Query(default=None, pattern="^(delivery|dine_in)$"),
     db: Session = Depends(get_db),
 ):
     if not active_only or product_type == "brinde":
@@ -268,6 +269,10 @@ def list_products(
         q = q.filter(Product.product_type == product_type)
     elif active_only:
         q = q.filter(or_(Product.product_type == None, Product.product_type != "brinde"))  # noqa: E711
+    if channel == "delivery":
+        q = q.filter(Product.visible_delivery == True)  # noqa: E712
+    elif channel == "dine_in":
+        q = q.filter(Product.visible_dine_in == True)  # noqa: E712
     products = q.order_by(Product.name).all()
     auto_badge_ids = _get_best_seller_badge_ids(db)
     return [_product_payload(product, db, auto_badge_ids) for product in products]
@@ -443,7 +448,7 @@ def update_product(product_id: str, body: ProductUpdate, db: Session = Depends(g
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
-    for key, value in body.model_dump(exclude_none=True).items():
+    for key, value in body.model_dump(exclude_unset=True).items():
         setattr(product, key, value)
     db.commit()
     db.refresh(product)

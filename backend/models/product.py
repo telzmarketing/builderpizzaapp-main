@@ -28,6 +28,10 @@ class Product(Base):
     category = Column(String(100), nullable=True)
     subcategory = Column(String(100), nullable=True)
     product_type = Column(String(20), nullable=True)  # "pizza" | "drink" | "other"
+    visible_delivery = Column(Boolean, nullable=False, default=True)
+    visible_dine_in = Column(Boolean, nullable=False, default=True)
+    delivery_price = Column(Float, nullable=True)
+    dine_in_price = Column(Float, nullable=True)
     rating = Column(Float, default=4.5)
     active = Column(Boolean, default=True)
     best_seller_badge_mode = Column(String(10), default="off")  # "off" | "manual" | "auto"

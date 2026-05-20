@@ -8,6 +8,7 @@ import { AppProvider, useApp } from "./context/AppContext";
 import { themeApi, applyTheme, DEFAULT_THEME, readCachedTheme } from "./lib/themeApi";
 import { captureTrackingFromUrl, firePixelEvent, trackEvent, getTrackingData, initCampaignPixel, initStorePixels, requestVisitorLocation } from "./lib/tracking";
 import { customerEventsApi, resolveAssetUrl } from "./lib/api";
+import { getPublicExperience, isSalaoExperience } from "./lib/experience";
 
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
 const StoreSocialProofNotification = lazy(() => import("./components/StoreSocialProofNotification"));
@@ -15,6 +16,8 @@ const CapacitorMotoboyEntry = lazy(() => import("./components/CapacitorMotoboyEn
 
 function StoreWidget() {
   const { pathname } = useLocation();
+  if (isSalaoExperience()) return null;
+
   const storeRoutes = [
     "/",
     "/product",
@@ -68,6 +71,20 @@ function TrackingInjector() {
     sessionStorage.setItem("_mo_site_opened", "1");
     requestVisitorLocation();
     const td = getTrackingData();
+    if (isSalaoExperience()) {
+      customerEventsApi.register({
+        event_type: "salao_site_opened",
+        event_name: "Abriu pagina do salao",
+        session_id: td.session_id,
+        utm_source: td.utm_source,
+        utm_medium: td.utm_medium,
+        utm_campaign: td.utm_campaign,
+        page_url: window.location.href,
+        referrer_url: td.referrer,
+      }).catch(() => {});
+      return;
+    }
+
     customerEventsApi.register({
       event_type: "site_opened",
       event_name: "Abriu o site",
@@ -85,6 +102,8 @@ function TrackingInjector() {
     if (pathname.startsWith("/painel")) return;
     const data = captureTrackingFromUrl();
     trackEvent("page_view");
+    if (isSalaoExperience()) return;
+
     const pixelTasks = [initStorePixels()];
     if (data.campaign_id) pixelTasks.push(initCampaignPixel(data.campaign_id));
     Promise.all(pixelTasks).then(() => firePixelEvent("PageView")).catch(() => {});
@@ -94,13 +113,18 @@ function TrackingInjector() {
 
 function DocumentHead() {
   const { siteContent } = useApp();
+  const isSalao = isSalaoExperience();
   const { pageTitle, faviconUrl, name } = siteContent.brand;
 
   const resolvedFavicon = faviconUrl ? resolveAssetUrl(faviconUrl) : "";
 
   useEffect(() => {
+    if (isSalao) {
+      document.title = "Moschettieri | Restaurante";
+      return;
+    }
     document.title = pageTitle || name || "Pizza Delivery App";
-  }, [pageTitle, name]);
+  }, [isSalao, pageTitle, name]);
 
   useEffect(() => {
     if (!resolvedFavicon) return;
@@ -177,6 +201,8 @@ import CrmTarefas from "./pages/admin/crm/CrmTarefas";
 import CrmInteligencia from "./pages/admin/crm/CrmInteligencia";
 import CrmAgenteWhatsApp from "./pages/admin/crm/CrmAgenteWhatsApp";
 import AdminLogistica from "./pages/admin/logistica/AdminLogistica";
+import AdminSalao from "./pages/admin/salao/AdminSalao";
+import AdminSalaoPage from "./pages/admin/salao/AdminSalaoPage";
 import PromotionalLandingEditor from "./pages/admin/PromotionalLandingEditor";
 import Motoboy from "./pages/Motoboy";
 import Campanha from "./pages/Campanha";
@@ -187,9 +213,18 @@ import Pedidos from "./pages/Pedidos";
 import Conta from "./pages/Conta";
 import Localizacao from "./pages/Localizacao";
 import Cardapio from "./pages/Cardapio";
+import SalaoHome from "./pages/salao/SalaoHome";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
+
+function PublicHome() {
+  return getPublicExperience() === "salao" ? <SalaoHome /> : <Index />;
+}
+
+function ExperienceRoute({ salao, delivery }: { salao: JSX.Element; delivery: JSX.Element }) {
+  return getPublicExperience() === "salao" ? salao : delivery;
+}
 
 export default function App() {
   return (
@@ -206,10 +241,10 @@ export default function App() {
             </Suspense>
             <StoreWidget />
             <TrackingInjector />
-            <ExitPopup />
+            {!isSalaoExperience() && <ExitPopup />}
             <Routes>
               {/* ── Customer routes ── */}
-              <Route path="/" element={<Index />} />
+              <Route path="/" element={<PublicHome />} />
               <Route path="/product/:id" element={<Product />} />
               <Route path="/cart" element={<Cart />} />
               <Route path="/checkout" element={<Checkout />} />
@@ -219,7 +254,9 @@ export default function App() {
               <Route path="/pedidos" element={<Pedidos />} />
               <Route path="/conta" element={<Conta />} />
               <Route path="/localizacao" element={<Localizacao />} />
-              <Route path="/cardapio" element={<Cardapio />} />
+              <Route path="/cardapio" element={<ExperienceRoute salao={<SalaoHome />} delivery={<Cardapio />} />} />
+              <Route path="/reservas" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
+              <Route path="/contato" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
               <Route path="/campanha/:slug" element={<Campanha />} />
               <Route path="/promocao/:slug" element={<PromocaoLanding />} />
 
@@ -236,6 +273,7 @@ export default function App() {
                 <Route path="/painel/products/landing/:productId/:promotionId" element={<PromotionalLandingEditor />} />
                 <Route path="/painel/orders" element={<AdminOrders />} />
                 <Route path="/painel/cozinha" element={<AdminCozinha />} />
+                <Route path="/painel/salao" element={<AdminSalao />} />
                 <Route path="/painel/fidelidade" element={<AdminFidelidade />} />
                 <Route path="/painel/conteudo" element={<AdminConteudo />} />
                 <Route path="/painel/pagamentos" element={<AdminPagamentos />} />
@@ -245,6 +283,7 @@ export default function App() {
                 <Route path="/painel/trafego-pago" element={<AdminPaidTraffic />} />
                 <Route path="/painel/chatbot"    element={<AdminChatbot />} />
                 <Route path="/painel/aparencia" element={<AdminAparencia />} />
+                <Route path="/painel/salao/pagina" element={<AdminSalaoPage />} />
                 <Route path="/painel/home-config" element={<AdminHomeConfig />} />
                 <Route path="/painel/lgpd" element={<AdminLgpd />} />
                 <Route path="/painel/configuracoes" element={<AdminConfiguracoes />} />

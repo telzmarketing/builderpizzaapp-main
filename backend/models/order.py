@@ -48,6 +48,9 @@ class Order(Base):
     session_id = Column(String(120), nullable=True)
     landing_page = Column(Text, nullable=True)
     referrer = Column(Text, nullable=True)
+    sales_channel = Column(String(30), nullable=False, default="delivery")
+    table_id = Column(String, ForeignKey("restaurant_tables.id", ondelete="SET NULL"), nullable=True)
+    table_session_id = Column(String, ForeignKey("table_sessions.id", ondelete="SET NULL"), nullable=True)
 
     subtotal = Column(Float, nullable=False)
     shipping_fee = Column(Float, default=0.0)
@@ -87,6 +90,8 @@ class Order(Base):
     payment = relationship("Payment", back_populates="order", uselist=False)
     coupon = relationship("Coupon", back_populates="orders")
     delivery = relationship("Delivery", back_populates="order", uselist=False)
+    table = relationship("RestaurantTable")
+    table_session = relationship("TableSession", back_populates="orders")
 
 
 class OrderItem(Base):

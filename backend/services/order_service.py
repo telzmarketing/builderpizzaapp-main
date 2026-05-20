@@ -19,9 +19,9 @@ from backend.core.exceptions import (
     FlavorDivisionMismatch, MaxFlavorsExceeded,
     DomainError,
 )
-from backend.core.state_machine import order_sm
+from backend.core.state_machine import order_sm, payment_sm
 from backend.core.events import (
-    bus, OrderCreated, OrderStatusChanged, OrderCancelled as EvOrderCancelled,
+    bus, OrderCreated, OrderStatusChanged, OrderCancelled as EvOrderCancelled, PaymentConfirmed,
 )
 from backend.models.order import Order, OrderItem, OrderItemFlavor, OrderStatus
 from backend.models.payment import Payment, PaymentMethod, PaymentStatus
@@ -738,6 +738,193 @@ class OrderService:
 
         return order
 
+    def create_from_table_session(self, table_session_id: str, *, payment_method: str = "cash") -> Order:
+        """
+        Materialize a dine-in table session as a real order.
+
+        Salao keeps its own operational comanda, but the finalized kitchen/order
+        record still goes through the central OrderService and the shared orders
+        table so BI, CRM and reports can filter by sales_channel=dine_in.
+        """
+        from backend.models.salao import TableSession
+
+        session = (
+            self._db.query(TableSession)
+            .options(joinedload(TableSession.items), joinedload(TableSession.table))
+            .filter(TableSession.id == table_session_id)
+            .first()
+        )
+        if not session:
+            raise DomainError("Comanda nao encontrada.", code="TableSessionNotFound")
+        if self._db.query(Order).filter(Order.table_session_id == table_session_id).first():
+            raise DomainError("Esta comanda ja gerou um pedido do salao.", code="TableSessionOrderAlreadyExists")
+        if not session.items:
+            raise DomainError("Adicione itens na comanda antes de gerar o pedido.", code="TableSessionEmpty")
+
+        method = PaymentMethod(payment_method) if payment_method in PaymentMethod._value2member_map_ else PaymentMethod.cash
+        subtotal = round(sum((item.total_price or 0.0) for item in session.items), 2)
+        service_fee = round(float(session.service_fee or 0.0), 2)
+        discount = round(float(session.discount or 0.0), 2)
+        total = round(max(0.0, subtotal + service_fee - discount), 2)
+        table_label = f"Mesa {session.table.number}" if session.table else "Salao"
+        now = datetime.now(timezone.utc)
+
+        order_id = f"order-{uuid.uuid4().hex[:8]}"
+        order = Order(
+            id=order_id,
+            order_code=self._generate_order_code(),
+            external_reference=order_id,
+            customer_id=session.customer_id,
+            delivery_name=table_label,
+            delivery_phone="",
+            delivery_street="Atendimento no salao",
+            delivery_city="Salao",
+            delivery_complement=session.waiter_name,
+            status=OrderStatus.preparing,
+            sales_channel="dine_in",
+            table_id=session.table_id,
+            table_session_id=session.id,
+            subtotal=subtotal,
+            shipping_fee=service_fee,
+            delivery_fee_original=service_fee,
+            delivery_fee_discount=0.0,
+            delivery_fee_final=service_fee,
+            free_shipping_applied=False,
+            discount=discount,
+            total=total,
+            estimated_time=0,
+            notes=session.notes,
+            preparation_started_at=now,
+            target_delivery_minutes=0,
+        )
+        self._db.add(order)
+        self._db.flush()
+
+        items_count = 0
+        for item in session.items:
+            items_count += int(item.quantity or 0)
+            self._db.add(OrderItem(
+                id=str(uuid.uuid4()),
+                order_id=order.id,
+                product_id=item.product_id,
+                quantity=item.quantity,
+                selected_size="Salao",
+                selected_size_id=None,
+                flavor_division=1,
+                flavor_count=1,
+                selected_crust_type_id=None,
+                selected_crust_type=None,
+                selected_drink_variant=None,
+                notes=item.notes,
+                unit_price=item.unit_price,
+                total_price=item.total_price,
+                standard_unit_price=item.unit_price,
+                applied_unit_price=item.unit_price,
+                original_price=item.unit_price,
+                is_gift=False,
+            ))
+
+        self._db.add(Payment(
+            id=str(uuid.uuid4()),
+            order_id=order.id,
+            method=method,
+            status=PaymentStatus.pending,
+            amount=total,
+            gateway="dine_in",
+            provider="salao",
+            external_reference=order.external_reference,
+            pay_on_delivery=False,
+        ))
+
+        session.subtotal = subtotal
+        session.total = total
+        session.status = "pending_payment"
+        session.updated_at = now
+        sync_customer_order_metrics(self._db, order.customer_id)
+        self._db.commit()
+        self._db.refresh(order)
+
+        bus.publish(OrderCreated(
+            order_id=order.id,
+            customer_name=table_label,
+            total=order.total,
+            items_count=items_count,
+            delivery_city="Salao",
+        ))
+        return order
+
+    def confirm_table_session_payment(self, table_session_id: str, *, payment_method: str = "cash") -> Order:
+        """Confirm dine-in payment, close the table session and make BI revenue effective."""
+        from backend.models.salao import TableSession
+
+        order = (
+            self._db.query(Order)
+            .options(joinedload(Order.payment), joinedload(Order.table_session))
+            .filter(Order.table_session_id == table_session_id, Order.sales_channel == "dine_in")
+            .first()
+        )
+        if not order:
+            order = self.create_from_table_session(table_session_id, payment_method=payment_method)
+            order = (
+                self._db.query(Order)
+                .options(joinedload(Order.payment), joinedload(Order.table_session))
+                .filter(Order.id == order.id)
+                .first()
+            )
+        session = self._db.query(TableSession).filter(TableSession.id == table_session_id).first()
+        if not order or not session:
+            raise DomainError("Comanda ou pedido do salao nao encontrado.", code="DineInOrderNotFound")
+
+        method = PaymentMethod(payment_method) if payment_method in PaymentMethod._value2member_map_ else PaymentMethod.cash
+        payment = order.payment or Payment(
+            id=str(uuid.uuid4()),
+            order_id=order.id,
+            method=method,
+            status=PaymentStatus.pending,
+            amount=order.total,
+            gateway="dine_in",
+            provider="salao",
+            external_reference=order.external_reference or order.id,
+        )
+        if payment.status not in {PaymentStatus.pending, PaymentStatus.approved, PaymentStatus.paid}:
+            raise DomainError("Somente pagamentos pendentes podem ser confirmados.", code="PaymentNotPending")
+
+        now = datetime.now(timezone.utc)
+        if payment.status == PaymentStatus.pending:
+            payment_sm.transition(payment.id, payment.status.value, PaymentStatus.approved.value)
+            payment.status = PaymentStatus.approved
+            payment.method = method
+            payment.gateway = "dine_in"
+            payment.provider = "salao"
+            payment.amount = order.total
+            payment.transaction_id = payment.transaction_id or f"SALAO-{uuid.uuid4().hex[:8].upper()}"
+            payment.external_reference = payment.external_reference or order.external_reference or order.id
+            payment.paid_at = payment.paid_at or now
+            payment.updated_at = now
+            self._db.add(payment)
+
+        order.paid_at = order.paid_at or now
+        order.updated_at = now
+        session.status = "paid"
+        session.closed_at = session.closed_at or now
+        session.updated_at = now
+        if session.table:
+            session.table.status = "cleaning"
+
+        self._db.flush()
+        sync_customer_order_metrics(self._db, order.customer_id)
+        self._db.commit()
+        self._db.refresh(order)
+
+        bus.publish(PaymentConfirmed(
+            payment_id=payment.id,
+            order_id=order.id,
+            amount=payment.amount,
+            gateway=payment.gateway,
+            transaction_id=payment.transaction_id or "",
+        ))
+        return order
+
     def change_status(
         self,
         order_id: str,
@@ -899,6 +1086,7 @@ class OrderService:
         customer_id: str | None = None,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
+        sales_channel: str | None = None,
         limit: int = 50,
     ) -> list[Order]:
         q = self._db.query(Order).options(joinedload(Order.items).joinedload(OrderItem.flavors))
@@ -906,6 +1094,8 @@ class OrderService:
             q = q.filter(Order.status == OrderStatus(status))
         if customer_id:
             q = q.filter(Order.customer_id == customer_id)
+        if sales_channel:
+            q = q.filter(Order.sales_channel == sales_channel)
         if date_from:
             q = q.filter(Order.created_at >= date_from)
         if date_to:

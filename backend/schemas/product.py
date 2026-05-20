@@ -127,6 +127,10 @@ class ProductBase(BaseModel):
     rating: float = Field(default=4.5, ge=1.0, le=5.0)
     active: bool = True
     best_seller_badge_mode: str = "off"  # "off" | "manual" | "auto"
+    visible_delivery: bool = True
+    visible_dine_in: bool = True
+    delivery_price: Optional[float] = Field(default=None, ge=0)
+    dine_in_price: Optional[float] = Field(default=None, ge=0)
 
 
 class ProductCreate(ProductBase):
@@ -144,6 +148,10 @@ class ProductUpdate(BaseModel):
     rating: Optional[float] = Field(default=None, ge=1.0, le=5.0)
     active: Optional[bool] = None
     best_seller_badge_mode: Optional[str] = None
+    visible_delivery: Optional[bool] = None
+    visible_dine_in: Optional[bool] = None
+    delivery_price: Optional[float] = Field(default=None, ge=0)
+    dine_in_price: Optional[float] = Field(default=None, ge=0)
 
 
 class ProductOut(ProductBase):

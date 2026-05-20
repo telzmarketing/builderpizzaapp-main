@@ -400,6 +400,7 @@ export default function AdminProducts() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<Pizza> & { product_type?: string }>({
     name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza",
+    visible_delivery: true, visible_dine_in: true, delivery_price: null, dine_in_price: null,
   });
 
   const selectedCategoryId = activeCatalogCategories.find((cat) => cat.name === ((formData as any).category || ""))?.id ?? "";
@@ -418,6 +419,16 @@ export default function AdminProducts() {
     }
     const category = ((formData as any).category || "").trim();
     const subcategory = ((formData as any).subcategory || "").trim();
+    const visibleDelivery = (formData as any).visible_delivery !== false;
+    const visibleDineIn = (formData as any).visible_dine_in !== false;
+    if (!visibleDelivery && !visibleDineIn) {
+      alert("Selecione pelo menos um canal: Delivery ou Salao.");
+      return;
+    }
+    const deliveryPriceRaw = (formData as any).delivery_price;
+    const dineInPriceRaw = (formData as any).dine_in_price;
+    const deliveryPrice = deliveryPriceRaw === "" || deliveryPriceRaw === null || deliveryPriceRaw === undefined ? null : Number(deliveryPriceRaw);
+    const dineInPrice = dineInPriceRaw === "" || dineInPriceRaw === null || dineInPriceRaw === undefined ? null : Number(dineInPriceRaw);
     if (category && !catalogCategoryNames.includes(category)) {
       alert("Selecione uma categoria cadastrada na aba Categorias.");
       return;
@@ -427,8 +438,14 @@ export default function AdminProducts() {
       return;
     }
     try {
+      const channelFields = {
+        visible_delivery: visibleDelivery,
+        visible_dine_in: visibleDineIn,
+        delivery_price: Number.isFinite(deliveryPrice as number) ? deliveryPrice : null,
+        dine_in_price: Number.isFinite(dineInPrice as number) ? dineInPrice : null,
+      };
       if (editingId) {
-        await updateProduct(editingId, { ...formData, price, category: category || null, subcategory: subcategory || null } as any);
+        await updateProduct(editingId, { ...formData, ...channelFields, price, category: category || null, subcategory: subcategory || null } as any);
         setEditingId(null);
       } else {
         await addProduct({
@@ -438,9 +455,10 @@ export default function AdminProducts() {
           subcategory: subcategory || null,
           product_type: formData.product_type || "pizza",
           rating: formData.rating || 4.5, active: true,
+          ...channelFields,
         } as any);
       }
-      setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza" });
+      setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, delivery_price: null, dine_in_price: null });
       setShowForm(false);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao salvar produto.");
@@ -454,6 +472,10 @@ export default function AdminProducts() {
       subcategory: (product as any).subcategory ?? "",
       product_type: (product as any).product_type ?? "pizza",
       best_seller_badge_mode: (product as any).best_seller_badge_mode ?? "off",
+      visible_delivery: (product as any).visible_delivery !== false,
+      visible_dine_in: (product as any).visible_dine_in !== false,
+      delivery_price: (product as any).delivery_price ?? null,
+      dine_in_price: (product as any).dine_in_price ?? null,
     } as any);
     setEditingId(product.id);
     setShowForm(true);
@@ -1252,7 +1274,7 @@ export default function AdminProducts() {
             <div className="flex items-center gap-3">
               {activeTab === "produtos" && (
                 <button
-                  onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza" }); }}
+                  onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, delivery_price: null, dine_in_price: null }); }}
                   className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
                 >
                   <Plus size={20} />
@@ -1315,7 +1337,7 @@ export default function AdminProducts() {
                   ))}
                 </select>
                 <button
-                  onClick={() => { setShowForm(true); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza" }); }}
+                  onClick={() => { setShowForm(true); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, delivery_price: null, dine_in_price: null }); }}
                   className="flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
                 >
                   <Plus size={20} />
@@ -1454,6 +1476,14 @@ export default function AdminProducts() {
                         </div>
 
                         <p className="text-stone text-sm mb-3 line-clamp-2">{product.description}</p>
+                        <div className="mb-3 flex flex-wrap gap-1.5">
+                          {(product as any).visible_delivery !== false && (
+                            <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-[11px] font-bold text-blue-300">Delivery</span>
+                          )}
+                          {(product as any).visible_dine_in !== false && (
+                            <span className="rounded-full border border-gold/30 bg-gold/10 px-2 py-0.5 text-[11px] font-bold text-gold">Salao</span>
+                          )}
+                        </div>
                         <div className="flex justify-end items-center mb-4">
                           <span className="text-stone text-sm">⭐ {product.rating}</span>
                         </div>
@@ -2006,6 +2036,58 @@ export default function AdminProducts() {
                     step="0.01"
                   />
                   <p className="text-stone text-xs mt-1">Usado como preco inicial e fallback. Tamanhos podem ser configurados depois no card do produto.</p>
+                </div>
+                <div className="rounded-xl border border-surface-03 bg-surface-03/35 p-4">
+                  <div className="mb-3">
+                    <h4 className="text-sm font-bold text-cream">Canais de venda</h4>
+                    <p className="text-xs text-stone">Controle onde este produto aparece sem duplicar o cadastro.</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-02 px-3 py-2 text-sm text-parchment">
+                      <input
+                        type="checkbox"
+                        checked={(formData as any).visible_delivery !== false}
+                        onChange={(event) => setFormData({ ...formData, visible_delivery: event.target.checked } as any)}
+                        className="accent-gold"
+                      />
+                      Visivel no Delivery
+                    </label>
+                    <label className="flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-02 px-3 py-2 text-sm text-parchment">
+                      <input
+                        type="checkbox"
+                        checked={(formData as any).visible_dine_in !== false}
+                        onChange={(event) => setFormData({ ...formData, visible_dine_in: event.target.checked } as any)}
+                        className="accent-gold"
+                      />
+                      Visivel no Salao
+                    </label>
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="block text-parchment text-xs font-medium mb-1.5">Preco especifico Delivery</label>
+                      <input
+                        type="number"
+                        value={(formData as any).delivery_price ?? ""}
+                        onChange={(event) => setFormData({ ...formData, delivery_price: event.target.value === "" ? null : Number(event.target.value) } as any)}
+                        className={cls}
+                        placeholder="Usar preco base"
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-parchment text-xs font-medium mb-1.5">Preco especifico Salao</label>
+                      <input
+                        type="number"
+                        value={(formData as any).dine_in_price ?? ""}
+                        onChange={(event) => setFormData({ ...formData, dine_in_price: event.target.value === "" ? null : Number(event.target.value) } as any)}
+                        className={cls}
+                        placeholder="Usar preco base"
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
+                  </div>
                 </div>
                 <div>
                   <div className="flex items-center justify-between gap-3 mb-2">

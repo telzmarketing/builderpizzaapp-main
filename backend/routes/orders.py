@@ -170,6 +170,9 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
         "is_scheduled": bool(order.is_scheduled),
         "scheduled_for": order.scheduled_for,
         "coupon_id": order.coupon_id,
+        "sales_channel": order.sales_channel or "delivery",
+        "table_id": order.table_id,
+        "table_session_id": order.table_session_id,
         "items": items,
         "created_at": order.created_at,
         "updated_at": order.updated_at,
@@ -221,6 +224,7 @@ def list_orders(
     customer_id: str | None = Query(default=None),
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
+    sales_channel: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
@@ -240,6 +244,7 @@ def list_orders(
             customer_id=customer_id,
             date_from=date_from,
             date_to=date_to,
+            sales_channel=sales_channel,
             limit=limit,
         )
         return ok(_serialize_orders(db, orders))

@@ -248,6 +248,10 @@ export interface ApiProduct {
   product_type: string | null;  // "pizza" | "drink" | "other"
   rating: number;
   active: boolean;
+  visible_delivery?: boolean;
+  visible_dine_in?: boolean;
+  delivery_price?: number | null;
+  dine_in_price?: number | null;
   created_at: string;
   updated_at: string;
   sizes?: ApiProductSize[];
@@ -898,6 +902,9 @@ export interface ApiOrder {
   is_scheduled?: boolean;
   scheduled_for?: string | null;
   coupon_id: string | null;
+  sales_channel?: string;
+  table_id?: string | null;
+  table_session_id?: string | null;
   pedido_status?: OrderStatus;
   payment_status?: ApiPayment["status"] | "pending";
   payment_method?: ApiPayment["method"] | null;
@@ -1987,9 +1994,10 @@ export const adminAuthApi = {
 // ─── Products ─────────────────────────────────────────────────────────────────
 
 export const productsApi = {
-  list: (activeOnly = true, productType?: string) => {
+  list: (activeOnly = true, productType?: string, channel?: "delivery" | "dine_in") => {
     const qs = new URLSearchParams({ active_only: activeOnly ? "true" : "false" });
     if (productType) qs.set("product_type", productType);
+    if (channel) qs.set("channel", channel);
     return get<ApiProduct[]>(`/products?${qs.toString()}`);
   },
 
@@ -2167,12 +2175,13 @@ export const ordersApi = {
     return order;
   },
 
-  list: (params?: { status?: OrderStatus; customer_id?: string; date_from?: string; date_to?: string; limit?: number }) => {
+  list: (params?: { status?: OrderStatus; customer_id?: string; date_from?: string; date_to?: string; sales_channel?: string; limit?: number }) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.customer_id) qs.set("customer_id", params.customer_id);
     if (params?.date_from) qs.set("date_from", params.date_from);
     if (params?.date_to) qs.set("date_to", params.date_to);
+    if (params?.sales_channel) qs.set("sales_channel", params.sales_channel);
     if (params?.limit) qs.set("limit", String(params.limit));
     const q = qs.toString();
     return request<ApiOrder[]>(
@@ -2204,6 +2213,172 @@ export const ordersApi = {
 };
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
+
+export type ApiRestaurantTableStatus = "available" | "occupied" | "reserved" | "cleaning" | "inactive";
+export type ApiReservationStatus = "pending" | "confirmed" | "seated" | "cancelled" | "no_show" | "completed";
+export type ApiTableSessionStatus = "open" | "pending_payment" | "paid" | "closed" | "cancelled";
+
+export interface ApiRestaurantTable {
+  id: string;
+  number: string;
+  name?: string | null;
+  capacity: number;
+  location?: string | null;
+  status: ApiRestaurantTableStatus;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiReservation {
+  id: string;
+  customer_id?: string | null;
+  customer_name: string;
+  customer_phone: string;
+  customer_email?: string | null;
+  table_id?: string | null;
+  reservation_date: string;
+  reservation_time: string;
+  guests_count: number;
+  status: ApiReservationStatus;
+  notes?: string | null;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiTableSession {
+  id: string;
+  table_id: string;
+  customer_id?: string | null;
+  opened_at: string;
+  closed_at?: string | null;
+  status: ApiTableSessionStatus;
+  subtotal: number;
+  service_fee: number;
+  discount: number;
+  total: number;
+  waiter_name?: string | null;
+  notes?: string | null;
+  items?: ApiTableSessionItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiTableSessionItem {
+  id: string;
+  table_session_id: string;
+  product_id: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiSalaoExperienceCard {
+  title: string;
+  text: string;
+  image: string;
+}
+
+export interface ApiSalaoMenuItem {
+  name: string;
+  description: string;
+}
+
+export interface ApiSalaoPageSettings {
+  id: string;
+  enabled: boolean;
+  hero_eyebrow: string;
+  hero_title: string;
+  hero_subtitle: string;
+  hero_description: string;
+  primary_cta_label: string;
+  secondary_cta_label: string;
+  hero_background_image: string;
+  hero_plate_image: string;
+  experience_eyebrow: string;
+  experience_title: string;
+  experience_text: string;
+  experience_cards: ApiSalaoExperienceCard[];
+  menu_eyebrow: string;
+  menu_title: string;
+  menu_items: ApiSalaoMenuItem[];
+  reservation_eyebrow: string;
+  reservation_title: string;
+  reservation_text: string;
+  reservation_background_image: string;
+  address: string;
+  hours: string;
+  phone: string;
+  whatsapp_url: string;
+  seo_title: string;
+  seo_description: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export type ApiSalaoPageSettingsUpdate = Partial<Omit<ApiSalaoPageSettings, "id" | "created_at" | "updated_at">>;
+
+export const salaoApi = {
+  tables: {
+    list: (params?: { include_inactive?: boolean }) =>
+      get<ApiRestaurantTable[]>(`/salao/tables${params?.include_inactive ? "?include_inactive=true" : ""}`),
+    create: (data: Omit<ApiRestaurantTable, "id" | "created_at" | "updated_at">) =>
+      post<ApiRestaurantTable>("/salao/tables", data),
+    update: (id: string, data: Partial<Omit<ApiRestaurantTable, "id" | "created_at" | "updated_at">>) =>
+      patch<ApiRestaurantTable>(`/salao/tables/${id}`, data),
+    updateStatus: (id: string, status: ApiRestaurantTableStatus) =>
+      patch<ApiRestaurantTable>(`/salao/tables/${id}/status`, { status }),
+  },
+  reservations: {
+    list: (params?: { status?: ApiReservationStatus }) =>
+      get<ApiReservation[]>(`/salao/reservations${params?.status ? `?status=${params.status}` : ""}`),
+    create: (data: Omit<ApiReservation, "id" | "created_at" | "updated_at">) =>
+      post<ApiReservation>("/salao/reservations", data),
+    update: (id: string, data: Partial<Omit<ApiReservation, "id" | "created_at" | "updated_at">>) =>
+      patch<ApiReservation>(`/salao/reservations/${id}`, data),
+    updateStatus: (id: string, status: ApiReservationStatus) =>
+      patch<ApiReservation>(`/salao/reservations/${id}/status`, { status }),
+    publicCreate: (data: {
+      customer_name: string;
+      customer_phone: string;
+      customer_email?: string | null;
+      reservation_date: string;
+      reservation_time: string;
+      guests_count: number;
+      notes?: string | null;
+    }) => post<ApiReservation>("/salao/reservations/public", data),
+  },
+  sessions: {
+    list: (params?: { status?: ApiTableSessionStatus }) =>
+      get<ApiTableSession[]>(`/salao/table-sessions${params?.status ? `?status=${params.status}` : ""}`),
+    open: (data: Omit<ApiTableSession, "id" | "opened_at" | "closed_at" | "created_at" | "updated_at">) =>
+      post<ApiTableSession>("/salao/table-sessions", data),
+    update: (id: string, data: Partial<Omit<ApiTableSession, "id" | "opened_at" | "closed_at" | "created_at" | "updated_at">>) =>
+      patch<ApiTableSession>(`/salao/table-sessions/${id}`, data),
+    close: (id: string, data: { subtotal?: number; service_fee?: number; discount?: number; total?: number; status?: "paid" | "closed"; notes?: string | null }) =>
+      post<ApiTableSession>(`/salao/table-sessions/${id}/close`, data),
+    addItem: (id: string, data: { product_id: string; quantity: number; unit_price?: number | null; notes?: string | null }) =>
+      post<ApiTableSession>(`/salao/table-sessions/${id}/items`, data),
+    updateItem: (id: string, itemId: string, data: { quantity?: number; unit_price?: number | null; notes?: string | null }) =>
+      patch<ApiTableSession>(`/salao/table-sessions/${id}/items/${itemId}`, data),
+    deleteItem: (id: string, itemId: string) =>
+      del<ApiTableSession>(`/salao/table-sessions/${id}/items/${itemId}`),
+    createOrder: (id: string, data: { payment_method?: "cash" | "debit_card" | "credit_card" | "pix" } = {}) =>
+      post<{ order_id: string }>(`/salao/table-sessions/${id}/order`, { payment_method: data.payment_method ?? "cash" }),
+    confirmPayment: (id: string, data: { payment_method?: "cash" | "debit_card" | "credit_card" | "pix" } = {}) =>
+      post<{ order_id: string }>(`/salao/table-sessions/${id}/payment`, { payment_method: data.payment_method ?? "cash" }),
+  },
+};
+
+export const salaoPageApi = {
+  get: () => get<ApiSalaoPageSettings>("/salao/page"),
+  update: (data: ApiSalaoPageSettingsUpdate) => put<ApiSalaoPageSettings>("/salao/page", data),
+};
 
 export const storeOperationApi = {
   status: () => get<StoreOperationStatus>("/store-operation/status"),

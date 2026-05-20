@@ -76,6 +76,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     children: [
       { path: "/painel/orders", icon: ShoppingBag, label: "Pedidos", permissions: ["pedidos"] },
       { path: "/painel/cozinha", icon: ChefHat, label: "Cozinha", permissions: ["cozinha"] },
+      { path: "/painel/salao", icon: ClipboardList, label: "Salao & Reservas", permissions: ["pedidos"] },
       { path: "/painel/logistica", icon: Route, label: "Logistica", permissions: ["entregas", "motoboys"] },
     ],
   },
@@ -115,7 +116,8 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
   {
     label: "Configuracoes",
     children: [
-      { path: "/painel/conteudo", icon: FileText, label: "Conteudo", permissions: ["loja_online"] },
+      { path: "/painel/conteudo", icon: FileText, label: "Pagina Delivery", permissions: ["loja_online"] },
+      { path: "/painel/salao/pagina", icon: FileText, label: "Pagina Salao", permissions: ["loja_online"] },
       { path: "/painel/pagamentos", icon: CreditCard, label: "Pagamentos", permissions: ["formas_pagamento"] },
       { path: "/painel/frete", icon: Truck, label: "Entregas e Fretes", permissions: ["frete"] },
       { path: "/painel/funcionamento", icon: Clock, label: "Funcionamento da Loja", permissions: ["funcionamento"] },

@@ -42,6 +42,8 @@ from backend.routes import bi as bi_routes
 from backend.routes import store_notifications as store_notifications_routes
 from backend.routes import upsells as upsells_routes
 from backend.routes import agente_whatsapp as agente_whatsapp_routes
+from backend.routes import salao as salao_routes
+from backend.routes import salao_page as salao_page_routes
 
 settings = get_settings()
 
@@ -249,6 +251,33 @@ def _run_migrations():
         "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS gift_reason VARCHAR(100)",
         "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS coupon_id VARCHAR",
         "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS coupon_code VARCHAR(50)",
+        # Salao & Reservas foundation
+        "CREATE TABLE IF NOT EXISTS restaurant_tables (id VARCHAR PRIMARY KEY, number VARCHAR(30) NOT NULL UNIQUE, name VARCHAR(120), capacity INTEGER NOT NULL DEFAULT 2, location VARCHAR(120), status VARCHAR(30) NOT NULL DEFAULT 'available', active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_restaurant_tables_number ON restaurant_tables(number)",
+        "CREATE INDEX IF NOT EXISTS ix_restaurant_tables_status ON restaurant_tables(status)",
+        "CREATE TABLE IF NOT EXISTS reservations (id VARCHAR PRIMARY KEY, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, customer_name VARCHAR(200) NOT NULL, customer_phone VARCHAR(40) NOT NULL, customer_email VARCHAR(200), table_id VARCHAR REFERENCES restaurant_tables(id) ON DELETE SET NULL, reservation_date DATE NOT NULL, reservation_time TIME NOT NULL, guests_count INTEGER NOT NULL DEFAULT 2, status VARCHAR(30) NOT NULL DEFAULT 'pending', notes TEXT, source VARCHAR(40) NOT NULL DEFAULT 'salao', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_reservations_customer_id ON reservations(customer_id)",
+        "CREATE INDEX IF NOT EXISTS ix_reservations_table_id ON reservations(table_id)",
+        "CREATE INDEX IF NOT EXISTS ix_reservations_date_status ON reservations(reservation_date, status)",
+        "CREATE TABLE IF NOT EXISTS table_sessions (id VARCHAR PRIMARY KEY, table_id VARCHAR NOT NULL REFERENCES restaurant_tables(id) ON DELETE RESTRICT, customer_id VARCHAR REFERENCES customers(id) ON DELETE SET NULL, opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), closed_at TIMESTAMPTZ, status VARCHAR(30) NOT NULL DEFAULT 'open', subtotal FLOAT NOT NULL DEFAULT 0, service_fee FLOAT NOT NULL DEFAULT 0, discount FLOAT NOT NULL DEFAULT 0, total FLOAT NOT NULL DEFAULT 0, waiter_name VARCHAR(120), notes TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_table_sessions_table_id ON table_sessions(table_id)",
+        "CREATE INDEX IF NOT EXISTS ix_table_sessions_customer_id ON table_sessions(customer_id)",
+        "CREATE INDEX IF NOT EXISTS ix_table_sessions_status ON table_sessions(status)",
+        "CREATE TABLE IF NOT EXISTS table_session_items (id VARCHAR PRIMARY KEY, table_session_id VARCHAR NOT NULL REFERENCES table_sessions(id) ON DELETE CASCADE, product_id VARCHAR NOT NULL REFERENCES products(id) ON DELETE RESTRICT, product_name VARCHAR(200) NOT NULL, quantity INTEGER NOT NULL DEFAULT 1, unit_price FLOAT NOT NULL DEFAULT 0, total_price FLOAT NOT NULL DEFAULT 0, notes TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE INDEX IF NOT EXISTS ix_table_session_items_table_session_id ON table_session_items(table_session_id)",
+        "CREATE INDEX IF NOT EXISTS ix_table_session_items_product_id ON table_session_items(product_id)",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS sales_channel VARCHAR(30) NOT NULL DEFAULT 'delivery'",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_id VARCHAR REFERENCES restaurant_tables(id) ON DELETE SET NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_session_id VARCHAR REFERENCES table_sessions(id) ON DELETE SET NULL",
+        "CREATE INDEX IF NOT EXISTS ix_orders_sales_channel ON orders(sales_channel)",
+        "CREATE INDEX IF NOT EXISTS ix_orders_table_session_id ON orders(table_session_id)",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS visible_delivery BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS visible_dine_in BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS delivery_price FLOAT",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS dine_in_price FLOAT",
+        # Pagina publica do Salao
+        "CREATE TABLE IF NOT EXISTS salao_page_settings (id VARCHAR PRIMARY KEY DEFAULT 'default', enabled BOOLEAN NOT NULL DEFAULT TRUE, hero_eyebrow VARCHAR(200) NOT NULL DEFAULT 'Restaurante italiano em Sao Paulo', hero_title VARCHAR(200) NOT NULL DEFAULT 'Moschettieri', hero_subtitle VARCHAR(300) NOT NULL DEFAULT 'pizza, sala e experiencia.', hero_description TEXT NOT NULL DEFAULT 'Uma pagina institucional para o salao, reservas e apresentacao premium do restaurante, separada da loja delivery e integrada ao mesmo ecossistema.', primary_cta_label VARCHAR(120) NOT NULL DEFAULT 'Reservar mesa', secondary_cta_label VARCHAR(120) NOT NULL DEFAULT 'Ver cardapio', hero_background_image TEXT NOT NULL DEFAULT '/salao/hero-ambience.jpg', hero_plate_image TEXT NOT NULL DEFAULT '/salao/hero-plate.png', experience_eyebrow VARCHAR(120) NOT NULL DEFAULT 'A casa', experience_title VARCHAR(300) NOT NULL DEFAULT 'Uma experiencia pensada para o salao.', experience_text TEXT NOT NULL DEFAULT 'O canal do salao nasce separado da loja delivery: outro visual, outra navegacao e outro objetivo comercial, mantendo o mesmo ERP, CRM, BI e base operacional.', experience_cards_json TEXT NOT NULL DEFAULT '[]', menu_eyebrow VARCHAR(120) NOT NULL DEFAULT 'Cardapio do salao', menu_title VARCHAR(300) NOT NULL DEFAULT 'Destaques da mesa.', menu_items_json TEXT NOT NULL DEFAULT '[]', reservation_eyebrow VARCHAR(120) NOT NULL DEFAULT 'Reservas', reservation_title VARCHAR(300) NOT NULL DEFAULT 'Reserve sua mesa.', reservation_text TEXT NOT NULL DEFAULT 'Solicite sua reserva online. A equipe confirma disponibilidade e horario pelo canal de contato informado.', reservation_background_image TEXT NOT NULL DEFAULT '/salao/reservation.jpg', address VARCHAR(300) NOT NULL DEFAULT 'Santana, Sao Paulo - SP', hours VARCHAR(300) NOT NULL DEFAULT 'Funcionamento configuravel pelo modulo Pagina Salao.', phone VARCHAR(120) NOT NULL DEFAULT 'Contato e WhatsApp integrados ao ecossistema.', whatsapp_url TEXT NOT NULL DEFAULT '', seo_title VARCHAR(200) NOT NULL DEFAULT 'Moschettieri | Restaurante', seo_description TEXT NOT NULL DEFAULT 'Restaurante Moschettieri: experiencia premium de salao, cardapio institucional e reservas online.', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        "INSERT INTO salao_page_settings (id) VALUES ('default') ON CONFLICT DO NOTHING",
         # ── Home catalog config ───────────────────────────────────────────
         "CREATE TABLE IF NOT EXISTS home_catalog_config (id VARCHAR PRIMARY KEY DEFAULT 'default', mode VARCHAR(20) NOT NULL DEFAULT 'all', selected_categories TEXT DEFAULT '[]', selected_product_ids TEXT DEFAULT '[]', show_promotions BOOLEAN DEFAULT TRUE, updated_at TIMESTAMPTZ DEFAULT NOW())",
         "INSERT INTO home_catalog_config (id) VALUES ('default') ON CONFLICT DO NOTHING",
@@ -1107,6 +1136,8 @@ app.include_router(bi_routes.router)
 app.include_router(store_notifications_routes.router)
 app.include_router(upsells_routes.router)
 app.include_router(agente_whatsapp_routes.router)
+app.include_router(salao_routes.router)
+app.include_router(salao_page_routes.router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")
@@ -1149,6 +1180,8 @@ app.include_router(bi_routes.router, prefix="/api")
 app.include_router(store_notifications_routes.router, prefix="/api")
 app.include_router(upsells_routes.router, prefix="/api")
 app.include_router(agente_whatsapp_routes.router, prefix="/api")
+app.include_router(salao_routes.router, prefix="/api")
+app.include_router(salao_page_routes.router, prefix="/api")
 
 # ── Static files (uploaded images) ───────────────────────────────────────────
 # Must be mounted AFTER all route registrations.
