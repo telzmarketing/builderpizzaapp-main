@@ -2,15 +2,152 @@ export interface SalaoSiteTextTarget {
   id: string;
   tag: string;
   value: string;
+  blockId: string;
+  blockTitle: string;
+  context: string;
 }
 
 export interface SalaoSiteImageTarget {
   id: string;
   src: string;
   alt: string;
+  blockId: string;
+  blockTitle: string;
+  context: string;
+  width: string;
+  height: string;
+}
+
+export interface SalaoSiteBlock {
+  id: string;
+  title: string;
+  description: string;
+  textIds: string[];
+  imageIds: string[];
 }
 
 const SKIP_TEXT_PARENTS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "META", "LINK", "TITLE", "HEAD"]);
+
+const SECTION_ORDER = [
+  "781f60e",
+  "8b3e972",
+  "622ae3c",
+  "9b4b28c",
+  "8246d51",
+  "7082ce9",
+  "4d7a5a0",
+  "e677573",
+  "0d41703",
+  "7a5b8b1",
+  "e7af066",
+  "54d2708",
+  "d594721",
+  "e83d900",
+  "964391c",
+  "f97eb41",
+  "5618613",
+  "1c1b66b",
+  "2952b59",
+  "049259e",
+  "header",
+  "footer",
+  "uncategorized",
+];
+
+const SECTION_META: Record<string, { title: string; description: string }> = {
+  "781f60e": {
+    title: "Topo - faixa de contato",
+    description: "Endereco, telefone, e-mail e informacoes rapidas acima do menu.",
+  },
+  "8b3e972": {
+    title: "Topo - logo e navegacao",
+    description: "Logo principal, menus, links e chamada de reserva do cabecalho.",
+  },
+  "622ae3c": {
+    title: "Hero - slide 1",
+    description: "Primeiro destaque visual da abertura, com chamada, texto, botao e imagens.",
+  },
+  "9b4b28c": {
+    title: "Hero - slide 2",
+    description: "Segundo destaque visual do carrossel inicial.",
+  },
+  "8246d51": {
+    title: "Hero - slide 3",
+    description: "Terceiro destaque visual do carrossel inicial.",
+  },
+  "7082ce9": {
+    title: "Newsletter e reserva rapida",
+    description: "Bloco com convite de assinatura, redes sociais e chamada para reserva.",
+  },
+  "4d7a5a0": {
+    title: "Apresentacao do restaurante",
+    description: "Descricao institucional, imagem principal e chamadas para menu, reservas e eventos.",
+  },
+  "e677573": {
+    title: "Diferenciais e pratos",
+    description: "Beneficios, destaques de experiencia e chamada para pratos especiais.",
+  },
+  "0d41703": {
+    title: "Ocasioes e celebracoes",
+    description: "Lista de momentos e motivos para visitar o salao.",
+  },
+  "7a5b8b1": {
+    title: "Cardapio - categorias",
+    description: "Titulo do cardapio institucional e abas de categorias.",
+  },
+  "e7af066": {
+    title: "Cardapio - Indian",
+    description: "Itens e imagens da primeira categoria do cardapio.",
+  },
+  "54d2708": {
+    title: "Cardapio - Italian",
+    description: "Itens e imagens da segunda categoria do cardapio.",
+  },
+  "d594721": {
+    title: "Cardapio - French",
+    description: "Itens e imagens da terceira categoria do cardapio.",
+  },
+  "e83d900": {
+    title: "Cardapio - Chinese",
+    description: "Itens, imagens e chamada para ver o cardapio completo.",
+  },
+  "964391c": {
+    title: "Especiais e precos",
+    description: "Lista de pratos especiais, descricoes, categorias e valores.",
+  },
+  "f97eb41": {
+    title: "Equipe culinaria",
+    description: "Chefs, cargos, imagens e apresentacao da equipe.",
+  },
+  "5618613": {
+    title: "Galeria do ambiente",
+    description: "Imagens e nomes dos ambientes do restaurante.",
+  },
+  "1c1b66b": {
+    title: "Noticias e conteudos",
+    description: "Cards de blog, datas, textos de apoio e imagens.",
+  },
+  "2952b59": {
+    title: "Formulario de reservas",
+    description: "Textos, horarios, campos e mensagens do bloco de reserva.",
+  },
+  "049259e": {
+    title: "Rodape",
+    description: "Logo, contatos, links, newsletter, lojas de app e pagamentos.",
+  },
+  header: {
+    title: "Cabecalho",
+    description: "Itens gerais do cabecalho que nao pertencem a um bloco especifico.",
+  },
+  footer: {
+    title: "Rodape",
+    description: "Itens gerais do rodape que nao pertencem a um bloco especifico.",
+  },
+  uncategorized: {
+    title: "Outros conteudos",
+    description: "Textos e imagens encontrados fora dos blocos principais do layout.",
+  },
+};
 
 function parseHtml(html: string): Document {
   return new DOMParser().parseFromString(html, "text/html");
@@ -40,6 +177,7 @@ export function extractSalaoSiteTextTargets(html: string): SalaoSiteTextTarget[]
     id: `text-${index}`,
     tag: node.parentElement?.tagName.toLowerCase() ?? "text",
     value: node.nodeValue?.replace(/\s+/g, " ").trim() ?? "",
+    ...getElementMeta(node.parentElement),
   }));
 }
 
@@ -49,7 +187,36 @@ export function extractSalaoSiteImageTargets(html: string): SalaoSiteImageTarget
     id: `image-${index}`,
     src: image.getAttribute("src") ?? "",
     alt: image.getAttribute("alt") ?? "",
+    width: image.getAttribute("width") ?? "",
+    height: image.getAttribute("height") ?? "",
+    ...getElementMeta(image),
   }));
+}
+
+export function buildSalaoSiteBlocks(
+  textTargets: SalaoSiteTextTarget[],
+  imageTargets: SalaoSiteImageTarget[],
+): SalaoSiteBlock[] {
+  const blocks = new Map<string, SalaoSiteBlock>();
+
+  const ensureBlock = (id: string) => {
+    const meta = SECTION_META[id] ?? SECTION_META.uncategorized;
+    if (!blocks.has(id)) {
+      blocks.set(id, {
+        id,
+        title: meta.title,
+        description: meta.description,
+        textIds: [],
+        imageIds: [],
+      });
+    }
+    return blocks.get(id)!;
+  };
+
+  textTargets.forEach((target) => ensureBlock(target.blockId).textIds.push(target.id));
+  imageTargets.forEach((target) => ensureBlock(target.blockId).imageIds.push(target.id));
+
+  return Array.from(blocks.values()).sort((a, b) => getBlockOrder(a.id) - getBlockOrder(b.id));
 }
 
 function ensureBase(doc: Document) {
@@ -57,6 +224,55 @@ function ensureBase(doc: Document) {
   const base = doc.createElement("base");
   base.href = "/salao-site/";
   doc.head.prepend(base);
+}
+
+function getElementMeta(element: Element | null) {
+  const blockId = getBlockId(element);
+  const meta = SECTION_META[blockId] ?? SECTION_META.uncategorized;
+  return {
+    blockId,
+    blockTitle: meta.title,
+    context: getElementContext(element),
+  };
+}
+
+function getBlockId(element: Element | null) {
+  if (!element) return "uncategorized";
+
+  const knownSection = getElementorAncestors(element).find((ancestor) => {
+    const id = ancestor.getAttribute("data-id") ?? "";
+    return Boolean(SECTION_META[id]);
+  });
+  if (knownSection) return knownSection.getAttribute("data-id") ?? "uncategorized";
+
+  if (element.closest("#header")) return "header";
+  if (element.closest("#footer")) return "footer";
+  return "uncategorized";
+}
+
+function getElementorAncestors(element: Element) {
+  const ancestors: Element[] = [];
+  let current: Element | null = element;
+
+  while (current) {
+    if (current.matches(".elementor-element[data-id]")) ancestors.push(current);
+    current = current.parentElement;
+  }
+
+  return ancestors;
+}
+
+function getElementContext(element: Element | null) {
+  if (!element) return "conteudo";
+  const widget = element.closest("[data-widget_type]");
+  const widgetType = widget?.getAttribute("data-widget_type");
+  if (widgetType) return widgetType.replace(".default", "");
+  return element.tagName.toLowerCase();
+}
+
+function getBlockOrder(id: string) {
+  const index = SECTION_ORDER.indexOf(id);
+  return index >= 0 ? index : SECTION_ORDER.length;
 }
 
 export function applySalaoSiteOverrides(

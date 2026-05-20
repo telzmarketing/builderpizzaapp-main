@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Eye, FileText, Image, Loader2, RotateCcw, Save, Search, Settings } from "lucide-react";
+import { Check, Eye, FileText, Image, Layers3, Loader2, RotateCcw, Save, Search, Settings } from "lucide-react";
 import {
   AdminPageContent,
   AdminPageHeader,
@@ -11,29 +11,31 @@ import ImageUpload from "@/components/admin/ImageUpload";
 import { resolveAssetUrl, salaoPageApi, type ApiSalaoPageSettings } from "@/lib/api";
 import {
   applySalaoSiteOverrides,
+  buildSalaoSiteBlocks,
   extractSalaoSiteImageTargets,
   extractSalaoSiteTextTargets,
+  type SalaoSiteBlock,
   type SalaoSiteImageTarget,
   type SalaoSiteTextTarget,
 } from "@/lib/salaoSiteCms";
 
-type Tab = "texts" | "images" | "seo" | "preview";
+type Tab = "blocks" | "seo" | "preview";
 
 const SALAO_SITE_URL = "/salao-site/index.html";
 
 const TABS: AdminPageTab<Tab>[] = [
-  { id: "texts", icon: <FileText size={15} />, label: "Textos" },
-  { id: "images", icon: <Image size={15} />, label: "Imagens" },
+  { id: "blocks", icon: <Layers3 size={15} />, label: "Blocos" },
   { id: "seo", icon: <Settings size={15} />, label: "SEO & Publicacao" },
   { id: "preview", icon: <Eye size={15} />, label: "Previa" },
 ];
 
 export default function AdminSalaoPage() {
-  const [tab, setTab] = useState<Tab>("texts");
+  const [tab, setTab] = useState<Tab>("blocks");
   const [draft, setDraft] = useState<ApiSalaoPageSettings | null>(null);
   const [siteHtml, setSiteHtml] = useState("");
   const [textTargets, setTextTargets] = useState<SalaoSiteTextTarget[]>([]);
   const [imageTargets, setImageTargets] = useState<SalaoSiteImageTarget[]>([]);
+  const [activeBlockId, setActiveBlockId] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -55,17 +57,45 @@ export default function AdminSalaoPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filteredTexts = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    if (!term) return textTargets;
-    return textTargets.filter((item) => getTextValue(draft, item).toLowerCase().includes(term));
-  }, [draft, query, textTargets]);
+  const blocks = useMemo(() => buildSalaoSiteBlocks(textTargets, imageTargets), [imageTargets, textTargets]);
 
-  const filteredImages = useMemo(() => {
+  useEffect(() => {
+    if (!blocks.length) return;
+    if (!activeBlockId || !blocks.some((block) => block.id === activeBlockId)) {
+      setActiveBlockId(blocks[0].id);
+    }
+  }, [activeBlockId, blocks]);
+
+  const textById = useMemo(() => new Map(textTargets.map((item) => [item.id, item])), [textTargets]);
+  const imageById = useMemo(() => new Map(imageTargets.map((item) => [item.id, item])), [imageTargets]);
+  const activeBlock = useMemo(
+    () => blocks.find((block) => block.id === activeBlockId) ?? blocks[0],
+    [activeBlockId, blocks],
+  );
+
+  const filteredBlockTexts = useMemo(() => {
+    if (!activeBlock) return [];
     const term = query.trim().toLowerCase();
-    if (!term) return imageTargets;
-    return imageTargets.filter((item) => `${item.src} ${item.alt} ${draft?.site_image_overrides[item.id] ?? ""}`.toLowerCase().includes(term));
-  }, [draft, imageTargets, query]);
+    return activeBlock.textIds
+      .map((id) => textById.get(id))
+      .filter((item): item is SalaoSiteTextTarget => Boolean(item))
+      .filter((item) => {
+        if (!term) return true;
+        return `${getTextValue(draft, item)} ${item.context}`.toLowerCase().includes(term);
+      });
+  }, [activeBlock, draft, query, textById]);
+
+  const filteredBlockImages = useMemo(() => {
+    if (!activeBlock) return [];
+    const term = query.trim().toLowerCase();
+    return activeBlock.imageIds
+      .map((id) => imageById.get(id))
+      .filter((item): item is SalaoSiteImageTarget => Boolean(item))
+      .filter((item) => {
+        if (!term) return true;
+        return `${item.src} ${item.alt} ${item.context} ${draft?.site_image_overrides[item.id] ?? ""}`.toLowerCase().includes(term);
+      });
+  }, [activeBlock, draft, imageById, query]);
 
   const previewHtml = useMemo(() => {
     if (!draft || !siteHtml) return "";
@@ -147,54 +177,36 @@ export default function AdminSalaoPage() {
           </div>
         ) : (
           <>
-            {(tab === "texts" || tab === "images") && (
+            {tab === "blocks" && activeBlock && (
               <Toolbar
                 query={query}
                 onQuery={setQuery}
-                total={tab === "texts" ? filteredTexts.length : filteredImages.length}
-                label={tab === "texts" ? "textos encontrados" : "imagens encontradas"}
+                total={filteredBlockTexts.length + filteredBlockImages.length}
+                label="itens neste bloco"
               />
             )}
 
-            {tab === "texts" && (
-              <Panel
-                title="Textos do site original"
-                subtitle="Cada campo abaixo corresponde a um texto encontrado no HTML do layout anexado."
-              >
-                <div className="grid gap-3">
-                  {filteredTexts.map((item, index) => (
-                    <TextRow
-                      key={item.id}
-                      index={index + 1}
-                      target={item}
-                      value={getTextValue(draft, item)}
-                      changed={draft.site_text_overrides[item.id] !== undefined}
-                      onChange={(value) => updateText(item.id, value)}
-                      onRestore={() => restoreText(item.id)}
-                    />
-                  ))}
-                </div>
-              </Panel>
-            )}
-
-            {tab === "images" && (
-              <Panel
-                title="Imagens do site original"
-                subtitle="Substitua imagens pontuais mantendo o restante do layout exatamente como o arquivo enviado."
-              >
-                <div className="grid gap-4 lg:grid-cols-2">
-                  {filteredImages.map((item, index) => (
-                    <ImageRow
-                      key={item.id}
-                      index={index + 1}
-                      target={item}
-                      value={draft.site_image_overrides[item.id] ?? ""}
-                      onChange={(value) => updateImage(item.id, value)}
-                      onRestore={() => restoreImage(item.id)}
-                    />
-                  ))}
-                </div>
-              </Panel>
+            {tab === "blocks" && activeBlock && (
+              <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+                <BlockNavigation
+                  blocks={blocks}
+                  activeBlockId={activeBlock.id}
+                  onSelect={(id) => {
+                    setActiveBlockId(id);
+                    setQuery("");
+                  }}
+                />
+                <BlockEditor
+                  block={activeBlock}
+                  texts={filteredBlockTexts}
+                  images={filteredBlockImages}
+                  draft={draft}
+                  onTextChange={updateText}
+                  onTextRestore={restoreText}
+                  onImageChange={updateImage}
+                  onImageRestore={restoreImage}
+                />
+              </div>
             )}
 
             {tab === "seo" && (
@@ -233,8 +245,146 @@ function normalizeSettings(settings: ApiSalaoPageSettings): ApiSalaoPageSettings
   };
 }
 
+function BlockNavigation({
+  blocks,
+  activeBlockId,
+  onSelect,
+}: {
+  blocks: SalaoSiteBlock[];
+  activeBlockId: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <aside className="grid gap-3 rounded-xl border border-surface-03 bg-surface-02 p-3 xl:sticky xl:top-4 xl:self-start">
+      <div className="px-2">
+        <h2 className="text-sm font-black uppercase tracking-[0.16em] text-gold">Estrutura do site</h2>
+        <p className="mt-1 text-xs text-stone">Blocos separados conforme o layout original importado.</p>
+      </div>
+      <div className="grid max-h-[680px] gap-2 overflow-y-auto pr-1">
+        {blocks.map((block) => {
+          const active = block.id === activeBlockId;
+          const total = block.textIds.length + block.imageIds.length;
+          return (
+            <button
+              key={block.id}
+              type="button"
+              onClick={() => onSelect(block.id)}
+              className={`grid gap-1 rounded-xl border p-3 text-left transition ${
+                active
+                  ? "border-gold/60 bg-gold/10 text-cream"
+                  : "border-surface-03 bg-surface-01 text-stone hover:border-gold/30 hover:text-cream"
+              }`}
+            >
+              <span className="text-sm font-black">{block.title}</span>
+              <span className="line-clamp-2 text-xs">{block.description}</span>
+              <span className="mt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-gold">
+                {block.textIds.length} textos - {block.imageIds.length} imagens - {total} itens
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+function BlockEditor({
+  block,
+  texts,
+  images,
+  draft,
+  onTextChange,
+  onTextRestore,
+  onImageChange,
+  onImageRestore,
+}: {
+  block: SalaoSiteBlock;
+  texts: SalaoSiteTextTarget[];
+  images: SalaoSiteImageTarget[];
+  draft: ApiSalaoPageSettings;
+  onTextChange: (id: string, value: string) => void;
+  onTextRestore: (id: string) => void;
+  onImageChange: (id: string, value: string) => void;
+  onImageRestore: (id: string) => void;
+}) {
+  return (
+    <Panel title={block.title} subtitle={block.description}>
+      <div className="grid gap-6">
+        <section className="grid gap-3">
+          <SectionHeader icon={<FileText size={15} />} title="Textos deste bloco" count={texts.length} />
+          {texts.length ? (
+            <div className="grid gap-3">
+              {texts.map((item) => (
+                <TextRow
+                  key={item.id}
+                  index={targetNumber(item.id)}
+                  target={item}
+                  value={getTextValue(draft, item)}
+                  changed={draft.site_text_overrides[item.id] !== undefined}
+                  onChange={(value) => onTextChange(item.id, value)}
+                  onRestore={() => onTextRestore(item.id)}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyBlockMessage message="Este bloco nao possui textos editaveis." />
+          )}
+        </section>
+
+        <section className="grid gap-3">
+          <SectionHeader icon={<Image size={15} />} title="Imagens deste bloco" count={images.length} />
+          {images.length ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {images.map((item) => (
+                <ImageRow
+                  key={item.id}
+                  index={targetNumber(item.id)}
+                  target={item}
+                  value={draft.site_image_overrides[item.id] ?? ""}
+                  onChange={(value) => onImageChange(item.id, value)}
+                  onRestore={() => onImageRestore(item.id)}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyBlockMessage message="Este bloco nao possui imagens editaveis." />
+          )}
+        </section>
+      </div>
+    </Panel>
+  );
+}
+
+function SectionHeader({ icon, title, count }: { icon: React.ReactNode; title: string; count: number }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-03 pb-2">
+      <div className="inline-flex items-center gap-2 text-sm font-black text-cream">
+        <span className="text-gold">{icon}</span>
+        {title}
+      </div>
+      <span className="rounded-full border border-surface-03 bg-surface-01 px-2 py-1 text-[11px] font-bold uppercase text-stone">
+        {count} itens
+      </span>
+    </div>
+  );
+}
+
+function EmptyBlockMessage({ message }: { message: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-surface-03 bg-surface-01 p-4 text-sm text-stone">
+      {message}
+    </div>
+  );
+}
+
 function getTextValue(settings: ApiSalaoPageSettings | null, target: SalaoSiteTextTarget) {
   return settings?.site_text_overrides[target.id] ?? target.value;
+}
+
+function targetNumber(id: string) {
+  const [, raw] = id.split("-");
+  const number = Number(raw);
+  return Number.isFinite(number) ? number + 1 : 1;
 }
 
 function siteAssetUrl(value: string) {
@@ -293,6 +443,7 @@ function TextRow({
         <div>
           <span className="text-xs font-black uppercase tracking-[0.18em] text-gold">Texto {index}</span>
           <span className="ml-2 rounded-full bg-surface-03 px-2 py-1 text-[11px] font-bold uppercase text-stone">{target.tag}</span>
+          <span className="ml-2 rounded-full bg-surface-03 px-2 py-1 text-[11px] font-bold uppercase text-stone">{target.context}</span>
         </div>
         {changed && <RestoreButton onClick={onRestore} />}
       </div>
@@ -345,6 +496,14 @@ function ImageRow({
       <div className="rounded-lg border border-surface-03 bg-surface-02 p-3 text-xs text-stone">
         <div className="font-bold text-cream">Arquivo original</div>
         <div className="mt-1 break-all">{target.src}</div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {target.width && target.height && (
+            <span className="rounded-full bg-surface-03 px-2 py-1 font-bold">
+              Original: {target.width} x {target.height}px
+            </span>
+          )}
+          <span className="rounded-full bg-surface-03 px-2 py-1 font-bold">{target.context}</span>
+        </div>
       </div>
       <ImageUpload
         label="Substituir imagem"
