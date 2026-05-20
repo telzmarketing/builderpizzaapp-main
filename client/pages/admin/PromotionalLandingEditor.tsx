@@ -29,6 +29,10 @@ type FormState = {
   content_alignment: ApiPromotionLandingAlignment;
   overlay_style: ApiPromotionLandingOverlay;
   badge_text: string;
+  free_shipping_label: string;
+  gift_label_prefix: string;
+  gift_fallback_label: string;
+  active_offer_label: string;
   slug: string;
   status: ApiPromotionLandingStatus;
   is_active: boolean;
@@ -81,6 +85,10 @@ const emptyForm = (productName = ""): FormState => ({
   content_alignment: "center",
   overlay_style: "dark-gradient",
   badge_text: "Oferta do dia",
+  free_shipping_label: "Frete gratis na promocao",
+  gift_label_prefix: "Brinde",
+  gift_fallback_label: "Brinde incluido",
+  active_offer_label: "Oferta ativa agora",
   slug: "",
   status: "draft",
   is_active: true,
@@ -150,6 +158,10 @@ export default function PromotionalLandingEditor() {
             content_alignment: existing.content_alignment,
             overlay_style: existing.overlay_style,
             badge_text: existing.badge_text ?? "",
+            free_shipping_label: existing.free_shipping_label || "Frete gratis na promocao",
+            gift_label_prefix: existing.gift_label_prefix || "Brinde",
+            gift_fallback_label: existing.gift_fallback_label || "Brinde incluido",
+            active_offer_label: existing.active_offer_label || "Oferta ativa agora",
             slug: existing.slug,
             status: existing.status,
             is_active: existing.is_active,
@@ -185,6 +197,10 @@ export default function PromotionalLandingEditor() {
     content_alignment: form.content_alignment,
     overlay_style: form.overlay_style,
     badge_text: form.badge_text.trim() || null,
+    free_shipping_label: form.free_shipping_label.trim() || "Frete gratis na promocao",
+    gift_label_prefix: form.gift_label_prefix.trim() || "Brinde",
+    gift_fallback_label: form.gift_fallback_label.trim() || "Brinde incluido",
+    active_offer_label: form.active_offer_label.trim() || "Oferta ativa agora",
     slug: form.slug.trim() || null,
     status,
     is_active: form.is_active,
@@ -344,6 +360,29 @@ export default function PromotionalLandingEditor() {
               <div>
                 <label className={labelClass}>Badge</label>
                 <input value={form.badge_text} onChange={(e) => setForm((current) => ({ ...current, badge_text: e.target.value }))} className={inputClass} maxLength={80} />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-surface-03 bg-surface-01 p-3">
+              <p className="text-sm font-bold text-cream">Textos dos beneficios</p>
+              <p className="mb-3 text-xs text-stone">Esses textos aparecem nos selos abaixo do titulo da landing.</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className={labelClass}>Texto do frete gratis</label>
+                  <input value={form.free_shipping_label} onChange={(e) => setForm((current) => ({ ...current, free_shipping_label: e.target.value }))} className={inputClass} maxLength={160} />
+                </div>
+                <div>
+                  <label className={labelClass}>Texto da oferta ativa</label>
+                  <input value={form.active_offer_label} onChange={(e) => setForm((current) => ({ ...current, active_offer_label: e.target.value }))} className={inputClass} maxLength={160} />
+                </div>
+                <div>
+                  <label className={labelClass}>Prefixo do brinde</label>
+                  <input value={form.gift_label_prefix} onChange={(e) => setForm((current) => ({ ...current, gift_label_prefix: e.target.value }))} className={inputClass} maxLength={80} />
+                </div>
+                <div>
+                  <label className={labelClass}>Texto do brinde sem nome</label>
+                  <input value={form.gift_fallback_label} onChange={(e) => setForm((current) => ({ ...current, gift_fallback_label: e.target.value }))} className={inputClass} maxLength={160} />
+                </div>
               </div>
             </div>
           </div>

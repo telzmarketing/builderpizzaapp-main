@@ -320,6 +320,8 @@ function ImageRow({
   onRestore: () => void;
 }) {
   const currentUrl = siteAssetUrl(value || target.src);
+  const assetInfo = useImageAssetInfo(currentUrl);
+
   return (
     <div className="grid gap-4 rounded-xl border border-surface-03 bg-surface-01 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -331,6 +333,14 @@ function ImageRow({
       </div>
       <div className="aspect-video overflow-hidden rounded-xl border border-surface-03 bg-black">
         {currentUrl ? <img src={currentUrl} alt={target.alt || `Imagem ${index}`} className="h-full w-full object-contain" /> : null}
+      </div>
+      <div className="grid gap-2 rounded-lg border border-gold/20 bg-gold/5 p-3 text-xs">
+        <div className="font-black uppercase tracking-[0.16em] text-gold">Informacoes da imagem</div>
+        <div className="grid gap-2 text-stone sm:grid-cols-3">
+          <InfoPill label="Dimensao atual" value={assetInfo.dimensions ?? "Carregando..."} />
+          <InfoPill label="Tamanho atual" value={assetInfo.fileSize ?? "Nao informado"} />
+          <InfoPill label="Limite de upload" value="3 MB" />
+        </div>
       </div>
       <div className="rounded-lg border border-surface-03 bg-surface-02 p-3 text-xs text-stone">
         <div className="font-bold text-cream">Arquivo original</div>
@@ -345,6 +355,71 @@ function ImageRow({
       />
     </div>
   );
+}
+
+function useImageAssetInfo(url: string) {
+  const [info, setInfo] = useState<{ dimensions?: string; fileSize?: string }>({});
+
+  useEffect(() => {
+    if (!url) {
+      setInfo({});
+      return;
+    }
+
+    let active = true;
+    const controller = new AbortController();
+    setInfo({});
+
+    const image = new window.Image();
+    image.onload = () => {
+      if (!active) return;
+      const dimensions = image.naturalWidth && image.naturalHeight
+        ? `${image.naturalWidth} x ${image.naturalHeight}px`
+        : "Nao informado";
+      setInfo((prev) => ({ ...prev, dimensions }));
+    };
+    image.onerror = () => {
+      if (active) setInfo((prev) => ({ ...prev, dimensions: "Nao informado" }));
+    };
+    image.src = url;
+
+    fetch(url, { method: "HEAD", signal: controller.signal })
+      .then((response) => {
+        const length = response.headers.get("content-length");
+        if (active) setInfo((prev) => ({ ...prev, fileSize: length ? formatBytes(Number(length)) : "Nao informado" }));
+      })
+      .catch(() => {
+        if (active) setInfo((prev) => ({ ...prev, fileSize: "Nao informado" }));
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [url]);
+
+  return info;
+}
+
+function InfoPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-surface-03 bg-surface-02 p-2">
+      <div className="text-[11px] font-bold uppercase text-stone/80">{label}</div>
+      <div className="mt-1 font-black text-cream">{value}</div>
+    </div>
+  );
+}
+
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "Nao informado";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 function Field({

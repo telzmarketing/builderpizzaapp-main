@@ -342,6 +342,10 @@ export interface ApiPromotionLandingPage {
   content_alignment: ApiPromotionLandingAlignment;
   overlay_style: ApiPromotionLandingOverlay;
   badge_text: string | null;
+  free_shipping_label: string;
+  gift_label_prefix: string;
+  gift_fallback_label: string;
+  active_offer_label: string;
   slug: string;
   status: ApiPromotionLandingStatus;
   is_active: boolean;
@@ -378,6 +382,10 @@ export type ApiPromotionLandingPayload = {
   content_alignment?: ApiPromotionLandingAlignment;
   overlay_style?: ApiPromotionLandingOverlay;
   badge_text?: string | null;
+  free_shipping_label?: string;
+  gift_label_prefix?: string;
+  gift_fallback_label?: string;
+  active_offer_label?: string;
   slug?: string | null;
   status?: ApiPromotionLandingStatus;
   is_active?: boolean;

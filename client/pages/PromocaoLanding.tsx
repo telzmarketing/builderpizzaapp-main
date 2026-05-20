@@ -154,10 +154,13 @@ export default function PromocaoLanding() {
   const alignment = alignClass[landing.content_alignment] ?? alignClass.center;
   const position = imagePositionClass[landing.image_position] ?? imagePositionClass.center;
   const overlay = overlayClass[landing.overlay_style] ?? overlayClass["dark-gradient"];
+  const giftText = product?.promotion_gift_name
+    ? `${landing.gift_label_prefix || "Brinde"}: ${product.promotion_gift_name}`
+    : landing.gift_fallback_label || "Brinde incluido";
   const promoBenefits = [
-    product?.promotion_free_shipping ? { icon: Truck, text: "Frete gratis na promocao" } : null,
-    product?.promotion_gift_enabled ? { icon: Gift, text: product.promotion_gift_name ? `Brinde: ${product.promotion_gift_name}` : "Brinde incluido" } : null,
-    landing.promotion_active_now ? { icon: Clock, text: "Oferta ativa agora" } : null,
+    product?.promotion_free_shipping ? { icon: Truck, text: landing.free_shipping_label || "Frete gratis na promocao" } : null,
+    product?.promotion_gift_enabled ? { icon: Gift, text: giftText } : null,
+    landing.promotion_active_now ? { icon: Clock, text: landing.active_offer_label || "Oferta ativa agora" } : null,
   ].filter(Boolean) as { icon: typeof Truck; text: string }[];
 
   return (

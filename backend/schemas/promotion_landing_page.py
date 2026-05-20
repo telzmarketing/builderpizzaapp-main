@@ -22,6 +22,10 @@ class PromotionLandingPageBase(BaseModel):
     content_alignment: str = Field(default="center", pattern=r"^(left|center|right)$")
     overlay_style: str = Field(default="dark-gradient", pattern=r"^(dark-gradient|dark|light|brand)$")
     badge_text: Optional[str] = Field(default=None, max_length=80)
+    free_shipping_label: str = Field(default="Frete gratis na promocao", min_length=1, max_length=160)
+    gift_label_prefix: str = Field(default="Brinde", min_length=1, max_length=80)
+    gift_fallback_label: str = Field(default="Brinde incluido", min_length=1, max_length=160)
+    active_offer_label: str = Field(default="Oferta ativa agora", min_length=1, max_length=160)
     slug: Optional[str] = Field(default=None, max_length=160)
     status: str = Field(default="draft", pattern=r"^(draft|published)$")
     is_active: bool = True
@@ -44,6 +48,10 @@ class PromotionLandingPageUpdate(BaseModel):
     content_alignment: Optional[str] = Field(default=None, pattern=r"^(left|center|right)$")
     overlay_style: Optional[str] = Field(default=None, pattern=r"^(dark-gradient|dark|light|brand)$")
     badge_text: Optional[str] = Field(default=None, max_length=80)
+    free_shipping_label: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    gift_label_prefix: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    gift_fallback_label: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    active_offer_label: Optional[str] = Field(default=None, min_length=1, max_length=160)
     slug: Optional[str] = Field(default=None, max_length=160)
     status: Optional[str] = Field(default=None, pattern=r"^(draft|published)$")
     is_active: Optional[bool] = None
