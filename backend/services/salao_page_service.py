@@ -53,6 +53,10 @@ class SalaoPageService:
                 settings.experience_cards_json = json.dumps(value, ensure_ascii=False)
             elif key == "menu_items":
                 settings.menu_items_json = json.dumps(value, ensure_ascii=False)
+            elif key == "site_text_overrides":
+                settings.site_text_overrides_json = json.dumps(self._clean_override_map(value), ensure_ascii=False)
+            elif key == "site_image_overrides":
+                settings.site_image_overrides_json = json.dumps(self._clean_override_map(value), ensure_ascii=False)
             elif hasattr(settings, key):
                 setattr(settings, key, value)
         settings.updated_at = datetime.now(timezone.utc)
@@ -90,6 +94,8 @@ class SalaoPageService:
             "whatsapp_url": item.whatsapp_url,
             "seo_title": item.seo_title,
             "seo_description": item.seo_description,
+            "site_text_overrides": self._json_map(item.site_text_overrides_json),
+            "site_image_overrides": self._json_map(item.site_image_overrides_json),
             "created_at": item.created_at,
             "updated_at": item.updated_at,
         }
@@ -105,3 +111,25 @@ class SalaoPageService:
         except Exception:
             pass
         return fallback
+
+    @staticmethod
+    def _json_map(raw: str | None) -> dict[str, str]:
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                return {str(key): str(value) for key, value in data.items() if value is not None}
+        except Exception:
+            pass
+        return {}
+
+    @staticmethod
+    def _clean_override_map(value: Any) -> dict[str, str]:
+        if not isinstance(value, dict):
+            return {}
+        return {
+            str(key): str(item)
+            for key, item in value.items()
+            if item is not None and str(item).strip()
+        }

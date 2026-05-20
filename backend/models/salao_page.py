@@ -41,6 +41,8 @@ class SalaoPageSettings(Base):
 
     seo_title = Column(String(200), nullable=False, default="Moschettieri | Restaurante")
     seo_description = Column(Text, nullable=False, default="Restaurante Moschettieri: experiencia premium de salao, cardapio institucional e reservas online.")
+    site_text_overrides_json = Column(Text, nullable=False, default="{}")
+    site_image_overrides_json = Column(Text, nullable=False, default="{}")
 
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(

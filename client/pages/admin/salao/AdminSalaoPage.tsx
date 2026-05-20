@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { CalendarDays, Check, FileText, Image, Loader2, MapPin, Plus, Save, Trash2, Utensils } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, Eye, FileText, Image, Loader2, RotateCcw, Save, Search, Settings } from "lucide-react";
 import {
   AdminPageContent,
   AdminPageHeader,
@@ -8,55 +8,96 @@ import {
   type AdminPageTab,
 } from "@/components/admin/AdminPageChrome";
 import ImageUpload from "@/components/admin/ImageUpload";
+import { resolveAssetUrl, salaoPageApi, type ApiSalaoPageSettings } from "@/lib/api";
 import {
-  salaoPageApi,
-  type ApiSalaoExperienceCard,
-  type ApiSalaoMenuItem,
-  type ApiSalaoPageSettings,
-} from "@/lib/api";
+  applySalaoSiteOverrides,
+  extractSalaoSiteImageTargets,
+  extractSalaoSiteTextTargets,
+  type SalaoSiteImageTarget,
+  type SalaoSiteTextTarget,
+} from "@/lib/salaoSiteCms";
 
-type Tab = "hero" | "experience" | "menu" | "reservation" | "contact";
+type Tab = "texts" | "images" | "seo" | "preview";
+
+const SALAO_SITE_URL = "/salao-site/index.html";
 
 const TABS: AdminPageTab<Tab>[] = [
-  { id: "hero", icon: <Image size={15} />, label: "Topo" },
-  { id: "experience", icon: <FileText size={15} />, label: "Experiencia" },
-  { id: "menu", icon: <Utensils size={15} />, label: "Cardapio" },
-  { id: "reservation", icon: <CalendarDays size={15} />, label: "Reservas" },
-  { id: "contact", icon: <MapPin size={15} />, label: "Contato & SEO" },
+  { id: "texts", icon: <FileText size={15} />, label: "Textos" },
+  { id: "images", icon: <Image size={15} />, label: "Imagens" },
+  { id: "seo", icon: <Settings size={15} />, label: "SEO & Publicacao" },
+  { id: "preview", icon: <Eye size={15} />, label: "Previa" },
 ];
 
-const EMPTY_CARD: ApiSalaoExperienceCard = { title: "", text: "", image: "" };
-const EMPTY_MENU_ITEM: ApiSalaoMenuItem = { name: "", description: "" };
-
 export default function AdminSalaoPage() {
-  const [tab, setTab] = useState<Tab>("hero");
+  const [tab, setTab] = useState<Tab>("texts");
   const [draft, setDraft] = useState<ApiSalaoPageSettings | null>(null);
+  const [siteHtml, setSiteHtml] = useState("");
+  const [textTargets, setTextTargets] = useState<SalaoSiteTextTarget[]>([]);
+  const [imageTargets, setImageTargets] = useState<SalaoSiteImageTarget[]>([]);
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    salaoPageApi.get()
-      .then(setDraft)
-      .catch(() => setError("Nao foi possivel carregar a configuracao da Pagina Salao."))
+    Promise.all([
+      salaoPageApi.get(),
+      fetch(SALAO_SITE_URL).then((response) => response.text()),
+    ])
+      .then(([settings, html]) => {
+        setDraft(normalizeSettings(settings));
+        setSiteHtml(html);
+        setTextTargets(extractSalaoSiteTextTargets(html));
+        setImageTargets(extractSalaoSiteImageTargets(html));
+      })
+      .catch(() => setError("Nao foi possivel carregar o site original da Pagina Salao."))
       .finally(() => setLoading(false));
   }, []);
+
+  const filteredTexts = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return textTargets;
+    return textTargets.filter((item) => getTextValue(draft, item).toLowerCase().includes(term));
+  }, [draft, query, textTargets]);
+
+  const filteredImages = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return imageTargets;
+    return imageTargets.filter((item) => `${item.src} ${item.alt} ${draft?.site_image_overrides[item.id] ?? ""}`.toLowerCase().includes(term));
+  }, [draft, imageTargets, query]);
+
+  const previewHtml = useMemo(() => {
+    if (!draft || !siteHtml) return "";
+    return applySalaoSiteOverrides(siteHtml, draft.site_text_overrides, draft.site_image_overrides);
+  }, [draft, siteHtml]);
 
   const setField = <K extends keyof ApiSalaoPageSettings>(key: K, value: ApiSalaoPageSettings[K]) => {
     setDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
   };
 
-  const updateCard = (index: number, patch: Partial<ApiSalaoExperienceCard>) => {
+  const updateText = (id: string, value: string) => {
     if (!draft) return;
-    const next = draft.experience_cards.map((card, idx) => (idx === index ? { ...card, ...patch } : card));
-    setField("experience_cards", next);
+    setField("site_text_overrides", { ...draft.site_text_overrides, [id]: value });
   };
 
-  const updateMenuItem = (index: number, patch: Partial<ApiSalaoMenuItem>) => {
+  const restoreText = (id: string) => {
     if (!draft) return;
-    const next = draft.menu_items.map((item, idx) => (idx === index ? { ...item, ...patch } : item));
-    setField("menu_items", next);
+    const next = { ...draft.site_text_overrides };
+    delete next[id];
+    setField("site_text_overrides", next);
+  };
+
+  const updateImage = (id: string, value: string) => {
+    if (!draft) return;
+    setField("site_image_overrides", { ...draft.site_image_overrides, [id]: value });
+  };
+
+  const restoreImage = (id: string) => {
+    if (!draft) return;
+    const next = { ...draft.site_image_overrides };
+    delete next[id];
+    setField("site_image_overrides", next);
   };
 
   const save = async () => {
@@ -65,7 +106,7 @@ export default function AdminSalaoPage() {
     setError("");
     try {
       const updated = await salaoPageApi.update(draft);
-      setDraft(updated);
+      setDraft(normalizeSettings(updated));
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (err) {
@@ -80,7 +121,7 @@ export default function AdminSalaoPage() {
       <AdminPageHeader
         eyebrow="Configuracoes"
         title="Pagina Salao"
-        description="Conteudo publico do dominio moschettieri.com.br"
+        description="Gerencie todos os textos e imagens do site publico moschettieri.com.br"
         icon={<FileText size={20} />}
         actions={
           <button
@@ -94,6 +135,7 @@ export default function AdminSalaoPage() {
           </button>
         }
       />
+
       <AdminPageContent>
         <AdminPageTabs tabs={TABS} active={tab} onChange={(next) => setTab(next as Tab)} />
         {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
@@ -101,94 +143,78 @@ export default function AdminSalaoPage() {
         {loading || !draft ? (
           <div className="flex items-center justify-center gap-3 rounded-xl border border-surface-03 bg-surface-02 p-10 text-stone">
             <Loader2 className="animate-spin" size={20} />
-            Carregando Pagina Salao...
+            Carregando site original...
           </div>
         ) : (
           <>
-            {tab === "hero" && (
-              <Panel title="Topo da pagina" subtitle="Hero principal da experiencia publica do salao">
-                <Toggle checked={draft.enabled} onChange={(value) => setField("enabled", value)} label="Pagina ativa" />
-                <Field label="Chamada superior" value={draft.hero_eyebrow} onChange={(value) => setField("hero_eyebrow", value)} />
-                <Field label="Titulo principal" value={draft.hero_title} onChange={(value) => setField("hero_title", value)} />
-                <Field label="Subtitulo" value={draft.hero_subtitle} onChange={(value) => setField("hero_subtitle", value)} />
-                <Field label="Descricao" value={draft.hero_description} onChange={(value) => setField("hero_description", value)} multiline />
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="Botao principal" value={draft.primary_cta_label} onChange={(value) => setField("primary_cta_label", value)} />
-                  <Field label="Botao secundario" value={draft.secondary_cta_label} onChange={(value) => setField("secondary_cta_label", value)} />
+            {(tab === "texts" || tab === "images") && (
+              <Toolbar
+                query={query}
+                onQuery={setQuery}
+                total={tab === "texts" ? filteredTexts.length : filteredImages.length}
+                label={tab === "texts" ? "textos encontrados" : "imagens encontradas"}
+              />
+            )}
+
+            {tab === "texts" && (
+              <Panel
+                title="Textos do site original"
+                subtitle="Cada campo abaixo corresponde a um texto encontrado no HTML do layout anexado."
+              >
+                <div className="grid gap-3">
+                  {filteredTexts.map((item, index) => (
+                    <TextRow
+                      key={item.id}
+                      index={index + 1}
+                      target={item}
+                      value={getTextValue(draft, item)}
+                      changed={draft.site_text_overrides[item.id] !== undefined}
+                      onChange={(value) => updateText(item.id, value)}
+                      onRestore={() => restoreText(item.id)}
+                    />
+                  ))}
                 </div>
-                <ImageUpload label="Imagem de fundo" value={draft.hero_background_image} onChange={(value) => setField("hero_background_image", value)} maxKB={3072} sizeGuide="Imagem ampla do ambiente, ate 3MB" />
-                <ImageUpload label="Imagem de destaque" value={draft.hero_plate_image} onChange={(value) => setField("hero_plate_image", value)} maxKB={3072} sizeGuide="Prato/produto em PNG ou imagem recortada, ate 3MB" />
               </Panel>
             )}
 
-            {tab === "experience" && (
-              <Panel title="Experiencia" subtitle="Secao institucional com imagens do ambiente">
-                <Field label="Chamada" value={draft.experience_eyebrow} onChange={(value) => setField("experience_eyebrow", value)} />
-                <Field label="Titulo" value={draft.experience_title} onChange={(value) => setField("experience_title", value)} />
-                <Field label="Texto" value={draft.experience_text} onChange={(value) => setField("experience_text", value)} multiline />
-                <ListEditor
-                  title="Cards da experiencia"
-                  onAdd={() => setField("experience_cards", [...draft.experience_cards, EMPTY_CARD])}
-                >
-                  {draft.experience_cards.map((card, index) => (
-                    <div key={index} className="rounded-xl border border-surface-03 bg-surface-01 p-4">
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-[0.18em] text-gold">Card {index + 1}</span>
-                        <RemoveButton onClick={() => setField("experience_cards", draft.experience_cards.filter((_, idx) => idx !== index))} />
-                      </div>
-                      <div className="grid gap-4">
-                        <Field label="Titulo" value={card.title} onChange={(value) => updateCard(index, { title: value })} />
-                        <Field label="Texto" value={card.text} onChange={(value) => updateCard(index, { text: value })} multiline />
-                        <ImageUpload label="Imagem" value={card.image} onChange={(value) => updateCard(index, { image: value })} maxKB={3072} sizeGuide="Foto do ambiente, ate 3MB" />
-                      </div>
-                    </div>
+            {tab === "images" && (
+              <Panel
+                title="Imagens do site original"
+                subtitle="Substitua imagens pontuais mantendo o restante do layout exatamente como o arquivo enviado."
+              >
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {filteredImages.map((item, index) => (
+                    <ImageRow
+                      key={item.id}
+                      index={index + 1}
+                      target={item}
+                      value={draft.site_image_overrides[item.id] ?? ""}
+                      onChange={(value) => updateImage(item.id, value)}
+                      onRestore={() => restoreImage(item.id)}
+                    />
                   ))}
-                </ListEditor>
+                </div>
               </Panel>
             )}
 
-            {tab === "menu" && (
-              <Panel title="Cardapio institucional" subtitle="Destaques exibidos na pagina publica, sem alterar o catalogo delivery">
-                <Field label="Chamada" value={draft.menu_eyebrow} onChange={(value) => setField("menu_eyebrow", value)} />
-                <Field label="Titulo" value={draft.menu_title} onChange={(value) => setField("menu_title", value)} />
-                <ListEditor
-                  title="Itens em destaque"
-                  onAdd={() => setField("menu_items", [...draft.menu_items, EMPTY_MENU_ITEM])}
-                >
-                  {draft.menu_items.map((item, index) => (
-                    <div key={index} className="rounded-xl border border-surface-03 bg-surface-01 p-4">
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-[0.18em] text-gold">Item {index + 1}</span>
-                        <RemoveButton onClick={() => setField("menu_items", draft.menu_items.filter((_, idx) => idx !== index))} />
-                      </div>
-                      <div className="grid gap-4">
-                        <Field label="Nome" value={item.name} onChange={(value) => updateMenuItem(index, { name: value })} />
-                        <Field label="Descricao" value={item.description} onChange={(value) => updateMenuItem(index, { description: value })} multiline />
-                      </div>
-                    </div>
-                  ))}
-                </ListEditor>
+            {tab === "seo" && (
+              <Panel
+                title="SEO & Publicacao"
+                subtitle="Controle de disponibilidade e metadados do dominio principal."
+              >
+                <Toggle checked={draft.enabled} onChange={(value) => setField("enabled", value)} label="Pagina publica ativa" />
+                <Field label="Titulo SEO" value={draft.seo_title} onChange={(value) => setField("seo_title", value)} />
+                <Field label="Descricao SEO" value={draft.seo_description} onChange={(value) => setField("seo_description", value)} multiline />
               </Panel>
             )}
 
-            {tab === "reservation" && (
-              <Panel title="Reservas" subtitle="Textos e imagem do bloco de solicitacao de reserva">
-                <Field label="Chamada" value={draft.reservation_eyebrow} onChange={(value) => setField("reservation_eyebrow", value)} />
-                <Field label="Titulo" value={draft.reservation_title} onChange={(value) => setField("reservation_title", value)} />
-                <Field label="Texto" value={draft.reservation_text} onChange={(value) => setField("reservation_text", value)} multiline />
-                <ImageUpload label="Imagem de fundo" value={draft.reservation_background_image} onChange={(value) => setField("reservation_background_image", value)} maxKB={3072} sizeGuide="Imagem horizontal do salao, ate 3MB" />
-              </Panel>
-            )}
-
-            {tab === "contact" && (
-              <Panel title="Contato & SEO" subtitle="Dados institucionais do rodape e metadados da pagina">
-                <Field label="Endereco" value={draft.address} onChange={(value) => setField("address", value)} />
-                <Field label="Horario de funcionamento" value={draft.hours} onChange={(value) => setField("hours", value)} />
-                <Field label="Telefone / contato" value={draft.phone} onChange={(value) => setField("phone", value)} />
-                <Field label="Link WhatsApp" value={draft.whatsapp_url} onChange={(value) => setField("whatsapp_url", value)} />
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="Titulo SEO" value={draft.seo_title} onChange={(value) => setField("seo_title", value)} />
-                  <Field label="Descricao SEO" value={draft.seo_description} onChange={(value) => setField("seo_description", value)} multiline />
+            {tab === "preview" && (
+              <Panel
+                title="Previa do site"
+                subtitle="Visualizacao com os textos e imagens gerenciados aplicados sobre o layout original."
+              >
+                <div className="overflow-hidden rounded-xl border border-surface-03 bg-black">
+                  <iframe title="Previa Pagina Salao" srcDoc={previewHtml} className="h-[720px] w-full border-0 bg-black" />
                 </div>
               </Panel>
             )}
@@ -199,6 +225,24 @@ export default function AdminSalaoPage() {
   );
 }
 
+function normalizeSettings(settings: ApiSalaoPageSettings): ApiSalaoPageSettings {
+  return {
+    ...settings,
+    site_text_overrides: settings.site_text_overrides ?? {},
+    site_image_overrides: settings.site_image_overrides ?? {},
+  };
+}
+
+function getTextValue(settings: ApiSalaoPageSettings | null, target: SalaoSiteTextTarget) {
+  return settings?.site_text_overrides[target.id] ?? target.value;
+}
+
+function siteAssetUrl(value: string) {
+  if (!value) return "";
+  if (/^(https?:|data:|blob:|\/)/.test(value)) return resolveAssetUrl(value);
+  return `/salao-site/${value.replace(/^\.?\//, "")}`;
+}
+
 function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
     <section className="grid gap-5 rounded-xl border border-surface-03 bg-surface-02 p-5">
@@ -206,8 +250,100 @@ function Panel({ title, subtitle, children }: { title: string; subtitle: string;
         <h2 className="text-lg font-black text-cream">{title}</h2>
         <p className="text-sm text-stone">{subtitle}</p>
       </div>
-      <div className="grid gap-4">{children}</div>
+      {children}
     </section>
+  );
+}
+
+function Toolbar({ query, onQuery, total, label }: { query: string; onQuery: (value: string) => void; total: number; label: string }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 p-3">
+      <div className="text-sm font-bold text-cream">{total} {label}</div>
+      <label className="relative min-w-[260px] flex-1 md:flex-none">
+        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone" size={15} />
+        <input
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          placeholder="Buscar no conteudo..."
+          className="h-10 w-full rounded-xl border border-surface-03 bg-surface-01 pl-9 pr-3 text-sm text-cream outline-none focus:border-gold"
+        />
+      </label>
+    </div>
+  );
+}
+
+function TextRow({
+  index,
+  target,
+  value,
+  changed,
+  onChange,
+  onRestore,
+}: {
+  index: number;
+  target: SalaoSiteTextTarget;
+  value: string;
+  changed: boolean;
+  onChange: (value: string) => void;
+  onRestore: () => void;
+}) {
+  return (
+    <div className="grid gap-3 rounded-xl border border-surface-03 bg-surface-01 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <span className="text-xs font-black uppercase tracking-[0.18em] text-gold">Texto {index}</span>
+          <span className="ml-2 rounded-full bg-surface-03 px-2 py-1 text-[11px] font-bold uppercase text-stone">{target.tag}</span>
+        </div>
+        {changed && <RestoreButton onClick={onRestore} />}
+      </div>
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        rows={value.length > 120 ? 4 : 2}
+        className="w-full resize-y rounded-xl border border-surface-03 bg-surface-02 px-3 py-2 text-sm text-cream outline-none focus:border-gold"
+      />
+    </div>
+  );
+}
+
+function ImageRow({
+  index,
+  target,
+  value,
+  onChange,
+  onRestore,
+}: {
+  index: number;
+  target: SalaoSiteImageTarget;
+  value: string;
+  onChange: (value: string) => void;
+  onRestore: () => void;
+}) {
+  const currentUrl = siteAssetUrl(value || target.src);
+  return (
+    <div className="grid gap-4 rounded-xl border border-surface-03 bg-surface-01 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <span className="text-xs font-black uppercase tracking-[0.18em] text-gold">Imagem {index}</span>
+          {value && <span className="ml-2 rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] font-bold text-emerald-300">alterada</span>}
+        </div>
+        {value && <RestoreButton onClick={onRestore} />}
+      </div>
+      <div className="aspect-video overflow-hidden rounded-xl border border-surface-03 bg-black">
+        {currentUrl ? <img src={currentUrl} alt={target.alt || `Imagem ${index}`} className="h-full w-full object-contain" /> : null}
+      </div>
+      <div className="rounded-lg border border-surface-03 bg-surface-02 p-3 text-xs text-stone">
+        <div className="font-bold text-cream">Arquivo original</div>
+        <div className="mt-1 break-all">{target.src}</div>
+      </div>
+      <ImageUpload
+        label="Substituir imagem"
+        value={value}
+        onChange={onChange}
+        maxKB={3072}
+        sizeGuide="Imagem da Pagina Salao, ate 3MB"
+      />
+    </div>
   );
 }
 
@@ -249,26 +385,15 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
   );
 }
 
-function ListEditor({ title, onAdd, children }: { title: string; onAdd: () => void; children: React.ReactNode }) {
+function RestoreButton({ onClick }: { onClick: () => void }) {
   return (
-    <div className="grid gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-black text-cream">{title}</h3>
-        <button type="button" onClick={onAdd} className="inline-flex h-9 items-center gap-2 rounded-xl border border-gold/35 px-3 text-xs font-bold text-gold hover:bg-gold/10">
-          <Plus size={14} />
-          Adicionar
-        </button>
-      </div>
-      <div className="grid gap-3">{children}</div>
-    </div>
-  );
-}
-
-function RemoveButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} className="inline-flex h-8 items-center gap-1 rounded-lg border border-red-500/30 px-2 text-xs font-bold text-red-300 hover:bg-red-500/10">
-      <Trash2 size={13} />
-      Remover
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex h-8 items-center gap-2 rounded-lg border border-surface-03 px-2 text-xs font-bold text-stone hover:border-gold/40 hover:text-gold"
+    >
+      <RotateCcw size={13} />
+      Restaurar original
     </button>
   );
 }

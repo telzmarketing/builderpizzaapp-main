@@ -43,6 +43,8 @@ class SalaoPageSettingsOut(BaseModel):
     whatsapp_url: str
     seo_title: str
     seo_description: str
+    site_text_overrides: dict[str, str] = Field(default_factory=dict)
+    site_image_overrides: dict[str, str] = Field(default_factory=dict)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -74,3 +76,5 @@ class SalaoPageSettingsUpdate(BaseModel):
     whatsapp_url: Optional[str] = Field(default=None, max_length=1000)
     seo_title: Optional[str] = Field(default=None, max_length=200)
     seo_description: Optional[str] = None
+    site_text_overrides: Optional[dict[str, str]] = None
+    site_image_overrides: Optional[dict[str, str]] = None

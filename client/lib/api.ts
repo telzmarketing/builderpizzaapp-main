@@ -2317,6 +2317,8 @@ export interface ApiSalaoPageSettings {
   whatsapp_url: string;
   seo_title: string;
   seo_description: string;
+  site_text_overrides: Record<string, string>;
+  site_image_overrides: Record<string, string>;
   created_at?: string | null;
   updated_at?: string | null;
 }
