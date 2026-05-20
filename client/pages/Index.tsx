@@ -325,13 +325,13 @@ export default function Home() {
       </div>
 
       {/* Aviso de horário de funcionamento */}
-      <div className="px-4 sm:px-6 lg:px-8 pt-3 max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto w-full">
+      <div className="px-4 lg:px-8 pt-3 max-w-sm lg:max-w-4xl mx-auto w-full">
         <StoreStatusBanner />
       </div>
 
       {homeConfig.showPromotions && activeBanners.length > 0 && (
-        <div className="px-4 sm:px-6 lg:px-8 pt-4 pb-3">
-          <div className="max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto">
+        <div className="px-4 lg:px-8 pt-4 pb-3">
+          <div className="max-w-sm lg:max-w-4xl mx-auto">
             <button
               className="w-full text-left focus:outline-none"
               onClick={() => {
@@ -344,7 +344,7 @@ export default function Home() {
               }}
             >
               <div
-                className="w-full rounded-xl sm:rounded-2xl overflow-hidden relative aspect-[2/1] sm:aspect-[2.15/1] lg:aspect-[2.8/1] max-h-[11.75rem] sm:max-h-[15rem] lg:max-h-[18rem] bg-black"
+                className="rounded-2xl overflow-hidden relative h-[10.35rem] lg:h-[16.1rem]"
                 style={
                   displayBanner?.card_bg_color
                     ? { background: displayBanner.card_bg_color }
@@ -357,7 +357,7 @@ export default function Home() {
                 {displayBanner?.media_type === "video" && displayBanner?.video_url ? (
                   <video
                     src={resolveAssetUrl(displayBanner.video_url)}
-                    className="absolute inset-0 w-full h-full object-contain object-center"
+                    className="absolute inset-0 w-full h-full object-cover object-center"
                     autoPlay
                     muted
                     loop
@@ -367,16 +367,16 @@ export default function Home() {
                   <img
                     src={resolveAssetUrl((displayBanner?.banner || media.heroBannerImage)!)}
                     alt="Banner promocional"
-                    className="absolute inset-0 w-full h-full object-contain object-center"
+                    className="absolute inset-0 w-full h-full object-cover object-center"
                     loading="eager"
                     decoding="async"
                   />
                 ) : null}
                 {/* Gradient overlay */}
-                <div className="absolute inset-0 hidden sm:block bg-gradient-to-r from-black/75 via-black/40 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/40 to-transparent" />
 
                 {/* Text */}
-                <div className="absolute inset-0 hidden sm:flex flex-col justify-end px-5 pb-5 lg:px-10 lg:pb-8">
+                <div className="absolute inset-0 flex flex-col justify-end px-5 pb-5 lg:px-10 lg:pb-8">
                   {displayBanner?.display_title && (
                     <p className="text-xs lg:text-sm text-parchment/80 truncate mb-0.5">
                       {displayBanner.display_title}
@@ -391,10 +391,10 @@ export default function Home() {
 
                 {/* Navigation dots */}
                 {activeBanners.length > 1 && (
-                  <div className="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 flex items-center gap-1.5 sm:gap-2">
+                  <div className="absolute bottom-3 right-3 flex items-center gap-2">
                     <button
                       onClick={(e) => { e.stopPropagation(); setActiveBannerIndex((prev) => (prev - 1 + activeBanners.length) % activeBanners.length); }}
-                      className="w-6 h-6 rounded-full bg-black/55 text-stone hover:text-cream flex items-center justify-center"
+                      className="w-6 h-6 rounded-full bg-black/50 text-stone hover:text-cream flex items-center justify-center"
                     >
                       <ChevronLeft size={13} />
                     </button>
@@ -409,7 +409,7 @@ export default function Home() {
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); setActiveBannerIndex((prev) => (prev + 1) % activeBanners.length); }}
-                      className="w-6 h-6 rounded-full bg-black/55 text-stone hover:text-cream flex items-center justify-center"
+                      className="w-6 h-6 rounded-full bg-black/50 text-stone hover:text-cream flex items-center justify-center"
                     >
                       <ChevronRight size={13} />
                     </button>
@@ -422,7 +422,7 @@ export default function Home() {
       )}
 
       {/* ── Content ── */}
-      <div className="px-4 sm:px-6 lg:px-8 pb-28 lg:pb-12 max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto w-full">
+      <div className="px-4 lg:px-8 pb-32 max-w-lg lg:max-w-5xl mx-auto w-full">
         {/* Section Title */}
         <div className="mt-4 mb-3">
           <p className="text-stone text-xs lg:text-sm">{sectionSubtitle}</p>
@@ -435,7 +435,7 @@ export default function Home() {
             <button
               key={category}
               onClick={() => setActiveCategory(category)}
-              className={`px-3.5 py-1.5 lg:px-5 lg:py-2 rounded-full text-xs lg:text-base font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+              className={`px-3.5 py-1.5 lg:px-5 lg:py-2 rounded-full text-sm lg:text-base font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                 activeCategory === category
                   ? "bg-gold text-cream shadow-lg shadow-gold/20"
                   : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
@@ -456,7 +456,7 @@ export default function Home() {
 
         {/* ── Desktop Grid (lg+) ── */}
         {categoryProducts.length > 0 && (
-          <div className="hidden lg:grid lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-5">
+          <div className="hidden lg:grid lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {categoryProducts.map((product, index) => (
               <button
                 key={product.id}
@@ -465,7 +465,7 @@ export default function Home() {
                   clickedPizza === product.id ? "scale-105 shadow-gold/30" : "hover:scale-[1.02]"
                 }`}
               >
-                <div className="relative w-40 h-40 xl:w-44 xl:h-44 mx-auto mb-4">
+                <div className="relative w-44 h-44 mx-auto mb-4">
                   <CategorySeal product={product} className="left-2 top-2" />
                   <div className="h-full w-full rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
                     {renderIcon(product.icon, index, "lg")}
@@ -499,30 +499,30 @@ export default function Home() {
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
-            <div className="grid grid-cols-1 min-[430px]:grid-cols-[64px_minmax(0,1fr)_64px] items-center gap-2">
+            <div className="grid grid-cols-[64px_minmax(0,1fr)_64px] min-[390px]:grid-cols-[72px_minmax(0,1fr)_72px] items-start gap-2">
               {/* Previous (partially visible) */}
-              <div className="hidden min-[430px]:block w-full opacity-30 pointer-events-none">
+              <div className="w-full mt-16 opacity-35 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
                   {renderIcon(prevPizza?.icon, getPizzaIndex(-1), "sm")}
                 </div>
               </div>
 
               {/* Featured center card */}
-              <div className="w-full max-w-[220px] min-[390px]:max-w-[236px] mx-auto min-w-0">
+              <div className="w-full max-w-[236px] mx-auto">
                 <button
                   onTouchStart={handleTouchStart}
                   onTouchEnd={handleTouchEnd}
                   onClick={() => handlePizzaClick(currentPizza.id)}
-                  className={`w-full overflow-hidden bg-surface-02 rounded-2xl p-3 min-[390px]:p-4 shadow-2xl transition-all duration-300 ${
+                  className={`w-full bg-surface-02 rounded-2xl p-4 shadow-2xl transition-all duration-300 ${
                     clickedPizza === currentPizza.id ? "scale-105 shadow-gold/30" : "active:scale-95"
                   }`}
                 >
-                  <div className="relative w-[min(144px,40vw)] h-[min(144px,40vw)] min-[390px]:w-[min(156px,42vw)] min-[390px]:h-[min(156px,42vw)] mx-auto mb-3">
+                  <div className="relative w-[min(156px,42vw)] h-[min(156px,42vw)] mx-auto mb-3">
                     <CategorySeal product={currentPizza} className="left-2 top-2" compact />
                     <div className="h-full w-full rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
                       {renderIcon(currentPizza?.icon, carouselPosition, "lg")}
                     </div>
-                    <BestSellerSeal show={(currentPizza as any)?.show_best_seller_badge} compact />
+                    <BestSellerSeal show={(currentPizza as any)?.show_best_seller_badge} />
                   </div>
                   <p className="text-cream font-bold text-center text-sm leading-snug line-clamp-1">
                     {currentPizza?.name}
@@ -543,7 +543,7 @@ export default function Home() {
               </div>
 
               {/* Next (partially visible) */}
-              <div className="hidden min-[430px]:block w-full opacity-30 pointer-events-none">
+              <div className="w-full mt-16 opacity-35 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
                   {renderIcon(nextPizza?.icon, getPizzaIndex(1), "sm")}
                 </div>
