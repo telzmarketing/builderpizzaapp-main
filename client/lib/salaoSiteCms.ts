@@ -35,6 +35,18 @@ export interface SalaoPublicPage {
   paths: string[];
 }
 
+export interface SalaoSiteBlogPost {
+  id: string;
+  title: string;
+  excerpt: string;
+  content?: string;
+  image: string;
+  published_at: string;
+  author?: string;
+  category?: string;
+  published: boolean;
+}
+
 const SKIP_TEXT_PARENTS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "META", "LINK", "TITLE", "HEAD"]);
 
 export const SALAO_PUBLIC_PAGES: SalaoPublicPage[] = [
@@ -424,6 +436,7 @@ export function applySalaoSiteOverrides(
   html: string,
   textOverrides: Record<string, string> = {},
   imageOverrides: Record<string, string> = {},
+  blogPosts: SalaoSiteBlogPost[] = [],
 ): string {
   const doc = parseHtml(html);
   ensureBase(doc);
@@ -445,6 +458,7 @@ export function applySalaoSiteOverrides(
   });
 
   applySalaoNavigationPreset(doc);
+  applySalaoBlogPosts(doc, blogPosts);
 
   return `<!doctype html>\n${doc.documentElement.outerHTML}`;
 }
@@ -488,4 +502,78 @@ function isExcludedSalaoNavigationElement(element: Element | null) {
 
 function getMenuItemClasses(element: Element) {
   return Array.from(element.classList).filter((className) => className.startsWith("menu-item-"));
+}
+
+function applySalaoBlogPosts(doc: Document, blogPosts: SalaoSiteBlogPost[]) {
+  const publishedPosts = blogPosts.filter((post) => post.published !== false && post.title.trim());
+  if (!publishedPosts.length) return;
+
+  const holder = doc.querySelector(".tpl-blog-holder");
+  const entries = Array.from(doc.querySelectorAll<HTMLElement>(".wdt-post-entry"))
+    .filter((entry) => entry.querySelector("article"));
+  const template = entries[0];
+  if (!holder || !template) return;
+
+  entries.forEach((entry, index) => {
+    if (index >= publishedPosts.length) entry.remove();
+  });
+
+  publishedPosts.forEach((post, index) => {
+    const entry = entries[index] ?? template.cloneNode(true) as HTMLElement;
+    if (!entries[index]) holder.appendChild(entry);
+    hydrateBlogEntry(entry, post, index);
+  });
+}
+
+function hydrateBlogEntry(entry: HTMLElement, post: SalaoSiteBlogPost, index: number) {
+  const slug = slugify(post.title || post.id || `artigo-${index + 1}`);
+  const href = `/blog#${slug}`;
+  const date = formatBlogDate(post.published_at);
+
+  const article = entry.querySelector("article");
+  if (article) article.id = post.id || `salao-blog-${index + 1}`;
+
+  entry.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => {
+    link.href = href;
+    link.target = "_top";
+    link.title = post.title;
+  });
+
+  const image = entry.querySelector<HTMLImageElement>(".entry-thumb img");
+  if (image && post.image) {
+    image.src = post.image;
+    image.alt = post.title;
+    image.removeAttribute("srcset");
+    image.removeAttribute("sizes");
+    image.removeAttribute("data-src");
+    image.removeAttribute("data-lazy-src");
+  }
+
+  const dateNode = entry.querySelector(".entry-date");
+  if (dateNode) dateNode.textContent = date;
+
+  const titleNode = entry.querySelector(".entry-title a");
+  if (titleNode) titleNode.textContent = post.title;
+
+  const bodyNode = entry.querySelector(".entry-body p");
+  if (bodyNode) bodyNode.textContent = post.excerpt || post.content || "";
+
+  const button = entry.querySelector(".entry-button a");
+  if (button?.firstChild) button.firstChild.textContent = "Leia mais";
+}
+
+function formatBlogDate(value: string) {
+  if (!value) return "";
+  const date = new Date(`${value.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+function slugify(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "artigo";
 }

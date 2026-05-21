@@ -36,6 +36,7 @@ export default function SalaoHome() {
           html,
           getSalaoPageOverrides(settings.site_text_overrides, pageKey),
           getSalaoPageOverrides(settings.site_image_overrides, pageKey),
+          settings.blog_posts,
         ));
       })
       .catch(() => {

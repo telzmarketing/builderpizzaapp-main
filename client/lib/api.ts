@@ -2297,6 +2297,18 @@ export interface ApiSalaoMenuItem {
   description: string;
 }
 
+export interface ApiSalaoBlogPost {
+  id: string;
+  title: string;
+  excerpt: string;
+  content: string;
+  image: string;
+  published_at: string;
+  author: string;
+  category: string;
+  published: boolean;
+}
+
 export interface ApiSalaoPageSettings {
   id: string;
   enabled: boolean;
@@ -2327,6 +2339,7 @@ export interface ApiSalaoPageSettings {
   seo_description: string;
   site_text_overrides: Record<string, string>;
   site_image_overrides: Record<string, string>;
+  blog_posts: ApiSalaoBlogPost[];
   created_at?: string | null;
   updated_at?: string | null;
 }

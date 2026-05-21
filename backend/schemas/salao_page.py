@@ -15,6 +15,18 @@ class SalaoMenuItem(BaseModel):
     description: str = Field(default="", max_length=600)
 
 
+class SalaoBlogPost(BaseModel):
+    id: str = Field(default="", max_length=80)
+    title: str = Field(min_length=1, max_length=220)
+    excerpt: str = Field(default="", max_length=800)
+    content: str = Field(default="", max_length=6000)
+    image: str = Field(default="", max_length=1000)
+    published_at: str = Field(default="", max_length=40)
+    author: str = Field(default="", max_length=120)
+    category: str = Field(default="", max_length=120)
+    published: bool = True
+
+
 class SalaoPageSettingsOut(BaseModel):
     id: str
     enabled: bool
@@ -45,6 +57,7 @@ class SalaoPageSettingsOut(BaseModel):
     seo_description: str
     site_text_overrides: dict[str, str] = Field(default_factory=dict)
     site_image_overrides: dict[str, str] = Field(default_factory=dict)
+    blog_posts: list[SalaoBlogPost] = Field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -78,3 +91,4 @@ class SalaoPageSettingsUpdate(BaseModel):
     seo_description: Optional[str] = None
     site_text_overrides: Optional[dict[str, str]] = None
     site_image_overrides: Optional[dict[str, str]] = None
+    blog_posts: Optional[list[SalaoBlogPost]] = None

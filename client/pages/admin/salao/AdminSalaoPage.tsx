@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Eye, FileText, Image, Layers3, Loader2, RotateCcw, Save, Search, Settings } from "lucide-react";
+import { Check, Eye, FileText, Image, Layers3, Loader2, Newspaper, Plus, RotateCcw, Save, Search, Settings, Trash2 } from "lucide-react";
 import {
   AdminPageContent,
   AdminPageHeader,
@@ -8,7 +8,7 @@ import {
   type AdminPageTab,
 } from "@/components/admin/AdminPageChrome";
 import ImageUpload from "@/components/admin/ImageUpload";
-import { resolveAssetUrl, salaoPageApi, type ApiSalaoPageSettings } from "@/lib/api";
+import { resolveAssetUrl, salaoPageApi, type ApiSalaoBlogPost, type ApiSalaoPageSettings } from "@/lib/api";
 import {
   applySalaoSiteOverrides,
   buildSalaoSiteBlocks,
@@ -25,12 +25,13 @@ import {
   type SalaoSiteTextTarget,
 } from "@/lib/salaoSiteCms";
 
-type Tab = "blocks" | "seo" | "preview";
+type Tab = "blocks" | "blog" | "seo" | "preview";
 
 const SALAO_SITE_URL = "/salao-site/index.html";
 
 const TABS: AdminPageTab<Tab>[] = [
   { id: "blocks", icon: <Layers3 size={15} />, label: "Blocos" },
+  { id: "blog", icon: <Newspaper size={15} />, label: "Blog" },
   { id: "seo", icon: <Settings size={15} />, label: "SEO & Publicacao" },
   { id: "preview", icon: <Eye size={15} />, label: "Previa" },
 ];
@@ -110,6 +111,7 @@ export default function AdminSalaoPage() {
       siteHtml,
       getSalaoPageOverrides(draft.site_text_overrides, activePageKey),
       getSalaoPageOverrides(draft.site_image_overrides, activePageKey),
+      draft.blog_posts,
     );
   }, [activePageKey, draft, siteHtml]);
 
@@ -135,6 +137,37 @@ export default function AdminSalaoPage() {
   const restoreImage = (id: string) => {
     if (!draft) return;
     setField("site_image_overrides", removeSalaoPageOverride(draft.site_image_overrides, activePageKey, id));
+  };
+
+  const updateBlogPost = (index: number, patch: Partial<ApiSalaoBlogPost>) => {
+    if (!draft) return;
+    const posts = [...draft.blog_posts];
+    posts[index] = { ...posts[index], ...patch };
+    setField("blog_posts", posts);
+  };
+
+  const addBlogPost = () => {
+    if (!draft) return;
+    const id = `blog-${Date.now()}`;
+    setField("blog_posts", [
+      ...draft.blog_posts,
+      {
+        id,
+        title: "Novo artigo",
+        excerpt: "",
+        content: "",
+        image: "",
+        published_at: new Date().toISOString().slice(0, 10),
+        author: "Moschettieri",
+        category: "Restaurante",
+        published: true,
+      },
+    ]);
+  };
+
+  const removeBlogPost = (index: number) => {
+    if (!draft) return;
+    setField("blog_posts", draft.blog_posts.filter((_, itemIndex) => itemIndex !== index));
   };
 
   const save = async () => {
@@ -226,6 +259,15 @@ export default function AdminSalaoPage() {
               </div>
             )}
 
+            {tab === "blog" && (
+              <BlogManager
+                posts={draft.blog_posts}
+                onAdd={addBlogPost}
+                onChange={updateBlogPost}
+                onRemove={removeBlogPost}
+              />
+            )}
+
             {tab === "seo" && (
               <Panel
                 title="SEO & Publicacao"
@@ -259,7 +301,128 @@ function normalizeSettings(settings: ApiSalaoPageSettings): ApiSalaoPageSettings
     ...settings,
     site_text_overrides: settings.site_text_overrides ?? {},
     site_image_overrides: settings.site_image_overrides ?? {},
+    blog_posts: settings.blog_posts ?? [],
   };
+}
+
+function BlogManager({
+  posts,
+  onAdd,
+  onChange,
+  onRemove,
+}: {
+  posts: ApiSalaoBlogPost[];
+  onAdd: () => void;
+  onChange: (index: number, patch: Partial<ApiSalaoBlogPost>) => void;
+  onRemove: (index: number) => void;
+}) {
+  return (
+    <Panel title="Blog List" subtitle="Crie e gerencie os artigos exibidos nos cards de blog da Pagina Salao.">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-01 p-3">
+        <div>
+          <p className="text-sm font-black text-cream">{posts.length} artigos cadastrados</p>
+          <p className="text-xs text-stone">Artigos publicados aparecem automaticamente no bloco de noticias do site.</p>
+        </div>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="inline-flex h-10 items-center gap-2 rounded-xl bg-gold px-4 text-sm font-black text-black transition hover:bg-gold/90"
+        >
+          <Plus size={16} />
+          Novo artigo
+        </button>
+      </div>
+
+      {posts.length === 0 ? (
+        <EmptyBlockMessage message="Nenhum artigo cadastrado ainda." />
+      ) : (
+        <div className="grid gap-4">
+          {posts.map((post, index) => (
+            <BlogPostEditor
+              key={post.id || index}
+              post={post}
+              index={index}
+              onChange={(patch) => onChange(index, patch)}
+              onRemove={() => onRemove(index)}
+            />
+          ))}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function BlogPostEditor({
+  post,
+  index,
+  onChange,
+  onRemove,
+}: {
+  post: ApiSalaoBlogPost;
+  index: number;
+  onChange: (patch: Partial<ApiSalaoBlogPost>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <article className="grid gap-4 rounded-xl border border-surface-03 bg-surface-01 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <span className="text-xs font-black uppercase tracking-[0.18em] text-gold">Artigo {index + 1}</span>
+          <h3 className="mt-1 text-lg font-black text-cream">{post.title || "Sem titulo"}</h3>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onChange({ published: !post.published })}
+            className={`rounded-lg border px-3 py-2 text-xs font-black ${
+              post.published
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                : "border-red-500/30 bg-red-500/10 text-red-300"
+            }`}
+          >
+            {post.published ? "Publicado" : "Rascunho"}
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-red-500/30 px-3 text-xs font-bold text-red-300 hover:bg-red-500/10"
+          >
+            <Trash2 size={14} />
+            Excluir
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid gap-3">
+          <Field label="Titulo" value={post.title} onChange={(value) => onChange({ title: value })} />
+          <Field label="Resumo do card" value={post.excerpt} onChange={(value) => onChange({ excerpt: value })} multiline />
+          <Field label="Conteudo do artigo" value={post.content} onChange={(value) => onChange({ content: value })} multiline />
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field label="Data" value={post.published_at} onChange={(value) => onChange({ published_at: value })} />
+            <Field label="Autor" value={post.author} onChange={(value) => onChange({ author: value })} />
+            <Field label="Categoria" value={post.category} onChange={(value) => onChange({ category: value })} />
+          </div>
+        </div>
+        <div className="grid gap-3">
+          <div className="aspect-[16/10] overflow-hidden rounded-xl border border-surface-03 bg-black">
+            {post.image ? (
+              <img src={siteAssetUrl(post.image)} alt={post.title} className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full items-center justify-center text-xs text-stone">Sem imagem</div>
+            )}
+          </div>
+          <ImageUpload
+            label="Imagem do artigo"
+            value={post.image}
+            onChange={(value) => onChange({ image: value })}
+            maxKB={3072}
+            sizeGuide="Imagem do blog, ate 3MB"
+          />
+        </div>
+      </div>
+    </article>
+  );
 }
 
 function PublicPageSelector({
@@ -282,10 +445,11 @@ function PublicPageSelector({
             <button
               key={page.key}
               type="button"
+              aria-pressed={active}
               onClick={() => onSelect(page.key)}
               className={`rounded-xl border p-3 text-left transition ${
                 active
-                  ? "border-gold/60 bg-gold/10 text-cream"
+                  ? "border-gold bg-gold text-black shadow-[0_0_0_3px_rgba(218,165,32,0.18)]"
                   : "border-surface-03 bg-surface-01 text-stone hover:border-gold/30 hover:text-cream"
               }`}
             >
