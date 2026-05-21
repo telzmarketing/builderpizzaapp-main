@@ -26,15 +26,6 @@ export interface SalaoSiteBlock {
   imageIds: string[];
 }
 
-export type SalaoPublicPageKey = "home" | "menu" | "blog" | "pages" | "contact";
-
-export interface SalaoPublicPage {
-  key: SalaoPublicPageKey;
-  title: string;
-  description: string;
-  paths: string[];
-}
-
 export interface SalaoSiteBlogPost {
   id: string;
   title: string;
@@ -48,39 +39,6 @@ export interface SalaoSiteBlogPost {
 }
 
 const SKIP_TEXT_PARENTS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "META", "LINK", "TITLE", "HEAD"]);
-
-export const SALAO_PUBLIC_PAGES: SalaoPublicPage[] = [
-  {
-    key: "home",
-    title: "Home 1",
-    description: "Pagina inicial principal definida para o dominio moschettieri.com.br.",
-    paths: ["/", ""],
-  },
-  {
-    key: "menu",
-    title: "Menu 2",
-    description: "Pagina de cardapio institucional definida como Menu 2.",
-    paths: ["/cardapio", "/menu", "/menu-ii"],
-  },
-  {
-    key: "blog",
-    title: "Blog List",
-    description: "Listagem de conteudos do restaurante.",
-    paths: ["/blog", "/blog-list"],
-  },
-  {
-    key: "pages",
-    title: "Pages",
-    description: "Paginas institucionais, galeria, chefs, premios e perguntas frequentes.",
-    paths: ["/sobre", "/galeria", "/chefs", "/premios", "/faq"],
-  },
-  {
-    key: "contact",
-    title: "Contato",
-    description: "Contato, reservas e canais de atendimento do salao.",
-    paths: ["/contato", "/reservas", "/contact-us", "/reservation"],
-  },
-];
 
 const SECTION_ORDER = [
   "781f60e",
@@ -203,50 +161,6 @@ const SECTION_META: Record<string, { title: string; description: string }> = {
   },
 };
 
-const EXCLUDED_MENU_ITEM_CLASSES = new Set([
-  "menu-item-113",
-  "menu-item-117",
-  "menu-item-116",
-  "menu-item-977",
-  "menu-item-980",
-  "menu-item-981",
-  "menu-item-978",
-  "menu-item-979",
-  "menu-item-281",
-  "menu-item-271",
-  "menu-item-246",
-  "menu-item-97",
-  "menu-item-95",
-  "menu-item-96",
-  "menu-item-94",
-  "menu-item-457",
-  "menu-item-47",
-  "menu-item-48",
-]);
-
-const MENU_LABELS: Record<string, string> = {
-  "menu-item-46": "Home 1",
-  "menu-item-247": "Menu 2",
-  "menu-item-74": "Blog List",
-};
-
-const MENU_HREFS: Record<string, string> = {
-  "menu-item-112": "/",
-  "menu-item-46": "/",
-  "menu-item-248": "/cardapio",
-  "menu-item-247": "/cardapio",
-  "menu-item-75": "/blog",
-  "menu-item-74": "/blog",
-  "menu-item-893": "/sobre",
-  "menu-item-55": "/galeria",
-  "menu-item-196": "/chefs",
-  "menu-item-327": "/premios",
-  "menu-item-328": "/faq",
-  "menu-item-229": "/contato",
-  "menu-item-230": "/contato",
-  "menu-item-56": "/reservas",
-};
-
 function parseHtml(html: string): Document {
   return new DOMParser().parseFromString(html, "text/html");
 }
@@ -271,32 +185,24 @@ function walkTextNodes(doc: Document): Text[] {
 
 export function extractSalaoSiteTextTargets(html: string): SalaoSiteTextTarget[] {
   const doc = parseHtml(html);
-  return walkTextNodes(doc)
-    .map((node, index) => ({
-      id: `text-${index}`,
-      tag: node.parentElement?.tagName.toLowerCase() ?? "text",
-      value: node.nodeValue?.replace(/\s+/g, " ").trim() ?? "",
-      ...getElementMeta(node.parentElement),
-      hiddenByNavigationPreset: isExcludedSalaoNavigationElement(node.parentElement),
-    }))
-    .filter((target) => !target.hiddenByNavigationPreset)
-    .map(({ hiddenByNavigationPreset: _hiddenByNavigationPreset, ...target }) => target);
+  return walkTextNodes(doc).map((node, index) => ({
+    id: `text-${index}`,
+    tag: node.parentElement?.tagName.toLowerCase() ?? "text",
+    value: node.nodeValue?.replace(/\s+/g, " ").trim() ?? "",
+    ...getElementMeta(node.parentElement),
+  }));
 }
 
 export function extractSalaoSiteImageTargets(html: string): SalaoSiteImageTarget[] {
   const doc = parseHtml(html);
-  return Array.from(doc.querySelectorAll<HTMLImageElement>("img[src]"))
-    .map((image, index) => ({
-      id: `image-${index}`,
-      src: image.getAttribute("src") ?? "",
-      alt: image.getAttribute("alt") ?? "",
-      width: image.getAttribute("width") ?? "",
-      height: image.getAttribute("height") ?? "",
-      ...getElementMeta(image),
-      hiddenByNavigationPreset: isExcludedSalaoNavigationElement(image),
-    }))
-    .filter((target) => !target.hiddenByNavigationPreset)
-    .map(({ hiddenByNavigationPreset: _hiddenByNavigationPreset, ...target }) => target);
+  return Array.from(doc.querySelectorAll<HTMLImageElement>("img[src]")).map((image, index) => ({
+    id: `image-${index}`,
+    src: image.getAttribute("src") ?? "",
+    alt: image.getAttribute("alt") ?? "",
+    width: image.getAttribute("width") ?? "",
+    height: image.getAttribute("height") ?? "",
+    ...getElementMeta(image),
+  }));
 }
 
 export function buildSalaoSiteBlocks(
@@ -323,57 +229,6 @@ export function buildSalaoSiteBlocks(
   imageTargets.forEach((target) => ensureBlock(target.blockId).imageIds.push(target.id));
 
   return Array.from(blocks.values()).sort((a, b) => getBlockOrder(a.id) - getBlockOrder(b.id));
-}
-
-export function getSalaoPublicPageKey(pathname = "/"): SalaoPublicPageKey {
-  const path = normalizePath(pathname);
-  return SALAO_PUBLIC_PAGES.find((page) => page.paths.some((candidate) => normalizePath(candidate) === path))?.key ?? "home";
-}
-
-export function getSalaoPageScopedKey(pageKey: SalaoPublicPageKey, targetId: string) {
-  return pageKey === "home" ? targetId : `${pageKey}:${targetId}`;
-}
-
-export function getSalaoOverrideValue(overrides: Record<string, string>, pageKey: SalaoPublicPageKey, targetId: string) {
-  const scopedKey = getSalaoPageScopedKey(pageKey, targetId);
-  return overrides[scopedKey] ?? overrides[targetId];
-}
-
-export function getSalaoPageOverrides(overrides: Record<string, string> = {}, pageKey: SalaoPublicPageKey) {
-  const pageOverrides: Record<string, string> = {};
-
-  Object.entries(overrides).forEach(([key, value]) => {
-    if (!key.includes(":")) pageOverrides[key] = value;
-  });
-
-  if (pageKey !== "home") {
-    const prefix = `${pageKey}:`;
-    Object.entries(overrides).forEach(([key, value]) => {
-      if (key.startsWith(prefix)) pageOverrides[key.slice(prefix.length)] = value;
-    });
-  }
-
-  return pageOverrides;
-}
-
-export function setSalaoPageOverride(
-  overrides: Record<string, string>,
-  pageKey: SalaoPublicPageKey,
-  targetId: string,
-  value: string,
-) {
-  return { ...overrides, [getSalaoPageScopedKey(pageKey, targetId)]: value };
-}
-
-export function removeSalaoPageOverride(
-  overrides: Record<string, string>,
-  pageKey: SalaoPublicPageKey,
-  targetId: string,
-) {
-  const next = { ...overrides };
-  delete next[getSalaoPageScopedKey(pageKey, targetId)];
-  if (pageKey === "home") delete next[targetId];
-  return next;
 }
 
 function ensureBase(doc: Document) {
@@ -457,51 +312,9 @@ export function applySalaoSiteOverrides(
     image.removeAttribute("sizes");
   });
 
-  applySalaoNavigationPreset(doc);
   applySalaoBlogPosts(doc, blogPosts);
 
   return `<!doctype html>\n${doc.documentElement.outerHTML}`;
-}
-
-function normalizePath(pathname: string) {
-  const path = pathname.split("?")[0].split("#")[0].replace(/\/+$/, "");
-  return path || "/";
-}
-
-function applySalaoNavigationPreset(doc: Document) {
-  doc.querySelectorAll("li").forEach((item) => {
-    if (getMenuItemClasses(item).some((className) => EXCLUDED_MENU_ITEM_CLASSES.has(className))) {
-      item.remove();
-    }
-  });
-
-  doc.querySelectorAll("li").forEach((item) => {
-    const className = getMenuItemClasses(item).find((name) => MENU_LABELS[name] || MENU_HREFS[name]);
-    if (!className) return;
-
-    const label = MENU_LABELS[className];
-    if (label) {
-      const span = item.querySelector(":scope > a span");
-      if (span) span.textContent = label;
-    }
-
-    const href = MENU_HREFS[className];
-    const link = item.querySelector<HTMLAnchorElement>(":scope > a");
-    if (href && link) {
-      link.setAttribute("href", href);
-      link.setAttribute("target", "_top");
-    }
-  });
-}
-
-function isExcludedSalaoNavigationElement(element: Element | null) {
-  if (!element) return false;
-  const item = element.closest("li");
-  return Boolean(item && getMenuItemClasses(item).some((className) => EXCLUDED_MENU_ITEM_CLASSES.has(className)));
-}
-
-function getMenuItemClasses(element: Element) {
-  return Array.from(element.classList).filter((className) => className.startsWith("menu-item-"));
 }
 
 function applySalaoBlogPosts(doc: Document, blogPosts: SalaoSiteBlogPost[]) {
