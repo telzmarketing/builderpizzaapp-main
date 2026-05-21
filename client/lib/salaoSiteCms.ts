@@ -408,6 +408,21 @@ function ensureBase(doc: Document) {
   doc.head.prepend(base);
 }
 
+function normalizeSalaoAssetUrls(doc: Document) {
+  doc.querySelectorAll<HTMLElement>("[style]").forEach((element) => {
+    const style = element.getAttribute("style");
+    if (style) element.setAttribute("style", normalizeSalaoAssetReference(style));
+  });
+
+  doc.querySelectorAll<HTMLStyleElement>("style").forEach((style) => {
+    style.textContent = normalizeSalaoAssetReference(style.textContent ?? "");
+  });
+}
+
+function normalizeSalaoAssetReference(value: string) {
+  return value.replace(/url\((['"]?)(?!data:|https?:|\/|#)(?:\.\/)?images\//gi, "url($1/salao-site/images/");
+}
+
 function getElementMeta(element: Element | null) {
   const blockId = getBlockId(element);
   const meta = SECTION_META[blockId] ?? SECTION_META.uncategorized;
@@ -465,6 +480,7 @@ export function applySalaoSiteOverrides(
 ): string {
   const doc = parseHtml(html);
   ensureBase(doc);
+  normalizeSalaoAssetUrls(doc);
 
   walkTextNodes(doc).forEach((node, index) => {
     const value = textOverrides[`text-${index}`];
