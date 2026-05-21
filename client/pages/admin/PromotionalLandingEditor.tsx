@@ -60,8 +60,8 @@ const MEDIA_SLOT_CONFIG: Record<ApiPromotionLandingMediaSlot, {
   video_url: {
     label: "Video curto",
     mediaType: "video",
-    hint: "O carrossel exibe o video por ate 5 segundos e passa para a proxima midia.",
-    sizeGuide: "Recomendado: MP4/WebM vertical, ate 5 segundos",
+    hint: "O carrossel exibe o video por ate 15 segundos e passa para a proxima midia.",
+    sizeGuide: "Recomendado: MP4/WebM vertical, ate 15 segundos",
   },
 };
 
@@ -455,8 +455,8 @@ export default function PromotionalLandingEditor() {
               onChange={(value) => setForm((current) => ({ ...current, video_url: value }))}
               mediaType="video"
               label="Vídeo curto"
-              hint="O carrossel exibe o vídeo por até 5 segundos e passa para a próxima mídia."
-              sizeGuide="Recomendado: MP4/WebM vertical, até 5 segundos"
+              hint="O carrossel exibe o vídeo por até 15 segundos e passa para a próxima mídia."
+              sizeGuide="Recomendado: MP4/WebM vertical, até 15 segundos"
               maxKBVideo={12000}
             />
 

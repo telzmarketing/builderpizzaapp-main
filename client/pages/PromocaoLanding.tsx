@@ -50,7 +50,7 @@ type LandingMedia = {
 
 const advanceIntervalMs = {
   image: 4500,
-  video: 5000,
+  video: 15000,
 };
 
 export default function PromocaoLanding() {
