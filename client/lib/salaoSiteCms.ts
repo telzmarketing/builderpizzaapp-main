@@ -62,7 +62,7 @@ export const SALAO_PUBLIC_PAGES: SalaoPublicPage[] = [
     key: "home",
     title: "Home",
     description: "Home 2 definida como pagina inicial publica.",
-    blockIds: ["781f60e", "8b3e972", "622ae3c", "9b4b28c", "8246d51", "7082ce9", "4d7a5a0", "e677573", "0d41703"],
+    blockIds: ["781f60e", "8b3e972", "9b4b28c", "7082ce9", "4d7a5a0", "e677573", "0d41703"],
   },
   {
     key: "menu",
@@ -483,9 +483,53 @@ export function applySalaoSiteOverrides(
   });
 
   applySalaoNavigationPreset(doc);
+  applySalaoHomePreset(doc);
   applySalaoBlogPosts(doc, blogPosts);
 
   return `<!doctype html>\n${doc.documentElement.outerHTML}`;
+}
+
+function applySalaoHomePreset(doc: Document) {
+  const homeCarousel = doc.querySelector<HTMLElement>(".wdt-custom-h1-slider-carousel");
+  const wrapper = homeCarousel?.querySelector<HTMLElement>(".wdt-advanced-carousel-wrapper");
+  if (!homeCarousel || !wrapper) return;
+
+  const home2Slide = Array.from(wrapper.querySelectorAll<HTMLElement>(".swiper-slide"))
+    .find((slide) => slide.querySelector('[data-id="9b4b28c"], .elementor-496'));
+  if (!home2Slide) return;
+
+  wrapper.replaceChildren(home2Slide);
+  home2Slide.classList.add("swiper-slide-active");
+  home2Slide.classList.remove("swiper-slide-next", "swiper-slide-prev", "swiper-slide-duplicate");
+  home2Slide.removeAttribute("style");
+  home2Slide.setAttribute("aria-label", "Home 2");
+
+  const carouselContainer = homeCarousel.querySelector<HTMLElement>(".wdt-advanced-carousel-container");
+  carouselContainer?.classList.remove("swiper-initialized", "swiper-horizontal", "swiper-backface-hidden");
+  carouselContainer?.removeAttribute("style");
+  wrapper.removeAttribute("style");
+
+  homeCarousel.querySelectorAll<HTMLElement>(
+    ".wdt-carousel-pagination-wrapper, .wdt-carousel-arrow-pagination, .swiper-pagination, [class*='arrow-pagination']",
+  ).forEach((element) => element.remove());
+
+  const style = doc.createElement("style");
+  style.id = "moschettieri-home-2-static";
+  style.textContent = `
+    .wdt-custom-h1-slider-carousel .wdt-advanced-carousel-wrapper {
+      transform: none !important;
+      display: block !important;
+    }
+    .wdt-custom-h1-slider-carousel .swiper-slide {
+      width: 100% !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+      transform: none !important;
+      position: relative !important;
+      pointer-events: auto !important;
+    }
+  `;
+  doc.head.appendChild(style);
 }
 
 function applySalaoNavigationPreset(doc: Document) {
