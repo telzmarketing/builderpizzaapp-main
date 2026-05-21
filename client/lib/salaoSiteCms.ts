@@ -27,6 +27,18 @@ export interface SalaoSiteBlock {
 }
 
 export type SalaoPublicPageKey = "home" | "menu" | "blog" | "moschettieri" | "contact";
+export type SalaoRenderPageKey =
+  | "home"
+  | "menu"
+  | "blog"
+  | "moschettieri"
+  | "galeria"
+  | "pessoas"
+  | "certificados"
+  | "duvidas"
+  | "contato"
+  | "reservas"
+  | "minha-conta";
 
 export interface SalaoPublicSubPage {
   key: string;
@@ -56,6 +68,22 @@ export interface SalaoSiteBlogPost {
 }
 
 const SKIP_TEXT_PARENTS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "META", "LINK", "TITLE", "HEAD"]);
+
+const SALAO_COMMON_BLOCK_IDS = ["781f60e", "8b3e972", "049259e"];
+
+const SALAO_PAGE_BLOCK_IDS: Record<SalaoRenderPageKey, string[]> = {
+  home: ["9b4b28c", "7082ce9", "4d7a5a0", "e677573", "0d41703"],
+  menu: ["7a5b8b1", "e7af066", "54d2708", "d594721", "e83d900", "964391c"],
+  blog: ["1c1b66b"],
+  moschettieri: ["4d7a5a0", "e677573", "0d41703"],
+  galeria: ["5618613"],
+  pessoas: ["f97eb41"],
+  certificados: ["0d41703", "f97eb41"],
+  duvidas: ["049259e"],
+  contato: ["2952b59", "049259e"],
+  reservas: ["2952b59", "7082ce9"],
+  "minha-conta": ["049259e"],
+};
 
 export const SALAO_PUBLIC_PAGES: SalaoPublicPage[] = [
   {
@@ -477,6 +505,7 @@ export function applySalaoSiteOverrides(
   textOverrides: Record<string, string> = {},
   imageOverrides: Record<string, string> = {},
   blogPosts: SalaoSiteBlogPost[] = [],
+  pageKey: SalaoRenderPageKey = "home",
 ): string {
   const doc = parseHtml(html);
   ensureBase(doc);
@@ -499,10 +528,39 @@ export function applySalaoSiteOverrides(
   });
 
   applySalaoNavigationPreset(doc);
-  applySalaoHomePreset(doc);
+  applySalaoPagePreset(doc, pageKey);
   applySalaoBlogPosts(doc, blogPosts);
 
   return `<!doctype html>\n${doc.documentElement.outerHTML}`;
+}
+
+function applySalaoPagePreset(doc: Document, pageKey: SalaoRenderPageKey) {
+  const allowedBlockIds = new Set([
+    ...SALAO_COMMON_BLOCK_IDS,
+    ...(SALAO_PAGE_BLOCK_IDS[pageKey] ?? SALAO_PAGE_BLOCK_IDS.home),
+  ]);
+
+  Object.keys(SECTION_META).forEach((blockId) => {
+    if (blockId === "header" || blockId === "footer" || blockId === "uncategorized") return;
+    if (allowedBlockIds.has(blockId)) return;
+
+    doc.querySelectorAll<HTMLElement>(`.elementor-element[data-id="${blockId}"]`).forEach((element) => {
+      const slide = element.closest<HTMLElement>(".swiper-slide");
+      if (slide && slide.closest(".wdt-custom-h1-slider-carousel")) {
+        slide.remove();
+        return;
+      }
+      element.remove();
+    });
+  });
+
+  if (pageKey === "home") {
+    applySalaoHomePreset(doc);
+  } else {
+    doc.querySelector<HTMLElement>(".wdt-custom-h1-slider-carousel")?.remove();
+  }
+
+  doc.body.classList.add(`salao-page-${pageKey}`);
 }
 
 function applySalaoHomePreset(doc: Document) {

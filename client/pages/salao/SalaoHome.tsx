@@ -1,10 +1,27 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { salaoPageApi } from "@/lib/api";
-import { applySalaoSiteOverrides } from "@/lib/salaoSiteCms";
+import { applySalaoSiteOverrides, type SalaoRenderPageKey } from "@/lib/salaoSiteCms";
 
 const SALAO_SITE_URL = "/salao-site/index.html";
 
+function resolveSalaoPageKey(pathname: string): SalaoRenderPageKey {
+  if (pathname.startsWith("/cardapio")) return "menu";
+  if (pathname.startsWith("/blog")) return "blog";
+  if (pathname.startsWith("/galeria")) return "galeria";
+  if (pathname.startsWith("/pessoas")) return "pessoas";
+  if (pathname.startsWith("/certificados")) return "certificados";
+  if (pathname.startsWith("/duvidas")) return "duvidas";
+  if (pathname.startsWith("/reservas")) return "reservas";
+  if (pathname.startsWith("/contato")) return "contato";
+  if (pathname.startsWith("/minha-conta")) return "minha-conta";
+  if (pathname.startsWith("/sobre")) return "moschettieri";
+  return "home";
+}
+
 export default function SalaoHome() {
+  const { pathname } = useLocation();
+  const pageKey = resolveSalaoPageKey(pathname);
   const [srcDoc, setSrcDoc] = useState("");
   const [unavailable, setUnavailable] = useState(false);
 
@@ -15,6 +32,7 @@ export default function SalaoHome() {
     document.body.style.background = "#0b0b0b";
 
     let active = true;
+    setSrcDoc("");
 
     Promise.all([
       fetch(SALAO_SITE_URL).then((response) => response.text()),
@@ -36,6 +54,7 @@ export default function SalaoHome() {
           settings.site_text_overrides,
           settings.site_image_overrides,
           settings.blog_posts,
+          pageKey,
         ));
       })
       .catch(() => {
@@ -47,7 +66,7 @@ export default function SalaoHome() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [pageKey]);
 
   if (unavailable) {
     return (
