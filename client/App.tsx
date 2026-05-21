@@ -255,8 +255,15 @@ export default function App() {
               <Route path="/conta" element={<Conta />} />
               <Route path="/localizacao" element={<Localizacao />} />
               <Route path="/cardapio" element={<ExperienceRoute salao={<SalaoHome />} delivery={<Cardapio />} />} />
+              <Route path="/blog" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
+              <Route path="/sobre" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
+              <Route path="/galeria" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
+              <Route path="/pessoas" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
+              <Route path="/certificados" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
+              <Route path="/duvidas" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
               <Route path="/reservas" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
               <Route path="/contato" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
+              <Route path="/minha-conta" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
               <Route path="/campanha/:slug" element={<Campanha />} />
               <Route path="/promocao/:slug" element={<PromocaoLanding />} />
 

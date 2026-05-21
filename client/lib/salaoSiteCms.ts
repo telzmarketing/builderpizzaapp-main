@@ -26,13 +26,21 @@ export interface SalaoSiteBlock {
   imageIds: string[];
 }
 
-export type SalaoPublicPageKey = "home" | "menu" | "blog" | "pages" | "contact";
+export type SalaoPublicPageKey = "home" | "menu" | "blog" | "moschettieri" | "contact";
+
+export interface SalaoPublicSubPage {
+  key: string;
+  title: string;
+  description: string;
+  blockIds: string[];
+}
 
 export interface SalaoPublicPage {
   key: SalaoPublicPageKey;
   title: string;
   description: string;
   blockIds: string[];
+  subPages?: SalaoPublicSubPage[];
 }
 
 export interface SalaoSiteBlogPost {
@@ -53,34 +61,154 @@ export const SALAO_PUBLIC_PAGES: SalaoPublicPage[] = [
   {
     key: "home",
     title: "Home",
-    description: "Abertura, destaques, apresentacao do restaurante e chamadas principais.",
+    description: "Home 2 definida como pagina inicial publica.",
     blockIds: ["781f60e", "8b3e972", "622ae3c", "9b4b28c", "8246d51", "7082ce9", "4d7a5a0", "e677573", "0d41703"],
   },
   {
     key: "menu",
     title: "Menu",
-    description: "Cardapio institucional, categorias, pratos, descricoes, imagens e precos.",
+    description: "Menu 2 definido como cardapio institucional.",
     blockIds: ["7a5b8b1", "e7af066", "54d2708", "d594721", "e83d900", "964391c"],
   },
   {
     key: "blog",
     title: "Blog",
-    description: "Textos, imagens e artigos do bloco de noticias do restaurante.",
+    description: "Blog List com artigos e noticias do restaurante.",
     blockIds: ["1c1b66b"],
   },
   {
-    key: "pages",
-    title: "Pages",
-    description: "Conteudos institucionais, equipe, galeria, diferenciais e secoes internas.",
+    key: "moschettieri",
+    title: "A Moschettieri",
+    description: "Paginas institucionais do restaurante.",
     blockIds: ["4d7a5a0", "e677573", "0d41703", "f97eb41", "5618613"],
+    subPages: [
+      {
+        key: "moschettieri",
+        title: "Moschettieri",
+        description: "Apresentacao institucional, historia e experiencia do restaurante.",
+        blockIds: ["4d7a5a0", "e677573", "0d41703"],
+      },
+      {
+        key: "galeria",
+        title: "Galeria",
+        description: "Imagens do ambiente e apresentacao visual do salao.",
+        blockIds: ["5618613"],
+      },
+      {
+        key: "pessoas",
+        title: "Pessoas",
+        description: "Equipe, pessoas e apresentacao dos profissionais.",
+        blockIds: ["f97eb41"],
+      },
+      {
+        key: "certificados",
+        title: "Certificados & History",
+        description: "Premios, certificados e historico institucional.",
+        blockIds: ["0d41703", "f97eb41"],
+      },
+      {
+        key: "duvidas",
+        title: "Dúvidas e Perguntas",
+        description: "Conteudos de apoio, perguntas frequentes e informacoes institucionais.",
+        blockIds: ["049259e", "footer"],
+      },
+    ],
   },
   {
     key: "contact",
     title: "Contato",
-    description: "Reservas, contatos, horarios, endereco, rodape e canais de atendimento.",
+    description: "Contatos, reservas e Minha Conta.",
     blockIds: ["2952b59", "049259e", "footer"],
+    subPages: [
+      {
+        key: "contatos",
+        title: "Contatos",
+        description: "Endereco, telefone, e-mail e canais de atendimento.",
+        blockIds: ["781f60e", "049259e", "footer"],
+      },
+      {
+        key: "reservas",
+        title: "Reservas",
+        description: "Formulario e chamadas para reserva de mesa.",
+        blockIds: ["2952b59", "7082ce9"],
+      },
+      {
+        key: "minha-conta",
+        title: "Minha Conta",
+        description: "Link de acesso a conta do cliente e rodape relacionado.",
+        blockIds: ["049259e", "footer"],
+      },
+    ],
   },
 ];
+
+const REMOVED_MENU_ITEM_CLASSES = new Set([
+  "menu-item-46",
+  "menu-item-113",
+  "menu-item-116",
+  "menu-item-117",
+  "menu-item-977",
+  "menu-item-980",
+  "menu-item-981",
+  "menu-item-978",
+  "menu-item-979",
+  "menu-item-281",
+  "menu-item-245",
+  "menu-item-280",
+  "menu-item-271",
+  "menu-item-246",
+  "menu-item-247",
+  "menu-item-97",
+  "menu-item-74",
+  "menu-item-95",
+  "menu-item-96",
+  "menu-item-94",
+  "menu-item-457",
+  "menu-item-232",
+  "menu-item-233",
+  "menu-item-47",
+  "menu-item-48",
+]);
+
+const DIRECT_MENU_ITEM_CLASSES = new Set(["menu-item-112", "menu-item-248", "menu-item-75"]);
+
+const MENU_ITEM_LABELS: Record<string, string> = {
+  "menu-item-112": "Home",
+  "menu-item-113": "Home",
+  "menu-item-248": "Menu",
+  "menu-item-247": "Menu",
+  "menu-item-75": "Blog",
+  "menu-item-74": "Blog",
+  "menu-item-195": "A Moschettieri",
+  "menu-item-893": "Moschettieri",
+  "menu-item-55": "Galeria",
+  "menu-item-196": "Pessoas",
+  "menu-item-327": "Certificados & History",
+  "menu-item-328": "Dúvidas e Perguntas",
+  "menu-item-229": "Contato",
+  "menu-item-230": "Contatos",
+  "menu-item-56": "Reservas",
+  "menu-item-49": "Minha Conta",
+};
+
+const MENU_ITEM_HREFS: Record<string, string> = {
+  "menu-item-112": "/",
+  "menu-item-113": "/",
+  "menu-item-248": "/cardapio",
+  "menu-item-247": "/cardapio",
+  "menu-item-75": "/blog",
+  "menu-item-74": "/blog",
+  "menu-item-195": "/sobre",
+  "menu-item-893": "/sobre",
+  "menu-item-55": "/galeria",
+  "menu-item-196": "/pessoas",
+  "menu-item-327": "/certificados",
+  "menu-item-328": "/duvidas",
+  "menu-item-229": "/contato",
+  "menu-item-230": "/contato",
+  "menu-item-56": "/reservas",
+  "menu-item-49": "/minha-conta",
+};
 
 const SECTION_ORDER = [
   "781f60e",
@@ -354,9 +482,70 @@ export function applySalaoSiteOverrides(
     image.removeAttribute("sizes");
   });
 
+  applySalaoNavigationPreset(doc);
   applySalaoBlogPosts(doc, blogPosts);
 
   return `<!doctype html>\n${doc.documentElement.outerHTML}`;
+}
+
+function applySalaoNavigationPreset(doc: Document) {
+  doc.querySelectorAll("li").forEach((item) => {
+    const classes = getMenuItemClasses(item);
+    if (classes.some((className) => REMOVED_MENU_ITEM_CLASSES.has(className))) {
+      item.remove();
+      return;
+    }
+
+    const className = classes.find((name) => MENU_ITEM_LABELS[name] || MENU_ITEM_HREFS[name]);
+    if (!className) return;
+
+    const link = getDirectMenuLink(item);
+    if (!link) return;
+
+    const label = MENU_ITEM_LABELS[className];
+    if (label) setMenuLinkLabel(link, label);
+
+    const href = MENU_ITEM_HREFS[className];
+    if (href) {
+      link.setAttribute("href", href);
+      link.setAttribute("target", "_top");
+    }
+
+    if (classes.some((name) => DIRECT_MENU_ITEM_CLASSES.has(name))) {
+      removeDirectSubMenus(item);
+      item.classList.remove("menu-item-has-children");
+    }
+  });
+}
+
+function getMenuItemClasses(element: Element) {
+  return Array.from(element.classList).filter((className) => className.startsWith("menu-item-"));
+}
+
+function getDirectMenuLink(item: Element) {
+  return Array.from(item.children).find((child): child is HTMLAnchorElement => child.tagName === "A") ?? null;
+}
+
+function setMenuLinkLabel(link: HTMLAnchorElement, label: string) {
+  const span = link.querySelector("span");
+  if (span) {
+    span.textContent = label;
+    return;
+  }
+
+  const textNode = Array.from(link.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
+  if (textNode) {
+    textNode.nodeValue = label;
+    return;
+  }
+
+  link.textContent = label;
+}
+
+function removeDirectSubMenus(item: Element) {
+  Array.from(item.children).forEach((child) => {
+    if (child.tagName === "UL") child.remove();
+  });
 }
 
 function applySalaoBlogPosts(doc: Document, blogPosts: SalaoSiteBlogPost[]) {

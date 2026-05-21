@@ -16,6 +16,7 @@ import {
   extractSalaoSiteTextTargets,
   SALAO_PUBLIC_PAGES,
   type SalaoPublicPageKey,
+  type SalaoPublicSubPage,
   type SalaoSiteBlock,
   type SalaoSiteImageTarget,
   type SalaoSiteTextTarget,
@@ -40,6 +41,7 @@ export default function AdminSalaoPage() {
   const [imageTargets, setImageTargets] = useState<SalaoSiteImageTarget[]>([]);
   const [activeBlockId, setActiveBlockId] = useState("");
   const [activePageKey, setActivePageKey] = useState<SalaoPublicPageKey>("home");
+  const [activeSubPageKey, setActiveSubPageKey] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -66,11 +68,15 @@ export default function AdminSalaoPage() {
     () => SALAO_PUBLIC_PAGES.find((page) => page.key === activePageKey) ?? SALAO_PUBLIC_PAGES[0],
     [activePageKey],
   );
+  const activeSubPage = useMemo(
+    () => activePage.subPages?.find((subPage) => subPage.key === activeSubPageKey) ?? null,
+    [activePage, activeSubPageKey],
+  );
   const pageBlocks = useMemo(() => {
-    const allowedBlocks = new Set(activePage.blockIds);
+    const allowedBlocks = new Set(activeSubPage?.blockIds ?? activePage.blockIds);
     const scopedBlocks = blocks.filter((block) => allowedBlocks.has(block.id));
     return scopedBlocks.length ? scopedBlocks : blocks;
-  }, [activePage, blocks]);
+  }, [activePage, activeSubPage, blocks]);
 
   useEffect(() => {
     if (!pageBlocks.length) return;
@@ -232,17 +238,33 @@ export default function AdminSalaoPage() {
                   activePageKey={activePageKey}
                   onSelect={(key) => {
                     setActivePageKey(key);
+                    setActiveSubPageKey("");
                     setQuery("");
                     const page = SALAO_PUBLIC_PAGES.find((item) => item.key === key);
                     const firstBlock = blocks.find((block) => page?.blockIds.includes(block.id));
                     if (firstBlock) setActiveBlockId(firstBlock.id);
                   }}
                 />
+                {activePage.subPages?.length ? (
+                  <PublicSubPageSelector
+                    parentTitle={activePage.title}
+                    subPages={activePage.subPages}
+                    activeSubPageKey={activeSubPageKey}
+                    onSelect={(key) => {
+                      const nextKey = key === activeSubPageKey ? "" : key;
+                      setActiveSubPageKey(nextKey);
+                      setQuery("");
+                      const subPage = activePage.subPages?.find((item) => item.key === nextKey);
+                      const firstBlock = blocks.find((block) => (subPage?.blockIds ?? activePage.blockIds).includes(block.id));
+                      if (firstBlock) setActiveBlockId(firstBlock.id);
+                    }}
+                  />
+                ) : null}
                 <Toolbar
                   query={query}
                   onQuery={setQuery}
                   total={filteredBlockTexts.length + filteredBlockImages.length}
-                  label={`itens em ${activePage.title}`}
+                  label={`itens em ${activeSubPage?.title ?? activePage.title}`}
                 />
               </>
             )}
@@ -447,7 +469,7 @@ function PublicPageSelector({
     <section className="grid gap-3 rounded-xl border border-surface-03 bg-surface-02 p-3">
       <div>
         <h2 className="text-sm font-black uppercase tracking-[0.16em] text-gold">Paginas do site</h2>
-        <p className="text-xs text-stone">Selecione uma pagina para abrir os blocos de textos e imagens correspondentes.</p>
+        <p className="text-xs text-stone">Selecione uma area do menu publico para abrir os textos e imagens correspondentes.</p>
       </div>
       <div className="grid gap-2 md:grid-cols-5">
         {SALAO_PUBLIC_PAGES.map((page) => {
@@ -466,6 +488,48 @@ function PublicPageSelector({
             >
               <span className="block text-sm font-black">{page.title}</span>
               <span className="mt-1 block line-clamp-2 text-xs">{page.description}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function PublicSubPageSelector({
+  parentTitle,
+  subPages,
+  activeSubPageKey,
+  onSelect,
+}: {
+  parentTitle: string;
+  subPages: SalaoPublicSubPage[];
+  activeSubPageKey: string;
+  onSelect: (key: string) => void;
+}) {
+  return (
+    <section className="grid gap-3 rounded-xl border border-surface-03 bg-surface-02 p-3">
+      <div>
+        <h2 className="text-sm font-black uppercase tracking-[0.16em] text-gold">Paginas em {parentTitle}</h2>
+        <p className="text-xs text-stone">Abra uma subpagina para focar a edicao nos blocos ligados a ela.</p>
+      </div>
+      <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-5">
+        {subPages.map((subPage) => {
+          const active = subPage.key === activeSubPageKey;
+          return (
+            <button
+              key={subPage.key}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onSelect(subPage.key)}
+              className={`rounded-xl border p-3 text-left transition ${
+                active
+                  ? "border-gold bg-gold text-black shadow-[0_0_0_3px_rgba(218,165,32,0.18)]"
+                  : "border-surface-03 bg-surface-01 text-stone hover:border-gold/30 hover:text-cream"
+              }`}
+            >
+              <span className="block text-sm font-black">{subPage.title}</span>
+              <span className="mt-1 block line-clamp-2 text-xs">{subPage.description}</span>
             </button>
           );
         })}
