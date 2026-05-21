@@ -26,6 +26,15 @@ export interface SalaoSiteBlock {
   imageIds: string[];
 }
 
+export type SalaoPublicPageKey = "home" | "menu" | "blog" | "pages" | "contact";
+
+export interface SalaoPublicPage {
+  key: SalaoPublicPageKey;
+  title: string;
+  description: string;
+  blockIds: string[];
+}
+
 export interface SalaoSiteBlogPost {
   id: string;
   title: string;
@@ -39,6 +48,39 @@ export interface SalaoSiteBlogPost {
 }
 
 const SKIP_TEXT_PARENTS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "META", "LINK", "TITLE", "HEAD"]);
+
+export const SALAO_PUBLIC_PAGES: SalaoPublicPage[] = [
+  {
+    key: "home",
+    title: "Home",
+    description: "Abertura, destaques, apresentacao do restaurante e chamadas principais.",
+    blockIds: ["781f60e", "8b3e972", "622ae3c", "9b4b28c", "8246d51", "7082ce9", "4d7a5a0", "e677573", "0d41703"],
+  },
+  {
+    key: "menu",
+    title: "Menu",
+    description: "Cardapio institucional, categorias, pratos, descricoes, imagens e precos.",
+    blockIds: ["7a5b8b1", "e7af066", "54d2708", "d594721", "e83d900", "964391c"],
+  },
+  {
+    key: "blog",
+    title: "Blog",
+    description: "Textos, imagens e artigos do bloco de noticias do restaurante.",
+    blockIds: ["1c1b66b"],
+  },
+  {
+    key: "pages",
+    title: "Pages",
+    description: "Conteudos institucionais, equipe, galeria, diferenciais e secoes internas.",
+    blockIds: ["4d7a5a0", "e677573", "0d41703", "f97eb41", "5618613"],
+  },
+  {
+    key: "contact",
+    title: "Contato",
+    description: "Reservas, contatos, horarios, endereco, rodape e canais de atendimento.",
+    blockIds: ["2952b59", "049259e", "footer"],
+  },
+];
 
 const SECTION_ORDER = [
   "781f60e",

@@ -14,6 +14,8 @@ import {
   buildSalaoSiteBlocks,
   extractSalaoSiteImageTargets,
   extractSalaoSiteTextTargets,
+  SALAO_PUBLIC_PAGES,
+  type SalaoPublicPageKey,
   type SalaoSiteBlock,
   type SalaoSiteImageTarget,
   type SalaoSiteTextTarget,
@@ -37,6 +39,7 @@ export default function AdminSalaoPage() {
   const [textTargets, setTextTargets] = useState<SalaoSiteTextTarget[]>([]);
   const [imageTargets, setImageTargets] = useState<SalaoSiteImageTarget[]>([]);
   const [activeBlockId, setActiveBlockId] = useState("");
+  const [activePageKey, setActivePageKey] = useState<SalaoPublicPageKey>("home");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -59,19 +62,28 @@ export default function AdminSalaoPage() {
   }, []);
 
   const blocks = useMemo(() => buildSalaoSiteBlocks(textTargets, imageTargets), [imageTargets, textTargets]);
+  const activePage = useMemo(
+    () => SALAO_PUBLIC_PAGES.find((page) => page.key === activePageKey) ?? SALAO_PUBLIC_PAGES[0],
+    [activePageKey],
+  );
+  const pageBlocks = useMemo(() => {
+    const allowedBlocks = new Set(activePage.blockIds);
+    const scopedBlocks = blocks.filter((block) => allowedBlocks.has(block.id));
+    return scopedBlocks.length ? scopedBlocks : blocks;
+  }, [activePage, blocks]);
 
   useEffect(() => {
-    if (!blocks.length) return;
-    if (!activeBlockId || !blocks.some((block) => block.id === activeBlockId)) {
-      setActiveBlockId(blocks[0].id);
+    if (!pageBlocks.length) return;
+    if (!activeBlockId || !pageBlocks.some((block) => block.id === activeBlockId)) {
+      setActiveBlockId(pageBlocks[0].id);
     }
-  }, [activeBlockId, blocks]);
+  }, [activeBlockId, pageBlocks]);
 
   const textById = useMemo(() => new Map(textTargets.map((item) => [item.id, item])), [textTargets]);
   const imageById = useMemo(() => new Map(imageTargets.map((item) => [item.id, item])), [imageTargets]);
   const activeBlock = useMemo(
-    () => blocks.find((block) => block.id === activeBlockId) ?? blocks[0],
-    [activeBlockId, blocks],
+    () => pageBlocks.find((block) => block.id === activeBlockId) ?? pageBlocks[0],
+    [activeBlockId, pageBlocks],
   );
 
   const filteredBlockTexts = useMemo(() => {
@@ -215,18 +227,30 @@ export default function AdminSalaoPage() {
         ) : (
           <>
             {tab === "blocks" && activeBlock && (
-              <Toolbar
-                query={query}
-                onQuery={setQuery}
-                total={filteredBlockTexts.length + filteredBlockImages.length}
-                label="itens neste bloco"
-              />
+              <>
+                <PublicPageSelector
+                  activePageKey={activePageKey}
+                  onSelect={(key) => {
+                    setActivePageKey(key);
+                    setQuery("");
+                    const page = SALAO_PUBLIC_PAGES.find((item) => item.key === key);
+                    const firstBlock = blocks.find((block) => page?.blockIds.includes(block.id));
+                    if (firstBlock) setActiveBlockId(firstBlock.id);
+                  }}
+                />
+                <Toolbar
+                  query={query}
+                  onQuery={setQuery}
+                  total={filteredBlockTexts.length + filteredBlockImages.length}
+                  label={`itens em ${activePage.title}`}
+                />
+              </>
             )}
 
             {tab === "blocks" && activeBlock && (
               <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
                 <BlockNavigation
-                  blocks={blocks}
+                  blocks={pageBlocks}
                   activeBlockId={activeBlock.id}
                   onSelect={(id) => {
                     setActiveBlockId(id);
@@ -411,6 +435,45 @@ function BlogPostEditor({
     </article>
   );
 }
+
+function PublicPageSelector({
+  activePageKey,
+  onSelect,
+}: {
+  activePageKey: SalaoPublicPageKey;
+  onSelect: (key: SalaoPublicPageKey) => void;
+}) {
+  return (
+    <section className="grid gap-3 rounded-xl border border-surface-03 bg-surface-02 p-3">
+      <div>
+        <h2 className="text-sm font-black uppercase tracking-[0.16em] text-gold">Paginas do site</h2>
+        <p className="text-xs text-stone">Selecione uma pagina para abrir os blocos de textos e imagens correspondentes.</p>
+      </div>
+      <div className="grid gap-2 md:grid-cols-5">
+        {SALAO_PUBLIC_PAGES.map((page) => {
+          const active = page.key === activePageKey;
+          return (
+            <button
+              key={page.key}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onSelect(page.key)}
+              className={`rounded-xl border p-3 text-left transition ${
+                active
+                  ? "border-gold bg-gold text-black shadow-[0_0_0_3px_rgba(218,165,32,0.18)]"
+                  : "border-surface-03 bg-surface-01 text-stone hover:border-gold/30 hover:text-cream"
+              }`}
+            >
+              <span className="block text-sm font-black">{page.title}</span>
+              <span className="mt-1 block line-clamp-2 text-xs">{page.description}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function BlockNavigation({
   blocks,
   activeBlockId,
