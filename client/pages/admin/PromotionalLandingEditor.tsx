@@ -39,6 +39,7 @@ type FormState = {
 };
 
 const DEFAULT_MEDIA_ORDER: ApiPromotionLandingMediaSlot[] = ["image_url", "image_url_2", "video_url"];
+const FREE_SHIPPING_LABEL = "Frete Grátis na Promoção";
 const MEDIA_SLOT_CONFIG: Record<ApiPromotionLandingMediaSlot, {
   label: string;
   mediaType: "image" | "video";
@@ -72,6 +73,18 @@ const normalizeMediaOrder = (order?: ApiPromotionLandingMediaSlot[] | null) => {
   return [...unique, ...DEFAULT_MEDIA_ORDER.filter((slot) => !unique.includes(slot))];
 };
 
+const normalizeFreeShippingLabel = (value?: string | null) => {
+  const normalized = value?.trim();
+  const comparable = normalized
+    ?.toLocaleLowerCase("pt-BR")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!normalized || comparable === "frete gratis na promocao") {
+    return FREE_SHIPPING_LABEL;
+  }
+  return normalized;
+};
+
 const emptyForm = (productName = ""): FormState => ({
   title: productName ? `${productName} em promocao` : "",
   subtitle: "Oferta especial por tempo limitado",
@@ -85,7 +98,7 @@ const emptyForm = (productName = ""): FormState => ({
   content_alignment: "center",
   overlay_style: "dark-gradient",
   badge_text: "Oferta do dia",
-  free_shipping_label: "Frete grátis na promoção",
+  free_shipping_label: FREE_SHIPPING_LABEL,
   gift_label_prefix: "Brinde",
   gift_fallback_label: "Brinde incluído",
   active_offer_label: "Oferta ativa agora",
@@ -158,7 +171,7 @@ export default function PromotionalLandingEditor() {
             content_alignment: existing.content_alignment,
             overlay_style: existing.overlay_style,
             badge_text: existing.badge_text ?? "",
-            free_shipping_label: existing.free_shipping_label || "Frete grátis na promoção",
+            free_shipping_label: normalizeFreeShippingLabel(existing.free_shipping_label),
             gift_label_prefix: existing.gift_label_prefix || "Brinde",
             gift_fallback_label: existing.gift_fallback_label || "Brinde incluído",
             active_offer_label: existing.active_offer_label || "Oferta ativa agora",
@@ -197,7 +210,7 @@ export default function PromotionalLandingEditor() {
     content_alignment: form.content_alignment,
     overlay_style: form.overlay_style,
     badge_text: form.badge_text.trim() || null,
-    free_shipping_label: form.free_shipping_label.trim() || "Frete grátis na promoção",
+    free_shipping_label: normalizeFreeShippingLabel(form.free_shipping_label),
     gift_label_prefix: form.gift_label_prefix.trim() || "Brinde",
     gift_fallback_label: form.gift_fallback_label.trim() || "Brinde incluído",
     active_offer_label: form.active_offer_label.trim() || "Oferta ativa agora",

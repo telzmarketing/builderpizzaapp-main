@@ -6,6 +6,9 @@ from sqlalchemy.orm import relationship
 from backend.database import Base
 
 
+FREE_SHIPPING_LABEL = "Frete Grátis na Promoção"
+
+
 class PromotionLandingPage(Base):
     __tablename__ = "promotion_landing_pages"
     __table_args__ = (
@@ -27,7 +30,7 @@ class PromotionLandingPage(Base):
     content_alignment = Column(String(20), nullable=False, default="center")
     overlay_style = Column(String(40), nullable=False, default="dark-gradient")
     badge_text = Column(String(80), nullable=True)
-    free_shipping_label = Column(String(160), nullable=False, default="Frete grátis na promoção")
+    free_shipping_label = Column(String(160), nullable=False, default=FREE_SHIPPING_LABEL)
     gift_label_prefix = Column(String(80), nullable=False, default="Brinde")
     gift_fallback_label = Column(String(160), nullable=False, default="Brinde incluído")
     active_offer_label = Column(String(160), nullable=False, default="Oferta ativa agora")

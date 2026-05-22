@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 PromotionLandingMediaSlot = Literal["image_url", "image_url_2", "video_url"]
 DEFAULT_MEDIA_ORDER: list[PromotionLandingMediaSlot] = ["image_url", "image_url_2", "video_url"]
+FREE_SHIPPING_LABEL = "Frete Grátis na Promoção"
 
 
 class PromotionLandingPageBase(BaseModel):
@@ -22,7 +23,7 @@ class PromotionLandingPageBase(BaseModel):
     content_alignment: str = Field(default="center", pattern=r"^(left|center|right)$")
     overlay_style: str = Field(default="dark-gradient", pattern=r"^(dark-gradient|dark|light|brand)$")
     badge_text: Optional[str] = Field(default=None, max_length=80)
-    free_shipping_label: str = Field(default="Frete grátis na promoção", min_length=1, max_length=160)
+    free_shipping_label: str = Field(default=FREE_SHIPPING_LABEL, min_length=1, max_length=160)
     gift_label_prefix: str = Field(default="Brinde", min_length=1, max_length=80)
     gift_fallback_label: str = Field(default="Brinde incluído", min_length=1, max_length=160)
     active_offer_label: str = Field(default="Oferta ativa agora", min_length=1, max_length=160)
