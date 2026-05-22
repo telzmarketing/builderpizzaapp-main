@@ -651,6 +651,7 @@ export function applySalaoSiteOverrides(
     applySalaoNavigationPreset(doc);
   }
   applySalaoPagePreset(doc, pageKey);
+  applySalaoMenuTabsPreset(doc, pageKey);
   applySalaoAnimationFallbacks(doc);
   applySalaoBlogPosts(doc, blogPosts);
 
@@ -836,10 +837,54 @@ function applySalaoAnimationFallbacks(doc: Document) {
         });
       }
 
+      function installMenuTabsFallback() {
+        if (!document.body.classList.contains("salao-page-menu")) return;
+
+        document.querySelectorAll(".wdt-h1-menu-tab .wdt-tabs-container").forEach(function (container) {
+          if (container.classList.contains("moschettieri-menu-tabs-ready")) return;
+          container.classList.add("moschettieri-menu-tabs-ready");
+
+          var tabItems = Array.prototype.slice.call(container.querySelectorAll(".wdt-tabs-list > li"));
+          var tabContents = Array.prototype.slice.call(container.querySelectorAll(".wdt-tabs-content"));
+          if (!tabItems.length || !tabContents.length) return;
+
+          function activate(index) {
+            tabItems.forEach(function (item, itemIndex) {
+              var isActive = itemIndex === index;
+              item.classList.toggle("ui-state-active", isActive);
+              item.classList.toggle("ui-tabs-active", isActive);
+              var link = item.querySelector("a");
+              if (link) link.setAttribute("aria-selected", isActive ? "true" : "false");
+            });
+
+            tabContents.forEach(function (content, contentIndex) {
+              var isActive = contentIndex === index;
+              content.style.display = isActive ? "" : "none";
+              content.setAttribute("aria-hidden", isActive ? "false" : "true");
+            });
+          }
+
+          tabItems.forEach(function (item, index) {
+            var link = item.querySelector("a");
+            if (!link) return;
+
+            link.addEventListener("click", function (event) {
+              event.preventDefault();
+              activate(index);
+            });
+          });
+
+          activate(Math.max(0, tabItems.findIndex(function (item) {
+            return item.classList.contains("ui-state-active") || item.classList.contains("wdt-active");
+          })));
+        });
+      }
+
       ready(function () {
         window.setTimeout(function () {
           installHomeCarouselFallback();
           installMenuHoverFallback();
+          installMenuTabsFallback();
         }, 900);
       });
     })();
@@ -874,6 +919,31 @@ function applySalaoPagePreset(doc: Document, pageKey: SalaoRenderPageKey) {
   }
 
   doc.body.classList.add(`salao-page-${pageKey}`);
+}
+
+function applySalaoMenuTabsPreset(doc: Document, pageKey: SalaoRenderPageKey) {
+  if (pageKey !== "menu") return;
+
+  doc.querySelectorAll<HTMLElement>(".wdt-h1-menu-tab .wdt-tabs-container").forEach((container) => {
+    const tabItems = Array.from(container.querySelectorAll<HTMLElement>(".wdt-tabs-list > li"));
+    const tabContents = Array.from(container.querySelectorAll<HTMLElement>(".wdt-tabs-content"));
+    if (!tabItems.length || !tabContents.length) return;
+
+    tabItems.forEach((item, index) => {
+      item.classList.toggle("ui-state-active", index === 0);
+      item.classList.toggle("ui-tabs-active", index === 0);
+      const link = getDirectMenuLink(item);
+      if (link) {
+        link.classList.add("ui-tabs-anchor");
+        link.setAttribute("aria-selected", index === 0 ? "true" : "false");
+      }
+    });
+
+    tabContents.forEach((content, index) => {
+      content.style.display = index === 0 ? "" : "none";
+      content.setAttribute("aria-hidden", index === 0 ? "false" : "true");
+    });
+  });
 }
 
 function applySalaoNavigationPreset(doc: Document) {
