@@ -75,31 +75,31 @@ const SKIP_TEXT_PARENTS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "META",
 
 const SALAO_COMMON_BLOCK_IDS = ["781f60e", "8b3e972", "049259e"];
 
-const SALAO_DEFAULT_TEXT_REPLACEMENTS: Record<string, string> = {
-  "Eat. Enjoy. Repeat.": "FORNO. MESA. MOSCHETTIERI.",
-  "Authentic Mexican Delights": "Moschettieri Restaurante",
-  "Tincidunt Placerat Dignissim Enim Libero Commodo Lorem. Himenaeos Mattis Facilisi Sed Suscipit Potenti Cubilia Semper. Himenaeos Massa Praesent Eleifend Eros Suscipit. Auctor Habitasse In Ligula Pretium Parturient Tellus Enim. Venenatis Lectus Maecenas Accumsan Fringilla, Pellentesque Taciti Praesent Lacinia Tortor Platea Mus Euismod Molestie. Litora Nam Ridiculus Vestibulum Posuere Tempus Placerat Rutrum Fringilla Taciti Luctus Felis Tincidunt Tristique Viverra Integer Ut.": "Uma experiencia italiana para viver a pizza com calma: massa preparada com cuidado, sabores da casa, atendimento presente e ambiente pensado para encontros, reservas e celebracoes.",
-  "Planing for a event?": "Planejando sua visita?",
-  "Planing For A Event?": "Planejando sua visita?",
-  "contact us now.": "reserve sua mesa.",
-  "Contact Us Now.": "Reserve sua mesa.",
-  "Reservation": "Reservas",
-  "Events": "Eventos",
-  "Reserve a Table": "Reservar mesa",
-  "Pure. Fresh. Natural.": "Pizza. Salao. Experiencia.",
-  "Our Specialized Recipies": "Destaques da Casa",
-  "Special Dishes": "Pratos especiais",
-  "View All Blogs": "Ver noticias",
-  "Read More": "Leia mais",
-  "Subscribe": "Assinar",
-  "Enter email address": "Digite seu e-mail",
-};
+const SALAO_DEFAULT_TEXT_REPLACEMENTS: Record<string, string> = {};
 
 const SALAO_DEFAULT_IMAGE_REPLACEMENTS: Record<string, string> = {
 };
 
 const SALAO_PAGE_BLOCK_IDS: Record<SalaoRenderPageKey, string[]> = {
-  home: ["9b4b28c", "7082ce9", "4d7a5a0", "e677573", "0d41703"],
+  home: [
+    "622ae3c",
+    "9b4b28c",
+    "8246d51",
+    "7082ce9",
+    "4d7a5a0",
+    "e677573",
+    "0d41703",
+    "7a5b8b1",
+    "e7af066",
+    "54d2708",
+    "d594721",
+    "e83d900",
+    "964391c",
+    "f97eb41",
+    "5618613",
+    "1c1b66b",
+    "2952b59",
+  ],
   menu: ["7a5b8b1", "e7af066", "54d2708", "d594721", "e83d900", "964391c"],
   blog: ["1c1b66b"],
   moschettieri: ["4d7a5a0", "e677573", "0d41703"],
@@ -117,7 +117,29 @@ export const SALAO_PUBLIC_PAGES: SalaoPublicPage[] = [
     key: "home",
     title: "Home",
     description: "Home 2 definida como pagina inicial publica.",
-    blockIds: ["781f60e", "8b3e972", "9b4b28c", "7082ce9", "4d7a5a0", "e677573", "0d41703"],
+    blockIds: [
+      "781f60e",
+      "8b3e972",
+      "622ae3c",
+      "9b4b28c",
+      "8246d51",
+      "7082ce9",
+      "4d7a5a0",
+      "e677573",
+      "0d41703",
+      "7a5b8b1",
+      "e7af066",
+      "54d2708",
+      "d594721",
+      "e83d900",
+      "964391c",
+      "f97eb41",
+      "5618613",
+      "1c1b66b",
+      "2952b59",
+      "049259e",
+      "footer",
+    ],
   },
   {
     key: "menu",
@@ -624,7 +646,9 @@ export function applySalaoSiteOverrides(
     image.removeAttribute("sizes");
   });
 
-  applySalaoNavigationPreset(doc);
+  if (pageKey !== "home") {
+    applySalaoNavigationPreset(doc);
+  }
   applySalaoPagePreset(doc, pageKey);
   applySalaoAnimationFallbacks(doc);
   applySalaoBlogPosts(doc, blogPosts);
@@ -678,56 +702,11 @@ function applySalaoPagePreset(doc: Document, pageKey: SalaoRenderPageKey) {
     });
   }
 
-  if (pageKey === "home") {
-    applySalaoHomePreset(doc);
-  } else {
+  if (pageKey !== "home") {
     doc.querySelector<HTMLElement>(".wdt-custom-h1-slider-carousel")?.remove();
   }
 
   doc.body.classList.add(`salao-page-${pageKey}`);
-}
-
-function applySalaoHomePreset(doc: Document) {
-  const homeCarousel = doc.querySelector<HTMLElement>(".wdt-custom-h1-slider-carousel");
-  const wrapper = homeCarousel?.querySelector<HTMLElement>(".wdt-advanced-carousel-wrapper");
-  if (!homeCarousel || !wrapper) return;
-
-  const home2Slide = Array.from(wrapper.querySelectorAll<HTMLElement>(".swiper-slide"))
-    .find((slide) => slide.querySelector('[data-id="9b4b28c"], .elementor-496'));
-  if (!home2Slide) return;
-
-  wrapper.replaceChildren(home2Slide);
-  home2Slide.classList.add("swiper-slide-active");
-  home2Slide.classList.remove("swiper-slide-next", "swiper-slide-prev", "swiper-slide-duplicate");
-  home2Slide.removeAttribute("style");
-  home2Slide.setAttribute("aria-label", "Home 2");
-
-  const carouselContainer = homeCarousel.querySelector<HTMLElement>(".wdt-advanced-carousel-container");
-  carouselContainer?.classList.remove("swiper-initialized", "swiper-horizontal", "swiper-backface-hidden");
-  carouselContainer?.removeAttribute("style");
-  wrapper.removeAttribute("style");
-
-  homeCarousel.querySelectorAll<HTMLElement>(
-    ".wdt-carousel-pagination-wrapper, .wdt-carousel-arrow-pagination, .swiper-pagination, [class*='arrow-pagination']",
-  ).forEach((element) => element.remove());
-
-  const style = doc.createElement("style");
-  style.id = "moschettieri-home-2-static";
-  style.textContent = `
-    .wdt-custom-h1-slider-carousel .wdt-advanced-carousel-wrapper {
-      transform: none !important;
-      display: block !important;
-    }
-    .wdt-custom-h1-slider-carousel .swiper-slide {
-      width: 100% !important;
-      opacity: 1 !important;
-      visibility: visible !important;
-      transform: none !important;
-      position: relative !important;
-      pointer-events: auto !important;
-    }
-  `;
-  doc.head.appendChild(style);
 }
 
 function applySalaoNavigationPreset(doc: Document) {
