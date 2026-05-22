@@ -277,8 +277,8 @@ const MENU_ITEM_LABELS: Record<string, string> = {
 const MENU_ITEM_HREFS: Record<string, string> = {
   "menu-item-112": "/",
   "menu-item-113": "/",
-  "menu-item-248": "/cardapio",
-  "menu-item-247": "/cardapio",
+  "menu-item-248": "#salao-menu",
+  "menu-item-247": "#salao-menu",
   "menu-item-75": "/blog",
   "menu-item-74": "/blog",
   "menu-item-195": "/sobre",
@@ -651,7 +651,7 @@ export function applySalaoSiteOverrides(
     applySalaoNavigationPreset(doc);
   }
   applySalaoPagePreset(doc, pageKey);
-  applySalaoMenuTabsPreset(doc, pageKey);
+  applySalaoHomeMenuAnchor(doc);
   applySalaoAnimationFallbacks(doc);
   applySalaoBlogPosts(doc, blogPosts);
 
@@ -837,54 +837,10 @@ function applySalaoAnimationFallbacks(doc: Document) {
         });
       }
 
-      function installMenuTabsFallback() {
-        if (!document.body.classList.contains("salao-page-menu")) return;
-
-        document.querySelectorAll(".wdt-h1-menu-tab .wdt-tabs-container").forEach(function (container) {
-          if (container.classList.contains("moschettieri-menu-tabs-ready")) return;
-          container.classList.add("moschettieri-menu-tabs-ready");
-
-          var tabItems = Array.prototype.slice.call(container.querySelectorAll(".wdt-tabs-list > li"));
-          var tabContents = Array.prototype.slice.call(container.querySelectorAll(".wdt-tabs-content"));
-          if (!tabItems.length || !tabContents.length) return;
-
-          function activate(index) {
-            tabItems.forEach(function (item, itemIndex) {
-              var isActive = itemIndex === index;
-              item.classList.toggle("ui-state-active", isActive);
-              item.classList.toggle("ui-tabs-active", isActive);
-              var link = item.querySelector("a");
-              if (link) link.setAttribute("aria-selected", isActive ? "true" : "false");
-            });
-
-            tabContents.forEach(function (content, contentIndex) {
-              var isActive = contentIndex === index;
-              content.style.display = isActive ? "" : "none";
-              content.setAttribute("aria-hidden", isActive ? "false" : "true");
-            });
-          }
-
-          tabItems.forEach(function (item, index) {
-            var link = item.querySelector("a");
-            if (!link) return;
-
-            link.addEventListener("click", function (event) {
-              event.preventDefault();
-              activate(index);
-            });
-          });
-
-          activate(Math.max(0, tabItems.findIndex(function (item) {
-            return item.classList.contains("ui-state-active") || item.classList.contains("wdt-active");
-          })));
-        });
-      }
-
       ready(function () {
         window.setTimeout(function () {
           installHomeCarouselFallback();
           installMenuHoverFallback();
-          installMenuTabsFallback();
         }, 900);
       });
     })();
@@ -921,31 +877,6 @@ function applySalaoPagePreset(doc: Document, pageKey: SalaoRenderPageKey) {
   doc.body.classList.add(`salao-page-${pageKey}`);
 }
 
-function applySalaoMenuTabsPreset(doc: Document, pageKey: SalaoRenderPageKey) {
-  if (pageKey !== "menu") return;
-
-  doc.querySelectorAll<HTMLElement>(".wdt-h1-menu-tab .wdt-tabs-container").forEach((container) => {
-    const tabItems = Array.from(container.querySelectorAll<HTMLElement>(".wdt-tabs-list > li"));
-    const tabContents = Array.from(container.querySelectorAll<HTMLElement>(".wdt-tabs-content"));
-    if (!tabItems.length || !tabContents.length) return;
-
-    tabItems.forEach((item, index) => {
-      item.classList.toggle("ui-state-active", index === 0);
-      item.classList.toggle("ui-tabs-active", index === 0);
-      const link = getDirectMenuLink(item);
-      if (link) {
-        link.classList.add("ui-tabs-anchor");
-        link.setAttribute("aria-selected", index === 0 ? "true" : "false");
-      }
-    });
-
-    tabContents.forEach((content, index) => {
-      content.style.display = index === 0 ? "" : "none";
-      content.setAttribute("aria-hidden", index === 0 ? "false" : "true");
-    });
-  });
-}
-
 function applySalaoNavigationPreset(doc: Document) {
   doc.querySelectorAll("li").forEach((item) => {
     const classes = getMenuItemClasses(item);
@@ -966,7 +897,11 @@ function applySalaoNavigationPreset(doc: Document) {
     const href = MENU_ITEM_HREFS[className];
     if (href) {
       link.setAttribute("href", href);
-      link.setAttribute("target", "_top");
+      if (href.startsWith("#")) {
+        link.removeAttribute("target");
+      } else {
+        link.setAttribute("target", "_top");
+      }
     }
 
     if (classes.some((name) => DIRECT_MENU_ITEM_CLASSES.has(name))) {
@@ -982,11 +917,19 @@ function applySalaoMenuButtonPreset(doc: Document) {
     if (!link) return;
 
     setMenuLinkLabel(link, "Menu");
-    link.setAttribute("href", "/cardapio");
-    link.setAttribute("target", "_top");
+    link.setAttribute("href", "#salao-menu");
+    link.removeAttribute("target");
     removeDirectSubMenus(item);
     item.classList.remove("menu-item-has-children");
   });
+}
+
+function applySalaoHomeMenuAnchor(doc: Document) {
+  const menuSection = doc.querySelector<HTMLElement>('.elementor-element[data-id="7a5b8b1"]');
+  if (!menuSection) return;
+
+  menuSection.id = "salao-menu";
+  menuSection.style.scrollMarginTop = "120px";
 }
 
 function getMenuItemClasses(element: Element) {

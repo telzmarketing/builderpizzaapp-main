@@ -6,7 +6,6 @@ import { applySalaoSiteOverrides, type SalaoRenderPageKey } from "@/lib/salaoSit
 const SALAO_SITE_URL = "/salao-site/index.html";
 
 function resolveSalaoPageKey(pathname: string): SalaoRenderPageKey {
-  if (pathname.startsWith("/cardapio")) return "menu";
   if (pathname.startsWith("/blog")) return "blog";
   if (pathname.startsWith("/galeria")) return "galeria";
   if (pathname.startsWith("/pessoas")) return "pessoas";
