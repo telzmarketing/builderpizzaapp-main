@@ -9,8 +9,22 @@ const port = process.env.PORT || 3000;
 const __dirname = import.meta.dirname;
 const distPath = path.join(__dirname, "../spa");
 
-// Serve static files
-app.use(express.static(distPath));
+// Serve hashed assets with long cache, but keep HTML/PWA entry files fresh.
+app.use(express.static(distPath, {
+  maxAge: "1y",
+  immutable: true,
+  setHeaders(res, filePath) {
+    const fileName = path.basename(filePath);
+    if (
+      fileName === "index.html" ||
+      fileName === "registerSW.js" ||
+      fileName === "sw.js" ||
+      fileName === "manifest.webmanifest"
+    ) {
+      res.setHeader("Cache-Control", "no-cache");
+    }
+  },
+}));
 
 // Handle React Router - serve index.html for all non-API routes
 app.get("/{*path}", (req, res) => {

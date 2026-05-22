@@ -151,70 +151,70 @@ function DocumentHead() {
   }, [resolvedFavicon]);
   return null;
 }
-import AdminGuard from "./components/AdminGuard";
-import AdminLayout from "./components/layout/AdminLayout";
-import Index from "./pages/Index";
-import Product from "./pages/Product";
-import Cart from "./pages/Cart";
-import Checkout from "./pages/Checkout";
-import OrderTracking from "./pages/OrderTracking";
-import AdminLogin from "./pages/admin/Login";
-import AdminDashboard from "./pages/admin/Dashboard";
-import AdminProducts from "./pages/admin/Products";
-import AdminOrders from "./pages/admin/Orders";
-import AdminCozinha from "./pages/admin/Cozinha";
-import AdminFidelidade from "./pages/admin/AdminFidelidade";
-import AdminConteudo from "./pages/admin/Conteudo";
-import AdminPagamentos from "./pages/admin/AdminPagamentos";
-import AdminFrete from "./pages/admin/AdminFrete";
-import StoreOperation from "./pages/admin/StoreOperation";
-import AdminCampanhas from "./pages/admin/AdminCampanhas";
-import AdminPaidTraffic from "./pages/admin/PaidTraffic";
-import AdminChatbot from "./pages/admin/AdminChatbot";
-import AdminAparencia from "./pages/admin/Aparencia";
-import AdminHomeConfig from "./pages/admin/HomeConfig";
-import AdminLgpd from "./pages/admin/AdminLgpd";
-import AdminConfiguracoes from "./pages/admin/AdminConfiguracoes";
-import AdminClientes from "./pages/admin/AdminClientes";
-import ClienteDetalhe from "./pages/admin/ClienteDetalhe";
-import AdminExitPopup from "./pages/admin/AdminExitPopup";
-import AdminUsuarios from "./pages/admin/AdminUsuarios";
-import AdminBI from "./pages/admin/bi/BiDashboard";
-import AdminBIMobile from "./pages/admin/bi/BiMobile";
-import ExitPopup from "./components/ExitPopup";
-import MarketingDashboard from "./pages/admin/marketing/MarketingDashboard";
-import MarketingCampanhas from "./pages/admin/marketing/MarketingCampanhas";
-import MarketingVisitantes from "./pages/admin/marketing/MarketingVisitantes";
-import MarketingLinks from "./pages/admin/marketing/MarketingLinks";
-import MarketingIntegracoes from "./pages/admin/marketing/MarketingIntegracoes";
-import MarketingWhatsApp from "./pages/admin/marketing/MarketingWhatsApp";
-import MarketingEmail from "./pages/admin/marketing/MarketingEmail";
-import MarketingAutomacoes from "./pages/admin/marketing/MarketingAutomacoes";
-import MarketingWorkflow from "./pages/admin/marketing/MarketingWorkflow";
-import MarketingCupons from "./pages/admin/marketing/MarketingCupons";
-import MarketingStoreNotifications from "./pages/admin/marketing/MarketingStoreNotifications";
-import MarketingUpsell from "./pages/admin/marketing/MarketingUpsell";
-import CrmDashboard from "./pages/admin/crm/CrmDashboard";
-import CrmPipeline from "./pages/admin/crm/CrmPipeline";
-import CrmGrupos from "./pages/admin/crm/CrmGrupos";
-import CrmTarefas from "./pages/admin/crm/CrmTarefas";
-import CrmInteligencia from "./pages/admin/crm/CrmInteligencia";
-import CrmAgenteWhatsApp from "./pages/admin/crm/CrmAgenteWhatsApp";
-import AdminLogistica from "./pages/admin/logistica/AdminLogistica";
-import AdminSalao from "./pages/admin/salao/AdminSalao";
-import AdminSalaoPage from "./pages/admin/salao/AdminSalaoPage";
-import PromotionalLandingEditor from "./pages/admin/PromotionalLandingEditor";
-import Motoboy from "./pages/Motoboy";
-import Campanha from "./pages/Campanha";
-import PromocaoLanding from "./pages/PromocaoLanding";
-import Fidelidade from "./pages/Fidelidade";
-import Cupons from "./pages/Cupons";
-import Pedidos from "./pages/Pedidos";
-import Conta from "./pages/Conta";
-import Localizacao from "./pages/Localizacao";
-import Cardapio from "./pages/Cardapio";
-import SalaoHome from "./pages/salao/SalaoHome";
-import NotFound from "./pages/NotFound";
+const AdminGuard = lazy(() => import("./components/AdminGuard"));
+const AdminLayout = lazy(() => import("./components/layout/AdminLayout"));
+const Index = lazy(() => import("./pages/Index"));
+const Product = lazy(() => import("./pages/Product"));
+const Cart = lazy(() => import("./pages/Cart"));
+const Checkout = lazy(() => import("./pages/Checkout"));
+const OrderTracking = lazy(() => import("./pages/OrderTracking"));
+const AdminLogin = lazy(() => import("./pages/admin/Login"));
+const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
+const AdminProducts = lazy(() => import("./pages/admin/Products"));
+const AdminOrders = lazy(() => import("./pages/admin/Orders"));
+const AdminCozinha = lazy(() => import("./pages/admin/Cozinha"));
+const AdminFidelidade = lazy(() => import("./pages/admin/AdminFidelidade"));
+const AdminConteudo = lazy(() => import("./pages/admin/Conteudo"));
+const AdminPagamentos = lazy(() => import("./pages/admin/AdminPagamentos"));
+const AdminFrete = lazy(() => import("./pages/admin/AdminFrete"));
+const StoreOperation = lazy(() => import("./pages/admin/StoreOperation"));
+const AdminCampanhas = lazy(() => import("./pages/admin/AdminCampanhas"));
+const AdminPaidTraffic = lazy(() => import("./pages/admin/PaidTraffic"));
+const AdminChatbot = lazy(() => import("./pages/admin/AdminChatbot"));
+const AdminAparencia = lazy(() => import("./pages/admin/Aparencia"));
+const AdminHomeConfig = lazy(() => import("./pages/admin/HomeConfig"));
+const AdminLgpd = lazy(() => import("./pages/admin/AdminLgpd"));
+const AdminConfiguracoes = lazy(() => import("./pages/admin/AdminConfiguracoes"));
+const AdminClientes = lazy(() => import("./pages/admin/AdminClientes"));
+const ClienteDetalhe = lazy(() => import("./pages/admin/ClienteDetalhe"));
+const AdminExitPopup = lazy(() => import("./pages/admin/AdminExitPopup"));
+const AdminUsuarios = lazy(() => import("./pages/admin/AdminUsuarios"));
+const AdminBI = lazy(() => import("./pages/admin/bi/BiDashboard"));
+const AdminBIMobile = lazy(() => import("./pages/admin/bi/BiMobile"));
+const ExitPopup = lazy(() => import("./components/ExitPopup"));
+const MarketingDashboard = lazy(() => import("./pages/admin/marketing/MarketingDashboard"));
+const MarketingCampanhas = lazy(() => import("./pages/admin/marketing/MarketingCampanhas"));
+const MarketingVisitantes = lazy(() => import("./pages/admin/marketing/MarketingVisitantes"));
+const MarketingLinks = lazy(() => import("./pages/admin/marketing/MarketingLinks"));
+const MarketingIntegracoes = lazy(() => import("./pages/admin/marketing/MarketingIntegracoes"));
+const MarketingWhatsApp = lazy(() => import("./pages/admin/marketing/MarketingWhatsApp"));
+const MarketingEmail = lazy(() => import("./pages/admin/marketing/MarketingEmail"));
+const MarketingAutomacoes = lazy(() => import("./pages/admin/marketing/MarketingAutomacoes"));
+const MarketingWorkflow = lazy(() => import("./pages/admin/marketing/MarketingWorkflow"));
+const MarketingCupons = lazy(() => import("./pages/admin/marketing/MarketingCupons"));
+const MarketingStoreNotifications = lazy(() => import("./pages/admin/marketing/MarketingStoreNotifications"));
+const MarketingUpsell = lazy(() => import("./pages/admin/marketing/MarketingUpsell"));
+const CrmDashboard = lazy(() => import("./pages/admin/crm/CrmDashboard"));
+const CrmPipeline = lazy(() => import("./pages/admin/crm/CrmPipeline"));
+const CrmGrupos = lazy(() => import("./pages/admin/crm/CrmGrupos"));
+const CrmTarefas = lazy(() => import("./pages/admin/crm/CrmTarefas"));
+const CrmInteligencia = lazy(() => import("./pages/admin/crm/CrmInteligencia"));
+const CrmAgenteWhatsApp = lazy(() => import("./pages/admin/crm/CrmAgenteWhatsApp"));
+const AdminLogistica = lazy(() => import("./pages/admin/logistica/AdminLogistica"));
+const AdminSalao = lazy(() => import("./pages/admin/salao/AdminSalao"));
+const AdminSalaoPage = lazy(() => import("./pages/admin/salao/AdminSalaoPage"));
+const PromotionalLandingEditor = lazy(() => import("./pages/admin/PromotionalLandingEditor"));
+const Motoboy = lazy(() => import("./pages/Motoboy"));
+const Campanha = lazy(() => import("./pages/Campanha"));
+const PromocaoLanding = lazy(() => import("./pages/PromocaoLanding"));
+const Fidelidade = lazy(() => import("./pages/Fidelidade"));
+const Cupons = lazy(() => import("./pages/Cupons"));
+const Pedidos = lazy(() => import("./pages/Pedidos"));
+const Conta = lazy(() => import("./pages/Conta"));
+const Localizacao = lazy(() => import("./pages/Localizacao"));
+const Cardapio = lazy(() => import("./pages/Cardapio"));
+const SalaoHome = lazy(() => import("./pages/salao/SalaoHome"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
 
@@ -241,7 +241,12 @@ export default function App() {
             </Suspense>
             <StoreWidget />
             <TrackingInjector />
-            {!isSalaoExperience() && <ExitPopup />}
+            {!isSalaoExperience() && (
+              <Suspense fallback={null}>
+                <ExitPopup />
+              </Suspense>
+            )}
+            <Suspense fallback={null}>
             <Routes>
               {/* ── Customer routes ── */}
               <Route path="/" element={<PublicHome />} />
@@ -329,6 +334,7 @@ export default function App() {
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </Suspense>
           </BrowserRouter>
         </TooltipProvider>
       </AppProvider>
