@@ -96,10 +96,6 @@ const SALAO_DEFAULT_TEXT_REPLACEMENTS: Record<string, string> = {
 };
 
 const SALAO_DEFAULT_IMAGE_REPLACEMENTS: Record<string, string> = {
-  "images/home-1-1-01.jpg": "/salao/hero-plate.png",
-  "images/image-menu.jpg": "/salao/experience-01.jpg",
-  "images/image-reservation.jpg": "/salao/reservation.jpg",
-  "images/image-events.jpg": "/salao/experience-02.jpg",
 };
 
 const SALAO_PAGE_BLOCK_IDS: Record<SalaoRenderPageKey, string[]> = {
@@ -630,9 +626,34 @@ export function applySalaoSiteOverrides(
 
   applySalaoNavigationPreset(doc);
   applySalaoPagePreset(doc, pageKey);
+  applySalaoAnimationFallbacks(doc);
   applySalaoBlogPosts(doc, blogPosts);
 
   return `<!doctype html>\n${doc.documentElement.outerHTML}`;
+}
+
+function applySalaoAnimationFallbacks(doc: Document) {
+  if (doc.getElementById("moschettieri-salao-animation-fallbacks")) return;
+
+  const style = doc.createElement("style");
+  style.id = "moschettieri-salao-animation-fallbacks";
+  style.textContent = `
+    @keyframes moschettieri-salao-plate-rotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .elementor-element[data-id="91de15a"] img {
+      animation: moschettieri-salao-plate-rotate 30s linear infinite;
+      transform-origin: center center;
+      will-change: transform;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .elementor-element[data-id="91de15a"] img {
+        animation: none;
+      }
+    }
+  `;
+  doc.head.appendChild(style);
 }
 
 function applySalaoPagePreset(doc: Document, pageKey: SalaoRenderPageKey) {
