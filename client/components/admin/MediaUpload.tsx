@@ -22,6 +22,11 @@ function isVideoUrl(url: string): boolean {
   return VIDEO_EXTS.some((ext) => url.toLowerCase().endsWith(ext));
 }
 
+const formatLimit = (maxKB: number) => {
+  if (maxKB >= 1000) return `${maxKB / 1000}MB`;
+  return `${maxKB}KB`;
+};
+
 export default function MediaUpload({
   value,
   onChange,
@@ -45,8 +50,8 @@ export default function MediaUpload({
     if (file.size > maxKB * 1024) {
       alert(
         mediaType === "video"
-          ? "Arquivo muito grande. Máximo permitido: 50MB para vídeos."
-          : `Arquivo muito grande. Máximo permitido: ${maxKBImage / 1000}MB para imagens.`,
+          ? `Arquivo muito grande. Máximo permitido: ${formatLimit(maxKBVideo)} para vídeos.`
+          : `Arquivo muito grande. Máximo permitido: ${formatLimit(maxKBImage)} para imagens.`,
       );
       e.target.value = "";
       return;
@@ -143,7 +148,7 @@ export default function MediaUpload({
           />
           {sizeGuide && <p className="text-gold/80 text-xs font-medium">📐 {sizeGuide}</p>}
           {mediaType === "video" && (
-            <p className="text-stone/70 text-xs">Formatos: MP4, WebM, MOV — Máx. 50MB</p>
+            <p className="text-stone/70 text-xs">Formatos: MP4, WebM, MOV — Máx. {formatLimit(maxKBVideo)}</p>
           )}
           {hint && <p className="text-stone/70 text-xs">{hint}</p>}
         </div>

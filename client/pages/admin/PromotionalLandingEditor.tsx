@@ -470,7 +470,7 @@ export default function PromotionalLandingEditor() {
               label="Vídeo curto"
               hint="O carrossel exibe o vídeo por até 15 segundos e passa para a próxima mídia."
               sizeGuide="Recomendado: MP4/WebM vertical, até 15 segundos"
-              maxKBVideo={12000}
+              maxKBVideo={50000}
             />
 
             <div className="grid gap-3 md:grid-cols-3">
