@@ -33,27 +33,28 @@ export default function SalaoHome() {
 
     let active = true;
     setSrcDoc("");
+    setUnavailable(false);
 
     Promise.all([
       fetch(SALAO_SITE_URL).then((response) => response.text()),
-      salaoPageApi.get(),
+      salaoPageApi.get().catch(() => null),
     ])
       .then(([html, settings]) => {
         if (!active) return;
-        if (!settings.enabled) {
+        if (settings && !settings.enabled) {
           setUnavailable(true);
           return;
         }
-        document.title = settings.seo_title || "Moschettieri";
+        document.title = settings?.seo_title || "Moschettieri";
         const metaDescription = document.querySelector<HTMLMetaElement>('meta[name="description"]');
         if (metaDescription) {
-          metaDescription.content = settings.seo_description || "";
+          metaDescription.content = settings?.seo_description || "";
         }
         setSrcDoc(applySalaoSiteOverrides(
           html,
-          settings.site_text_overrides,
-          settings.site_image_overrides,
-          settings.blog_posts,
+          settings?.site_text_overrides,
+          settings?.site_image_overrides,
+          settings?.blog_posts,
           pageKey,
         ));
       })

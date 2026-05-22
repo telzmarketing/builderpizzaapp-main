@@ -16,10 +16,12 @@ import {
   extractSalaoSiteTextTargets,
   SALAO_PUBLIC_PAGES,
   type SalaoPublicPageKey,
+  type SalaoRenderPageKey,
   type SalaoPublicSubPage,
   type SalaoSiteBlock,
   type SalaoSiteImageTarget,
   type SalaoSiteTextTarget,
+  type SalaoTextRole,
 } from "@/lib/salaoSiteCms";
 
 type Tab = "blocks" | "blog" | "seo" | "preview";
@@ -32,6 +34,8 @@ const TABS: AdminPageTab<Tab>[] = [
   { id: "seo", icon: <Settings size={15} />, label: "SEO & Publicacao" },
   { id: "preview", icon: <Eye size={15} />, label: "Previa" },
 ];
+
+const TEXT_GROUP_ORDER: SalaoTextRole[] = ["title", "subtitle", "description", "button", "navigation", "label", "other"];
 
 export default function AdminSalaoPage() {
   const [tab, setTab] = useState<Tab>("blocks");
@@ -100,7 +104,7 @@ export default function AdminSalaoPage() {
       .filter((item): item is SalaoSiteTextTarget => Boolean(item))
       .filter((item) => {
         if (!term) return true;
-        return `${getTextValue(draft, item)} ${item.context}`.toLowerCase().includes(term);
+        return `${getTextValue(draft, item)} ${item.roleLabel} ${item.context}`.toLowerCase().includes(term);
       });
   }, [activeBlock, draft, query, textById]);
 
@@ -118,13 +122,20 @@ export default function AdminSalaoPage() {
 
   const previewHtml = useMemo(() => {
     if (!draft || !siteHtml) return "";
+    const previewPageKey: SalaoRenderPageKey =
+      activeSubPageKey && isSalaoRenderPageKey(activeSubPageKey)
+        ? activeSubPageKey
+        : isSalaoRenderPageKey(activePageKey)
+          ? activePageKey
+          : "home";
     return applySalaoSiteOverrides(
       siteHtml,
       draft.site_text_overrides,
       draft.site_image_overrides,
       draft.blog_posts,
+      previewPageKey,
     );
-  }, [draft, siteHtml]);
+  }, [activePageKey, activeSubPageKey, draft, siteHtml]);
 
   const setField = <K extends keyof ApiSalaoPageSettings>(key: K, value: ApiSalaoPageSettings[K]) => {
     setDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -471,7 +482,7 @@ function PublicPageSelector({
         <h2 className="text-sm font-black uppercase tracking-[0.16em] text-gold">Paginas do site</h2>
         <p className="text-xs text-stone">Selecione uma area do menu publico para abrir os textos e imagens correspondentes.</p>
       </div>
-      <div className="grid gap-2 md:grid-cols-5">
+      <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
         {SALAO_PUBLIC_PAGES.map((page) => {
           const active = page.key === activePageKey;
           return (
@@ -600,22 +611,33 @@ function BlockEditor({
   onImageChange: (id: string, value: string) => void;
   onImageRestore: (id: string) => void;
 }) {
+  const groupedTexts = useMemo(() => {
+    const map = new Map<SalaoTextRole, SalaoSiteTextTarget[]>();
+    texts.forEach((item) => {
+      const current = map.get(item.role) ?? [];
+      current.push(item);
+      map.set(item.role, current);
+    });
+    return TEXT_GROUP_ORDER
+      .map((role) => ({ role, items: map.get(role) ?? [] }))
+      .filter((group) => group.items.length > 0);
+  }, [texts]);
+
   return (
     <Panel title={block.title} subtitle={block.description}>
       <div className="grid gap-6">
         <section className="grid gap-3">
-          <SectionHeader icon={<FileText size={15} />} title="Textos deste bloco" count={texts.length} />
-          {texts.length ? (
-            <div className="grid gap-3">
-              {texts.map((item) => (
-                <TextRow
-                  key={item.id}
-                  index={targetNumber(item.id)}
-                  target={item}
-                  value={getTextValue(draft, item)}
-                  changed={draft.site_text_overrides[item.id] !== undefined}
-                  onChange={(value) => onTextChange(item.id, value)}
-                  onRestore={() => onTextRestore(item.id)}
+          <SectionHeader icon={<FileText size={15} />} title="Textos organizados por funcao" count={texts.length} />
+          {groupedTexts.length ? (
+            <div className="grid gap-4">
+              {groupedTexts.map((group) => (
+                <TextGroup
+                  key={group.role}
+                  role={group.role}
+                  items={group.items}
+                  draft={draft}
+                  onTextChange={onTextChange}
+                  onTextRestore={onTextRestore}
                 />
               ))}
             </div>
@@ -645,6 +667,58 @@ function BlockEditor({
         </section>
       </div>
     </Panel>
+  );
+}
+
+function TextGroup({
+  role,
+  items,
+  draft,
+  onTextChange,
+  onTextRestore,
+}: {
+  role: SalaoTextRole;
+  items: SalaoSiteTextTarget[];
+  draft: ApiSalaoPageSettings;
+  onTextChange: (id: string, value: string) => void;
+  onTextRestore: (id: string) => void;
+}) {
+  const label = items[0]?.roleLabel ?? "Textos";
+  const help: Record<SalaoTextRole, string> = {
+    title: "Chamadas principais, nomes de secoes e titulos visiveis no layout.",
+    subtitle: "Linhas curtas de apoio usadas acima ou abaixo dos titulos.",
+    description: "Paragrafos e textos maiores que explicam a secao.",
+    button: "Textos de botoes e chamadas de acao.",
+    navigation: "Itens do menu e links de navegacao do site publico.",
+    label: "Legendas, datas, aceite e informacoes curtas.",
+    other: "Textos auxiliares do template que nao se encaixam nos grupos principais.",
+  };
+
+  return (
+    <div className="grid gap-3 rounded-xl border border-surface-03 bg-surface-02 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-surface-03 pb-2">
+        <div>
+          <h3 className="text-sm font-black text-cream">{label}</h3>
+          <p className="text-xs text-stone">{help[role]}</p>
+        </div>
+        <span className="rounded-full border border-surface-03 bg-surface-01 px-2 py-1 text-[11px] font-bold uppercase text-stone">
+          {items.length} campos
+        </span>
+      </div>
+      <div className="grid gap-3">
+        {items.map((item) => (
+          <TextRow
+            key={item.id}
+            index={targetNumber(item.id)}
+            target={item}
+            value={getTextValue(draft, item)}
+            changed={draft.site_text_overrides[item.id] !== undefined}
+            onChange={(value) => onTextChange(item.id, value)}
+            onRestore={() => onTextRestore(item.id)}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -734,7 +808,7 @@ function TextRow({
     <div className="grid gap-3 rounded-xl border border-surface-03 bg-surface-01 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <span className="text-xs font-black uppercase tracking-[0.18em] text-gold">Texto {index}</span>
+          <span className="text-xs font-black uppercase tracking-[0.18em] text-gold">{target.roleLabel} {index}</span>
           <span className="ml-2 rounded-full bg-surface-03 px-2 py-1 text-[11px] font-bold uppercase text-stone">{target.tag}</span>
           <span className="ml-2 rounded-full bg-surface-03 px-2 py-1 text-[11px] font-bold uppercase text-stone">{target.context}</span>
         </div>
@@ -748,6 +822,22 @@ function TextRow({
       />
     </div>
   );
+}
+
+function isSalaoRenderPageKey(value: string): value is SalaoRenderPageKey {
+  return [
+    "home",
+    "menu",
+    "blog",
+    "moschettieri",
+    "galeria",
+    "pessoas",
+    "certificados",
+    "duvidas",
+    "contato",
+    "reservas",
+    "minha-conta",
+  ].includes(value);
 }
 
 function ImageRow({

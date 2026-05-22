@@ -1,3 +1,5 @@
+export type SalaoTextRole = "title" | "subtitle" | "description" | "button" | "navigation" | "label" | "other";
+
 export interface SalaoSiteTextTarget {
   id: string;
   tag: string;
@@ -5,6 +7,8 @@ export interface SalaoSiteTextTarget {
   blockId: string;
   blockTitle: string;
   context: string;
+  role: SalaoTextRole;
+  roleLabel: string;
 }
 
 export interface SalaoSiteImageTarget {
@@ -26,7 +30,7 @@ export interface SalaoSiteBlock {
   imageIds: string[];
 }
 
-export type SalaoPublicPageKey = "home" | "menu" | "blog" | "moschettieri" | "contact";
+export type SalaoPublicPageKey = "home" | "menu" | "blog" | "moschettieri" | "contact" | "popup";
 export type SalaoRenderPageKey =
   | "home"
   | "menu"
@@ -70,6 +74,33 @@ export interface SalaoSiteBlogPost {
 const SKIP_TEXT_PARENTS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "META", "LINK", "TITLE", "HEAD"]);
 
 const SALAO_COMMON_BLOCK_IDS = ["781f60e", "8b3e972", "049259e"];
+
+const SALAO_DEFAULT_TEXT_REPLACEMENTS: Record<string, string> = {
+  "Eat. Enjoy. Repeat.": "FORNO. MESA. MOSCHETTIERI.",
+  "Authentic Mexican Delights": "Moschettieri Restaurante",
+  "Tincidunt Placerat Dignissim Enim Libero Commodo Lorem. Himenaeos Mattis Facilisi Sed Suscipit Potenti Cubilia Semper. Himenaeos Massa Praesent Eleifend Eros Suscipit. Auctor Habitasse In Ligula Pretium Parturient Tellus Enim. Venenatis Lectus Maecenas Accumsan Fringilla, Pellentesque Taciti Praesent Lacinia Tortor Platea Mus Euismod Molestie. Litora Nam Ridiculus Vestibulum Posuere Tempus Placerat Rutrum Fringilla Taciti Luctus Felis Tincidunt Tristique Viverra Integer Ut.": "Uma experiencia italiana para viver a pizza com calma: massa preparada com cuidado, sabores da casa, atendimento presente e ambiente pensado para encontros, reservas e celebracoes.",
+  "Planing for a event?": "Planejando sua visita?",
+  "Planing For A Event?": "Planejando sua visita?",
+  "contact us now.": "reserve sua mesa.",
+  "Contact Us Now.": "Reserve sua mesa.",
+  "Reservation": "Reservas",
+  "Events": "Eventos",
+  "Reserve a Table": "Reservar mesa",
+  "Pure. Fresh. Natural.": "Pizza. Salao. Experiencia.",
+  "Our Specialized Recipies": "Destaques da Casa",
+  "Special Dishes": "Pratos especiais",
+  "View All Blogs": "Ver noticias",
+  "Read More": "Leia mais",
+  "Subscribe": "Assinar",
+  "Enter email address": "Digite seu e-mail",
+};
+
+const SALAO_DEFAULT_IMAGE_REPLACEMENTS: Record<string, string> = {
+  "images/home-1-1-01.jpg": "/salao/hero-plate.png",
+  "images/image-menu.jpg": "/salao/experience-01.jpg",
+  "images/image-reservation.jpg": "/salao/reservation.jpg",
+  "images/image-events.jpg": "/salao/experience-02.jpg",
+};
 
 const SALAO_PAGE_BLOCK_IDS: Record<SalaoRenderPageKey, string[]> = {
   home: ["9b4b28c", "7082ce9", "4d7a5a0", "e677573", "0d41703"],
@@ -168,6 +199,12 @@ export const SALAO_PUBLIC_PAGES: SalaoPublicPage[] = [
       },
     ],
   },
+  {
+    key: "popup",
+    title: "Popup",
+    description: "Popup de entrada, captura de e-mail e chamada exibida sobre o site.",
+    blockIds: ["popup"],
+  },
 ];
 
 const REMOVED_MENU_ITEM_CLASSES = new Set([
@@ -259,6 +296,7 @@ const SECTION_ORDER = [
   "1c1b66b",
   "2952b59",
   "049259e",
+  "popup",
   "header",
   "footer",
   "uncategorized",
@@ -345,6 +383,10 @@ const SECTION_META: Record<string, { title: string; description: string }> = {
     title: "Rodape",
     description: "Logo, contatos, links, newsletter, lojas de app e pagamentos.",
   },
+  popup: {
+    title: "Popup de entrada",
+    description: "Titulo, texto descritivo, aceite e chamada do popup exibido na abertura do site.",
+  },
   header: {
     title: "Cabecalho",
     description: "Itens gerais do cabecalho que nao pertencem a um bloco especifico.",
@@ -383,12 +425,16 @@ function walkTextNodes(doc: Document): Text[] {
 
 export function extractSalaoSiteTextTargets(html: string): SalaoSiteTextTarget[] {
   const doc = parseHtml(html);
-  return walkTextNodes(doc).map((node, index) => ({
-    id: `text-${index}`,
-    tag: node.parentElement?.tagName.toLowerCase() ?? "text",
-    value: node.nodeValue?.replace(/\s+/g, " ").trim() ?? "",
-    ...getElementMeta(node.parentElement),
-  }));
+  return walkTextNodes(doc).map((node, index) => {
+    const value = node.nodeValue?.replace(/\s+/g, " ").trim() ?? "";
+    return {
+      id: `text-${index}`,
+      tag: node.parentElement?.tagName.toLowerCase() ?? "text",
+      value,
+      ...getElementMeta(node.parentElement),
+      ...getTextRole(node.parentElement, value),
+    };
+  });
 }
 
 export function extractSalaoSiteImageTargets(html: string): SalaoSiteImageTarget[] {
@@ -464,6 +510,8 @@ function getElementMeta(element: Element | null) {
 function getBlockId(element: Element | null) {
   if (!element) return "uncategorized";
 
+  if (element.closest(".wdt-popup-box-content-holder, .wdt-popup-box-window")) return "popup";
+
   const knownSection = getElementorAncestors(element).find((ancestor) => {
     const id = ancestor.getAttribute("data-id") ?? "";
     return Boolean(SECTION_META[id]);
@@ -495,6 +543,49 @@ function getElementContext(element: Element | null) {
   return element.tagName.toLowerCase();
 }
 
+function getTextRole(element: Element | null, value: string): { role: SalaoTextRole; roleLabel: string } {
+  if (!element) return roleInfo("other");
+
+  if (element.closest("nav, .menu, .main-navigation, .menu-item")) return roleInfo("navigation");
+  if (element.closest("button, .wdt-button, .entry-button")) return roleInfo("button");
+  if (
+    element.closest(".wdt-heading-title, .entry-title, .wdt-content-title") ||
+    /^(H1|H2|H3)$/i.test(element.tagName)
+  ) {
+    return roleInfo("title");
+  }
+  if (
+    element.closest(".wdt-heading-subtitle, .wdt-content-subtitle") ||
+    /^(H4|H5|H6)$/i.test(element.tagName)
+  ) {
+    return roleInfo("subtitle");
+  }
+  if (
+    element.closest(".wdt-heading-content-wrapper, .elementor-widget-text-editor, .entry-body") ||
+    element.tagName === "P" ||
+    value.length > 90
+  ) {
+    return roleInfo("description");
+  }
+  if (element.closest("label, .wdt-terms-condition-lbl, .entry-date, .elementor-icon-list-text")) {
+    return roleInfo("label");
+  }
+  return roleInfo("other");
+}
+
+function roleInfo(role: SalaoTextRole) {
+  const labels: Record<SalaoTextRole, string> = {
+    title: "Titulo",
+    subtitle: "Subtitulo",
+    description: "Texto descritivo",
+    button: "Botao / CTA",
+    navigation: "Menu / navegacao",
+    label: "Legenda / informacao",
+    other: "Texto auxiliar",
+  };
+  return { role, roleLabel: labels[role] };
+}
+
 function getBlockOrder(id: string) {
   const index = SECTION_ORDER.indexOf(id);
   return index >= 0 ? index : SECTION_ORDER.length;
@@ -513,13 +604,23 @@ export function applySalaoSiteOverrides(
 
   walkTextNodes(doc).forEach((node, index) => {
     const value = textOverrides[`text-${index}`];
-    if (value !== undefined && value.trim()) node.nodeValue = value;
+    if (value !== undefined && value.trim()) {
+      node.nodeValue = value;
+      return;
+    }
+
+    const current = node.nodeValue?.replace(/\s+/g, " ").trim() ?? "";
+    const defaultValue = SALAO_DEFAULT_TEXT_REPLACEMENTS[current];
+    if (defaultValue) node.nodeValue = defaultValue;
   });
 
   Array.from(doc.querySelectorAll<HTMLImageElement>("img[src]")).forEach((image, index) => {
     const value = imageOverrides[`image-${index}`];
-    if (!value?.trim()) return;
-    image.setAttribute("src", value);
+    const src = image.getAttribute("src") ?? "";
+    const defaultValue = SALAO_DEFAULT_IMAGE_REPLACEMENTS[src];
+    const nextValue = value?.trim() || defaultValue;
+    if (!nextValue) return;
+    image.setAttribute("src", nextValue);
     image.removeAttribute("srcset");
     image.removeAttribute("data-src");
     image.removeAttribute("data-large_image");
