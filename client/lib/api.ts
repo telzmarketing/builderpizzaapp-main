@@ -10,7 +10,11 @@ const isLocalApiBase = (value: string) => /^https?:\/\/(localhost|127\.0\.0\.1)(
 const PRIMARY_API_BASE = RAW_API_BASE && !(import.meta.env.PROD && isLocalApiBase(RAW_API_BASE))
   ? RAW_API_BASE
   : (import.meta.env.DEV ? "http://localhost:8000" : "");
-const API_BASES = Array.from(new Set([PRIMARY_API_BASE, "", "/api"].filter((base) => base || import.meta.env.PROD)));
+const API_BASES = Array.from(new Set(
+  import.meta.env.PROD
+    ? [PRIMARY_API_BASE, "/api", ""].filter((base) => base || !PRIMARY_API_BASE)
+    : [PRIMARY_API_BASE, "", "/api"].filter(Boolean)
+));
 const BASE = API_BASES[0] ?? "";
 const ASSET_BASE = BASE.endsWith("/api") ? BASE.slice(0, -4) : BASE;
 const UPLOAD_ASSET_BASE = BASE.endsWith("/api")
@@ -55,7 +59,7 @@ async function fetchApi(path: string, init: RequestInit): Promise<Response> {
       const res = await fetch(`${base}${path}`, init);
       if (!res.ok) {
         lastError = new Error(`HTTP ${res.status}`);
-        if ([404, 405].includes(res.status)) continue;
+        if ([404, 405, 502, 503, 504].includes(res.status)) continue;
       }
       if (res.ok && res.status !== 204) {
         const contentType = res.headers.get("content-type") ?? "";
