@@ -657,24 +657,26 @@ function applySalaoAnimationFallbacks(doc: Document) {
 }
 
 function applySalaoPagePreset(doc: Document, pageKey: SalaoRenderPageKey) {
-  const allowedBlockIds = new Set([
-    ...SALAO_COMMON_BLOCK_IDS,
-    ...(SALAO_PAGE_BLOCK_IDS[pageKey] ?? SALAO_PAGE_BLOCK_IDS.home),
-  ]);
+  if (pageKey !== "home") {
+    const allowedBlockIds = new Set([
+      ...SALAO_COMMON_BLOCK_IDS,
+      ...(SALAO_PAGE_BLOCK_IDS[pageKey] ?? SALAO_PAGE_BLOCK_IDS.home),
+    ]);
 
-  Object.keys(SECTION_META).forEach((blockId) => {
-    if (blockId === "header" || blockId === "footer" || blockId === "uncategorized") return;
-    if (allowedBlockIds.has(blockId)) return;
+    Object.keys(SECTION_META).forEach((blockId) => {
+      if (blockId === "header" || blockId === "footer" || blockId === "uncategorized") return;
+      if (allowedBlockIds.has(blockId)) return;
 
-    doc.querySelectorAll<HTMLElement>(`.elementor-element[data-id="${blockId}"]`).forEach((element) => {
-      const slide = element.closest<HTMLElement>(".swiper-slide");
-      if (slide && slide.closest(".wdt-custom-h1-slider-carousel")) {
-        slide.remove();
-        return;
-      }
-      element.remove();
+      doc.querySelectorAll<HTMLElement>(`.elementor-element[data-id="${blockId}"]`).forEach((element) => {
+        const slide = element.closest<HTMLElement>(".swiper-slide");
+        if (slide && slide.closest(".wdt-custom-h1-slider-carousel")) {
+          slide.remove();
+          return;
+        }
+        element.remove();
+      });
     });
-  });
+  }
 
   if (pageKey === "home") {
     applySalaoHomePreset(doc);
