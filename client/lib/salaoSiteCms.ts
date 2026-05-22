@@ -646,6 +646,7 @@ export function applySalaoSiteOverrides(
     image.removeAttribute("sizes");
   });
 
+  applySalaoMenuButtonPreset(doc);
   if (pageKey !== "home") {
     applySalaoNavigationPreset(doc);
   }
@@ -902,6 +903,19 @@ function applySalaoNavigationPreset(doc: Document) {
       removeDirectSubMenus(item);
       item.classList.remove("menu-item-has-children");
     }
+  });
+}
+
+function applySalaoMenuButtonPreset(doc: Document) {
+  doc.querySelectorAll("li.menu-item-248").forEach((item) => {
+    const link = getDirectMenuLink(item);
+    if (!link) return;
+
+    setMenuLinkLabel(link, "Menu");
+    link.setAttribute("href", "/cardapio");
+    link.setAttribute("target", "_top");
+    removeDirectSubMenus(item);
+    item.classList.remove("menu-item-has-children");
   });
 }
 
