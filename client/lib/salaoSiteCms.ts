@@ -680,6 +680,34 @@ function applySalaoAnimationFallbacks(doc: Document) {
       display: block;
       opacity: 1;
       visibility: visible;
+      position: absolute;
+      right: clamp(16px, 1.5vw, 24px);
+      bottom: clamp(14px, 1.5vw, 20px);
+      left: auto;
+      width: min(450px, calc(100% - 40px));
+      max-width: min(450px, calc(100% - 40px));
+      margin: 0;
+      padding: 21px 76px;
+      z-index: 5;
+    }
+    .wdt-custom-h1-slider-carousel .wdt-carousel-pagination-wrapper.wdt-swiper-custom-pagination .swiper-pagination-progressbar {
+      height: 3px;
+    }
+    .wdt-custom-h1-slider-carousel .wdt-carousel-pagination-wrapper.wdt-swiper-custom-pagination .wdt-carousel-arrow-pagination > div.wdt-arrow-pagination-prev {
+      left: 20px;
+    }
+    .wdt-custom-h1-slider-carousel .wdt-carousel-pagination-wrapper.wdt-swiper-custom-pagination .wdt-carousel-arrow-pagination > div.wdt-arrow-pagination-next {
+      right: 20px;
+    }
+    @media (max-width: 1024px) {
+      .wdt-custom-h1-slider-carousel .wdt-carousel-pagination-wrapper.wdt-swiper-custom-pagination {
+        position: relative;
+        right: auto;
+        bottom: auto;
+        width: 100%;
+        max-width: 600px;
+        margin: 24px auto 0;
+      }
     }
     .elementor-31 .elementor-element.elementor-element-74874fe .wdt-content-item,
     .elementor-31 .elementor-element.elementor-element-74874fe .wdt-content-item .wdt-content-title h5,
@@ -721,7 +749,7 @@ function applySalaoAnimationFallbacks(doc: Document) {
           var swiper = holder.querySelector(".swiper");
           var wrapper = holder.querySelector(".swiper-wrapper");
           var slides = Array.prototype.slice.call(holder.querySelectorAll(".swiper-slide"));
-          if (!swiper || !wrapper || slides.length < 2 || swiper.swiper) return;
+          if (!swiper || !wrapper || slides.length < 2 || swiper.swiper || holder.classList.contains("moschettieri-fallback-carousel")) return;
 
           var pagination = holder.querySelector(".wdt-carousel-pagination-wrapper.wdt-swiper-custom-pagination");
           var progressFill = pagination && pagination.querySelector(".swiper-pagination-progressbar-fill");
@@ -741,8 +769,10 @@ function applySalaoAnimationFallbacks(doc: Document) {
             current = (nextIndex + slides.length) % slides.length;
             slides.forEach(function (slide, index) {
               slide.classList.toggle("swiper-slide-active", index === current);
+              slide.classList.toggle("swiper-slide-visible", index === current);
               slide.classList.toggle("swiper-slide-prev", index === ((current - 1 + slides.length) % slides.length));
               slide.classList.toggle("swiper-slide-next", index === ((current + 1) % slides.length));
+              slide.setAttribute("aria-hidden", index === current ? "false" : "true");
               slide.style.position = index === current ? "relative" : "absolute";
               slide.style.inset = "0";
               slide.style.width = "100%";
@@ -780,6 +810,9 @@ function applySalaoAnimationFallbacks(doc: Document) {
 
       function installMenuHoverFallback() {
         document.querySelectorAll(".wdt-image-box-holder.wdt-image-active-class").forEach(function (holder) {
+          if (holder.classList.contains("moschettieri-menu-hover-ready")) return;
+          holder.classList.add("moschettieri-menu-hover-ready");
+
           var columns = Array.prototype.slice.call(holder.querySelectorAll(".wdt-column-wrapper .wdt-column"));
           var slides = Array.prototype.slice.call(holder.querySelectorAll(".wdt-image-box-wrapper .swiper-slide"));
           var items = columns.length ? columns : slides;
