@@ -20,6 +20,20 @@ from backend.models.product import Product
 from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 
 
+INTERNAL_TRACKING_PREFIXES = ("/painel", "/motoboy")
+
+
+def _public_tracking_sql(column: str) -> str:
+    value = f"COALESCE({column}, '')"
+    filters = []
+    for prefix in INTERNAL_TRACKING_PREFIXES:
+        filters.extend([
+            f"{value} NOT LIKE '{prefix}%'",
+            f"{value} NOT LIKE '%://%{prefix}%'",
+        ])
+    return f"({value} = '' OR ({' AND '.join(filters)}))"
+
+
 class BusinessIntelligenceService:
     """Read-only BI aggregation layer.
 
@@ -449,7 +463,7 @@ class BusinessIntelligenceService:
     ) -> dict:
         # Use raw SQL here because visitor_profiles is owned by the marketing route module.
         raw_visitor_rows = self._db.execute(
-            text("""
+            text(f"""
             SELECT
                 COALESCE(NULLIF(TRIM(neighborhood), ''), 'Sem bairro') AS name,
                 MAX(city) AS city,
@@ -461,6 +475,22 @@ class BusinessIntelligenceService:
               AND last_seen_at <= :end_dt
               AND neighborhood IS NOT NULL
               AND TRIM(neighborhood) <> ''
+              AND (
+                EXISTS (
+                  SELECT 1 FROM visitor_events ve
+                  WHERE ve.visitor_id = visitor_profiles.id
+                    AND ve.created_at >= :start_dt
+                    AND ve.created_at <= :end_dt
+                    AND {_public_tracking_sql("ve.page")}
+                )
+                OR EXISTS (
+                  SELECT 1 FROM visitor_sessions vs
+                  WHERE vs.visitor_id = visitor_profiles.id
+                    AND vs.started_at >= :start_dt
+                    AND vs.started_at <= :end_dt
+                    AND {_public_tracking_sql("vs.landing_page")}
+                )
+              )
             GROUP BY COALESCE(NULLIF(TRIM(neighborhood), ''), 'Sem bairro')
             """),
             {"start_dt": start_dt, "end_dt": end_dt},
@@ -481,7 +511,7 @@ class BusinessIntelligenceService:
             }
 
         raw_visitor_order_rows = self._db.execute(
-            text("""
+            text(f"""
             SELECT
                 COALESCE(NULLIF(TRIM(vp.neighborhood), ''), 'Sem bairro') AS name,
                 COUNT(ve.id) AS visitor_orders
@@ -490,6 +520,7 @@ class BusinessIntelligenceService:
             WHERE ve.created_at >= :start_dt
               AND ve.created_at <= :end_dt
               AND ve.event_type = 'order_created'
+              AND {_public_tracking_sql("ve.page")}
               AND vp.neighborhood IS NOT NULL
               AND TRIM(vp.neighborhood) <> ''
             GROUP BY COALESCE(NULLIF(TRIM(vp.neighborhood), ''), 'Sem bairro')
@@ -754,10 +785,11 @@ class BusinessIntelligenceService:
 
         online_since = datetime.now(timezone.utc) - timedelta(minutes=online_minutes)
         visitors = self._db.execute(
-            text("""
-            SELECT COUNT(*)
-            FROM visitor_profiles
-            WHERE last_seen_at >= :online_since
+            text(f"""
+            SELECT COUNT(DISTINCT visitor_id)
+            FROM visitor_events
+            WHERE created_at >= :online_since
+              AND {_public_tracking_sql("page")}
             """),
             {"online_since": online_since},
         ).scalar() or 0
@@ -775,24 +807,18 @@ class BusinessIntelligenceService:
     def _visitor_access_count(self, start_dt: datetime, end_dt: datetime) -> int:
         # Mirrors Marketing > Visitantes so BI Mobile counts people who accessed the store in the selected day.
         total = self._db.execute(
-            text("""
+            text(f"""
             SELECT COUNT(*)
             FROM (
                 SELECT DISTINCT visitor_id
                 FROM visitor_events
                 WHERE created_at >= :start_dt AND created_at <= :end_dt
+                  AND {_public_tracking_sql("page")}
                 UNION
                 SELECT DISTINCT visitor_id
                 FROM visitor_sessions
                 WHERE started_at >= :start_dt AND started_at <= :end_dt
-                UNION
-                SELECT id AS visitor_id
-                FROM visitor_profiles
-                WHERE first_seen_at >= :start_dt AND first_seen_at <= :end_dt
-                UNION
-                SELECT id AS visitor_id
-                FROM visitor_profiles
-                WHERE last_seen_at >= :start_dt AND last_seen_at <= :end_dt
+                  AND {_public_tracking_sql("landing_page")}
             ) period_visitors
             """),
             {"start_dt": start_dt, "end_dt": end_dt},

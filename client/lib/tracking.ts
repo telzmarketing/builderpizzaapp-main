@@ -4,6 +4,7 @@ const STORAGE_KEY = "paid_traffic_tracking";
 const PIXEL_STORAGE_KEY = "campaign_pixel_config";
 const STORE_PIXEL_STORAGE_KEY = "store_pixel_configs";
 const LOCATION_STORAGE_KEY = "visitor_location_permission_checked";
+const INTERNAL_STAFF_PATHS = ["/painel", "/motoboy"];
 
 // ─── Pixel helpers ────────────────────────────────────────────────────────────
 
@@ -198,6 +199,18 @@ export type TrackingData = {
   referrer?: string | null;
 };
 
+export function isInternalStaffPath(path?: string | null): boolean {
+  const rawPath = path ?? (typeof window !== "undefined" ? window.location.pathname : "");
+  if (!rawPath) return false;
+  let pathname = rawPath;
+  try {
+    if (/^https?:\/\//i.test(rawPath)) pathname = new URL(rawPath).pathname;
+  } catch {
+    pathname = rawPath;
+  }
+  return INTERNAL_STAFF_PATHS.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
 function newSessionId(): string {
   if (crypto?.randomUUID) return crypto.randomUUID();
   return `sess-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -256,6 +269,7 @@ export function trackEvent(
   metadata?: Record<string, unknown>,
   location?: VisitorLocation
 ) {
+  if (isInternalStaffPath()) return;
   const data = getTrackingData();
   marketingTrackApi.track({
     fingerprint: data.session_id,
@@ -277,6 +291,7 @@ export function trackEvent(
 }
 
 export function requestVisitorLocation(): void {
+  if (isInternalStaffPath()) return;
   if (!("geolocation" in navigator)) return;
   if (sessionStorage.getItem(LOCATION_STORAGE_KEY)) return;
   sessionStorage.setItem(LOCATION_STORAGE_KEY, "1");

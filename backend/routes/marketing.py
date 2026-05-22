@@ -5,6 +5,7 @@ import json
 import uuid
 import requests
 from datetime import date, datetime, timezone, timedelta
+from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from pydantic import BaseModel
 from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, Date, ForeignKey, func, text
@@ -156,6 +157,7 @@ class IntegrationConnection(Base):
 
 SECRET_KEYS = {"access_token", "client_secret", "app_secret", "password", "smtp_password"}
 MASKED_SECRET = "********"
+INTERNAL_TRACKING_PREFIXES = ("/painel", "/motoboy")
 INTEGRATION_LABELS = {
     "meta_ads": "Meta Ads",
     "google_ads": "Google Ads",
@@ -402,6 +404,33 @@ def _hash_ip(ip: str | None, anonymize: bool = True) -> str:
     return hashlib.sha256(ip.encode()).hexdigest()[:32]
 
 
+def _tracking_path(value: str | None) -> str:
+    if not value:
+        return ""
+    try:
+        if value.startswith(("http://", "https://")):
+            return urlparse(value).path or ""
+    except Exception:
+        return value
+    return value
+
+
+def _is_internal_tracking_page(value: str | None) -> bool:
+    path = _tracking_path(value)
+    return any(path == prefix or path.startswith(f"{prefix}/") for prefix in INTERNAL_TRACKING_PREFIXES)
+
+
+def _public_tracking_sql(column: str) -> str:
+    value = f"COALESCE({column}, '')"
+    filters = []
+    for prefix in INTERNAL_TRACKING_PREFIXES:
+        filters.extend([
+            f"{value} NOT LIKE '{prefix}%'",
+            f"{value} NOT LIKE '%://%{prefix}%'",
+        ])
+    return f"({value} = '' OR ({' AND '.join(filters)}))"
+
+
 def _get_or_create_visitor(fingerprint: str, db: Session, ip_hash: str = "") -> VisitorProfile:
     visitor = db.query(VisitorProfile).filter(VisitorProfile.fingerprint == fingerprint).first()
     if not visitor:
@@ -590,14 +619,28 @@ def marketing_dashboard(
     total_orders = db.query(func.sum(MarketingCampaign.orders_count)).scalar() or 0
     total_leads = db.query(func.sum(MarketingCampaign.leads)).scalar() or 0
 
-    visitors_period = db.query(func.count(VisitorProfile.id)).filter(
-        VisitorProfile.last_seen_at >= since,
-        VisitorProfile.last_seen_at <= period_end,
-    ).scalar() or 0
+    public_event_filter = _public_tracking_sql("page")
+    visitors_period = db.execute(text(f"""
+        SELECT COUNT(*)
+        FROM (
+            SELECT DISTINCT visitor_id
+            FROM visitor_events
+            WHERE created_at >= :since AND created_at <= :period_end
+              AND {public_event_filter}
+            UNION
+            SELECT DISTINCT visitor_id
+            FROM visitor_sessions
+            WHERE started_at >= :since AND started_at <= :period_end
+              AND {_public_tracking_sql("landing_page")}
+        ) visitors
+    """), {"since": since, "period_end": period_end}).scalar() or 0
     online_since = now - timedelta(minutes=5)
-    visitors_online = db.query(func.count(VisitorProfile.id)).filter(
-        VisitorProfile.last_seen_at >= online_since
-    ).scalar() or 0
+    visitors_online = db.execute(text(f"""
+        SELECT COUNT(DISTINCT visitor_id)
+        FROM visitor_events
+        WHERE created_at >= :online_since
+          AND {public_event_filter}
+    """), {"online_since": online_since}).scalar() or 0
 
     tracking_links = db.query(func.count(TrackingLink.id)).filter(TrackingLink.active == True).scalar() or 0  # noqa: E712
     link_clicks = db.query(func.sum(TrackingLink.clicks)).scalar() or 0
@@ -702,6 +745,9 @@ def delete_tracking_link(link_id: str, db: Session = Depends(get_db), _=Depends(
 
 @public_router.post("/track")
 async def track_event(body: VisitorEventIn, request: Request, db: Session = Depends(get_db)):
+    if _is_internal_tracking_page(body.page):
+        return {"ok": True, "ignored": True}
+
     settings = db.query(MarketingSettings).filter(MarketingSettings.id == "default").first()
     if settings and not settings.tracking_enabled:
         return {"ok": True}
@@ -783,23 +829,19 @@ def list_visitors(
         period_label = period
 
     params = {"start_dt": start_dt, "end_dt": end_dt}
+    public_event_filter = _public_tracking_sql("page")
+    public_session_filter = _public_tracking_sql("landing_page")
     period_visitors_cte = """
         SELECT DISTINCT visitor_id
         FROM visitor_events
         WHERE created_at >= :start_dt AND created_at <= :end_dt
+          AND {public_event_filter}
         UNION
         SELECT DISTINCT visitor_id
         FROM visitor_sessions
         WHERE started_at >= :start_dt AND started_at <= :end_dt
-        UNION
-        SELECT id AS visitor_id
-        FROM visitor_profiles
-        WHERE first_seen_at >= :start_dt AND first_seen_at <= :end_dt
-        UNION
-        SELECT id AS visitor_id
-        FROM visitor_profiles
-        WHERE last_seen_at >= :start_dt AND last_seen_at <= :end_dt
-    """
+          AND {public_session_filter}
+    """.format(public_event_filter=public_event_filter, public_session_filter=public_session_filter)
 
     total = db.execute(
         text(f"SELECT COUNT(*) FROM ({period_visitors_cte}) period_visitors"),
@@ -808,7 +850,12 @@ def list_visitors(
     settings = db.query(MarketingSettings).filter(MarketingSettings.id == "default").first()
     online_minutes = settings.online_visitor_minutes if settings and settings.online_visitor_minutes else 5
     online_since = now - timedelta(minutes=online_minutes)
-    online = db.query(func.count(VisitorProfile.id)).filter(VisitorProfile.last_seen_at >= online_since).scalar() or 0
+    online = db.execute(text(f"""
+        SELECT COUNT(DISTINCT visitor_id)
+        FROM visitor_events
+        WHERE created_at >= :online_since
+          AND {public_event_filter}
+    """), {"online_since": online_since}).scalar() or 0
     online_registered_customers = db.query(func.count(func.distinct(CustomerEvent.customer_id))).filter(
         CustomerEvent.created_at >= online_since,
         CustomerEvent.customer_id.isnot(None),
@@ -820,6 +867,7 @@ def list_visitors(
             SELECT visitor_id, COUNT(*) AS sessions, COALESCE(SUM(pageviews), 0) AS session_pageviews
             FROM visitor_sessions
             WHERE started_at >= :start_dt AND started_at <= :end_dt
+              AND {public_session_filter}
             GROUP BY visitor_id
         ),
         period_events AS (
@@ -830,6 +878,7 @@ def list_visitors(
                 MAX(created_at) AS last_event_at
             FROM visitor_events
             WHERE created_at >= :start_dt AND created_at <= :end_dt
+              AND {public_event_filter}
             GROUP BY visitor_id
         )
         SELECT
@@ -857,16 +906,17 @@ def list_visitors(
     """), {**params, "limit": limit}).fetchall()
 
     # Top events
-    top_events = db.execute(text("""
+    top_events = db.execute(text(f"""
         SELECT event_type, COUNT(*) as cnt
         FROM visitor_events
         WHERE created_at >= :start_dt AND created_at <= :end_dt
+          AND {public_event_filter}
         GROUP BY event_type ORDER BY cnt DESC LIMIT 10
     """), params).fetchall()
 
     # UTM breakdown
     try:
-        utm_rows = db.execute(text("""
+        utm_rows = db.execute(text(f"""
             SELECT
                 COALESCE(utm_source, 'direto') AS utm_source,
                 utm_medium, utm_campaign,
@@ -875,6 +925,7 @@ def list_visitors(
             FROM visitor_sessions vs
             JOIN visitor_profiles vp ON vp.id = vs.visitor_id
             WHERE vs.started_at >= :start_dt AND vs.started_at <= :end_dt
+              AND {_public_tracking_sql("vs.landing_page")}
             GROUP BY utm_source, utm_medium, utm_campaign
             ORDER BY sessions DESC
             LIMIT 20
@@ -904,7 +955,7 @@ def list_visitors(
 
     # Top products viewed/ordered
     try:
-        prod_rows = db.execute(text("""
+        prod_rows = db.execute(text(f"""
             SELECT p.name,
                    COUNT(ve.id) FILTER (WHERE ve.event_type IN ('product_view', 'product_viewed')) AS views,
                    COUNT(ve.id) FILTER (WHERE ve.event_type IN ('add_to_cart', 'cart_item_added')) AS add_to_cart,
@@ -913,6 +964,7 @@ def list_visitors(
             FROM visitor_events ve
             JOIN products p ON p.id = ve.product_id
             WHERE ve.created_at >= :start_dt AND ve.created_at <= :end_dt AND ve.product_id IS NOT NULL
+              AND {_public_tracking_sql("ve.page")}
             GROUP BY p.name ORDER BY views DESC LIMIT 10
         """), params).fetchall()
         top_products = [{"name": r[0], "views": r[1] or 0, "add_to_cart": r[2] or 0, "orders": r[3] or 0,
@@ -922,7 +974,7 @@ def list_visitors(
 
     # Conversion funnel
     try:
-        funnel_data = db.execute(text("""
+        funnel_data = db.execute(text(f"""
             SELECT
                 COUNT(DISTINCT visitor_id) FILTER (WHERE event_type IN ('product_view', 'product_viewed', 'product_config_view')) AS product_views,
                 COUNT(DISTINCT visitor_id) FILTER (WHERE event_type IN ('add_to_cart', 'cart_item_added', 'cart_opened')) AS carts,
@@ -930,6 +982,7 @@ def list_visitors(
                 COUNT(DISTINCT visitor_id) FILTER (WHERE event_type = 'order_created') AS orders
             FROM visitor_events
             WHERE created_at >= :start_dt AND created_at <= :end_dt
+              AND {public_event_filter}
         """), params).fetchone()
         product_views = funnel_data[0] or 0
         carts = funnel_data[1] or 0
@@ -948,7 +1001,7 @@ def list_visitors(
     # Count total sessions and events in period
     try:
         total_sessions = db.execute(
-            text("SELECT COUNT(*) FROM visitor_sessions WHERE started_at >= :start_dt AND started_at <= :end_dt"),
+            text(f"SELECT COUNT(*) FROM visitor_sessions WHERE started_at >= :start_dt AND started_at <= :end_dt AND {public_session_filter}"),
             params,
         ).scalar() or 0
     except Exception:
@@ -956,19 +1009,20 @@ def list_visitors(
 
     try:
         total_events = db.execute(
-            text("SELECT COUNT(*) FROM visitor_events WHERE created_at >= :start_dt AND created_at <= :end_dt"),
+            text(f"SELECT COUNT(*) FROM visitor_events WHERE created_at >= :start_dt AND created_at <= :end_dt AND {public_event_filter}"),
             params,
         ).scalar() or 0
     except Exception:
         total_events = 0
 
     try:
-        bounce_rows = db.execute(text("""
+        bounce_rows = db.execute(text(f"""
             SELECT
                 COUNT(*) FILTER (WHERE COALESCE(pageviews, 0) <= 1) AS bounced,
                 COUNT(*) AS total
             FROM visitor_sessions
             WHERE started_at >= :start_dt AND started_at <= :end_dt
+              AND {public_session_filter}
         """), params).fetchone()
         bounced_sessions = bounce_rows[0] or 0
         sessions_for_bounce = bounce_rows[1] or 0
@@ -977,12 +1031,13 @@ def list_visitors(
         bounce_rate = 0
 
     try:
-        avg_session_duration = db.execute(text("""
+        avg_session_duration = db.execute(text(f"""
             SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (ended_at - started_at))), 0)
             FROM visitor_sessions
             WHERE started_at >= :start_dt
               AND started_at <= :end_dt
               AND ended_at IS NOT NULL
+              AND {public_session_filter}
         """), params).scalar() or 0
     except Exception:
         avg_session_duration = 0

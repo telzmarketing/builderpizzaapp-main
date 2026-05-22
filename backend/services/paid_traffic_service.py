@@ -9,7 +9,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
@@ -35,6 +35,19 @@ from backend.schemas.paid_traffic import (
     TrackingEventIn,
     TrackingSessionIn,
 )
+
+INTERNAL_TRACKING_PREFIXES = ("/painel", "/motoboy")
+
+
+def _public_tracking_sql(column: str) -> str:
+    value = f"COALESCE({column}, '')"
+    filters = []
+    for prefix in INTERNAL_TRACKING_PREFIXES:
+        filters.extend([
+            f"{value} NOT LIKE '{prefix}%'",
+            f"{value} NOT LIKE '%://%{prefix}%'",
+        ])
+    return f"({value} = '' OR ({' AND '.join(filters)}))"
 
 
 def _slug(value: str) -> str:
@@ -361,6 +374,7 @@ class PaidTrafficService:
             .join(VisitorProfile, VisitorProfile.id == VisitorEvent.visitor_id)
             .outerjoin(Product, Product.id == VisitorEvent.product_id)
             .filter(VisitorEvent.created_at >= since)
+            .filter(text(_public_tracking_sql("visitor_events.page")))
             .order_by(VisitorEvent.created_at.desc())
             .limit(limit)
             .all()
@@ -372,8 +386,11 @@ class PaidTrafficService:
 
         visitors = (
             self._db.query(VisitorProfile)
-            .filter(VisitorProfile.last_seen_at >= since)
-            .order_by(VisitorProfile.last_seen_at.desc())
+            .join(VisitorEvent, VisitorEvent.visitor_id == VisitorProfile.id)
+            .filter(VisitorEvent.created_at >= since)
+            .filter(text(_public_tracking_sql("visitor_events.page")))
+            .order_by(func.max(VisitorEvent.created_at).desc())
+            .group_by(VisitorProfile.id)
             .limit(limit)
             .all()
         )
@@ -381,23 +398,29 @@ class PaidTrafficService:
         event_counts = (
             self._db.query(VisitorEvent.event_type, func.count(VisitorEvent.id))
             .filter(VisitorEvent.created_at >= since)
+            .filter(text(_public_tracking_sql("visitor_events.page")))
             .group_by(VisitorEvent.event_type)
             .order_by(func.count(VisitorEvent.id).desc())
             .limit(12)
             .all()
         )
+        visitor_count = func.count(func.distinct(VisitorProfile.id))
         device_counts = (
-            self._db.query(func.coalesce(VisitorProfile.device_type, "unknown"), func.count(VisitorProfile.id))
-            .filter(VisitorProfile.last_seen_at >= since)
+            self._db.query(func.coalesce(VisitorProfile.device_type, "unknown"), visitor_count)
+            .join(VisitorEvent, VisitorEvent.visitor_id == VisitorProfile.id)
+            .filter(VisitorEvent.created_at >= since)
+            .filter(text(_public_tracking_sql("visitor_events.page")))
             .group_by(func.coalesce(VisitorProfile.device_type, "unknown"))
-            .order_by(func.count(VisitorProfile.id).desc())
+            .order_by(visitor_count.desc())
             .all()
         )
         city_counts = (
-            self._db.query(func.coalesce(VisitorProfile.city, "Sem cidade"), func.count(VisitorProfile.id))
-            .filter(VisitorProfile.last_seen_at >= since)
+            self._db.query(func.coalesce(VisitorProfile.city, "Sem cidade"), visitor_count)
+            .join(VisitorEvent, VisitorEvent.visitor_id == VisitorProfile.id)
+            .filter(VisitorEvent.created_at >= since)
+            .filter(text(_public_tracking_sql("visitor_events.page")))
             .group_by(func.coalesce(VisitorProfile.city, "Sem cidade"))
-            .order_by(func.count(VisitorProfile.id).desc())
+            .order_by(visitor_count.desc())
             .limit(8)
             .all()
         )
@@ -405,18 +428,21 @@ class PaidTrafficService:
         total_events = (
             self._db.query(func.count(VisitorEvent.id))
             .filter(VisitorEvent.created_at >= since)
+            .filter(text(_public_tracking_sql("visitor_events.page")))
             .scalar()
             or 0
         )
         active_sessions = (
             self._db.query(func.count(VisitorSession.id))
             .filter(VisitorSession.started_at >= since)
+            .filter(text(_public_tracking_sql("visitor_sessions.landing_page")))
             .scalar()
             or 0
         )
         online_visitors = (
-            self._db.query(func.count(VisitorProfile.id))
-            .filter(VisitorProfile.last_seen_at >= online_since)
+            self._db.query(func.count(func.distinct(VisitorEvent.visitor_id)))
+            .filter(VisitorEvent.created_at >= online_since)
+            .filter(text(_public_tracking_sql("visitor_events.page")))
             .scalar()
             or 0
         )
