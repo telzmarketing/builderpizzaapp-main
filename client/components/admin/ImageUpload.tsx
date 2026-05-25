@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { Upload, X } from "lucide-react";
 import { uploadApi, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { prepareMediaFileForUpload } from "@/lib/mediaCompression";
 
 interface Props {
   value: string;
@@ -23,24 +24,24 @@ export default function ImageUpload({ value, onChange, label, hint, sizeGuide, m
     if (!file) return;
     setError(null);
 
-    if (file.size > maxKB * 1024) {
-      setError(`Arquivo muito grande. Máximo permitido: ${maxKB}KB`);
-      e.target.value = "";
-      return;
-    }
-
     setUploading(true);
     try {
-      const url = await uploadApi.upload(file);
+      const prepared = await prepareMediaFileForUpload(file, { maxImageBytes: maxKB * 1024 });
+      if (prepared.file.size > maxKB * 1024) {
+        setError(`Arquivo muito grande. Maximo permitido: ${maxKB}KB`);
+        return;
+      }
+
+      const url = await uploadApi.upload(prepared.file);
       onChange(url);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("413")) {
         setError("Arquivo muito grande para o servidor. Use uma imagem menor (recomendado: abaixo de 1MB).");
       } else if (msg.includes("401") || msg.includes("403")) {
-        setError("Sessão expirada. Recarregue a página e faça login novamente.");
+        setError("Sessao expirada. Recarregue a pagina e faca login novamente.");
       } else if (msg.includes("400")) {
-        setError("Formato não suportado. Use JPEG, PNG ou WebP.");
+        setError("Formato nao suportado. Use JPEG, PNG ou WebP.");
       } else {
         setError(`Erro ao enviar: ${msg}`);
       }
@@ -91,7 +92,7 @@ export default function ImageUpload({ value, onChange, label, hint, sizeGuide, m
             className="hidden"
             disabled={uploading}
           />
-          {sizeGuide && <p className="text-gold/80 text-xs font-medium">📐 {sizeGuide}</p>}
+          {sizeGuide && <p className="text-gold/80 text-xs font-medium">{sizeGuide}</p>}
           {hint && <p className="text-stone/70 text-xs">{hint}</p>}
           {error && <p className="text-red-400 text-xs mt-1">{error}</p>}
         </div>

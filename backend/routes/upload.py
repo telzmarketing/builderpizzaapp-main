@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from backend.core.response import ok, err_msg
 from backend.routes.admin_auth import get_current_admin
 from backend.models.admin import AdminUser
+from backend.services.media_compression_service import compress_uploaded_media
 
 router = APIRouter(prefix="/admin", tags=["admin-upload"])
 
@@ -83,6 +84,9 @@ async def upload_image(
 
     # ── Write to disk ─────────────────────────────────────────────────────────
     ext = _EXT_MAP.get(content_type, "bin")
+    media = compress_uploaded_media(data, content_type, ext)
+    data = media.data
+    ext = media.extension
     filename = f"{uuid4().hex}.{ext}"
     dest = os.path.join("uploads", filename)
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Upload, X, Play, Video } from "lucide-react";
 import { uploadApi, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { prepareMediaFileForUpload } from "@/lib/mediaCompression";
 
 type MediaType = "image" | "video";
 
@@ -47,23 +48,25 @@ export default function MediaUpload({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > maxKB * 1024) {
-      alert(
-        mediaType === "video"
-          ? `Arquivo muito grande. Máximo permitido: ${formatLimit(maxKBVideo)} para vídeos.`
-          : `Arquivo muito grande. Máximo permitido: ${formatLimit(maxKBImage)} para imagens.`,
-      );
-      e.target.value = "";
-      return;
-    }
-
     setUploading(true);
     try {
-      const url = await uploadApi.upload(file);
+      const prepared = await prepareMediaFileForUpload(file, {
+        maxImageBytes: mediaType === "image" ? maxKB * 1024 : undefined,
+      });
+      if (prepared.file.size > maxKB * 1024) {
+        alert(
+          mediaType === "video"
+            ? `Arquivo muito grande. Maximo permitido: ${formatLimit(maxKBVideo)} para videos.`
+            : `Arquivo muito grande. Maximo permitido: ${formatLimit(maxKBImage)} para imagens.`,
+        );
+        return;
+      }
+
+      const url = await uploadApi.upload(prepared.file);
       onChange(url);
     } catch (err) {
       alert(
-        `Erro ao enviar ${mediaType === "video" ? "vídeo" : "imagem"}: ${
+        `Erro ao enviar ${mediaType === "video" ? "video" : "imagem"}: ${
           err instanceof Error ? err.message : "Tente novamente."
         }`,
       );
@@ -80,7 +83,6 @@ export default function MediaUpload({
     <div>
       <label className="block text-parchment text-sm font-medium mb-2">{label}</label>
       <div className="flex items-start gap-4">
-        {/* Preview */}
         <div className="w-24 h-16 bg-surface-03 border border-surface-03 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden">
           {hasMedia ? (
             showAsVideo ? (
@@ -110,12 +112,11 @@ export default function MediaUpload({
           ) : (
             <div className="text-stone/40 flex flex-col items-center gap-1">
               {mediaType === "video" ? <Video size={20} /> : <Upload size={20} />}
-              <span className="text-[10px]">Sem mídia</span>
+              <span className="text-[10px]">Sem midia</span>
             </div>
           )}
         </div>
 
-        {/* Controls */}
         <div className="flex-1 space-y-2">
           <div className="flex items-center gap-2">
             <label
@@ -125,7 +126,7 @@ export default function MediaUpload({
               }`}
             >
               {mediaType === "video" ? <Video size={14} /> : <Upload size={14} />}
-              {uploading ? "Enviando..." : mediaType === "video" ? "Upload de vídeo" : "Fazer upload"}
+              {uploading ? "Enviando..." : mediaType === "video" ? "Upload de video" : "Fazer upload"}
             </label>
             {hasMedia && !uploading && (
               <button
@@ -146,9 +147,9 @@ export default function MediaUpload({
             className="hidden"
             disabled={uploading}
           />
-          {sizeGuide && <p className="text-gold/80 text-xs font-medium">📐 {sizeGuide}</p>}
+          {sizeGuide && <p className="text-gold/80 text-xs font-medium">{sizeGuide}</p>}
           {mediaType === "video" && (
-            <p className="text-stone/70 text-xs">Formatos: MP4, WebM, MOV — Máx. {formatLimit(maxKBVideo)}</p>
+            <p className="text-stone/70 text-xs">Formatos: MP4, WebM, MOV - Max. {formatLimit(maxKBVideo)}</p>
           )}
           {hint && <p className="text-stone/70 text-xs">{hint}</p>}
         </div>

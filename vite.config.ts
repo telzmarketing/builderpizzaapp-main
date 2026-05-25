@@ -56,6 +56,7 @@ export default defineConfig(({ mode }) => ({
       },
       injectManifest: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest}"],
+        globIgnores: ["salao-site/**", "salao/**"],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
     }),

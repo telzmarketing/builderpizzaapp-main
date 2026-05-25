@@ -45,6 +45,7 @@ import {
   type PaidTrafficRealtime,
   type TrafficCampaign,
 } from "@/lib/api";
+import { prepareMediaFileForUpload } from "@/lib/mediaCompression";
 
 type Tab = "dashboard" | "campanhas" | "links" | "relatorios" | "integracoes" | "pixels" | "configuracoes";
 
@@ -105,74 +106,12 @@ const platforms = [
 const CREATIVE_IMAGE_PROXY_SAFE_BYTES = 900 * 1024;
 const CREATIVE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 const CREATIVE_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
-const CREATIVE_IMAGE_MAX_DIMENSION = 1600;
 const COMPRESSIBLE_CREATIVE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const ALLOWED_CREATIVE_IMAGE_TYPES = new Set([...COMPRESSIBLE_CREATIVE_IMAGE_TYPES, "image/gif"]);
 
 function formatUploadSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${Math.ceil(bytes / 1024)} KB`;
-}
-
-function withWebpExtension(name: string): string {
-  return name.replace(/\.[^.]+$/, "") + ".webp";
-}
-
-function loadImageFile(file: File): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(image);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Nao foi possivel ler a imagem selecionada."));
-    };
-    image.src = url;
-  });
-}
-
-function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error("Nao foi possivel otimizar a imagem."));
-    }, type, quality);
-  });
-}
-
-async function prepareCreativeImageUpload(file: File): Promise<File> {
-  if (!COMPRESSIBLE_CREATIVE_IMAGE_TYPES.has(file.type) || file.size <= CREATIVE_IMAGE_PROXY_SAFE_BYTES) {
-    return file;
-  }
-
-  const image = await loadImageFile(file);
-  const width = image.naturalWidth || image.width;
-  const height = image.naturalHeight || image.height;
-  if (!width || !height) throw new Error("Imagem invalida.");
-
-  const scale = Math.min(1, CREATIVE_IMAGE_MAX_DIMENSION / width, CREATIVE_IMAGE_MAX_DIMENSION / height);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(width * scale));
-  canvas.height = Math.max(1, Math.round(height * scale));
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Nao foi possivel otimizar a imagem.");
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-  let bestBlob: Blob | null = null;
-  for (const quality of [0.82, 0.72, 0.62, 0.52, 0.42]) {
-    const blob = await canvasToBlob(canvas, "image/webp", quality);
-    bestBlob = !bestBlob || blob.size < bestBlob.size ? blob : bestBlob;
-    if (blob.size <= CREATIVE_IMAGE_PROXY_SAFE_BYTES) break;
-  }
-
-  if (!bestBlob || bestBlob.size >= file.size) return file;
-  return new File([bestBlob], withWebpExtension(file.name), {
-    type: "image/webp",
-    lastModified: Date.now(),
-  });
 }
 
 const WEEKDAYS = [
@@ -602,7 +541,9 @@ export default function AdminPaidTraffic() {
           alert("GIFs maiores que 900 KB podem ser bloqueados pelo servidor. Use um GIF menor ou envie como video.");
           return;
         }
-        uploadFile = await prepareCreativeImageUpload(file);
+        uploadFile = (await prepareMediaFileForUpload(file, {
+          maxImageBytes: CREATIVE_IMAGE_PROXY_SAFE_BYTES,
+        })).file;
         if (uploadFile.size > CREATIVE_IMAGE_MAX_BYTES) {
           alert(`Arquivo muito grande. Limite: 5 MB para imagens. Tamanho atual: ${formatUploadSize(uploadFile.size)}.`);
           return;

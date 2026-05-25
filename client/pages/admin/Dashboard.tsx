@@ -1,17 +1,15 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ShoppingBag, Package, BarChart3, Clock, Users,
   TrendingUp, ArrowUpRight, Loader2,
   CircleDollarSign,
 } from "lucide-react";
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell,
-} from "recharts";
 import AdminSidebar from "@/components/AdminSidebar";
 import { adminApi, type ApiDashboard, type ApiOrder } from "@/lib/api";
 import { ordersApi } from "@/lib/api";
+
+const DashboardChart = lazy(() => import("@/components/admin/DashboardChart"));
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Aguardando",
@@ -181,21 +179,9 @@ export default function AdminDashboard() {
                     <TrendingUp size={16} className="text-stone" />
                   </div>
                   <div className="flex items-center gap-4">
-                    <PieChart width={110} height={110}>
-                      <Pie
-                        data={pieData}
-                        cx={50}
-                        cy={50}
-                        innerRadius={32}
-                        outerRadius={50}
-                        dataKey="value"
-                        strokeWidth={0}
-                      >
-                        {pieData.map((_, i) => (
-                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                        ))}
-                      </Pie>
-                    </PieChart>
+                    <Suspense fallback={<ChartFallback className="h-[110px] w-[110px]" />}>
+                      <DashboardChart variant="pie" data={pieData} colors={PIE_COLORS} />
+                    </Suspense>
                     <div className="flex flex-col gap-3">
                       <div className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-gold flex-shrink-0" />
@@ -268,34 +254,9 @@ export default function AdminDashboard() {
                   </div>
                   <BarChart3 size={18} className="text-stone" />
                 </div>
-                <ResponsiveContainer width="100%" height={200}>
-                  <AreaChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorReceita" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f97316" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3d56" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} width={50}
-                      tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
-                    <Tooltip
-                      contentStyle={{ background: "#1e2a3b", border: "1px solid #2d3d56", borderRadius: "8px", color: "#f8fafc" }}
-                      labelStyle={{ color: "#94a3b8", fontSize: "11px" }}
-                      formatter={(v: number) => [`R$${v.toFixed(2)}`, "Receita"]}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="receita"
-                      stroke="#f97316"
-                      strokeWidth={2}
-                      fill="url(#colorReceita)"
-                      dot={{ fill: "#f97316", r: 3 }}
-                      activeDot={{ r: 5 }}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <Suspense fallback={<ChartFallback className="h-[200px] w-full" />}>
+                  <DashboardChart variant="revenue" data={chartData} />
+                </Suspense>
               </div>
 
               {/* ── Quick links ─────────────────────────────────────────── */}
@@ -352,6 +313,10 @@ function ProgressRow({ label, pct, color }: { label: string; pct: number; color:
       </div>
     </div>
   );
+}
+
+function ChartFallback({ className }: { className: string }) {
+  return <div className={`rounded-lg bg-surface-03/50 ${className}`} />;
 }
 
 function QuickLink({ to, icon: Icon, label, desc, tone }: {

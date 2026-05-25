@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { firePixelEvent, getTrackingData } from "@/lib/tracking";
 import {
   productsApi,
@@ -14,11 +14,7 @@ import {
   type ApiPromotion,
   type ApiCampaign,
   type ApiCoupon,
-  type ApiLoyaltyLevel,
-  type ApiLoyaltyReward,
-  type ApiLoyaltyRule,
   type ApiLoyaltySettings,
-  type ApiMultiFlavorsConfig,
   type ApiCustomer,
   type ApiOrder,
   type OrderStatus,
@@ -331,6 +327,7 @@ interface AppContextType {
 
   // Campaign banners (unificado — substitui promotions no home)
   campaignBanners: ApiCampaign[];
+  loadRouteData: (pathname: string) => Promise<void>;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -452,16 +449,50 @@ function apiCouponToCoupon(c: ApiCoupon): Coupon {
   };
 }
 
-function apiLevelToLevel(l: ApiLoyaltyLevel): FidelidadeLevel {
-  return { id: l.id, name: l.name, minPoints: l.min_points, icon: l.icon, color: l.color };
+type CatalogBootstrapPlan = {
+  products?: boolean;
+  promotions?: boolean;
+  multiFlavorsConfig?: boolean;
+  campaignBanners?: boolean;
+};
+
+function hasCatalogPlan(plan: CatalogBootstrapPlan) {
+  return !!(plan.products || plan.promotions || plan.multiFlavorsConfig || plan.campaignBanners);
 }
 
-function apiRewardToReward(r: ApiLoyaltyReward): FidelidadeReward {
-  return { id: r.id, label: r.label, points: r.points_required, icon: r.icon };
+function needsCatalogBootstrap(pathname: string) {
+  return hasCatalogPlan(getCatalogBootstrapPlan(pathname));
 }
 
-function apiRuleToRule(r: ApiLoyaltyRule): EarnRule {
-  return { id: r.id, icon: r.icon, label: r.label, points: `+${r.points} pts` };
+function getCatalogBootstrapPlan(pathname: string): CatalogBootstrapPlan {
+  const productDetail = pathname.startsWith("/product/");
+  const adminProducts = pathname.startsWith("/painel/products");
+
+  return {
+    products:
+      pathname === "/" ||
+      pathname === "/cardapio" ||
+      productDetail ||
+      adminProducts ||
+      pathname.startsWith("/painel/home-config"),
+    multiFlavorsConfig: productDetail || adminProducts,
+    campaignBanners: pathname === "/",
+  };
+}
+
+function getStoreRefreshPlan(pathname: string): CatalogBootstrapPlan {
+  return {
+    products: pathname === "/" || pathname === "/cardapio" || pathname.startsWith("/product/"),
+    campaignBanners: pathname === "/",
+  };
+}
+
+function needsLoyaltySettings(pathname: string) {
+  return pathname === "/" || pathname === "/conta" || pathname === "/fidelidade";
+}
+
+function needsCouponsBootstrap(pathname: string) {
+  return pathname === "/cupons";
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -503,51 +534,101 @@ export function AppProvider({ children }: { children: ReactNode }) {
     maxFlavors: 3,
     pricingRule: "most_expensive",
   });
+  const loadedDataRef = useRef<Set<string>>(new Set());
+
+  async function loadCatalogData(plan: CatalogBootstrapPlan) {
+    const [prods, promos, cfgRaw, camps] = await Promise.allSettled([
+      plan.products ? productsApi.list(true) : Promise.resolve(undefined),
+      plan.promotions ? promotionsApi.list(true) : Promise.resolve(undefined),
+      plan.multiFlavorsConfig ? productsApi.getMultiFlavorsConfig() : Promise.resolve(undefined),
+      plan.campaignBanners ? campaignsApi.list(true) : Promise.resolve(undefined),
+    ]);
+
+    if (plan.products && prods.status === "fulfilled" && prods.value) {
+      setProducts(prods.value);
+      loadedDataRef.current.add("products");
+    }
+    if (plan.promotions && promos.status === "fulfilled" && promos.value) {
+      setPromotions(promos.value.map(apiPromotionToPromotion));
+      loadedDataRef.current.add("promotions");
+    }
+    if (plan.campaignBanners && camps.status === "fulfilled" && camps.value) {
+      setCampaignBanners(camps.value);
+      loadedDataRef.current.add("campaignBanners");
+    }
+    if (plan.multiFlavorsConfig && cfgRaw.status === "fulfilled" && cfgRaw.value) {
+      const c = cfgRaw.value;
+      setMultiFlavorsConfig({ maxFlavors: c.max_flavors, pricingRule: c.pricing_rule });
+      loadedDataRef.current.add("multiFlavorsConfig");
+    }
+  }
+
+  async function loadSiteContent() {
+    const data = await siteConfigApi.get();
+    if (data && Object.keys(data).length > 0) {
+      setSiteContent((prev) => deepMerge(prev, data) as SiteContent);
+    }
+  }
+
+  async function loadLoyaltySettings() {
+    const data = await loyaltyApi.settings();
+    setLoyaltySettings({
+      enabled: data.enabled,
+      points_per_real: data.points_per_real,
+    });
+    loadedDataRef.current.add("loyaltySettings");
+  }
+
+  async function loadCoupons(customerId?: string) {
+    const items = await couponsApi.publicList(customerId);
+    setCoupons(items.map(apiCouponToCoupon));
+    loadedDataRef.current.add(`coupons:${customerId ?? "anon"}`);
+  }
+
+  const loadRouteData = useCallback(async (pathname: string) => {
+    const catalogPlan = getCatalogBootstrapPlan(pathname);
+    const requiredCatalogPlan: CatalogBootstrapPlan = {
+      products: catalogPlan.products && !loadedDataRef.current.has("products"),
+      promotions: catalogPlan.promotions && !loadedDataRef.current.has("promotions"),
+      multiFlavorsConfig: catalogPlan.multiFlavorsConfig && !loadedDataRef.current.has("multiFlavorsConfig"),
+      campaignBanners: catalogPlan.campaignBanners && !loadedDataRef.current.has("campaignBanners"),
+    };
+    const customerId = customer?.id;
+    const couponKey = `coupons:${customerId ?? "anon"}`;
+    const tasks: Promise<unknown>[] = [];
+
+    if (hasCatalogPlan(requiredCatalogPlan)) {
+      tasks.push(loadCatalogData(requiredCatalogPlan));
+    }
+    if (needsLoyaltySettings(pathname) && !loadedDataRef.current.has("loyaltySettings")) {
+      tasks.push(loadLoyaltySettings());
+    }
+    if (needsCouponsBootstrap(pathname) && !loadedDataRef.current.has(couponKey)) {
+      tasks.push(loadCoupons(customerId));
+    }
+
+    if (tasks.length === 0) return;
+    setLoading(true);
+    try {
+      await Promise.allSettled(tasks);
+    } finally {
+      setLoading(false);
+    }
+  }, [customer?.id]);
 
   // ── Bootstrap — fetch all data from backend on mount ──────────────────────
   useEffect(() => {
+    const pathname = window.location.pathname;
+
     async function bootstrap() {
       setLoading(true);
       try {
-        const [prods, promos, cfgRaw, cups, loyaltyCfg, levels, rewards, rules, camps] = await Promise.allSettled([
-          productsApi.list(true),
-          promotionsApi.list(true),
-          productsApi.getMultiFlavorsConfig(),
-          couponsApi.publicList(customer?.id),
-          loyaltyApi.settings(),
-          loyaltyApi.levels(),
-          loyaltyApi.rewards(),
-          loyaltyApi.rules(),
-          campaignsApi.list(true),
+        await Promise.allSettled([
+          needsCatalogBootstrap(pathname) || needsLoyaltySettings(pathname) || needsCouponsBootstrap(pathname)
+            ? loadRouteData(pathname)
+            : Promise.resolve(),
+          loadSiteContent(),
         ]);
-
-        if (prods.status === "fulfilled") setProducts(prods.value);
-        if (promos.status === "fulfilled")
-          setPromotions(promos.value.map(apiPromotionToPromotion));
-        if (camps.status === "fulfilled") setCampaignBanners(camps.value);
-        if (cfgRaw.status === "fulfilled") {
-          const c = cfgRaw.value;
-          setMultiFlavorsConfig({ maxFlavors: c.max_flavors, pricingRule: c.pricing_rule });
-        }
-        if (cups.status === "fulfilled") setCoupons(cups.value.map(apiCouponToCoupon));
-        if (loyaltyCfg.status === "fulfilled")
-          setLoyaltySettings({
-            enabled: loyaltyCfg.value.enabled,
-            points_per_real: loyaltyCfg.value.points_per_real,
-          });
-        if (levels.status === "fulfilled")
-          setFidelidadeLevels(levels.value.map(apiLevelToLevel));
-        if (rewards.status === "fulfilled")
-          setFidelidadeRewards(rewards.value.map(apiRewardToReward));
-        if (rules.status === "fulfilled") setEarnRules(rules.value.map(apiRuleToRule));
-
-        // Load site content from backend (overwrites localStorage if backend has data)
-        try {
-          const data = await siteConfigApi.get();
-          if (data && Object.keys(data).length > 0) {
-            setSiteContent((prev) => deepMerge(prev, data) as SiteContent);
-          }
-        } catch { /* offline — keep localStorage value */ }
       } catch {
         // Se o backend não estiver disponível, continua com estado vazio
       } finally {
@@ -558,26 +639,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (window.location.pathname.startsWith("/painel")) return;
-    couponsApi.publicList(customer?.id)
-      .then((items) => setCoupons(items.map(apiCouponToCoupon)))
+    if (!needsCouponsBootstrap(window.location.pathname)) return;
+    if (!customer?.id) return;
+    loadCoupons(customer.id)
       .catch(() => setCoupons([]));
   }, [customer?.id]);
 
   // ── Store data polling (silent refresh every 30s for store pages) ─────────
   useEffect(() => {
     async function refreshStoreData() {
-      if (window.location.pathname.startsWith("/painel")) return;
+      const refreshPlan = getStoreRefreshPlan(window.location.pathname);
+      if (!hasCatalogPlan(refreshPlan)) return;
       try {
-        const [prods, promos, camps] = await Promise.allSettled([
-          productsApi.list(true),
-          promotionsApi.list(true),
-          campaignsApi.list(true),
-        ]);
-        if (prods.status === "fulfilled") setProducts(prods.value);
-        if (promos.status === "fulfilled")
-          setPromotions(promos.value.map(apiPromotionToPromotion));
-        if (camps.status === "fulfilled") setCampaignBanners(camps.value);
+        await loadCatalogData(refreshPlan);
       } catch {
         // silent
       }
@@ -875,6 +949,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     loyaltySettings, setLoyaltySettings,
     siteContent, updateSiteContent,
     multiFlavorsConfig, updateMultiFlavorsConfig,
+    loadRouteData,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

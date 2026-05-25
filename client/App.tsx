@@ -1,8 +1,7 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { themeApi, applyTheme, DEFAULT_THEME, readCachedTheme } from "./lib/themeApi";
@@ -14,8 +13,65 @@ const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
 const StoreSocialProofNotification = lazy(() => import("./components/StoreSocialProofNotification"));
 const CapacitorMotoboyEntry = lazy(() => import("./components/CapacitorMotoboyEntry"));
 
+function useDeferredClientMount(delay = 1200) {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const requestIdle = window.requestIdleCallback;
+    if (requestIdle) {
+      const id = requestIdle(() => setReady(true), { timeout: delay });
+      return () => window.cancelIdleCallback?.(id);
+    }
+
+    const id = window.setTimeout(() => setReady(true), delay);
+    return () => window.clearTimeout(id);
+  }, [delay]);
+
+  return ready;
+}
+
+function hasNativeCapacitorBridge() {
+  const bridge = (window as Window & {
+    Capacitor?: { isNativePlatform?: () => boolean };
+  }).Capacitor;
+  try {
+    return !!bridge?.isNativePlatform?.();
+  } catch {
+    return false;
+  }
+}
+
+function MotoboyNativeEntry() {
+  const { pathname } = useLocation();
+  const shouldLoad = pathname.startsWith("/motoboy") || hasNativeCapacitorBridge();
+
+  if (!shouldLoad) return null;
+  return (
+    <Suspense fallback={null}>
+      <CapacitorMotoboyEntry />
+    </Suspense>
+  );
+}
+
+function RouteDataLoader() {
+  const { pathname } = useLocation();
+  const { loadRouteData } = useApp();
+  const firstRun = useRef(true);
+
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    loadRouteData(pathname).catch(() => {});
+  }, [loadRouteData, pathname]);
+
+  return null;
+}
+
 function StoreWidget() {
   const { pathname } = useLocation();
+  const ready = useDeferredClientMount();
   if (isSalaoExperience()) return null;
 
   const storeRoutes = [
@@ -36,7 +92,7 @@ function StoreWidget() {
   const isStoreRoute = storeRoutes.some((route) => (
     route === "/" ? pathname === "/" : pathname === route || pathname.startsWith(`${route}/`)
   ));
-  if (!isStoreRoute) return null;
+  if (!isStoreRoute || !ready) return null;
   return (
     <>
       <Suspense fallback={null}>
@@ -69,7 +125,7 @@ function TrackingInjector() {
     if (isInternalStaffPath(pathname)) return;
     if (sessionStorage.getItem("_mo_site_opened")) return;
     sessionStorage.setItem("_mo_site_opened", "1");
-    requestVisitorLocation();
+    const locationTimer = window.setTimeout(requestVisitorLocation, 2000);
     const td = getTrackingData();
     if (isSalaoExperience()) {
       customerEventsApi.register({
@@ -82,7 +138,7 @@ function TrackingInjector() {
         page_url: window.location.href,
         referrer_url: td.referrer,
       }).catch(() => {});
-      return;
+      return () => window.clearTimeout(locationTimer);
     }
 
     customerEventsApi.register({
@@ -95,6 +151,8 @@ function TrackingInjector() {
       page_url: window.location.href,
       referrer_url: td.referrer,
     }).catch(() => {});
+
+    return () => window.clearTimeout(locationTimer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -104,9 +162,12 @@ function TrackingInjector() {
     trackEvent("page_view");
     if (isSalaoExperience()) return;
 
-    const pixelTasks = [initStorePixels()];
-    if (data.campaign_id) pixelTasks.push(initCampaignPixel(data.campaign_id));
-    Promise.all(pixelTasks).then(() => firePixelEvent("PageView")).catch(() => {});
+    const pixelTimer = window.setTimeout(() => {
+      const pixelTasks = [initStorePixels()];
+      if (data.campaign_id) pixelTasks.push(initCampaignPixel(data.campaign_id));
+      Promise.all(pixelTasks).then(() => firePixelEvent("PageView")).catch(() => {});
+    }, 1500);
+    return () => window.clearTimeout(pixelTimer);
   }, [pathname, search]);
   return null;
 }
@@ -216,8 +277,6 @@ const Cardapio = lazy(() => import("./pages/Cardapio"));
 const SalaoHome = lazy(() => import("./pages/salao/SalaoHome"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
-const queryClient = new QueryClient();
-
 function PublicHome() {
   return getPublicExperience() === "salao" ? <SalaoHome /> : <Index />;
 }
@@ -227,21 +286,21 @@ function ExperienceRoute({ salao, delivery }: { salao: JSX.Element; delivery: JS
 }
 
 export default function App() {
+  const deferredWidgetsReady = useDeferredClientMount(1500);
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <AppProvider>
+    <AppProvider>
         <DocumentHead />
         <ThemeInjector />
         <TooltipProvider>
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <Suspense fallback={null}>
-              <CapacitorMotoboyEntry />
-            </Suspense>
+            <MotoboyNativeEntry />
+            <RouteDataLoader />
             <StoreWidget />
             <TrackingInjector />
-            {!isSalaoExperience() && (
+            {!isSalaoExperience() && deferredWidgetsReady && (
               <Suspense fallback={null}>
                 <ExitPopup />
               </Suspense>
@@ -337,7 +396,6 @@ export default function App() {
             </Suspense>
           </BrowserRouter>
         </TooltipProvider>
-      </AppProvider>
-    </QueryClientProvider>
+    </AppProvider>
   );
 }

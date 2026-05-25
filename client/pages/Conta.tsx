@@ -23,6 +23,7 @@ declare global {
 }
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
+const GOOGLE_SCRIPT_ID = "google-identity-client";
 
 type AuthTab = "login" | "register";
 type RegStep = "form" | "lgpd";
@@ -243,7 +244,9 @@ export default function Conta() {
   // ── Google Sign-In ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (customer || !GOOGLE_CLIENT_ID) return;
+    let cancelled = false;
     const render = () => {
+      if (cancelled) return;
       if (!window.google?.accounts?.id || !googleBtnRef.current) return;
       window.google.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
@@ -264,11 +267,28 @@ export default function Conta() {
         text: "continue_with", locale: "pt-BR",
       });
     };
-    if (window.google) { render(); }
-    else {
-      const id = setInterval(() => { if (window.google) { render(); clearInterval(id); } }, 200);
-      return () => clearInterval(id);
+    if (window.google) {
+      render();
+      return () => { cancelled = true; };
     }
+
+    let script = document.getElementById(GOOGLE_SCRIPT_ID) as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement("script");
+      script.id = GOOGLE_SCRIPT_ID;
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    script.addEventListener("load", render);
+    const id = setInterval(() => { if (window.google) { render(); clearInterval(id); } }, 200);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      script?.removeEventListener("load", render);
+    };
   }, [customer, tab]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
