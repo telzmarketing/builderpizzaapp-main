@@ -106,27 +106,36 @@ const normalizeProductText = (value?: string | null) =>
     .toLowerCase()
     .trim();
 
-const isSweetPizzaCandidate = (candidate?: Pizza | null) => {
-  const searchableText = normalizeProductText(
-    [candidate?.name, candidate?.category, candidate?.subcategory].filter(Boolean).join(" ")
+const productSearchText = (candidate?: Pizza | null) =>
+  normalizeProductText(
+    [
+      candidate?.name,
+      candidate?.description,
+      candidate?.category,
+      candidate?.subcategory,
+      candidate?.product_type,
+    ].filter(Boolean).join(" ")
   );
-  return SWEET_PRODUCT_HINTS.some((hint) => searchableText.includes(hint));
+
+const hasHint = (text: string, hints: string[]) =>
+  hints.some((hint) => text.includes(hint));
+
+const isSweetPizzaCandidate = (candidate?: Pizza | null) => {
+  return hasHint(productSearchText(candidate), SWEET_PRODUCT_HINTS);
+};
+
+const isDrinkLikeCandidate = (candidate?: Pizza | null) => {
+  if (!candidate) return false;
+  const productType = normalizeProductText(candidate.product_type);
+  if (["drink", "bebida", "beverage"].includes(productType)) return true;
+  if (Array.isArray(candidate.drink_variants) && candidate.drink_variants.length > 0) return true;
+  return hasHint(productSearchText(candidate), DRINK_PRODUCT_HINTS);
 };
 
 const isPizzaFlavorCandidate = (candidate?: Pizza | null, options: { allowSweet?: boolean } = {}) => {
   if (!candidate || candidate.active === false) return false;
 
-  const searchableText = normalizeProductText(
-    [candidate.name, candidate.category, candidate.subcategory].filter(Boolean).join(" ")
-  );
-
-  if (Array.isArray(candidate.drink_variants) && candidate.drink_variants.length > 0) {
-    return false;
-  }
-
-  if (DRINK_PRODUCT_HINTS.some((hint) => searchableText.includes(hint))) {
-    return false;
-  }
+  if (isDrinkLikeCandidate(candidate)) return false;
 
   const allowSweet = options.allowSweet ?? true;
   if (!allowSweet && isSweetPizzaCandidate(candidate)) return false;
@@ -134,7 +143,7 @@ const isPizzaFlavorCandidate = (candidate?: Pizza | null, options: { allowSweet?
   const productType = normalizeProductText(candidate.product_type);
   if (productType) return productType === "pizza";
 
-  return PIZZA_PRODUCT_HINTS.some((hint) => searchableText.includes(hint));
+  return hasHint(productSearchText(candidate), PIZZA_PRODUCT_HINTS);
 };
 
 function computeFlavorPrice(slots: (Pizza | null)[], division: number, rule: PricingRule): number {
