@@ -261,7 +261,7 @@ export default function AdminConteudo() {
                     value={(draft.brand as typeof draft.brand & { faviconUrl?: string }).faviconUrl ?? ""}
                     onChange={(v) => set(["brand", "faviconUrl"], v)}
                     label="Favicon (ícone da aba do navegador)"
-                    sizeGuide="Tamanho recomendado: 32×32px ou 64×64px, PNG ou ICO, máx. 50KB"
+                    sizeGuide="Recomendado para rapidez: 32x32px ou 64x64px, PNG/ICO/WebP, ate 50KB."
                     hint="Ícone pequeno exibido na aba do browser e favoritos."
                     maxKB={50}
                   />
@@ -270,7 +270,7 @@ export default function AdminConteudo() {
                     value={draft.brand.logo}
                     onChange={(v) => set(["brand", "logo"], v)}
                     label="Logo da marca"
-                    sizeGuide="Recomendado: 200×200px, PNG com fundo transparente, máx. 200KB"
+                    sizeGuide="Recomendado para rapidez: 200x200px, PNG/WebP com fundo transparente, ideal ate 100KB e max. 200KB."
                     hint="Exibido no painel admin e no cabeçalho da loja."
                     maxKB={200}
                     previewRounded
@@ -291,7 +291,7 @@ export default function AdminConteudo() {
                     value={draft.media.logoUrl}
                     onChange={(v) => set(["media", "logoUrl"], v)}
                     label="Logo Branco"
-                    sizeGuide="Tamanho recomendado: 300×120px, PNG com fundo transparente, máx. 200KB"
+                    sizeGuide="Recomendado para rapidez: 300x120px, PNG/WebP transparente, ideal ate 100KB e max. 200KB."
                     hint="Exibido no cabeçalho da loja. Use PNG transparente para melhor resultado."
                     maxKB={200}
                   />

@@ -1476,7 +1476,7 @@ export default function CrmAgenteWhatsApp() {
               mediaType={storyForm.media_type}
               label="Arquivo do story"
               hint="Use uma imagem ou video vertical sempre que possivel."
-              sizeGuide="Stories funcionam melhor em 1080x1920"
+              sizeGuide="Recomendado para rapidez: imagem 1080x1920 WebP/JPG ate 250KB; video MP4/WebM 720x1280, 5 a 12s, ideal ate 2MB."
             />
 
             <div>

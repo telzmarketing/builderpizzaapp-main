@@ -603,6 +603,9 @@ export default function MarketingWhatsApp() {
                         <label className="text-xs text-stone">URL HTTPS da midia *</label>
                         <input type="url" value={dispForm.media_url} onChange={e => setDispForm(f => ({ ...f, media_url: e.target.value }))}
                           placeholder={dispForm.media_type === "video" ? "https://site.com/video.mp4" : "https://site.com/imagem.jpg"} className={IC} />
+                        <p className="text-[11px] text-gold/80">
+                          Recomendado para rapidez: imagem 1080x1080 WebP/JPG ate 250KB; video MP4/WebM 720p, 5 a 12s, ideal ate 2MB.
+                        </p>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="space-y-1">
@@ -867,6 +870,9 @@ export default function MarketingWhatsApp() {
                         <label className="text-xs text-stone">URL HTTPS da midia *</label>
                         <input type="url" value={tplForm.media_url} onChange={e => setTplForm(f => ({ ...f, media_url: e.target.value }))}
                           placeholder={tplForm.media_type === "video" ? "https://site.com/video.mp4" : "https://site.com/imagem.jpg"} className={IC} />
+                        <p className="text-[11px] text-gold/80">
+                          Recomendado para rapidez: imagem 1080x1080 WebP/JPG ate 250KB; video MP4/WebM 720p, 5 a 12s, ideal ate 2MB.
+                        </p>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="space-y-1">

@@ -1152,8 +1152,8 @@ export default function AdminCampanhas() {
                 onChange={(v) => setCampaignForm({ ...campaignForm, banner: v })}
                 mediaType="image"
                 label="Banner da Campanha"
-                sizeGuide="Recomendado: 800×345px, máx. 5MB"
-                hint="Imagem exibida na página pública da campanha."
+                sizeGuide="Recomendado para rapidez: 800x345px ou 960x414px, WebP/JPG, ideal ate 250KB e max. 5MB."
+                hint="Imagem exibida na página pública da campanha. Evite enviar imagem maior que o espaço exibido."
               />
             ) : (
               <MediaUpload
@@ -1161,8 +1161,8 @@ export default function AdminCampanhas() {
                 onChange={(v) => setCampaignForm({ ...campaignForm, video_url: v })}
                 mediaType="video"
                 label="Vídeo do Banner"
-                sizeGuide="Recomendado: 1280×480px, duração até 15s"
-                hint="Vídeo em loop exibido como banner. autoplay + muted + loop."
+                sizeGuide="Recomendado para rapidez: MP4/WebM 1280x480px ou menor, 5 a 12s, ideal ate 2MB."
+                hint="Vídeo em loop exibido como banner. Use arquivo curto, sem áudio relevante e bem comprimido."
               />
             )}
 

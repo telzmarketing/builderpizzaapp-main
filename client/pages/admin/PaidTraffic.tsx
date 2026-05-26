@@ -945,8 +945,13 @@ export default function AdminPaidTraffic() {
 
                           {expandedCreatives[campaign.id] && (
                             <div className="mt-4 border-t border-surface-03 pt-4 space-y-3">
-                              <div className="flex items-center justify-between">
-                                <p className="text-parchment text-xs font-bold uppercase tracking-wider">Criativos</p>
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-parchment text-xs font-bold uppercase tracking-wider">Criativos</p>
+                                  <p className="text-gold/80 text-[11px] mt-1">
+                                    Recomendado para rapidez: imagens 1080x1080 ou 1080x1920 WebP/JPG ate 250KB; videos MP4/WebM 720p, 5 a 12s, ideal ate 2MB.
+                                  </p>
+                                </div>
                                 <label className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold cursor-pointer transition-colors ${uploadingCreative[campaign.id] ? "bg-surface-03 text-stone" : "bg-gold text-cream hover:bg-gold/90"}`}>
                                   {uploadingCreative[campaign.id] ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
                                   {uploadingCreative[campaign.id] ? "Enviando..." : "Adicionar"}

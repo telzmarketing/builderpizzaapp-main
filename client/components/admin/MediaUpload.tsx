@@ -43,6 +43,11 @@ export default function MediaUpload({
 
   const accept = mediaType === "video" ? "video/mp4,video/webm,video/quicktime" : "image/*";
   const maxKB = mediaType === "video" ? maxKBVideo : maxKBImage;
+  const performanceGuide = sizeGuide || (
+    mediaType === "video"
+      ? `Recomendado para rapidez: MP4/WebM em 720p ou menor, 5 a 12 segundos, arquivo ideal ate 2MB e max. ${formatLimit(maxKBVideo)}.`
+      : `Recomendado para rapidez: WebP/JPG, miniaturas 300x300px, cards 800x800px ou banners ate 1280px, arquivo ate ${formatLimit(maxKBImage)}.`
+  );
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -147,9 +152,9 @@ export default function MediaUpload({
             className="hidden"
             disabled={uploading}
           />
-          {sizeGuide && <p className="text-gold/80 text-xs font-medium">{sizeGuide}</p>}
+          <p className="text-gold/80 text-xs font-medium">{performanceGuide}</p>
           {mediaType === "video" && (
-            <p className="text-stone/70 text-xs">Formatos: MP4, WebM, MOV - Max. {formatLimit(maxKBVideo)}</p>
+            <p className="text-stone/70 text-xs">Formatos: MP4, WebM, MOV. Use videos curtos e comprimidos; evite arquivos acima de 2MB quando for banner ou landing.</p>
           )}
           {hint && <p className="text-stone/70 text-xs">{hint}</p>}
         </div>

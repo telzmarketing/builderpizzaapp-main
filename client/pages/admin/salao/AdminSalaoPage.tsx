@@ -461,7 +461,7 @@ function BlogPostEditor({
             value={post.image}
             onChange={(value) => onChange({ image: value })}
             maxKB={3072}
-            sizeGuide="Imagem do blog, ate 3MB"
+            sizeGuide="Recomendado para rapidez: 1200x750px, WebP/JPG, ideal ate 250KB e max. 3MB."
           />
         </div>
       </div>
@@ -893,7 +893,7 @@ function ImageRow({
         value={value}
         onChange={onChange}
         maxKB={3072}
-        sizeGuide="Imagem da Pagina Salao, ate 3MB"
+        sizeGuide="Recomendado para rapidez: use a mesma proporcao do bloco, WebP/JPG, ideal ate 250KB e max. 3MB."
       />
     </div>
   );

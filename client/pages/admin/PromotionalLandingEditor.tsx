@@ -50,19 +50,19 @@ const MEDIA_SLOT_CONFIG: Record<ApiPromotionLandingMediaSlot, {
     label: "Imagem principal",
     mediaType: "image",
     hint: "Imagem promocional usada no carrossel da landing.",
-    sizeGuide: "Recomendado: 1080x1350 ou 1200x1200",
+    sizeGuide: "Recomendado para rapidez: 1080x1350 ou 1200x1200, WebP/JPG, ideal ate 250KB e max. 3MB.",
   },
   image_url_2: {
     label: "Segunda imagem",
     mediaType: "image",
     hint: "Imagem complementar da landing promocional.",
-    sizeGuide: "Recomendado: 1080x1350 ou 1200x1200",
+    sizeGuide: "Recomendado para rapidez: 1080x1350 ou 1200x1200, WebP/JPG, ideal ate 250KB e max. 3MB.",
   },
   video_url: {
     label: "Video curto",
     mediaType: "video",
     hint: "O carrossel exibe o video por ate 15 segundos e passa para a proxima midia.",
-    sizeGuide: "Recomendado: MP4/WebM vertical, ate 15 segundos",
+    sizeGuide: "Recomendado para rapidez: MP4/WebM vertical 720x1280, 5 a 12s, ideal ate 2MB e max. 50MB.",
   },
 };
 
@@ -451,7 +451,7 @@ export default function PromotionalLandingEditor() {
               mediaType="image"
               label="Imagem principal"
               hint="Primeira mídia exibida no carrossel da landing."
-              sizeGuide="Recomendado: 1080x1350 ou 1200x1200"
+              sizeGuide="Recomendado para rapidez: 1080x1350 ou 1200x1200, WebP/JPG, ideal ate 250KB e max. 3MB."
               maxKBImage={3000}
             />
             <MediaUpload
@@ -460,7 +460,7 @@ export default function PromotionalLandingEditor() {
               mediaType="image"
               label="Segunda imagem"
               hint="Aparece como segunda lâmina do carrossel."
-              sizeGuide="Recomendado: 1080x1350 ou 1200x1200"
+              sizeGuide="Recomendado para rapidez: 1080x1350 ou 1200x1200, WebP/JPG, ideal ate 250KB e max. 3MB."
               maxKBImage={3000}
             />
             <MediaUpload
@@ -469,7 +469,7 @@ export default function PromotionalLandingEditor() {
               mediaType="video"
               label="Vídeo curto"
               hint="O carrossel exibe o vídeo por até 15 segundos e passa para a próxima mídia."
-              sizeGuide="Recomendado: MP4/WebM vertical, até 15 segundos"
+              sizeGuide="Recomendado para rapidez: MP4/WebM vertical 720x1280, 5 a 12s, ideal ate 2MB e max. 50MB."
               maxKBVideo={50000}
             />
 

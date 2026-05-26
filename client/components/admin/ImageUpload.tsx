@@ -13,6 +13,11 @@ interface Props {
   previewRounded?: boolean;
 }
 
+const formatLimit = (maxKB: number) => {
+  if (maxKB >= 1000) return `${Number((maxKB / 1024).toFixed(1))}MB`;
+  return `${maxKB}KB`;
+};
+
 export default function ImageUpload({ value, onChange, label, hint, sizeGuide, maxKB = 500, previewRounded = false }: Props) {
   const reactId = useId();
   const id = `img-upload-${reactId}`;
@@ -52,6 +57,7 @@ export default function ImageUpload({ value, onChange, label, hint, sizeGuide, m
   };
 
   const isImage = isAssetUrl(value);
+  const performanceGuide = sizeGuide || `Recomendado para rapidez: WebP/JPG no tamanho real de uso, miniaturas 300x300px, cards 800x800px ou banners ate 1280px, arquivo ate ${formatLimit(maxKB)}.`;
 
   return (
     <div>
@@ -92,7 +98,7 @@ export default function ImageUpload({ value, onChange, label, hint, sizeGuide, m
             className="hidden"
             disabled={uploading}
           />
-          {sizeGuide && <p className="text-gold/80 text-xs font-medium">{sizeGuide}</p>}
+          <p className="text-gold/80 text-xs font-medium">{performanceGuide}</p>
           {hint && <p className="text-stone/70 text-xs">{hint}</p>}
           {error && <p className="text-red-400 text-xs mt-1">{error}</p>}
         </div>

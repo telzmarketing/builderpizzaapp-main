@@ -2146,8 +2146,8 @@ export default function AdminProducts() {
                     value={formData.icon || ""}
                     onChange={(v) => setFormData({ ...formData, icon: v })}
                     label="Ícone / Imagem do produto"
-                    sizeGuide="Tamanho recomendado: 800×800px ou maior, máx. 2MB"
-                    hint="Faça upload de uma imagem ou use um emoji 🍕"
+                    sizeGuide="Recomendado para rapidez: 800x800px, WebP/JPG, ideal ate 120KB e max. 2MB."
+                    hint="Faça upload de imagem quadrada no tamanho real do card ou use um emoji."
                     maxKB={2048}
                   />
                   <div>
@@ -2961,7 +2961,7 @@ export default function AdminProducts() {
                     label="Foto do Brinde"
                     previewRounded={false}
                     maxKB={1024}
-                    sizeGuide="Recomendado: 400×400px, JPEG ou PNG, máx. 1MB"
+                    sizeGuide="Recomendado para rapidez: 400x400px, WebP/JPG, ideal ate 80KB e max. 1MB."
                   />
                 </div>
                 <div className="flex items-center gap-3">

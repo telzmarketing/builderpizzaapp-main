@@ -146,6 +146,9 @@ export default function AdminExitPopup() {
                 <div>
                   <label className="text-parchment text-xs mb-1 block">Imagem (URL opcional)</label>
                   <input value={form.image_url} onChange={(e) => set("image_url", e.target.value)} className={cls} placeholder="https://..." />
+                  <p className="text-gold/80 text-xs mt-1">
+                    Recomendado para rapidez: 800x800px ou 1200x800px, WebP/JPG, ideal ate 250KB. Evite URL de imagem pesada.
+                  </p>
                   {form.image_url && (
                     <a href={form.image_url} target="_blank" rel="noopener noreferrer" className="text-gold text-xs flex items-center gap-1 mt-1 hover:underline">
                       <ExternalLink size={11} /> Visualizar imagem

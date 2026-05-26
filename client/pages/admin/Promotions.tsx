@@ -99,8 +99,8 @@ export default function AdminPromotions() {
                     value={formData.icon || ""}
                     onChange={(v) => setFormData({ ...formData, icon: v })}
                     label="Ícone da campanha"
-                    sizeGuide="Tamanho recomendado: 120×120px, máx. 200KB"
-                    hint="Faça upload de uma imagem ou use um emoji 🍕"
+                    sizeGuide="Recomendado para rapidez: 120x120px, WebP/PNG, ideal ate 50KB e max. 200KB."
+                    hint="Faça upload de uma imagem leve ou use um emoji."
                     maxKB={200}
                   />
 
