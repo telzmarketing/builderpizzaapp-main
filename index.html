@@ -16,6 +16,25 @@
   <body>
     <div id="root"></div>
 
+    <script>
+      (function () {
+        var path = window.location.pathname;
+        var shouldPreloadCatalog = path === "/" || path === "/cardapio" || path.indexOf("/product/") === 0;
+        if (!shouldPreloadCatalog) return;
+        window.__MOSCHETTIERI_PRODUCTS_PRELOAD__ = fetch("/api/products?active_only=true", {
+          headers: { Accept: "application/json" }
+        })
+          .then(function (response) {
+            if (!response.ok) return null;
+            var contentType = response.headers.get("content-type") || "";
+            if (contentType.indexOf("application/json") === -1) return null;
+            return response.json();
+          })
+          .catch(function () {
+            return null;
+          });
+      })();
+    </script>
     <script type="module" src="/client/main.tsx"></script>
   </body>
 </html>

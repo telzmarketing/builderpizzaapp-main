@@ -281,6 +281,24 @@ export interface ApiProduct {
   show_best_seller_badge?: boolean;
 }
 
+declare global {
+  interface Window {
+    __MOSCHETTIERI_PRODUCTS_PRELOAD__?: Promise<ApiProduct[] | null>;
+  }
+}
+
+function consumeProductsPreload(
+  activeOnly: boolean,
+  productType?: string,
+  channel?: "delivery" | "dine_in"
+): Promise<ApiProduct[] | null> | null {
+  if (!activeOnly || productType || channel || typeof window === "undefined") return null;
+  const preload = window.__MOSCHETTIERI_PRODUCTS_PRELOAD__;
+  if (!preload) return null;
+  delete window.__MOSCHETTIERI_PRODUCTS_PRELOAD__;
+  return preload;
+}
+
 export interface ApiBestSellerConfig {
   id: string;
   period_days: number;
@@ -2010,7 +2028,12 @@ export const productsApi = {
     const qs = new URLSearchParams({ active_only: activeOnly ? "true" : "false" });
     if (productType) qs.set("product_type", productType);
     if (channel) qs.set("channel", channel);
-    return get<ApiProduct[]>(`/products?${qs.toString()}`);
+    const path = `/products?${qs.toString()}`;
+    const preload = consumeProductsPreload(activeOnly, productType, channel);
+    if (preload) {
+      return preload.then((items) => Array.isArray(items) ? items : get<ApiProduct[]>(path));
+    }
+    return get<ApiProduct[]>(path);
   },
 
   listGifts: () =>
