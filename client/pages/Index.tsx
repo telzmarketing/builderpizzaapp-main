@@ -153,6 +153,21 @@ export default function Home() {
       ? catalogProducts.filter((p) => p.active && productMatchesHomeCategory(p, activeCategory))
       : [];
 
+  const categoryCounts = useMemo(() => (
+    effectiveCategories.map((category) => ({
+      category,
+      count: catalogProducts.filter((p) => p.active && productMatchesHomeCategory(p, category)).length,
+    }))
+  ), [catalogProducts, effectiveCategories]);
+
+  useEffect(() => {
+    if (!productsLoaded || catalogProducts.length === 0 || categoryProducts.length > 0) return;
+    const firstCategoryWithProducts = categoryCounts.find((item) => item.count > 0)?.category;
+    if (firstCategoryWithProducts && firstCategoryWithProducts !== activeCategory) {
+      setActiveCategory(firstCategoryWithProducts);
+    }
+  }, [activeCategory, catalogProducts.length, categoryCounts, categoryProducts.length, productsLoaded]);
+
   const { home, media } = siteContent;
 
   const handleNext = () => {

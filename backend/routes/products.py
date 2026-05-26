@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from backend.database import get_db
 from backend.models.admin import AdminUser
@@ -262,7 +262,13 @@ def list_products(
 ):
     if not active_only or product_type == "brinde":
         _require_admin(request, db)
-    q = db.query(Product)
+    q = db.query(Product).options(
+        selectinload(Product.sizes),
+        selectinload(Product.crust_types),
+        selectinload(Product.drink_variants),
+        selectinload(Product.promotions).selectinload(ProductPromotion.combinations),
+        selectinload(Product.promotions).selectinload(ProductPromotion.gift_product),
+    )
     if active_only:
         q = q.filter(Product.active == True)  # noqa: E712
     if product_type:
@@ -274,7 +280,11 @@ def list_products(
     elif channel == "dine_in":
         q = q.filter(Product.visible_dine_in == True)  # noqa: E712
     products = q.order_by(Product.name).all()
-    auto_badge_ids = _get_best_seller_badge_ids(db)
+    auto_badge_ids = (
+        _get_best_seller_badge_ids(db)
+        if any((product.best_seller_badge_mode or "off") == "auto" for product in products)
+        else set()
+    )
     return [_product_payload(product, db, auto_badge_ids) for product in products]
 
 

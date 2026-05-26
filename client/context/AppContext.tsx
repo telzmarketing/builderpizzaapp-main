@@ -93,6 +93,41 @@ export interface CartPromotionMeta {
 export type { ApiOrder as Order };
 export type { OrderStatus };
 
+const PRODUCTS_CACHE_KEY = "moschettieri:store-products:v1";
+const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+function readCachedProducts(): Pizza[] {
+  try {
+    const raw = localStorage.getItem(PRODUCTS_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as { updatedAt?: number; items?: Pizza[] };
+    if (!parsed.updatedAt || !Array.isArray(parsed.items)) return [];
+    if (Date.now() - parsed.updatedAt > PRODUCTS_CACHE_TTL_MS) return [];
+    return parsed.items;
+  } catch {
+    return [];
+  }
+}
+
+function writeCachedProducts(items: Pizza[]) {
+  try {
+    localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({
+      updatedAt: Date.now(),
+      items,
+    }));
+  } catch {
+    // Best-effort cache only.
+  }
+}
+
+function getInitialProductsState() {
+  const cached = readCachedProducts();
+  return {
+    products: cached,
+    loaded: cached.length > 0,
+  };
+}
+
 export interface CustomerInfo {
   name: string;
   phone: string;
@@ -511,8 +546,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   });
 
-  const [products, setProducts] = useState<Pizza[]>([]);
-  const [productsLoaded, setProductsLoaded] = useState(false);
+  const [initialProducts] = useState(getInitialProductsState);
+  const [products, setProducts] = useState<Pizza[]>(initialProducts.products);
+  const [productsLoaded, setProductsLoaded] = useState(initialProducts.loaded);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [campaignBanners, setCampaignBanners] = useState<ApiCampaign[]>([]);
@@ -547,6 +583,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           .then((items) => {
             setProducts(items);
             setProductsLoaded(true);
+            writeCachedProducts(items);
             loadedDataRef.current.add("products");
           })
           .catch((error) => {

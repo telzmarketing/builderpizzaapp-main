@@ -64,19 +64,15 @@ class ProductPricingService:
         standard_price = self._standard_price(product, size, crust, standard_price_override)
         current_dt = self._localized_now(now)
 
-        promotions = (
-            self._db.query(ProductPromotion)
-            .filter(
-                ProductPromotion.product_id == product.id,
-                ProductPromotion.active == True,  # noqa: E712
-            )
-            .order_by(ProductPromotion.created_at.desc())
-            .all()
+        promotions = sorted(
+            (promotion for promotion in product.promotions if promotion.active),
+            key=lambda promotion: promotion.created_at.timestamp() if promotion.created_at else 0.0,
+            reverse=True,
         )
 
         if flavor_count > 1:
             blocked_promotion = next(
-                (promotion for promotion in promotions if self._matching_combination(promotion.id, size, crust)),
+                (promotion for promotion in promotions if self._matching_combination(promotion, size, crust)),
                 None,
             )
             if blocked_promotion:
@@ -91,7 +87,7 @@ class ProductPricingService:
             if not self._promotion_is_valid(promotion, current_dt):
                 continue
 
-            combination = self._matching_combination(promotion.id, size, crust)
+            combination = self._matching_combination(promotion, size, crust)
             if not combination:
                 continue
 
@@ -163,10 +159,25 @@ class ProductPricingService:
 
     def _matching_combination(
         self,
-        promotion_id: str,
+        promotion: ProductPromotion | str,
         size: ProductSize | None,
         crust: ProductCrustType | None,
     ) -> ProductPromotionCombination | None:
+        if isinstance(promotion, ProductPromotion):
+            size_id = size.id if size else None
+            crust_id = crust.id if crust else None
+            return next(
+                (
+                    combination
+                    for combination in promotion.combinations
+                    if combination.active
+                    and combination.product_size_id == size_id
+                    and combination.product_crust_type_id == crust_id
+                ),
+                None,
+            )
+
+        promotion_id = promotion
         query = self._db.query(ProductPromotionCombination).filter(
             ProductPromotionCombination.promotion_id == promotion_id,
             ProductPromotionCombination.active == True,  # noqa: E712
