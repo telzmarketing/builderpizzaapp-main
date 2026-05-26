@@ -2,7 +2,7 @@ import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Plus, Minus, Trash2, UtensilsCrossed, ShoppingCart, Tag, Check, X } from "lucide-react";
 import { useApp, CartItem } from "@/context/AppContext";
-import { couponsApi, isAssetUrl, resolveAssetUrl, storeOperationApi, type ApiCouponGift, type StoreOperationStatus } from "@/lib/api";
+import { couponsApi, isAssetUrl, resolveOptimizedAssetUrl, storeOperationApi, type ApiCouponGift, type StoreOperationStatus } from "@/lib/api";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
@@ -27,7 +27,7 @@ function CartProductIcon({ icons }: { icons: string[] }) {
         {displayIcons.map((icon, index) => (
           <div key={`${icon}-${index}`} className="min-w-0 min-h-0 rounded-lg bg-surface-02 flex items-center justify-center overflow-hidden">
             {isAssetUrl(icon) ? (
-              <img src={resolveAssetUrl(icon)} alt="" className="w-full h-full object-cover" />
+              <img src={resolveOptimizedAssetUrl(icon, 160)} alt="" className="w-full h-full object-cover" />
             ) : (
               <span className={isSingle ? "text-2xl leading-none" : "text-lg leading-none"}>{icon}</span>
             )}
@@ -124,18 +124,12 @@ export default function Cart() {
 
   const promotionBlocksCoupons = cart.some((item) => item.promotionApplied && item.promotionBlocksOtherCoupons);
   const promotionFreeShipping = cart.some((item) => item.promotionApplied && item.promotionFreeShipping);
-  const promotionGifts = useMemo<ApiCouponGift[]>(() => {
+  const promotionGiftByCartItemId = useMemo(() => {
     const gifts = new Map<string, ApiCouponGift>();
     cart.forEach((item) => {
       if (!item.promotionApplied || !item.promotionGiftEnabled || !item.promotionGiftProductId || !item.promotionGiftName) return;
-      const key = `${item.promotionId ?? "promotion"}-${item.promotionGiftProductId}`;
       const quantity = Math.max(1, item.promotionGiftQuantity ?? 1) * item.quantity;
-      const current = gifts.get(key);
-      if (current) {
-        current.quantity += quantity;
-        return;
-      }
-      gifts.set(key, {
+      gifts.set(item.cartItemId, {
         product_id: item.promotionGiftProductId,
         name: item.promotionGiftName,
         icon: item.promotionGiftIcon ?? "🎁",
@@ -148,7 +142,7 @@ export default function Cart() {
         promotion_name: item.promotionName ?? null,
       });
     });
-    return Array.from(gifts.values());
+    return gifts;
   }, [cart]);
 
   useEffect(() => {
@@ -263,20 +257,33 @@ export default function Cart() {
           <h2 className="text-sm font-bold uppercase tracking-wide text-gold-light">
             {selectedItemsTitle}
           </h2>
-          {cart.map((item, index) => (
-            <Fragment key={item.cartItemId}>
-              <CartItemRow
-                item={item}
-                onRemove={() => removeFromCart(item.cartItemId)}
-                onUpdate={(qty) => updateCartItem(item.cartItemId, qty, item.selectedSize, item.selectedAddOns)}
-              />
-              {index === cart.length - 1 && (
-                <Suspense fallback={null}>
-                  <CheckoutUpsell isLocked={false} />
-                </Suspense>
-              )}
-            </Fragment>
-          ))}
+          {cart.map((item) => {
+            const promotionGift = promotionGiftByCartItemId.get(item.cartItemId);
+            return (
+              <Fragment key={item.cartItemId}>
+                <CartItemRow
+                  item={item}
+                  onRemove={() => removeFromCart(item.cartItemId)}
+                  onUpdate={(qty) => updateCartItem(item.cartItemId, qty, item.selectedSize, item.selectedAddOns)}
+                />
+                {promotionGift && (
+                  <div className="bg-green-500/10 rounded-2xl p-4 border border-green-500/30">
+                    <div className="flex items-center gap-3">
+                      <CartProductIcon icons={[promotionGift.icon || "🎁"]} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-cream font-semibold text-sm leading-tight truncate">{promotionGift.name}</h3>
+                          <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold text-green-300">Brinde</span>
+                        </div>
+                        <p className="text-stone text-xs mt-1">{promotionGift.quantity}x - Promocao {promotionGift.promotion_name}</p>
+                        <p className="text-green-400 font-bold text-sm mt-1">R$ 0,00</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
           {couponGift && (
             <div className="bg-green-500/10 rounded-2xl p-4 border border-green-500/30">
               <div className="flex items-center gap-3">
@@ -292,21 +299,9 @@ export default function Cart() {
               </div>
             </div>
           )}
-          {promotionGifts.map((gift) => (
-            <div key={`${gift.promotion_id}-${gift.product_id}`} className="bg-green-500/10 rounded-2xl p-4 border border-green-500/30">
-              <div className="flex items-center gap-3">
-                <CartProductIcon icons={[gift.icon || "🎁"]} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-cream font-semibold text-sm leading-tight truncate">{gift.name}</h3>
-                    <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold text-green-300">Brinde</span>
-                  </div>
-                  <p className="text-stone text-xs mt-1">{gift.quantity}x - Promocao {gift.promotion_name}</p>
-                  <p className="text-green-400 font-bold text-sm mt-1">R$ 0,00</p>
-                </div>
-              </div>
-            </div>
-          ))}
+          <Suspense fallback={null}>
+            <CheckoutUpsell isLocked={false} />
+          </Suspense>
         </div>
 
         {/* Action Buttons */}

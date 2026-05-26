@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, ShoppingCart, Clock, Tag } from "lucide-react";
-import { campaignsApi, type ApiCampaign, type ApiCampaignProduct, productsApi, type ApiProduct, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { campaignsApi, type ApiCampaign, type ApiCampaignProduct, productsApi, type ApiProduct, isAssetUrl, resolveOptimizedAssetUrl } from "@/lib/api";
 import { useApp } from "@/context/AppContext";
 import { trackEvent } from "@/lib/tracking";
 import BottomNav from "@/components/BottomNav";
@@ -25,12 +25,12 @@ export default function Campanha() {
     campaignsApi.getBySlug(slug)
       .then(async (c) => {
         setCampaign(c);
-        const [cps, prods] = await Promise.all([
-          campaignsApi.listProducts(c.id),
-          productsApi.list(true),
-        ]);
-        setCampaignProducts(cps.filter((cp) => cp.active));
-        setProducts(prods);
+        const cps = await campaignsApi.listProducts(c.id);
+        const activeProducts = cps.filter((cp) => cp.active);
+        const productIds = Array.from(new Set(activeProducts.flatMap((cp) => cp.product_id ? [cp.product_id] : [])));
+        const prods = await Promise.all(productIds.map((id) => productsApi.get(id).catch(() => null)));
+        setCampaignProducts(activeProducts);
+        setProducts(prods.filter(Boolean) as ApiProduct[]);
       })
       .catch(() => setError("Campanha não encontrada ou não disponível."))
       .finally(() => setLoading(false));
@@ -107,7 +107,7 @@ export default function Campanha() {
       {campaign.banner && (
         <div className="w-full h-48 overflow-hidden">
           {isAssetUrl(campaign.banner) ? (
-            <img src={resolveAssetUrl(campaign.banner)} alt="Banner promocional" className="w-full h-full object-cover" />
+            <img src={resolveOptimizedAssetUrl(campaign.banner, 960)} alt="Banner promocional" className="w-full h-full object-cover" loading="eager" decoding="async" />
           ) : campaign.banner.startsWith("http") || campaign.banner.startsWith("data:") ? (
             <img src={campaign.banner} alt="Banner promocional" className="w-full h-full object-cover" />
           ) : (
@@ -163,7 +163,7 @@ export default function Campanha() {
                     <div className="relative w-14 h-14 rounded-xl bg-surface-03 flex-shrink-0 flex items-center justify-center overflow-hidden">
                       <CategorySeal product={product} compact className="left-1 top-1 max-w-[90%] px-1 text-[7px]" />
                       {isAssetUrl(product.icon) ? (
-                        <img src={resolveAssetUrl(product.icon)} alt={product.name} className="w-full h-full object-contain" />
+                        <img src={resolveOptimizedAssetUrl(product.icon, 160)} alt={product.name} className="w-full h-full object-contain" loading="lazy" decoding="async" />
                       ) : (
                         <span className="text-2xl">{product.icon || "🍕"}</span>
                       )}

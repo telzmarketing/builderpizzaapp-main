@@ -9,6 +9,7 @@ import {
   type ApiPromotionLandingPage,
   isAssetUrl,
   resolveAssetUrl,
+  resolveOptimizedAssetUrl,
 } from "@/lib/api";
 import { getTrackingData, trackEvent } from "@/lib/tracking";
 
@@ -77,13 +78,15 @@ export default function PromocaoLanding() {
 
   useEffect(() => {
     if (!slug) return;
+    let active = true;
     setLoading(true);
     setError("");
+    setProduct(null);
     promotionLandingsApi.getBySlug(slug)
-      .then(async (page) => {
+      .then((page) => {
+        if (!active) return;
         setLanding(page);
-        const prod = await productsApi.get(page.product_id);
-        setProduct(prod);
+        setLoading(false);
         const td = getTrackingData();
         trackEvent("landing_promo_view", undefined, {
           product_id: page.product_id,
@@ -93,19 +96,30 @@ export default function PromocaoLanding() {
           session_id: td.session_id,
           timestamp: new Date().toISOString(),
         });
+        productsApi.get(page.product_id)
+          .then((prod) => {
+            if (active) setProduct(prod);
+          })
+          .catch(() => undefined);
       })
-      .catch(() => setError("Promocao nao encontrada ou fora do horario."))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (!active) return;
+        setError("Promocao nao encontrada ou fora do horario.");
+        setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [slug]);
 
   const mediaItems = useMemo<LandingMedia[]>(() => {
     const mediaBySlot: Partial<Record<LandingMediaSlot, LandingMedia>> = {};
-    if (landing?.image_url) mediaBySlot.image_url = { type: "image", url: resolveAssetUrl(landing.image_url), slot: "image_url" };
-    if (landing?.image_url_2) mediaBySlot.image_url_2 = { type: "image", url: resolveAssetUrl(landing.image_url_2), slot: "image_url_2" };
+    if (landing?.image_url) mediaBySlot.image_url = { type: "image", url: resolveOptimizedAssetUrl(landing.image_url, 960), slot: "image_url" };
+    if (landing?.image_url_2) mediaBySlot.image_url_2 = { type: "image", url: resolveOptimizedAssetUrl(landing.image_url_2, 960), slot: "image_url_2" };
     if (landing?.video_url) mediaBySlot.video_url = { type: "video", url: resolveAssetUrl(landing.video_url), slot: "video_url" };
     const items = normalizeMediaOrder(landing?.media_order).flatMap((slot) => mediaBySlot[slot] ? [mediaBySlot[slot]!] : []);
     if (items.length === 0 && isAssetUrl(product?.icon)) {
-      items.push({ type: "image", url: resolveAssetUrl(product?.icon), slot: "image_url" });
+      items.push({ type: "image", url: resolveOptimizedAssetUrl(product?.icon, 960), slot: "image_url" });
     }
     return items;
   }, [landing?.image_url, landing?.image_url_2, landing?.video_url, landing?.media_order, product?.icon]);
@@ -189,6 +203,7 @@ export default function PromocaoLanding() {
               playsInline
               autoPlay
               loop={false}
+              preload="metadata"
             />
           ) : (
           <img
@@ -196,6 +211,8 @@ export default function PromocaoLanding() {
             src={activeMedia.url}
             alt={landing.title}
             className={`absolute inset-0 h-full w-full object-cover ${position}`}
+            loading="eager"
+            decoding="async"
           />
           )
         ) : (

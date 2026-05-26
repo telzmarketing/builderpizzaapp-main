@@ -923,6 +923,9 @@ export default function Checkout() {
                   : <Banknote size={20} className="text-gold" />}
               Forma de pagamento
             </h2>
+            <p className="mb-3 rounded-xl border border-surface-03 bg-surface-02 px-3 py-2 text-xs leading-relaxed text-parchment">
+              Pagamento 100% seguro via Mercado Pago. Seus dados são protegidos durante toda a transação.
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {([
                 { value: "pix", label: "PIX", icon: QrCode, helper: "QR Code na tela" },
