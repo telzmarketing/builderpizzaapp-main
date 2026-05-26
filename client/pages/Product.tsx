@@ -39,14 +39,38 @@ const DRINK_PRODUCT_HINTS = [
   "chopp",
   "coca",
   "drink",
+  "energetico",
   "fanta",
   "guarana",
+  "h2o",
   "lata",
   "litro",
+  "mate",
   "ml",
+  "pepsi",
   "refrigerante",
+  "red bull",
   "sprite",
   "suco",
+  "tonica",
+];
+
+const PIZZA_PRODUCT_HINTS = [
+  "brotinho",
+  "broto",
+  "calzone",
+  "doce",
+  "doces",
+  "especial",
+  "especiais",
+  "meio a meio",
+  "napolitana",
+  "pizza",
+  "pizzas",
+  "salgada",
+  "salgadas",
+  "tradicional",
+  "tradicionais",
 ];
 
 const normalizeProductText = (value?: string | null) =>
@@ -70,7 +94,11 @@ const isPizzaFlavorCandidate = (candidate?: Pizza | null) => {
     [candidate.name, candidate.category, candidate.subcategory].filter(Boolean).join(" ")
   );
 
-  return !DRINK_PRODUCT_HINTS.some((hint) => searchableText.includes(hint));
+  if (DRINK_PRODUCT_HINTS.some((hint) => searchableText.includes(hint))) {
+    return false;
+  }
+
+  return PIZZA_PRODUCT_HINTS.some((hint) => searchableText.includes(hint));
 };
 
 function computeFlavorPrice(slots: (Pizza | null)[], division: number, rule: PricingRule): number {
@@ -607,12 +635,12 @@ export default function Product() {
                     onClick={() => setSelectedCrust(crust)}
                     className={`flex-1 min-w-[80px] py-3 px-2 rounded-xl text-sm font-bold transition-all ${
                       selectedCrust?.id === crust.id
-                        ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
+                        ? "bg-gold text-cream shadow-lg shadow-gold/30"
                         : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
                     }`}
                   >
                     <span className="block font-black text-xs">{crust.name}</span>
-                    <span className={`block text-[10px] mt-0.5 ${selectedCrust?.id === crust.id ? "text-white/80" : effectiveAddition > 0 ? "text-amber-400" : "opacity-70"}`}>
+                    <span className={`block text-[10px] mt-0.5 ${selectedCrust?.id === crust.id ? "text-cream/80" : effectiveAddition > 0 ? "text-gold-light" : "opacity-70"}`}>
                       {formatCrustAddition(effectiveAddition)}
                     </span>
                   </button>
@@ -635,12 +663,12 @@ export default function Product() {
                   onClick={() => setSelectedBorder(null)}
                   className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold transition-all ${
                     selectedBorder === null
-                      ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
+                      ? "bg-gold text-cream shadow-lg shadow-gold/30"
                       : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
                   }`}
                 >
                   <span>Sem borda</span>
-                  <span className={`text-[10px] font-normal ${selectedBorder === null ? "text-white/70" : "opacity-60"}`}>Sem adicional</span>
+                  <span className={`text-[10px] font-normal ${selectedBorder === null ? "text-cream/80" : "opacity-60"}`}>Sem adicional</span>
                 </button>
                 {borderCrusts.map((border) => (
                   <button
@@ -648,12 +676,12 @@ export default function Product() {
                     onClick={() => setSelectedBorder(border)}
                     className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold transition-all ${
                       selectedBorder?.id === border.id
-                        ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
+                        ? "bg-gold text-cream shadow-lg shadow-gold/30"
                         : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
                     }`}
                   >
                     <span>{border.name}</span>
-                    <span className={`text-[10px] font-normal ${selectedBorder?.id === border.id ? "text-white/70" : "text-amber-400"}`}>
+                    <span className={`text-[10px] font-normal ${selectedBorder?.id === border.id ? "text-cream/80" : "text-gold-light"}`}>
                       {border.price_addition > 0 ? `+ R$ ${border.price_addition.toFixed(2)}` : "Sem adicional"}
                     </span>
                   </button>
