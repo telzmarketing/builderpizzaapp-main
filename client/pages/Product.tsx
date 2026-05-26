@@ -23,8 +23,9 @@ const isNapolitanaCrust = (name?: string | null) =>
 const DIVISION_OPTIONS: { value: FlavorDivision; label: string; emoji: string }[] = [
   { value: 1, label: "Inteira", emoji: "🍕" },
   { value: 2, label: "Meio a Meio", emoji: "½" },
-  { value: 3, label: "3 Sabores", emoji: "⅓" },
 ];
+
+const PUBLIC_MAX_FLAVORS = 2;
 
 const PRICING_LABELS: Record<PricingRule, string> = {
   most_expensive: "Preço do sabor mais caro",
@@ -73,6 +74,20 @@ const PIZZA_PRODUCT_HINTS = [
   "tradicionais",
 ];
 
+const SWEET_PRODUCT_HINTS = [
+  "banana",
+  "beijinho",
+  "brigadeiro",
+  "chocolate",
+  "doce",
+  "doces",
+  "goiabada",
+  "morango",
+  "nutella",
+  "prestigio",
+  "romeu",
+];
+
 const normalizeProductText = (value?: string | null) =>
   String(value ?? "")
     .normalize("NFD")
@@ -80,8 +95,18 @@ const normalizeProductText = (value?: string | null) =>
     .toLowerCase()
     .trim();
 
-const isPizzaFlavorCandidate = (candidate?: Pizza | null) => {
+const isSweetPizzaCandidate = (candidate?: Pizza | null) => {
+  const searchableText = normalizeProductText(
+    [candidate?.name, candidate?.category, candidate?.subcategory].filter(Boolean).join(" ")
+  );
+  return SWEET_PRODUCT_HINTS.some((hint) => searchableText.includes(hint));
+};
+
+const isPizzaFlavorCandidate = (candidate?: Pizza | null, options: { allowSweet?: boolean } = {}) => {
   if (!candidate || candidate.active === false) return false;
+
+  const allowSweet = options.allowSweet ?? true;
+  if (!allowSweet && isSweetPizzaCandidate(candidate)) return false;
 
   const productType = normalizeProductText(candidate.product_type);
   if (productType) return productType === "pizza";
@@ -369,20 +394,35 @@ export default function Product() {
 
   const activeFlavors = flavorSlots.slice(0, division);
   const allFilled = activeFlavors.every((f) => f !== null);
+  const effectivePricingRule: PricingRule = division > 1 ? "average" : multiFlavorsConfig.pricingRule;
+  const selectedSizeLookup = normalizeProductText(selectedSizeObj?.label ?? selectedSize);
+
+  const getFlavorDisplayPrice = (flavor?: Pizza | null) => {
+    if (!flavor) return 0;
+    if (isDrink) return selectedSizeObj?.price ?? flavor.price;
+
+    if (selectedSizeLookup) {
+      const matchingSize = flavor.sizes?.find(
+        (size) => size.active && normalizeProductText(size.label) === selectedSizeLookup
+      );
+      if (matchingSize) return matchingSize.price;
+      if (flavor.id === product?.id && selectedSizeObj) return selectedSizeObj.price;
+    }
+
+    return flavor.price;
+  };
 
   const flavorPrice = useMemo(() => {
     if (isDrink) {
       // For drinks: price is the size price or product base price
       return selectedSizeObj?.price ?? productPrice;
     }
-    if (productSizes.length > 0 && selectedSizeObj) {
-      const slotsWithSizePrice = activeFlavors.map((f) =>
-        f ? { ...f, price: selectedSizeObj.price } : null
-      );
-      return computeFlavorPrice(slotsWithSizePrice as (Pizza | null)[], division, multiFlavorsConfig.pricingRule);
-    }
-    return computeFlavorPrice(activeFlavors, division, multiFlavorsConfig.pricingRule);
-  }, [activeFlavors, division, multiFlavorsConfig.pricingRule, productSizes, selectedSizeObj, isDrink, productPrice]);
+
+    const slotsWithDisplayPrice = activeFlavors.map((f) =>
+      f ? { ...f, price: getFlavorDisplayPrice(f) } : null
+    );
+    return computeFlavorPrice(slotsWithDisplayPrice as (Pizza | null)[], division, effectivePricingRule);
+  }, [activeFlavors, division, effectivePricingRule, selectedSizeLookup, selectedSizeObj, isDrink, productPrice, product?.id]);
 
   const variantPriceAddition = useMemo(() => {
     if (isPizza && selectedCrust) return normalizeCrustPriceAddition(selectedCrust.price_addition, productPrice);
@@ -398,6 +438,7 @@ export default function Product() {
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
   const handleDivisionChange = (d: FlavorDivision) => {
+    if (d > PUBLIC_MAX_FLAVORS) return;
     if (isPizzaBrotoSelected && d > 1) return;
     setDivision(d);
     setActiveSlot(null);
@@ -411,7 +452,7 @@ export default function Product() {
   };
 
   const handleSelectFlavor = (slotIndex: number, p: Pizza) => {
-    if (!isPizzaFlavorCandidate(p)) return;
+    if (!isPizzaFlavorCandidate(p, { allowSweet: division === 1 })) return;
 
     setFlavorSlots((prev) => {
       const next = [...prev];
@@ -465,11 +506,10 @@ export default function Product() {
       flavors = [{ productId: product.id, name: product.name, price: flavorPrice, icon: product.icon }];
     } else {
       // Use the size-adjusted price so backend validation passes with size-based pricing
-      const priceForFlavor = selectedSizeObj?.price ?? productPrice;
       flavors = (activeFlavors as Pizza[]).map((p) => ({
         productId: p.id,
         name: p.name,
-        price: priceForFlavor,
+        price: getFlavorDisplayPrice(p),
         icon: p.icon,
       }));
     }
@@ -520,12 +560,12 @@ export default function Product() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   const divisionOptions = DIVISION_OPTIONS.filter(
-    (opt) => opt.value <= multiFlavorsConfig.maxFlavors || opt.value === 1
+    (opt) => opt.value <= Math.min(multiFlavorsConfig.maxFlavors, PUBLIC_MAX_FLAVORS) || opt.value === 1
   );
 
   const availableForSlot = (slotIndex: number) =>
     products.filter((p) => {
-      return isPizzaFlavorCandidate(p) && !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id);
+      return isPizzaFlavorCandidate(p, { allowSweet: division === 1 }) && !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id);
     });
 
   const canAddToCart = isDrink ? true : (allFilled && (regularCrusts.length === 0 || selectedCrust !== null));
@@ -827,7 +867,7 @@ export default function Product() {
                         <p className={`text-sm font-semibold ${flavor ? "text-cream" : "text-stone/70"}`}>
                           {flavor?.name ?? "Toque para escolher o sabor"}
                         </p>
-                        {flavor && <p className="text-gold-light text-xs">R$ {flavor.price.toFixed(2)}</p>}
+                        {flavor && <p className="text-gold-light text-xs">R$ {getFlavorDisplayPrice(flavor).toFixed(2)}</p>}
                       </div>
                       <div className="flex-shrink-0">
                         {flavor ? (
@@ -844,26 +884,27 @@ export default function Product() {
                     {isOpen && (
                       <div className="mt-2 bg-brand-dark rounded-xl p-3 border border-gold/30 animate-in slide-in-from-top-1">
                         <p className="text-stone text-xs mb-3">Selecione o sabor {i + 1}:</p>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                           {availableForSlot(i).map((p) => {
                             const isSelected = flavorSlots[i]?.id === p.id;
+                            const displayPrice = getFlavorDisplayPrice(p);
                             return (
                               <button
                                 key={p.id}
                                 onClick={() => handleSelectFlavor(i, p)}
-                                className={`p-2.5 rounded-xl border text-center transition-all active:scale-95 ${
+                                className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all active:scale-[0.99] ${
                                   isSelected ? "bg-gold/20 border-gold shadow-sm" : "bg-surface-02 border-surface-03 hover:border-gold/40"
                                 }`}
                               >
-                                <div className="w-10 h-10 mx-auto mb-1 flex items-center justify-center text-2xl overflow-hidden rounded-lg">
+                                <div className="w-12 h-12 flex-shrink-0 flex items-center justify-center text-2xl overflow-hidden rounded-lg bg-surface-03">
                                   {isAssetUrl(p.icon)
                                     ? (
                                       <img
-                                        src={resolveOptimizedAssetUrl(p.icon, 80)}
+                                        src={resolveOptimizedAssetUrl(p.icon, 96)}
                                         alt=""
                                         className="w-full h-full object-cover"
-                                        width={40}
-                                        height={40}
+                                        width={48}
+                                        height={48}
                                         loading="lazy"
                                         decoding="async"
                                         fetchPriority="low"
@@ -871,9 +912,15 @@ export default function Product() {
                                     )
                                     : <span>{p.icon || "🍕"}</span>}
                                 </div>
-                                <p className="text-cream text-xs font-medium leading-tight line-clamp-1">{p.name}</p>
-                                <p className="text-gold-light text-xs mt-0.5">R${p.price.toFixed(2)}</p>
-                                {isSelected && <span className="inline-block mt-1 text-[10px] bg-gold text-cream px-1.5 py-0.5 rounded-full">✓ Selecionado</span>}
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-cream text-sm font-semibold leading-tight break-words">{p.name}</p>
+                                  <p className="text-gold-light text-xs mt-1">R$ {displayPrice.toFixed(2)}</p>
+                                </div>
+                                {isSelected && (
+                                  <span className="flex-shrink-0 text-[10px] bg-gold text-cream px-2 py-1 rounded-full">
+                                    Selecionado
+                                  </span>
+                                )}
                               </button>
                             );
                           })}
@@ -911,7 +958,7 @@ export default function Product() {
                             />
                           )
                           : <span>{f.icon}</span>}
-                        {f.name} — R${f.price.toFixed(2)}
+                        {f.name} — R${getFlavorDisplayPrice(f).toFixed(2)}
                       </span>
                     ) : (
                       <span key={i} className="text-xs bg-surface-03/50 text-stone/70 px-2 py-0.5 rounded-full border border-dashed border-brand-mid">
@@ -973,7 +1020,7 @@ export default function Product() {
           <div className="flex flex-col items-center mb-6 p-4 bg-surface-02/50 rounded-2xl border border-surface-03">
             <PizzaDiagram division={division} slots={flavorSlots} />
             <p className="text-stone/70 text-xs mt-2">
-              💰 {PRICING_LABELS[multiFlavorsConfig.pricingRule]}
+              💰 {PRICING_LABELS[effectivePricingRule]}
             </p>
           </div>
         )}

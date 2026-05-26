@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
@@ -61,7 +62,14 @@ class ProductPricingService:
         flavor_count: int = 1,
         flavor_product_ids: list[str] | None = None,
     ) -> ProductPriceResult:
-        standard_price = self._standard_price(product, size, crust, standard_price_override)
+        standard_price = self._multi_flavor_standard_price(
+            product=product,
+            size=size,
+            crust=crust,
+            flavor_product_ids=flavor_product_ids,
+        )
+        if standard_price is None:
+            standard_price = self._standard_price(product, size, crust, standard_price_override)
         current_dt = self._localized_now(now)
 
         promotions = sorted(
@@ -135,6 +143,69 @@ class ProductPricingService:
         if crust:
             base_price += normalize_crust_price_addition(crust.price_addition, product.price)
         return round(base_price, 2)
+
+    def _multi_flavor_standard_price(
+        self,
+        *,
+        product: Product,
+        size: ProductSize | None,
+        crust: ProductCrustType | None,
+        flavor_product_ids: list[str] | None,
+    ) -> float | None:
+        if not flavor_product_ids or len(flavor_product_ids) <= 1:
+            return None
+
+        selected_size_label = self._normalize_size_label(size.label if size else None)
+        prices: list[float] = []
+        for flavor_product_id in flavor_product_ids:
+            flavor_product = product if flavor_product_id == product.id else (
+                self._db.query(Product)
+                .filter(Product.id == flavor_product_id, Product.active == True)  # noqa: E712
+                .first()
+            )
+            if not flavor_product:
+                return None
+            prices.append(self._flavor_product_price(flavor_product, selected_size_label, size))
+
+        if not prices:
+            return None
+
+        base_price = sum(prices) / len(prices)
+        if crust:
+            base_price += normalize_crust_price_addition(crust.price_addition, product.price)
+        return round(base_price, 2)
+
+    def _flavor_product_price(
+        self,
+        product: Product,
+        selected_size_label: str | None,
+        selected_size: ProductSize | None,
+    ) -> float:
+        if selected_size_label:
+            matching_size = next(
+                (
+                    size
+                    for size in product.sizes
+                    if size.active and self._normalize_size_label(size.label) == selected_size_label
+                ),
+                None,
+            )
+            if matching_size:
+                return float(matching_size.price)
+            if selected_size and selected_size.product_id == product.id:
+                return float(selected_size.price)
+        return float(product.price)
+
+    def _normalize_size_label(self, value: str | None) -> str | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        return (
+            unicodedata.normalize("NFD", text)
+            .encode("ascii", "ignore")
+            .decode("ascii")
+            .lower()
+        )
 
     def _localized_now(self, now: datetime | None) -> datetime:
         zone = ZoneInfo("America/Sao_Paulo")

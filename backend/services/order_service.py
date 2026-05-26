@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import random
 import string
+import unicodedata
 import uuid
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session, joinedload
@@ -63,6 +64,36 @@ def _clip_text(value: str | None, max_len: int) -> str | None:
     if not text:
         return None
     return text[:max_len]
+
+
+def _normalize_size_label(value: str | None) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return (
+        unicodedata.normalize("NFD", text)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+        .lower()
+    )
+
+
+def _product_price_for_selected_size(product: Product, selected_size: ProductSize) -> float:
+    selected_label = _normalize_size_label(selected_size.label)
+    if selected_label:
+        matching_size = next(
+            (
+                size
+                for size in product.sizes
+                if size.active and _normalize_size_label(size.label) == selected_label
+            ),
+            None,
+        )
+        if matching_size:
+            return float(matching_size.price)
+    if product.id == selected_size.product_id:
+        return float(selected_size.price)
+    return float(product.price)
 
 
 class OrderService:
@@ -185,7 +216,6 @@ class OrderService:
             raise MaxFlavorsExceeded(item.flavor_division, config.max_flavors)
 
         # Fetch size price server-side (authoritative — client-submitted prices are ignored when size found)
-        size_base_price: float | None = None
         selected_size_obj: ProductSize | None = None
         if item.selected_size_id:
             selected_size_obj = (
@@ -195,8 +225,6 @@ class OrderService:
                         ProductSize.active == True)  # noqa: E712
                 .first()
             )
-            if selected_size_obj:
-                size_base_price = selected_size_obj.price
 
         flavor_products: list[Product] = []
         slot_prices: list[float] = []
@@ -210,9 +238,9 @@ class OrderService:
             if not product:
                 raise ProductNotFound(f.product_id)
 
-            if size_base_price is not None:
-                # Size-based: server price is authoritative, ignore client f.price
-                slot_prices.append(size_base_price)
+            if selected_size_obj is not None:
+                # Size-based: each flavor uses the matching size label from its own product.
+                slot_prices.append(_product_price_for_selected_size(product, selected_size_obj))
             else:
                 # No size configured: validate submitted price against product base price
                 if abs(product.price - f.price) > 0.01:
@@ -223,7 +251,7 @@ class OrderService:
 
         # Apply pricing rule across slots
         division = item.flavor_division
-        rule = config.pricing_rule
+        rule = PricingRule.average if division > 1 else config.pricing_rule
         if not slot_prices:
             server_price = 0.0
         elif rule == PricingRule.most_expensive:
