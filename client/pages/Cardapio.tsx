@@ -12,7 +12,7 @@ import BestSellerSeal from "@/components/BestSellerSeal";
 
 export default function Cardapio() {
   const navigate = useNavigate();
-  const { products, addToCart } = useApp();
+  const { products, productsLoaded, addToCart } = useApp();
   const PROMO_LABEL = "Promoções";
   const [activeCategory, setActiveCategory] = useState("");
   const [search, setSearch] = useState("");
@@ -62,6 +62,7 @@ export default function Cardapio() {
       (activeCategory === PROMO_LABEL ? p.promotion_applied : ((p.subcategory || p.category) ?? "").toLowerCase() === activeCategory.toLowerCase());
     return matchSearch && matchCat && p.active;
   });
+  const isCatalogLoading = !productsLoaded && products.length === 0;
 
   const productTarget = (product: typeof products[0]) =>
     product.promotion_landing_url || `/product/${product.id}`;
@@ -149,14 +150,16 @@ export default function Cardapio() {
 
       {/* Products Grid */}
       <div className="px-4 pb-32 max-w-2xl mx-auto w-full">
-        {filtered.length === 0 ? (
+        {isCatalogLoading ? (
+          <CatalogGridSkeleton />
+        ) : filtered.length === 0 ? (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">🍕</div>
             <p className="text-stone">Nenhum produto encontrado</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {filtered.map((product) => (
+            {filtered.map((product, index) => (
               <div
                 key={product.id}
                 className="bg-surface-02 rounded-2xl p-4 border border-surface-03 hover:border-gold/40 transition-all"
@@ -183,6 +186,11 @@ export default function Cardapio() {
                           src={resolveAssetUrl(product.icon)}
                           alt={product.name}
                           className="relative z-[1] w-full h-full object-cover scale-[1.10] transition-transform duration-300"
+                          width={320}
+                          height={320}
+                          loading={index === 0 ? "eager" : "lazy"}
+                          decoding="async"
+                          fetchPriority={index === 0 ? "high" : "auto"}
                         />
                       ) : (
                         <span className="relative z-[1] text-5xl scale-[1.10] inline-block">
@@ -242,6 +250,21 @@ export default function Cardapio() {
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
+    </div>
+  );
+}
+
+function CatalogGridSkeleton() {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3" aria-label="Carregando produtos">
+      {[0, 1, 2, 3, 4, 5].map((item) => (
+        <div key={item} className="rounded-2xl border border-surface-03 bg-surface-02 p-4">
+          <div className="mb-3 aspect-square rounded-xl bg-surface-03 animate-pulse" />
+          <div className="h-4 w-24 rounded bg-surface-03 animate-pulse" />
+          <div className="mt-2 h-3 w-16 rounded bg-surface-03 animate-pulse" />
+          <div className="mt-3 h-4 w-20 rounded bg-surface-03 animate-pulse" />
+        </div>
+      ))}
     </div>
   );
 }

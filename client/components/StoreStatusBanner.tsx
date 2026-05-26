@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Clock, Store } from "lucide-react";
 import { storeOperationApi, type StoreOperationStatus } from "@/lib/api";
 
-export default function StoreStatusBanner({ compact = false }: { compact?: boolean }) {
+export default function StoreStatusBanner({ compact = false, delayMs = 0 }: { compact?: boolean; delayMs?: number }) {
   const [status, setStatus] = useState<StoreOperationStatus | null>(null);
 
   useEffect(() => {
@@ -10,13 +10,14 @@ export default function StoreStatusBanner({ compact = false }: { compact?: boole
     const load = () => storeOperationApi.status().then((data) => {
       if (!cancelled) setStatus(data);
     }).catch(() => {});
-    load();
-    const id = window.setInterval(load, 60000);
+    const firstLoadId = window.setTimeout(load, Math.max(0, delayMs));
+    const intervalId = window.setInterval(load, 60000);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      window.clearTimeout(firstLoadId);
+      window.clearInterval(intervalId);
     };
-  }, []);
+  }, [delayMs]);
 
   if (!status || status.is_open) return null;
 

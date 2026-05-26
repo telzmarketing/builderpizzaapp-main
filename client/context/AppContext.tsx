@@ -263,6 +263,7 @@ interface AppContextType {
 
   // Products
   products: Pizza[];
+  productsLoaded: boolean;
   addProduct: (product: Omit<Pizza, "id" | "created_at" | "updated_at">) => Promise<Pizza>;
   updateProduct: (id: string, data: Partial<Pizza>) => Promise<Pizza>;
   deleteProduct: (id: string) => Promise<void>;
@@ -511,6 +512,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
 
   const [products, setProducts] = useState<Pizza[]>([]);
+  const [productsLoaded, setProductsLoaded] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [campaignBanners, setCampaignBanners] = useState<ApiCampaign[]>([]);
@@ -537,30 +539,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loadedDataRef = useRef<Set<string>>(new Set());
 
   async function loadCatalogData(plan: CatalogBootstrapPlan) {
-    const [prods, promos, cfgRaw, camps] = await Promise.allSettled([
-      plan.products ? productsApi.list(true) : Promise.resolve(undefined),
-      plan.promotions ? promotionsApi.list(true) : Promise.resolve(undefined),
-      plan.multiFlavorsConfig ? productsApi.getMultiFlavorsConfig() : Promise.resolve(undefined),
-      plan.campaignBanners ? campaignsApi.list(true) : Promise.resolve(undefined),
-    ]);
+    const tasks: Promise<unknown>[] = [];
 
-    if (plan.products && prods.status === "fulfilled" && prods.value) {
-      setProducts(prods.value);
-      loadedDataRef.current.add("products");
+    if (plan.products) {
+      tasks.push(
+        productsApi.list(true)
+          .then((items) => {
+            setProducts(items);
+            setProductsLoaded(true);
+            loadedDataRef.current.add("products");
+          })
+          .catch((error) => {
+            setProductsLoaded(true);
+            throw error;
+          })
+      );
     }
-    if (plan.promotions && promos.status === "fulfilled" && promos.value) {
-      setPromotions(promos.value.map(apiPromotionToPromotion));
-      loadedDataRef.current.add("promotions");
+
+    if (plan.promotions) {
+      tasks.push(
+        promotionsApi.list(true).then((items) => {
+          setPromotions(items.map(apiPromotionToPromotion));
+          loadedDataRef.current.add("promotions");
+        })
+      );
     }
-    if (plan.campaignBanners && camps.status === "fulfilled" && camps.value) {
-      setCampaignBanners(camps.value);
-      loadedDataRef.current.add("campaignBanners");
+
+    if (plan.campaignBanners) {
+      tasks.push(
+        campaignsApi.list(true).then((items) => {
+          setCampaignBanners(items);
+          loadedDataRef.current.add("campaignBanners");
+        })
+      );
     }
-    if (plan.multiFlavorsConfig && cfgRaw.status === "fulfilled" && cfgRaw.value) {
-      const c = cfgRaw.value;
-      setMultiFlavorsConfig({ maxFlavors: c.max_flavors, pricingRule: c.pricing_rule });
-      loadedDataRef.current.add("multiFlavorsConfig");
+
+    if (plan.multiFlavorsConfig) {
+      tasks.push(
+        productsApi.getMultiFlavorsConfig().then((config) => {
+          setMultiFlavorsConfig({ maxFlavors: config.max_flavors, pricingRule: config.pricing_rule });
+          loadedDataRef.current.add("multiFlavorsConfig");
+        })
+      );
     }
+
+    await Promise.allSettled(tasks);
   }
 
   async function loadSiteContent() {
@@ -936,7 +959,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value: AppContextType = {
     loading,
     customer, customerLogin, googleLogin, emailLogin, registerCustomer, customerLogout, updateCustomer, addCustomerAddress,
-    products, addProduct, updateProduct, deleteProduct,
+    products, productsLoaded, addProduct, updateProduct, deleteProduct,
     cart, addToCart, updateCartItem, removeFromCart, clearCart,
     cartSubtotal, cartDeliveryFee, cartTotal,
     promotions, loadAdminPromotions, addPromotion, updatePromotion, deletePromotion,

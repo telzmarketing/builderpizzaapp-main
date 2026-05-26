@@ -558,6 +558,11 @@ export default function Product() {
                     src={resolveAssetUrl(product.icon)}
                     alt={product.name}
                     className="w-full h-full object-cover"
+                    width={208}
+                    height={208}
+                    loading="eager"
+                    decoding="async"
+                    fetchPriority="high"
                   />
                 )
                 : (
@@ -775,7 +780,18 @@ export default function Product() {
                     >
                       <div className="w-12 h-12 rounded-full bg-surface-03 flex items-center justify-center text-2xl flex-shrink-0 overflow-hidden">
                         {isAssetUrl(flavor?.icon)
-                          ? <img src={resolveAssetUrl(flavor?.icon)} alt="" className="w-full h-full object-cover" />
+                          ? (
+                            <img
+                              src={resolveAssetUrl(flavor?.icon)}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              width={48}
+                              height={48}
+                              loading="lazy"
+                              decoding="async"
+                              fetchPriority="low"
+                            />
+                          )
                           : <span>{flavor?.icon ?? "?"}</span>}
                       </div>
                       <div className="flex-1 text-left">
@@ -813,7 +829,18 @@ export default function Product() {
                               >
                                 <div className="w-10 h-10 mx-auto mb-1 flex items-center justify-center text-2xl overflow-hidden rounded-lg">
                                   {isAssetUrl(p.icon)
-                                    ? <img src={resolveAssetUrl(p.icon)} alt="" className="w-full h-full object-cover" />
+                                    ? (
+                                      <img
+                                        src={resolveAssetUrl(p.icon)}
+                                        alt=""
+                                        className="w-full h-full object-cover"
+                                        width={40}
+                                        height={40}
+                                        loading="lazy"
+                                        decoding="async"
+                                        fetchPriority="low"
+                                      />
+                                    )
                                     : <span>{p.icon || "🍕"}</span>}
                                 </div>
                                 <p className="text-cream text-xs font-medium leading-tight line-clamp-1">{p.name}</p>
@@ -843,7 +870,18 @@ export default function Product() {
                     f ? (
                       <span key={i} className="inline-flex items-center gap-1 text-xs bg-surface-03 text-parchment px-2 py-0.5 rounded-full">
                         {isAssetUrl(f.icon)
-                          ? <img src={resolveAssetUrl(f.icon)} alt="" className="w-4 h-4 rounded-full object-cover flex-shrink-0" />
+                          ? (
+                            <img
+                              src={resolveAssetUrl(f.icon)}
+                              alt=""
+                              className="w-4 h-4 rounded-full object-cover flex-shrink-0"
+                              width={16}
+                              height={16}
+                              loading="lazy"
+                              decoding="async"
+                              fetchPriority="low"
+                            />
+                          )
                           : <span>{f.icon}</span>}
                         {f.name} — R${f.price.toFixed(2)}
                       </span>
@@ -944,6 +982,11 @@ export default function Product() {
                 src={resolveAssetUrl(product.icon)}
                 alt={product.name}
                 className="w-full h-full object-contain transition-transform duration-200 select-none"
+                width={640}
+                height={640}
+                loading="lazy"
+                decoding="async"
+                fetchPriority="low"
                 draggable={false}
                 onPointerDown={updateImageZoomPosition}
                 onPointerMove={updateImageZoomPosition}

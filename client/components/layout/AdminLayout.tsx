@@ -1,3 +1,4 @@
+import "@/admin.css";
 import { Outlet } from "react-router-dom";
 import { AdminLayoutContext } from "@/components/layout/AdminLayoutContext";
 import AdminHeader from "@/components/layout/AdminHeader";

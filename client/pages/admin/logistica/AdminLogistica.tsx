@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { AlertTriangle, BarChart2, DollarSign, Map, MapPin, Settings, Truck, Users } from "lucide-react";
 import {
   AdminPageContent,
@@ -7,13 +7,14 @@ import {
   AdminPageTabs,
   type AdminPageTab,
 } from "@/components/admin/AdminPageChrome";
-import LogisticaMotoboys from "./LogisticaMotoboys";
-import LogisticaAtivas from "./LogisticaAtivas";
-import LogisticaMapa from "./LogisticaMapa";
-import LogisticaConfig from "./LogisticaConfig";
-import LogisticaFinanceiro from "./LogisticaFinanceiro";
-import LogisticaAnalytics from "./LogisticaAnalytics";
-import LogisticaAlertas from "./LogisticaAlertas";
+
+const LogisticaMotoboys = lazy(() => import("./LogisticaMotoboys"));
+const LogisticaAtivas = lazy(() => import("./LogisticaAtivas"));
+const LogisticaMapa = lazy(() => import("./LogisticaMapa"));
+const LogisticaConfig = lazy(() => import("./LogisticaConfig"));
+const LogisticaFinanceiro = lazy(() => import("./LogisticaFinanceiro"));
+const LogisticaAnalytics = lazy(() => import("./LogisticaAnalytics"));
+const LogisticaAlertas = lazy(() => import("./LogisticaAlertas"));
 
 type Tab = "motoboys" | "ativas" | "mapa" | "financeiro" | "analytics" | "alertas" | "config";
 
@@ -39,14 +40,24 @@ export default function AdminLogistica() {
       />
       <AdminPageTabs tabs={TABS} active={tab} onChange={(next) => setTab(next as Tab)} />
       <AdminPageContent>
-        {tab === "motoboys" && <LogisticaMotoboys />}
-        {tab === "ativas" && <LogisticaAtivas />}
-        {tab === "mapa" && <LogisticaMapa />}
-        {tab === "financeiro" && <LogisticaFinanceiro />}
-        {tab === "analytics" && <LogisticaAnalytics />}
-        {tab === "alertas" && <LogisticaAlertas />}
-        {tab === "config" && <LogisticaConfig />}
+        <Suspense fallback={<LogisticaTabFallback />}>
+          {tab === "motoboys" && <LogisticaMotoboys />}
+          {tab === "ativas" && <LogisticaAtivas />}
+          {tab === "mapa" && <LogisticaMapa />}
+          {tab === "financeiro" && <LogisticaFinanceiro />}
+          {tab === "analytics" && <LogisticaAnalytics />}
+          {tab === "alertas" && <LogisticaAlertas />}
+          {tab === "config" && <LogisticaConfig />}
+        </Suspense>
       </AdminPageContent>
     </AdminPageShell>
+  );
+}
+
+function LogisticaTabFallback() {
+  return (
+    <div className="rounded-2xl border border-surface-03 bg-surface-02 p-8 text-center text-sm text-stone">
+      Carregando...
+    </div>
   );
 }

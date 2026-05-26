@@ -1,13 +1,14 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronLeft, Plus, Minus, Trash2, UtensilsCrossed, ShoppingCart, Tag, Check, X } from "lucide-react";
 import { useApp, CartItem } from "@/context/AppContext";
-import CheckoutUpsell from "@/pages/checkout/CheckoutUpsell";
 import { couponsApi, isAssetUrl, resolveAssetUrl, storeOperationApi, type ApiCouponGift, type StoreOperationStatus } from "@/lib/api";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import StoreStatusBanner from "@/components/StoreStatusBanner";
+
+const CheckoutUpsell = lazy(() => import("@/pages/checkout/CheckoutUpsell"));
 
 function divisionLabel(d: number) {
   if (d === 2) return "Meio a Meio";
@@ -269,7 +270,11 @@ export default function Cart() {
                 onRemove={() => removeFromCart(item.cartItemId)}
                 onUpdate={(qty) => updateCartItem(item.cartItemId, qty, item.selectedSize, item.selectedAddOns)}
               />
-              {index === cart.length - 1 && <CheckoutUpsell isLocked={false} />}
+              {index === cart.length - 1 && (
+                <Suspense fallback={null}>
+                  <CheckoutUpsell isLocked={false} />
+                </Suspense>
+              )}
             </Fragment>
           ))}
           {couponGift && (

@@ -57,7 +57,7 @@ function productMatchesHomeCategory(product: HomeCatalogProduct, category: HomeC
 
 export default function Home() {
   const navigate = useNavigate();
-  const { products, campaignBanners, siteContent, loyaltySettings } = useApp();
+  const { products, productsLoaded, campaignBanners, siteContent, loyaltySettings } = useApp();
   const { sectionSubtitle, sectionTitle, bannerRotationInterval } = siteContent.home;
   const rotationInterval = (bannerRotationInterval ?? 5) * 1000;
   const [activeCategory, setActiveCategory] = useState<HomeCatalogCategory>(HOME_CATALOG_CATEGORY_ORDER[0]);
@@ -193,18 +193,36 @@ export default function Home() {
   const getIcon = (icon: string | undefined, index: number) =>
     icon || PIZZA_FALLBACKS[index % PIZZA_FALLBACKS.length];
 
-  const renderIcon = (icon: string | undefined, index: number, size: "sm" | "md" | "lg" = "md") => {
+  const renderIcon = (
+    icon: string | undefined,
+    index: number,
+    size: "sm" | "md" | "lg" = "md",
+    options: { loading?: "eager" | "lazy"; fetchPriority?: "high" | "low" | "auto" } = {}
+  ) => {
     const resolved = getIcon(icon, index);
     const isImage = isAssetUrl(resolved);
     const textCls = size === "lg" ? "text-5xl pizza-spin" : "text-4xl pizza-spin";
+    const dimension = size === "lg" ? 176 : size === "sm" ? 64 : 96;
     return isImage
-      ? <img src={resolveAssetUrl(resolved)} alt="" className="w-full h-full object-contain pizza-spin" />
+      ? (
+        <img
+          src={resolveAssetUrl(resolved)}
+          alt=""
+          className="w-full h-full object-contain pizza-spin"
+          width={dimension}
+          height={dimension}
+          loading={options.loading ?? "lazy"}
+          decoding="async"
+          fetchPriority={options.fetchPriority ?? "auto"}
+        />
+      )
       : <span className={textCls}>{resolved}</span>;
   };
 
   const prevPizza = categoryProducts.length > 0 ? categoryProducts[getPizzaIndex(-1)] : undefined;
   const currentPizza = categoryProducts.length > 0 ? categoryProducts[getPizzaIndex(0)] : undefined;
   const nextPizza = categoryProducts.length > 0 ? categoryProducts[getPizzaIndex(1)] : undefined;
+  const isCatalogLoading = !productsLoaded && products.length === 0;
 
   useEffect(() => { setCarouselPosition(0); }, [activeCategory]);
 
@@ -216,17 +234,6 @@ export default function Home() {
     }, 4000);
     return () => clearInterval(timer);
   }, [categoryProducts.length, activeCategory]);
-
-  if (products.length === 0) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00 flex items-center justify-center">
-        <div className="text-center text-stone">
-          <div className="text-4xl mb-4">🍕</div>
-          <p className="text-lg">Carregando cardápio...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
@@ -260,7 +267,7 @@ export default function Home() {
                     className="w-full bg-surface-02 rounded-xl p-4 flex items-center gap-4 hover:bg-surface-03 transition-colors text-left"
                   >
                     <div className="w-12 h-12 rounded-xl bg-surface-03 flex items-center justify-center overflow-hidden flex-shrink-0">
-                      {renderIcon(product.icon, 0, "sm")}
+                      {renderIcon(product.icon, 0, "sm", { loading: "lazy", fetchPriority: "low" })}
                     </div>
                     <div className="flex-1">
                       <p className="text-cream font-semibold">{product.name}</p>
@@ -326,7 +333,7 @@ export default function Home() {
 
       {/* Aviso de horário de funcionamento */}
       <div className="px-4 lg:px-8 pt-3 max-w-sm lg:max-w-4xl mx-auto w-full">
-        <StoreStatusBanner />
+        <StoreStatusBanner delayMs={1800} />
       </div>
 
       {homeConfig.showPromotions && activeBanners.length > 0 && (
@@ -370,6 +377,7 @@ export default function Home() {
                     className="absolute inset-0 w-full h-full object-cover object-center"
                     loading="eager"
                     decoding="async"
+                    fetchPriority="high"
                   />
                 ) : null}
                 {/* Gradient overlay */}
@@ -446,8 +454,10 @@ export default function Home() {
           ))}
         </div>
 
+        {isCatalogLoading && <CatalogSkeleton />}
+
         {/* Empty state */}
-        {categoryProducts.length === 0 && (
+        {!isCatalogLoading && categoryProducts.length === 0 && (
           <div className="text-center py-10">
             <p className="text-4xl mb-3">🍕</p>
             <p className="text-stone text-sm">Nenhum produto nesta categoria.</p>
@@ -455,7 +465,7 @@ export default function Home() {
         )}
 
         {/* ── Desktop Grid (lg+) ── */}
-        {categoryProducts.length > 0 && (
+        {!isCatalogLoading && categoryProducts.length > 0 && (
           <div className="hidden lg:grid lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {categoryProducts.map((product, index) => (
               <button
@@ -468,7 +478,12 @@ export default function Home() {
                 <div className="relative w-44 h-44 mx-auto mb-4">
                   <CategorySeal product={product} className="left-2 top-2" />
                   <div className="h-full w-full rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
-                    {renderIcon(product.icon, index, "lg")}
+                    {renderIcon(
+                      product.icon,
+                      index,
+                      "lg",
+                      index === 0 ? { loading: "eager", fetchPriority: "high" } : { loading: "lazy", fetchPriority: "auto" }
+                    )}
                   </div>
                   <BestSellerSeal show={(product as any).show_best_seller_badge} />
                 </div>
@@ -493,7 +508,7 @@ export default function Home() {
         )}
 
         {/* ── Mobile Carousel (hidden on lg+) ── */}
-        {categoryProducts.length > 0 && (
+        {!isCatalogLoading && categoryProducts.length > 0 && (
           <div
             className="relative overflow-hidden select-none lg:hidden"
             onTouchStart={handleTouchStart}
@@ -503,7 +518,7 @@ export default function Home() {
               {/* Previous (partially visible) */}
               <div className="w-full mt-16 opacity-35 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
-                  {renderIcon(prevPizza?.icon, getPizzaIndex(-1), "sm")}
+                  {renderIcon(prevPizza?.icon, getPizzaIndex(-1), "sm", { loading: "lazy", fetchPriority: "low" })}
                 </div>
               </div>
 
@@ -520,7 +535,7 @@ export default function Home() {
                   <div className="relative w-[min(156px,42vw)] h-[min(156px,42vw)] mx-auto mb-3">
                     <CategorySeal product={currentPizza} className="left-2 top-2" compact />
                     <div className="h-full w-full rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
-                      {renderIcon(currentPizza?.icon, carouselPosition, "lg")}
+                      {renderIcon(currentPizza?.icon, carouselPosition, "lg", { loading: "eager", fetchPriority: "high" })}
                     </div>
                     <BestSellerSeal show={(currentPizza as any)?.show_best_seller_badge} />
                   </div>
@@ -545,7 +560,7 @@ export default function Home() {
               {/* Next (partially visible) */}
               <div className="w-full mt-16 opacity-35 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
-                  {renderIcon(nextPizza?.icon, getPizzaIndex(1), "sm")}
+                  {renderIcon(nextPizza?.icon, getPizzaIndex(1), "sm", { loading: "lazy", fetchPriority: "low" })}
                 </div>
               </div>
             </div>
@@ -587,5 +602,32 @@ export default function Home() {
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
     </div>
+  );
+}
+
+function CatalogSkeleton() {
+  return (
+    <>
+      <div className="hidden lg:grid lg:grid-cols-3 xl:grid-cols-4 gap-5" aria-label="Carregando produtos">
+        {[0, 1, 2, 3].map((item) => (
+          <div key={item} className="rounded-2xl border border-surface-03 bg-surface-02 p-5">
+            <div className="mx-auto mb-4 h-44 w-44 rounded-full bg-surface-03 animate-pulse" />
+            <div className="mx-auto h-4 w-32 rounded bg-surface-03 animate-pulse" />
+            <div className="mx-auto mt-3 h-4 w-20 rounded bg-surface-03 animate-pulse" />
+          </div>
+        ))}
+      </div>
+      <div className="relative overflow-hidden select-none lg:hidden" aria-label="Carregando produtos">
+        <div className="grid grid-cols-[64px_minmax(0,1fr)_64px] min-[390px]:grid-cols-[72px_minmax(0,1fr)_72px] items-start gap-2">
+          <div className="mt-16 aspect-square rounded-xl bg-surface-02 opacity-35 animate-pulse" />
+          <div className="mx-auto w-full max-w-[236px] rounded-2xl bg-surface-02 p-4">
+            <div className="mx-auto mb-3 h-[min(156px,42vw)] w-[min(156px,42vw)] rounded-full bg-surface-03 animate-pulse" />
+            <div className="mx-auto h-4 w-32 rounded bg-surface-03 animate-pulse" />
+            <div className="mx-auto mt-3 h-4 w-20 rounded bg-surface-03 animate-pulse" />
+          </div>
+          <div className="mt-16 aspect-square rounded-xl bg-surface-02 opacity-35 animate-pulse" />
+        </div>
+      </div>
+    </>
   );
 }

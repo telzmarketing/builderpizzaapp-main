@@ -1,7 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { themeApi, applyTheme, DEFAULT_THEME, readCachedTheme } from "./lib/themeApi";
@@ -17,14 +15,20 @@ function useDeferredClientMount(delay = 1200) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const requestIdle = window.requestIdleCallback;
-    if (requestIdle) {
-      const id = requestIdle(() => setReady(true), { timeout: delay });
-      return () => window.cancelIdleCallback?.(id);
-    }
+    let idleId: number | undefined;
+    const timerId = window.setTimeout(() => {
+      const requestIdle = window.requestIdleCallback;
+      if (requestIdle) {
+        idleId = requestIdle(() => setReady(true), { timeout: 1000 });
+        return;
+      }
+      setReady(true);
+    }, delay);
 
-    const id = window.setTimeout(() => setReady(true), delay);
-    return () => window.clearTimeout(id);
+    return () => {
+      window.clearTimeout(timerId);
+      if (idleId !== undefined) window.cancelIdleCallback?.(idleId);
+    };
   }, [delay]);
 
   return ready;
@@ -71,7 +75,7 @@ function RouteDataLoader() {
 
 function StoreWidget() {
   const { pathname } = useLocation();
-  const ready = useDeferredClientMount();
+  const ready = useDeferredClientMount(2500);
   if (isSalaoExperience()) return null;
 
   const storeRoutes = [
@@ -125,12 +129,25 @@ function TrackingInjector() {
     if (isInternalStaffPath(pathname)) return;
     if (sessionStorage.getItem("_mo_site_opened")) return;
     sessionStorage.setItem("_mo_site_opened", "1");
-    const locationTimer = window.setTimeout(requestVisitorLocation, 2000);
-    const td = getTrackingData();
-    if (isSalaoExperience()) {
+    const openingTimer = window.setTimeout(() => {
+      const td = getTrackingData();
+      if (isSalaoExperience()) {
+        customerEventsApi.register({
+          event_type: "salao_site_opened",
+          event_name: "Abriu pagina do salao",
+          session_id: td.session_id,
+          utm_source: td.utm_source,
+          utm_medium: td.utm_medium,
+          utm_campaign: td.utm_campaign,
+          page_url: window.location.href,
+          referrer_url: td.referrer,
+        }).catch(() => {});
+        return;
+      }
+
       customerEventsApi.register({
-        event_type: "salao_site_opened",
-        event_name: "Abriu pagina do salao",
+        event_type: "site_opened",
+        event_name: "Abriu o site",
         session_id: td.session_id,
         utm_source: td.utm_source,
         utm_medium: td.utm_medium,
@@ -138,21 +155,13 @@ function TrackingInjector() {
         page_url: window.location.href,
         referrer_url: td.referrer,
       }).catch(() => {});
-      return () => window.clearTimeout(locationTimer);
-    }
+    }, 1800);
+    const locationTimer = window.setTimeout(requestVisitorLocation, 3500);
 
-    customerEventsApi.register({
-      event_type: "site_opened",
-      event_name: "Abriu o site",
-      session_id: td.session_id,
-      utm_source: td.utm_source,
-      utm_medium: td.utm_medium,
-      utm_campaign: td.utm_campaign,
-      page_url: window.location.href,
-      referrer_url: td.referrer,
-    }).catch(() => {});
-
-    return () => window.clearTimeout(locationTimer);
+    return () => {
+      window.clearTimeout(openingTimer);
+      window.clearTimeout(locationTimer);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -166,7 +175,7 @@ function TrackingInjector() {
       const pixelTasks = [initStorePixels()];
       if (data.campaign_id) pixelTasks.push(initCampaignPixel(data.campaign_id));
       Promise.all(pixelTasks).then(() => firePixelEvent("PageView")).catch(() => {});
-    }, 1500);
+    }, 3000);
     return () => window.clearTimeout(pixelTimer);
   }, [pathname, search]);
   return null;
@@ -286,15 +295,13 @@ function ExperienceRoute({ salao, delivery }: { salao: JSX.Element; delivery: JS
 }
 
 export default function App() {
-  const deferredWidgetsReady = useDeferredClientMount(1500);
+  const deferredWidgetsReady = useDeferredClientMount(3200);
 
   return (
     <AppProvider>
         <DocumentHead />
         <ThemeInjector />
-        <TooltipProvider>
           <Toaster />
-          <Sonner />
           <BrowserRouter>
             <MotoboyNativeEntry />
             <RouteDataLoader />
@@ -395,7 +402,6 @@ export default function App() {
             </Routes>
             </Suspense>
           </BrowserRouter>
-        </TooltipProvider>
     </AppProvider>
   );
 }
