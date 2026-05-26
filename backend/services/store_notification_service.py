@@ -31,7 +31,8 @@ from backend.services.store_operation_service import StoreOperationService
 
 
 ALLOWED_PAGES = {"home", "cardapio", "product", "cart"}
-DEFAULT_TEMPLATE = "{nome}, {bairro}. Comprou hoje {produto_com_artigo}"
+DEFAULT_TEMPLATE = "{nome} — {bairro} comprou hoje {produto}"
+FIXED_DISPLAY_TEMPLATE = "{name} — {neighborhood} comprou hoje {product}"
 PAID_ORDER_STATUSES = {
     OrderStatus.paid,
     OrderStatus.pago,
@@ -184,15 +185,10 @@ class StoreNotificationService:
 
     def preview(self, payload: StoreNotificationPreviewIn) -> dict:
         product_name = self._safe_text(payload.product_name) or "Produto"
-        message = self._render_template(
-            payload.template_text,
-            name=self._first_name(payload.display_name),
-            product=product_name,
-            product_with_article=self._product_with_article(product_name),
+        message = self._render_notification_message(
+            name=self._safe_text(payload.display_name) or "Cliente",
             neighborhood=self._safe_text(payload.neighborhood),
-            relative_time=self._display_relative_time(payload.purchase_minutes_ago)
-            if payload.purchase_minutes_ago
-            else payload.relative_time,
+            product=product_name,
         )
         return {"message": message}
 
@@ -483,7 +479,7 @@ class StoreNotificationService:
                 continue
             product_name = self._product_display_name(item.product, "Produto")
             purchase_minutes = int(item.purchase_minutes_ago or 0)
-            if not self._has_complete_display_data(item, product_name, purchase_minutes):
+            if not self._has_complete_display_data(item, product_name):
                 continue
             source_type = "real" if item.source_customer_id else "manual"
             candidates.append({
@@ -493,13 +489,10 @@ class StoreNotificationService:
                 "product_name": product_name,
                 "product_image": item.product.icon if item.product else None,
                 "neighborhood": self._safe_text(item.neighborhood),
-                "message": self._render_template(
-                    item.template_text,
-                    name=self._first_name(item.display_name),
-                    product=product_name,
-                    product_with_article=self._product_with_article(product_name),
+                "message": self._render_notification_message(
+                    name=self._safe_text(item.display_name) or "Cliente",
                     neighborhood=self._safe_text(item.neighborhood),
-                    relative_time=self._display_relative_time(purchase_minutes),
+                    product=product_name,
                 ),
                 "display_seconds": item.display_seconds or settings.default_display_seconds,
                 "purchase_minutes_ago": purchase_minutes,
@@ -552,25 +545,12 @@ class StoreNotificationService:
         self,
         notification: StoreNotification,
         product_name: str | None,
-        purchase_minutes: int,
     ) -> bool:
         return all([
             self._safe_text(notification.display_name),
             self._safe_text(product_name),
             self._safe_text(notification.neighborhood),
-            purchase_minutes > 0,
         ])
-
-    def _display_relative_time(self, purchase_minutes: int | None) -> str:
-        minutes = max(1, int(purchase_minutes or 1))
-        if minutes == 1:
-            return "há 1 minuto"
-        if minutes < 60:
-            return f"há {minutes} minutos"
-        hours = minutes // 60
-        if hours == 1:
-            return "há 1 hora"
-        return f"há {hours} horas"
 
     def _manual_is_eligible(self, notification: StoreNotification, current: datetime) -> bool:
         if current.weekday() not in [day.weekday for day in notification.days]:
@@ -714,28 +694,27 @@ class StoreNotificationService:
         neighborhood: str | None,
         relative_time: str,
     ) -> str:
-        template = template or DEFAULT_TEMPLATE
-        if not neighborhood:
-            template = re.sub(r",?\s*\{bairro\},?", "", template, flags=re.IGNORECASE)
-            template = re.sub(r",?\s*do bairro\s*\{bairro\},?", "", template, flags=re.IGNORECASE)
-            template = re.sub(r",?\s*do\s+\{bairro\},?", "", template, flags=re.IGNORECASE)
-        rendered = (
-            template.replace("{nome}", name or "Cliente")
-            .replace("{produto_com_artigo}", product_with_article or product or "um produto")
-            .replace("{produto}", product or "um produto")
-            .replace("{bairro}", neighborhood or "")
-            .replace("{tempo}", relative_time or "2min")
+        return self._render_notification_message(
+            name=name,
+            neighborhood=neighborhood,
+            product=product,
         )
-        rendered = re.sub(r",\s*do bairro\s+", ", ", rendered, flags=re.IGNORECASE)
-        rendered = re.sub(r"\bdo bairro\s+", "", rendered, flags=re.IGNORECASE)
-        rendered = re.sub(r"\bpediu\b", "comprou", rendered, flags=re.IGNORECASE)
-        rendered = re.sub(r"\s+h[aá]\s+(agora|\d+\s*min|\d+\s*h)", r" - \1", rendered, flags=re.IGNORECASE)
-        rendered = re.sub(r"\s+h[aá]\s+alguns minutos", " - alguns min", rendered, flags=re.IGNORECASE)
-        rendered = re.sub(r"\s+-\s+h[aá]\s+", " - ", rendered, flags=re.IGNORECASE)
-        rendered = re.sub(r"\s+-\s+há\s+", " há ", rendered, flags=re.IGNORECASE)
-        rendered = re.sub(r"\s+-\s+(\d+\s+minutos?|\d+\s+horas?)", r" há \1", rendered, flags=re.IGNORECASE)
-        rendered = re.sub(r"\s+", " ", rendered).strip(" ,")
-        return rendered
+
+    def _render_notification_message(
+        self,
+        *,
+        name: str,
+        neighborhood: str | None,
+        product: str,
+    ) -> str:
+        clean_name = self._safe_text(name) or "Cliente"
+        clean_neighborhood = self._safe_text(neighborhood) or "bairro"
+        clean_product = self._safe_text(product) or "Produto"
+        return FIXED_DISPLAY_TEMPLATE.format(
+            name=clean_name,
+            neighborhood=clean_neighborhood,
+            product=clean_product,
+        )
 
     def _product_with_article(self, product_name: str | None) -> str:
         product = self._safe_text(product_name) or "produto"
@@ -753,7 +732,7 @@ class StoreNotificationService:
         product_type = (product.product_type or "").lower() if product else ""
         category = " ".join(filter(None, [product.category, product.subcategory])).lower() if product else ""
         if product_type == "pizza" or "pizza" in category:
-            return f"Pizza de {name}"
+            return f"Pizza {name}"
         return name
 
     def _first_name(self, value: str | None) -> str:
@@ -768,17 +747,3 @@ class StoreNotificationService:
         clean = re.sub(r"[\r\n\t]+", " ", str(value)).strip()
         clean = re.sub(r"\s+", " ", clean)
         return clean[:120] or None
-
-    def _relative_time(self, value: datetime | None) -> str:
-        if not value:
-            return "2min"
-        current = datetime.now(timezone.utc)
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        minutes = max(1, int((current - value.astimezone(timezone.utc)).total_seconds() // 60))
-        if minutes <= 1:
-            return "1min"
-        if minutes < 60:
-            return f"{minutes}min"
-        hours = min(23, minutes // 60)
-        return f"{hours}h"

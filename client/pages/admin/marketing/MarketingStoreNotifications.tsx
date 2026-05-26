@@ -83,7 +83,7 @@ const emptyForm = (): ApiStoreNotificationInput => ({
   display_name: "",
   product_id: "",
   neighborhood: "",
-  template_text: "{nome}, {bairro}. Comprou hoje {produto_com_artigo}",
+  template_text: "{nome} — {bairro} comprou hoje {produto}",
   priority: "medium",
   weight: 1,
   display_seconds: 7,
@@ -131,7 +131,7 @@ function productDisplayName(product?: ApiProduct | null) {
   if (!name) return "Produto";
   if (name.toLowerCase().startsWith("pizza")) return name;
   const category = [product.category, product.subcategory].filter(Boolean).join(" ").toLowerCase();
-  if (product.product_type === "pizza" || category.includes("pizza")) return `Pizza de ${name}`;
+  if (product.product_type === "pizza" || category.includes("pizza")) return `Pizza ${name}`;
   return name;
 }
 
@@ -251,7 +251,7 @@ export default function MarketingStoreNotifications() {
       display_name: cap.buyer_name ?? "Cliente",
       product_id: firstProduct?.id ?? "",
       neighborhood: cap.neighborhood ?? "",
-      template_text: "{nome}, {bairro}. Comprou hoje {produto_com_artigo}",
+      template_text: "{nome} — {bairro} comprou hoje {produto}",
       priority: "medium",
       weight: 1,
       display_seconds: 7,
@@ -273,7 +273,7 @@ export default function MarketingStoreNotifications() {
       return;
     }
     if (!Number.isInteger(form.purchase_minutes_ago) || form.purchase_minutes_ago <= 0) {
-      alert("Informe ha quantos minutos a compra foi realizada usando um numero inteiro positivo.");
+      alert("A referencia interna da compra precisa ser um numero inteiro positivo.");
       return;
     }
     if (!form.neighborhood?.trim()) {
@@ -337,7 +337,6 @@ export default function MarketingStoreNotifications() {
         product_name: pName,
         neighborhood: form.neighborhood,
         template_text: form.template_text,
-        purchase_minutes_ago: form.purchase_minutes_ago,
       });
       setPreview(result.message);
     } catch {
@@ -352,7 +351,6 @@ export default function MarketingStoreNotifications() {
         product_name: productName(products, item.product_id),
         neighborhood: item.neighborhood,
         template_text: item.template_text,
-        purchase_minutes_ago: item.purchase_minutes_ago,
       });
       setPreview(result.message);
     } catch {
@@ -498,7 +496,7 @@ export default function MarketingStoreNotifications() {
                 <table className="w-full min-w-[1080px] text-sm">
                   <thead>
                     <tr className="border-b border-surface-03 bg-surface-03/40 text-xs text-stone">
-                      {["Status", "Nome interno", "Tipo", "Produto", "Bairro", "Ref.", "Limpeza", "Dias ativos", "Horario", "Prioridade", "Ultima exibicao", "Acoes"].map((header) => (
+                      {["Status", "Nome interno", "Tipo", "Produto", "Bairro", "Limpeza", "Dias ativos", "Horario", "Prioridade", "Ultima exibicao", "Acoes"].map((header) => (
                         <th key={header} className="p-3 text-left font-medium">{header}</th>
                       ))}
                     </tr>
@@ -506,7 +504,7 @@ export default function MarketingStoreNotifications() {
                   <tbody className="divide-y divide-surface-03">
                     {items.length === 0 ? (
                       <tr>
-                        <td colSpan={12} className="p-10 text-center text-sm text-stone">
+                        <td colSpan={11} className="p-10 text-center text-sm text-stone">
                           Nenhuma notificacao manual cadastrada.
                         </td>
                       </tr>
@@ -521,7 +519,6 @@ export default function MarketingStoreNotifications() {
                         <td className="p-3 text-stone">{TYPE_LABEL[item.type]}</td>
                         <td className="p-3 text-stone">{item.product_name ?? productName(products, item.product_id)}</td>
                         <td className="p-3 text-stone">{item.neighborhood || "-"}</td>
-                        <td className="p-3 text-stone">{item.purchase_minutes_ago ?? 12} min</td>
                         <td className="p-3 text-stone">{item.clear_after_view ? "Apos vista" : "Mantem ativa"}</td>
                         <td className="p-3 text-stone">{daysLabel(item.weekdays)}</td>
                         <td className="p-3 text-stone">{item.start_time.slice(0, 5)} - {item.end_time.slice(0, 5)}</td>
@@ -761,17 +758,6 @@ export default function MarketingStoreNotifications() {
               <Field label="Tempo de apresentacao (seg)">
                 <input className={IC} required min={3} type="number" value={form.display_seconds} onChange={(e) => setForm((f) => ({ ...f, display_seconds: Number(e.target.value) }))} />
               </Field>
-              <Field label="Referencia interna da compra (min)">
-                <input
-                  className={IC}
-                  required
-                  min={1}
-                  step={1}
-                  type="number"
-                  value={form.purchase_minutes_ago}
-                  onChange={(e) => setForm((f) => ({ ...f, purchase_minutes_ago: Number(e.target.value) }))}
-                />
-              </Field>
               <div className="md:col-span-2">
                 <ToggleRow
                   label="Limpar apos ser vista"
@@ -813,7 +799,7 @@ export default function MarketingStoreNotifications() {
               <Field label="Texto / modelo da notificacao" className="md:col-span-2">
                 <textarea className={`${IC} min-h-24`} required value={form.template_text} onChange={(e) => setForm((f) => ({ ...f, template_text: e.target.value }))} />
                 <p className="mt-1 text-xs text-stone">
-                  Padrao atual: {"{nome}, {bairro}. Comprou hoje {produto_com_artigo}"}
+                  Padrao atual: {"{nome} — {bairro} comprou hoje {produto}"}
                 </p>
               </Field>
               {preview && (
