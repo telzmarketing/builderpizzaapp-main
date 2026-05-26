@@ -22,6 +22,7 @@ from backend.routes import products, orders, payments, shipping, coupons, loyalt
 from backend.routes import promotion_landings as promotion_landings_routes
 from backend.routes import chatbot as chatbot_routes, admin_chatbot as admin_chatbot_routes
 from backend.routes import upload as upload_routes
+from backend.routes import upload_optimized as upload_optimized_routes
 from backend.routes import theme as theme_routes
 from backend.routes import home_config as home_config_routes
 from backend.routes import site_config as site_config_routes
@@ -46,6 +47,13 @@ from backend.routes import salao as salao_routes
 from backend.routes import salao_page as salao_page_routes
 
 settings = get_settings()
+
+
+class CachedStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+        return response
 
 
 @asynccontextmanager
@@ -1195,12 +1203,14 @@ app.include_router(upsells_routes.router, prefix="/api")
 app.include_router(agente_whatsapp_routes.router, prefix="/api")
 app.include_router(salao_routes.router, prefix="/api")
 app.include_router(salao_page_routes.router, prefix="/api")
+app.include_router(upload_optimized_routes.router)
+app.include_router(upload_optimized_routes.router, prefix="/api")
 
 # ── Static files (uploaded images) ───────────────────────────────────────────
 # Must be mounted AFTER all route registrations.
 os.makedirs("uploads", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads", html=False), name="uploads")
-app.mount("/api/uploads", StaticFiles(directory="uploads", html=False), name="api-uploads")
+app.mount("/uploads", CachedStaticFiles(directory="uploads", html=False), name="uploads")
+app.mount("/api/uploads", CachedStaticFiles(directory="uploads", html=False), name="api-uploads")
 
 # ── Health check ──────────────────────────────────────────────────────────────
 @app.get("/health", tags=["system"])

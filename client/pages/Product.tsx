@@ -5,7 +5,7 @@ import MoschettieriLogo from "@/components/MoschettieriLogo";
 import CategorySeal from "@/components/CategorySeal";
 import BestSellerSeal from "@/components/BestSellerSeal";
 import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation } from "@/context/AppContext";
-import { sizesApi, crustApi, drinkVariantApi, productPromotionsApi, customerEventsApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductPriceQuote, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { sizesApi, crustApi, drinkVariantApi, productPromotionsApi, customerEventsApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductPriceQuote, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl } from "@/lib/api";
 import { isAllowedPizzaSize, isPizzaBroto, pizzaSizeDescription, pizzaSizeLabel, PIZZA_SIZE_LABELS } from "@/lib/pizzaSizes";
 import { formatCrustAddition, normalizeCrustPriceAddition } from "@/lib/pricing";
 import { firePixelEvent, trackEvent, getTrackingData } from "@/lib/tracking";
@@ -555,7 +555,7 @@ export default function Product() {
               {isAssetUrl(product.icon)
                 ? (
                   <img
-                    src={resolveAssetUrl(product.icon)}
+                    src={resolveOptimizedAssetUrl(product.icon, 416)}
                     alt={product.name}
                     className="w-full h-full object-cover"
                     width={208}
@@ -782,7 +782,7 @@ export default function Product() {
                         {isAssetUrl(flavor?.icon)
                           ? (
                             <img
-                              src={resolveAssetUrl(flavor?.icon)}
+                              src={resolveOptimizedAssetUrl(flavor?.icon, 96)}
                               alt=""
                               className="w-full h-full object-cover"
                               width={48}
@@ -831,7 +831,7 @@ export default function Product() {
                                   {isAssetUrl(p.icon)
                                     ? (
                                       <img
-                                        src={resolveAssetUrl(p.icon)}
+                                        src={resolveOptimizedAssetUrl(p.icon, 80)}
                                         alt=""
                                         className="w-full h-full object-cover"
                                         width={40}
@@ -872,7 +872,7 @@ export default function Product() {
                         {isAssetUrl(f.icon)
                           ? (
                             <img
-                              src={resolveAssetUrl(f.icon)}
+                              src={resolveOptimizedAssetUrl(f.icon, 64)}
                               alt=""
                               className="w-4 h-4 rounded-full object-cover flex-shrink-0"
                               width={16}
@@ -979,7 +979,7 @@ export default function Product() {
             <CategorySeal product={product} className="left-4 top-4" />
             {isAssetUrl(product.icon) ? (
               <img
-                src={resolveAssetUrl(product.icon)}
+                src={resolveOptimizedAssetUrl(product.icon, 1280)}
                 alt={product.name}
                 className="w-full h-full object-contain transition-transform duration-200 select-none"
                 width={640}

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Menu, Search, Star, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, Tag, Heart, UtensilsCrossed } from "lucide-react";
 
 import { useApp } from "@/context/AppContext";
-import { homeCatalogApi, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { homeCatalogApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl } from "@/lib/api";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import StoreStatusBanner from "@/components/StoreStatusBanner";
@@ -221,7 +221,7 @@ export default function Home() {
     return isImage
       ? (
         <img
-          src={resolveAssetUrl(resolved)}
+          src={resolveOptimizedAssetUrl(resolved, dimension * 2)}
           alt=""
           className="w-full h-full object-contain pizza-spin"
           width={dimension}
@@ -351,7 +351,7 @@ export default function Home() {
         <StoreStatusBanner delayMs={1800} />
       </div>
 
-      {homeConfig.showPromotions && activeBanners.length > 0 && (
+      {homeConfig.showPromotions && (
         <div className="px-4 lg:px-8 pt-4 pb-3">
           <div className="max-w-sm lg:max-w-4xl mx-auto">
             <button
@@ -387,7 +387,7 @@ export default function Home() {
                   />
                 ) : (displayBanner?.banner || media.heroBannerImage) ? (
                   <img
-                    src={resolveAssetUrl((displayBanner?.banner || media.heroBannerImage)!)}
+                    src={resolveOptimizedAssetUrl((displayBanner?.banner || media.heroBannerImage)!, 768)}
                     alt="Banner promocional"
                     className="absolute inset-0 w-full h-full object-cover object-center"
                     loading="eager"

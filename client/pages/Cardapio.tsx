@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, Search, Star, Plus, Check } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { categoriesApi, isAssetUrl, resolveAssetUrl, type ApiProductCategory } from "@/lib/api";
+import { categoriesApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl, type ApiProductCategory } from "@/lib/api";
 import { sortCategoryNamesByCatalogOrder } from "@/lib/catalogOrdering";
 import { trackEvent } from "@/lib/tracking";
 import BottomNav from "@/components/BottomNav";
@@ -183,7 +183,7 @@ export default function Cardapio() {
                       <CategorySeal product={product} />
                       {isAssetUrl(product.icon) ? (
                         <img
-                          src={resolveAssetUrl(product.icon)}
+                          src={resolveOptimizedAssetUrl(product.icon, 360)}
                           alt={product.name}
                           className="relative z-[1] w-full h-full object-cover scale-[1.10] transition-transform duration-300"
                           width={320}

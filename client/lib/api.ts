@@ -45,6 +45,32 @@ export function resolveAssetUrl(value?: string | null): string {
   return trimmed;
 }
 
+function encodeUploadPath(path: string): string {
+  return path
+    .split("/")
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+}
+
+export function resolveOptimizedAssetUrl(value?: string | null, width = 640): string {
+  const trimmed = value?.trim().replace(/\\/g, "/");
+  if (!trimmed) return "";
+  if (trimmed.startsWith("http") || trimmed.startsWith("data:")) return resolveAssetUrl(trimmed);
+  if (/\.(svg|gif|avif)$/i.test(trimmed)) return resolveAssetUrl(trimmed);
+
+  let uploadPath = "";
+  if (trimmed.startsWith("/api/uploads/")) uploadPath = trimmed.replace(/^\/api\/uploads\//, "");
+  else if (trimmed.startsWith("/uploads/")) uploadPath = trimmed.replace(/^\/uploads\//, "");
+  else if (trimmed.startsWith("api/uploads/")) uploadPath = trimmed.replace(/^api\/uploads\//, "");
+  else if (trimmed.startsWith("uploads/")) uploadPath = trimmed.replace(/^uploads\//, "");
+  else if (IMAGE_FILE_RE.test(trimmed)) uploadPath = trimmed;
+
+  if (!uploadPath) return resolveAssetUrl(trimmed);
+  const normalizedWidth = Math.max(64, Math.min(Math.round(width), 1280));
+  return `${UPLOAD_ASSET_BASE}/uploads/optimized/${normalizedWidth}/${encodeUploadPath(uploadPath)}`;
+}
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 function authHeaders(): HeadersInit {
