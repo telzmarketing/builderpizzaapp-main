@@ -23,9 +23,10 @@ const isNapolitanaCrust = (name?: string | null) =>
 const DIVISION_OPTIONS: { value: FlavorDivision; label: string; emoji: string }[] = [
   { value: 1, label: "Inteira", emoji: "🍕" },
   { value: 2, label: "Meio a Meio", emoji: "½" },
+  { value: 3, label: "3 Sabores", emoji: "⅓" },
 ];
 
-const PUBLIC_MAX_FLAVORS = 2;
+const PUBLIC_MAX_FLAVORS = 3;
 
 const PRICING_LABELS: Record<PricingRule, string> = {
   most_expensive: "Preço do sabor mais caro",
@@ -36,22 +37,32 @@ const PRICING_LABELS: Record<PricingRule, string> = {
 const DRINK_PRODUCT_HINTS = [
   "agua",
   "bebida",
+  "brahma",
+  "budweiser",
   "cerveja",
   "chopp",
   "coca",
+  "corona",
   "drink",
   "energetico",
   "fanta",
+  "garrafa",
   "guarana",
   "h2o",
+  "heineken",
   "lata",
   "litro",
+  "long neck",
+  "longneck",
   "mate",
   "ml",
+  "monster",
   "pepsi",
   "refrigerante",
   "red bull",
+  "skol",
   "sprite",
+  "stella",
   "suco",
   "tonica",
 ];
@@ -105,23 +116,23 @@ const isSweetPizzaCandidate = (candidate?: Pizza | null) => {
 const isPizzaFlavorCandidate = (candidate?: Pizza | null, options: { allowSweet?: boolean } = {}) => {
   if (!candidate || candidate.active === false) return false;
 
-  const allowSweet = options.allowSweet ?? true;
-  if (!allowSweet && isSweetPizzaCandidate(candidate)) return false;
-
-  const productType = normalizeProductText(candidate.product_type);
-  if (productType) return productType === "pizza";
+  const searchableText = normalizeProductText(
+    [candidate.name, candidate.category, candidate.subcategory].filter(Boolean).join(" ")
+  );
 
   if (Array.isArray(candidate.drink_variants) && candidate.drink_variants.length > 0) {
     return false;
   }
 
-  const searchableText = normalizeProductText(
-    [candidate.name, candidate.category, candidate.subcategory].filter(Boolean).join(" ")
-  );
-
   if (DRINK_PRODUCT_HINTS.some((hint) => searchableText.includes(hint))) {
     return false;
   }
+
+  const allowSweet = options.allowSweet ?? true;
+  if (!allowSweet && isSweetPizzaCandidate(candidate)) return false;
+
+  const productType = normalizeProductText(candidate.product_type);
+  if (productType) return productType === "pizza";
 
   return PIZZA_PRODUCT_HINTS.some((hint) => searchableText.includes(hint));
 };
@@ -560,7 +571,7 @@ export default function Product() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   const divisionOptions = DIVISION_OPTIONS.filter(
-    (opt) => opt.value <= Math.min(multiFlavorsConfig.maxFlavors, PUBLIC_MAX_FLAVORS) || opt.value === 1
+    (opt) => opt.value <= PUBLIC_MAX_FLAVORS
   );
 
   const availableForSlot = (slotIndex: number) =>
