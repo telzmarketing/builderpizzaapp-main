@@ -117,11 +117,18 @@ const productSearchText = (candidate?: Pizza | null) =>
     ].filter(Boolean).join(" ")
   );
 
-const hasHint = (text: string, hints: string[]) =>
-  hints.some((hint) => text.includes(hint));
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const hasWordHint = (text: string, hints: string[]) =>
+  hints.some((hint) => {
+    const normalizedHint = normalizeProductText(hint);
+    if (!normalizedHint) return false;
+    return new RegExp(`(^|[^a-z0-9])${escapeRegExp(normalizedHint)}([^a-z0-9]|$)`, "i").test(text);
+  });
 
 const isSweetPizzaCandidate = (candidate?: Pizza | null) => {
-  return hasHint(productSearchText(candidate), SWEET_PRODUCT_HINTS);
+  return hasWordHint(productSearchText(candidate), SWEET_PRODUCT_HINTS);
 };
 
 const productCategoryKeys = (candidate?: Pizza | null) =>
@@ -133,7 +140,9 @@ const matchesFlavorCategoryFilters = (candidate: Pizza, categoryFilters: string[
   const normalizedFilters = categoryFilters.map((value) => normalizeProductText(value)).filter(Boolean);
   if (normalizedFilters.length === 0) return false;
   const keys = productCategoryKeys(candidate);
-  return keys.some((key) => normalizedFilters.includes(key));
+  return keys.some((key) =>
+    normalizedFilters.some((filter) => key === filter || key.includes(filter) || filter.includes(key))
+  );
 };
 
 const isDrinkLikeCandidate = (candidate?: Pizza | null) => {
@@ -141,7 +150,8 @@ const isDrinkLikeCandidate = (candidate?: Pizza | null) => {
   const productType = normalizeProductText(candidate.product_type);
   if (["drink", "bebida", "beverage"].includes(productType)) return true;
   if (Array.isArray(candidate.drink_variants) && candidate.drink_variants.length > 0) return true;
-  return hasHint(productSearchText(candidate), DRINK_PRODUCT_HINTS);
+  const searchableText = productSearchText(candidate);
+  return hasWordHint(searchableText, DRINK_PRODUCT_HINTS) || /\b\d+\s*(ml|l|litro|litros)\b/.test(searchableText);
 };
 
 const isPizzaFlavorCandidate = (candidate?: Pizza | null, options: { allowSweet?: boolean; categoryFilters?: string[] } = {}) => {
