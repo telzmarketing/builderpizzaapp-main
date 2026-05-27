@@ -395,9 +395,6 @@ export default function Home() {
                     fetchPriority="high"
                   />
                 ) : null}
-                {/* Gradient overlay */}
-                <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/40 to-transparent" />
-
                 {/* Text */}
                 <div className="absolute inset-0 flex flex-col justify-end px-5 pb-5 lg:px-10 lg:pb-8">
                   {displayBanner?.display_title && (
