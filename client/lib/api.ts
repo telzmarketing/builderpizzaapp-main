@@ -3685,6 +3685,7 @@ export interface DeliveryPerson {
   location_lng?: number;
   location_updated_at?: string;
   created_at: string;
+  deleted_at?: string | null;
 }
 
 export interface OrderAddress {

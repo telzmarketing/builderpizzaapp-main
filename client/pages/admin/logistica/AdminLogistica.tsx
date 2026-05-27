@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useState, type ComponentType } from "react";
 import { AlertTriangle, BarChart2, DollarSign, Map, MapPin, Settings, Truck, Users } from "lucide-react";
 import {
   AdminPageContent,
@@ -8,15 +8,33 @@ import {
   type AdminPageTab,
 } from "@/components/admin/AdminPageChrome";
 
-const LogisticaMotoboys = lazy(() => import("./LogisticaMotoboys"));
-const LogisticaAtivas = lazy(() => import("./LogisticaAtivas"));
-const LogisticaMapa = lazy(() => import("./LogisticaMapa"));
-const LogisticaConfig = lazy(() => import("./LogisticaConfig"));
-const LogisticaFinanceiro = lazy(() => import("./LogisticaFinanceiro"));
-const LogisticaAnalytics = lazy(() => import("./LogisticaAnalytics"));
-const LogisticaAlertas = lazy(() => import("./LogisticaAlertas"));
-
 type Tab = "motoboys" | "ativas" | "mapa" | "financeiro" | "analytics" | "alertas" | "config";
+
+const tabLoaders: Record<Tab, () => Promise<{ default: ComponentType }>> = {
+  motoboys: () => import("./LogisticaMotoboys"),
+  ativas: () => import("./LogisticaAtivas"),
+  mapa: () => import("./LogisticaMapa"),
+  config: () => import("./LogisticaConfig"),
+  financeiro: () => import("./LogisticaFinanceiro"),
+  analytics: () => import("./LogisticaAnalytics"),
+  alertas: () => import("./LogisticaAlertas"),
+};
+
+const preloadedTabs = new Set<Tab>();
+
+function preloadLogisticaTab(tab: Tab) {
+  if (preloadedTabs.has(tab)) return;
+  preloadedTabs.add(tab);
+  tabLoaders[tab]().catch(() => preloadedTabs.delete(tab));
+}
+
+const LogisticaMotoboys = lazy(tabLoaders.motoboys);
+const LogisticaAtivas = lazy(tabLoaders.ativas);
+const LogisticaMapa = lazy(tabLoaders.mapa);
+const LogisticaConfig = lazy(tabLoaders.config);
+const LogisticaFinanceiro = lazy(tabLoaders.financeiro);
+const LogisticaAnalytics = lazy(tabLoaders.analytics);
+const LogisticaAlertas = lazy(tabLoaders.alertas);
 
 const TABS: AdminPageTab<Tab>[] = [
   { id: "motoboys", icon: <Users size={15} />, label: "Motoboys" },
@@ -38,7 +56,15 @@ export default function AdminLogistica() {
         title="Logistica"
         description="Gerenciamento de entregas e motoboys"
       />
-      <AdminPageTabs tabs={TABS} active={tab} onChange={(next) => setTab(next as Tab)} />
+      <AdminPageTabs
+        tabs={TABS}
+        active={tab}
+        onPreview={preloadLogisticaTab}
+        onChange={(next) => {
+          preloadLogisticaTab(next);
+          setTab(next as Tab);
+        }}
+      />
       <AdminPageContent>
         <Suspense fallback={<LogisticaTabFallback />}>
           {tab === "motoboys" && <LogisticaMotoboys />}

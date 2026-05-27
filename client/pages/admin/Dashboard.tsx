@@ -34,11 +34,28 @@ const statusColor = (s: string) => {
 const formatMoney = (value: number) =>
   value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+function buildLast7DaysRevenue(rows: { day: string; revenue: number }[]) {
+  const revenueByDay = new Map(rows.map((row) => [row.day, row.revenue]));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (6 - index));
+    const key = date.toISOString().slice(0, 10);
+    return {
+      name: date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+      receita: revenueByDay.get(key) ?? 0,
+    };
+  });
+}
+
 export default function AdminDashboard() {
   const [stats, setStats] = useState<ApiDashboard | null>(null);
   const [recentOrders, setRecentOrders] = useState<ApiOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const normalizedChartData = buildLast7DaysRevenue(stats?.daily_revenue ?? []);
 
   useEffect(() => {
     Promise.allSettled([
@@ -52,7 +69,7 @@ export default function AdminDashboard() {
   }, []);
 
   // Revenue chart data — use daily_revenue from API or generate mock from totals
-  const chartData = stats?.daily_revenue?.length
+  const _legacyChartData = stats?.daily_revenue?.length
     ? stats.daily_revenue.map((d) => ({ name: d.day, receita: d.revenue }))
     : [
         { name: "Seg", receita: 0 },
@@ -255,7 +272,7 @@ export default function AdminDashboard() {
                   <BarChart3 size={18} className="text-stone" />
                 </div>
                 <Suspense fallback={<ChartFallback className="h-[200px] w-full" />}>
-                  <DashboardChart variant="revenue" data={chartData} />
+                  <DashboardChart variant="revenue" data={normalizedChartData} />
                 </Suspense>
               </div>
 

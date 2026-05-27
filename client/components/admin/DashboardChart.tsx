@@ -68,21 +68,18 @@ function RevenueRing({ data, colors }: { data: PieDatum[]; colors: string[] }) {
 }
 
 function RevenueArea({ data }: { data: RevenueDatum[] }) {
-  const width = 640;
-  const height = 200;
-  const padding = { top: 10, right: 12, bottom: 28, left: 52 };
-  const chartWidth = width - padding.left - padding.right;
-  const chartHeight = height - padding.top - padding.bottom;
+  const width = 1000;
+  const height = 160;
   const values = data.map((item) => Math.max(item.receita, 0));
-  const maxValue = Math.max(...values, 1);
-  const baselineY = padding.top + chartHeight;
+  const maxValue = niceMax(Math.max(...values, 0));
+  const baselineY = height;
 
   const points = data.map((item, index) => {
-    const x =
-      padding.left +
-      (data.length <= 1 ? chartWidth / 2 : (chartWidth / (data.length - 1)) * index);
-    const y = baselineY - (Math.max(item.receita, 0) / maxValue) * chartHeight;
-    return { ...item, x, y };
+    const x = data.length <= 1 ? width / 2 : (width / (data.length - 1)) * index;
+    const y = baselineY - (Math.max(item.receita, 0) / maxValue) * height;
+    const left = data.length <= 1 ? 50 : (index / (data.length - 1)) * 100;
+    const top = (y / height) * 100;
+    return { ...item, x, y, left, top };
   });
 
   const linePath = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
@@ -93,40 +90,78 @@ function RevenueArea({ data }: { data: RevenueDatum[] }) {
 
   return (
     <div className="h-[200px] w-full">
-      <svg className="h-full w-full overflow-visible" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Receita efetivada nos ultimos 7 dias" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="dashboardRevenueFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#f97316" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#f97316" stopOpacity="0" />
-          </linearGradient>
-        </defs>
+      <div className="grid h-full grid-cols-[4.5rem_minmax(0,1fr)] grid-rows-[1fr_1.75rem]">
+        <div className="relative col-start-1 row-start-1 text-[11px] text-stone">
+          {gridValues.map((value) => (
+            <span
+              key={value}
+              className="absolute right-3 -translate-y-1/2 whitespace-nowrap tabular-nums"
+              style={{ top: `${100 - (value / maxValue) * 100}%` }}
+            >
+              {formatAxisMoney(value)}
+            </span>
+          ))}
+        </div>
 
-        {gridValues.map((value) => {
-          const y = baselineY - (value / maxValue) * chartHeight;
-          return (
-            <g key={value}>
-              <line x1={padding.left} x2={width - padding.right} y1={y} y2={y} stroke="#2d3d56" strokeDasharray="3 3" />
-              <text x={padding.left - 10} y={y + 4} textAnchor="end" fill="#94a3b8" fontSize="11">
-                {value >= 1000 ? `R$${(value / 1000).toFixed(0)}k` : `R$${Math.round(value)}`}
-              </text>
-            </g>
-          );
-        })}
+        <div className="relative col-start-2 row-start-1 min-w-0">
+          <svg
+            className="absolute inset-0 h-full w-full overflow-visible"
+            viewBox={`0 0 ${width} ${height}`}
+            role="img"
+            aria-label="Receita efetivada nos ultimos 7 dias"
+            preserveAspectRatio="none"
+          >
+            <defs>
+              <linearGradient id="dashboardRevenueFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#f97316" stopOpacity="0.3" />
+                <stop offset="100%" stopColor="#f97316" stopOpacity="0" />
+              </linearGradient>
+            </defs>
 
-        {areaPath && <path d={areaPath} fill="url(#dashboardRevenueFill)" />}
-        {linePath && <path d={linePath} fill="none" stroke="#f97316" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
+            {gridValues.map((value) => {
+              const y = baselineY - (value / maxValue) * height;
+              return (
+                <line key={value} x1="0" x2={width} y1={y} y2={y} stroke="#2d3d56" strokeDasharray="3 3" />
+              );
+            })}
 
-        {points.map((point) => (
-          <g key={point.name}>
-            <circle cx={point.x} cy={point.y} r="3" fill="#f97316" vectorEffect="non-scaling-stroke">
-              <title>{`${point.name}: ${money(point.receita)}`}</title>
-            </circle>
-            <text x={point.x} y={height - 8} textAnchor="middle" fill="#94a3b8" fontSize="11">
+            {areaPath && <path d={areaPath} fill="url(#dashboardRevenueFill)" />}
+            {linePath && <path d={linePath} fill="none" stroke="#f97316" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
+          </svg>
+
+          {points.map((point) => (
+            <span
+              key={point.name}
+              className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-surface-02 bg-gold shadow-sm"
+              style={{ left: `${point.left}%`, top: `${point.top}%` }}
+              title={`${point.name}: ${money(point.receita)}`}
+            />
+          ))}
+        </div>
+
+        <div className="col-start-2 row-start-2 grid min-w-0 items-end text-center text-[11px] text-stone" style={{ gridTemplateColumns: `repeat(${Math.max(data.length, 1)}, minmax(0, 1fr))` }}>
+          {data.map((point) => (
+            <span key={point.name} className="truncate px-1">
               {point.name}
-            </text>
-          </g>
-        ))}
-      </svg>
+            </span>
+          ))}
+        </div>
+      </div>
     </div>
   );
+}
+
+function niceMax(value: number) {
+  if (value <= 0) return 100;
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  const normalized = value / magnitude;
+  const niceNormalized = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return niceNormalized * magnitude;
+}
+
+function formatAxisMoney(value: number) {
+  if (value >= 1000) {
+    return `R$ ${(value / 1000).toLocaleString("pt-BR", { maximumFractionDigits: value >= 10000 ? 0 : 1 })} mil`;
+  }
+  return `R$ ${Math.round(value).toLocaleString("pt-BR")}`;
 }

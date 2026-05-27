@@ -191,6 +191,7 @@ def _run_migrations():
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS subcategory VARCHAR(100)",
         "ALTER TABLE promotions ALTER COLUMN icon TYPE TEXT",
         "ALTER TABLE promotions ADD COLUMN IF NOT EXISTS validity_text VARCHAR(200)",
+        "ALTER TABLE delivery_persons ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ",
         # ── Product sizes ─────────────────────────────────────────────────
         "CREATE TABLE IF NOT EXISTS product_sizes (id VARCHAR PRIMARY KEY, product_id VARCHAR NOT NULL REFERENCES products(id) ON DELETE CASCADE, label VARCHAR(50) NOT NULL, description VARCHAR(200), price FLOAT NOT NULL, is_default BOOLEAN DEFAULT FALSE, sort_order INTEGER DEFAULT 0, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW())",
         "UPDATE product_sizes SET label = 'Pizza Broto', description = '25cm - 4 pedaços' WHERE LOWER(label) IN ('brotinho', 'pizza broto')",

@@ -56,7 +56,11 @@ class DeliveryService:
     def _get_delivery_person(self, person_id: str) -> DeliveryPerson:
         p = (
             self._db.query(DeliveryPerson)
-            .filter(DeliveryPerson.id == person_id, DeliveryPerson.active == True)  # noqa: E712
+            .filter(
+                DeliveryPerson.id == person_id,
+                DeliveryPerson.active == True,  # noqa: E712
+                DeliveryPerson.deleted_at.is_(None),
+            )
             .first()
         )
         if not p:
@@ -64,7 +68,14 @@ class DeliveryService:
         return p
 
     def _get_any_delivery_person(self, person_id: str) -> DeliveryPerson:
-        p = self._db.query(DeliveryPerson).filter(DeliveryPerson.id == person_id).first()
+        p = (
+            self._db.query(DeliveryPerson)
+            .filter(
+                DeliveryPerson.id == person_id,
+                DeliveryPerson.deleted_at.is_(None),
+            )
+            .first()
+        )
         if not p:
             raise DeliveryPersonNotFound(person_id)
         return p
@@ -461,7 +472,7 @@ class DeliveryService:
     # ── Delivery Person CRUD ──────────────────────────────────────────────────
 
     def list_persons(self, *, available_only: bool = False, include_inactive: bool = False) -> list[DeliveryPerson]:
-        q = self._db.query(DeliveryPerson)
+        q = self._db.query(DeliveryPerson).filter(DeliveryPerson.deleted_at.is_(None))
         if not include_inactive:
             q = q.filter(DeliveryPerson.active == True)  # noqa: E712
         if available_only:
@@ -544,7 +555,30 @@ class DeliveryService:
 
     def deactivate_person(self, person_id: str) -> None:
         """Soft-delete a delivery person."""
-        self.set_person_access(person_id, False)
+        person = self._get_any_delivery_person(person_id)
+        active_delivery = (
+            self._db.query(Delivery.id)
+            .filter(
+                Delivery.delivery_person_id == person_id,
+                Delivery.status.in_([
+                    DeliveryStatus.pending_assignment,
+                    DeliveryStatus.assigned,
+                    DeliveryStatus.picked_up,
+                    DeliveryStatus.on_the_way,
+                ]),
+            )
+            .first()
+        )
+        if active_delivery:
+            raise DomainError(
+                "Nao e possivel excluir motoboy com entrega ativa. Finalize ou cancele a entrega antes.",
+                code="DeliveryPersonHasActiveDelivery",
+            )
+
+        person.active = False
+        person.status = DeliveryPersonStatus.offline
+        person.deleted_at = datetime.now(timezone.utc)
+        self._db.commit()
 
     # ── Driver App ────────────────────────────────────────────────────────────
 

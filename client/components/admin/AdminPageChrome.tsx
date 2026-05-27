@@ -81,10 +81,12 @@ export function AdminPageTabs<T extends string>({
   tabs,
   active,
   onChange,
+  onPreview,
 }: {
   tabs: AdminPageTab<T>[];
   active: T;
   onChange: (tab: T) => void;
+  onPreview?: (tab: T) => void;
 }) {
   return (
     <div className="admin-local-tabs flex max-w-full gap-1 overflow-x-auto rounded-xl border border-surface-03 bg-surface-02/80 p-1">
@@ -95,6 +97,9 @@ export function AdminPageTabs<T extends string>({
             <button
               key={tab.id}
               type="button"
+              onMouseEnter={() => onPreview?.(tab.id)}
+              onFocus={() => onPreview?.(tab.id)}
+              onPointerDown={() => onPreview?.(tab.id)}
               onClick={() => onChange(tab.id)}
               className={`flex items-center gap-2 whitespace-nowrap rounded-lg border px-3 py-2 text-xs md:text-sm font-semibold transition-colors ${
                 selected

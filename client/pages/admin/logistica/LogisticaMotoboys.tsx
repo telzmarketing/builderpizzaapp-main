@@ -11,6 +11,7 @@ import {
   Power,
   RefreshCw,
   Star,
+  Trash2,
   User,
   XCircle,
 } from "lucide-react";
@@ -102,6 +103,7 @@ export default function LogisticaMotoboys() {
   const [editing, setEditing] = useState<DeliveryPerson | null>(null);
   const [form, setForm] = useState<FormData>(BLANK);
   const [formError, setFormError] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -202,6 +204,25 @@ export default function LogisticaMotoboys() {
       await load();
     } catch {
       alert(`Erro ao ${action} acesso.`);
+    }
+  }
+
+  async function deletePerson(p: DeliveryPerson) {
+    if (p.status === "busy") {
+      alert("Finalize ou cancele as entregas em rota antes de excluir este motoboy.");
+      return;
+    }
+
+    if (!confirm(`Excluir ${p.name} da lista de motoboys? O historico de entregas sera preservado.`)) return;
+
+    setDeletingId(p.id);
+    try {
+      await deliveryApi.deactivatePerson(p.id);
+      setPersons((prev) => prev.filter((person) => person.id !== p.id));
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Erro ao excluir motoboy.");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -322,6 +343,16 @@ export default function LogisticaMotoboys() {
                   >
                     <Power size={13} />
                     {p.active ? "Bloquear acesso" : "Liberar acesso"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deletePerson(p)}
+                    disabled={deletingId === p.id}
+                    className="flex items-center justify-center gap-1 rounded-lg bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    title={p.status === "busy" ? "Finalize as entregas em rota antes de excluir" : "Excluir motoboy"}
+                  >
+                    {deletingId === p.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                    Excluir
                   </button>
                 </div>
               </div>

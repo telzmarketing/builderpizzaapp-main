@@ -76,6 +76,7 @@ class DeliveryPerson(Base):
     updated_at = Column(DateTime(timezone=True),
                         default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     deliveries = relationship("Delivery", back_populates="delivery_person")
 

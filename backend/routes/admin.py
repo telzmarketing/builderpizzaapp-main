@@ -106,8 +106,11 @@ def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin))
             day = to_store_datetime(row.created_at).date().isoformat()
             totals[day] = totals.get(day, 0.0) + float(row.total or 0)
         return [
-            {"day": day, "revenue": round(revenue, 2)}
-            for day, revenue in sorted(totals.items())
+            {
+                "day": (start_date + timedelta(days=offset)).isoformat(),
+                "revenue": round(totals.get((start_date + timedelta(days=offset)).isoformat(), 0.0), 2),
+            }
+            for offset in range(7)
         ]
 
     return {

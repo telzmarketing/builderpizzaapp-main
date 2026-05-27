@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useState, type ComponentType } from "react";
 import { BarChart3, FileText, HelpCircle, MessageCircle, MessagesSquare, Settings, Zap } from "lucide-react";
 import {
   AdminPageContent,
@@ -8,14 +8,31 @@ import {
   type AdminPageTab,
 } from "@/components/admin/AdminPageChrome";
 
-const ChatbotDashboard = lazy(() => import("./chatbot/ChatbotDashboard"));
-const ChatbotConfig = lazy(() => import("./chatbot/ChatbotConfig"));
-const ChatbotFAQ = lazy(() => import("./chatbot/ChatbotFAQ"));
-const ChatbotConversations = lazy(() => import("./chatbot/ChatbotConversations"));
-const ChatbotAutomations = lazy(() => import("./chatbot/ChatbotAutomations"));
-const ChatbotReports = lazy(() => import("./chatbot/ChatbotReports"));
-
 type Tab = "dashboard" | "config" | "faq" | "conversations" | "automations" | "reports";
+
+const tabLoaders: Record<Tab, () => Promise<{ default: ComponentType }>> = {
+  dashboard: () => import("./chatbot/ChatbotDashboard"),
+  config: () => import("./chatbot/ChatbotConfig"),
+  faq: () => import("./chatbot/ChatbotFAQ"),
+  conversations: () => import("./chatbot/ChatbotConversations"),
+  automations: () => import("./chatbot/ChatbotAutomations"),
+  reports: () => import("./chatbot/ChatbotReports"),
+};
+
+const preloadedTabs = new Set<Tab>();
+
+function preloadChatbotTab(tab: Tab) {
+  if (preloadedTabs.has(tab)) return;
+  preloadedTabs.add(tab);
+  tabLoaders[tab]().catch(() => preloadedTabs.delete(tab));
+}
+
+const ChatbotDashboard = lazy(tabLoaders.dashboard);
+const ChatbotConfig = lazy(tabLoaders.config);
+const ChatbotFAQ = lazy(tabLoaders.faq);
+const ChatbotConversations = lazy(tabLoaders.conversations);
+const ChatbotAutomations = lazy(tabLoaders.automations);
+const ChatbotReports = lazy(tabLoaders.reports);
 
 const TABS: AdminPageTab<Tab>[] = [
   { id: "dashboard", icon: <BarChart3 size={15} />, label: "Dashboard" },
@@ -36,7 +53,15 @@ export default function AdminChatbot() {
         title="Chatbot"
         description="Atendimento inteligente integrado ao site"
       />
-      <AdminPageTabs tabs={TABS} active={tab} onChange={(next) => setTab(next as Tab)} />
+      <AdminPageTabs
+        tabs={TABS}
+        active={tab}
+        onPreview={preloadChatbotTab}
+        onChange={(next) => {
+          preloadChatbotTab(next);
+          setTab(next as Tab);
+        }}
+      />
       <AdminPageContent>
         <Suspense fallback={<ChatbotTabFallback />}>
           {tab === "dashboard" && <ChatbotDashboard />}

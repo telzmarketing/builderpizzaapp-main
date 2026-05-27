@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
 import { filterAdminNavigation } from "@/lib/adminAccess";
+import { preloadAdminRoute } from "@/lib/adminRoutePreload";
 import type { ApiEffectivePermissions } from "@/lib/api";
 
 function getInitials(name: string): string {
@@ -60,6 +61,7 @@ export default function AppSidebar() {
   useEffect(() => {
     if (!activeGroups.length) return;
     setOpenGroups((current) => {
+      if (activeGroups.every((group) => current.has(group))) return current;
       const next = new Set(current);
       activeGroups.forEach((group) => next.add(group));
       return next;
@@ -166,6 +168,9 @@ export default function AppSidebar() {
                   <Link
                     key={path}
                     to={path}
+                    onMouseEnter={() => preloadAdminRoute(path)}
+                    onFocus={() => preloadAdminRoute(path)}
+                    onPointerDown={() => preloadAdminRoute(path)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                       active
                         ? "bg-gold text-cream shadow-sm shadow-gold/20"
