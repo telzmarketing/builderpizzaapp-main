@@ -199,6 +199,45 @@ export default function AdminProducts() {
       .map((p) => (p.category || "").trim())
       .filter((cat) => cat && !catalogCategoryNames.includes(cat))
   )].sort();
+  const catalogFlavorCategoryNames = new Set([...catalogCategoryNames, ...catalogSubcategoryNames]);
+  const legacyFlavorCategoryNames = [...new Set(
+    products
+      .flatMap((p) => [(p.category || "").trim(), ((p as any).subcategory || "").trim()])
+      .filter((name) => name && !catalogFlavorCategoryNames.has(name))
+  )].sort();
+  const flavorCategoryOptions = [
+    ...parentCategories
+      .filter((category) => category.active)
+      .map((category) => ({
+        key: category.name,
+        label: category.name,
+        type: "Categoria",
+        count: products.filter((product) => (product.category || "").trim() === category.name).length,
+      })),
+    ...activeSubcategories.map((subcategory) => {
+      const parent = parentCategories.find((category) => category.id === subcategory.parent_id);
+      return {
+        key: subcategory.name,
+        label: parent ? `${parent.name} / ${subcategory.name}` : subcategory.name,
+        type: "Subcategoria",
+        count: products.filter((product) => ((product as any).subcategory || "").trim() === subcategory.name).length,
+      };
+    }),
+    ...legacyFlavorCategoryNames.map((name) => ({
+      key: name,
+      label: name,
+      type: "Categoria antiga",
+      count: products.filter((product) => (product.category || "").trim() === name || ((product as any).subcategory || "").trim() === name).length,
+    })),
+  ];
+  const selectedFlavorCategoryFilters = multiFlavorsConfig.flavorCategoryFilters ?? [];
+  const isFlavorCategorySelected = (name: string) => selectedFlavorCategoryFilters.includes(name);
+  const toggleFlavorCategoryFilter = (name: string) => {
+    const selected = isFlavorCategorySelected(name)
+      ? selectedFlavorCategoryFilters.filter((item) => item !== name)
+      : [...selectedFlavorCategoryFilters, name];
+    updateMultiFlavorsConfig({ ...multiFlavorsConfig, flavorCategoryFilters: selected });
+  };
 
   useEffect(() => {
     categoriesApi.list().then(setCatalogCategories).catch(() => setCatalogCategories([]));
@@ -1912,6 +1951,57 @@ export default function AdminProducts() {
                         </button>
                       ))}
                     </div>
+                  </div>
+
+                  <div>
+                    <div className="mb-3">
+                      <label className="block text-parchment text-sm font-medium">Categorias liberadas para sabores</label>
+                      <p className="text-stone text-xs mt-1">
+                        Selecione as categorias ou subcategorias de pizzas salgadas que o cliente pode escolher na divisao de sabores.
+                      </p>
+                    </div>
+                    {flavorCategoryOptions.length === 0 ? (
+                      <div className="rounded-lg border border-surface-03 bg-surface-03/50 p-3 text-sm text-stone">
+                        Cadastre categorias e vincule produtos para liberar a selecao manual.
+                      </div>
+                    ) : (
+                      <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                        {flavorCategoryOptions.map((option) => {
+                          const selected = isFlavorCategorySelected(option.key);
+                          return (
+                            <button
+                              key={`${option.type}:${option.key}`}
+                              type="button"
+                              onClick={() => toggleFlavorCategoryFilter(option.key)}
+                              className={`flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition-all ${
+                                selected
+                                  ? "border-gold bg-gold/10 text-gold"
+                                  : "border-surface-03 bg-surface-03/60 text-parchment hover:border-gold/50"
+                              }`}
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-bold">{option.label}</span>
+                                <span className="block text-xs text-stone">{option.type} - {option.count} produto{option.count === 1 ? "" : "s"}</span>
+                              </span>
+                              <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                                selected ? "border-gold bg-gold text-cream" : "border-surface-03 bg-surface-01"
+                              }`}>
+                                {selected && <Check size={14} />}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {selectedFlavorCategoryFilters.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => updateMultiFlavorsConfig({ ...multiFlavorsConfig, flavorCategoryFilters: [] })}
+                        className="mt-3 text-xs font-semibold text-stone underline decoration-stone/40 underline-offset-4 transition-colors hover:text-gold"
+                      >
+                        Limpar categorias selecionadas
+                      </button>
+                    )}
                   </div>
 
                   <div>

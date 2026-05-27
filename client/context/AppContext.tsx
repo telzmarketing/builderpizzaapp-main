@@ -37,6 +37,7 @@ export interface PizzaFlavor {
 export interface MultiFlavorsConfig {
   maxFlavors: 2 | 3;
   pricingRule: PricingRule;
+  flavorCategoryFilters: string[];
 }
 
 // ─── Cart ─────────────────────────────────────────────────────────────────────
@@ -571,6 +572,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [multiFlavorsConfig, setMultiFlavorsConfig] = useState<MultiFlavorsConfig>({
     maxFlavors: 3,
     pricingRule: "most_expensive",
+    flavorCategoryFilters: [],
   });
   const loadedDataRef = useRef<Set<string>>(new Set());
 
@@ -614,7 +616,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (plan.multiFlavorsConfig) {
       tasks.push(
         productsApi.getMultiFlavorsConfig().then((config) => {
-          setMultiFlavorsConfig({ maxFlavors: config.max_flavors, pricingRule: config.pricing_rule });
+          setMultiFlavorsConfig({
+            maxFlavors: config.max_flavors,
+            pricingRule: config.pricing_rule,
+            flavorCategoryFilters: config.flavor_category_filters ?? [],
+          });
           loadedDataRef.current.add("multiFlavorsConfig");
         })
       );
@@ -976,8 +982,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const updated = await productsApi.updateMultiFlavorsConfig({
       ...(update.maxFlavors !== undefined && { max_flavors: update.maxFlavors }),
       ...(update.pricingRule !== undefined && { pricing_rule: update.pricingRule }),
+      ...(update.flavorCategoryFilters !== undefined && { flavor_category_filters: update.flavorCategoryFilters }),
     });
-    setMultiFlavorsConfig({ maxFlavors: updated.max_flavors, pricingRule: updated.pricing_rule });
+    setMultiFlavorsConfig({
+      maxFlavors: updated.max_flavors,
+      pricingRule: updated.pricing_rule,
+      flavorCategoryFilters: updated.flavor_category_filters ?? [],
+    });
   };
 
   // ── Site Content (CMS — persisted in backend) ────────────────────────────

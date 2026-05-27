@@ -471,9 +471,10 @@ export interface ApiPromotion {
 }
 
 export interface ApiMultiFlavorsConfig {
-  id: number;
+  id: string;
   max_flavors: 2 | 3;
   pricing_rule: "most_expensive" | "average" | "proportional";
+  flavor_category_filters: string[];
   updated_at: string;
 }
 
@@ -2078,7 +2079,7 @@ export const productsApi = {
   getMultiFlavorsConfig: () =>
     get<ApiMultiFlavorsConfig>("/products/config/multi-flavors"),
 
-  updateMultiFlavorsConfig: (data: Partial<Pick<ApiMultiFlavorsConfig, "max_flavors" | "pricing_rule">>) =>
+  updateMultiFlavorsConfig: (data: Partial<Pick<ApiMultiFlavorsConfig, "max_flavors" | "pricing_rule" | "flavor_category_filters">>) =>
     patch<ApiMultiFlavorsConfig>("/products/config/multi-flavors", data),
 
   getBestSellerConfig: () =>

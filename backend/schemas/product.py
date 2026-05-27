@@ -290,12 +290,14 @@ class ProductPriceQuoteOut(BaseModel):
 class MultiFlavorsConfigUpdate(BaseModel):
     max_flavors: Optional[int] = Field(default=None, ge=2, le=3)
     pricing_rule: Optional[PricingRule] = None
+    flavor_category_filters: Optional[list[str]] = None
 
 
 class MultiFlavorsConfigOut(BaseModel):
     id: str
     max_flavors: int
     pricing_rule: PricingRule
+    flavor_category_filters: list[str] = Field(default_factory=list)
     updated_at: datetime
 
     model_config = {"from_attributes": True}

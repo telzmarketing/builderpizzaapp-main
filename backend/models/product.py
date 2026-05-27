@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Boolean, Integer, Enum, Text, DateTime, ForeignKey
+from sqlalchemy import Column, String, Float, Boolean, Integer, Enum, Text, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -125,5 +125,6 @@ class MultiFlavorsConfig(Base):
     pricing_rule = Column(
         Enum(PricingRule), default=PricingRule.most_expensive
     )
+    flavor_category_filters = Column(JSON, default=list)
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))

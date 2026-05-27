@@ -124,6 +124,18 @@ const isSweetPizzaCandidate = (candidate?: Pizza | null) => {
   return hasHint(productSearchText(candidate), SWEET_PRODUCT_HINTS);
 };
 
+const productCategoryKeys = (candidate?: Pizza | null) =>
+  [candidate?.category, candidate?.subcategory]
+    .map((value) => normalizeProductText(value))
+    .filter(Boolean);
+
+const matchesFlavorCategoryFilters = (candidate: Pizza, categoryFilters: string[] = []) => {
+  const normalizedFilters = categoryFilters.map((value) => normalizeProductText(value)).filter(Boolean);
+  if (normalizedFilters.length === 0) return false;
+  const keys = productCategoryKeys(candidate);
+  return keys.some((key) => normalizedFilters.includes(key));
+};
+
 const isDrinkLikeCandidate = (candidate?: Pizza | null) => {
   if (!candidate) return false;
   const productType = normalizeProductText(candidate.product_type);
@@ -132,7 +144,7 @@ const isDrinkLikeCandidate = (candidate?: Pizza | null) => {
   return hasHint(productSearchText(candidate), DRINK_PRODUCT_HINTS);
 };
 
-const isPizzaFlavorCandidate = (candidate?: Pizza | null, options: { allowSweet?: boolean } = {}) => {
+const isPizzaFlavorCandidate = (candidate?: Pizza | null, options: { allowSweet?: boolean; categoryFilters?: string[] } = {}) => {
   if (!candidate || candidate.active === false) return false;
 
   if (isDrinkLikeCandidate(candidate)) return false;
@@ -140,10 +152,13 @@ const isPizzaFlavorCandidate = (candidate?: Pizza | null, options: { allowSweet?
   const allowSweet = options.allowSweet ?? true;
   if (!allowSweet && isSweetPizzaCandidate(candidate)) return false;
 
+  if (matchesFlavorCategoryFilters(candidate, options.categoryFilters)) return true;
+  if ((options.categoryFilters ?? []).filter((value) => normalizeProductText(value)).length > 0) return false;
+
   const productType = normalizeProductText(candidate.product_type);
   if (productType) return productType === "pizza";
 
-  return hasHint(productSearchText(candidate), PIZZA_PRODUCT_HINTS);
+  return true;
 };
 
 function computeFlavorPrice(slots: (Pizza | null)[], division: number, rule: PricingRule): number {
@@ -415,6 +430,7 @@ export default function Product() {
   const activeFlavors = flavorSlots.slice(0, division);
   const allFilled = activeFlavors.every((f) => f !== null);
   const effectivePricingRule: PricingRule = division > 1 ? "average" : multiFlavorsConfig.pricingRule;
+  const flavorCategoryFilters = multiFlavorsConfig.flavorCategoryFilters ?? [];
   const selectedSizeLookup = normalizeProductText(selectedSizeObj?.label ?? selectedSize);
 
   const getFlavorDisplayPrice = (flavor?: Pizza | null) => {
@@ -472,7 +488,7 @@ export default function Product() {
   };
 
   const handleSelectFlavor = (slotIndex: number, p: Pizza) => {
-    if (!isPizzaFlavorCandidate(p, { allowSweet: division === 1 })) return;
+    if (!isPizzaFlavorCandidate(p, { allowSweet: division === 1, categoryFilters: flavorCategoryFilters })) return;
 
     setFlavorSlots((prev) => {
       const next = [...prev];
@@ -585,7 +601,7 @@ export default function Product() {
 
   const availableForSlot = (slotIndex: number) =>
     products.filter((p) => {
-      return isPizzaFlavorCandidate(p, { allowSweet: division === 1 }) && !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id);
+      return isPizzaFlavorCandidate(p, { allowSweet: division === 1, categoryFilters: flavorCategoryFilters }) && !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id);
     });
 
   const canAddToCart = isDrink ? true : (allFilled && (regularCrusts.length === 0 || selectedCrust !== null));

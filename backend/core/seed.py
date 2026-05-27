@@ -57,7 +57,7 @@ def _seed_admin(db: Session) -> None:
 def _seed_multi_flavor_config(db: Session) -> None:
     if db.query(MultiFlavorsConfig).filter(MultiFlavorsConfig.id == "default").first():
         return
-    db.add(MultiFlavorsConfig(id="default", max_flavors=2, pricing_rule=PricingRule.most_expensive))
+    db.add(MultiFlavorsConfig(id="default", max_flavors=2, pricing_rule=PricingRule.most_expensive, flavor_category_filters=[]))
 
 
 def _seed_products(db: Session) -> None:

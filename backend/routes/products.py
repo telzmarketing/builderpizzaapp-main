@@ -180,6 +180,8 @@ def get_multi_flavors_config(db: Session = Depends(get_db)):
         db.add(config)
         db.commit()
         db.refresh(config)
+    if config.flavor_category_filters is None:
+        config.flavor_category_filters = []
     return config
 
 
@@ -191,9 +193,13 @@ def update_multi_flavors_config(body: MultiFlavorsConfigUpdate, db: Session = De
         db.add(config)
         db.flush()
     for key, value in body.model_dump(exclude_none=True).items():
+        if key == "flavor_category_filters":
+            value = [str(item).strip() for item in value if str(item).strip()]
         setattr(config, key, value)
     db.commit()
     db.refresh(config)
+    if config.flavor_category_filters is None:
+        config.flavor_category_filters = []
     return config
 
 
