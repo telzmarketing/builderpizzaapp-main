@@ -687,6 +687,7 @@ def _run_migrations():
         "INSERT INTO integration_connections (id, integration_type) VALUES ('tiktok_ads', 'tiktok_ads') ON CONFLICT DO NOTHING",
         "INSERT INTO integration_connections (id, integration_type) VALUES ('whatsapp_cloud', 'whatsapp_cloud') ON CONFLICT DO NOTHING",
         "INSERT INTO integration_connections (id, integration_type) VALUES ('whatsapp_qr', 'whatsapp_qr') ON CONFLICT DO NOTHING",
+        "INSERT INTO integration_connections (id, integration_type) VALUES ('whatsapp_unofficial', 'whatsapp_unofficial') ON CONFLICT DO NOTHING",
         "INSERT INTO integration_connections (id, integration_type) VALUES ('smtp', 'smtp') ON CONFLICT DO NOTHING",
 
         # ── Seed default CRM pipeline (Delivery) ──────────────────────────────
@@ -737,6 +738,9 @@ def _run_migrations():
         "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS evolution_base_url VARCHAR(500) DEFAULT ''",
         "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS evolution_api_key TEXT DEFAULT ''",
         "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS evolution_instance VARCHAR(120) DEFAULT ''",
+        "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS uazapi_base_url VARCHAR(500) DEFAULT ''",
+        "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS uazapi_token TEXT DEFAULT ''",
+        "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS uazapi_instance VARCHAR(120) DEFAULT ''",
         "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS interval_min_seconds INTEGER DEFAULT 3",
         "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS interval_max_seconds INTEGER DEFAULT 8",
 

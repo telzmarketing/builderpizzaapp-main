@@ -48,16 +48,22 @@ function fmtDate(s?: string) {
 }
 
 const IC = "w-full bg-surface-03 border border-surface-03 rounded-xl px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold";
+const PROVIDER_LABELS: Record<string, string> = {
+  official: "WABA",
+  evolution: "Evolution",
+  uazapi: "Uazapi",
+};
+const isUnofficialProvider = (provider?: string) => provider === "evolution" || provider === "uazapi";
 
 interface WaTemplate { id: string; name: string; body: string; category: string; language: string; provider?: string; media_type?: string; media_url?: string; caption?: string; mimetype?: string; file_name?: string; active: boolean; created_at: string; }
 interface WaMessage  { id: string; phone: string; body_sent: string; status: string; sent_at: string; error?: string; customer_name?: string; template_name?: string; provider?: string; message_type?: string; media_type?: string; media_url?: string; caption?: string; }
 interface WaCampaign { id: string; name: string; status: string; template_id?: string; group_id?: string; scheduled_at?: string; sent_count: number; delivered_count: number; read_count: number; error_count: number; created_at: string; }
 interface WaContactList { id: string; name: string; contact_count: number; created_at?: string; }
 interface WaDashboard { sent: number; delivered: number; read: number; responded: number; errors: number; active_campaigns: number; scheduled_campaigns: number; response_rate: number; orders_generated: number; revenue_generated: number; }
-interface WaConfig { connection_type: string; status: string; messages_per_minute: number; interval_seconds: number; interval_min_seconds: number; interval_max_seconds: number; daily_limit: number; webhook_url: string; evolution_base_url: string; evolution_api_key: string; evolution_instance: string; }
+interface WaConfig { connection_type: string; status: string; messages_per_minute: number; interval_seconds: number; interval_min_seconds: number; interval_max_seconds: number; daily_limit: number; webhook_url: string; evolution_base_url: string; evolution_api_key: string; evolution_instance: string; uazapi_base_url: string; uazapi_token: string; uazapi_instance: string; }
 
 const EMPTY_DASH: WaDashboard = { sent: 0, delivered: 0, read: 0, responded: 0, errors: 0, active_campaigns: 0, scheduled_campaigns: 0, response_rate: 0, orders_generated: 0, revenue_generated: 0 };
-const EMPTY_CFG: WaConfig = { connection_type: "official", status: "disconnected", messages_per_minute: 10, interval_seconds: 3, interval_min_seconds: 3, interval_max_seconds: 8, daily_limit: 1000, webhook_url: "", evolution_base_url: "", evolution_api_key: "", evolution_instance: "" };
+const EMPTY_CFG: WaConfig = { connection_type: "official", status: "disconnected", messages_per_minute: 10, interval_seconds: 3, interval_min_seconds: 3, interval_max_seconds: 8, daily_limit: 1000, webhook_url: "", evolution_base_url: "", evolution_api_key: "", evolution_instance: "", uazapi_base_url: "", uazapi_token: "", uazapi_instance: "" };
 const EMPTY_TPL = { name: "", body: "", category: "marketing", language: "pt_BR", provider: "official", media_type: "", media_url: "", caption: "", mimetype: "", file_name: "" };
 const EMPTY_LIST = { name: "", contacts: "" };
 
@@ -113,7 +119,7 @@ export default function MarketingWhatsApp() {
   const [saving, setSaving] = useState(false);
   const providerTemplates = templates.filter(t => (t.provider || "official") === dispForm.provider);
   const selectedTemplate = providerTemplates.find(t => t.id === dispForm.template_id);
-  const isEvolution = dispForm.provider === "evolution";
+  const isUnofficial = isUnofficialProvider(dispForm.provider);
   const selectedContactList = contactLists.find(l => l.id === dispForm.contact_list_id);
 
   // fetch helpers
@@ -172,7 +178,7 @@ export default function MarketingWhatsApp() {
   // ── Template CRUD ──
   const saveTpl = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (tplForm.provider === "evolution" && tplForm.media_type && !tplForm.media_url.trim()) { alert("Informe a URL HTTPS da midia."); return; }
+    if (isUnofficialProvider(tplForm.provider) && tplForm.media_type && !tplForm.media_url.trim()) { alert("Informe a URL HTTPS da midia."); return; }
     if (!tplForm.name.trim() || !tplForm.body.trim()) { alert("Nome e body obrigatórios."); return; }
     setSaving(true);
     try {
@@ -416,7 +422,7 @@ export default function MarketingWhatsApp() {
                       <div>
                         <h3 className="text-cream font-semibold text-sm">{t.name}</h3>
                         <span className="text-xs text-stone">
-                          {(t.provider || "official") === "evolution" ? "Evolution" : "WABA"} · {t.category} · {t.language}
+                          {PROVIDER_LABELS[t.provider || "official"] || t.provider || "WABA"} · {t.category} · {t.language}
                           {t.media_type ? ` · ${t.media_type === "video" ? "Video" : "Imagem"}` : ""}
                         </span>
                       </div>
@@ -533,21 +539,22 @@ export default function MarketingWhatsApp() {
                   <select value={dispForm.provider} onChange={e => setDispForm(f => ({ ...f, provider: e.target.value, template_id: "" }))} className={IC}>
                     <option value="official">WABA / Meta Cloud API</option>
                     <option value="evolution">Evolution API</option>
+                    <option value="uazapi">Uazapi</option>
                   </select>
                   <p className="text-xs text-stone/60">
-                    {isEvolution ? "Evolution usa modelos internos com texto, imagem e video." : "WABA usa templates aprovados na Meta para campanha."}
+                    {isUnofficial ? "API nao oficial usa modelos internos com texto, imagem e video." : "WABA usa templates aprovados na Meta para campanha."}
                   </p>
                 </div>
                 {dispForm.mode === "template" ? (
                   <div className="space-y-3">
                     <div className="space-y-1">
-                      <label className="text-xs text-stone">{isEvolution ? "Modelo interno da Evolution *" : "Template aprovado na Meta *"}</label>
+                      <label className="text-xs text-stone">{isUnofficial ? `Modelo interno da ${PROVIDER_LABELS[dispForm.provider]} *` : "Template aprovado na Meta *"}</label>
                       <select value={dispForm.template_id} onChange={e => setDispForm(f => ({ ...f, template_id: e.target.value }))} className={IC}>
                         <option value="">Selecione...</option>
                         {providerTemplates.map(t => <option key={t.id} value={t.id}>{t.name}{t.media_type ? ` (${t.media_type})` : ""}</option>)}
                       </select>
                       {providerTemplates.length === 0 && (
-                        <p className="text-xs text-stone/60">{isEvolution ? "Crie um modelo interno da Evolution na aba Templates." : "Crie ou sincronize um template aprovado da Meta na aba Templates."}</p>
+                        <p className="text-xs text-stone/60">{isUnofficial ? `Crie um modelo interno da ${PROVIDER_LABELS[dispForm.provider]} na aba Templates.` : "Crie ou sincronize um template aprovado da Meta na aba Templates."}</p>
                       )}
                     </div>
                     <div className="space-y-1">
@@ -559,7 +566,7 @@ export default function MarketingWhatsApp() {
                         placeholder={"Valor para {{1}}\nValor para {{2}}"}
                         className={`${IC} resize-none font-mono text-xs`}
                       />
-                      <p className="text-xs text-stone/60">{isEvolution ? "Uma variavel por linha, na ordem usada no modelo interno." : "Uma variavel por linha, na mesma ordem aprovada na Meta."}</p>
+                      <p className="text-xs text-stone/60">{isUnofficial ? "Uma variavel por linha, na ordem usada no modelo interno." : "Uma variavel por linha, na mesma ordem aprovada na Meta."}</p>
                       {selectedTemplate?.media_type && (
                         <p className="text-xs text-gold/90">Este modelo ja possui {selectedTemplate.media_type === "video" ? "video" : "imagem"} configurado(a).</p>
                       )}
@@ -620,7 +627,7 @@ export default function MarketingWhatsApp() {
                         </div>
                       </div>
                       <p className="text-xs text-stone/60">
-                        Na WABA com template, a midia e enviada como header do template aprovado. Na Evolution, vai pelo endpoint sendMedia.
+                        Na WABA com template, a midia e enviada como header do template aprovado. Na API nao oficial, vai pelo endpoint de midia do provedor selecionado.
                       </p>
                     </>
                   )}
@@ -700,7 +707,7 @@ export default function MarketingWhatsApp() {
                             <tr key={m.id} className="hover:bg-surface-03/30 transition-colors">
                               <td className="p-3 text-cream font-medium">{m.customer_name ?? "—"}</td>
                               <td className="p-3 text-stone font-mono text-xs">{m.phone}</td>
-                              <td className="p-3 text-stone text-xs">{m.provider === "evolution" ? "Evolution" : "WABA"}</td>
+                              <td className="p-3 text-stone text-xs">{PROVIDER_LABELS[m.provider || "official"] || m.provider || "WABA"}</td>
                               <td className="p-3 text-stone text-xs">{m.media_type || m.message_type || "text"}</td>
                               <td className="p-3 text-stone text-xs">{m.template_name ?? "—"}</td>
                               <td className="p-3"><span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${sc.cls}`}><SI size={10} />{sc.label}</span></td>
@@ -727,11 +734,12 @@ export default function MarketingWhatsApp() {
                 <label className="text-xs text-stone">Tipo de Conexão</label>
                 <select value={cfg.connection_type} onChange={e => setCfg(c => ({ ...c, connection_type: e.target.value }))} className={IC}>
                   <option value="official">WhatsApp Oficial (Cloud API)</option>
-                  <option value="evolution">Evolution API</option>
+                  <option value="evolution">API nao oficial - Evolution API</option>
+                  <option value="uazapi">API nao oficial - Uazapi</option>
                   <option value="qr" disabled>WhatsApp QR Code (indisponivel sem servico de sessao)</option>
                 </select>
                 <p className="text-xs text-stone/70">
-                  Selecione o provedor padrao. No disparo imediato tambem e possivel escolher WABA ou Evolution por envio.
+                  Selecione o provedor padrao. No disparo imediato tambem e possivel escolher WABA, Evolution ou Uazapi por envio.
                 </p>
               </div>
               <div className="flex items-center gap-3 p-3 bg-surface-03 rounded-xl">
@@ -771,26 +779,51 @@ export default function MarketingWhatsApp() {
                   Cadastre esta URL na Meta junto com o Verify Token configurado em Integracoes.
                 </p>
               </div>
-              {cfg.connection_type === "evolution" && (
+              {isUnofficialProvider(cfg.connection_type) && (
                 <div className="space-y-3 rounded-xl border border-surface-03 bg-surface-03/30 p-3">
-                  <h3 className="text-xs font-semibold text-cream">Evolution API</h3>
-                  <div className="space-y-1">
-                    <label className="text-xs text-stone">URL base</label>
-                    <input type="url" value={cfg.evolution_base_url} onChange={e => setCfg(c => ({ ...c, evolution_base_url: e.target.value }))}
-                      placeholder="https://evolution.seudominio.com" className={IC} />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-xs text-stone">API Key</label>
-                      <input type="password" value={cfg.evolution_api_key} onChange={e => setCfg(c => ({ ...c, evolution_api_key: e.target.value }))}
-                        placeholder="apikey da Evolution" className={IC} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs text-stone">Instancia</label>
-                      <input type="text" value={cfg.evolution_instance} onChange={e => setCfg(c => ({ ...c, evolution_instance: e.target.value }))}
-                        placeholder="nome-da-instancia" className={IC} />
-                    </div>
-                  </div>
+                  <h3 className="text-xs font-semibold text-cream">API nao oficial</h3>
+                  <p className="text-xs text-stone/70">Escolha e configure apenas o provedor nao oficial que sera usado como padrao.</p>
+                  {cfg.connection_type === "evolution" ? (
+                    <>
+                      <div className="space-y-1">
+                        <label className="text-xs text-stone">URL base da Evolution</label>
+                        <input type="url" value={cfg.evolution_base_url} onChange={e => setCfg(c => ({ ...c, evolution_base_url: e.target.value }))}
+                          placeholder="https://evolution.seudominio.com" className={IC} />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-xs text-stone">API Key</label>
+                          <input type="password" value={cfg.evolution_api_key} onChange={e => setCfg(c => ({ ...c, evolution_api_key: e.target.value }))}
+                            placeholder="apikey da Evolution" className={IC} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs text-stone">Instancia</label>
+                          <input type="text" value={cfg.evolution_instance} onChange={e => setCfg(c => ({ ...c, evolution_instance: e.target.value }))}
+                            placeholder="nome-da-instancia" className={IC} />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="space-y-1">
+                        <label className="text-xs text-stone">URL base da Uazapi</label>
+                        <input type="url" value={cfg.uazapi_base_url} onChange={e => setCfg(c => ({ ...c, uazapi_base_url: e.target.value }))}
+                          placeholder="https://api.uazapi.com" className={IC} />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-xs text-stone">Token da instancia</label>
+                          <input type="password" value={cfg.uazapi_token} onChange={e => setCfg(c => ({ ...c, uazapi_token: e.target.value }))}
+                            placeholder="token da Uazapi" className={IC} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs text-stone">Instancia</label>
+                          <input type="text" value={cfg.uazapi_instance} onChange={e => setCfg(c => ({ ...c, uazapi_instance: e.target.value }))}
+                            placeholder="nome opcional da instancia" className={IC} />
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
               <button type="submit" disabled={cfgSaving}
@@ -812,14 +845,15 @@ export default function MarketingWhatsApp() {
             </div>
             <form onSubmit={saveTpl} className="p-5 space-y-4">
               <div className="space-y-1">
-                <label className="text-xs text-stone">{tplForm.provider === "evolution" ? "Nome do modelo interno *" : "Nome do template aprovado na Meta *"}</label>
+                <label className="text-xs text-stone">{isUnofficialProvider(tplForm.provider) ? "Nome do modelo interno *" : "Nome do template aprovado na Meta *"}</label>
                 <input type="text" value={tplForm.name} onChange={e => setTplForm(f => ({ ...f, name: e.target.value }))} placeholder="boas_vindas" className={IC} />
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-stone">API do modelo</label>
-                <select value={tplForm.provider} onChange={e => setTplForm(f => ({ ...f, provider: e.target.value, media_type: e.target.value === "evolution" ? f.media_type : "", media_url: e.target.value === "evolution" ? f.media_url : "" }))} className={IC}>
+                <select value={tplForm.provider} onChange={e => setTplForm(f => ({ ...f, provider: e.target.value, media_type: isUnofficialProvider(e.target.value) ? f.media_type : "", media_url: isUnofficialProvider(e.target.value) ? f.media_url : "" }))} className={IC}>
                   <option value="official">WABA / Meta Cloud API</option>
-                  <option value="evolution">Evolution API</option>
+                  <option value="evolution">API nao oficial - Evolution API</option>
+                  <option value="uazapi">API nao oficial - Uazapi</option>
                 </select>
               </div>
               <div className="space-y-1">
@@ -847,7 +881,7 @@ export default function MarketingWhatsApp() {
                   ))}
                 </div>
               </div>
-              {tplForm.provider === "evolution" && (
+              {isUnofficialProvider(tplForm.provider) && (
                 <div className="space-y-3 rounded-xl border border-surface-03 bg-surface-03/30 p-3">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">

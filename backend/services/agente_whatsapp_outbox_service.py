@@ -21,6 +21,7 @@ from backend.routes.whatsapp_marketing import (
     _normalize_media_type,
     _normalize_provider,
     _send_evolution_api,
+    _send_uazapi_api,
     _send_whatsapp_api,
 )
 
@@ -186,7 +187,7 @@ class AgenteWhatsAppOutboxService:
             for row in self._db.query(AgenteWhatsAppOutbox.provider).distinct().all()
             if row[0]
         }
-        providers.update({"official", "evolution"})
+        providers.update({"official", "evolution", "uazapi"})
         return [self._ensure_provider_state(provider) for provider in sorted(providers)]
 
     def alerts(self) -> dict[str, Any]:
@@ -631,7 +632,7 @@ class AgenteWhatsAppOutboxService:
 
         if provider == "qr":
             return self._fail_item(item, "WhatsApp QR Code ainda nao possui worker ativo.")
-        if provider not in {"official", "evolution"}:
+        if provider not in {"official", "evolution", "uazapi"}:
             return self._fail_item(item, "Provedor WhatsApp invalido.")
 
         payload = _json_load(item.payload_json)
@@ -642,6 +643,16 @@ class AgenteWhatsAppOutboxService:
         if provider == "evolution":
             cfg = _get_config(self._db)
             provider_message_id, status, error = _send_evolution_api(
+                item.phone,
+                body,
+                cfg,
+                media_type=media_type,
+                media_url=media_url,
+                caption=body if media_url else None,
+            )
+        elif provider == "uazapi":
+            cfg = _get_config(self._db)
+            provider_message_id, status, error = _send_uazapi_api(
                 item.phone,
                 body,
                 cfg,

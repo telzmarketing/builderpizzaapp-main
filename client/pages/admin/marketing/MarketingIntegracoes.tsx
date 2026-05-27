@@ -20,7 +20,15 @@ interface IntegrationDef {
   label: string;
   emoji: string;
   description: string;
-  fields: { key: string; label: string; placeholder: string; secret?: boolean }[];
+  fields: {
+    key: string;
+    label: string;
+    placeholder: string;
+    secret?: boolean;
+    type?: "text" | "select";
+    options?: { value: string; label: string }[];
+    showWhen?: { key: string; value: string };
+  }[];
 }
 
 // Platforms that support OAuth (ads_oauth router)
@@ -88,6 +96,30 @@ const INTEGRATIONS: IntegrationDef[] = [
     ],
   },
   {
+    type: "whatsapp_unofficial",
+    label: "API nao oficial",
+    emoji: "API",
+    description: "Configure Evolution API ou Uazapi como provedor nao oficial para o disparador de WhatsApp.",
+    fields: [
+      {
+        key: "provider",
+        label: "Provedor",
+        placeholder: "",
+        type: "select",
+        options: [
+          { value: "evolution", label: "Evolution API" },
+          { value: "uazapi", label: "Uazapi" },
+        ],
+      },
+      { key: "evolution_base_url", label: "URL base da Evolution", placeholder: "https://evolution.seudominio.com", showWhen: { key: "provider", value: "evolution" } },
+      { key: "evolution_api_key", label: "API Key da Evolution", placeholder: "apikey da Evolution", secret: true, showWhen: { key: "provider", value: "evolution" } },
+      { key: "evolution_instance", label: "Instancia Evolution", placeholder: "nome-da-instancia", showWhen: { key: "provider", value: "evolution" } },
+      { key: "uazapi_base_url", label: "URL base da Uazapi", placeholder: "https://api.uazapi.com", showWhen: { key: "provider", value: "uazapi" } },
+      { key: "uazapi_token", label: "Token da instancia Uazapi", placeholder: "token da Uazapi", secret: true, showWhen: { key: "provider", value: "uazapi" } },
+      { key: "uazapi_instance", label: "Instancia Uazapi", placeholder: "nome opcional da instancia", showWhen: { key: "provider", value: "uazapi" } },
+    ],
+  },
+  {
     type: "smtp",
     label: "SMTP / E-mail",
     emoji: "📧",
@@ -142,7 +174,11 @@ export default function MarketingIntegracoes() {
       const res = await fetch(`${BASE}/marketing/integrations/${type}`, {
         method: "PATCH",
         headers,
-        body: JSON.stringify({ credentials: configs[type] ?? {} }),
+        body: JSON.stringify({
+          credentials: type === "whatsapp_unofficial"
+            ? { provider: "evolution", ...(configs[type] ?? {}) }
+            : configs[type] ?? {},
+        }),
       });
       const data = await res.json();
       if (!res.ok || data?.success === false) {
@@ -308,19 +344,33 @@ export default function MarketingIntegracoes() {
                   {/* Expanded fields */}
                   {isExpanded && (
                     <div className="border-t border-surface-03 p-5 space-y-4 bg-surface-03/20">
-                      {def.fields.map((f) => (
-                        <div key={f.key} className="space-y-1">
-                          <label className="text-xs text-stone">{f.label}</label>
-                          <input
-                            type={f.secret ? "password" : "text"}
-                            value={configs[def.type]?.[f.key] ?? ""}
-                            onChange={(e) => updateConfig(def.type, f.key, e.target.value)}
-                            placeholder={f.placeholder}
-                            autoComplete="off"
-                            className="w-full bg-surface-03 border border-surface-03 rounded-xl px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold"
-                          />
-                        </div>
-                      ))}
+                      {def.fields
+                        .filter((f) => !f.showWhen || (configs[def.type]?.[f.showWhen.key] ?? "evolution") === f.showWhen.value)
+                        .map((f) => (
+                          <div key={f.key} className="space-y-1">
+                            <label className="text-xs text-stone">{f.label}</label>
+                            {f.type === "select" ? (
+                              <select
+                                value={configs[def.type]?.[f.key] ?? f.options?.[0]?.value ?? ""}
+                                onChange={(e) => updateConfig(def.type, f.key, e.target.value)}
+                                className="w-full bg-surface-03 border border-surface-03 rounded-xl px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold"
+                              >
+                                {(f.options ?? []).map((option) => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type={f.secret ? "password" : "text"}
+                                value={configs[def.type]?.[f.key] ?? ""}
+                                onChange={(e) => updateConfig(def.type, f.key, e.target.value)}
+                                placeholder={f.placeholder}
+                                autoComplete="off"
+                                className="w-full bg-surface-03 border border-surface-03 rounded-xl px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold"
+                              />
+                            )}
+                          </div>
+                        ))}
                       <div className="flex gap-2 pt-1">
                         <button
                           onClick={() => setExpanded(null)}

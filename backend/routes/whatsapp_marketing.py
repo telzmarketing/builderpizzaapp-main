@@ -113,6 +113,9 @@ class WhatsAppConfig(Base):
     evolution_base_url = Column(String(500), default="")
     evolution_api_key = Column(Text, default="")
     evolution_instance = Column(String(120), default="")
+    uazapi_base_url = Column(String(500), default="")
+    uazapi_token = Column(Text, default="")
+    uazapi_instance = Column(String(120), default="")
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
 
@@ -173,7 +176,7 @@ class SendRequest(BaseModel):
     free_text: Optional[str] = None
     # Telefones diretos (novo)
     phones: list[str] = []
-    # Midia para WABA e Evolution API
+    # Midia para WABA e APIs nao oficiais
     media_type: Optional[str] = None
     media_url: Optional[str] = None
     caption: Optional[str] = None
@@ -209,6 +212,9 @@ class ConfigUpdate(BaseModel):
     evolution_base_url: Optional[str] = None
     evolution_api_key: Optional[str] = None
     evolution_instance: Optional[str] = None
+    uazapi_base_url: Optional[str] = None
+    uazapi_token: Optional[str] = None
+    uazapi_instance: Optional[str] = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -310,6 +316,9 @@ def _cfg_to_dict(cfg: WhatsAppConfig) -> dict:
         "evolution_base_url": cfg.evolution_base_url or "",
         "evolution_api_key": cfg.evolution_api_key or "",
         "evolution_instance": cfg.evolution_instance or "",
+        "uazapi_base_url": cfg.uazapi_base_url or "",
+        "uazapi_token": cfg.uazapi_token or "",
+        "uazapi_instance": cfg.uazapi_instance or "",
     }
 
 
@@ -391,6 +400,8 @@ def _normalize_provider(provider: Optional[str]) -> str:
         return "official"
     if value in {"evolution", "evolution_api"}:
         return "evolution"
+    if value in {"uazapi", "uazapi_api", "uazapigo"}:
+        return "uazapi"
     if value == "qr":
         return "qr"
     return value
@@ -432,6 +443,15 @@ def _evolution_credentials(cfg: WhatsAppConfig) -> tuple[dict, Optional[str]]:
     if not base_url or not api_key or not instance:
         return {}, "Evolution API incompleta. Informe URL base, API Key e instancia."
     return {"base_url": base_url, "api_key": api_key, "instance": instance}, None
+
+
+def _uazapi_credentials(cfg: WhatsAppConfig) -> tuple[dict, Optional[str]]:
+    base_url = (cfg.uazapi_base_url or "").strip().rstrip("/")
+    token = (cfg.uazapi_token or "").strip()
+    instance = (cfg.uazapi_instance or "").strip()
+    if not base_url or not token:
+        return {}, "Uazapi incompleta. Informe URL base e token da instancia."
+    return {"base_url": base_url, "token": token, "instance": instance}, None
 
 
 def _load_whatsapp_verify_token(db: Session) -> Optional[str]:
@@ -583,6 +603,64 @@ def _send_evolution_api(
             )
             return msg_id, "sent", None
         message = data.get("message") or data.get("error") or resp.text
+        return None, "failed", str(message)
+    except Exception as exc:
+        return None, "failed", str(exc)
+
+
+def _send_uazapi_api(
+    phone: str,
+    body: str,
+    cfg: WhatsAppConfig,
+    *,
+    media_type: str | None = None,
+    media_url: str | None = None,
+    caption: str | None = None,
+    mimetype: str | None = None,
+    file_name: str | None = None,
+) -> tuple[Optional[str], str, Optional[str]]:
+    """Envia via Uazapi. Retorna (message_id, status, error)."""
+    creds, error = _uazapi_credentials(cfg)
+    if error:
+        return None, "failed", error
+
+    clean_phone = "".join(c for c in phone if c.isdigit())
+    normalized_media = _normalize_media_type(media_type, media_url)
+    headers = {"token": creds["token"], "Content-Type": "application/json"}
+
+    if media_url and normalized_media:
+        endpoint = f"{creds['base_url']}/send/media"
+        payload = {
+            "number": clean_phone,
+            "type": normalized_media,
+            "file": media_url,
+            "text": caption or body or "",
+        }
+        if mimetype:
+            payload["mimetype"] = mimetype
+        if file_name:
+            payload["docName"] = file_name
+    else:
+        endpoint = f"{creds['base_url']}/send/text"
+        payload = {
+            "number": clean_phone,
+            "text": body,
+            "linkPreview": True,
+        }
+
+    try:
+        resp = requests.post(endpoint, headers=headers, json=payload, timeout=20)
+        data = resp.json() if resp.content else {}
+        if 200 <= resp.status_code < 300:
+            msg_id = (
+                data.get("messageid")
+                or data.get("id")
+                or data.get("key", {}).get("id")
+                or data.get("response", {}).get("messageid")
+                or data.get("response", {}).get("id")
+            )
+            return msg_id, "sent", None
+        message = data.get("message_ptbr") or data.get("message") or data.get("error") or resp.text
         return None, "failed", str(message)
     except Exception as exc:
         return None, "failed", str(exc)
@@ -955,12 +1033,12 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
     provider = _normalize_provider(body.provider or cfg.connection_type)
     if provider == "qr":
         return err_msg(
-            "WhatsApp QR Code ainda nao possui servico de sessao implementado. Use WABA ou Evolution API.",
+            "WhatsApp QR Code ainda nao possui servico de sessao implementado. Use WABA, Evolution API ou Uazapi.",
             code="WhatsAppQrNotImplemented",
             status_code=501,
         )
-    if provider not in {"official", "evolution"}:
-        return err_msg("Provedor WhatsApp invalido. Use official ou evolution.", code="WhatsAppProviderInvalid")
+    if provider not in {"official", "evolution", "uazapi"}:
+        return err_msg("Provedor WhatsApp invalido. Use official, evolution ou uazapi.", code="WhatsAppProviderInvalid")
     if provider == "official":
         _, cloud_error = _load_whatsapp_cloud_credentials(db)
         if cloud_error:
@@ -969,6 +1047,10 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
         _, evolution_error = _evolution_credentials(cfg)
         if evolution_error:
             return err_msg(evolution_error, code="EvolutionConfigMissing")
+    if provider == "uazapi":
+        _, uazapi_error = _uazapi_credentials(cfg)
+        if uazapi_error:
+            return err_msg(uazapi_error, code="UazapiConfigMissing")
     if body.scheduled_at:
         return err_msg("Agendamento ainda nao possui worker ativo. Faca disparo imediato por enquanto.", code="WhatsAppScheduleUnavailable")
 
@@ -1044,6 +1126,17 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
 
         if provider == "evolution":
             wamid, status, error = _send_evolution_api(
+                phone,
+                msg_body,
+                cfg,
+                media_type=media_type,
+                media_url=media_url,
+                caption=msg_caption,
+                mimetype=mimetype,
+                file_name=file_name,
+            )
+        elif provider == "uazapi":
+            wamid, status, error = _send_uazapi_api(
                 phone,
                 msg_body,
                 cfg,
@@ -1175,11 +1268,22 @@ def update_config(body: ConfigUpdate, db: Session = Depends(get_db), _=Depends(g
         cfg.evolution_api_key = body.evolution_api_key.strip()
     if body.evolution_instance is not None:
         cfg.evolution_instance = body.evolution_instance.strip()
+    if body.uazapi_base_url is not None:
+        cfg.uazapi_base_url = body.uazapi_base_url.strip().rstrip("/")
+    if body.uazapi_token is not None:
+        cfg.uazapi_token = body.uazapi_token.strip()
+    if body.uazapi_instance is not None:
+        cfg.uazapi_instance = body.uazapi_instance.strip()
     if cfg.connection_type == "evolution":
         cfg.status = "connected" if all([
             cfg.evolution_base_url,
             cfg.evolution_api_key,
             cfg.evolution_instance,
+        ]) else "disconnected"
+    elif cfg.connection_type == "uazapi":
+        cfg.status = "connected" if all([
+            cfg.uazapi_base_url,
+            cfg.uazapi_token,
         ]) else "disconnected"
     elif body.connection_type is not None and cfg.connection_type == "official":
         _, cloud_error = _load_whatsapp_cloud_credentials(db)

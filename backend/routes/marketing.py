@@ -155,7 +155,17 @@ class IntegrationConnection(Base):
                         onupdate=lambda: datetime.now(timezone.utc))
 
 
-SECRET_KEYS = {"access_token", "client_secret", "app_secret", "password", "smtp_password"}
+SECRET_KEYS = {
+    "access_token",
+    "client_secret",
+    "app_secret",
+    "password",
+    "smtp_password",
+    "api_key",
+    "token",
+    "evolution_api_key",
+    "uazapi_token",
+}
 MASKED_SECRET = "********"
 INTERNAL_TRACKING_PREFIXES = ("/painel", "/motoboy")
 INTEGRATION_LABELS = {
@@ -164,6 +174,7 @@ INTEGRATION_LABELS = {
     "tiktok_ads": "TikTok Ads",
     "whatsapp_cloud": "WhatsApp Cloud API",
     "whatsapp_qr": "WhatsApp QR Code",
+    "whatsapp_unofficial": "API nao oficial",
     "smtp": "SMTP / E-mail",
 }
 
@@ -334,6 +345,67 @@ def _merge_credentials(current: dict, incoming: dict) -> dict:
         else:
             merged[key] = value
     return merged
+
+
+def _normalize_unofficial_whatsapp_provider(value: str | None) -> str:
+    provider = (value or "evolution").strip().lower()
+    if provider in {"uazapi", "uazapi_api", "uazapigo"}:
+        return "uazapi"
+    return "evolution"
+
+
+def _sync_unofficial_whatsapp_config(db: Session, creds: dict, now: datetime) -> None:
+    provider = _normalize_unofficial_whatsapp_provider(creds.get("provider"))
+    db.execute(text("INSERT INTO whatsapp_config (id) VALUES ('default') ON CONFLICT DO NOTHING"))
+    if provider == "uazapi":
+        db.execute(
+            text(
+                """
+                UPDATE whatsapp_config
+                SET connection_type = 'uazapi',
+                    uazapi_base_url = :base_url,
+                    uazapi_token = :token,
+                    uazapi_instance = :instance,
+                    status = :status,
+                    updated_at = :now
+                WHERE id = 'default'
+                """
+            ),
+            {
+                "base_url": (creds.get("uazapi_base_url") or "").strip().rstrip("/"),
+                "token": (creds.get("uazapi_token") or "").strip(),
+                "instance": (creds.get("uazapi_instance") or "").strip(),
+                "status": "connected" if creds.get("uazapi_base_url") and creds.get("uazapi_token") else "disconnected",
+                "now": now,
+            },
+        )
+        return
+
+    db.execute(
+        text(
+            """
+            UPDATE whatsapp_config
+            SET connection_type = 'evolution',
+                evolution_base_url = :base_url,
+                evolution_api_key = :api_key,
+                evolution_instance = :instance,
+                status = :status,
+                updated_at = :now
+            WHERE id = 'default'
+            """
+        ),
+        {
+            "base_url": (creds.get("evolution_base_url") or "").strip().rstrip("/"),
+            "api_key": (creds.get("evolution_api_key") or "").strip(),
+            "instance": (creds.get("evolution_instance") or "").strip(),
+            "status": "connected" if all([
+                creds.get("evolution_base_url"),
+                creds.get("evolution_api_key"),
+                creds.get("evolution_instance"),
+            ]) else "disconnected",
+            "now": now,
+        },
+    )
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -1138,8 +1210,22 @@ def update_integration(integration_type: str, body: dict, db: Session = Depends(
         incoming_credentials = body.get("config")
     if incoming_credentials is not None:
         creds = _merge_credentials(_load_credentials(conn), incoming_credentials)
+        if integration_type == "whatsapp_unofficial":
+            creds["provider"] = _normalize_unofficial_whatsapp_provider(creds.get("provider"))
         conn.credentials_json = json.dumps(creds, ensure_ascii=False)
-        conn.status = "connected" if any(v for v in creds.values()) else "disconnected"
+        if integration_type == "whatsapp_unofficial":
+            now = datetime.now(timezone.utc)
+            if creds["provider"] == "uazapi":
+                conn.status = "connected" if creds.get("uazapi_base_url") and creds.get("uazapi_token") else "disconnected"
+            else:
+                conn.status = "connected" if all([
+                    creds.get("evolution_base_url"),
+                    creds.get("evolution_api_key"),
+                    creds.get("evolution_instance"),
+                ]) else "disconnected"
+            _sync_unofficial_whatsapp_config(db, creds, now)
+        else:
+            conn.status = "connected" if any(v for v in creds.values()) else "disconnected"
     if "status" in body:
         conn.status = body["status"]
     conn.updated_at = datetime.now(timezone.utc)
@@ -1214,6 +1300,49 @@ def test_integration(integration_type: str, db: Session = Depends(get_db), _=Dep
         conn.updated_at = now
         db.commit()
         return err_msg(conn.last_error, code="WhatsAppQrNotImplemented", status_code=501)
+
+    if integration_type == "whatsapp_unofficial":
+        provider = _normalize_unofficial_whatsapp_provider(creds.get("provider"))
+        if provider == "uazapi":
+            missing = []
+            if not creds.get("uazapi_base_url"):
+                missing.append("URL base")
+            if not creds.get("uazapi_token"):
+                missing.append("token da instancia")
+            if missing:
+                conn.status = "disconnected"
+                conn.last_error = f"Uazapi incompleta. Informe {', '.join(missing)}."
+                conn.updated_at = now
+                db.commit()
+                return err_msg(conn.last_error, code="UazapiConfigMissing")
+            conn.status = "connected"
+            conn.last_error = None
+            conn.last_sync_at = now
+            conn.updated_at = now
+            _sync_unofficial_whatsapp_config(db, creds, now)
+            db.commit()
+            return ok({"connected": True, "provider": "uazapi"}, "Uazapi configurada como API nao oficial.")
+
+        missing = []
+        if not creds.get("evolution_base_url"):
+            missing.append("URL base")
+        if not creds.get("evolution_api_key"):
+            missing.append("API Key")
+        if not creds.get("evolution_instance"):
+            missing.append("instancia")
+        if missing:
+            conn.status = "disconnected"
+            conn.last_error = f"Evolution API incompleta. Informe {', '.join(missing)}."
+            conn.updated_at = now
+            db.commit()
+            return err_msg(conn.last_error, code="EvolutionConfigMissing")
+        conn.status = "connected"
+        conn.last_error = None
+        conn.last_sync_at = now
+        conn.updated_at = now
+        _sync_unofficial_whatsapp_config(db, creds, now)
+        db.commit()
+        return ok({"connected": True, "provider": "evolution"}, "Evolution API configurada como API nao oficial.")
 
     configured = bool(creds)
     conn.status = "connected" if configured else "disconnected"
