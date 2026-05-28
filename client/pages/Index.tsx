@@ -528,8 +528,6 @@ export default function Home() {
               {/* Featured center card */}
               <div className="w-full max-w-[236px] mx-auto">
                 <button
-                  onTouchStart={handleTouchStart}
-                  onTouchEnd={handleTouchEnd}
                   onClick={() => handlePizzaClick(currentPizza.id)}
                   className={`w-full bg-surface-02 rounded-2xl p-4 shadow-2xl transition-all duration-300 ${
                     clickedPizza === currentPizza.id ? "scale-105 shadow-gold/30" : "active:scale-95"
