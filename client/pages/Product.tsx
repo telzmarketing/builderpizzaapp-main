@@ -671,7 +671,7 @@ export default function Product() {
                   <img
                     src={resolveOptimizedAssetUrl(product.icon, 416)}
                     alt={product.name}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover product-image-pulse-spin"
                     width={208}
                     height={208}
                     loading="eager"

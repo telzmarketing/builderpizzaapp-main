@@ -10,6 +10,7 @@ import { getPublicExperience, isSalaoExperience } from "./lib/experience";
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
 const StoreSocialProofNotification = lazy(() => import("./components/StoreSocialProofNotification"));
 const CapacitorMotoboyEntry = lazy(() => import("./components/CapacitorMotoboyEntry"));
+const StoreScreenshotProtection = lazy(() => import("./components/StoreScreenshotProtection"));
 
 const CHUNK_RECOVERY_RELOAD_KEY = "mo_chunk_recovery_reloaded_at";
 const CHUNK_RECOVERY_COOLDOWN_MS = 60_000;
@@ -387,8 +388,13 @@ export default function App() {
             <Suspense fallback={null}>
             <Routes>
               {/* ── Customer routes ── */}
-              <Route path="/" element={<PublicHome />} />
-              <Route path="/product/:id" element={<Product />} />
+              <Route element={<StoreScreenshotProtection />}>
+                <Route path="/" element={<PublicHome />} />
+                <Route path="/product/:id" element={<Product />} />
+                <Route path="/cardapio" element={<ExperienceRoute salao={<SalaoHome />} delivery={<Cardapio />} />} />
+                <Route path="/campanha/:slug" element={<Campanha />} />
+                <Route path="/promocao/:slug" element={<PromocaoLanding />} />
+              </Route>
               <Route path="/cart" element={<Cart />} />
               <Route path="/checkout" element={<Checkout />} />
               <Route path="/order-tracking" element={<OrderTracking />} />
@@ -397,7 +403,6 @@ export default function App() {
               <Route path="/pedidos" element={<Pedidos />} />
               <Route path="/conta" element={<Conta />} />
               <Route path="/localizacao" element={<Localizacao />} />
-              <Route path="/cardapio" element={<ExperienceRoute salao={<SalaoHome />} delivery={<Cardapio />} />} />
               <Route path="/blog" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
               <Route path="/sobre" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
               <Route path="/galeria" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
@@ -407,8 +412,6 @@ export default function App() {
               <Route path="/reservas" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
               <Route path="/contato" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
               <Route path="/minha-conta" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
-              <Route path="/campanha/:slug" element={<Campanha />} />
-              <Route path="/promocao/:slug" element={<PromocaoLanding />} />
 
               {/* ── Admin login (public) ── */}
               <Route path="/painel/login" element={<AdminLogin />} />

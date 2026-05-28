@@ -5,6 +5,62 @@
 @layer utilities {
   .pt-safe-top    { padding-top:    env(safe-area-inset-top, 0px); }
   .pb-safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+  @keyframes productImagePulseSpin {
+    0%, 68%, 100% {
+      transform: scale(1) rotate(0deg);
+    }
+
+    78% {
+      transform: scale(1.25) rotate(20deg);
+    }
+
+    90% {
+      transform: scale(1) rotate(0deg);
+    }
+  }
+
+  .product-image-pulse-spin {
+    animation: productImagePulseSpin 5s ease-in-out infinite;
+    transform-origin: center center;
+    will-change: transform;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .product-image-pulse-spin {
+      animation: none;
+    }
+  }
+
+  body.store-protection-active {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  body.store-protection-active :where(input, textarea, select, option, [contenteditable="true"], [role="textbox"]) {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  body.store-protection-active img {
+    -webkit-user-drag: none;
+    user-drag: none;
+  }
+
+  #store-privacy-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    display: none;
+    pointer-events: none;
+    background: rgba(12, 18, 32, 0.62);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+  }
+
+  body.store-privacy-visible #store-privacy-overlay {
+    display: block;
+  }
 }
 
 @layer base {
