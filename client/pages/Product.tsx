@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, type PointerEvent } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ChevronLeft, Star, Minus, Plus, AlertCircle, Check, Loader2, X, ZoomIn } from "lucide-react";
+import { ChevronLeft, Minus, Plus, AlertCircle, Check, Loader2, X, ZoomIn } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import CategorySeal from "@/components/CategorySeal";
 import BestSellerSeal from "@/components/BestSellerSeal";
@@ -689,11 +689,6 @@ export default function Product() {
             <BestSellerSeal show={(product as any).show_best_seller_badge} />
           </button>
           <h1 className="text-cream text-2xl font-bold mt-4 text-center">{product.name}</h1>
-          <div className="flex gap-1 mt-2">
-            {[...Array(5)].map((_, i) => (
-              <Star key={i} size={16} className={i < Math.floor(product.rating || 4) ? "fill-yellow-400 text-yellow-400" : "text-slate-600"} />
-            ))}
-          </div>
           <div className="flex items-start gap-4 w-full mt-4">
             <p className="text-stone text-sm leading-relaxed flex-1">{product.description}</p>
             <div className="flex items-center gap-3 bg-surface-02 rounded-full px-4 py-2 flex-shrink-0 border border-surface-03">

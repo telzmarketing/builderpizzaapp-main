@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Menu, Search, Star, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, Tag, Heart, UtensilsCrossed } from "lucide-react";
+import { Menu, Search, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, Tag, Heart, UtensilsCrossed } from "lucide-react";
 
 import { useApp } from "@/context/AppContext";
 import { homeCatalogApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl } from "@/lib/api";
@@ -502,15 +502,6 @@ export default function Home() {
                 <p className="text-cream font-bold text-center text-base leading-snug line-clamp-1">
                   {product.name}
                 </p>
-                <div className="flex justify-center gap-0.5 mt-1.5 mb-2">
-                  {[...Array(5)].map((_, i) => (
-                    <Star
-                      key={i}
-                      size={13}
-                      className={i < Math.floor(product.rating || 0) ? "fill-yellow-400 text-yellow-400" : "text-slate-600"}
-                    />
-                  ))}
-                </div>
                 <p className="text-gold font-bold text-center text-base">
                   R$ {(product.current_price ?? product.price).toFixed(2)}
                 </p>
@@ -554,15 +545,6 @@ export default function Home() {
                   <p className="text-cream font-bold text-center text-sm leading-snug line-clamp-1">
                     {currentPizza?.name}
                   </p>
-                  <div className="flex justify-center gap-0.5 mt-1 mb-1.5">
-                    {[...Array(5)].map((_, i) => (
-                      <Star
-                        key={i}
-                        size={11}
-                        className={i < Math.floor(currentPizza?.rating || 0) ? "fill-yellow-400 text-yellow-400" : "text-slate-600"}
-                      />
-                    ))}
-                  </div>
                   <p className="text-gold font-bold text-center text-sm">
                     R$ {((currentPizza as any)?.current_price ?? currentPizza?.price ?? 0).toFixed(2)}
                   </p>

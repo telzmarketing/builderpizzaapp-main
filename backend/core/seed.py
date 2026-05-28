@@ -238,7 +238,7 @@ _MODULES = [
     ("pedidos",         "Pedidos",                1),
     ("cardapio",        "Cardápio / Produtos",    2),
     ("categorias",      "Categorias",             3),
-    ("promocoes",       "Promoções e Banners",    4),
+    ("promocoes",       "Banner Delivery",        4),
     ("cupons",          "Cupons de Desconto",     5),
     ("kits",            "Kits e Combos",          6),
     ("clientes",        "Clientes / CRM",         7),

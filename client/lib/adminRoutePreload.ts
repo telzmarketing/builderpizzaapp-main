@@ -4,7 +4,6 @@ const loadedRoutes = new Set<string>();
 
 const routeLoaders: Array<[string, RouteLoader]> = [
   ["/painel/products/landing", () => import("@/pages/admin/PromotionalLandingEditor")],
-  ["/painel/marketing/campanhas", () => import("@/pages/admin/marketing/MarketingCampanhas")],
   ["/painel/marketing/visitantes", () => import("@/pages/admin/marketing/MarketingVisitantes")],
   ["/painel/marketing/links", () => import("@/pages/admin/marketing/MarketingLinks")],
   ["/painel/marketing/integracoes", () => import("@/pages/admin/marketing/MarketingIntegracoes")],

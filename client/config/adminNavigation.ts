@@ -96,7 +96,6 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     label: "Marketing",
     children: [
       { path: "/painel/marketing", icon: TrendingUp, label: "Dashboard Marketing", exact: true, permissions: ["marketing"] },
-      { path: "/painel/marketing/campanhas", icon: Sparkles, label: "Campanhas", permissions: ["campanhas"] },
       { path: "/painel/marketing/visitantes", icon: Eye, label: "Analise de Visitantes", permissions: ["marketing", "relatorios"] },
       { path: "/painel/marketing/links", icon: MousePointerClick, label: "Links Rastreaveis", permissions: ["marketing"] },
       { path: "/painel/marketing/whatsapp", icon: MessageCircle, label: "Disparador WhatsApp", permissions: ["whatsapp"] },
@@ -108,7 +107,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
       { path: "/painel/marketing/notificacoes", icon: Bell, label: "Notificacoes de Compradores", permissions: ["marketing"] },
       { path: "/painel/marketing/upsell", icon: ShoppingCart, label: "Gestao de Upsell", permissions: ["marketing"] },
       { path: "/painel/chatbot", icon: MessageCircle, label: "Chatbot", permissions: ["whatsapp", "marketing"] },
-      { path: "/painel/campanhas", icon: Sparkles, label: "Promocoes & Banners", permissions: ["promocoes", "campanhas"] },
+      { path: "/painel/campanhas", icon: Sparkles, label: "Banner Delivery", permissions: ["promocoes", "campanhas"] },
       { path: "/painel/fidelidade", icon: Trophy, label: "Fidelidade", permissions: ["clientes", "promocoes"] },
       { path: "/painel/popup-saida", icon: LogIn, label: "Popup por Tempo", permissions: ["loja_online", "marketing"] },
     ],

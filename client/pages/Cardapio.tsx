@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, Search, Star, Plus, Check } from "lucide-react";
+import { ChevronLeft, Search, Plus, Check } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { categoriesApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl, type ApiProductCategory } from "@/lib/api";
 import { sortCategoryNamesByCatalogOrder } from "@/lib/catalogOrdering";
@@ -204,10 +204,6 @@ export default function Cardapio() {
                   <h3 className="text-cream font-semibold text-sm leading-tight line-clamp-1">
                     {product.name}
                   </h3>
-                  <div className="flex items-center gap-1 mt-1">
-                    <Star size={10} className="fill-yellow-400 text-yellow-400" />
-                    <span className="text-stone text-xs">{product.rating?.toFixed(1) ?? "4.5"}</span>
-                  </div>
                   <p className="text-stone/70 text-xs mt-1 line-clamp-2 leading-tight">
                     {product.description}
                   </p>

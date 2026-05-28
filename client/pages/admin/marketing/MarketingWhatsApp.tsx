@@ -12,17 +12,20 @@ import {
   AdminPageTabs,
   type AdminPageTab,
 } from "@/components/admin/AdminPageChrome";
+import PromotionLandingsTab from "@/components/admin/PromotionLandingsTab";
+import type { ApiPromotionLandingPage } from "@/lib/api";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const unwrap = (j: any) => j?.data ?? j;
 
-type Tab = "dashboard" | "templates" | "campanhas" | "disparo" | "monitoramento" | "configuracoes";
+type Tab = "dashboard" | "templates" | "campanhas" | "promocoes_delivery" | "disparo" | "monitoramento" | "configuracoes";
 
 const TABS: AdminPageTab<Tab>[] = [
   { id: "dashboard",     label: "Dashboard",      icon: <BarChart2 size={15} /> },
   { id: "templates",     label: "Templates",       icon: <MessageSquare size={15} /> },
   { id: "campanhas",     label: "Campanhas",       icon: <Megaphone size={15} /> },
+  { id: "promocoes_delivery", label: "Promoções Loja Delivery", icon: <Megaphone size={15} /> },
   { id: "disparo",       label: "Disparo Imediato",icon: <Send size={15} /> },
   { id: "monitoramento", label: "Monitoramento",   icon: <Eye size={15} /> },
   { id: "configuracoes", label: "Configurações",   icon: <Settings size={15} /> },
@@ -215,6 +218,17 @@ export default function MarketingWhatsApp() {
     if (!confirm("Excluir campanha?")) return;
     await fetch(`${BASE}/whatsapp/campaigns/${id}`, { method: "DELETE", headers });
     fetchCampaigns();
+  };
+
+  const openCampaignFromPromotion = (landing: ApiPromotionLandingPage) => {
+    setCampForm({
+      name: landing.title || landing.promotion_name || "Campanha promocional",
+      template_id: "",
+      group_id: "",
+      scheduled_at: "",
+    });
+    setTab("campanhas");
+    setShowCampModal(true);
   };
 
   // ── Disparo imediato ──
@@ -520,6 +534,10 @@ export default function MarketingWhatsApp() {
         )}
 
         {/* ═══ DISPARO IMEDIATO ═══ */}
+        {tab === "promocoes_delivery" && (
+          <PromotionLandingsTab onCreateCampaign={openCampaignFromPromotion} />
+        )}
+
         {tab === "disparo" && (
           <div className="max-w-2xl space-y-6">
             <div className="bg-surface-02 border border-surface-03 rounded-2xl p-5">

@@ -214,6 +214,7 @@ export default function Conta() {
   // Login tab
   const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [loginErrors, setLoginErrors] = useState<{ identifier?: string; password?: string }>({});
 
   // Register tab
   const [reg, setReg] = useState({
@@ -231,6 +232,8 @@ export default function Conta() {
   // ── Add address form ─────────────────────────────────────────────────────────
   const [showAddAddr, setShowAddAddr] = useState(false);
   const [addrForm, setAddrForm] = useState({ label: "", street: "", number: "", complement: "", neighborhood: "", city: "", zip_code: "" });
+  const [addrErrors, setAddrErrors] = useState<Partial<typeof addrForm>>({});
+  const [addrError, setAddrError] = useState("");
   const [savingAddr, setSavingAddr] = useState(false);
 
   useEffect(() => {
@@ -293,7 +296,11 @@ export default function Conta() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleLogin = async () => {
-    if (!loginIdentifier.trim() || !loginPassword) return;
+    const errs: typeof loginErrors = {};
+    if (!loginIdentifier.trim()) errs.identifier = "Informe e-mail ou telefone";
+    if (!loginPassword) errs.password = "Informe a senha";
+    setLoginErrors(errs);
+    if (Object.keys(errs).length > 0) return;
     setLoading(true); setError("");
     try {
       await emailLogin(loginIdentifier.trim(), loginPassword);
@@ -349,8 +356,16 @@ export default function Conta() {
   };
 
   const handleAddAddress = async () => {
-    if (!addrForm.street.trim() || !addrForm.city.trim()) return;
+    const errs: Partial<typeof addrForm> = {};
+    if (!addrForm.street.trim()) errs.street = "Rua obrigatoria";
+    if (!addrForm.city.trim()) errs.city = "Cidade obrigatoria";
+    setAddrErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      setAddrError("Preencha os campos obrigatorios do endereco.");
+      return;
+    }
     if (!customer) return;
+    setAddrError("");
     setSavingAddr(true);
     try {
       await customersApi.addAddress(customer.id, {
@@ -360,8 +375,8 @@ export default function Conta() {
       setAddrForm({ label: "", street: "", number: "", complement: "", neighborhood: "", city: "", zip_code: "" });
       setShowAddAddr(false);
       window.location.reload();
-    } catch {
-      /* keep form open */
+    } catch (e) {
+      setAddrError(e instanceof Error ? e.message : "Erro ao salvar endereco.");
     } finally {
       setSavingAddr(false);
     }
@@ -443,7 +458,7 @@ export default function Conta() {
               {(["login", "register"] as AuthTab[]).map((t) => (
                 <button
                   key={t}
-                  onClick={() => { setTab(t); setError(""); setRegStep("form"); }}
+                  onClick={() => { setTab(t); setError(""); setLoginErrors({}); setRegStep("form"); }}
                   className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${tab === t ? "bg-gold text-cream shadow-sm" : "text-stone hover:text-parchment"}`}
                 >
                   {t === "login" ? "Entrar" : "Criar conta"}
@@ -460,16 +475,20 @@ export default function Conta() {
                 </div>
                 <Field
                   icon={Mail} label="E-mail ou Telefone" placeholder="seu@email.com ou (00) 00000-0000"
-                  value={loginIdentifier} onChange={setLoginIdentifier}
+                  value={loginIdentifier}
+                  onChange={(v) => { setLoginIdentifier(v); if (loginErrors.identifier) setLoginErrors((p) => ({ ...p, identifier: undefined })); }}
+                  error={loginErrors.identifier}
                 />
                 <Field
                   icon={Lock} label="Senha" placeholder="Digite sua senha" type="password"
-                  value={loginPassword} onChange={setLoginPassword}
+                  value={loginPassword}
+                  onChange={(v) => { setLoginPassword(v); if (loginErrors.password) setLoginErrors((p) => ({ ...p, password: undefined })); }}
+                  error={loginErrors.password}
                 />
                 {error && <p className="text-red-400 text-sm text-center">{error}</p>}
                 <button
                   onClick={handleLogin}
-                  disabled={loading || !loginIdentifier.trim() || !loginPassword}
+                  disabled={loading}
                   className="w-full py-3 rounded-full bg-gold text-cream font-bold disabled:opacity-60 hover:bg-gold/90 transition-colors"
                 >
                   {loading ? "Entrando..." : "Entrar"}
@@ -641,23 +660,48 @@ export default function Conta() {
                   <p className="text-gold text-xs font-bold uppercase tracking-wide">Novo endereço</p>
                   <Field icon={Home} label="Identificação" placeholder="Casa, Trabalho..." value={addrForm.label} onChange={(v) => setAddrForm((p) => ({ ...p, label: v }))} />
                   <Field icon={MapPin} label="CEP" placeholder="00000-000" value={addrForm.zip_code} onChange={(v) => setAddrForm((p) => ({ ...p, zip_code: v }))} />
-                  <Field icon={Home} label="Rua" placeholder="Rua das Flores" value={addrForm.street} onChange={(v) => setAddrForm((p) => ({ ...p, street: v }))} />
+                  <Field
+                    icon={Home}
+                    label="Rua"
+                    placeholder="Rua das Flores"
+                    required
+                    value={addrForm.street}
+                    onChange={(v) => {
+                      setAddrForm((p) => ({ ...p, street: v }));
+                      if (addrErrors.street) setAddrErrors((p) => ({ ...p, street: undefined }));
+                      if (addrError) setAddrError("");
+                    }}
+                    error={addrErrors.street}
+                  />
                   <div className="grid grid-cols-2 gap-2">
                     <Field icon={Hash} label="Número" placeholder="123" value={addrForm.number} onChange={(v) => setAddrForm((p) => ({ ...p, number: v }))} />
                     <Field icon={Home} label="Complemento" placeholder="Apto 4" value={addrForm.complement} onChange={(v) => setAddrForm((p) => ({ ...p, complement: v }))} />
                   </div>
                   <Field icon={MapPin} label="Bairro" placeholder="Centro" value={addrForm.neighborhood} onChange={(v) => setAddrForm((p) => ({ ...p, neighborhood: v }))} />
-                  <Field icon={MapPin} label="Cidade" placeholder="São Paulo" value={addrForm.city} onChange={(v) => setAddrForm((p) => ({ ...p, city: v }))} />
+                  <Field
+                    icon={MapPin}
+                    label="Cidade"
+                    placeholder="São Paulo"
+                    required
+                    value={addrForm.city}
+                    onChange={(v) => {
+                      setAddrForm((p) => ({ ...p, city: v }));
+                      if (addrErrors.city) setAddrErrors((p) => ({ ...p, city: undefined }));
+                      if (addrError) setAddrError("");
+                    }}
+                    error={addrErrors.city}
+                  />
+                  {addrError && <p className="text-red-400 text-xs">{addrError}</p>}
                   <div className="flex gap-2">
                     <button
-                      onClick={() => setShowAddAddr(false)}
+                      onClick={() => { setShowAddAddr(false); setAddrErrors({}); setAddrError(""); }}
                       className="flex-1 py-2.5 rounded-full border border-surface-03 text-stone text-sm"
                     >
                       Cancelar
                     </button>
                     <button
                       onClick={handleAddAddress}
-                      disabled={savingAddr || !addrForm.street.trim() || !addrForm.city.trim()}
+                      disabled={savingAddr}
                       className="flex-1 py-2.5 rounded-full bg-gold text-cream text-sm font-bold disabled:opacity-60"
                     >
                       {savingAddr ? "Salvando..." : "Salvar"}

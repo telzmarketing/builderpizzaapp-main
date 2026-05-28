@@ -435,6 +435,7 @@ export default function Checkout() {
   const handleChange = (field: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) setErrors((prev) => ({ ...prev, [field]: undefined }));
+    if (apiError) setApiError("");
   };
 
   const validate = () => {
@@ -517,6 +518,7 @@ export default function Checkout() {
     const newErrors = validate();
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
+      setApiError("Revise os campos destacados antes de finalizar o pedido.");
       return;
     }
 
@@ -1320,7 +1322,9 @@ function Field({
 }) {
   return (
     <div>
-      <div className="flex items-center gap-3 bg-surface-02 rounded-xl px-4 py-3 border border-surface-03 focus-within:border-gold transition-colors">
+      <div className={`flex items-center gap-3 bg-surface-02 rounded-xl px-4 py-3 border transition-colors ${
+        error ? "border-red-500/70" : "border-surface-03 focus-within:border-gold"
+      }`}>
         <Icon size={18} className="text-stone flex-shrink-0" />
         <input
           type="text"

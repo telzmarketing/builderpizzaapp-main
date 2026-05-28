@@ -21,6 +21,7 @@ import {
   RefreshCcw,
   Save,
   Settings,
+  Tag,
   Trash2,
   Video,
   XCircle,
@@ -28,6 +29,7 @@ import {
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
+import PromotionLandingsTab from "@/components/admin/PromotionLandingsTab";
 import {
   couponsApi,
   paidTrafficApi,
@@ -37,6 +39,7 @@ import {
   type AdIntegration,
   type AdsPixel,
   type ApiCoupon,
+  type ApiPromotionLandingPage,
   type ApiProduct,
   type CampaignCreative,
   type CampaignLink,
@@ -47,7 +50,7 @@ import {
 } from "@/lib/api";
 import { prepareMediaFileForUpload } from "@/lib/mediaCompression";
 
-type Tab = "dashboard" | "campanhas" | "links" | "relatorios" | "integracoes" | "pixels" | "configuracoes";
+type Tab = "dashboard" | "campanhas" | "promocoes_delivery" | "links" | "relatorios" | "integracoes" | "pixels" | "configuracoes";
 
 type CampaignForm = {
   name: string;
@@ -89,6 +92,7 @@ function normalizeGeneratedLinkUrl(url: string): string {
 const tabs: Array<{ id: Tab; label: string; icon: typeof BarChart3 }> = [
   { id: "dashboard", label: "Dashboard", icon: BarChart3 },
   { id: "campanhas", label: "Campanhas", icon: Megaphone },
+  { id: "promocoes_delivery", label: "Promocoes Loja Delivery", icon: Tag },
   { id: "links", label: "Links", icon: Link2 },
   { id: "relatorios", label: "Relatorios", icon: LineChart },
   { id: "integracoes", label: "Meta/CAPI", icon: PlugZap },
@@ -407,6 +411,22 @@ export default function AdminPaidTraffic() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const openCampaignFromPromotion = (landing: ApiPromotionLandingPage) => {
+    setEditingId(null);
+    setCampaignForm({
+      ...initialCampaignForm,
+      name: landing.title || landing.promotion_name || "Campanha promocional",
+      product_id: landing.product_id,
+      destination_url: normalizeGeneratedLinkUrl(landing.public_url),
+      notes: [
+        landing.promotion_name ? `Promocao: ${landing.promotion_name}` : null,
+        landing.product_name ? `Produto: ${landing.product_name}` : null,
+        `Landing: ${normalizeGeneratedLinkUrl(landing.public_url)}`,
+      ].filter(Boolean).join("\n"),
+    });
+    setActiveTab("campanhas");
   };
 
   const editCampaign = (campaign: TrafficCampaign) => {
@@ -1017,6 +1037,10 @@ export default function AdminPaidTraffic() {
                     </div>
                   </Panel>
                 </div>
+              )}
+
+              {activeTab === "promocoes_delivery" && (
+                <PromotionLandingsTab onCreateCampaign={openCampaignFromPromotion} />
               )}
 
               {activeTab === "links" && (

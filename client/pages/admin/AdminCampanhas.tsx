@@ -7,10 +7,12 @@ import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import ImageUpload from "@/components/admin/ImageUpload";
 import MediaUpload from "@/components/admin/MediaUpload";
+import PromotionLandingsTab from "@/components/admin/PromotionLandingsTab";
 import {
   campaignsApi, productsApi, couponsApi, marketingAutomationsApi,
   isAssetUrl, resolveAssetUrl,
   type ApiCampaign, type ApiCampaignProduct, type ApiPromotionalKit,
+  type ApiPromotionLandingPage,
   type ApiProduct, type ApiCoupon, type ApiCouponUsage, type ApiMarketingAutomation,
   type CampaignStatus, type CampaignType, type CpDiscountType, type KitType,
 } from "@/lib/api";
@@ -79,7 +81,7 @@ function automationLabel(a: ApiMarketingAutomation) {
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 
-type Tab = "cupons" | "campanhas" | "kits" | "uso_cupons";
+type Tab = "cupons" | "campanhas" | "promocoes_delivery" | "kits" | "uso_cupons";
 
 // ── Forms ──────────────────────────────────────────────────────────────────────
 
@@ -558,13 +560,37 @@ export default function AdminCampanhas() {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
+  const openBannerCampaignFromPromotion = (landing: ApiPromotionLandingPage) => {
+    const nextForm: CampaignForm = {
+      ...emptyCampaignForm,
+      name: landing.title || landing.promotion_name || "Banner promocional",
+      description: landing.description || "",
+      banner: landing.image_url || "",
+      slug: landing.slug || "",
+      campaign_type: "products_promo",
+      display_title: landing.badge_text || landing.promotion_name || landing.title,
+      display_subtitle: landing.subtitle || landing.product_name || "",
+      media_type: landing.video_url && !landing.image_url ? "video" : "image",
+      video_url: landing.video_url || "",
+      product_id: landing.product_id,
+      published: false,
+      status: "draft",
+    };
+    setEditingCampaignId(null);
+    setCampaignForm(nextForm);
+    setInitialCampaignForm(nextForm);
+    setShowCampaignModal(true);
+    setActiveTab("campanhas");
+  };
+
   const getProductName = (id: string) => products.find((p) => p.id === id)?.name ?? id;
   const getCouponCode = (id: string) => couponsList.find((c) => c.id === id)?.code ?? id;
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const tabs: { key: Tab; icon: React.ReactNode; label: string }[] = [
-    { key: "campanhas", icon: <Sparkles size={14} />, label: "Campanhas" },
+    { key: "campanhas", icon: <Sparkles size={14} />, label: "Banners" },
+    { key: "promocoes_delivery", icon: <Tag size={14} />, label: "Promocoes Loja Delivery" },
     { key: "kits", icon: <Package size={14} />, label: "Kits Promocionais" },
   ];
 
@@ -583,8 +609,8 @@ export default function AdminCampanhas() {
           {/* Header */}
           <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 sticky top-0 z-20 flex items-center justify-between">
             <div className="grid grid-cols-2 gap-4">
-              <h2 className="text-2xl font-bold text-cream">Campanhas</h2>
-              <p className="text-stone text-sm">{campaigns.length} campanhas · {kits.length} kits</p>
+              <h2 className="text-2xl font-bold text-cream">Banner Delivery</h2>
+              <p className="text-stone text-sm">{campaigns.length} banners · {kits.length} kits</p>
             </div>
             <AdminTopActions />
           </div>
@@ -695,7 +721,7 @@ export default function AdminCampanhas() {
                         className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors text-sm"
                       >
                         <Plus size={16} />
-                        Nova Campanha
+                        Novo Banner
                       </button>
                     </div>
 
@@ -794,9 +820,9 @@ export default function AdminCampanhas() {
                     {campaigns.length === 0 && (
                       <div className="text-center py-16">
                         <Sparkles size={48} className="text-slate-600 mx-auto mb-4" />
-                        <p className="text-stone text-lg">Nenhuma campanha criada</p>
+                        <p className="text-stone text-lg">Nenhum banner criado</p>
                         <button onClick={openCreateCampaign} className="mt-4 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-6 rounded-lg text-sm transition-colors inline-flex items-center gap-2">
-                          <Plus size={16} /> Criar Primeira Campanha
+                          <Plus size={16} /> Criar Primeiro Banner
                         </button>
                       </div>
                     )}
@@ -805,6 +831,10 @@ export default function AdminCampanhas() {
                 )}
 
                 {/* ── TAB: KITS ──────────────────────────────────────────────── */}
+                {activeTab === "promocoes_delivery" && (
+                  <PromotionLandingsTab onCreateCampaign={openBannerCampaignFromPromotion} />
+                )}
+
                 {activeTab === "kits" && (
                   <>
                     <div className="flex justify-end mb-6">

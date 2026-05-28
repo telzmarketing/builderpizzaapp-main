@@ -1264,7 +1264,6 @@ export default function AdminProducts() {
         (product as any).product_type,
         productTypeLabel((product as any).product_type),
         product.price,
-        product.rating,
       )
     )
     .sort((a, b) => {
@@ -1523,10 +1522,6 @@ export default function AdminProducts() {
                             <span className="rounded-full border border-gold/30 bg-gold/10 px-2 py-0.5 text-[11px] font-bold text-gold">Salao</span>
                           )}
                         </div>
-                        <div className="flex justify-end items-center mb-4">
-                          <span className="text-stone text-sm">⭐ {product.rating}</span>
-                        </div>
-
                         <div className="flex gap-2 mb-2">
                           <button onClick={() => handleEdit(product)} className="flex-1 flex items-center justify-center gap-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 font-medium py-2 px-3 rounded-lg transition-colors">
                             <Edit2 size={16} />
@@ -2231,7 +2226,7 @@ export default function AdminProducts() {
                     )}
                   </select>
                 </div>
-                <div className="grid grid-cols-2 gap-4 items-start">
+                <div>
                   <ImageUpload
                     value={formData.icon || ""}
                     onChange={(v) => setFormData({ ...formData, icon: v })}
@@ -2240,10 +2235,6 @@ export default function AdminProducts() {
                     hint="Faça upload de imagem quadrada no tamanho real do card ou use um emoji."
                     maxKB={2048}
                   />
-                  <div>
-                    <label className="block text-parchment text-sm font-medium mb-2">Avaliação (1–5)</label>
-                    <input type="number" value={formData.rating || ""} onChange={(e) => setFormData({ ...formData, rating: parseFloat(e.target.value) })} className={cls} placeholder="4.5" min="1" max="5" step="0.1" />
-                  </div>
                 </div>
                 <div>
                   <label className="block text-parchment text-sm font-medium mb-2">Selo "Mais Pedida"</label>
