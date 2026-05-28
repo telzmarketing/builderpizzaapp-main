@@ -11,6 +11,78 @@ const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
 const StoreSocialProofNotification = lazy(() => import("./components/StoreSocialProofNotification"));
 const CapacitorMotoboyEntry = lazy(() => import("./components/CapacitorMotoboyEntry"));
 
+const CHUNK_RECOVERY_RELOAD_KEY = "mo_chunk_recovery_reloaded_at";
+const CHUNK_RECOVERY_COOLDOWN_MS = 60_000;
+const CHUNK_ERROR_PATTERNS = [
+  "failed to fetch dynamically imported module",
+  "importing a module script failed",
+  "failed to load module script",
+  "expected a javascript-or-wasm module script",
+  "error loading dynamically imported module",
+  "load failed for module",
+];
+
+function getErrorMessage(reason: unknown): string {
+  if (typeof reason === "string") return reason;
+  if (reason instanceof Error) return reason.message;
+  if (reason && typeof reason === "object" && "message" in reason) {
+    return String((reason as { message?: unknown }).message || "");
+  }
+  return "";
+}
+
+function shouldRecoverFromChunkError(reason: unknown) {
+  const message = getErrorMessage(reason).toLowerCase();
+  return CHUNK_ERROR_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+function recoverFromChunkError() {
+  const lastReload = Number(sessionStorage.getItem(CHUNK_RECOVERY_RELOAD_KEY) || 0);
+  if (Date.now() - lastReload < CHUNK_RECOVERY_COOLDOWN_MS) return;
+
+  sessionStorage.setItem(CHUNK_RECOVERY_RELOAD_KEY, String(Date.now()));
+  window.location.reload();
+}
+
+function ChunkRecovery() {
+  useEffect(() => {
+    const clearRecoveryFlag = window.setTimeout(() => {
+      sessionStorage.removeItem(CHUNK_RECOVERY_RELOAD_KEY);
+    }, CHUNK_RECOVERY_COOLDOWN_MS);
+
+    const onVitePreloadError = (event: Event) => {
+      event.preventDefault();
+      recoverFromChunkError();
+    };
+
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (!shouldRecoverFromChunkError(event.reason)) return;
+      event.preventDefault();
+      recoverFromChunkError();
+    };
+
+    const onError = (event: ErrorEvent) => {
+      const target = event.target;
+      const scriptSrc = target instanceof HTMLScriptElement ? target.src : "";
+      if (!scriptSrc.includes("/assets/") && !shouldRecoverFromChunkError(event.message || event.error)) return;
+      recoverFromChunkError();
+    };
+
+    window.addEventListener("vite:preloadError", onVitePreloadError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+    window.addEventListener("error", onError, true);
+
+    return () => {
+      window.clearTimeout(clearRecoveryFlag);
+      window.removeEventListener("vite:preloadError", onVitePreloadError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+      window.removeEventListener("error", onError, true);
+    };
+  }, []);
+
+  return null;
+}
+
 function useDeferredClientMount(delay = 1200) {
   const [ready, setReady] = useState(false);
 
@@ -298,6 +370,7 @@ export default function App() {
 
   return (
     <AppProvider>
+        <ChunkRecovery />
         <DocumentHead />
         <ThemeInjector />
           <Toaster />

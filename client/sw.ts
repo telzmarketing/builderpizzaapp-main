@@ -10,11 +10,19 @@ declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<{ url: string; revision?: string | null }>;
 };
 
+const LEGACY_RUNTIME_CACHES = ["motoboy-static-v1", "motoboy-runtime-v1"];
+const RUNTIME_STATIC_CACHE = "motoboy-static-v2";
+const RUNTIME_MEDIA_CACHE = "motoboy-media-v2";
+
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 
 self.skipWaiting();
 clientsClaim();
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(Promise.all(LEGACY_RUNTIME_CACHES.map((cacheName) => caches.delete(cacheName))));
+});
 
 registerRoute(
   new NavigationRoute(createHandlerBoundToURL("/index.html"), {
@@ -26,9 +34,9 @@ registerRoute(
   ({ request, url }) =>
     request.method === "GET" &&
     url.origin === self.location.origin &&
-    (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/icons/")),
+    url.pathname.startsWith("/icons/"),
   new CacheFirst({
-    cacheName: "motoboy-static-v1",
+    cacheName: RUNTIME_STATIC_CACHE,
     plugins: [
       new ExpirationPlugin({
         maxEntries: 80,
@@ -41,9 +49,9 @@ registerRoute(
 registerRoute(
   ({ request }) =>
     request.method === "GET" &&
-    ["font", "image", "script", "style"].includes(request.destination),
+    ["font", "image"].includes(request.destination),
   new StaleWhileRevalidate({
-    cacheName: "motoboy-runtime-v1",
+    cacheName: RUNTIME_MEDIA_CACHE,
     plugins: [
       new ExpirationPlugin({
         maxEntries: 60,
