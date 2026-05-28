@@ -665,13 +665,13 @@ export default function Product() {
             aria-label="Ampliar imagem do produto"
           >
             <CategorySeal product={product} className="left-2 top-3" />
-            <span className="absolute inset-0 rounded-full overflow-hidden flex items-center justify-center">
+            <span className="absolute inset-0 z-0 rounded-full overflow-visible flex items-center justify-center">
               {isAssetUrl(product.icon)
                 ? (
                   <img
                     src={resolveOptimizedAssetUrl(product.icon, 416)}
                     alt={product.name}
-                    className="w-full h-full object-cover product-image-pulse-spin"
+                    className="w-full h-full object-contain product-image-pulse-spin"
                     width={208}
                     height={208}
                     loading="eager"
@@ -683,7 +683,7 @@ export default function Product() {
                   <span>{product.icon || "🍕"}</span>
                 )}
             </span>
-            <span className="absolute bottom-4 right-4 h-9 w-9 rounded-full bg-surface-00/95 border border-surface-03 flex items-center justify-center text-gold shadow-lg">
+            <span className="absolute bottom-4 right-4 z-30 h-9 w-9 rounded-full bg-surface-00/95 border border-surface-03 flex items-center justify-center text-gold shadow-lg">
               <ZoomIn size={17} />
             </span>
             <BestSellerSeal show={(product as any).show_best_seller_badge} />
