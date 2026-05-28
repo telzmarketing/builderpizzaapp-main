@@ -89,6 +89,36 @@ function normalizeGeneratedLinkUrl(url: string): string {
   return value.startsWith("/") ? `${storefrontOrigin()}${value}` : `${storefrontOrigin()}/${value}`;
 }
 
+function isStorefrontHomeUrl(url: string | null | undefined): boolean {
+  if (!url) return true;
+  try {
+    const parsed = new URL(normalizeGeneratedLinkUrl(url));
+    return parsed.origin === storefrontOrigin() && parsed.pathname.replace(/\/+$/, "") === "" && !parsed.search;
+  } catch {
+    return false;
+  }
+}
+
+function trackedLinkUrl(link: CampaignLink, campaign?: TrafficCampaign): string {
+  const destination =
+    isStorefrontHomeUrl(link.destination_url) && campaign?.destination_url
+      ? campaign.destination_url
+      : link.destination_url || link.final_url;
+  const parsed = new URL(normalizeGeneratedLinkUrl(destination));
+  const params = {
+    utm_source: link.utm_source,
+    utm_medium: link.utm_medium,
+    utm_campaign: link.utm_campaign,
+    utm_content: link.utm_content,
+    utm_term: link.utm_term,
+    campaign_id: link.campaign_id,
+  };
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) parsed.searchParams.set(key, value);
+  });
+  return parsed.toString();
+}
+
 const tabs: Array<{ id: Tab; label: string; icon: typeof BarChart3 }> = [
   { id: "dashboard", label: "Dashboard", icon: BarChart3 },
   { id: "campanhas", label: "Campanhas", icon: Megaphone },
@@ -455,7 +485,6 @@ export default function AdminPaidTraffic() {
       const created = await paidTrafficApi.createLink({
         campaign_id: linkCampaignId,
         name: linkName || undefined,
-        destination_url: storefrontOrigin(),
       });
       setLinks((prev) => [created, ...prev]);
       setLinkName("");
@@ -1060,7 +1089,7 @@ export default function AdminPaidTraffic() {
                   <Panel title="Links gerados">
                     <div className="space-y-3">
                       {links.map((link) => {
-                        const finalUrl = normalizeGeneratedLinkUrl(link.final_url);
+                        const finalUrl = trackedLinkUrl(link, campaignById.get(link.campaign_id));
                         return (
                           <div key={link.id} className="rounded-2xl border border-surface-03 bg-surface-03/40 p-4">
                             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
