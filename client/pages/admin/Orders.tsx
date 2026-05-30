@@ -941,7 +941,7 @@ function OrderCard({
         <p className="mb-1 text-[11px] font-bold text-parchment">Itens</p>
         <div className="space-y-0.5">
           {itemSummary.map((item, i) => (
-            <p key={i} className="line-clamp-1 text-[11px] text-stone">{item}</p>
+            <p key={i} className="break-words text-[11px] leading-snug text-stone">{item}</p>
           ))}
           {remaining > 0 && <p className="text-[11px] font-semibold text-gold">+ {remaining} item(ns)</p>}
         </div>
@@ -1098,7 +1098,7 @@ function OrderCard({
       </div>
 
       {printMenuOpen && (
-        <div className="mt-2 grid grid-cols-1 gap-1.5 rounded-lg border border-surface-03 bg-surface-02 p-1.5 2xl:grid-cols-3">
+        <div className="mt-2 grid grid-cols-1 gap-1.5 rounded-lg border border-surface-03 bg-surface-02 p-1.5">
           {(
             [
               { tpl: "completo" as PrintTemplate, label: "Completo" },
@@ -1109,10 +1109,10 @@ function OrderCard({
             <button
               key={tpl}
               onClick={() => { onPrint(tpl); setPrintMenuOpen(false); }}
-              className="flex items-center justify-center gap-1 rounded-lg border border-surface-03 bg-surface-03/50 px-1.5 py-1.5 text-[10px] font-bold text-parchment transition-colors hover:border-gold/40 hover:text-gold"
+              className="flex items-center justify-start gap-1.5 rounded-lg border border-surface-03 bg-surface-03/50 px-2 py-1.5 text-[10px] font-bold text-parchment transition-colors hover:border-gold/40 hover:text-gold"
             >
               <Printer size={12} className="shrink-0 text-stone" />
-              {label}
+              <span className="whitespace-nowrap">{label}</span>
             </button>
           ))}
         </div>

@@ -145,14 +145,14 @@ export default function TopNavigation({
           <Menu size={20} />
         </button>
 
-        <Link to="/painel" className="flex h-[52px] w-[8.5rem] shrink-0 items-center sm:w-[9.75rem]" aria-label="Ir para o dashboard">
-          <span className="flex h-full w-full items-center justify-center">
+        <Link to="/painel" className="flex h-10 w-[5.75rem] shrink-0 items-center sm:w-[6.75rem] lg:h-11 xl:w-[7.5rem]" aria-label="Ir para o dashboard">
+          <span className="flex h-full w-full items-center justify-start sm:justify-center">
             {isAssetUrl(logo) ? (
-              <img src={resolveAssetUrl(logo)} alt="" className="h-full w-full object-contain" />
+              <img src={resolveAssetUrl(logo)} alt="" className="max-h-8 w-full object-contain sm:max-h-9 lg:max-h-10" />
             ) : logo ? (
-              <span className="text-3xl leading-none">{logo}</span>
+              <span className="truncate text-xl leading-none sm:text-2xl">{logo}</span>
             ) : (
-              <MoschettieriLogo className="w-full text-[1.4rem] leading-none text-gold" />
+              <MoschettieriLogo className="w-full text-[0.9rem] leading-none text-gold sm:text-[1rem] lg:text-[1.1rem]" />
             )}
           </span>
         </Link>
