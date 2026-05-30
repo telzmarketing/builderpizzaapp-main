@@ -652,8 +652,8 @@ export default function AdminOrders() {
                 <p className="text-stone text-sm mt-2">Os pedidos de {selectedDateLabel} aparecem aqui automaticamente.</p>
               </div>
             ) : (
-              <div className="w-full min-w-0 flex-1 overflow-x-auto overflow-y-hidden px-4 pb-4 pt-4 md:px-6 md:pb-6">
-                <div className="flex h-full gap-4 min-w-max">
+              <div className="w-full min-w-0 flex-1 overflow-y-auto px-3 pb-4 pt-3 md:px-4 md:pb-4">
+                <div className="grid min-h-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 xl:gap-2">
                   {KANBAN_COLUMNS.map((column) => {
                     const Icon = column.icon;
                     const columnOrders = groupedOrders.get(column.id) ?? [];
@@ -661,7 +661,7 @@ export default function AdminOrders() {
                     return (
                       <section
                         key={column.id}
-                        className={`flex h-full w-[300px] flex-col rounded-2xl border transition-colors ${
+                        className={`flex min-h-[18rem] min-w-0 flex-col rounded-xl border transition-colors xl:h-full ${
                           isDragOver
                             ? "border-gold bg-gold/5"
                             : "border-surface-03 bg-surface-02"
@@ -675,27 +675,27 @@ export default function AdminOrders() {
                         onDrop={() => handleDrop(column)}
                       >
                         {/* Column header */}
-                        <header className="border-b border-surface-03 p-4">
-                          <div className="flex items-start justify-between gap-3">
+                        <header className="border-b border-surface-03 p-3 xl:p-2.5">
+                          <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border ${column.accent}`}>
-                                  <Icon size={16} />
+                              <div className="flex items-center gap-1.5">
+                                <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${column.accent}`}>
+                                  <Icon size={14} />
                                 </span>
-                                <h2 className="text-cream text-sm font-black truncate">{column.title}</h2>
+                                <h2 className="truncate text-xs font-black text-cream" title={column.title}>{column.title}</h2>
                               </div>
-                              <p className="text-stone text-xs mt-2 leading-snug">{column.description}</p>
+                              <p className="mt-1.5 hidden text-[11px] leading-snug text-stone 2xl:block">{column.description}</p>
                             </div>
-                            <span className="rounded-full bg-surface-03 px-2.5 py-1 text-xs font-bold text-parchment flex-shrink-0">
+                            <span className="shrink-0 rounded-full bg-surface-03 px-2 py-1 text-[10px] font-bold text-parchment">
                               {columnOrders.length}
                             </span>
                           </div>
                         </header>
 
                         {/* Cards */}
-                        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                        <div className="flex-1 space-y-2 overflow-y-auto p-2">
                           {columnOrders.length === 0 ? (
-                            <div className={`rounded-xl border border-dashed p-6 text-center text-xs text-stone transition-colors ${isDragOver ? "border-gold/50 bg-gold/5 text-gold" : "border-surface-03"}`}>
+                            <div className={`rounded-lg border border-dashed p-4 text-center text-[11px] text-stone transition-colors ${isDragOver ? "border-gold/50 bg-gold/5 text-gold" : "border-surface-03"}`}>
                               {isDragOver ? "Soltar aqui" : "Sem pedidos"}
                             </div>
                           ) : (
@@ -912,24 +912,24 @@ function OrderCard({
       draggable={!isWaitingPayment}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className={`rounded-2xl border border-surface-03 bg-surface-03/45 p-4 shadow-sm select-none transition-opacity cursor-grab active:cursor-grabbing ${updating ? "opacity-50 pointer-events-none" : ""}`}
+      className={`cursor-grab select-none rounded-xl border border-surface-03 bg-surface-03/45 p-3 shadow-sm transition-opacity active:cursor-grabbing xl:p-2.5 ${updating ? "opacity-50 pointer-events-none" : ""}`}
     >
       {/* Top row: ID + status badge */}
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="text-cream font-mono text-sm font-black">#{order.id.slice(0, 8).toUpperCase()}</h3>
-          <p className="text-stone text-xs mt-1">{formatDateTime(order.created_at)} · {orderTimeLabel(order)}</p>
+          <h3 className="font-mono text-xs font-black text-cream">#{order.id.slice(0, 8).toUpperCase()}</h3>
+          <p className="mt-1 text-[10px] text-stone">{formatDateTime(order.created_at)} · {orderTimeLabel(order)}</p>
         </div>
-        <span className={`rounded-full px-2 py-1 text-[10px] font-bold whitespace-nowrap flex-shrink-0 ${statusColor(order.status)}`}>
+        <span className={`max-w-full shrink-0 truncate rounded-full px-1.5 py-1 text-[9px] font-bold ${statusColor(order.status)}`}>
           {STATUS_LABELS[order.status] ?? order.status}
         </span>
       </div>
 
       {/* Customer */}
-      <div className="mt-3">
-        <p className="text-cream text-sm font-bold truncate">{order.delivery_name}</p>
-        <p className="text-stone text-xs mt-0.5 truncate">{order.delivery_phone}</p>
-        <p className="text-stone/80 text-xs mt-0.5 line-clamp-2">
+      <div className="mt-2">
+        <p className="truncate text-xs font-bold text-cream">{order.delivery_name}</p>
+        <p className="mt-0.5 truncate text-[11px] text-stone">{order.delivery_phone}</p>
+        <p className="mt-0.5 line-clamp-2 text-[11px] text-stone/80">
           {order.delivery_street}
           {order.delivery_complement ? ` — ${order.delivery_complement}` : ""}
           {`, ${order.delivery_city}`}
@@ -937,36 +937,36 @@ function OrderCard({
       </div>
 
       {/* Items */}
-      <div className="mt-3 rounded-xl bg-surface-02/80 p-3">
-        <p className="text-parchment text-xs font-bold mb-1.5">Itens</p>
+      <div className="mt-2 rounded-lg bg-surface-02/80 p-2">
+        <p className="mb-1 text-[11px] font-bold text-parchment">Itens</p>
         <div className="space-y-0.5">
           {itemSummary.map((item, i) => (
-            <p key={i} className="text-stone text-xs line-clamp-1">{item}</p>
+            <p key={i} className="line-clamp-1 text-[11px] text-stone">{item}</p>
           ))}
-          {remaining > 0 && <p className="text-gold text-xs font-semibold">+ {remaining} item(ns)</p>}
+          {remaining > 0 && <p className="text-[11px] font-semibold text-gold">+ {remaining} item(ns)</p>}
         </div>
       </div>
 
       {/* Total */}
-      <div className="mt-3 flex items-center justify-between border-t border-surface-03 pt-3">
+      <div className="mt-2 flex items-center justify-between border-t border-surface-03 pt-2">
         <div>
-          <p className="text-stone text-[10px] uppercase tracking-widest">Total</p>
-          <p className="text-gold text-base font-black">{formatCurrency(order.total)}</p>
+          <p className="text-[9px] uppercase tracking-widest text-stone">Total</p>
+          <p className="text-sm font-black text-gold">{formatCurrency(order.total)}</p>
         </div>
         <div className="text-right">
-          <p className="text-stone text-[10px] uppercase tracking-widest">Entrega</p>
-          <p className="text-parchment text-xs font-semibold">{order.estimated_time} min</p>
+          <p className="text-[9px] uppercase tracking-widest text-stone">Entrega</p>
+          <p className="text-[11px] font-semibold text-parchment">{order.estimated_time} min</p>
         </div>
       </div>
 
       {paymentInfo && (
-        <div className="mt-3 rounded-xl border border-gold/25 bg-gold/10 px-3 py-2">
-          <p className="text-xs font-bold text-gold">{paymentInfo}</p>
+        <div className="mt-2 rounded-lg border border-gold/25 bg-gold/10 px-2 py-1.5">
+          <p className="text-[11px] font-bold text-gold">{paymentInfo}</p>
         </div>
       )}
 
       {payOnDeliveryPaymentProblem && (
-        <div className="mt-3 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2">
+        <div className="mt-2 rounded-lg border border-red-500/40 bg-red-500/10 px-2 py-1.5">
           <p className="text-[10px] font-bold uppercase tracking-widest text-red-300">Problema no pagamento na entrega</p>
           <p className="mt-1 text-xs font-semibold text-red-100">
             Este pedido nao entra na receita efetivada enquanto o pagamento nao for confirmado.
@@ -979,7 +979,7 @@ function OrderCard({
 
       {/* Quem cancelou — aparece apenas em pedidos cancelados */}
       {order.status === "cancelled" && order.cancelled_by && (
-        <div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2">
+        <div className="mt-2 rounded-lg border border-red-500/20 bg-red-500/10 px-2 py-1.5">
           <p className="text-[10px] font-bold uppercase tracking-widest text-red-300 mb-1">Cancelamento</p>
           <p className="text-xs text-red-200 font-semibold">
             {order.cancelled_by === "customer" && "Cancelado pelo cliente"}
@@ -1006,8 +1006,8 @@ function OrderCard({
       )}
 
       {order.delivery && (
-        <div className="mt-3 rounded-xl border border-blue-500/20 bg-blue-500/10 p-3">
-          <div className="flex items-start justify-between gap-3">
+        <div className="mt-2 rounded-lg border border-blue-500/20 bg-blue-500/10 p-2">
+          <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-widest text-blue-200">Motoboy</p>
               <p className="mt-1 truncate text-sm font-black text-cream">
@@ -1025,7 +1025,7 @@ function OrderCard({
       )}
 
       {unresolvedDeliveryProblem && (
-        <div className="mt-3 rounded-xl border border-red-500/40 bg-red-500/10 p-3">
+        <div className="mt-2 rounded-lg border border-red-500/40 bg-red-500/10 p-2">
           <div className="flex items-start gap-2">
             <AlertTriangle size={15} className="mt-0.5 shrink-0 text-red-300" />
             <div className="min-w-0">
@@ -1044,13 +1044,13 @@ function OrderCard({
       )}
 
       {/* Action buttons */}
-      <div className="mt-3 flex gap-2">
+      <div className="mt-2 flex flex-wrap gap-1.5">
         {/* Assign motoboy — for ready_for_pickup orders */}
         {isReadyForPickup && !order.delivery && (
           <button
             onClick={onAssignMotoboy}
             disabled={updating}
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs font-bold py-2 px-3 transition-colors disabled:opacity-50"
+            className="flex min-w-[6.5rem] flex-1 items-center justify-center gap-1 rounded-lg bg-blue-500/15 px-2 py-2 text-[11px] font-bold text-blue-300 transition-colors hover:bg-blue-500/25 disabled:opacity-50"
           >
             <Truck size={13} />
             Atribuir Motoboy
@@ -1062,7 +1062,7 @@ function OrderCard({
           <button
             onClick={onAdvance}
             disabled={updating}
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-gold/15 hover:bg-gold/25 text-gold text-xs font-bold py-2 px-3 transition-colors disabled:opacity-50"
+            className="flex min-w-[6.5rem] flex-1 items-center justify-center gap-1 rounded-lg bg-gold/15 px-2 py-2 text-[11px] font-bold text-gold transition-colors hover:bg-gold/25 disabled:opacity-50"
           >
             {updating ? (
               <Loader2 size={12} className="animate-spin" />
@@ -1089,16 +1089,16 @@ function OrderCard({
             onClick={onRequestDelete}
             disabled={updating}
             title="Excluir pedido"
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+            aria-label="Excluir pedido"
+            className="flex items-center justify-center rounded-lg border border-red-500/25 bg-red-500/10 p-2 text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50"
           >
             <Trash2 size={13} />
-            Excluir
           </button>
         )}
       </div>
 
       {printMenuOpen && (
-        <div className="mt-2 grid grid-cols-3 gap-2 rounded-xl border border-surface-03 bg-surface-02 p-2">
+        <div className="mt-2 grid grid-cols-1 gap-1.5 rounded-lg border border-surface-03 bg-surface-02 p-1.5 2xl:grid-cols-3">
           {(
             [
               { tpl: "completo" as PrintTemplate, label: "Completo" },
@@ -1109,7 +1109,7 @@ function OrderCard({
             <button
               key={tpl}
               onClick={() => { onPrint(tpl); setPrintMenuOpen(false); }}
-              className="flex items-center justify-center gap-1 rounded-lg border border-surface-03 bg-surface-03/50 px-2 py-2 text-[11px] font-bold text-parchment transition-colors hover:border-gold/40 hover:text-gold"
+              className="flex items-center justify-center gap-1 rounded-lg border border-surface-03 bg-surface-03/50 px-1.5 py-1.5 text-[10px] font-bold text-parchment transition-colors hover:border-gold/40 hover:text-gold"
             >
               <Printer size={12} className="shrink-0 text-stone" />
               {label}

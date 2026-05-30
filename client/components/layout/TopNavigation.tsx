@@ -6,7 +6,7 @@ import AdminTopActions from "@/components/admin/AdminTopActions";
 import { useApp } from "@/context/AppContext";
 import { filterAdminNavigation, findAdminNavigationGroup } from "@/lib/adminAccess";
 import { preloadAdminRoute } from "@/lib/adminRoutePreload";
-import type { ApiEffectivePermissions } from "@/lib/api";
+import { isAssetUrl, resolveAssetUrl, type ApiEffectivePermissions } from "@/lib/api";
 import type { AdminNavigationGroup, AdminNavigationItem } from "@/config/adminNavigation";
 
 const LAST_MODULE_PATH_PREFIX = "admin:last-module-path:";
@@ -145,21 +145,15 @@ export default function TopNavigation({
           <Menu size={20} />
         </button>
 
-        <Link to="/painel" className="flex min-w-0 shrink-0 items-center gap-2.5" aria-label="Ir para o dashboard">
-          <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-gold/25 bg-gold/10">
-            {logo && (logo.startsWith("http") || logo.startsWith("data:")) ? (
-              <img src={logo} alt="" className="h-8 w-8 object-contain" />
+        <Link to="/painel" className="flex h-12 min-w-0 max-w-[9rem] shrink-0 items-center" aria-label="Ir para o dashboard">
+          <span className="flex h-full min-w-0 items-center justify-center">
+            {isAssetUrl(logo) ? (
+              <img src={resolveAssetUrl(logo)} alt="" className="max-h-12 w-auto max-w-full object-contain" />
             ) : logo ? (
-              <span className="text-xl leading-none">{logo}</span>
+              <span className="text-3xl leading-none">{logo}</span>
             ) : (
-              <MoschettieriLogo className="text-gold text-[0.72rem] leading-none" />
+              <MoschettieriLogo className="text-gold text-xl leading-none" />
             )}
-          </span>
-          <span className="hidden min-w-0 sm:block">
-            <span className="block truncate text-sm font-black text-cream">
-              {siteContent.brand.name || "Moschettieri"}
-            </span>
-            <span className="block text-[10px] uppercase tracking-[0.18em] text-stone">Painel Admin</span>
           </span>
         </Link>
 
@@ -175,9 +169,9 @@ export default function TopNavigation({
                 onMouseEnter={() => preloadAdminRoute(target)}
                 onFocus={() => preloadAdminRoute(target)}
                 onClick={() => handleModuleClick(group)}
-                className={`flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-bold transition-colors ${
+                className={`flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-bold outline-none transition-colors ${
                   active
-                    ? "bg-gold/15 text-gold ring-1 ring-gold/30"
+                    ? "bg-surface-03 text-cream"
                     : "text-stone hover:bg-surface-03 hover:text-cream"
                 }`}
               >
