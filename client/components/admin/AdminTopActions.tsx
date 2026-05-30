@@ -111,7 +111,7 @@ function saveDismissedNotificationIds(ids: string[]) {
   localStorage.setItem(DISMISSED_NOTIFICATIONS_KEY, JSON.stringify(ids.slice(-MAX_DISMISSED_NOTIFICATIONS)));
 }
 
-function AdminTopActionsContent() {
+function AdminTopActionsContent({ hideSearch = false }: { hideSearch?: boolean }) {
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [bellOpen, setBellOpen] = useState(false);
@@ -188,7 +188,7 @@ function AdminTopActionsContent() {
 
   return (
     <div className="flex items-center gap-1.5 flex-shrink-0 rounded-xl border border-surface-03 bg-surface-01/70 p-1 shadow-sm">
-      {searchOpen ? (
+      {!hideSearch && (searchOpen ? (
         <form
           onSubmit={handleSearch}
           className="flex items-center gap-1.5 rounded-lg bg-surface-02 border border-surface-03 px-3 py-1.5"
@@ -217,7 +217,7 @@ function AdminTopActionsContent() {
         >
           <Search size={15} />
         </button>
-      )}
+      ))}
 
       <button
         onClick={() => { setRefreshing(true); setTimeout(() => window.location.reload(), 200); }}
@@ -307,12 +307,12 @@ function AdminTopActionsContent() {
   );
 }
 
-export default function AdminTopActions({ force = false }: { force?: boolean }) {
+export default function AdminTopActions({ force = false, hideSearch = false }: { force?: boolean; hideSearch?: boolean }) {
   const insideGlobalLayout = useAdminLayout();
 
   if (insideGlobalLayout && !force) {
     return <span data-admin-top-actions-placeholder className="hidden" />;
   }
 
-  return <AdminTopActionsContent />;
+  return <AdminTopActionsContent hideSearch={hideSearch} />;
 }

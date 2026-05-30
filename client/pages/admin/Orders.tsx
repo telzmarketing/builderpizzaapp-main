@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   AlertTriangle, Bell, BellOff, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2,
   PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Trash2, Truck, UserCheck, Users, Utensils,
@@ -272,6 +273,7 @@ function isEffectiveRevenueOrder(order: ApiOrder) {
 }
 
 export default function AdminOrders() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<ApiOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -286,6 +288,7 @@ export default function AdminOrders() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const adminPermissions = useMemo(() => loadStoredAdminPermissions(), []);
   const canDeleteOrders = useMemo(() => canDeleteOrdersFromPermissions(adminPermissions), [adminPermissions]);
+  const orderSearchQuery = searchParams.get("q")?.trim().toLowerCase() ?? "";
 
   // Motoboy assignment modal
   const [assignModal, setAssignModal] = useState<{ order: ApiOrder } | null>(null);
@@ -454,15 +457,24 @@ export default function AdminOrders() {
     }
   }, [deleteModal]);
 
+  const filteredOrders = useMemo(() => {
+    if (!orderSearchQuery) return orders;
+    return orders.filter((order) =>
+      [order.id, order.order_code, order.delivery_name, order.delivery_phone]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(orderSearchQuery)),
+    );
+  }, [orderSearchQuery, orders]);
+
   const groupedOrders = useMemo(() => {
     const grouped = new Map<string, ApiOrder[]>();
     KANBAN_COLUMNS.forEach((col) => grouped.set(col.id, []));
-    orders.forEach((order) => {
+    filteredOrders.forEach((order) => {
       const col = KANBAN_COLUMNS.find((c) => c.statuses.includes(order.status));
       grouped.get(col?.id ?? "waiting")?.push(order);
     });
     return grouped;
-  }, [orders]);
+  }, [filteredOrders]);
 
   const activeOrders = orders.filter((o) => !["delivered", "cancelled", "refunded"].includes(o.status)).length;
   const estimatedDayRevenue = useMemo(() => orders.reduce((sum, order) => sum + order.total, 0), [orders]);
@@ -510,6 +522,24 @@ export default function AdminOrders() {
           {error && (
             <div className="mx-4 md:mx-8 mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
               {error}
+            </div>
+          )}
+          {orderSearchQuery && (
+            <div className="mx-4 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gold/25 bg-gold/10 px-4 py-3 text-sm text-cream md:mx-8">
+              <span>
+                Busca por pedido: <strong>{searchParams.get("q")}</strong> ({filteredOrders.length} resultado{filteredOrders.length === 1 ? "" : "s"})
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = new URLSearchParams(searchParams);
+                  next.delete("q");
+                  setSearchParams(next, { replace: true });
+                }}
+                className="rounded-lg border border-gold/30 px-3 py-1.5 text-xs font-bold text-gold transition-colors hover:bg-gold/10"
+              >
+                Limpar busca
+              </button>
             </div>
           )}
 

@@ -11,6 +11,10 @@ function moduleAllowed(permissions: ApiEffectivePermissions, moduleKey: string):
   return !!modulePerms?.view || Object.values(modulePerms ?? {}).some(Boolean);
 }
 
+function itemMatchesPath(item: AdminNavigationItem, pathname: string, path: string): boolean {
+  return item.exact ? pathname === path : pathname === path || pathname.startsWith(`${path}/`);
+}
+
 export function canAccessAdminItem(
   permissions: ApiEffectivePermissions | null,
   item: AdminNavigationItem,
@@ -33,13 +37,24 @@ export function filterAdminNavigation(
 }
 
 export function findAdminNavigationItem(pathname: string): AdminNavigationItem | null {
-  const sorted = [...adminNavigation].sort((a, b) => b.path.length - a.path.length);
-  return sorted.find((item) => {
-    const paths = [item.path, ...(item.aliases ?? [])];
-    return paths.some((path) =>
-      item.exact ? pathname === path : pathname === path || pathname.startsWith(`${path}/`),
-    );
-  }) ?? null;
+  return adminNavigation
+    .flatMap((item) => [item.path, ...(item.aliases ?? [])].map((path) => ({ item, path })))
+    .filter(({ item, path }) => itemMatchesPath(item, pathname, path))
+    .sort((a, b) => b.path.length - a.path.length)[0]?.item ?? null;
+}
+
+export function findAdminNavigationGroup(
+  pathname: string,
+  groups: AdminNavigationGroup[] = adminNavigationGroups,
+): AdminNavigationGroup | null {
+  return groups
+    .flatMap((group) =>
+      group.children.flatMap((item) =>
+        [item.path, ...(item.aliases ?? [])].map((path) => ({ group, item, path })),
+      ),
+    )
+    .filter(({ item, path }) => itemMatchesPath(item, pathname, path))
+    .sort((a, b) => b.path.length - a.path.length)[0]?.group ?? groups[0] ?? null;
 }
 
 export function firstAllowedAdminPath(permissions: ApiEffectivePermissions | null): string {

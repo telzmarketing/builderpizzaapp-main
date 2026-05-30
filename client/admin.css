@@ -42,48 +42,40 @@
   background: linear-gradient(135deg, #082f2a 0%, #0b2d28 52%, #06231f 100%);
 }
 
-.admin-shell > :has(> .admin-sidebar) {
+.admin-shell .app-layout {
   height: 100dvh;
   min-height: 100dvh;
-  padding: 1rem;
+  background: color-mix(in srgb, var(--bg-alt) 84%, #000 16%);
 }
 
-.admin-shell .admin-sidebar {
-  border-radius: 1.25rem 0 0 1.25rem;
-  box-shadow: 0 24px 70px rgb(0 0 0 / 0.28);
-  overflow: hidden;
+.admin-shell .admin-top-navigation {
+  background: color-mix(in srgb, var(--navbar-bg) 94%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--border-color) 78%, transparent);
 }
 
-.admin-shell .admin-sidebar + .flex-1 {
+.admin-shell .context-sidebar {
+  border-right-color: color-mix(in srgb, var(--border-color) 78%, transparent);
+  box-shadow: 12px 0 34px rgb(0 0 0 / 0.12);
+}
+
+.admin-shell .context-sidebar + .flex-1 {
   min-width: 0;
-  margin-left: 0;
-  border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
-  border-left: 0;
-  border-radius: 0 1.25rem 1.25rem 0;
   background: color-mix(in srgb, var(--bg-alt) 82%, var(--bg-card) 18%);
-  box-shadow: 0 24px 70px rgb(0 0 0 / 0.22);
 }
 
-.admin-shell .admin-sidebar + .flex-1 > :where(.bg-surface-02, header.bg-surface-02):first-child {
+.admin-shell .context-sidebar + .flex-1 > :where(.bg-surface-02, header.bg-surface-02):first-child {
   background: color-mix(in srgb, var(--bg-card) 78%, transparent);
   border-bottom-color: color-mix(in srgb, var(--border-color) 72%, transparent);
   backdrop-filter: blur(12px);
-  min-height: 4.5rem;
 }
 
 .admin-shell .app-header {
-  position: sticky;
-  top: 0;
   z-index: 30;
 }
 
 .admin-layout-content :where(button[class~="bg-gold"], a[class~="bg-gold"]),
 .admin-page-actions :where(button[class~="bg-gold"], a[class~="bg-gold"]) {
   color: #071f1b;
-}
-
-.admin-shell .admin-sidebar :where(a[class~="bg-gold"], a[class~="bg-gold"] svg) {
-  color: var(--text-primary);
 }
 
 .admin-shell :where(.bg-surface-02.rounded-xl, .bg-surface-02.rounded-2xl) {
@@ -171,29 +163,6 @@
 }
 
 @media (max-width: 900px) {
-  .admin-shell > :has(> .admin-sidebar) {
-    padding: 0;
-  }
-
-  .admin-shell .admin-sidebar {
-    border-radius: 0;
-  }
-
-  .admin-shell .admin-sidebar + .flex-1 {
-    border-radius: 0;
-    border-top: 0;
-    border-right: 0;
-    border-bottom: 0;
-  }
-
-  .admin-shell > :has(> .admin-sidebar) {
-    min-height: 100dvh;
-  }
-
-  .admin-shell > :has(> .admin-sidebar) > .flex-1 {
-    min-width: 0;
-  }
-
   .admin-shell .px-8 {
     padding-left: 1rem !important;
     padding-right: 1rem !important;

@@ -1,11 +1,12 @@
 import "@/admin.css";
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { AdminLayoutContext } from "@/components/layout/AdminLayoutContext";
 import AdminHeader from "@/components/layout/AdminHeader";
-import AppSidebar from "@/components/layout/AppSidebar";
+import ContextSidebar from "@/components/layout/ContextSidebar";
 import PageContainer from "@/components/layout/PageContainer";
+import TopNavigation from "@/components/layout/TopNavigation";
 import StoreOperationAudioAlert from "@/components/admin/StoreOperationAudioAlert";
 
 function AdminRouteFallback() {
@@ -20,20 +21,25 @@ function AdminRouteFallback() {
 }
 
 export default function AdminLayout() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
     <AdminLayoutContext.Provider value>
       <div className="admin-shell">
         <StoreOperationAudioAlert />
-        <div className="app-layout min-h-screen bg-surface-00 flex flex-col md:flex-row md:h-screen overflow-hidden">
-          <AppSidebar />
-          <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-            <AdminHeader />
-            <PageContainer>
-              <Suspense fallback={<AdminRouteFallback />}>
-                <Outlet />
-              </Suspense>
-            </PageContainer>
-          </main>
+        <div className="app-layout flex h-screen min-h-screen flex-col overflow-hidden bg-surface-00">
+          <TopNavigation mobileMenuOpen={mobileMenuOpen} onMobileMenuChange={setMobileMenuOpen} />
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            <ContextSidebar />
+            <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+              <AdminHeader />
+              <PageContainer>
+                <Suspense fallback={<AdminRouteFallback />}>
+                  <Outlet />
+                </Suspense>
+              </PageContainer>
+            </main>
+          </div>
         </div>
       </div>
     </AdminLayoutContext.Provider>

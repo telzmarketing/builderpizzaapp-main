@@ -52,13 +52,13 @@ export type AdminNavigationGroup = {
 
 const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
   {
-    label: "Visao Geral",
+    label: "Dashboard",
     children: [
       { path: "/painel", icon: BarChart3, label: "Dashboard", exact: true, permissions: ["dashboard"] },
     ],
   },
   {
-    label: "BI & Relatorios",
+    label: "BI",
     children: [
       { path: "/painel/bi", icon: TrendingUp, label: "Inteligencia BI", exact: true, permissions: ["relatorios"] },
       { path: "/painel/bi-mobile", icon: BarChart3, label: "BI Mobile", exact: true, permissions: ["relatorios"] },
