@@ -145,14 +145,14 @@ export default function TopNavigation({
           <Menu size={20} />
         </button>
 
-        <Link to="/painel" className="flex h-10 w-[5.75rem] shrink-0 items-center sm:w-[6.75rem] lg:h-11 xl:w-[7.5rem]" aria-label="Ir para o dashboard">
+        <Link to="/painel" className="flex h-10 w-[6.75rem] shrink-0 items-center sm:w-[7.5rem] lg:h-11 xl:w-[8rem]" aria-label="Ir para o dashboard">
           <span className="flex h-full w-full items-center justify-start sm:justify-center">
             {isAssetUrl(logo) ? (
               <img src={resolveAssetUrl(logo)} alt="" className="max-h-8 w-full object-contain sm:max-h-9 lg:max-h-10" />
             ) : logo ? (
-              <span className="truncate text-xl leading-none sm:text-2xl">{logo}</span>
+              <span className="truncate whitespace-nowrap text-xl leading-none sm:text-2xl">{logo}</span>
             ) : (
-              <MoschettieriLogo className="w-full text-[0.9rem] leading-none text-gold sm:text-[1rem] lg:text-[1.1rem]" />
+              <MoschettieriLogo className="w-full text-[0.78rem] leading-none text-gold sm:text-[0.86rem] lg:text-[0.92rem] xl:text-[1rem]" />
             )}
           </span>
         </Link>
@@ -169,7 +169,7 @@ export default function TopNavigation({
                 onMouseEnter={() => preloadAdminRoute(target)}
                 onFocus={() => preloadAdminRoute(target)}
                 onClick={() => handleModuleClick(group)}
-                className={`flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-bold outline-none transition-colors ${
+                className={`flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-bold uppercase outline-none transition-colors ${
                   active
                     ? "bg-surface-03 text-cream"
                     : "text-stone hover:bg-surface-03 hover:text-cream"
