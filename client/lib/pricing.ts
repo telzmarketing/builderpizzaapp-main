@@ -1,5 +1,13 @@
 const PRICE_EPSILON = 0.01;
 
+export function isNapolitanaCrust(name?: string | null): boolean {
+  return (name ?? "").trim().toLowerCase().includes("napolitana");
+}
+
+export function isNapolitanaCrustBlocked(name: string | null | undefined, flavorDivision: number): boolean {
+  return flavorDivision > 1 && isNapolitanaCrust(name);
+}
+
 export function normalizeCrustPriceAddition(priceAddition: number | null | undefined, productBasePrice: number | null | undefined): number {
   const addition = Number(priceAddition ?? 0);
   if (!Number.isFinite(addition) || addition <= 0) return 0;

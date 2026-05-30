@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from backend.core.exceptions import NapolitanaMultiFlavorNotAllowed
 from backend.models.product import Product, ProductCrustType, ProductSize
 from backend.models.product_promotion import ProductPromotion, ProductPromotionCombination
 
@@ -19,6 +20,10 @@ def normalize_crust_price_addition(price_addition: float | None, product_base_pr
     if product_base_price and product_base_price > 0 and abs(addition - product_base_price) <= 0.01:
         return 0.0
     return round(addition, 2)
+
+
+def is_napolitana_crust(name: str | None) -> bool:
+    return "napolitana" in str(name or "").strip().lower()
 
 
 @dataclass(frozen=True)
@@ -62,6 +67,9 @@ class ProductPricingService:
         flavor_count: int = 1,
         flavor_product_ids: list[str] | None = None,
     ) -> ProductPriceResult:
+        if crust and flavor_count > 1 and is_napolitana_crust(crust.name):
+            raise NapolitanaMultiFlavorNotAllowed()
+
         standard_price = self._multi_flavor_standard_price(
             product=product,
             size=size,

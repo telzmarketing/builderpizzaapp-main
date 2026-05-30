@@ -7,7 +7,7 @@ import BestSellerSeal from "@/components/BestSellerSeal";
 import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation } from "@/context/AppContext";
 import { sizesApi, crustApi, drinkVariantApi, productPromotionsApi, customerEventsApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductPriceQuote, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl } from "@/lib/api";
 import { isAllowedPizzaSize, isPizzaBroto, pizzaSizeDescription, pizzaSizeLabel, PIZZA_SIZE_LABELS } from "@/lib/pizzaSizes";
-import { formatCrustAddition, normalizeCrustPriceAddition } from "@/lib/pricing";
+import { formatCrustAddition, isNapolitanaCrust, isNapolitanaCrustBlocked, normalizeCrustPriceAddition } from "@/lib/pricing";
 import { firePixelEvent, trackEvent, getTrackingData } from "@/lib/tracking";
 
 // ─── Add-ons ──────────────────────────────────────────────────────────────────
@@ -16,9 +16,6 @@ import { firePixelEvent, trackEvent, getTrackingData } from "@/lib/tracking";
 
 const isCatupiryCrust = (name?: string | null) =>
   (name || "").trim().toLowerCase().includes("catupiry");
-
-const isNapolitanaCrust = (name?: string | null) =>
-  (name || "").trim().toLowerCase().includes("napolitana");
 
 const DIVISION_OPTIONS: { value: FlavorDivision; label: string; emoji: string }[] = [
   { value: 1, label: "Inteira", emoji: "🍕" },
@@ -409,6 +406,12 @@ export default function Product() {
   }, [selectedCrust?.id]);
 
   useEffect(() => {
+    if (!isNapolitanaCrustBlocked(selectedCrust?.name, division)) return;
+    setSelectedCrust(regularCrusts.find((crust) => !isNapolitanaCrust(crust.name)) ?? null);
+    setSelectedBorder(null);
+  }, [division, productCrusts, selectedCrust?.id]);
+
+  useEffect(() => {
     if (!product || !isPizza) {
       setPriceQuote(null);
       return;
@@ -486,6 +489,10 @@ export default function Product() {
   const handleDivisionChange = (d: FlavorDivision) => {
     if (d > PUBLIC_MAX_FLAVORS) return;
     if (isPizzaBrotoSelected && d > 1) return;
+    if (isNapolitanaCrustBlocked(selectedCrust?.name, d)) {
+      setSelectedCrust(regularCrusts.find((crust) => !isNapolitanaCrust(crust.name)) ?? null);
+      setSelectedBorder(null);
+    }
     setDivision(d);
     setActiveSlot(null);
     setCartError(false);
@@ -541,6 +548,7 @@ export default function Product() {
       setFlavorSlots((prev) => [prev[0] ?? product, null, null]);
       return;
     }
+    if (isNapolitanaCrustBlocked(selectedCrust?.name, division)) return;
     if (isPizza && !allFilled) {
       setCartError(true);
       return;
@@ -710,13 +718,19 @@ export default function Product() {
             <div className="flex gap-2 flex-wrap">
               {regularCrusts.map((crust) => {
                 const effectiveAddition = normalizeCrustPriceAddition(crust.price_addition, product.price);
+                const blockedByFlavorDivision = isNapolitanaCrustBlocked(crust.name, division);
                 return (
                   <button
                     key={crust.id}
-                    onClick={() => setSelectedCrust(crust)}
+                    onClick={() => {
+                      if (!blockedByFlavorDivision) setSelectedCrust(crust);
+                    }}
+                    disabled={blockedByFlavorDivision}
                     className={`flex-1 min-w-[80px] py-3 px-2 rounded-xl text-sm font-bold transition-all ${
                       selectedCrust?.id === crust.id
                         ? "bg-gold text-cream shadow-lg shadow-gold/30"
+                        : blockedByFlavorDivision
+                          ? "bg-surface-02/70 text-stone/60 border border-surface-03 cursor-not-allowed"
                         : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
                     }`}
                   >
@@ -728,6 +742,9 @@ export default function Product() {
                 );
               })}
             </div>
+            {division > 1 && regularCrusts.some((crust) => isNapolitanaCrust(crust.name)) && (
+              <p className="text-stone/80 text-xs mt-2">Massa Napolitana indisponivel para pizzas com 2 ou 3 sabores.</p>
+            )}
             {selectedCrust && (
               <p className="text-amber-400 text-xs mt-2">Massa {selectedCrust.name} selecionada - {formatCrustAddition(variantPriceAddition)}</p>
             )}

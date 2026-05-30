@@ -80,6 +80,13 @@ class MaxFlavorsExceeded(DomainError):
         )
 
 
+class NapolitanaMultiFlavorNotAllowed(DomainError):
+    def __init__(self):
+        super().__init__(
+            "Massa Napolitana nao pode ser escolhida para pizzas com 2 ou 3 sabores."
+        )
+
+
 # ── Payment ───────────────────────────────────────────────────────────────────
 
 class PaymentNotFound(DomainError):

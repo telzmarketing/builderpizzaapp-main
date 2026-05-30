@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeCrustPriceAddition } from "./pricing";
+import { isNapolitanaCrustBlocked, normalizeCrustPriceAddition } from "./pricing";
 
 describe("normalizeCrustPriceAddition", () => {
   it("treats empty and zero crust additions as zero", () => {
@@ -16,5 +16,20 @@ describe("normalizeCrustPriceAddition", () => {
   it("treats legacy crust values equal to the product base price as no addition", () => {
     expect(normalizeCrustPriceAddition(95, 95)).toBe(0);
     expect(normalizeCrustPriceAddition(95.001, 95)).toBe(0);
+  });
+});
+
+describe("isNapolitanaCrustBlocked", () => {
+  it("allows Napolitana for a single flavor", () => {
+    expect(isNapolitanaCrustBlocked("Massa Napolitana", 1)).toBe(false);
+  });
+
+  it("blocks Napolitana for two or three flavors", () => {
+    expect(isNapolitanaCrustBlocked("Massa Napolitana", 2)).toBe(true);
+    expect(isNapolitanaCrustBlocked("NAPOLITANA", 3)).toBe(true);
+  });
+
+  it("keeps other crust types available for multiple flavors", () => {
+    expect(isNapolitanaCrustBlocked("Massa Tradicional", 3)).toBe(false);
   });
 });
