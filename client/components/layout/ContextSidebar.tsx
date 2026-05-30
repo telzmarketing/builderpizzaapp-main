@@ -70,8 +70,7 @@ export default function ContextSidebar() {
       <div className={`flex h-[58px] flex-shrink-0 items-center border-b border-surface-03 ${collapsed ? "justify-center px-2" : "justify-between px-4"}`}>
         {!collapsed && (
           <div className="min-w-0">
-            <p className="truncate text-[10px] font-black uppercase tracking-[0.2em] text-gold">Modulo ativo</p>
-            <p className="mt-1 truncate text-sm font-black text-cream">{activeGroup.label}</p>
+            <p className="truncate text-sm font-black text-cream">{activeGroup.label}</p>
           </div>
         )}
         <button
