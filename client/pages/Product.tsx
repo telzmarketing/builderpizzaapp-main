@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, type PointerEvent } from "react";
+import { useState, useMemo, useEffect, useId, type PointerEvent } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, Minus, Plus, AlertCircle, Check, Loader2, X, ZoomIn } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
@@ -181,74 +181,151 @@ function computeFlavorPrice(slots: (Pizza | null)[], division: number, rule: Pri
 function SvgIcon({ icon, x, y, size }: { icon: string | undefined; x: number; y: number; size: number }) {
   if (!icon) return <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize={size}>?</text>;
   if (isAssetUrl(icon)) {
-    return <image href={resolveAssetUrl(icon)} x={x - size / 2} y={y - size / 2} width={size} height={size} />;
+    return (
+      <image
+        href={resolveOptimizedAssetUrl(icon, Math.ceil(size * 2))}
+        x={x - size / 2}
+        y={y - size / 2}
+        width={size}
+        height={size}
+        preserveAspectRatio="xMidYMid slice"
+      />
+    );
   }
   return <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize={size}>{icon}</text>;
 }
 
 function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (Pizza | null)[] }) {
+  const diagramId = useId().replace(/:/g, "");
   const S = 176;
   const cx = S / 2, cy = S / 2, r = S / 2 - 6;
   const filled = ["#f97316", "#ea580c", "#c2410c"];
   const empty = ["#1e293b", "#334155", "#475569"];
   const borderColor = "#0f172a";
-
-  if (division === 1) {
-    return (
-      <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`}>
-        <circle cx={cx} cy={cy} r={r} fill={slots[0] ? filled[0] : empty[0]} />
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke={borderColor} strokeWidth="4" />
-        <SvgIcon icon={slots[0]?.icon} x={cx} y={cy} size={60} />
-      </svg>
-    );
-  }
-
-  if (division === 2) {
-    return (
-      <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`}>
-        <defs>
-          <clipPath id="left-half"><rect x="0" y="0" width={cx} height={S} /></clipPath>
-          <clipPath id="right-half"><rect x={cx} y="0" width={cx} height={S} /></clipPath>
-        </defs>
-        <circle cx={cx} cy={cy} r={r} fill={slots[0] ? filled[0] : empty[0]} clipPath="url(#left-half)" />
-        <circle cx={cx} cy={cy} r={r} fill={slots[1] ? filled[1] : empty[1]} clipPath="url(#right-half)" />
-        <line x1={cx} y1={cy - r} x2={cx} y2={cy + r} stroke={borderColor} strokeWidth="4" />
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke={borderColor} strokeWidth="4" />
-        <SvgIcon icon={slots[0]?.icon} x={cx / 2} y={cy} size={38} />
-        <SvgIcon icon={slots[1]?.icon} x={cx + cx / 2} y={cy} size={38} />
-      </svg>
-    );
-  }
-
+  const imageBox = { x: cx - r, y: cy - r, size: r * 2 };
   const toRad = (d: number) => (d * Math.PI) / 180;
   const sectorPath = (start: number, end: number) => {
     const x1 = cx + r * Math.cos(toRad(start));
     const y1 = cy + r * Math.sin(toRad(start));
     const x2 = cx + r * Math.cos(toRad(end));
     const y2 = cy + r * Math.sin(toRad(end));
-    return `M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 0 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z`;
+    const largeArc = Math.abs(end - start) > 180 ? 1 : 0;
+    return `M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z`;
   };
-  const sectors = [{ start: -90, end: 30 }, { start: 30, end: 150 }, { start: 150, end: 270 }];
-  const divLines = [-90, 30, 150];
   const iconAt = (midDeg: number, dist = r * 0.58) => ({
     x: cx + dist * Math.cos(toRad(midDeg)),
     y: cy + dist * Math.sin(toRad(midDeg)),
   });
 
+  if (division === 1) {
+    const icon = slots[0]?.icon;
+    const hasImage = isAssetUrl(icon);
+    return (
+      <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`}>
+        <defs>
+          <clipPath id={`${diagramId}-full-flavor`}><circle cx={cx} cy={cy} r={r} /></clipPath>
+        </defs>
+        <circle cx={cx} cy={cy} r={r} fill={slots[0] ? filled[0] : empty[0]} />
+        {hasImage && (
+          <image
+            href={resolveOptimizedAssetUrl(icon, 360)}
+            x={imageBox.x}
+            y={imageBox.y}
+            width={imageBox.size}
+            height={imageBox.size}
+            preserveAspectRatio="xMidYMid slice"
+            clipPath={`url(#${diagramId}-full-flavor)`}
+          />
+        )}
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={borderColor} strokeWidth="4" />
+        {!hasImage && <SvgIcon icon={icon} x={cx} y={cy} size={60} />}
+      </svg>
+    );
+  }
+
+  if (division === 2) {
+    const sectors = [
+      { start: 90, end: 270, mid: 180 },
+      { start: -90, end: 90, mid: 0 },
+    ];
+    return (
+      <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`}>
+        <defs>
+          {sectors.map((s, i) => (
+            <clipPath key={i} id={`${diagramId}-half-flavor-${i}`}>
+              <path d={sectorPath(s.start, s.end)} />
+            </clipPath>
+          ))}
+        </defs>
+        {sectors.map((s, i) => {
+          const icon = slots[i]?.icon;
+          const hasImage = isAssetUrl(icon);
+          const pos = iconAt(s.mid);
+          return (
+            <g key={i}>
+              <path d={sectorPath(s.start, s.end)} fill={slots[i] ? filled[i] : empty[i]} />
+              {hasImage ? (
+                <image
+                  href={resolveOptimizedAssetUrl(icon, 360)}
+                  x={imageBox.x}
+                  y={imageBox.y}
+                  width={imageBox.size}
+                  height={imageBox.size}
+                  preserveAspectRatio="xMidYMid slice"
+                  clipPath={`url(#${diagramId}-half-flavor-${i})`}
+                />
+              ) : (
+                <SvgIcon icon={icon} x={parseFloat(pos.x.toFixed(2))} y={parseFloat(pos.y.toFixed(2))} size={38} />
+              )}
+            </g>
+          );
+        })}
+        <line x1={cx} y1={cy - r} x2={cx} y2={cy + r} stroke={borderColor} strokeWidth="4" />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={borderColor} strokeWidth="4" />
+      </svg>
+    );
+  }
+
+  const sectors = [{ start: -90, end: 30 }, { start: 30, end: 150 }, { start: 150, end: 270 }];
+  const divLines = [-90, 30, 150];
+
   return (
     <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`}>
-      {sectors.map((s, i) => (
-        <path key={i} d={sectorPath(s.start, s.end)} fill={slots[i] ? filled[i] : empty[i]} />
-      ))}
+      <defs>
+        {sectors.map((s, i) => (
+          <clipPath key={i} id={`${diagramId}-third-flavor-${i}`}>
+            <path d={sectorPath(s.start, s.end)} />
+          </clipPath>
+        ))}
+      </defs>
+      {sectors.map((s, i) => {
+        const icon = slots[i]?.icon;
+        const hasImage = isAssetUrl(icon);
+        const mid = (s.start + s.end) / 2;
+        const pos = iconAt(mid);
+        return (
+          <g key={i}>
+            <path d={sectorPath(s.start, s.end)} fill={slots[i] ? filled[i] : empty[i]} />
+            {hasImage ? (
+              <image
+                href={resolveOptimizedAssetUrl(icon, 360)}
+                x={imageBox.x}
+                y={imageBox.y}
+                width={imageBox.size}
+                height={imageBox.size}
+                preserveAspectRatio="xMidYMid slice"
+                clipPath={`url(#${diagramId}-third-flavor-${i})`}
+              />
+            ) : (
+              <SvgIcon icon={icon} x={parseFloat(pos.x.toFixed(2))} y={parseFloat(pos.y.toFixed(2))} size={30} />
+            )}
+          </g>
+        );
+      })}
       {divLines.map((deg, i) => (
         <line key={i} x1={cx} y1={cy} x2={cx + r * Math.cos(toRad(deg))} y2={cy + r * Math.sin(toRad(deg))} stroke={borderColor} strokeWidth="4" />
       ))}
       <circle cx={cx} cy={cy} r={r} fill="none" stroke={borderColor} strokeWidth="4" />
-      {sectors.map((s, i) => {
-        const mid = (s.start + s.end) / 2;
-        const pos = iconAt(mid);
-        return <SvgIcon key={i} icon={slots[i]?.icon} x={parseFloat(pos.x.toFixed(2))} y={parseFloat(pos.y.toFixed(2))} size={30} />;
-      })}
     </svg>
   );
 }
