@@ -13,23 +13,13 @@ import BestSellerSeal from "@/components/BestSellerSeal";
 
 const PIZZA_FALLBACKS = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🍖", "🍄", "🫒", "🔥", "🥩", "🌿", "🫑"];
 
-const HOME_CATALOG_CATEGORY_ORDER = [
-  "Promoções",
-  "Mais Pedidas",
-  "Novidades",
-  "Tradicionais",
-  "Especiais",
-  "Doces",
-  "Bebidas",
-] as const;
+const PROMO_LABEL = "Promoções";
 
 type HomeCatalogCategory = string;
 type HomeCatalogProduct = {
   category?: string | null;
   subcategory?: string | null;
-  product_type?: string | null;
   promotion_applied?: boolean;
-  show_best_seller_badge?: boolean;
 };
 
 function normalizeHomeCategory(value?: string | null) {
@@ -47,11 +37,7 @@ function productMatchesHomeCategory(product: HomeCatalogProduct, category: HomeC
     normalizeHomeCategory(product.category),
   ].filter(Boolean);
 
-  if (category === "Promoções") return !!product.promotion_applied;
-  if (category === "Mais Pedidas") return !!product.show_best_seller_badge;
-  if (category === "Bebidas") {
-    return product.product_type === "drink" || productCategories.includes(normalizedCategory);
-  }
+  if (category === PROMO_LABEL) return !!product.promotion_applied;
 
   return productCategories.includes(normalizedCategory);
 }
@@ -61,7 +47,7 @@ export default function Home() {
   const { products, productsLoaded, campaignBanners, siteContent, loyaltySettings } = useApp();
   const { sectionSubtitle, sectionTitle, bannerRotationInterval } = siteContent.home;
   const rotationInterval = (bannerRotationInterval ?? 5) * 1000;
-  const [activeCategory, setActiveCategory] = useState<HomeCatalogCategory>(HOME_CATALOG_CATEGORY_ORDER[0]);
+  const [activeCategory, setActiveCategory] = useState<HomeCatalogCategory>("");
   const [carouselPosition, setCarouselPosition] = useState(0);
   const [clickedPizza, setClickedPizza] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -126,8 +112,6 @@ export default function Home() {
     : [];
   // (search always spans full product list, not filtered by homeConfig — intentional)
 
-  const PROMO_LABEL = "Promoções";
-
   // Apply home catalog config filter on top of all active products.
   const catalogProducts = useMemo(() => {
     const selectedCategoryKeys = homeConfig.selectedCategories.map(normalizeHomeCategory);
@@ -146,21 +130,33 @@ export default function Home() {
     return products;
   }, [products, homeConfig]);
 
-  const effectiveCategories = useMemo(() => {
-    const defaultKeys = new Set(HOME_CATALOG_CATEGORY_ORDER.map(normalizeHomeCategory));
-    const productCategories = [...new Set(
+  const productCats = useMemo(() => {
+    const categoryNames = [...new Set(
       catalogProducts
         .filter((p) => p.active && (p.subcategory || p.category))
         .map((p) => (p.subcategory || p.category) as string)
     )];
-    const orderedProductCategories = sortCategoryNamesByCatalogOrder(productCategories, catalogCategories);
-    const extraCategories = orderedProductCategories.filter(
-      (category) => !defaultKeys.has(normalizeHomeCategory(category))
-    );
-    return [...HOME_CATALOG_CATEGORY_ORDER, ...extraCategories];
+    return sortCategoryNamesByCatalogOrder(categoryNames, catalogCategories);
   }, [catalogProducts, catalogCategories]);
 
+  const hasPromos = useMemo(
+    () => catalogProducts.some((p) => p.active && p.promotion_applied),
+    [catalogProducts]
+  );
+
+  const effectiveCategories = useMemo(
+    () => [...(hasPromos ? [PROMO_LABEL] : []), ...productCats],
+    [hasPromos, productCats]
+  );
+
   useEffect(() => {
+    if (effectiveCategories.length === 0) {
+      if (activeCategory !== "") {
+        setActiveCategory("");
+      }
+      return;
+    }
+
     if (effectiveCategories.length > 0 && !effectiveCategories.includes(activeCategory)) {
       setActiveCategory(effectiveCategories[0]);
     }
