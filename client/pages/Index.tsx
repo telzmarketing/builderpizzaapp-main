@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Menu, Search, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, Tag, Heart, UtensilsCrossed } from "lucide-react";
 
 import { useApp } from "@/context/AppContext";
-import { homeCatalogApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl } from "@/lib/api";
+import { categoriesApi, homeCatalogApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl, type ApiProductCategory } from "@/lib/api";
+import { sortCategoryNamesByCatalogOrder } from "@/lib/catalogOrdering";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import StoreStatusBanner from "@/components/StoreStatusBanner";
@@ -22,7 +23,7 @@ const HOME_CATALOG_CATEGORY_ORDER = [
   "Bebidas",
 ] as const;
 
-type HomeCatalogCategory = typeof HOME_CATALOG_CATEGORY_ORDER[number];
+type HomeCatalogCategory = string;
 type HomeCatalogProduct = {
   category?: string | null;
   subcategory?: string | null;
@@ -68,6 +69,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
+  const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
 
   // Home catalog config
   const [homeConfig, setHomeConfig] = useState<{
@@ -88,6 +90,12 @@ export default function Home() {
         });
       } catch { /* use defaults on parse error */ }
     }).catch(() => { /* use defaults if backend unavailable */ });
+  }, []);
+
+  useEffect(() => {
+    categoriesApi.list(true)
+      .then(setCatalogCategories)
+      .catch(() => setCatalogCategories([]));
   }, []);
 
   const todayDay = new Date().getDay(); // 0=Dom … 6=Sáb
@@ -139,8 +147,18 @@ export default function Home() {
   }, [products, homeConfig]);
 
   const effectiveCategories = useMemo(() => {
-    return [...HOME_CATALOG_CATEGORY_ORDER];
-  }, []);
+    const defaultKeys = new Set(HOME_CATALOG_CATEGORY_ORDER.map(normalizeHomeCategory));
+    const productCategories = [...new Set(
+      catalogProducts
+        .filter((p) => p.active && (p.subcategory || p.category))
+        .map((p) => (p.subcategory || p.category) as string)
+    )];
+    const orderedProductCategories = sortCategoryNamesByCatalogOrder(productCategories, catalogCategories);
+    const extraCategories = orderedProductCategories.filter(
+      (category) => !defaultKeys.has(normalizeHomeCategory(category))
+    );
+    return [...HOME_CATALOG_CATEGORY_ORDER, ...extraCategories];
+  }, [catalogProducts, catalogCategories]);
 
   useEffect(() => {
     if (effectiveCategories.length > 0 && !effectiveCategories.includes(activeCategory)) {
