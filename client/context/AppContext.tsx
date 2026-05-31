@@ -91,6 +91,18 @@ export interface CartPromotionMeta {
 
 // ─── Order (frontend view) ────────────────────────────────────────────────────
 
+const normalizeCategoryText = (value?: string | null) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+const isFixedFlavorCombinationProduct = (product?: Pizza | null) =>
+  [product?.category, product?.subcategory]
+    .map(normalizeCategoryText)
+    .includes("combinacoes de sabores");
+
 export type { ApiOrder as Order };
 export type { OrderStatus };
 
@@ -825,6 +837,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     promotion?: CartPromotionMeta
   ) => {
     const cartItemId = `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const isFixedFlavorCombination = isFixedFlavorCombinationProduct(primaryProduct);
+    const cartFlavorDivision: FlavorDivision = isFixedFlavorCombination ? 1 : flavorDivision;
+    const cartFlavors: PizzaFlavor[] = isFixedFlavorCombination
+      ? [{
+          productId: primaryProduct.id,
+          name: primaryProduct.name,
+          price: primaryProduct.price,
+          icon: primaryProduct.icon,
+        }]
+      : flavors;
+
     setCart((prev) => [
       ...prev,
       {
@@ -835,8 +858,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         selectedSizeId: sizeId,
         selectedAddOns: addOns,
         productData: primaryProduct,
-        flavorDivision,
-        flavors,
+        flavorDivision: cartFlavorDivision,
+        flavors: cartFlavors,
         finalPrice,
         notes,
         selectedCrustType: crustType ?? null,

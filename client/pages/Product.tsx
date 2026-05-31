@@ -133,6 +133,9 @@ const productCategoryKeys = (candidate?: Pizza | null) =>
     .map((value) => normalizeProductText(value))
     .filter(Boolean);
 
+const isFixedFlavorCombinationProduct = (candidate?: Pizza | null) =>
+  productCategoryKeys(candidate).includes("combinacoes de sabores");
+
 const matchesFlavorCategoryFilters = (candidate: Pizza, categoryFilters: string[] = []) => {
   const normalizedFilters = categoryFilters.map((value) => normalizeProductText(value)).filter(Boolean);
   if (normalizedFilters.length === 0) return false;
@@ -153,6 +156,7 @@ const isDrinkLikeCandidate = (candidate?: Pizza | null) => {
 
 const isPizzaFlavorCandidate = (candidate?: Pizza | null, options: { allowSweet?: boolean; categoryFilters?: string[] } = {}) => {
   if (!candidate || candidate.active === false) return false;
+  if (isFixedFlavorCombinationProduct(candidate)) return false;
 
   if (isDrinkLikeCandidate(candidate)) return false;
 
@@ -344,6 +348,7 @@ export default function Product() {
   const productType = (product as any)?.product_type as string | null | undefined;
   const isPizza = !productType || productType === "pizza";
   const isDrink = productType === "drink";
+  const isFixedFlavorCombination = isPizza && isFixedFlavorCombinationProduct(product);
 
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState("");
@@ -461,6 +466,7 @@ export default function Product() {
   const selectedSize = selectedSizeObj ? selectedSizeObj.label : selectedSizeFallback;
   const isPizzaBrotoSelected = isPizza && isPizzaBroto(selectedSize);
   const productPrice = product?.price ?? 0;
+  const effectiveDivision: FlavorDivision = isFixedFlavorCombination ? 1 : division;
 
   // Separar crusts regulares de bordas (catupiry)
   const regularCrusts = productCrusts.filter((c) => !isCatupiryCrust(c.name));
@@ -475,7 +481,19 @@ export default function Product() {
     setFlavorSlots((prev) => [prev[0] ?? product ?? null, null, null]);
   }, [isPizzaBrotoSelected, division, product?.id]);
 
-  const selectedFlavorIdsKey = flavorSlots.slice(0, division).map((flavor) => flavor?.id ?? "").join("|");
+  useEffect(() => {
+    if (!product || !isFixedFlavorCombination) return;
+    if (division !== 1) setDivision(1);
+    setActiveSlot(null);
+    setCartError(false);
+    setFlavorSlots((prev) =>
+      prev[0]?.id === product.id && prev[1] === null && prev[2] === null
+        ? prev
+        : [product, null, null]
+    );
+  }, [product?.id, isFixedFlavorCombination, division]);
+
+  const selectedFlavorIdsKey = flavorSlots.slice(0, effectiveDivision).map((flavor) => flavor?.id ?? "").join("|");
 
   // Resetar borda se napolitana for selecionada
   useEffect(() => {
@@ -483,10 +501,10 @@ export default function Product() {
   }, [selectedCrust?.id]);
 
   useEffect(() => {
-    if (!isNapolitanaCrustBlocked(selectedCrust?.name, division)) return;
+    if (!isNapolitanaCrustBlocked(selectedCrust?.name, effectiveDivision)) return;
     setSelectedCrust(regularCrusts.find((crust) => !isNapolitanaCrust(crust.name)) ?? null);
     setSelectedBorder(null);
-  }, [division, productCrusts, selectedCrust?.id]);
+  }, [effectiveDivision, productCrusts, selectedCrust?.id]);
 
   useEffect(() => {
     if (!product || !isPizza) {
@@ -502,7 +520,7 @@ export default function Product() {
     productPromotionsApi.quote(product.id, {
       size_id: selectedSizeObj?.id ?? null,
       crust_id: selectedCrust?.id ?? null,
-      flavor_count: isDrink ? 1 : division,
+      flavor_count: isDrink ? 1 : effectiveDivision,
       flavor_ids: selectedFlavorIds,
     }).then((quote) => {
       if (!cancelled) setPriceQuote(quote);
@@ -513,13 +531,13 @@ export default function Product() {
     return () => {
       cancelled = true;
     };
-  }, [product?.id, isPizza, isDrink, selectedSizeObj?.id, selectedCrust?.id, division, selectedFlavorIdsKey]);
+  }, [product?.id, isPizza, isDrink, selectedSizeObj?.id, selectedCrust?.id, effectiveDivision, selectedFlavorIdsKey]);
 
   // ── Computed values ──────────────────────────────────────────────────────────
 
-  const activeFlavors = flavorSlots.slice(0, division);
-  const allFilled = activeFlavors.every((f) => f !== null);
-  const effectivePricingRule: PricingRule = division > 1 ? "average" : multiFlavorsConfig.pricingRule;
+  const activeFlavors = flavorSlots.slice(0, effectiveDivision);
+  const allFilled = isFixedFlavorCombination || activeFlavors.every((f) => f !== null);
+  const effectivePricingRule: PricingRule = effectiveDivision > 1 ? "average" : multiFlavorsConfig.pricingRule;
   const flavorCategoryFilters = multiFlavorsConfig.flavorCategoryFilters ?? [];
   const selectedSizeLookup = normalizeProductText(selectedSizeObj?.label ?? selectedSize);
 
@@ -547,8 +565,8 @@ export default function Product() {
     const slotsWithDisplayPrice = activeFlavors.map((f) =>
       f ? { ...f, price: getFlavorDisplayPrice(f) } : null
     );
-    return computeFlavorPrice(slotsWithDisplayPrice as (Pizza | null)[], division, effectivePricingRule);
-  }, [activeFlavors, division, effectivePricingRule, selectedSizeLookup, selectedSizeObj, isDrink, productPrice, product?.id]);
+    return computeFlavorPrice(slotsWithDisplayPrice as (Pizza | null)[], effectiveDivision, effectivePricingRule);
+  }, [activeFlavors, effectiveDivision, effectivePricingRule, selectedSizeLookup, selectedSizeObj, isDrink, productPrice, product?.id]);
 
   const variantPriceAddition = useMemo(() => {
     if (isPizza && selectedCrust) return normalizeCrustPriceAddition(selectedCrust.price_addition, productPrice);
@@ -564,6 +582,7 @@ export default function Product() {
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
   const handleDivisionChange = (d: FlavorDivision) => {
+    if (isFixedFlavorCombination) return;
     if (d > PUBLIC_MAX_FLAVORS) return;
     if (isPizzaBrotoSelected && d > 1) return;
     if (isNapolitanaCrustBlocked(selectedCrust?.name, d)) {
@@ -582,6 +601,7 @@ export default function Product() {
   };
 
   const handleSelectFlavor = (slotIndex: number, p: Pizza) => {
+    if (isFixedFlavorCombination) return;
     if (!isPizzaFlavorCandidate(p, { allowSweet: division === 1, categoryFilters: flavorCategoryFilters })) return;
 
     setFlavorSlots((prev) => {
@@ -594,6 +614,7 @@ export default function Product() {
   };
 
   const handleSlotToggle = (i: number) => {
+    if (isFixedFlavorCombination) return;
     setActiveSlot((prev) => (prev === i ? null : i));
     setCartError(false);
   };
@@ -618,21 +639,23 @@ export default function Product() {
 
   const handleAddToCart = () => {
     if (!product) return;
-    if (isPizzaBrotoSelected && division > 1) {
+    if (!isFixedFlavorCombination && isPizzaBrotoSelected && division > 1) {
       setDivision(1);
       setActiveSlot(null);
       setCartError(false);
       setFlavorSlots((prev) => [prev[0] ?? product, null, null]);
       return;
     }
-    if (isNapolitanaCrustBlocked(selectedCrust?.name, division)) return;
+    if (isNapolitanaCrustBlocked(selectedCrust?.name, effectiveDivision)) return;
     if (isPizza && !allFilled) {
       setCartError(true);
       return;
     }
 
     let flavors: PizzaFlavor[];
-    if (isDrink) {
+    if (isFixedFlavorCombination) {
+      flavors = [{ productId: product.id, name: product.name, price: getFlavorDisplayPrice(product), icon: product.icon }];
+    } else if (isDrink) {
       // For drinks, the "flavor" is just the product itself at the computed price
       flavors = [{ productId: product.id, name: product.name, price: flavorPrice, icon: product.icon }];
     } else {
@@ -659,12 +682,12 @@ export default function Product() {
       : null;
 
     addToCart(
-      flavorSlots[0]!,
+      isFixedFlavorCombination ? product : flavorSlots[0]!,
       quantity,
       selectedSize,
       [],
       flavors,
-      isDrink ? 1 : division,
+      isDrink ? 1 : effectiveDivision,
       pricePerUnit,
       notes || undefined,
       crustVariation,
@@ -819,7 +842,7 @@ export default function Product() {
                 );
               })}
             </div>
-            {division > 1 && regularCrusts.some((crust) => isNapolitanaCrust(crust.name)) && (
+            {!isFixedFlavorCombination && effectiveDivision > 1 && regularCrusts.some((crust) => isNapolitanaCrust(crust.name)) && (
               <p className="text-stone/80 text-xs mt-2">Massa Napolitana indisponivel para pizzas com 2 ou 3 sabores.</p>
             )}
             {selectedCrust && (
@@ -914,7 +937,7 @@ export default function Product() {
         </div>
 
         {/* ── Pizza: Division Selector ─────────────────────────────────────── */}
-        {isPizza && (
+        {isPizza && !isFixedFlavorCombination && (
           <div className="mb-6">
             <h3 className="text-cream font-bold mb-3">{p.divisionLabel}</h3>
             <div className="flex gap-2">
@@ -947,7 +970,7 @@ export default function Product() {
         )}
 
         {/* ── Pizza: Flavor Slots ──────────────────────────────────────────── */}
-        {isPizza && (
+        {isPizza && !isFixedFlavorCombination && (
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-cream font-bold">
@@ -1067,11 +1090,11 @@ export default function Product() {
               })}
             </div>
 
-            {division > 1 && activeFlavors.some((f) => f !== null) && (
+            {effectiveDivision > 1 && activeFlavors.some((f) => f !== null) && (
               <div className="mt-3 p-3 rounded-xl bg-surface-02/60 border border-surface-03">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-stone">
-                    {allFilled ? `${division === 2 ? "Meio a Meio" : "3 Sabores"}` : "Preço parcial"}
+                    {allFilled ? `${effectiveDivision === 2 ? "Meio a Meio" : "3 Sabores"}` : "Preço parcial"}
                   </span>
                   <span className="text-gold-light font-bold">R$ {flavorPrice.toFixed(2)}</span>
                 </div>
@@ -1151,9 +1174,9 @@ export default function Product() {
         </div>
 
         {/* ── Pizza Diagram ───────────────────────────────────────────────── */}
-        {isPizza && division > 1 && (
+        {isPizza && !isFixedFlavorCombination && effectiveDivision > 1 && (
           <div className="flex flex-col items-center mb-6 p-4 bg-surface-02/50 rounded-2xl border border-surface-03">
-            <PizzaDiagram division={division} slots={flavorSlots} />
+            <PizzaDiagram division={effectiveDivision} slots={flavorSlots} />
             <p className="text-stone/70 text-xs mt-2">
               💰 {PRICING_LABELS[effectivePricingRule]}
             </p>
@@ -1273,9 +1296,9 @@ export default function Product() {
             )}
           </div>
           <div className="text-right">
-            {isPizza && division > 1 && allFilled && (
+            {isPizza && !isFixedFlavorCombination && effectiveDivision > 1 && allFilled && (
               <p className="text-stone text-xs">
-                {division === 2 ? "Meio a Meio" : "3 Sabores"} · {selectedSize}
+                {effectiveDivision === 2 ? "Meio a Meio" : "3 Sabores"} · {selectedSize}
               </p>
             )}
             {selectedCrust && (

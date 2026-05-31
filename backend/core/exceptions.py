@@ -80,6 +80,14 @@ class MaxFlavorsExceeded(DomainError):
         )
 
 
+class FixedFlavorCombinationNotAllowed(DomainError):
+    def __init__(self, product_name: str):
+        super().__init__(
+            f"'{product_name}' pertence a categoria Combinacoes de Sabores e nao permite divisao ou troca de sabores.",
+            code="FixedFlavorCombinationNotAllowed",
+        )
+
+
 class NapolitanaMultiFlavorNotAllowed(DomainError):
     def __init__(self):
         super().__init__(

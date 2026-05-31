@@ -18,6 +18,7 @@ from backend.core.exceptions import (
     CartEmpty, OrderNotFound, OrderCancelled,
     ProductNotFound, PriceConflict,
     FlavorDivisionMismatch, MaxFlavorsExceeded,
+    FixedFlavorCombinationNotAllowed,
     DomainError,
 )
 from backend.core.state_machine import order_sm, payment_sm
@@ -76,6 +77,25 @@ def _normalize_size_label(value: str | None) -> str | None:
         .decode("ascii")
         .lower()
     )
+
+
+def _normalize_category_text(value: str | None) -> str:
+    return (
+        unicodedata.normalize("NFD", str(value or ""))
+        .encode("ascii", "ignore")
+        .decode("ascii")
+        .lower()
+        .strip()
+    )
+
+
+def _is_fixed_flavor_combination(product: Product | None) -> bool:
+    if not product:
+        return False
+    return "combinacoes de sabores" in {
+        _normalize_category_text(product.category),
+        _normalize_category_text(product.subcategory),
+    }
 
 
 def _product_price_for_selected_size(product: Product, selected_size: ProductSize) -> float:
@@ -216,6 +236,23 @@ class OrderService:
             raise MaxFlavorsExceeded(item.flavor_division, config.max_flavors)
 
         # Fetch size price server-side (authoritative — client-submitted prices are ignored when size found)
+        primary_product = (
+            self._db.query(Product)
+            .filter(Product.id == item.product_id, Product.active == True)  # noqa: E712
+            .first()
+        )
+        if not primary_product:
+            raise ProductNotFound(item.product_id)
+
+        if _is_fixed_flavor_combination(primary_product):
+            has_single_primary_flavor = (
+                item.flavor_division == 1
+                and len(item.flavors) == 1
+                and item.flavors[0].product_id == item.product_id
+            )
+            if not has_single_primary_flavor:
+                raise FixedFlavorCombinationNotAllowed(primary_product.name)
+
         selected_size_obj: ProductSize | None = None
         if item.selected_size_id:
             selected_size_obj = (
@@ -237,6 +274,15 @@ class OrderService:
             )
             if not product:
                 raise ProductNotFound(f.product_id)
+
+            if _is_fixed_flavor_combination(product):
+                raises_for_fixed_flavor = (
+                    item.flavor_division != 1
+                    or len(item.flavors) != 1
+                    or product.id != item.product_id
+                )
+                if raises_for_fixed_flavor:
+                    raise FixedFlavorCombinationNotAllowed(product.name)
 
             if selected_size_obj is not None:
                 # Size-based: each flavor uses the matching size label from its own product.
