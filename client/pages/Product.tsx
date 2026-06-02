@@ -5,7 +5,7 @@ import MoschettieriLogo from "@/components/MoschettieriLogo";
 import CategorySeal from "@/components/CategorySeal";
 import BestSellerSeal from "@/components/BestSellerSeal";
 import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation } from "@/context/AppContext";
-import { sizesApi, crustApi, drinkVariantApi, productPromotionsApi, customerEventsApi, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductPriceQuote, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl } from "@/lib/api";
+import { sizesApi, crustApi, productPromotionsApi, customerEventsApi, ApiProductSize, ApiProductCrustType, ApiProductPriceQuote, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl } from "@/lib/api";
 import { isAllowedPizzaSize, isPizzaBroto, pizzaSizeDescription, pizzaSizeLabel, PIZZA_SIZE_LABELS } from "@/lib/pizzaSizes";
 import { formatCrustAddition, isNapolitanaCrust, isNapolitanaCrustBlocked, normalizeCrustPriceAddition } from "@/lib/pricing";
 import { firePixelEvent, trackEvent, getTrackingData } from "@/lib/tracking";
@@ -345,9 +345,9 @@ export default function Product() {
   const product = products.find((p) => p.id === id);
 
   // Product type flags
-  const productType = (product as any)?.product_type as string | null | undefined;
-  const isPizza = !productType || productType === "pizza";
-  const isDrink = productType === "drink";
+  const productType = normalizeProductText(product?.product_type);
+  const isDrink = isDrinkLikeCandidate(product);
+  const isPizza = !isDrink && (!productType || productType === "pizza");
   const isFixedFlavorCombination = isPizza && isFixedFlavorCombinationProduct(product);
 
   const [quantity, setQuantity] = useState(1);
@@ -368,9 +368,6 @@ export default function Product() {
   const [selectedBorder, setSelectedBorder] = useState<ApiProductCrustType | null>(null);
   const [priceQuote, setPriceQuote] = useState<ApiProductPriceQuote | null>(null);
 
-  // Drink variants (drink only)
-  const [productDrinkVariants, setProductDrinkVariants] = useState<ApiProductDrinkVariant[]>([]);
-  const [selectedDrinkVariant, setSelectedDrinkVariant] = useState<ApiProductDrinkVariant | null>(null);
   const [imageZoomOpen, setImageZoomOpen] = useState(false);
   const [imageZoomScale, setImageZoomScale] = useState(1);
   const [imageZoomPosition, setImageZoomPosition] = useState({ x: 50, y: 50 });
@@ -404,7 +401,6 @@ export default function Product() {
     setCartError(false);
     setSelectedCrust(null);
     setSelectedBorder(null);
-    setSelectedDrinkVariant(null);
     setImageZoomOpen(false);
     setImageZoomScale(1);
     setImageZoomPosition({ x: 50, y: 50 });
@@ -415,30 +411,31 @@ export default function Product() {
       setProductSizes([]);
       setSelectedSizeObj(null);
       setProductCrusts([]);
-      setProductDrinkVariants([]);
       return;
     }
     setProductSizes([]);
     setSelectedSizeObj(null);
     setProductCrusts([]);
-    setProductDrinkVariants([]);
 
-    // Load sizes for all product types
-    sizesApi.list(product.id).then((sizes) => {
-      const activeSizes = sizes.filter((s) => s.active && (!isPizza || isAllowedPizzaSize(s.label)));
-      setProductSizes(activeSizes);
-      if (activeSizes.length > 0) {
-        const def = activeSizes.find((s) => s.is_default) ?? activeSizes[0];
-        setSelectedSizeObj(def);
-      } else {
+    if (isDrink) {
+      setSelectedSizeFallback("");
+    } else {
+      sizesApi.list(product.id).then((sizes) => {
+        const activeSizes = sizes.filter((s) => s.active && (!isPizza || isAllowedPizzaSize(s.label)));
+        setProductSizes(activeSizes);
+        if (activeSizes.length > 0) {
+          const def = activeSizes.find((s) => s.is_default) ?? activeSizes[0];
+          setSelectedSizeObj(def);
+        } else {
+          setSelectedSizeObj(null);
+          setSelectedSizeFallback(isPizza ? "Pizza Grande" : "");
+        }
+      }).catch(() => {
+        setProductSizes([]);
         setSelectedSizeObj(null);
         setSelectedSizeFallback(isPizza ? "Pizza Grande" : "");
-      }
-    }).catch(() => {
-      setProductSizes([]);
-      setSelectedSizeObj(null);
-      setSelectedSizeFallback(isPizza ? "Pizza Grande" : "");
-    });
+      });
+    }
 
     // Load crust types for pizza
     if (isPizza) {
@@ -449,17 +446,6 @@ export default function Product() {
         setSelectedCrust(firstRegular ?? activeCrusts[0] ?? null);
         setSelectedBorder(null);
       }).catch(() => setProductCrusts([]));
-    }
-
-    // Load drink variants for drinks
-    if (isDrink) {
-      drinkVariantApi.list(product.id).then((variants) => {
-        const activeVariants = variants.filter((v) => v.active);
-        setProductDrinkVariants(activeVariants);
-        if (activeVariants.length > 0) {
-          setSelectedDrinkVariant(activeVariants[0]);
-        }
-      }).catch(() => setProductDrinkVariants([]));
     }
   }, [product?.id, isPizza, isDrink]);
 
@@ -570,9 +556,8 @@ export default function Product() {
 
   const variantPriceAddition = useMemo(() => {
     if (isPizza && selectedCrust) return normalizeCrustPriceAddition(selectedCrust.price_addition, productPrice);
-    if (isDrink && selectedDrinkVariant) return selectedDrinkVariant.price_addition;
     return 0;
-  }, [isPizza, isDrink, selectedCrust, selectedDrinkVariant, productPrice]);
+  }, [isPizza, selectedCrust, productPrice]);
 
   const borderAddition = isPizza && selectedBorder ? (selectedBorder.price_addition ?? 0) : 0;
   const localPricePerUnit = flavorPrice + variantPriceAddition;
@@ -668,17 +653,13 @@ export default function Product() {
       }));
     }
 
-    const crustAddition = selectedCrust ? normalizeCrustPriceAddition(selectedCrust.price_addition, productPrice) : 0;
-    const crustVariation: CartItemVariation | null = selectedCrust
+    const crustAddition = isPizza && selectedCrust ? normalizeCrustPriceAddition(selectedCrust.price_addition, productPrice) : 0;
+    const crustVariation: CartItemVariation | null = isPizza && selectedCrust
       ? {
           id: selectedCrust.id,
           name: selectedBorder ? `${selectedCrust.name} + ${selectedBorder.name}` : selectedCrust.name,
           priceAddition: crustAddition + borderAddition,
         }
-      : null;
-
-    const drinkVariation: CartItemVariation | null = selectedDrinkVariant
-      ? { id: selectedDrinkVariant.id, name: selectedDrinkVariant.name, priceAddition: selectedDrinkVariant.price_addition }
       : null;
 
     addToCart(
@@ -691,7 +672,7 @@ export default function Product() {
       pricePerUnit,
       notes || undefined,
       crustVariation,
-      drinkVariation,
+      null,
       selectedSizeObj?.id,
       priceQuote?.promotion_applied ? {
         applied: true,
@@ -894,9 +875,10 @@ export default function Product() {
         )}
 
         {/* ── Size Selector ───────────────────────────────────────────────── */}
+        {!isDrink && (
         <div className="mb-6">
           <h3 className="text-cream font-bold mb-3">
-            {isDrink ? "Tamanho da Bebida" : p.sizeLabel}
+            {p.sizeLabel}
           </h3>
           <div className="flex gap-2 flex-wrap">
             {productSizes.length > 0 ? (
@@ -915,7 +897,7 @@ export default function Product() {
                   <span className="block text-[10px] text-gold-light mt-0.5">R${size.price.toFixed(2)}</span>
                 </button>
               ))
-            ) : !isDrink ? (
+            ) : (
               PIZZA_SIZE_LABELS.map((size) => (
                 <button
                   key={size}
@@ -930,11 +912,10 @@ export default function Product() {
                   <span className="block text-[10px] opacity-70 font-normal">{pizzaSizeDescription(size)}</span>
                 </button>
               ))
-            ) : (
-              <p className="text-stone text-sm py-2">Nenhum tamanho configurado.</p>
             )}
           </div>
         </div>
+        )}
 
         {/* ── Pizza: Division Selector ─────────────────────────────────────── */}
         {isPizza && !isFixedFlavorCombination && (
@@ -1130,48 +1111,21 @@ export default function Product() {
           </div>
         )}
 
-        {/* ── Drink: Tipo da Bebida ────────────────────────────────────────── */}
-        {isDrink && productDrinkVariants.length > 1 && (
-          <div className="mb-6">
-            <h3 className="text-cream font-bold mb-3">Tipo da Bebida</h3>
-            <div className="flex gap-2 flex-wrap">
-              {productDrinkVariants.map((variant) => (
-                <button
-                  key={variant.id}
-                  onClick={() => setSelectedDrinkVariant(variant)}
-                  className={`flex-1 min-w-[80px] py-3 px-2 rounded-xl text-sm font-bold transition-all ${
-                    selectedDrinkVariant?.id === variant.id
-                      ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
-                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
-                  }`}
-                >
-                  <span className="block font-black text-xs">{variant.name}</span>
-                  {variant.price_addition > 0 ? (
-                    <span className={`block text-[10px] mt-0.5 ${selectedDrinkVariant?.id === variant.id ? "text-white/80" : "text-blue-400"}`}>
-                      +R${variant.price_addition.toFixed(2)}
-                    </span>
-                  ) : (
-                    <span className="block text-[10px] mt-0.5 opacity-60">Mesmo preço</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* ── Observações ─────────────────────────────────────────────────── */}
+        {!isDrink && (
         <div className="mb-6">
           <h3 className="text-cream font-bold mb-3">Observações</h3>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder={isDrink ? "Ex: gelada, sem gelo..." : "Ex: sem cebola, ponto da massa, alergias..."}
+            placeholder="Ex: sem cebola, ponto da massa, alergias..."
             rows={3}
             className="w-full bg-surface-02 border border-surface-03 focus:border-gold rounded-xl px-4 py-3 text-cream placeholder-stone/70 outline-none text-sm resize-none transition-colors"
             maxLength={200}
           />
           <p className="text-stone/60 text-xs mt-1 text-right">{notes.length}/200</p>
         </div>
+        )}
 
         {/* ── Pizza Diagram ───────────────────────────────────────────────── */}
         {isPizza && !isFixedFlavorCombination && effectiveDivision > 1 && (
@@ -1301,11 +1255,8 @@ export default function Product() {
                 {effectiveDivision === 2 ? "Meio a Meio" : "3 Sabores"} · {selectedSize}
               </p>
             )}
-            {selectedCrust && (
+            {isPizza && selectedCrust && (
               <p className="text-stone text-xs">Massa: {selectedCrust.name}</p>
-            )}
-            {selectedDrinkVariant && productDrinkVariants.length > 1 && (
-              <p className="text-stone text-xs">Tipo: {selectedDrinkVariant.name}</p>
             )}
           </div>
         </div>
