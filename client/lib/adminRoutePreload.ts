@@ -7,6 +7,7 @@ const routeLoaders: Array<[string, RouteLoader]> = [
   ["/painel/marketing/visitantes", () => import("@/pages/admin/marketing/MarketingVisitantes")],
   ["/painel/marketing/links", () => import("@/pages/admin/marketing/MarketingLinks")],
   ["/painel/marketing/integracoes", () => import("@/pages/admin/marketing/MarketingIntegracoes")],
+  ["/painel/whatsapp-gateway", () => import("@/pages/admin/whatsapp/WhatsAppGateway")],
   ["/painel/marketing/whatsapp", () => import("@/pages/admin/marketing/MarketingWhatsApp")],
   ["/painel/marketing/email", () => import("@/pages/admin/marketing/MarketingEmail")],
   ["/painel/marketing/ads", () => import("@/pages/admin/PaidTraffic")],

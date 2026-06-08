@@ -1160,6 +1160,49 @@ class AgenteWhatsAppService:
 
         return {"received": received, "duplicates": duplicates, "status_updates": 0}
 
+    def process_baileys_runtime_event(self, payload: dict[str, Any]) -> dict[str, int]:
+        if payload.get("event_type") != "message_received":
+            return {"received": 0, "duplicates": 0, "status_updates": 0, "ignored": 1}
+
+        item = payload.get("message") or {}
+        if item.get("from_me") is True:
+            return {"received": 0, "duplicates": 0, "status_updates": 0, "ignored": 1}
+
+        remote = item.get("remote_jid") or item.get("from") or item.get("phone")
+        phone = normalize_phone(str(remote).split("@", 1)[0] if remote else "")
+        provider_message_id = item.get("id") or item.get("message_id")
+        if not phone or not provider_message_id:
+            return {"received": 0, "duplicates": 0, "status_updates": 0, "ignored": 1}
+        if self._message_exists(str(provider_message_id)):
+            return {"received": 0, "duplicates": 1, "status_updates": 0, "ignored": 0}
+
+        session, _created = self.get_or_create_session(
+            phone=phone,
+            provider="baileys",
+            provider_contact_id=str(remote) if remote else None,
+            origin="inbound",
+            metadata={"source": "baileys_runtime", "instance_id": payload.get("instance_id")},
+        )
+        push_name = item.get("push_name")
+        if session.customer and push_name and session.customer.name.startswith("Cliente WhatsApp"):
+            session.customer.name = str(push_name)
+
+        message_type = str(item.get("message_type") or "text")
+        body = item.get("body")
+        media_url = item.get("media_url")
+        self.add_message(
+            session,
+            direction="inbound",
+            sender_type="customer",
+            message_type=message_type,
+            body=str(body) if body is not None else None,
+            media_url=str(media_url) if media_url else None,
+            provider_message_id=str(provider_message_id),
+            provider_status="received",
+            raw_payload=payload,
+        )
+        return {"received": 1, "duplicates": 0, "status_updates": 0, "ignored": 0}
+
     def update_message_status(
         self,
         *,

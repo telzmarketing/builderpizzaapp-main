@@ -43,6 +43,7 @@ from backend.routes import bi as bi_routes
 from backend.routes import store_notifications as store_notifications_routes
 from backend.routes import upsells as upsells_routes
 from backend.routes import agente_whatsapp as agente_whatsapp_routes
+from backend.routes import whatsapp_gateway as whatsapp_gateway_routes
 from backend.routes import salao as salao_routes
 from backend.routes import salao_page as salao_page_routes
 
@@ -1163,6 +1164,7 @@ app.include_router(bi_routes.router)
 app.include_router(store_notifications_routes.router)
 app.include_router(upsells_routes.router)
 app.include_router(agente_whatsapp_routes.router)
+app.include_router(whatsapp_gateway_routes.router)
 app.include_router(salao_routes.router)
 app.include_router(salao_page_routes.router)
 
@@ -1207,6 +1209,7 @@ app.include_router(bi_routes.router, prefix="/api")
 app.include_router(store_notifications_routes.router, prefix="/api")
 app.include_router(upsells_routes.router, prefix="/api")
 app.include_router(agente_whatsapp_routes.router, prefix="/api")
+app.include_router(whatsapp_gateway_routes.router, prefix="/api")
 app.include_router(salao_routes.router, prefix="/api")
 app.include_router(salao_page_routes.router, prefix="/api")
 app.include_router(upload_optimized_routes.router)

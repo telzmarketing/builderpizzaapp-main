@@ -3069,6 +3069,137 @@ export const customersApi = {
     post<ApiCustomerAISuggestion>(`/suggestions/${suggestionId}/reject`, {}),
 };
 
+export interface ApiWhatsAppGatewayProviderStatus {
+  provider: string;
+  package_name: string;
+  installed: boolean;
+  installed_version: string | null;
+  runtime_status: string;
+  production_auto_update_enabled: boolean;
+  update_requires_confirmation: boolean;
+}
+
+export interface ApiWhatsAppGatewaySchedulerSettings {
+  id: string;
+  tenant_id: string;
+  company_id: string;
+  auto_health_check_enabled: boolean;
+  morning_check_time: string;
+  evening_check_time: string;
+  auto_update_check_enabled: boolean;
+  auto_update_staging_enabled: boolean;
+  auto_update_production_enabled: boolean;
+  notify_admin_enabled: boolean;
+}
+
+export interface ApiWhatsAppGatewayLog {
+  id: string;
+  tenant_id: string;
+  company_id: string;
+  instance_id: string | null;
+  action: string;
+  status: string;
+  message: string;
+  metadata: Record<string, unknown>;
+  created_at: string | null;
+}
+
+export interface ApiWhatsAppGatewayInstance {
+  id: string;
+  tenant_id: string;
+  company_id: string;
+  name: string;
+  phone_number: string | null;
+  provider: string;
+  status: string;
+  qr_code: string | null;
+  connected_at: string | null;
+  disconnected_at: string | null;
+  last_seen_at: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ApiWhatsAppGatewayOverview {
+  total_instances: number;
+  connected_instances: number;
+  disconnected_instances: number;
+  qr_required_instances: number;
+  failed_instances: number;
+  provider: ApiWhatsAppGatewayProviderStatus;
+  scheduler: ApiWhatsAppGatewaySchedulerSettings;
+  recent_logs: ApiWhatsAppGatewayLog[];
+}
+
+export interface ApiWhatsAppGatewayUpdateStatus {
+  package_name: string;
+  installed: boolean;
+  installed_version: string | null;
+  available_version: string | null;
+  update_type: string | null;
+  risk_level: string | null;
+  check_id: string | null;
+  last_checked_at: string | null;
+  confirmation_required: boolean;
+  confirmation_available: boolean;
+  production_auto_update_enabled: boolean;
+  message: string;
+}
+
+export interface ApiWhatsAppGatewayUpdateConfirm {
+  ok: boolean;
+  check_id: string;
+  target_version: string;
+  status: string;
+  message: string;
+}
+
+export interface ApiWhatsAppGatewayRuntimeCommand {
+  ok: boolean;
+  message: string;
+  instance: ApiWhatsAppGatewayInstance;
+  runtime: Record<string, unknown>;
+  qr_code: string | null;
+  qr_code_data_url: string | null;
+}
+
+export const whatsappGatewayApi = {
+  overview: () => get<ApiWhatsAppGatewayOverview>("/whatsapp-gateway/overview"),
+  providerStatus: () => get<ApiWhatsAppGatewayProviderStatus>("/whatsapp-gateway/provider/status"),
+  updateStatus: () => get<ApiWhatsAppGatewayUpdateStatus>("/whatsapp-gateway/updates/status"),
+  checkUpdate: () => post<ApiWhatsAppGatewayUpdateStatus>("/whatsapp-gateway/updates/check", {}),
+  confirmUpdate: (data: { check_id: string; target_version: string; confirm: boolean }) =>
+    post<ApiWhatsAppGatewayUpdateConfirm>("/whatsapp-gateway/updates/confirm", data),
+  schedulerSettings: () => get<ApiWhatsAppGatewaySchedulerSettings>("/whatsapp-gateway/scheduler/settings"),
+  listInstances: () => get<ApiWhatsAppGatewayInstance[]>("/whatsapp-gateway/instances"),
+  createInstance: (data: {
+    name: string;
+    phone_number?: string | null;
+    provider?: "baileys";
+    tenant_id?: string;
+    company_id?: string;
+    metadata?: Record<string, unknown>;
+  }) => post<ApiWhatsAppGatewayInstance>("/whatsapp-gateway/instances", data),
+  getInstance: (id: string) => get<ApiWhatsAppGatewayInstance>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}`),
+  connectInstance: (id: string) =>
+    post<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/connect`, {}),
+  getQrCode: (id: string) =>
+    get<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/qrcode`),
+  getInstanceStatus: (id: string) =>
+    get<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/status`),
+  disconnectInstance: (id: string) =>
+    post<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/disconnect`, {}),
+  restartInstance: (id: string) =>
+    post<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/restart`, {}),
+  listLogs: (params?: { instance_id?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.instance_id) qs.set("instance_id", params.instance_id);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    return get<ApiWhatsAppGatewayLog[]>(`/whatsapp-gateway/logs${qs.toString() ? `?${qs}` : ""}`);
+  },
+};
+
 export const agenteWhatsAppApi = {
   dashboard: () => get<ApiAgenteWhatsAppDashboard>("/agente-whatsapp/dashboard"),
   operationalMetrics: () => get<ApiAgenteWhatsAppOperationalMetrics>("/agente-whatsapp/operational-metrics"),

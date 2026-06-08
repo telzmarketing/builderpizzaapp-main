@@ -604,6 +604,7 @@ sudo chown -R deploy:deploy /home/deploy/"$APP_NAME"
 | Nginx | 80, 443 | Sim (público) |
 | Node.js (frontend) | 3000 | Não (apenas via Nginx) |
 | FastAPI (backend) | 8000 | Não (apenas via Nginx) |
+| WhatsApp Gateway Baileys | 3020 | Nao (apenas local) |
 | PostgreSQL | 5432 | Não (apenas local) |
 
 ## Credenciais padrão do admin
@@ -615,3 +616,10 @@ sudo chown -R deploy:deploy /home/deploy/"$APP_NAME"
 | Senha | Definida no seed do banco (`backend/core/seed.py`) |
 
 > **Importante:** Altere o e-mail e a senha do admin diretamente em `backend/core/seed.py` **antes** de executar o setup do banco pela primeira vez. Nunca use as credenciais padrão em produção.
+
+---
+
+## WhatsApp Gateway Baileys
+
+A operacao de producao do runtime Baileys esta documentada em `docs/whatsapp-gateway-producao.md`.
+Mantenha a porta `3020` apenas local e nao crie rota publica no Nginx para o runtime.

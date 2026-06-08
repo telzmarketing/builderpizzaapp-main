@@ -33,7 +33,7 @@ def create_all_tables():
         shipping, shipping_v2, coupon, loyalty, promotion, delivery, admin, campaign,
         chatbot, theme, home_config, paid_traffic, product_promotion, store_operation,
         customer_event, customer_identity, agente_whatsapp, rbac, crm, business_intelligence, store_notification,
-        promotion_landing_page, salao, salao_page,
+        promotion_landing_page, salao, salao_page, whatsapp_gateway,
     )
     from backend.routes import automations as automations_routes  # noqa: F401
     Base.metadata.create_all(bind=engine)

@@ -402,6 +402,8 @@ def _normalize_provider(provider: Optional[str]) -> str:
         return "evolution"
     if value in {"uazapi", "uazapi_api", "uazapigo"}:
         return "uazapi"
+    if value in {"baileys", "whatsapp_gateway"}:
+        return "baileys"
     if value == "qr":
         return "qr"
     return value

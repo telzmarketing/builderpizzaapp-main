@@ -65,6 +65,13 @@ class Settings(BaseSettings):
     AGENTE_WHATSAPP_PROVIDER_PAUSE_MINUTES: int = 30
     AGENTE_WHATSAPP_DEAD_ALERT_AFTER_MINUTES: int = 5
 
+    # WhatsApp Gateway - Baileys runtime local (nao expor publicamente)
+    WHATSAPP_GATEWAY_RUNTIME_URL: str = "http://127.0.0.1:3020"
+    WHATSAPP_GATEWAY_RUNTIME_TOKEN: str = ""
+    WHATSAPP_GATEWAY_RUNTIME_TIMEOUT_SECONDS: int = 8
+    WHATSAPP_GATEWAY_BACKEND_EVENT_URL: str = "http://127.0.0.1:8000/api/whatsapp-gateway/runtime/events"
+    WHATSAPP_GATEWAY_EVENT_TOKEN: str = ""
+
     class Config:
         env_file = (
             PROJECT_ROOT / ".env",

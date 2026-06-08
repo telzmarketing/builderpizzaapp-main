@@ -37,11 +37,20 @@ jobs:
             echo "━━━ [4/5] Reiniciando serviços ━━━"
             sudo systemctl restart moschettieri-api
             sudo systemctl restart moschettieri-web
+            if systemctl list-unit-files | grep -q '^moschettieri-whatsapp-gateway.service'; then
+              sudo systemctl restart moschettieri-whatsapp-gateway
+            fi
 
             echo "━━━ [5/5] Health check ━━━"
             sleep 4
             curl -sf http://localhost:8000/health \
               && echo "✅ Backend OK" \
               || (echo "❌ Backend falhou" && sudo journalctl -u moschettieri-api -n 20 --no-pager && exit 1)
+
+            if systemctl list-unit-files | grep -q '^moschettieri-whatsapp-gateway.service'; then
+              pnpm whatsapp-gateway:health \
+                && echo "WhatsApp Gateway OK" \
+                || (echo "WhatsApp Gateway falhou" && sudo journalctl -u moschettieri-whatsapp-gateway -n 20 --no-pager && exit 1)
+            fi
 
             echo "🚀 Deploy concluído com sucesso!"

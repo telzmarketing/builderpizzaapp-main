@@ -278,6 +278,7 @@ export default function CrmAgenteWhatsApp() {
   const [periodTo, setPeriodTo] = useState("");
   const [reply, setReply] = useState("");
   const [newPhone, setNewPhone] = useState("");
+  const [newProvider, setNewProvider] = useState<"official" | "baileys">("official");
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [outboxLoading, setOutboxLoading] = useState(false);
@@ -815,7 +816,7 @@ export default function CrmAgenteWhatsApp() {
       const session = await agenteWhatsAppApi.createSession({
         phone: newPhone.trim(),
         origin: "manual",
-        provider: "official",
+        provider: newProvider,
         ai_enabled: true,
       });
       setNewPhone("");
@@ -2073,6 +2074,14 @@ export default function CrmAgenteWhatsApp() {
                 placeholder="Telefone"
                 className="flex-1 h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
               />
+              <select
+                value={newProvider}
+                onChange={(event) => setNewProvider(event.target.value as "official" | "baileys")}
+                className="h-10 w-28 bg-surface-03 border border-surface-03 rounded-xl px-2 text-xs text-cream outline-none focus:border-gold"
+              >
+                <option value="official">Meta</option>
+                <option value="baileys">Baileys</option>
+              </select>
               <button
                 onClick={createSession}
                 disabled={saving || !newPhone.trim()}

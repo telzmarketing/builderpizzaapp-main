@@ -24,6 +24,7 @@ from backend.routes.whatsapp_marketing import (
     _send_uazapi_api,
     _send_whatsapp_api,
 )
+from backend.services.whatsapp_gateway_service import WhatsAppGatewayService
 
 
 def _now_utc() -> datetime:
@@ -31,7 +32,7 @@ def _now_utc() -> datetime:
 
 
 def _json_dump(value: dict[str, Any] | None) -> str:
-    return json.dumps(value or {}, ensure_ascii=False)
+    return json.dumps(value or {}, ensure_ascii=False, default=str)
 
 
 def _json_load(value: str | None) -> dict[str, Any]:
@@ -187,7 +188,7 @@ class AgenteWhatsAppOutboxService:
             for row in self._db.query(AgenteWhatsAppOutbox.provider).distinct().all()
             if row[0]
         }
-        providers.update({"official", "evolution", "uazapi"})
+        providers.update({"official", "evolution", "uazapi", "baileys"})
         return [self._ensure_provider_state(provider) for provider in sorted(providers)]
 
     def alerts(self) -> dict[str, Any]:
@@ -632,7 +633,7 @@ class AgenteWhatsAppOutboxService:
 
         if provider == "qr":
             return self._fail_item(item, "WhatsApp QR Code ainda nao possui worker ativo.")
-        if provider not in {"official", "evolution", "uazapi"}:
+        if provider not in {"official", "evolution", "uazapi", "baileys"}:
             return self._fail_item(item, "Provedor WhatsApp invalido.")
 
         payload = _json_load(item.payload_json)
@@ -640,7 +641,23 @@ class AgenteWhatsAppOutboxService:
         media_url = message.media_url or payload.get("media_url")
         media_type = _normalize_media_type(message.message_type, media_url)
 
-        if provider == "evolution":
+        if provider == "baileys":
+            gateway = WhatsAppGatewayService(self._db)
+            if media_url:
+                result = gateway.send_media_message(
+                    phone=item.phone,
+                    media_url=media_url,
+                    caption=body if media_url else None,
+                    media_type=media_type,
+                    mimetype=payload.get("mimetype"),
+                    file_name=payload.get("file_name"),
+                )
+            else:
+                result = gateway.send_text_message(phone=item.phone, text=body)
+            provider_message_id = result.provider_message_id or (result.data or {}).get("provider_message_id")
+            status = "sent" if result.ok and result.status == "sent" else result.status
+            error = None if status == "sent" else result.message
+        elif provider == "evolution":
             cfg = _get_config(self._db)
             provider_message_id, status, error = _send_evolution_api(
                 item.phone,

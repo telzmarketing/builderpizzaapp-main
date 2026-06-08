@@ -33,6 +33,7 @@ from backend.models import (  # noqa: F401
     store_operation,
     store_notification,
     theme,
+    whatsapp_gateway,
 )
 
 config = context.config

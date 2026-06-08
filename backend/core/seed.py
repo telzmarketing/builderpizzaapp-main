@@ -257,10 +257,11 @@ _MODULES = [
     ("funcionamento",   "Funcionamento da Loja",  20),
     ("frete",           "Frete e Regiões",        21),
     ("integracoes",     "Integrações",            22),
-    ("configuracoes",   "Configurações Gerais",   23),
-    ("usuarios",        "Usuários e Permissões",  24),
-    ("auditoria",       "Auditoria / Logs",       25),
-    ("cozinha",         "Cozinha (KDS)",          26),
+    ("whatsapp_gateway","WhatsApp Gateway",       23),
+    ("configuracoes",   "Configurações Gerais",   24),
+    ("usuarios",        "Usuários e Permissões",  25),
+    ("auditoria",       "Auditoria / Logs",       26),
+    ("cozinha",         "Cozinha (KDS)",          27),
 ]
 
 _PERMISSIONS = [
@@ -302,6 +303,7 @@ _ROLE_PERMISSIONS: dict = {
         "funcionamento":    ["view", "edit"],
         "frete":            ["view", "edit"],
         "integracoes":      ["view", "manage"],
+        "whatsapp_gateway": ["view", "create", "edit", "manage"],
         "configuracoes":    ["view"],
         "usuarios":         ["view", "create", "edit"],
         "auditoria":        ["view"],

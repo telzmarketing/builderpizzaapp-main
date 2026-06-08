@@ -329,6 +329,7 @@ const MarketingDashboard = lazy(() => import("./pages/admin/marketing/MarketingD
 const MarketingVisitantes = lazy(() => import("./pages/admin/marketing/MarketingVisitantes"));
 const MarketingLinks = lazy(() => import("./pages/admin/marketing/MarketingLinks"));
 const MarketingIntegracoes = lazy(() => import("./pages/admin/marketing/MarketingIntegracoes"));
+const WhatsAppGateway = lazy(() => import("./pages/admin/whatsapp/WhatsAppGateway"));
 const MarketingWhatsApp = lazy(() => import("./pages/admin/marketing/MarketingWhatsApp"));
 const MarketingEmail = lazy(() => import("./pages/admin/marketing/MarketingEmail"));
 const MarketingAutomacoes = lazy(() => import("./pages/admin/marketing/MarketingAutomacoes"));
@@ -453,6 +454,7 @@ export default function App() {
                 <Route path="/painel/marketing/integracoes" element={<MarketingIntegracoes />} />
                 <Route path="/painel/marketing/whatsapp" element={<MarketingWhatsApp />} />
                 <Route path="/painel/marketing/email" element={<MarketingEmail />} />
+                <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />
                 <Route path="/painel/marketing/automacoes" element={<MarketingAutomacoes />} />
                 <Route path="/painel/marketing/ads" element={<AdminPaidTraffic />} />
                 <Route path="/painel/marketing/workflow" element={<MarketingWorkflow />} />

@@ -44,6 +44,7 @@ export const adminPageMeta: Record<string, PageMeta> = {
   "/painel/marketing/visitantes": { eyebrow: "Marketing", title: "Analise de Visitantes", subtitle: "Origem e comportamento no site" },
   "/painel/marketing/links": { eyebrow: "Marketing", title: "Links Rastreaveis", subtitle: "UTMs e rastreamento de campanhas" },
   "/painel/marketing/integracoes": { eyebrow: "Configuracoes", title: "Integracoes", subtitle: "Conexoes com canais externos" },
+  "/painel/whatsapp-gateway": { eyebrow: "Configuracoes", title: "WhatsApp Gateway", subtitle: "Conexoes, sessoes, Baileys e saude operacional" },
   "/painel/marketing/whatsapp": { eyebrow: "Marketing", title: "Disparador WhatsApp", subtitle: "Mensagens e campanhas por WhatsApp" },
   "/painel/marketing/email": { eyebrow: "Marketing", title: "Disparador de Email", subtitle: "Campanhas e mensagens por email" },
   "/painel/marketing/automacoes": { eyebrow: "Marketing", title: "Automacao de Marketing", subtitle: "Fluxos automaticos e eventos" },

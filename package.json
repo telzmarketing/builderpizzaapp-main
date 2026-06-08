@@ -9,6 +9,8 @@
     "build:server": "vite build --config vite.config.server.ts",
     "postbuild": "node scripts/prepare-capacitor-webdir.mjs",
     "start": "node dist/server/node-build.mjs",
+    "whatsapp-gateway:runtime": "node server/whatsapp-gateway-runtime.mjs",
+    "whatsapp-gateway:health": "node scripts/whatsapp-gateway-health.mjs",
     "test": "vitest --run",
     "format.fix": "prettier --write .",
     "typecheck": "tsc"
@@ -16,9 +18,11 @@
   "dependencies": {
     "@capacitor/core": "^8.3.4",
     "@types/leaflet": "^1.9.21",
+    "@whiskeysockets/baileys": "7.0.0-rc13",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "leaflet": "^1.9.4",
+    "qrcode": "^1.5.4",
     "react-leaflet": "^5.0.0",
     "vite-plugin-pwa": "^1.3.0",
     "workbox-core": "^7.4.1",
