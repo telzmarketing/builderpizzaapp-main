@@ -81,7 +81,7 @@ def upgrade() -> None:
             is_primary, marketing_consent, source
         )
         SELECT
-            'cchan-email-' || substr(md5(c.id || ':email'), 1, 20),
+            'cchan-email-' || substr(md5(c.id || '-email'), 1, 20),
             c.id,
             'email',
             c.email,
@@ -101,7 +101,7 @@ def upgrade() -> None:
             is_primary, marketing_consent, source
         )
         SELECT
-            'cchan-phone-' || substr(md5(c.id || ':phone'), 1, 20),
+            'cchan-phone-' || substr(md5(c.id || '-phone'), 1, 20),
             c.id,
             'phone',
             c.phone,
@@ -123,7 +123,7 @@ def upgrade() -> None:
             is_primary, marketing_consent, source
         )
         SELECT
-            'cchan-wpp-' || substr(md5(c.id || ':whatsapp'), 1, 22),
+            'cchan-wpp-' || substr(md5(c.id || '-whatsapp'), 1, 22),
             c.id,
             'whatsapp',
             c.phone,
@@ -144,7 +144,7 @@ def upgrade() -> None:
             id, customer_id, auth_provider, identifier, password_hash, status
         )
         SELECT
-            'cauth-pass-' || substr(md5(c.id || ':password'), 1, 20),
+            'cauth-pass-' || substr(md5(c.id || '-password'), 1, 20),
             c.id,
             'password',
             lower(c.email),
@@ -159,7 +159,7 @@ def upgrade() -> None:
         """
         INSERT INTO customer_preferences (id, customer_id, preferred_channel)
         SELECT
-            'cpref-' || substr(md5(c.id || ':preferences'), 1, 26),
+            'cpref-' || substr(md5(c.id || '-preferences'), 1, 26),
             c.id,
             CASE WHEN c.phone IS NOT NULL AND c.phone <> '' THEN 'whatsapp' ELSE 'email' END
         FROM customers c
