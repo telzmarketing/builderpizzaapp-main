@@ -78,7 +78,7 @@ def upgrade() -> None:
         """
         INSERT INTO customer_channels (
             id, customer_id, channel, identifier, normalized_identifier,
-            is_primary, marketing_consent, source
+            is_primary, marketing_consent, source, metadata_json, created_at, updated_at
         )
         SELECT
             'cchan-email-' || substr(md5(c.id || '-email'), 1, 20),
@@ -88,7 +88,10 @@ def upgrade() -> None:
             lower(c.email),
             CASE WHEN c.phone IS NULL OR c.phone = '' THEN TRUE ELSE FALSE END,
             COALESCE(c.marketing_email_consent, FALSE),
-            COALESCE(c.source, 'legacy')
+            COALESCE(c.source, 'legacy'),
+            '{}',
+            NOW(),
+            NOW()
         FROM customers c
         WHERE c.email IS NOT NULL AND c.email <> ''
         ON CONFLICT DO NOTHING
@@ -98,7 +101,7 @@ def upgrade() -> None:
         """
         INSERT INTO customer_channels (
             id, customer_id, channel, identifier, normalized_identifier,
-            is_primary, marketing_consent, source
+            is_primary, marketing_consent, source, metadata_json, created_at, updated_at
         )
         SELECT
             'cchan-phone-' || substr(md5(c.id || '-phone'), 1, 20),
@@ -108,7 +111,10 @@ def upgrade() -> None:
             regexp_replace(c.phone, '[^0-9]', '', 'g'),
             TRUE,
             COALESCE(c.marketing_whatsapp_consent, FALSE),
-            COALESCE(c.source, 'legacy')
+            COALESCE(c.source, 'legacy'),
+            '{}',
+            NOW(),
+            NOW()
         FROM customers c
         WHERE c.phone IS NOT NULL
           AND c.phone <> ''
@@ -120,7 +126,7 @@ def upgrade() -> None:
         """
         INSERT INTO customer_channels (
             id, customer_id, channel, identifier, normalized_identifier,
-            is_primary, marketing_consent, source
+            is_primary, marketing_consent, source, metadata_json, created_at, updated_at
         )
         SELECT
             'cchan-wpp-' || substr(md5(c.id || '-whatsapp'), 1, 22),
@@ -130,7 +136,10 @@ def upgrade() -> None:
             regexp_replace(c.phone, '[^0-9]', '', 'g'),
             TRUE,
             COALESCE(c.marketing_whatsapp_consent, FALSE),
-            COALESCE(c.source, 'legacy')
+            COALESCE(c.source, 'legacy'),
+            '{}',
+            NOW(),
+            NOW()
         FROM customers c
         WHERE c.phone IS NOT NULL
           AND c.phone <> ''
@@ -157,11 +166,14 @@ def upgrade() -> None:
     )
     op.execute(
         """
-        INSERT INTO customer_preferences (id, customer_id, preferred_channel)
+        INSERT INTO customer_preferences (id, customer_id, preferred_channel, metadata_json, created_at, updated_at)
         SELECT
             'cpref-' || substr(md5(c.id || '-preferences'), 1, 26),
             c.id,
-            CASE WHEN c.phone IS NOT NULL AND c.phone <> '' THEN 'whatsapp' ELSE 'email' END
+            CASE WHEN c.phone IS NOT NULL AND c.phone <> '' THEN 'whatsapp' ELSE 'email' END,
+            '{}',
+            NOW(),
+            NOW()
         FROM customers c
         ON CONFLICT DO NOTHING
         """
