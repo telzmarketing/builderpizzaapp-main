@@ -166,11 +166,18 @@ def upgrade() -> None:
     )
     op.execute(
         """
-        INSERT INTO customer_preferences (id, customer_id, preferred_channel, metadata_json, created_at, updated_at)
+        INSERT INTO customer_preferences (
+            id, customer_id, preferred_channel, language,
+            accepts_ai_service, accepts_order_status,
+            metadata_json, created_at, updated_at
+        )
         SELECT
             'cpref-' || substr(md5(c.id || '-preferences'), 1, 26),
             c.id,
             CASE WHEN c.phone IS NOT NULL AND c.phone <> '' THEN 'whatsapp' ELSE 'email' END,
+            'pt_BR',
+            TRUE,
+            TRUE,
             '{}',
             NOW(),
             NOW()
