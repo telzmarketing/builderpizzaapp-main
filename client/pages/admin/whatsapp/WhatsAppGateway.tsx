@@ -51,17 +51,45 @@ function fmtDate(value?: string | null) {
   }
 }
 
-function statusClass(status: string) {
+function toDisplayText(value: unknown, fallback = "-") {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    const text = value.map((item) => toDisplayText(item, "")).filter(Boolean).join(", ");
+    return text || fallback;
+  }
+  if (typeof value === "object") {
+    const objectValue = value as Record<string, unknown>;
+    const candidate =
+      objectValue.message ?? objectValue.detail ?? objectValue.error ?? objectValue.status ?? objectValue.name ?? objectValue.title;
+    if (candidate !== undefined && candidate !== value) return toDisplayText(candidate, fallback);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
+function toErrorMessage(err: unknown, fallback: string) {
+  if (err instanceof Error) return toDisplayText(err.message, fallback);
+  return toDisplayText(err, fallback);
+}
+
+function statusClass(rawStatus: unknown) {
+  const status = toDisplayText(rawStatus, "unknown");
   if (["connected", "installed", "success"].includes(status)) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
   if (["created", "runtime_pending", "info"].includes(status)) return "border-sky-500/30 bg-sky-500/10 text-sky-300";
   if (["qr_required", "warning"].includes(status)) return "border-amber-500/30 bg-amber-500/10 text-amber-300";
   return "border-red-500/30 bg-red-500/10 text-red-300";
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status }: { status: unknown }) {
+  const label = toDisplayText(status, "unknown");
   return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusClass(status)}`}>
-      {status.replace(/_/g, " ")}
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusClass(label)}`}>
+      {label.replace(/_/g, " ")}
     </span>
   );
 }
@@ -72,7 +100,7 @@ function MetricCard({
   icon: Icon,
 }: {
   label: string;
-  value: string | number;
+  value: unknown;
   icon: LucideIcon;
 }) {
   return (
@@ -81,7 +109,7 @@ function MetricCard({
         <p className="text-xs font-semibold uppercase tracking-wide text-stone">{label}</p>
         <Icon size={17} className="text-gold" />
       </div>
-      <p className="mt-3 text-2xl font-black text-cream">{value}</p>
+      <p className="mt-3 text-2xl font-black text-cream">{toDisplayText(value)}</p>
     </div>
   );
 }
@@ -131,7 +159,7 @@ export default function WhatsAppGateway() {
       setLogs(logData);
       setUpdates(updateData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao carregar WhatsApp Gateway.");
+      setError(toErrorMessage(err, "Falha ao carregar WhatsApp Gateway."));
     } finally {
       setLoading(false);
     }
@@ -156,7 +184,7 @@ export default function WhatsAppGateway() {
       await loadAll();
       setTab("instances");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao criar instancia.");
+      setError(toErrorMessage(err, "Falha ao criar instancia."));
     } finally {
       setSaving(false);
     }
@@ -185,9 +213,9 @@ export default function WhatsAppGateway() {
       if (["connect", "qrcode", "restart"].includes(action)) {
         setQrPreview({
           instanceId: instance.id,
-          name: instance.name,
-          status: result.instance.status,
-          message: result.message,
+          name: toDisplayText(instance.name, "Instancia"),
+          status: toDisplayText(result.instance.status, "unknown"),
+          message: toDisplayText(result.message, "Acao executada."),
           dataUrl: result.qr_code_data_url,
         });
       }
@@ -196,7 +224,7 @@ export default function WhatsAppGateway() {
       }
       await loadAll();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao executar acao da instancia.");
+      setError(toErrorMessage(err, "Falha ao executar acao da instancia."));
     } finally {
       setActionLoading(null);
     }
@@ -211,7 +239,7 @@ export default function WhatsAppGateway() {
       await loadAll();
       setTab("updates");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao verificar atualizacao da Baileys.");
+      setError(toErrorMessage(err, "Falha ao verificar atualizacao da Baileys."));
     } finally {
       setUpdateAction(null);
     }
@@ -219,7 +247,7 @@ export default function WhatsAppGateway() {
 
   async function confirmUpdate() {
     if (!updates?.check_id || !updates.available_version) return;
-    const confirmed = window.confirm(`Confirmar atualizacao da Baileys para ${updates.available_version}?`);
+    const confirmed = window.confirm(`Confirmar atualizacao da Baileys para ${toDisplayText(updates.available_version)}?`);
     if (!confirmed) return;
     setUpdateAction("confirm");
     setError(null);
@@ -234,14 +262,14 @@ export default function WhatsAppGateway() {
       await loadAll();
       setTab("updates");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao confirmar atualizacao da Baileys.");
+      setError(toErrorMessage(err, "Falha ao confirmar atualizacao da Baileys."));
     } finally {
       setUpdateAction(null);
     }
   }
 
-  const providerStatus = overview?.provider.runtime_status ?? "unknown";
-  const updateMessage = updates?.message ?? "Status de atualizacao indisponivel.";
+  const providerStatus = toDisplayText(overview?.provider.runtime_status, "unknown");
+  const updateMessage = toDisplayText(updates?.message, "Status de atualizacao indisponivel.");
   const recentLogs = useMemo(() => logs.slice(0, 12), [logs]);
 
   return (
@@ -269,7 +297,7 @@ export default function WhatsAppGateway() {
         {error && (
           <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
             <AlertTriangle size={17} className="mt-0.5 shrink-0" />
-            <span>{error}</span>
+            <span>{toDisplayText(error)}</span>
           </div>
         )}
 
@@ -291,7 +319,7 @@ export default function WhatsAppGateway() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <h2 className="text-base font-bold text-cream">Provider Baileys</h2>
-                        <p className="mt-1 text-sm text-stone">{overview.provider.package_name}</p>
+                        <p className="mt-1 text-sm text-stone">{toDisplayText(overview.provider.package_name)}</p>
                       </div>
                       <StatusBadge status={providerStatus} />
                     </div>
@@ -302,7 +330,7 @@ export default function WhatsAppGateway() {
                       </div>
                       <div>
                         <p className="text-xs text-stone">Versao</p>
-                        <p className="mt-1 font-semibold text-cream">{overview.provider.installed_version ?? "-"}</p>
+                        <p className="mt-1 font-semibold text-cream">{toDisplayText(overview.provider.installed_version)}</p>
                       </div>
                       <div>
                         <p className="text-xs text-stone">Atualizacao em producao</p>
@@ -319,7 +347,7 @@ export default function WhatsAppGateway() {
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-stone">Health check</span>
                         <span className="font-semibold text-cream">
-                          {overview.scheduler.morning_check_time} / {overview.scheduler.evening_check_time}
+                          {toDisplayText(overview.scheduler.morning_check_time)} / {toDisplayText(overview.scheduler.evening_check_time)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-3">
@@ -411,9 +439,9 @@ export default function WhatsAppGateway() {
                       <tbody className="divide-y divide-surface-03">
                         {instances.map((instance) => (
                           <tr key={instance.id} className="text-stone">
-                            <td className="px-4 py-3 font-semibold text-cream">{instance.name}</td>
-                            <td className="px-4 py-3">{instance.phone_number ?? "-"}</td>
-                            <td className="px-4 py-3">{instance.provider}</td>
+                            <td className="px-4 py-3 font-semibold text-cream">{toDisplayText(instance.name)}</td>
+                            <td className="px-4 py-3">{toDisplayText(instance.phone_number)}</td>
+                            <td className="px-4 py-3">{toDisplayText(instance.provider)}</td>
                             <td className="px-4 py-3"><StatusBadge status={instance.status} /></td>
                             <td className="px-4 py-3">{fmtDate(instance.created_at)}</td>
                             <td className="px-4 py-3">
@@ -492,8 +520,8 @@ export default function WhatsAppGateway() {
                       <span className="text-xs text-stone">{fmtDate(log.created_at)}</span>
                       <StatusBadge status={log.status} />
                       <div>
-                        <p className="text-sm font-semibold text-cream">{log.action}</p>
-                        <p className="text-sm text-stone">{log.message}</p>
+                        <p className="text-sm font-semibold text-cream">{toDisplayText(log.action)}</p>
+                        <p className="text-sm text-stone">{toDisplayText(log.message)}</p>
                       </div>
                     </div>
                   ))}
@@ -509,7 +537,7 @@ export default function WhatsAppGateway() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h2 className="text-base font-bold text-cream">Baileys</h2>
-                    <p className="mt-1 text-sm text-stone">{updates?.package_name ?? "@whiskeysockets/baileys"}</p>
+                    <p className="mt-1 text-sm text-stone">{toDisplayText(updates?.package_name, "@whiskeysockets/baileys")}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge status={updates?.installed ? "installed" : "package_missing"} />
@@ -535,8 +563,8 @@ export default function WhatsAppGateway() {
                 </div>
                 <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <MetricCard label="Instalada" value={updates?.installed ? "Sim" : "Nao"} icon={CheckCircle2} />
-                  <MetricCard label="Versao atual" value={updates?.installed_version ?? "-"} icon={Server} />
-                  <MetricCard label="Disponivel" value={updates?.available_version ?? "-"} icon={RefreshCw} />
+                  <MetricCard label="Versao atual" value={updates?.installed_version} icon={Server} />
+                  <MetricCard label="Disponivel" value={updates?.available_version} icon={RefreshCw} />
                   <MetricCard label="Confirmacao" value={updates?.confirmation_required ? "Manual" : "Livre"} icon={ShieldCheck} />
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -546,11 +574,11 @@ export default function WhatsAppGateway() {
                   </div>
                   <div className="rounded-lg border border-surface-03 bg-surface-01 p-3">
                     <p className="text-xs text-stone">Tipo</p>
-                    <p className="mt-1 text-sm font-semibold text-cream">{updates?.update_type ?? "-"}</p>
+                    <p className="mt-1 text-sm font-semibold text-cream">{toDisplayText(updates?.update_type)}</p>
                   </div>
                   <div className="rounded-lg border border-surface-03 bg-surface-01 p-3">
                     <p className="text-xs text-stone">Risco</p>
-                    <p className="mt-1 text-sm font-semibold text-cream">{updates?.risk_level ?? "-"}</p>
+                    <p className="mt-1 text-sm font-semibold text-cream">{toDisplayText(updates?.risk_level)}</p>
                   </div>
                 </div>
                 <div className="mt-4 rounded-lg border border-surface-03 bg-surface-01 p-3 text-sm text-stone">
