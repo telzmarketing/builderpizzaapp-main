@@ -1,4 +1,4 @@
-import type { ElementType, ReactNode } from "react";
+import { isValidElement, type ElementType, type ReactNode } from "react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import { useAdminLayout } from "@/components/layout/AdminLayoutContext";
@@ -8,6 +8,17 @@ export type AdminPageTab<T extends string> = {
   label: string;
   icon?: ReactNode | ElementType;
 };
+
+function renderTabIcon(icon: AdminPageTab<string>["icon"]) {
+  if (!icon) return null;
+  if (isValidElement(icon)) return icon;
+  if (typeof icon === "function" || (typeof icon === "object" && "$$typeof" in icon)) {
+    const IconComponent = icon as ElementType<{ size?: number }>;
+    return <IconComponent size={15} />;
+  }
+  if (typeof icon === "string" || typeof icon === "number") return icon;
+  return null;
+}
 
 export function AdminPageShell({ children }: { children: ReactNode }) {
   const insideGlobalLayout = useAdminLayout();
@@ -107,7 +118,7 @@ export function AdminPageTabs<T extends string>({
                   : "border-transparent text-stone hover:bg-surface-03/60 hover:text-cream"
               }`}
             >
-              {typeof Icon === "function" ? <Icon size={15} /> : Icon}
+              {renderTabIcon(Icon)}
               {tab.label}
             </button>
           );
