@@ -34,17 +34,24 @@ def upgrade() -> None:
     op.execute(
         """
         INSERT INTO agente_whatsapp_ai_settings (
-            id, prompt_base, business_rules, tone_of_voice, objective,
-            transfer_instructions, forbidden_topics, allowed_tools_json
+            id, enabled, provider, model, temperature, max_tokens,
+            prompt_base, business_rules, tone_of_voice, objective,
+            transfer_instructions, forbidden_topics, allowed_tools_json, updated_at
         ) VALUES (
             'default',
+            TRUE,
+            'internal',
+            'internal-rules-v1',
+            0.4,
+            800,
             'Voce e o AGENTE WHATSAPP oficial da loja. Atenda com objetividade, venda com naturalidade e use somente dados vindos das ferramentas reais.',
             'Nunca invente preco, promocao, status de pedido, frete, cupom ou forma de pagamento. Para criar pedido ou pagamento real, exija confirmacao explicita do cliente.',
             'Humano, cordial, direto e comercial, sem textos longos.',
             'Vender, atender, recuperar vendas e acompanhar pedidos pelo WhatsApp.',
             'Transferir para humano quando houver reclamacao grave, pagamento divergente ou pedido fora das regras.',
             'Nao prometer prazo, desconto, brinde ou disponibilidade sem ferramenta real.',
-            '{"mode":"all_registered_tools"}'
+            '{"mode":"all_registered_tools"}',
+            NOW()
         )
         ON CONFLICT DO NOTHING
         """
