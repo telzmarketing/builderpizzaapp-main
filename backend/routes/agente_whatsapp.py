@@ -22,6 +22,8 @@ from backend.schemas.agente_whatsapp import (
     AgenteWhatsAppCampaignDispatchOut,
     AgenteWhatsAppCampaignOut,
     AgenteWhatsAppCampaignTemplateOut,
+    AgenteWhatsAppChannelSettingsOut,
+    AgenteWhatsAppChannelSettingsUpdate,
     AgenteWhatsAppAutomationRunIn,
     AgenteWhatsAppAutomationRunOut,
     AgenteWhatsAppAutomationTemplateOut,
@@ -52,12 +54,36 @@ from backend.schemas.agente_whatsapp import (
     AgenteWhatsAppToolCallOut,
     AgenteWhatsAppToolOut,
 )
+from backend.models.agente_whatsapp import AgenteWhatsAppChannelSettings
 from backend.services.agente_whatsapp_ai_service import AgenteWhatsAppAIService
 from backend.services.agente_whatsapp_outbox_service import AgenteWhatsAppOutboxService
 from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 from backend.services.agente_whatsapp_tools import AgenteWhatsAppToolService
+from backend.services.whatsapp_gateway_service import WhatsAppGatewayService
 
 router = APIRouter(prefix="/agente-whatsapp", tags=["agente-whatsapp"])
+
+
+def _get_channel_settings(db: Session) -> AgenteWhatsAppChannelSettings:
+    settings = (
+        db.query(AgenteWhatsAppChannelSettings)
+        .filter(AgenteWhatsAppChannelSettings.id == "default")
+        .first()
+    )
+    if not settings:
+        settings = AgenteWhatsAppChannelSettings(id="default", active_provider="official")
+        db.add(settings)
+        db.flush()
+    return settings
+
+
+def _serialize_channel_settings(settings: AgenteWhatsAppChannelSettings) -> dict:
+    return {
+        "id": settings.id,
+        "active_provider": settings.active_provider,
+        "whatsapp_gateway_instance_id": settings.whatsapp_gateway_instance_id,
+        "updated_at": settings.updated_at,
+    }
 
 
 @router.get("/webhook/meta", include_in_schema=False)
@@ -433,6 +459,37 @@ def outbox_providers(db: Session = Depends(get_db), _=Depends(get_current_admin)
     states = service.provider_states()
     db.commit()
     return [service.serialize_provider_state(state) for state in states]
+
+
+@router.get("/channel/settings", response_model=AgenteWhatsAppChannelSettingsOut)
+def get_channel_settings(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    settings = _get_channel_settings(db)
+    db.commit()
+    db.refresh(settings)
+    return _serialize_channel_settings(settings)
+
+
+@router.put("/channel/settings", response_model=AgenteWhatsAppChannelSettingsOut)
+def update_channel_settings(
+    body: AgenteWhatsAppChannelSettingsUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    settings = _get_channel_settings(db)
+    if body.active_provider is not None:
+        settings.active_provider = body.active_provider
+    if body.whatsapp_gateway_instance_id is not None:
+        instance_id = body.whatsapp_gateway_instance_id.strip()
+        if instance_id:
+            instance = WhatsAppGatewayService(db).get_instance(instance_id)
+            if not instance:
+                raise HTTPException(status_code=404, detail="Instancia do WhatsApp Gateway nao encontrada.")
+            settings.whatsapp_gateway_instance_id = instance_id
+        else:
+            settings.whatsapp_gateway_instance_id = None
+    db.commit()
+    db.refresh(settings)
+    return _serialize_channel_settings(settings)
 
 
 @router.get("/outbox/internal-alerts", response_model=list[AgenteWhatsAppInternalAlertOut])

@@ -57,6 +57,19 @@ class AgenteWhatsAppAISettings(Base):
     updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
 
 
+class AgenteWhatsAppChannelSettings(Base):
+    __tablename__ = "agente_whatsapp_channel_settings"
+
+    id = Column(String, primary_key=True, default="default")
+    active_provider = Column(String(40), nullable=False, default="official")
+    whatsapp_gateway_instance_id = Column(
+        String,
+        ForeignKey("whatsapp_gateway_instances.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
+
+
 class AgenteWhatsAppMessage(Base):
     __tablename__ = "agente_whatsapp_messages"
 

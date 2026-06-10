@@ -38,7 +38,7 @@ const OAUTH_PLATFORMS: Record<string, string> = {
   tiktok_ads: "tiktok",
 };
 
-const INTEGRATIONS: IntegrationDef[] = [
+const INTEGRATIONS: IntegrationDef[] = ([
   {
     type: "meta_ads",
     label: "Meta Ads",
@@ -132,7 +132,7 @@ const INTEGRATIONS: IntegrationDef[] = [
       { key: "from_name", label: "Nome remetente", placeholder: "Moschettieri Pizzaria" },
     ],
   },
-];
+] as IntegrationDef[]).filter((integration) => !["whatsapp_qr", "whatsapp_unofficial"].includes(integration.type));
 
 export default function MarketingIntegracoes() {
   const [integrations, setIntegrations] = useState<Integration[]>([]);

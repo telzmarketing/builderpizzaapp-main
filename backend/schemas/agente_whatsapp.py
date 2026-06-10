@@ -212,6 +212,18 @@ class AgenteWhatsAppAIProviderStatusOut(BaseModel):
     anthropic_key_preview: str | None = None
 
 
+class AgenteWhatsAppChannelSettingsUpdate(BaseModel):
+    active_provider: Literal["official", "baileys"] | None = None
+    whatsapp_gateway_instance_id: str | None = None
+
+
+class AgenteWhatsAppChannelSettingsOut(BaseModel):
+    id: str
+    active_provider: str
+    whatsapp_gateway_instance_id: str | None = None
+    updated_at: datetime | None = None
+
+
 class AgenteWhatsAppAITestIn(BaseModel):
     message: str | None = None
 

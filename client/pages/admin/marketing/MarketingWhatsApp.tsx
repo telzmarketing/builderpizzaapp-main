@@ -13,7 +13,11 @@ import {
   type AdminPageTab,
 } from "@/components/admin/AdminPageChrome";
 import PromotionLandingsTab from "@/components/admin/PromotionLandingsTab";
-import type { ApiPromotionLandingPage } from "@/lib/api";
+import {
+  whatsappGatewayApi,
+  type ApiPromotionLandingPage,
+  type ApiWhatsAppGatewayInstance,
+} from "@/lib/api";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -52,21 +56,20 @@ function fmtDate(s?: string) {
 
 const IC = "w-full bg-surface-03 border border-surface-03 rounded-xl px-3 py-2 text-cream text-sm focus:outline-none focus:border-gold";
 const PROVIDER_LABELS: Record<string, string> = {
-  official: "WABA",
-  evolution: "Evolution",
-  uazapi: "Uazapi",
+  official: "API Oficial",
+  baileys: "Gateway",
 };
-const isUnofficialProvider = (provider?: string) => provider === "evolution" || provider === "uazapi";
+const isGatewayProvider = (provider?: string) => provider === "baileys";
 
 interface WaTemplate { id: string; name: string; body: string; category: string; language: string; provider?: string; media_type?: string; media_url?: string; caption?: string; mimetype?: string; file_name?: string; active: boolean; created_at: string; }
 interface WaMessage  { id: string; phone: string; body_sent: string; status: string; sent_at: string; error?: string; customer_name?: string; template_name?: string; provider?: string; message_type?: string; media_type?: string; media_url?: string; caption?: string; }
 interface WaCampaign { id: string; name: string; status: string; template_id?: string; group_id?: string; scheduled_at?: string; sent_count: number; delivered_count: number; read_count: number; error_count: number; created_at: string; }
 interface WaContactList { id: string; name: string; contact_count: number; created_at?: string; }
 interface WaDashboard { sent: number; delivered: number; read: number; responded: number; errors: number; active_campaigns: number; scheduled_campaigns: number; response_rate: number; orders_generated: number; revenue_generated: number; }
-interface WaConfig { connection_type: string; status: string; messages_per_minute: number; interval_seconds: number; interval_min_seconds: number; interval_max_seconds: number; daily_limit: number; webhook_url: string; evolution_base_url: string; evolution_api_key: string; evolution_instance: string; uazapi_base_url: string; uazapi_token: string; uazapi_instance: string; }
+interface WaConfig { connection_type: string; status: string; messages_per_minute: number; interval_seconds: number; interval_min_seconds: number; interval_max_seconds: number; daily_limit: number; webhook_url: string; whatsapp_gateway_instance_id: string | null; evolution_base_url: string; evolution_api_key: string; evolution_instance: string; uazapi_base_url: string; uazapi_token: string; uazapi_instance: string; }
 
 const EMPTY_DASH: WaDashboard = { sent: 0, delivered: 0, read: 0, responded: 0, errors: 0, active_campaigns: 0, scheduled_campaigns: 0, response_rate: 0, orders_generated: 0, revenue_generated: 0 };
-const EMPTY_CFG: WaConfig = { connection_type: "official", status: "disconnected", messages_per_minute: 10, interval_seconds: 3, interval_min_seconds: 3, interval_max_seconds: 8, daily_limit: 1000, webhook_url: "", evolution_base_url: "", evolution_api_key: "", evolution_instance: "", uazapi_base_url: "", uazapi_token: "", uazapi_instance: "" };
+const EMPTY_CFG: WaConfig = { connection_type: "official", status: "disconnected", messages_per_minute: 10, interval_seconds: 3, interval_min_seconds: 3, interval_max_seconds: 8, daily_limit: 1000, webhook_url: "", whatsapp_gateway_instance_id: null, evolution_base_url: "", evolution_api_key: "", evolution_instance: "", uazapi_base_url: "", uazapi_token: "", uazapi_instance: "" };
 const EMPTY_TPL = { name: "", body: "", category: "marketing", language: "pt_BR", provider: "official", media_type: "", media_url: "", caption: "", mimetype: "", file_name: "" };
 const EMPTY_LIST = { name: "", contacts: "" };
 
@@ -117,13 +120,16 @@ export default function MarketingWhatsApp() {
   // ── Configurações ──
   const [cfg, setCfg] = useState<WaConfig>(EMPTY_CFG);
   const [cfgSaving, setCfgSaving] = useState(false);
+  const [gatewayInstances, setGatewayInstances] = useState<ApiWhatsAppGatewayInstance[]>([]);
   // ── Global ──
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const providerTemplates = templates.filter(t => (t.provider || "official") === dispForm.provider);
   const selectedTemplate = providerTemplates.find(t => t.id === dispForm.template_id);
-  const isUnofficial = isUnofficialProvider(dispForm.provider);
+  const isGateway = isGatewayProvider(dispForm.provider);
   const selectedContactList = contactLists.find(l => l.id === dispForm.contact_list_id);
+  const connectedGatewayInstances = gatewayInstances.filter((instance) => instance.status === "connected");
+  const selectedGatewayInstance = gatewayInstances.find((instance) => instance.id === cfg.whatsapp_gateway_instance_id);
 
   // fetch helpers
   const fetchDash = () => {
@@ -158,14 +164,17 @@ export default function MarketingWhatsApp() {
     fetch(`${BASE}/whatsapp/config`, { headers })
       .then(r => r.json()).then(d => setCfg({ ...EMPTY_CFG, ...unwrap(d) })).catch(() => {});
   };
+  const fetchGatewayInstances = () => {
+    whatsappGatewayApi.listInstances().then(setGatewayInstances).catch(() => setGatewayInstances([]));
+  };
 
   useEffect(() => {
     if (tab === "dashboard") { fetchDash(); }
     if (tab === "templates") { fetchTemplates(); }
     if (tab === "campanhas") { fetchCampaigns(); fetchTemplates(); }
-    if (tab === "disparo")   { fetchTemplates(); fetchContactLists(); }
+    if (tab === "disparo")   { fetchTemplates(); fetchContactLists(); fetchConfig(); fetchGatewayInstances(); }
     if (tab === "monitoramento") { fetchMessages(); }
-    if (tab === "configuracoes") { fetchConfig(); }
+    if (tab === "configuracoes") { fetchConfig(); fetchGatewayInstances(); }
   }, [tab]); // eslint-disable-line
 
   // auto-refresh monitoramento every 10s
@@ -181,7 +190,7 @@ export default function MarketingWhatsApp() {
   // ── Template CRUD ──
   const saveTpl = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isUnofficialProvider(tplForm.provider) && tplForm.media_type && !tplForm.media_url.trim()) { alert("Informe a URL HTTPS da midia."); return; }
+    if (isGatewayProvider(tplForm.provider) && tplForm.media_type && !tplForm.media_url.trim()) { alert("Informe a URL HTTPS da midia."); return; }
     if (!tplForm.name.trim() || !tplForm.body.trim()) { alert("Nome e body obrigatórios."); return; }
     setSaving(true);
     try {
@@ -308,7 +317,8 @@ export default function MarketingWhatsApp() {
     e.preventDefault();
     setCfgSaving(true);
     try {
-      const nextCfg = { ...cfg, connection_type: cfg.connection_type === "qr" ? "official" : cfg.connection_type };
+      const legacyProviders = ["qr", "evolution", "uazapi"];
+      const nextCfg = { ...cfg, connection_type: legacyProviders.includes(cfg.connection_type) ? "official" : cfg.connection_type };
       const response = await fetch(`${BASE}/whatsapp/config`, { method: "PATCH", headers, body: JSON.stringify(nextCfg) });
       const json = await response.json();
       if (!response.ok || json?.success === false) {
@@ -436,7 +446,7 @@ export default function MarketingWhatsApp() {
                       <div>
                         <h3 className="text-cream font-semibold text-sm">{t.name}</h3>
                         <span className="text-xs text-stone">
-                          {PROVIDER_LABELS[t.provider || "official"] || t.provider || "WABA"} · {t.category} · {t.language}
+                          {PROVIDER_LABELS[t.provider || "official"] || t.provider || "API Oficial"} · {t.category} · {t.language}
                           {t.media_type ? ` · ${t.media_type === "video" ? "Video" : "Imagem"}` : ""}
                         </span>
                       </div>
@@ -555,24 +565,32 @@ export default function MarketingWhatsApp() {
                 <div className="space-y-1">
                   <label className="text-xs text-stone">API de envio *</label>
                   <select value={dispForm.provider} onChange={e => setDispForm(f => ({ ...f, provider: e.target.value, template_id: "" }))} className={IC}>
-                    <option value="official">WABA / Meta Cloud API</option>
-                    <option value="evolution">Evolution API</option>
-                    <option value="uazapi">Uazapi</option>
+                    <option value="official">WhatsApp Oficial (Cloud API)</option>
+                    <option value="baileys">WhatsApp Gateway</option>
                   </select>
                   <p className="text-xs text-stone/60">
-                    {isUnofficial ? "API nao oficial usa modelos internos com texto, imagem e video." : "WABA usa templates aprovados na Meta para campanha."}
+                    {isGateway ? "Gateway usa a instancia Baileys configurada neste painel." : "API Oficial usa templates aprovados na Meta para campanhas."}
                   </p>
+                  {isGateway && (
+                    <p className={`text-xs ${connectedGatewayInstances.length ? "text-green-300" : "text-red-300"}`}>
+                      {selectedGatewayInstance
+                        ? `Instancia selecionada: ${selectedGatewayInstance.name} (${selectedGatewayInstance.status}).`
+                        : connectedGatewayInstances.length
+                          ? `Sem instancia fixa: o sistema usara uma das ${connectedGatewayInstances.length} instancia(s) conectada(s).`
+                          : "Nenhuma instancia conectada no Gateway."}
+                    </p>
+                  )}
                 </div>
                 {dispForm.mode === "template" ? (
                   <div className="space-y-3">
                     <div className="space-y-1">
-                      <label className="text-xs text-stone">{isUnofficial ? `Modelo interno da ${PROVIDER_LABELS[dispForm.provider]} *` : "Template aprovado na Meta *"}</label>
+                      <label className="text-xs text-stone">{isGateway ? "Modelo interno do Gateway *" : "Template aprovado na Meta *"}</label>
                       <select value={dispForm.template_id} onChange={e => setDispForm(f => ({ ...f, template_id: e.target.value }))} className={IC}>
                         <option value="">Selecione...</option>
                         {providerTemplates.map(t => <option key={t.id} value={t.id}>{t.name}{t.media_type ? ` (${t.media_type})` : ""}</option>)}
                       </select>
                       {providerTemplates.length === 0 && (
-                        <p className="text-xs text-stone/60">{isUnofficial ? `Crie um modelo interno da ${PROVIDER_LABELS[dispForm.provider]} na aba Templates.` : "Crie ou sincronize um template aprovado da Meta na aba Templates."}</p>
+                        <p className="text-xs text-stone/60">{isGateway ? "Crie um modelo interno do Gateway na aba Templates." : "Crie ou sincronize um template aprovado da Meta na aba Templates."}</p>
                       )}
                     </div>
                     <div className="space-y-1">
@@ -584,7 +602,7 @@ export default function MarketingWhatsApp() {
                         placeholder={"Valor para {{1}}\nValor para {{2}}"}
                         className={`${IC} resize-none font-mono text-xs`}
                       />
-                      <p className="text-xs text-stone/60">{isUnofficial ? "Uma variavel por linha, na ordem usada no modelo interno." : "Uma variavel por linha, na mesma ordem aprovada na Meta."}</p>
+                      <p className="text-xs text-stone/60">{isGateway ? "Uma variavel por linha, na ordem usada no modelo interno." : "Uma variavel por linha, na mesma ordem aprovada na Meta."}</p>
                       {selectedTemplate?.media_type && (
                         <p className="text-xs text-gold/90">Este modelo ja possui {selectedTemplate.media_type === "video" ? "video" : "imagem"} configurado(a).</p>
                       )}
@@ -645,7 +663,7 @@ export default function MarketingWhatsApp() {
                         </div>
                       </div>
                       <p className="text-xs text-stone/60">
-                        Na WABA com template, a midia e enviada como header do template aprovado. Na API nao oficial, vai pelo endpoint de midia do provedor selecionado.
+                        Na API Oficial com template, a midia e enviada como header do template aprovado. No Gateway, vai pela instancia Baileys selecionada.
                       </p>
                     </>
                   )}
@@ -725,7 +743,7 @@ export default function MarketingWhatsApp() {
                             <tr key={m.id} className="hover:bg-surface-03/30 transition-colors">
                               <td className="p-3 text-cream font-medium">{m.customer_name ?? "—"}</td>
                               <td className="p-3 text-stone font-mono text-xs">{m.phone}</td>
-                              <td className="p-3 text-stone text-xs">{PROVIDER_LABELS[m.provider || "official"] || m.provider || "WABA"}</td>
+                              <td className="p-3 text-stone text-xs">{PROVIDER_LABELS[m.provider || "official"] || m.provider || "API Oficial"}</td>
                               <td className="p-3 text-stone text-xs">{m.media_type || m.message_type || "text"}</td>
                               <td className="p-3 text-stone text-xs">{m.template_name ?? "—"}</td>
                               <td className="p-3"><span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${sc.cls}`}><SI size={10} />{sc.label}</span></td>
@@ -752,12 +770,10 @@ export default function MarketingWhatsApp() {
                 <label className="text-xs text-stone">Tipo de Conexão</label>
                 <select value={cfg.connection_type} onChange={e => setCfg(c => ({ ...c, connection_type: e.target.value }))} className={IC}>
                   <option value="official">WhatsApp Oficial (Cloud API)</option>
-                  <option value="evolution">API nao oficial - Evolution API</option>
-                  <option value="uazapi">API nao oficial - Uazapi</option>
-                  <option value="qr" disabled>WhatsApp QR Code (indisponivel sem servico de sessao)</option>
+                  <option value="baileys">WhatsApp Gateway</option>
                 </select>
                 <p className="text-xs text-stone/70">
-                  Selecione o provedor padrao. No disparo imediato tambem e possivel escolher WABA, Evolution ou Uazapi por envio.
+                  Selecione o provedor padrao. O disparador usa somente API Oficial ou Gateway.
                 </p>
               </div>
               <div className="flex items-center gap-3 p-3 bg-surface-03 rounded-xl">
@@ -797,51 +813,30 @@ export default function MarketingWhatsApp() {
                   Cadastre esta URL na Meta junto com o Verify Token configurado em Integracoes.
                 </p>
               </div>
-              {isUnofficialProvider(cfg.connection_type) && (
+              {cfg.connection_type === "baileys" && (
                 <div className="space-y-3 rounded-xl border border-surface-03 bg-surface-03/30 p-3">
-                  <h3 className="text-xs font-semibold text-cream">API nao oficial</h3>
-                  <p className="text-xs text-stone/70">Escolha e configure apenas o provedor nao oficial que sera usado como padrao.</p>
-                  {cfg.connection_type === "evolution" ? (
-                    <>
-                      <div className="space-y-1">
-                        <label className="text-xs text-stone">URL base da Evolution</label>
-                        <input type="url" value={cfg.evolution_base_url} onChange={e => setCfg(c => ({ ...c, evolution_base_url: e.target.value }))}
-                          placeholder="https://evolution.seudominio.com" className={IC} />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <label className="text-xs text-stone">API Key</label>
-                          <input type="password" value={cfg.evolution_api_key} onChange={e => setCfg(c => ({ ...c, evolution_api_key: e.target.value }))}
-                            placeholder="apikey da Evolution" className={IC} />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-xs text-stone">Instancia</label>
-                          <input type="text" value={cfg.evolution_instance} onChange={e => setCfg(c => ({ ...c, evolution_instance: e.target.value }))}
-                            placeholder="nome-da-instancia" className={IC} />
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="space-y-1">
-                        <label className="text-xs text-stone">URL base da Uazapi</label>
-                        <input type="url" value={cfg.uazapi_base_url} onChange={e => setCfg(c => ({ ...c, uazapi_base_url: e.target.value }))}
-                          placeholder="https://api.uazapi.com" className={IC} />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <label className="text-xs text-stone">Token da instancia</label>
-                          <input type="password" value={cfg.uazapi_token} onChange={e => setCfg(c => ({ ...c, uazapi_token: e.target.value }))}
-                            placeholder="token da Uazapi" className={IC} />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-xs text-stone">Instancia</label>
-                          <input type="text" value={cfg.uazapi_instance} onChange={e => setCfg(c => ({ ...c, uazapi_instance: e.target.value }))}
-                            placeholder="nome opcional da instancia" className={IC} />
-                        </div>
-                      </div>
-                    </>
-                  )}
+                  <h3 className="text-xs font-semibold text-cream">Instancia do Gateway</h3>
+                  <p className="text-xs text-stone/70">Escolha uma instancia Baileys conectada ou deixe automatico para usar qualquer instancia conectada.</p>
+                  <div className="space-y-1">
+                    <label className="text-xs text-stone">Instancia padrao</label>
+                    <select
+                      value={cfg.whatsapp_gateway_instance_id ?? ""}
+                      onChange={e => setCfg(c => ({ ...c, whatsapp_gateway_instance_id: e.target.value || null }))}
+                      className={IC}
+                    >
+                      <option value="">Automatico: qualquer instancia conectada</option>
+                      {gatewayInstances.map((instance) => (
+                        <option key={instance.id} value={instance.id}>
+                          {instance.name} - {instance.status}
+                        </option>
+                      ))}
+                    </select>
+                    <p className={`text-xs ${connectedGatewayInstances.length ? "text-green-300" : "text-red-300"}`}>
+                      {connectedGatewayInstances.length
+                        ? `${connectedGatewayInstances.length} instancia(s) conectada(s) no Gateway.`
+                        : "Nenhuma instancia conectada. Conecte no modulo WhatsApp Gateway antes de enviar."}
+                    </p>
+                  </div>
                 </div>
               )}
               <button type="submit" disabled={cfgSaving}
@@ -863,15 +858,14 @@ export default function MarketingWhatsApp() {
             </div>
             <form onSubmit={saveTpl} className="p-5 space-y-4">
               <div className="space-y-1">
-                <label className="text-xs text-stone">{isUnofficialProvider(tplForm.provider) ? "Nome do modelo interno *" : "Nome do template aprovado na Meta *"}</label>
+                <label className="text-xs text-stone">{isGatewayProvider(tplForm.provider) ? "Nome do modelo interno *" : "Nome do template aprovado na Meta *"}</label>
                 <input type="text" value={tplForm.name} onChange={e => setTplForm(f => ({ ...f, name: e.target.value }))} placeholder="boas_vindas" className={IC} />
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-stone">API do modelo</label>
-                <select value={tplForm.provider} onChange={e => setTplForm(f => ({ ...f, provider: e.target.value, media_type: isUnofficialProvider(e.target.value) ? f.media_type : "", media_url: isUnofficialProvider(e.target.value) ? f.media_url : "" }))} className={IC}>
-                  <option value="official">WABA / Meta Cloud API</option>
-                  <option value="evolution">API nao oficial - Evolution API</option>
-                  <option value="uazapi">API nao oficial - Uazapi</option>
+                <select value={tplForm.provider} onChange={e => setTplForm(f => ({ ...f, provider: e.target.value, media_type: isGatewayProvider(e.target.value) ? f.media_type : "", media_url: isGatewayProvider(e.target.value) ? f.media_url : "" }))} className={IC}>
+                  <option value="official">WhatsApp Oficial (Cloud API)</option>
+                  <option value="baileys">WhatsApp Gateway</option>
                 </select>
               </div>
               <div className="space-y-1">
@@ -899,7 +893,7 @@ export default function MarketingWhatsApp() {
                   ))}
                 </div>
               </div>
-              {isUnofficialProvider(tplForm.provider) && (
+              {isGatewayProvider(tplForm.provider) && (
                 <div className="space-y-3 rounded-xl border border-surface-03 bg-surface-03/30 p-3">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">

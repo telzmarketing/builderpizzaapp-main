@@ -26,6 +26,7 @@ import {
 import MediaUpload from "@/components/admin/MediaUpload";
 import {
   agenteWhatsAppApi,
+  whatsappGatewayApi,
   type ApiAgenteWhatsAppAIGuardrails,
   type ApiAgenteWhatsAppAIProviderStatus,
   type ApiAgenteWhatsAppAISettings,
@@ -43,8 +44,10 @@ import {
   type ApiAgenteWhatsAppOutboxMetrics,
   type ApiAgenteWhatsAppOperationalMetrics,
   type ApiAgenteWhatsAppProviderState,
+  type ApiAgenteWhatsAppChannelSettings,
   type ApiAgenteWhatsAppStory,
   type ApiAgenteWhatsAppStoryTemplate,
+  type ApiWhatsAppGatewayInstance,
   resolveAssetUrl,
 } from "@/lib/api";
 
@@ -101,6 +104,11 @@ const outboxStatusClasses: Record<string, string> = {
   sent: "bg-green-500/10 text-green-300 border-green-500/30",
   failed: "bg-red-500/10 text-red-300 border-red-500/30",
   dead: "bg-red-600/20 text-red-200 border-red-500/50",
+};
+
+const whatsappProviderLabels: Record<string, string> = {
+  official: "API Oficial",
+  baileys: "Gateway",
 };
 
 function fmtDate(value?: string | null) {
@@ -264,6 +272,8 @@ export default function CrmAgenteWhatsApp() {
   const [outboxItems, setOutboxItems] = useState<ApiAgenteWhatsAppOutbox[]>([]);
   const [outboxAlerts, setOutboxAlerts] = useState<ApiAgenteWhatsAppOutboxAlert[]>([]);
   const [providerStates, setProviderStates] = useState<ApiAgenteWhatsAppProviderState[]>([]);
+  const [channelSettings, setChannelSettings] = useState<ApiAgenteWhatsAppChannelSettings | null>(null);
+  const [gatewayInstances, setGatewayInstances] = useState<ApiWhatsAppGatewayInstance[]>([]);
   const [outboxFilter, setOutboxFilter] = useState<OutboxFilter>("failed");
   const [selectedOutbox, setSelectedOutbox] = useState<ApiAgenteWhatsAppOutbox | null>(null);
   const [sessions, setSessions] = useState<ApiAgenteWhatsAppConversation[]>([]);
@@ -278,7 +288,6 @@ export default function CrmAgenteWhatsApp() {
   const [periodTo, setPeriodTo] = useState("");
   const [reply, setReply] = useState("");
   const [newPhone, setNewPhone] = useState("");
-  const [newProvider, setNewProvider] = useState<"official" | "baileys">("official");
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [outboxLoading, setOutboxLoading] = useState(false);
@@ -295,9 +304,12 @@ export default function CrmAgenteWhatsApp() {
   const [automationRunning, setAutomationRunning] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [providerAction, setProviderAction] = useState<string | null>(null);
+  const [channelSaving, setChannelSaving] = useState(false);
   const [error, setError] = useState("");
 
   const selected = sessions.find((session) => session.id === selectedId) ?? null;
+  const channelProvider = channelSettings?.active_provider === "baileys" ? "baileys" : "official";
+  const connectedGatewayInstances = gatewayInstances.filter((instance) => instance.status === "connected");
   const selectedAutomation = automationTemplates.find((item) => item.key === automationForm.key) ?? automationTemplates[0] ?? null;
   const aiModels = aiSettings?.provider === "claude"
     ? ["claude-sonnet-4-20250514", "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"]
@@ -348,16 +360,20 @@ export default function CrmAgenteWhatsApp() {
           limit: 120,
         }),
       ]);
-      const [liveMetrics, aiSettingsPayload, aiStatusPayload] = await Promise.all([
+      const [liveMetrics, aiSettingsPayload, aiStatusPayload, channelPayload, gatewayPayload] = await Promise.all([
         agenteWhatsAppApi.operationalMetrics().catch(() => null),
         agenteWhatsAppApi.getAISettings().catch(() => null),
         agenteWhatsAppApi.aiProviderStatus().catch(() => null),
+        agenteWhatsAppApi.getChannelSettings().catch(() => null),
+        whatsappGatewayApi.listInstances().catch(() => []),
       ]);
       setDashboard(dash);
       setSessions(rows);
       setOperationalMetrics(liveMetrics);
       setAiSettings(aiSettingsPayload);
       setAiProviderStatus(aiStatusPayload);
+      setChannelSettings(channelPayload);
+      setGatewayInstances(gatewayPayload);
       const nextId = preferredId ?? selectedId ?? rows[0]?.id ?? null;
       setSelectedId(nextId);
       if (nextId) await loadDetail(nextId);
@@ -809,6 +825,23 @@ export default function CrmAgenteWhatsApp() {
     }
   }
 
+  async function saveChannelSettings() {
+    if (!channelSettings) return;
+    setChannelSaving(true);
+    setError("");
+    try {
+      const updated = await agenteWhatsAppApi.updateChannelSettings({
+        active_provider: channelProvider,
+        whatsapp_gateway_instance_id: channelSettings.whatsapp_gateway_instance_id || null,
+      });
+      setChannelSettings(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao salvar canal de envio.");
+    } finally {
+      setChannelSaving(false);
+    }
+  }
+
   async function createSession() {
     if (!newPhone.trim()) return;
     setSaving(true);
@@ -816,7 +849,7 @@ export default function CrmAgenteWhatsApp() {
       const session = await agenteWhatsAppApi.createSession({
         phone: newPhone.trim(),
         origin: "manual",
-        provider: newProvider,
+        provider: channelProvider,
         ai_enabled: true,
       });
       setNewPhone("");
@@ -874,6 +907,67 @@ export default function CrmAgenteWhatsApp() {
       )}
 
       {moduleTab === "settings" && (
+      <>
+      <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
+        <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-cream">Canal de envio</h2>
+            <p className="text-xs text-stone mt-1">
+              Provedor e instancia usados pelo atendimento, IA e fila do AGENTE WHATSAPP
+            </p>
+          </div>
+          <button
+            onClick={saveChannelSettings}
+            disabled={channelSaving || !channelSettings}
+            className="h-9 px-3 rounded-xl bg-gold text-black text-xs font-semibold flex items-center gap-2 disabled:opacity-50"
+          >
+            {channelSaving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+            Salvar canal
+          </button>
+        </div>
+
+        <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label className="text-xs text-stone">API do agente</label>
+            <select
+              value={channelProvider}
+              onChange={(event) => setChannelSettings((current) => current ? { ...current, active_provider: event.target.value } : current)}
+              className="w-full h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
+            >
+              <option value="official">WhatsApp Oficial (Cloud API)</option>
+              <option value="baileys">WhatsApp Gateway</option>
+            </select>
+            <p className="text-xs text-stone/70">
+              Novas conversas manuais e respostas da fila usam este canal. Conversas antigas mantem o provedor em que foram abertas.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs text-stone">Instancia do Gateway</label>
+            <select
+              value={channelSettings?.whatsapp_gateway_instance_id ?? ""}
+              onChange={(event) => setChannelSettings((current) => current ? { ...current, whatsapp_gateway_instance_id: event.target.value || null } : current)}
+              disabled={channelProvider !== "baileys"}
+              className="w-full h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold disabled:opacity-50"
+            >
+              <option value="">Automatico: qualquer instancia conectada</option>
+              {gatewayInstances.map((instance) => (
+                <option key={instance.id} value={instance.id}>
+                  {instance.name} - {instance.status}
+                </option>
+              ))}
+            </select>
+            <p className={`text-xs ${channelProvider === "baileys" && !connectedGatewayInstances.length ? "text-red-300" : "text-stone/70"}`}>
+              {channelProvider === "baileys"
+                ? connectedGatewayInstances.length
+                  ? `${connectedGatewayInstances.length} instancia(s) conectada(s) no Gateway.`
+                  : "Nenhuma instancia conectada. Conecte no modulo WhatsApp Gateway antes de atender por Gateway."
+                : "Instancia usada somente quando o canal for Gateway."}
+            </p>
+          </div>
+        </div>
+      </section>
+
       <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div>
@@ -1088,6 +1182,7 @@ export default function CrmAgenteWhatsApp() {
           </div>
         )}
       </section>
+      </>
       )}
 
       {false && (
@@ -1175,7 +1270,7 @@ export default function CrmAgenteWhatsApp() {
                       </span>
                       <span className="text-[11px] text-stone">{fmtDate(item.updated_at)}</span>
                     </div>
-                    <p className="text-xs text-cream mt-2 truncate">{item.phone} - {item.provider}</p>
+                    <p className="text-xs text-cream mt-2 truncate">{item.phone} - {whatsappProviderLabels[item.provider] ?? item.provider}</p>
                     <p className="text-xs text-red-300 mt-1 truncate">{item.error || "Sem erro detalhado"}</p>
                   </div>
                 ))}
@@ -1857,7 +1952,7 @@ export default function CrmAgenteWhatsApp() {
             <div key={provider.provider} className="rounded-xl border border-surface-03 bg-surface-00/30 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-cream">{provider.provider}</span>
+                  <span className="text-sm font-semibold text-cream">{whatsappProviderLabels[provider.provider] ?? provider.provider}</span>
                   <span className={`text-[11px] border rounded-full px-2 py-0.5 ${
                     provider.status === "paused"
                       ? "border-red-500/30 bg-red-500/10 text-red-300"
@@ -1941,7 +2036,7 @@ export default function CrmAgenteWhatsApp() {
                     <p className="truncate">{item.message_body || item.message_type || shortId(item.message_id)}</p>
                     {item.error && <p className="text-xs text-red-300 truncate mt-1">{item.error}</p>}
                   </td>
-                  <td className="px-4 py-3 text-stone">{item.provider}</td>
+                  <td className="px-4 py-3 text-stone">{whatsappProviderLabels[item.provider] ?? item.provider}</td>
                   <td className="px-4 py-3 text-stone">{item.attempts}/{item.max_attempts}</td>
                   <td className="px-4 py-3 text-stone">{fmtDate(item.updated_at)}</td>
                   <td className="px-4 py-3">
@@ -2074,14 +2169,9 @@ export default function CrmAgenteWhatsApp() {
                 placeholder="Telefone"
                 className="flex-1 h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
               />
-              <select
-                value={newProvider}
-                onChange={(event) => setNewProvider(event.target.value as "official" | "baileys")}
-                className="h-10 w-28 bg-surface-03 border border-surface-03 rounded-xl px-2 text-xs text-cream outline-none focus:border-gold"
-              >
-                <option value="official">Meta</option>
-                <option value="baileys">Baileys</option>
-              </select>
+              <span className="h-10 w-28 bg-surface-03 border border-surface-03 rounded-xl px-2 text-[11px] text-stone flex items-center justify-center">
+                {channelProvider === "baileys" ? "Gateway" : "Oficial"}
+              </span>
               <button
                 onClick={createSession}
                 disabled={saving || !newPhone.trim()}

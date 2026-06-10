@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.config import get_settings
 from backend.models.agente_whatsapp import (
+    AgenteWhatsAppChannelSettings,
     AgenteWhatsAppInternalAlert,
     AgenteWhatsAppMessage,
     AgenteWhatsAppOutbox,
@@ -17,11 +18,8 @@ from backend.models.agente_whatsapp import (
     AgenteWhatsAppSession,
 )
 from backend.routes.whatsapp_marketing import (
-    _get_config,
     _normalize_media_type,
     _normalize_provider,
-    _send_evolution_api,
-    _send_uazapi_api,
     _send_whatsapp_api,
 )
 from backend.services.whatsapp_gateway_service import WhatsAppGatewayService
@@ -188,7 +186,8 @@ class AgenteWhatsAppOutboxService:
             for row in self._db.query(AgenteWhatsAppOutbox.provider).distinct().all()
             if row[0]
         }
-        providers.update({"official", "evolution", "uazapi", "baileys"})
+        providers.update({"official", "baileys"})
+        providers.difference_update({"evolution", "uazapi", "qr"})
         return [self._ensure_provider_state(provider) for provider in sorted(providers)]
 
     def alerts(self) -> dict[str, Any]:
@@ -632,9 +631,9 @@ class AgenteWhatsAppOutboxService:
             return True
 
         if provider == "qr":
-            return self._fail_item(item, "WhatsApp QR Code ainda nao possui worker ativo.")
-        if provider not in {"official", "evolution", "uazapi", "baileys"}:
-            return self._fail_item(item, "Provedor WhatsApp invalido.")
+            return self._fail_item(item, "WhatsApp QR Code antigo foi desativado. Use API Oficial ou Gateway.")
+        if provider not in {"official", "baileys"}:
+            return self._fail_item(item, "Provedor WhatsApp invalido. Use official ou baileys.")
 
         payload = _json_load(item.payload_json)
         body = message.body or payload.get("body") or ""
@@ -643,6 +642,7 @@ class AgenteWhatsAppOutboxService:
 
         if provider == "baileys":
             gateway = WhatsAppGatewayService(self._db)
+            instance_id = self._channel_gateway_instance_id()
             if media_url:
                 result = gateway.send_media_message(
                     phone=item.phone,
@@ -651,32 +651,13 @@ class AgenteWhatsAppOutboxService:
                     media_type=media_type,
                     mimetype=payload.get("mimetype"),
                     file_name=payload.get("file_name"),
+                    instance_id=instance_id,
                 )
             else:
-                result = gateway.send_text_message(phone=item.phone, text=body)
+                result = gateway.send_text_message(phone=item.phone, text=body, instance_id=instance_id)
             provider_message_id = result.provider_message_id or (result.data or {}).get("provider_message_id")
             status = "sent" if result.ok and result.status == "sent" else result.status
             error = None if status == "sent" else result.message
-        elif provider == "evolution":
-            cfg = _get_config(self._db)
-            provider_message_id, status, error = _send_evolution_api(
-                item.phone,
-                body,
-                cfg,
-                media_type=media_type,
-                media_url=media_url,
-                caption=body if media_url else None,
-            )
-        elif provider == "uazapi":
-            cfg = _get_config(self._db)
-            provider_message_id, status, error = _send_uazapi_api(
-                item.phone,
-                body,
-                cfg,
-                media_type=media_type,
-                media_url=media_url,
-                caption=body if media_url else None,
-            )
         else:
             provider_message_id, status, error = _send_whatsapp_api(
                 item.phone,
@@ -701,6 +682,14 @@ class AgenteWhatsAppOutboxService:
             return True
 
         return self._fail_item(item, error or "Falha ao enviar mensagem WhatsApp.")
+
+    def _channel_gateway_instance_id(self) -> str | None:
+        settings = (
+            self._db.query(AgenteWhatsAppChannelSettings)
+            .filter(AgenteWhatsAppChannelSettings.id == "default")
+            .first()
+        )
+        return settings.whatsapp_gateway_instance_id if settings else None
 
     def _ensure_provider_state(self, provider: str) -> AgenteWhatsAppProviderState:
         normalized = _normalize_provider(provider)

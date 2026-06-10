@@ -1672,6 +1672,13 @@ export interface ApiAgenteWhatsAppProviderState {
   updated_at: string;
 }
 
+export interface ApiAgenteWhatsAppChannelSettings {
+  id: string;
+  active_provider: "official" | "baileys" | string;
+  whatsapp_gateway_instance_id: string | null;
+  updated_at: string | null;
+}
+
 export interface ApiAgenteWhatsAppOutboxAlert {
   level: "warning" | "critical" | string;
   code: string;
@@ -3290,6 +3297,9 @@ export const agenteWhatsAppApi = {
   },
   acknowledgeInternalAlert: (id: string) =>
     post<ApiAgenteWhatsAppInternalAlert>(`/agente-whatsapp/outbox/internal-alerts/${encodeURIComponent(id)}/ack`, {}),
+  getChannelSettings: () => get<ApiAgenteWhatsAppChannelSettings>("/agente-whatsapp/channel/settings"),
+  updateChannelSettings: (data: { active_provider?: "official" | "baileys"; whatsapp_gateway_instance_id?: string | null }) =>
+    put<ApiAgenteWhatsAppChannelSettings>("/agente-whatsapp/channel/settings", data),
   listOutboxProviders: () => get<ApiAgenteWhatsAppProviderState[]>("/agente-whatsapp/outbox/providers"),
   pauseOutboxProvider: (provider: string, data: { reason?: string; minutes?: number }) =>
     post<ApiAgenteWhatsAppProviderState>(`/agente-whatsapp/outbox/providers/${encodeURIComponent(provider)}/pause`, data),

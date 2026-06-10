@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from backend.database import get_db, Base
 from backend.routes.admin_auth import get_current_admin
 from backend.core.response import ok, created, err_msg
+from backend.services.whatsapp_gateway_service import WhatsAppGatewayService
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp-marketing"])
 
@@ -110,6 +111,7 @@ class WhatsAppConfig(Base):
     interval_max_seconds = Column(Integer, default=8)
     daily_limit = Column(Integer, default=1000)
     webhook_url = Column(String(500), default="")
+    whatsapp_gateway_instance_id = Column(String, ForeignKey("whatsapp_gateway_instances.id", ondelete="SET NULL"), nullable=True)
     evolution_base_url = Column(String(500), default="")
     evolution_api_key = Column(Text, default="")
     evolution_instance = Column(String(120), default="")
@@ -209,6 +211,7 @@ class ConfigUpdate(BaseModel):
     interval_max_seconds: Optional[int] = None
     daily_limit: Optional[int] = None
     webhook_url: Optional[str] = None
+    whatsapp_gateway_instance_id: Optional[str] = None
     evolution_base_url: Optional[str] = None
     evolution_api_key: Optional[str] = None
     evolution_instance: Optional[str] = None
@@ -313,6 +316,7 @@ def _cfg_to_dict(cfg: WhatsAppConfig) -> dict:
         "interval_max_seconds": cfg.interval_max_seconds if cfg.interval_max_seconds is not None else cfg.interval_seconds,
         "daily_limit": cfg.daily_limit,
         "webhook_url": cfg.webhook_url or "",
+        "whatsapp_gateway_instance_id": cfg.whatsapp_gateway_instance_id,
         "evolution_base_url": cfg.evolution_base_url or "",
         "evolution_api_key": cfg.evolution_api_key or "",
         "evolution_instance": cfg.evolution_instance or "",
@@ -398,12 +402,12 @@ def _normalize_provider(provider: Optional[str]) -> str:
     value = (provider or "official").strip().lower()
     if value in {"waba", "meta", "cloud", "whatsapp_cloud"}:
         return "official"
+    if value in {"gateway", "baileys", "whatsapp_gateway"}:
+        return "baileys"
     if value in {"evolution", "evolution_api"}:
         return "evolution"
     if value in {"uazapi", "uazapi_api", "uazapigo"}:
         return "uazapi"
-    if value in {"baileys", "whatsapp_gateway"}:
-        return "baileys"
     if value == "qr":
         return "qr"
     return value
@@ -554,6 +558,39 @@ def _send_whatsapp_api(
         return None, "failed", data.get("error", {}).get("message", resp.text)
     except Exception as exc:
         return None, "failed", str(exc)
+
+
+def _send_baileys_gateway(
+    phone: str,
+    body: str,
+    db: Session,
+    *,
+    instance_id: str | None = None,
+    media_type: str | None = None,
+    media_url: str | None = None,
+    caption: str | None = None,
+    mimetype: str | None = None,
+    file_name: str | None = None,
+) -> tuple[Optional[str], str, Optional[str]]:
+    gateway = WhatsAppGatewayService(db)
+    if media_url:
+        result = gateway.send_media_message(
+            phone=phone,
+            media_url=media_url,
+            caption=caption or body,
+            media_type=media_type,
+            mimetype=mimetype,
+            file_name=file_name,
+            instance_id=instance_id,
+        )
+    else:
+        result = gateway.send_text_message(
+            phone=phone,
+            text=body,
+            instance_id=instance_id,
+        )
+    provider_message_id = result.provider_message_id or (result.data or {}).get("provider_message_id")
+    return provider_message_id, "sent" if result.ok else "failed", None if result.ok else result.message
 
 
 def _send_evolution_api(
@@ -1035,24 +1072,23 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
     provider = _normalize_provider(body.provider or cfg.connection_type)
     if provider == "qr":
         return err_msg(
-            "WhatsApp QR Code ainda nao possui servico de sessao implementado. Use WABA, Evolution API ou Uazapi.",
+            "WhatsApp QR Code antigo foi desativado. Use WhatsApp Oficial ou WhatsApp Gateway.",
             code="WhatsAppQrNotImplemented",
             status_code=501,
         )
-    if provider not in {"official", "evolution", "uazapi"}:
-        return err_msg("Provedor WhatsApp invalido. Use official, evolution ou uazapi.", code="WhatsAppProviderInvalid")
+    if provider not in {"official", "baileys"}:
+        return err_msg("Provedor WhatsApp invalido. Use official ou baileys.", code="WhatsAppProviderInvalid")
     if provider == "official":
         _, cloud_error = _load_whatsapp_cloud_credentials(db)
         if cloud_error:
             return err_msg(cloud_error, code="WhatsAppConfigMissing")
-    if provider == "evolution":
-        _, evolution_error = _evolution_credentials(cfg)
-        if evolution_error:
-            return err_msg(evolution_error, code="EvolutionConfigMissing")
-    if provider == "uazapi":
-        _, uazapi_error = _uazapi_credentials(cfg)
-        if uazapi_error:
-            return err_msg(uazapi_error, code="UazapiConfigMissing")
+    if provider == "baileys":
+        if cfg.whatsapp_gateway_instance_id:
+            instance = WhatsAppGatewayService(db).get_instance(cfg.whatsapp_gateway_instance_id)
+            if not instance or instance.status != "connected":
+                return err_msg("Instancia do WhatsApp Gateway nao esta conectada.", code="WhatsAppGatewayInstanceDisconnected")
+        elif not WhatsAppGatewayService(db).overview().get("connected_instances"):
+            return err_msg("Nenhuma instancia conectada no WhatsApp Gateway.", code="WhatsAppGatewayInstanceMissing")
     if body.scheduled_at:
         return err_msg("Agendamento ainda nao possui worker ativo. Faca disparo imediato por enquanto.", code="WhatsAppScheduleUnavailable")
 
@@ -1126,22 +1162,12 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
         db.add(msg)
         db.flush()
 
-        if provider == "evolution":
-            wamid, status, error = _send_evolution_api(
+        if provider == "baileys":
+            wamid, status, error = _send_baileys_gateway(
                 phone,
                 msg_body,
-                cfg,
-                media_type=media_type,
-                media_url=media_url,
-                caption=msg_caption,
-                mimetype=mimetype,
-                file_name=file_name,
-            )
-        elif provider == "uazapi":
-            wamid, status, error = _send_uazapi_api(
-                phone,
-                msg_body,
-                cfg,
+                db,
+                instance_id=cfg.whatsapp_gateway_instance_id,
                 media_type=media_type,
                 media_url=media_url,
                 caption=msg_caption,
@@ -1244,7 +1270,8 @@ def update_config(body: ConfigUpdate, db: Session = Depends(get_db), _=Depends(g
     cfg = _get_config(db)
     if body.connection_type is not None:
         cfg.connection_type = _normalize_provider(body.connection_type)
-        if cfg.connection_type == "qr":
+        if cfg.connection_type in {"qr", "evolution", "uazapi"}:
+            cfg.connection_type = "official"
             cfg.status = "disconnected"
     if body.messages_per_minute is not None:
         cfg.messages_per_minute = body.messages_per_minute
@@ -1264,6 +1291,15 @@ def update_config(body: ConfigUpdate, db: Session = Depends(get_db), _=Depends(g
         cfg.daily_limit = body.daily_limit
     if body.webhook_url is not None:
         cfg.webhook_url = body.webhook_url
+    if body.whatsapp_gateway_instance_id is not None:
+        clean_instance_id = body.whatsapp_gateway_instance_id.strip()
+        if clean_instance_id:
+            instance = WhatsAppGatewayService(db).get_instance(clean_instance_id)
+            if not instance:
+                return err_msg("Instancia do WhatsApp Gateway nao encontrada.", code="WhatsAppGatewayInstanceNotFound")
+            cfg.whatsapp_gateway_instance_id = clean_instance_id
+        else:
+            cfg.whatsapp_gateway_instance_id = None
     if body.evolution_base_url is not None:
         cfg.evolution_base_url = body.evolution_base_url.strip()
     if body.evolution_api_key is not None:
@@ -1276,17 +1312,12 @@ def update_config(body: ConfigUpdate, db: Session = Depends(get_db), _=Depends(g
         cfg.uazapi_token = body.uazapi_token.strip()
     if body.uazapi_instance is not None:
         cfg.uazapi_instance = body.uazapi_instance.strip()
-    if cfg.connection_type == "evolution":
-        cfg.status = "connected" if all([
-            cfg.evolution_base_url,
-            cfg.evolution_api_key,
-            cfg.evolution_instance,
-        ]) else "disconnected"
-    elif cfg.connection_type == "uazapi":
-        cfg.status = "connected" if all([
-            cfg.uazapi_base_url,
-            cfg.uazapi_token,
-        ]) else "disconnected"
+    if cfg.connection_type == "baileys":
+        if cfg.whatsapp_gateway_instance_id:
+            instance = WhatsAppGatewayService(db).get_instance(cfg.whatsapp_gateway_instance_id)
+            cfg.status = "connected" if instance and instance.status == "connected" else "disconnected"
+        else:
+            cfg.status = "connected" if WhatsAppGatewayService(db).overview().get("connected_instances") else "disconnected"
     elif body.connection_type is not None and cfg.connection_type == "official":
         _, cloud_error = _load_whatsapp_cloud_credentials(db)
         cfg.status = "disconnected" if cloud_error else "connected"
