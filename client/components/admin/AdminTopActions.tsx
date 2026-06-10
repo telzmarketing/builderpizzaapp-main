@@ -19,24 +19,51 @@ const NOTIFICATION_ORDER_STATUSES = new Set(["paid", "pago", "ready_for_pickup",
 const DISMISSED_NOTIFICATIONS_KEY = "admin.dismissed_notifications";
 const MAX_DISMISSED_NOTIFICATIONS = 250;
 
+function toText(value: unknown, fallback = ""): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    const text = value.map((item) => toText(item)).filter(Boolean).join(", ");
+    return text || fallback;
+  }
+  if (typeof value === "object") {
+    const objectValue = value as Record<string, unknown>;
+    const candidate =
+      objectValue.message ?? objectValue.title ?? objectValue.description ?? objectValue.detail ?? objectValue.error ?? objectValue.name;
+    if (candidate !== undefined && candidate !== value) return toText(candidate, fallback);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
 function timeAgo(iso: string): string {
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+  const date = new Date(toText(iso));
+  const timestamp = date.getTime();
+  if (Number.isNaN(timestamp)) return "agora";
+  const diff = Math.floor((Date.now() - timestamp) / 60_000);
   if (diff < 1) return "agora";
   if (diff < 60) return `${diff}min atras`;
   return `${Math.floor(diff / 60)}h atras`;
 }
 
 function orderCode(order: ApiOrder) {
-  return order.order_code ? `#${order.order_code}` : `#${order.id.slice(0, 8).toUpperCase()}`;
+  const id = toText(order.id);
+  return order.order_code ? `#${toText(order.order_code)}` : `#${id.slice(0, 8).toUpperCase()}`;
 }
 
 function orderNotification(order: ApiOrder): AdminNotification | null {
-  const time = order.updated_at || order.created_at;
+  const time = toText(order.updated_at || order.created_at, new Date().toISOString());
+  const total = typeof order.total === "number" ? order.total.toFixed(2).replace(".", ",") : toText(order.total, "0,00");
+  const deliveryName = toText(order.delivery_name, "Cliente");
   if (order.status === "paid" || order.status === "pago") {
     return {
       id: `order-paid:${order.id}:${time}`,
       title: "Novo pedido confirmado",
-      description: `${orderCode(order)} - ${order.delivery_name} - R$ ${order.total.toFixed(2).replace(".", ",")}`,
+      description: `${orderCode(order)} - ${deliveryName} - R$ ${total}`,
       time,
       href: "/painel/orders",
       icon: "new_order",
@@ -56,7 +83,7 @@ function orderNotification(order: ApiOrder): AdminNotification | null {
     return {
       id: `order-delivered:${order.id}:${time}`,
       title: "Pedido entregue",
-      description: `${orderCode(order)} entregue para ${order.delivery_name}`,
+      description: `${orderCode(order)} entregue para ${deliveryName}`,
       time,
       href: "/painel/orders",
       icon: "delivered",
@@ -66,26 +93,29 @@ function orderNotification(order: ApiOrder): AdminNotification | null {
 }
 
 function chatNotification(conversation: ChatbotConversation): AdminNotification {
-  const label = conversation.nome_cliente || conversation.session_id.slice(0, 8).toUpperCase();
+  const sessionId = toText(conversation.session_id);
+  const label = toText(conversation.nome_cliente, sessionId.slice(0, 8).toUpperCase() || "Conversa");
   return {
-    id: `chat:${conversation.id}:${conversation.status}:${conversation.iniciada_em}`,
+    id: `chat:${toText(conversation.id)}:${toText(conversation.status)}:${toText(conversation.iniciada_em)}`,
     title: conversation.status === "em_humano" ? "Chat aguardando atendimento" : "Nova conversa no chat",
     description: label,
-    time: conversation.iniciada_em,
+    time: toText(conversation.iniciada_em, new Date().toISOString()),
     href: "/painel/chatbot",
     icon: "chat",
   };
 }
 
 function agenteWhatsAppNotification(alert: ApiAgenteWhatsAppInternalAlert): AdminNotification {
+  const id = toText(alert.id);
+  const time = toText(alert.last_seen_at || alert.updated_at || alert.created_at, new Date().toISOString());
   return {
-    id: `agente-whatsapp:${alert.id}:${alert.updated_at || alert.last_seen_at || alert.created_at}`,
-    title: alert.title,
-    description: alert.message,
-    time: alert.last_seen_at || alert.updated_at || alert.created_at || new Date().toISOString(),
+    id: `agente-whatsapp:${id}:${time}`,
+    title: toText(alert.title, "Alerta do agente WhatsApp"),
+    description: toText(alert.message, "Verifique o agente WhatsApp."),
+    time,
     href: "/painel/crm/agente-whatsapp",
     icon: "agente_whatsapp",
-    ackId: alert.id,
+    ackId: id || undefined,
   };
 }
 
@@ -281,10 +311,10 @@ function AdminTopActionsContent({ hideSearch = false }: { hideSearch?: boolean }
                     <NotificationIcon icon={notification.icon} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-xs font-bold text-cream">{notification.title}</span>
+                        <span className="truncate text-xs font-bold text-cream">{toText(notification.title)}</span>
                         <span className="shrink-0 text-[10px] text-stone">{timeAgo(notification.time)}</span>
                       </div>
-                      <p className="mt-0.5 truncate text-[11px] text-stone">{notification.description}</p>
+                      <p className="mt-0.5 truncate text-[11px] text-stone">{toText(notification.description)}</p>
                     </div>
                   </button>
                 ))

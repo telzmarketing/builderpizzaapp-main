@@ -11,6 +11,23 @@ import type { AdminNavigationGroup, AdminNavigationItem } from "@/config/adminNa
 
 const LAST_MODULE_PATH_PREFIX = "admin:last-module-path:";
 
+function toText(value: unknown, fallback = ""): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    const text = value.map((item) => toText(item)).filter(Boolean).join(", ");
+    return text || fallback;
+  }
+  if (typeof value === "object") {
+    const objectValue = value as Record<string, unknown>;
+    const candidate =
+      objectValue.url ?? objectValue.src ?? objectValue.path ?? objectValue.value ?? objectValue.label ?? objectValue.name ?? objectValue.title;
+    if (candidate !== undefined && candidate !== value) return toText(candidate, fallback);
+    return fallback;
+  }
+  return fallback;
+}
+
 function readJson<T>(key: string): T | null {
   try {
     const raw = localStorage.getItem(key);
@@ -61,9 +78,9 @@ export default function TopNavigation({
   const [searchOpen, setSearchOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
-  const adminName = adminUser?.name ?? "Administrador";
-  const adminEmail = adminUser?.email ?? "";
-  const adminRole = adminUser?.role_name ?? permissions?.role_name ?? "Admin";
+  const adminName = toText(adminUser?.name, "Administrador");
+  const adminEmail = toText(adminUser?.email);
+  const adminRole = toText(adminUser?.role_name ?? permissions?.role_name, "Admin");
   const initials = getInitials(adminName);
 
   useEffect(() => {
@@ -131,7 +148,7 @@ export default function TopNavigation({
     executeSearch();
   };
 
-  const logo = siteContent.brand.logo;
+  const logo = toText(siteContent.brand.logo);
 
   return (
     <>
