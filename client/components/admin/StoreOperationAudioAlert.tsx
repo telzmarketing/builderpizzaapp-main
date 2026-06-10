@@ -11,6 +11,26 @@ type AlertState = {
   tone: "open" | "closed" | "blocked";
 };
 
+function toText(value: unknown, fallback = ""): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    const text = value.map((item) => toText(item)).filter(Boolean).join(", ");
+    return text || fallback;
+  }
+  if (typeof value === "object") {
+    const objectValue = value as Record<string, unknown>;
+    const candidate = objectValue.message ?? objectValue.title ?? objectValue.detail ?? objectValue.error ?? objectValue.name;
+    if (candidate !== undefined && candidate !== value) return toText(candidate, fallback);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
 export default function StoreOperationAudioAlert() {
   const previousOpenRef = useRef<boolean | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -85,11 +105,11 @@ export default function StoreOperationAudioAlert() {
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-black uppercase tracking-[0.12em]">Alerta operacional</p>
-            <p className="mt-1 text-sm font-semibold">{alert.message}</p>
+            <p className="mt-1 text-sm font-semibold">{toText(alert.message)}</p>
             {alert.tone === "blocked" && !audioReady && (
               <button
                 type="button"
-                onClick={() => triggerAudio(alert.message, "closed", audioContextRef, setAudioReady, setAlert)}
+                onClick={() => triggerAudio(toText(alert.message), "closed", audioContextRef, setAudioReady, setAlert)}
                 className="mt-3 rounded-lg bg-gold px-3 py-2 text-xs font-black text-black"
               >
                 Ativar audio do painel

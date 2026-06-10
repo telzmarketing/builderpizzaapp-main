@@ -3,32 +3,46 @@ import { useLocation } from "react-router-dom";
 import { getAdminPageMeta } from "@/config/adminPageMeta";
 import { findAdminNavigationGroup } from "@/lib/adminAccess";
 
+function toText(value: unknown, fallback = ""): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "object") {
+    const objectValue = value as Record<string, unknown>;
+    const candidate = objectValue.title ?? objectValue.label ?? objectValue.name ?? objectValue.value;
+    if (candidate !== undefined && candidate !== value) return toText(candidate, fallback);
+    return fallback;
+  }
+  return fallback;
+}
+
 export default function AdminHeader({ actions }: { actions?: ReactNode }) {
   const { pathname } = useLocation();
   const meta = getAdminPageMeta(pathname);
   const group = findAdminNavigationGroup(pathname);
+  const title = toText(meta.title, "Painel Administrativo");
+  const subtitle = toText(meta.subtitle);
 
   return (
     <header className="app-header flex flex-shrink-0 flex-col gap-3 border-b border-surface-03 bg-surface-02/85 px-4 py-3 backdrop-blur-lg md:px-6 lg:flex-row lg:items-center lg:justify-between">
       <div className="min-w-0">
         <div className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-stone">
-          <span>{group?.label ?? "Painel"}</span>
+          <span>{toText(group?.label, "Painel")}</span>
           <span className="text-gold/70">/</span>
-          <span className="truncate text-gold">{meta.title}</span>
+          <span className="truncate text-gold">{title}</span>
         </div>
         <div className="flex min-w-0 items-baseline gap-3">
           <h1 className="truncate text-lg font-black leading-tight text-cream md:text-xl">
-            {meta.title}
+            {title}
           </h1>
-          {meta.subtitle && (
+          {subtitle && (
             <p className="hidden truncate text-xs leading-snug text-stone xl:block">
-              {meta.subtitle}
+              {subtitle}
             </p>
           )}
         </div>
-        {meta.subtitle && (
+        {subtitle && (
           <p className="mt-1 text-xs leading-snug text-stone xl:hidden">
-            {meta.subtitle}
+            {subtitle}
           </p>
         )}
       </div>

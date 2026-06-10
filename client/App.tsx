@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { Component, lazy, Suspense, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
@@ -15,12 +15,16 @@ const StoreScreenshotProtection = lazy(() => import("./components/StoreScreensho
 const CHUNK_RECOVERY_RELOAD_KEY = "mo_chunk_recovery_reloaded_at";
 const CHUNK_RECOVERY_COOLDOWN_MS = 60_000;
 const CHUNK_ERROR_PATTERNS = [
+  "chunkloaderror",
+  "loading chunk",
   "failed to fetch dynamically imported module",
+  "dynamically imported module",
   "importing a module script failed",
   "failed to load module script",
   "expected a javascript-or-wasm module script",
   "error loading dynamically imported module",
   "load failed for module",
+  "unable to preload css",
 ];
 
 function getErrorMessage(reason: unknown): string {
@@ -30,6 +34,23 @@ function getErrorMessage(reason: unknown): string {
     return String((reason as { message?: unknown }).message || "");
   }
   return "";
+}
+
+function toSafeText(value: unknown, fallback = ""): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    const text = value.map((item) => toSafeText(item)).filter(Boolean).join(", ");
+    return text || fallback;
+  }
+  if (typeof value === "object") {
+    const objectValue = value as Record<string, unknown>;
+    const candidate =
+      objectValue.title ?? objectValue.name ?? objectValue.label ?? objectValue.value ?? objectValue.url ?? objectValue.src;
+    if (candidate !== undefined && candidate !== value) return toSafeText(candidate, fallback);
+    return fallback;
+  }
+  return fallback;
 }
 
 function shouldRecoverFromChunkError(reason: unknown) {
@@ -82,6 +103,71 @@ function ChunkRecovery() {
   }, []);
 
   return null;
+}
+
+function AppRouteFallback() {
+  const isAdminRoute = window.location.pathname.startsWith("/painel");
+
+  if (isAdminRoute) {
+    return (
+      <div className="min-h-screen bg-[#123f39] text-[#f8f1dc]">
+        <div className="flex min-h-screen items-center justify-center px-6">
+          <div className="rounded-lg border border-[#315a52] bg-[#173f38] px-6 py-5 text-sm font-semibold shadow-lg">
+            Carregando painel...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function AppRouteErrorFallback() {
+  const isAdminRoute = window.location.pathname.startsWith("/painel");
+
+  return (
+    <div className={isAdminRoute ? "min-h-screen bg-[#123f39] text-[#f8f1dc]" : "min-h-screen bg-white text-slate-900"}>
+      <div className="flex min-h-screen items-center justify-center px-6">
+        <div className={isAdminRoute ? "max-w-md rounded-lg border border-[#315a52] bg-[#173f38] p-6 text-center shadow-lg" : "max-w-md rounded-lg border border-slate-200 bg-white p-6 text-center shadow-lg"}>
+          <h1 className="text-lg font-black">Nao foi possivel carregar este modulo.</h1>
+          <p className={isAdminRoute ? "mt-2 text-sm text-[#cbbf9f]" : "mt-2 text-sm text-slate-600"}>
+            Atualize a pagina para buscar a versao mais recente do painel.
+          </p>
+          <button
+            type="button"
+            className={isAdminRoute ? "mt-5 rounded-md bg-[#c7a45d] px-4 py-2 text-sm font-black text-[#2b2118] transition hover:bg-[#d4b16b]" : "mt-5 rounded-md bg-slate-900 px-4 py-2 text-sm font-black text-white transition hover:bg-slate-700"}
+            onClick={() => window.location.reload()}
+          >
+            Recarregar painel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type AppErrorBoundaryState = {
+  hasError: boolean;
+};
+
+class AppErrorBoundary extends Component<{ children: ReactNode }, AppErrorBoundaryState> {
+  state: AppErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): AppErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: unknown, errorInfo: ErrorInfo) {
+    if (shouldRecoverFromChunkError(error) || shouldRecoverFromChunkError(errorInfo.componentStack)) {
+      recoverFromChunkError();
+    }
+  }
+
+  render() {
+    if (this.state.hasError) return <AppRouteErrorFallback />;
+    return this.props.children;
+  }
 }
 
 function useDeferredClientMount(delay = 1200) {
@@ -259,15 +345,18 @@ function DocumentHead() {
   const isSalao = isSalaoExperience();
   const { pageTitle, faviconUrl, name } = siteContent.brand;
 
-  const resolvedFavicon = faviconUrl ? resolveAssetUrl(faviconUrl) : "";
+  const safePageTitle = toSafeText(pageTitle);
+  const safeName = toSafeText(name);
+  const safeFaviconUrl = toSafeText(faviconUrl);
+  const resolvedFavicon = safeFaviconUrl ? resolveAssetUrl(safeFaviconUrl) : "";
 
   useEffect(() => {
     if (isSalao) {
       document.title = "Moschettieri | Restaurante";
       return;
     }
-    document.title = pageTitle || name || "Pizza Delivery App";
-  }, [isSalao, pageTitle, name]);
+    document.title = safePageTitle || safeName || "Pizza Delivery App";
+  }, [isSalao, safePageTitle, safeName]);
 
   useEffect(() => {
     if (!resolvedFavicon) return;
@@ -372,6 +461,7 @@ export default function App() {
 
   return (
     <AppProvider>
+      <AppErrorBoundary>
         <ChunkRecovery />
         <DocumentHead />
         <ThemeInjector />
@@ -386,12 +476,13 @@ export default function App() {
                 <ExitPopup />
               </Suspense>
             )}
-            <Suspense fallback={null}>
+            <Suspense fallback={<AppRouteFallback />}>
             <Routes>
               {/* ── Customer routes ── */}
               <Route element={<StoreScreenshotProtection />}>
                 <Route path="/" element={<PublicHome />} />
                 <Route path="/product/:id" element={<Product />} />
+                <Route path="/menu" element={<ExperienceRoute salao={<SalaoHome />} delivery={<Cardapio />} />} />
                 <Route path="/cardapio" element={<ExperienceRoute salao={<SalaoHome />} delivery={<Cardapio />} />} />
                 <Route path="/campanha/:slug" element={<Campanha />} />
                 <Route path="/promocao/:slug" element={<PromocaoLanding />} />
@@ -412,6 +503,7 @@ export default function App() {
               <Route path="/duvidas" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
               <Route path="/reservas" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
               <Route path="/contato" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
+              <Route path="/login-cadastro" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
               <Route path="/minha-conta" element={<ExperienceRoute salao={<SalaoHome />} delivery={<NotFound />} />} />
 
               {/* ── Admin login (public) ── */}
@@ -421,6 +513,7 @@ export default function App() {
               {/* ── Admin routes (protected by JWT guard) ── */}
               <Route element={<AdminGuard />}>
                 <Route path="/painel/bi-mobile" element={<AdminBIMobile />} />
+                <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />
                 <Route element={<AdminLayout />}>
                 <Route path="/painel" element={<AdminDashboard />} />
                 <Route path="/painel/products" element={<AdminProducts />} />
@@ -454,7 +547,6 @@ export default function App() {
                 <Route path="/painel/marketing/integracoes" element={<MarketingIntegracoes />} />
                 <Route path="/painel/marketing/whatsapp" element={<MarketingWhatsApp />} />
                 <Route path="/painel/marketing/email" element={<MarketingEmail />} />
-                <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />
                 <Route path="/painel/marketing/automacoes" element={<MarketingAutomacoes />} />
                 <Route path="/painel/marketing/ads" element={<AdminPaidTraffic />} />
                 <Route path="/painel/marketing/workflow" element={<MarketingWorkflow />} />
@@ -478,6 +570,7 @@ export default function App() {
             </Routes>
             </Suspense>
           </BrowserRouter>
+      </AppErrorBoundary>
     </AppProvider>
   );
 }

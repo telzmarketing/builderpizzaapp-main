@@ -7,6 +7,18 @@ import type { ApiEffectivePermissions } from "@/lib/api";
 
 const SIDEBAR_COLLAPSED_KEY = "admin:context-sidebar-collapsed";
 
+function toText(value: unknown, fallback = ""): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "object") {
+    const objectValue = value as Record<string, unknown>;
+    const candidate = objectValue.label ?? objectValue.name ?? objectValue.title ?? objectValue.value;
+    if (candidate !== undefined && candidate !== value) return toText(candidate, fallback);
+    return fallback;
+  }
+  return fallback;
+}
+
 function readPermissions(): ApiEffectivePermissions | null {
   try {
     const raw = localStorage.getItem("admin_permissions");
@@ -70,7 +82,7 @@ export default function ContextSidebar() {
       <div className={`flex h-[58px] flex-shrink-0 items-center border-b border-surface-03 ${collapsed ? "justify-center px-2" : "justify-between px-4"}`}>
         {!collapsed && (
           <div className="min-w-0">
-            <p className="truncate text-sm font-black text-cream">{activeGroup.label}</p>
+            <p className="truncate text-sm font-black text-cream">{toText(activeGroup.label)}</p>
           </div>
         )}
         <button
@@ -96,7 +108,7 @@ export default function ContextSidebar() {
                 onMouseEnter={() => preloadAdminRoute(item.path)}
                 onFocus={() => preloadAdminRoute(item.path)}
                 onPointerDown={() => preloadAdminRoute(item.path)}
-                title={collapsed ? item.label : undefined}
+                title={collapsed ? toText(item.label) : undefined}
                 className={`flex items-center rounded-xl text-sm font-semibold transition-all ${
                   collapsed ? "h-11 justify-center px-2" : "gap-3 px-3 py-2.5"
                 } ${
@@ -106,7 +118,7 @@ export default function ContextSidebar() {
                 }`}
               >
                 <Icon size={17} className="flex-shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
+                {!collapsed && <span className="truncate">{toText(item.label)}</span>}
                 {!collapsed && active && <span className="ml-auto h-1.5 w-1.5 flex-shrink-0 rounded-full bg-black/60" />}
               </Link>
             );

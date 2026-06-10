@@ -7,6 +7,32 @@ import { filterAdminNavigation } from "@/lib/adminAccess";
 import { preloadAdminRoute } from "@/lib/adminRoutePreload";
 import type { ApiEffectivePermissions } from "@/lib/api";
 
+function toText(value: unknown, fallback = ""): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    const text = value.map((item) => toText(item)).filter(Boolean).join(", ");
+    return text || fallback;
+  }
+  if (typeof value === "object") {
+    const objectValue = value as Record<string, unknown>;
+    const candidate =
+      objectValue.url ?? objectValue.src ?? objectValue.path ?? objectValue.value ?? objectValue.label ?? objectValue.name ?? objectValue.title;
+    if (candidate !== undefined && candidate !== value) return toText(candidate, fallback);
+    return fallback;
+  }
+  return fallback;
+}
+
+function readJson<T>(value: string | null): T | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
 function getInitials(name: string): string {
   return name
     .split(" ")
@@ -22,15 +48,16 @@ export default function AppSidebar() {
   const navRef = useRef<HTMLElement>(null);
 
   const adminUserRaw = localStorage.getItem("admin_user");
-  const adminUser = adminUserRaw ? JSON.parse(adminUserRaw) : null;
+  const adminUser = readJson<{ name?: unknown; email?: unknown; role_name?: unknown }>(adminUserRaw);
   const permissionsRaw = localStorage.getItem("admin_permissions");
-  const permissions: ApiEffectivePermissions | null = permissionsRaw ? JSON.parse(permissionsRaw) : null;
+  const permissions = readJson<ApiEffectivePermissions>(permissionsRaw);
   const navigationGroups = useMemo(() => filterAdminNavigation(permissions), [permissionsRaw]);
-  const adminName: string = adminUser?.name ?? "Administrador";
-  const adminEmail: string = adminUser?.email ?? "";
-  const adminRole: string = adminUser?.role_name ?? permissions?.role_name ?? "Admin";
+  const adminName = toText(adminUser?.name, "Administrador");
+  const adminEmail = toText(adminUser?.email);
+  const adminRole = toText(adminUser?.role_name ?? permissions?.role_name, "Admin");
   const initials = getInitials(adminName);
   const { brand } = siteContent;
+  const logo = toText(brand.logo);
 
   const handleLogout = () => {
     localStorage.removeItem("admin_token");
@@ -97,14 +124,14 @@ export default function AppSidebar() {
     <aside className="app-sidebar admin-sidebar w-full md:w-64 bg-surface-02 border-b md:border-b-0 md:border-r border-surface-03 flex flex-col flex-shrink-0 h-auto md:h-full max-h-[52vh] md:max-h-none">
       <div className="px-4 md:px-5 pt-5 pb-4 border-b border-surface-03 flex-shrink-0">
         <div className="flex min-h-[66px] flex-col items-center justify-center text-center">
-          {brand.logo && (brand.logo.startsWith("http") || brand.logo.startsWith("data:")) ? (
+          {logo && (logo.startsWith("http") || logo.startsWith("data:")) ? (
             <img
-              src={brand.logo}
+              src={logo}
               alt="logo"
               className="mb-1 h-10 max-w-[8.75rem] object-contain"
             />
-          ) : brand.logo ? (
-            <span className="mb-1 text-xl leading-none">{brand.logo}</span>
+          ) : logo ? (
+            <span className="mb-1 text-xl leading-none">{logo}</span>
           ) : (
             <MoschettieriLogo className="text-gold text-[1.15rem] leading-tight" />
           )}
@@ -153,7 +180,7 @@ export default function AppSidebar() {
                 groupActive ? "text-gold bg-gold/10" : "text-stone/60 hover:bg-surface-03/60 hover:text-stone"
               }`}
             >
-              <span>{group.label}</span>
+              <span>{toText(group.label)}</span>
               <ChevronDown
                 size={13}
                 className={`transition-transform ${groupOpen ? "rotate-180" : ""}`}
@@ -181,7 +208,7 @@ export default function AppSidebar() {
                       size={16}
                       className={`flex-shrink-0 ${active ? "text-cream" : "text-stone/70"}`}
                     />
-                    <span className="truncate">{label}</span>
+                    <span className="truncate">{toText(label)}</span>
                     {active && (
                       <span className="ml-auto w-1.5 h-1.5 rounded-full bg-cream/70 flex-shrink-0" />
                     )}
