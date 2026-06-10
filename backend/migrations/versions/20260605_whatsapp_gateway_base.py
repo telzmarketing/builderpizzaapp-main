@@ -114,8 +114,27 @@ def upgrade() -> None:
     op.execute("CREATE INDEX IF NOT EXISTS ix_whatsapp_gateway_scheduler_settings_company_id ON whatsapp_gateway_scheduler_settings(company_id)")
     op.execute(
         """
-        INSERT INTO whatsapp_gateway_scheduler_settings (id)
-        VALUES ('default')
+        INSERT INTO whatsapp_gateway_scheduler_settings (
+            id, tenant_id, company_id,
+            auto_health_check_enabled, morning_check_time, evening_check_time,
+            auto_update_check_enabled, auto_update_staging_enabled,
+            auto_update_production_enabled, notify_admin_enabled,
+            created_at, updated_at
+        )
+        VALUES (
+            'default',
+            'default',
+            'default',
+            TRUE,
+            '06:00',
+            '18:00',
+            TRUE,
+            FALSE,
+            FALSE,
+            TRUE,
+            NOW(),
+            NOW()
+        )
         ON CONFLICT (id) DO NOTHING
         """
     )
