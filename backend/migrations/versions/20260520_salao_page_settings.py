@@ -50,7 +50,57 @@ def upgrade() -> None:
         )
         """
     )
-    op.execute("INSERT INTO salao_page_settings (id) VALUES ('default') ON CONFLICT DO NOTHING")
+    op.execute("ALTER TABLE salao_page_settings ADD COLUMN IF NOT EXISTS site_text_overrides_json TEXT NOT NULL DEFAULT '{}'")
+    op.execute("ALTER TABLE salao_page_settings ADD COLUMN IF NOT EXISTS site_image_overrides_json TEXT NOT NULL DEFAULT '{}'")
+    op.execute("ALTER TABLE salao_page_settings ADD COLUMN IF NOT EXISTS blog_posts_json TEXT NOT NULL DEFAULT '[]'")
+    op.execute(
+        """
+        INSERT INTO salao_page_settings (
+            id, enabled, hero_eyebrow, hero_title, hero_subtitle, hero_description,
+            primary_cta_label, secondary_cta_label, hero_background_image, hero_plate_image,
+            experience_eyebrow, experience_title, experience_text, experience_cards_json,
+            menu_eyebrow, menu_title, menu_items_json,
+            reservation_eyebrow, reservation_title, reservation_text, reservation_background_image,
+            address, hours, phone, whatsapp_url, seo_title, seo_description,
+            site_text_overrides_json, site_image_overrides_json, blog_posts_json,
+            created_at, updated_at
+        ) VALUES (
+            'default',
+            TRUE,
+            'Restaurante italiano em Sao Paulo',
+            'Moschettieri',
+            'pizza, sala e experiencia.',
+            'Uma pagina institucional para o salao, reservas e apresentacao premium do restaurante, separada da loja delivery e integrada ao mesmo ecossistema.',
+            'Reservar mesa',
+            'Ver cardapio',
+            '/salao/hero-ambience.jpg',
+            '/salao/hero-plate.png',
+            'A casa',
+            'Uma experiencia pensada para o salao.',
+            'O canal do salao nasce separado da loja delivery: outro visual, outra navegacao e outro objetivo comercial, mantendo o mesmo ERP, CRM, BI e base operacional.',
+            '[]',
+            'Cardapio do salao',
+            'Destaques da mesa.',
+            '[]',
+            'Reservas',
+            'Reserve sua mesa.',
+            'Solicite sua reserva online. A equipe confirma disponibilidade e horario pelo canal de contato informado.',
+            '/salao/reservation.jpg',
+            'Santana, Sao Paulo - SP',
+            'Funcionamento configuravel pelo modulo Pagina Salao.',
+            'Contato e WhatsApp integrados ao ecossistema.',
+            '',
+            'Moschettieri | Restaurante',
+            'Restaurante Moschettieri: experiencia premium de salao, cardapio institucional e reservas online.',
+            '{}',
+            '{}',
+            '[]',
+            NOW(),
+            NOW()
+        )
+        ON CONFLICT DO NOTHING
+        """
+    )
 
 
 def downgrade() -> None:
