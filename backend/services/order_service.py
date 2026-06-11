@@ -448,11 +448,13 @@ class OrderService:
         shipping_result = ShippingService(self._db).calculate(
             ShippingCalculateIn(
                 city=payload.delivery.city,
+                street=payload.delivery.street,
                 neighborhood=payload.delivery.neighborhood,
                 zip_code=payload.delivery.zip_code,
                 order_subtotal=subtotal,
                 is_pickup=payload.delivery.is_pickup,
                 is_scheduled=payload.delivery.is_scheduled,
+                distance_km=payload.delivery.distance_km,
             )
         )
         if not shipping_result.available:

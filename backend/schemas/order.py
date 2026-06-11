@@ -39,6 +39,7 @@ class DeliveryAddressIn(BaseModel):
     neighborhood: Optional[str] = None
     zip_code: Optional[str] = None
     complement: Optional[str] = None
+    distance_km: Optional[float] = None
     is_pickup: bool = False
     is_scheduled: bool = False
     scheduled_for: Optional[datetime] = None

@@ -14,7 +14,7 @@ from backend.models.admin import AdminUser
 from backend.models.order import Order
 from backend.routes.admin_auth import get_current_admin
 from backend.routes.order_access import require_order_or_admin
-from backend.schemas.payment import PaymentCreate, WebhookPayload
+from backend.schemas.payment import PaymentCreate, PayOnDeliverySwitch, WebhookPayload
 from backend.services.payment_service import PaymentService
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -90,6 +90,24 @@ def create_preference(order_id: str, request: Request, db: Session = Depends(get
             )
         result = PaymentService(db).create_preference(order_id)
         return created(result, "Preferencia de pagamento criada.")
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/pay-on-delivery/{order_id}")
+def switch_to_pay_on_delivery(order_id: str, body: PayOnDeliverySwitch, request: Request, db: Session = Depends(get_db)):
+    try:
+        order = db.query(Order).filter(Order.id == order_id).first()
+        if order:
+            require_order_or_admin(
+                order,
+                db,
+                request.headers.get("authorization"),
+                request.headers.get("x-customer-phone"),
+                request.headers.get("x-customer-email"),
+            )
+        payment = PaymentService(db).switch_to_pay_on_delivery(order_id, body)
+        return ok(payment, "Pedido alterado para pagamento na entrega.")
     except DomainError as exc:
         return err(exc)
 

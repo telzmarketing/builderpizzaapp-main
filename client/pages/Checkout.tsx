@@ -286,7 +286,8 @@ export default function Checkout() {
           form.neighborhood || undefined,
           form.zip_code || undefined,
           false,
-          false
+          false,
+          form.address || undefined
         );
         setShippingResult(s);
       } catch {
@@ -296,7 +297,7 @@ export default function Checkout() {
       }
     }, 600);
     return () => clearTimeout(tid);
-  }, [form.city, form.neighborhood, form.zip_code, cartSubtotal, deliveryMode]);
+  }, [form.address, form.city, form.neighborhood, form.zip_code, cartSubtotal, deliveryMode]);
 
   useEffect(() => {
     if (!createdOrder) return;
@@ -345,7 +346,7 @@ export default function Checkout() {
         } else if (status.payment_status === "rejected" || status.pedido_status === "pagamento_recusado") {
           sessionStorage.removeItem(LOCKED_ORDER_KEY);
           setPaymentState("rejected");
-          setPaymentMessage("Pagamento recusado. Tente novamente com outro metodo.");
+          setPaymentMessage("O Mercado Pago recusou o cartao de credito. Escolha PIX ou pagamento na entrega para continuar com este pedido.");
           clearInterval(id);
         } else if (["cancelled", "expired"].includes(status.payment_status) || status.pedido_status === "pagamento_expirado") {
           sessionStorage.removeItem(LOCKED_ORDER_KEY);
@@ -557,6 +558,7 @@ export default function Checkout() {
         neighborhood: deliveryMode === "pickup" ? undefined : form.neighborhood || undefined,
         zip_code: deliveryMode === "pickup" ? undefined : form.zip_code || undefined,
         complement: form.complement || undefined,
+        distance_km: deliveryMode === "pickup" ? null : shippingResult?.distance_km ?? null,
         is_pickup: deliveryMode === "pickup",
         is_scheduled: mustSchedule,
         scheduled_for: mustSchedule ? new Date(scheduledFor).toISOString() : null,
@@ -695,7 +697,8 @@ export default function Checkout() {
       setPayment(createdPayment);
       if (createdPayment.status === "rejected" || createdPayment.status === "cancelled") {
         setPaymentState("rejected");
-        setPaymentMessage("Cartao recusado pelo banco. Tente outro cartao ou pague via PIX.");
+        sessionStorage.removeItem(LOCKED_ORDER_KEY);
+        setPaymentMessage("O Mercado Pago recusou o cartao de credito. Escolha PIX ou pagamento na entrega para continuar com este pedido.");
       } else {
         setPaymentState("pending");
         setPaymentMessage("Pagamento enviado. Aguardando confirmacao do banco.");
@@ -711,6 +714,7 @@ export default function Checkout() {
   const handleSwitchToPix = async () => {
     if (!createdOrder) return;
     setSelectedPaymentMethod("pix");
+    sessionStorage.setItem(LOCKED_ORDER_KEY, createdOrder.id);
     setPaymentState("loading");
     setPaymentMessage("Gerando PIX seguro...");
     setCardError("");
@@ -727,6 +731,40 @@ export default function Checkout() {
     } catch {
       setPaymentState("error");
       setPaymentMessage("Erro ao gerar PIX. Tente novamente.");
+    }
+  };
+
+  const handleSwitchToPayOnDelivery = async () => {
+    if (!createdOrder) return;
+    if (deliveryPaymentMethod === "cash" && cashNeedsChange) {
+      const changeFor = Number(cashChangeFor.replace(",", "."));
+      if (!Number.isFinite(changeFor) || changeFor <= createdOrder.total) {
+        setPaymentMessage("Informe um valor de troco maior que o total do pedido.");
+        return;
+      }
+    }
+    setSelectedPaymentMethod("delivery");
+    setPaymentState("loading");
+    setPaymentMessage("Alterando para pagamento na entrega...");
+    setCardError("");
+    try {
+      const deliveryPayment = await paymentsApi.switchToPayOnDelivery(createdOrder.id, {
+        delivery_payment_method: deliveryPaymentMethod,
+        cash_needs_change: deliveryPaymentMethod === "cash" ? cashNeedsChange : null,
+        cash_change_for: deliveryPaymentMethod === "cash" && cashNeedsChange
+          ? Number(cashChangeFor.replace(",", "."))
+          : null,
+      });
+      setPayment(deliveryPayment);
+      sessionStorage.removeItem(LOCKED_ORDER_KEY);
+      setPaymentState("approved");
+      setPaymentMessage("Pedido confirmado. O pagamento sera feito na entrega.");
+      clearCart();
+      setTimeout(() => navigate(`/order-tracking?orderId=${createdOrder.id}`), 900);
+    } catch (err) {
+      setSelectedPaymentMethod("card");
+      setPaymentState("rejected");
+      setPaymentMessage(err instanceof Error ? err.message : "Nao foi possivel alterar para pagamento na entrega.");
     }
   };
 
@@ -1172,9 +1210,11 @@ export default function Checkout() {
                     <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-4 space-y-3">
                       <p className="text-red-400 text-sm font-semibold flex items-center gap-2">
                         <AlertCircle size={16} />
-                        Cartao recusado pelo banco.
+                        Mercado Pago recusou o cartao de credito.
                       </p>
-                      <p className="text-stone text-xs">Tente outro cartao ou pague via PIX — rapido e sem taxa.</p>
+                      <p className="text-stone text-xs">
+                        Este pedido continua aberto. Escolha PIX ou pagamento na entrega para continuar.
+                      </p>
                       <button
                         onClick={handleSwitchToPix}
                         className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 hover:bg-green-500 active:scale-95 text-white font-bold py-3 transition-colors"
@@ -1182,6 +1222,57 @@ export default function Checkout() {
                         <QrCode size={18} />
                         Pagar via PIX agora
                       </button>
+                      <div className="rounded-xl border border-surface-03 bg-surface-03/70 p-3 space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          {([
+                            { value: "card", label: "Cartao na entrega" },
+                            { value: "cash", label: "Dinheiro" },
+                          ] as { value: DeliveryPaymentMethod; label: string }[]).map(({ value, label }) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => setDeliveryPaymentMethod(value)}
+                              className={`rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${
+                                deliveryPaymentMethod === value
+                                  ? "border-gold bg-gold/10 text-gold-light"
+                                  : "border-surface-03 bg-surface-02 text-stone"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        {deliveryPaymentMethod === "cash" && (
+                          <div className="space-y-2">
+                            <label className="flex items-center gap-2 text-xs font-semibold text-parchment">
+                              <input
+                                type="checkbox"
+                                checked={cashNeedsChange}
+                                onChange={(e) => setCashNeedsChange(e.target.checked)}
+                                className="h-4 w-4 accent-gold"
+                              />
+                              Vou precisar de troco
+                            </label>
+                            {cashNeedsChange && (
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={cashChangeFor}
+                                onChange={(e) => setCashChangeFor(e.target.value.replace(/[^\d,.]/g, ""))}
+                                placeholder="Troco para quanto?"
+                                className="w-full bg-surface-02 border border-surface-03 rounded-xl px-3 py-2 text-cream placeholder-stone/60 outline-none focus:border-gold text-xs"
+                              />
+                            )}
+                          </div>
+                        )}
+                        <button
+                          onClick={handleSwitchToPayOnDelivery}
+                          className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold hover:bg-gold/90 active:scale-95 text-cream font-bold py-3 transition-colors"
+                        >
+                          <Banknote size={18} />
+                          Pagar na entrega
+                        </button>
+                      </div>
                       <button
                         onClick={() => { setPaymentState("pending"); setPaymentMessage("Preencha os dados do cartao para concluir."); setCardError(""); }}
                         className="w-full text-center text-stone text-xs underline underline-offset-2"

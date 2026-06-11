@@ -30,7 +30,7 @@ class ShippingConfig(Base):
     pickup_message = Column(String(300), default="Retire em nossa loja")
     min_order_value = Column(Float, default=0.0)
     default_estimated_time = Column(Integer, default=45)   # minutes
-    max_delivery_distance = Column(Float, default=20.0)    # km
+    max_delivery_distance = Column(Float, default=3.0)    # km
     default_base_fee = Column(Float, default=5.0)
     unavailable_message = Column(String(300), default="Infelizmente não entregamos nessa região ainda.")
     store_lat = Column(Float, nullable=True)

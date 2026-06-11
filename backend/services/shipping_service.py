@@ -57,6 +57,11 @@ _FREIGHT_TYPES = [
     "fixed", "by_neighborhood", "by_cep_range",
     "by_distance", "by_order_value", "free", "pickup", "scheduled",
 ]
+DELIVERY_RADIUS_LIMIT_KM = 3.0
+DELIVERY_RADIUS_BLOCK_MESSAGE = (
+    "Nao entregamos no endereco informado, pois ultrapassa o raio de entrega. "
+    "Altere o endereco de entrega para continuar."
+)
 
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -308,6 +313,7 @@ class ShippingService:
         nbhd_lower = (payload.neighborhood or "").lower().strip()
         city_lower = (payload.city or "").lower().strip()
         cep_clean = _strip_cep(payload.zip_code or "")
+        distance_km = self._resolve_distance_km(payload, cfg)
 
         # ── 1. Check if delivery is enabled ──────────────────────────────────
         if not cfg.delivery_enabled and not payload.is_pickup:
@@ -333,6 +339,21 @@ class ShippingService:
                 estimated_time=15,
                 available=True,
                 message=cfg.pickup_message,
+            )
+            self._publish(result, payload, order_id)
+            return result
+
+        max_distance = self._effective_delivery_radius_km(cfg)
+        if not payload.is_pickup and distance_km is not None and distance_km > max_distance:
+            result = ShippingCalculateOut(
+                shipping_price=0.0,
+                shipping_type="distance_block",
+                rule_name="Fora do raio de entrega",
+                free=False,
+                estimated_time=0,
+                available=False,
+                message=DELIVERY_RADIUS_BLOCK_MESSAGE,
+                distance_km=round(distance_km, 2),
             )
             self._publish(result, payload, order_id)
             return result
@@ -499,7 +520,7 @@ class ShippingService:
                         break
 
             elif tc.freight_type == "by_distance":
-                km = payload.distance_km
+                km = distance_km
                 if km is None:
                     # Try Haversine if store coords known
                     km = None  # geocoding would go here
@@ -521,6 +542,7 @@ class ShippingService:
                                 free=price == 0.0,
                                 estimated_time=dr.estimated_time_min,
                                 available=True,
+                                distance_km=round(km, 2),
                             )
                             break
 
@@ -580,6 +602,38 @@ class ShippingService:
         return result
 
     # ─── Internal helpers ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _effective_delivery_radius_km(cfg: ShippingConfig) -> float:
+        configured = cfg.max_delivery_distance if cfg.max_delivery_distance and cfg.max_delivery_distance > 0 else DELIVERY_RADIUS_LIMIT_KM
+        return min(float(configured), DELIVERY_RADIUS_LIMIT_KM)
+
+    def _resolve_distance_km(self, payload: ShippingCalculateIn, cfg: ShippingConfig) -> float | None:
+        if payload.distance_km is not None:
+            return float(payload.distance_km)
+        if payload.is_pickup or cfg.store_lat is None or cfg.store_lng is None:
+            return None
+        address_parts = [
+            payload.street,
+            payload.neighborhood,
+            payload.city,
+            payload.zip_code,
+            "Brasil",
+        ]
+        query = ", ".join(str(part).strip() for part in address_parts if str(part or "").strip())
+        if not payload.street or not payload.city or not query:
+            return None
+        try:
+            from backend.services.delivery_service import DeliveryService
+
+            point = DeliveryService(self._db).geocode_address(query)
+            lat = point.get("lat")
+            lng = point.get("lng")
+            if lat is None or lng is None:
+                return None
+            return _haversine(float(cfg.store_lat), float(cfg.store_lng), float(lat), float(lng))
+        except Exception:
+            return None
 
     def _apply_extra_surcharges(
         self,

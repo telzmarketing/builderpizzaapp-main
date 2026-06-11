@@ -19,6 +19,12 @@ class PaymentCreate(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class PayOnDeliverySwitch(BaseModel):
+    delivery_payment_method: str = "card"
+    cash_needs_change: Optional[bool] = None
+    cash_change_for: Optional[float] = Field(default=None, ge=0)
+
+
 class PaymentOut(BaseModel):
     id: str
     order_id: str

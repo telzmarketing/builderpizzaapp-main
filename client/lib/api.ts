@@ -1028,6 +1028,7 @@ export interface CheckoutIn {
     neighborhood?: string;
     zip_code?: string;
     complement?: string;
+    distance_km?: number | null;
     is_pickup?: boolean;
     is_scheduled?: boolean;
     scheduled_for?: string | null;
@@ -1779,6 +1780,7 @@ export interface ApiShipping {
   estimated_time: number;
   available: boolean;
   message: string;
+  distance_km?: number | null;
 }
 
 // ── Exit Popup ────────────────────────────────────────────────────────────────
@@ -2504,6 +2506,21 @@ export const paymentsApi = {
       orderAccessHeaders(order_id),
     ),
 
+  switchToPayOnDelivery: (
+    order_id: string,
+    data: {
+      delivery_payment_method: "cash" | "card";
+      cash_needs_change?: boolean | null;
+      cash_change_for?: number | null;
+    },
+  ) =>
+    request<ApiPayment>(
+      "POST",
+      `/payments/pay-on-delivery/${order_id}`,
+      data,
+      orderAccessHeaders(order_id),
+    ),
+
   getByOrder: (order_id: string) =>
     request<ApiPayment>("GET", `/payments/${order_id}`, undefined, orderAccessHeaders(order_id)),
 
@@ -2647,9 +2664,11 @@ export const shippingApi = {
     zip_code?: string,
     is_pickup?: boolean,
     is_scheduled?: boolean,
+    street?: string,
+    distance_km?: number | null,
   ) =>
     post<ApiShipping>("/shipping/calculate", {
-      city, order_subtotal, neighborhood, zip_code, is_pickup, is_scheduled,
+      city, order_subtotal, neighborhood, zip_code, is_pickup, is_scheduled, street, distance_km,
     }),
 };
 

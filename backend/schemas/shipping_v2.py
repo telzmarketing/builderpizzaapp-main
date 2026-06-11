@@ -274,6 +274,7 @@ class ShippingExtraRuleOut(ShippingExtraRuleCreate):
 class ShippingCalculateIn(BaseModel):
     """Input for shipping calculation — matches both V1 and V2."""
     city: str = ""
+    street: Optional[str] = None
     neighborhood: Optional[str] = None
     zip_code: Optional[str] = None
     order_subtotal: float = 0.0
@@ -290,3 +291,4 @@ class ShippingCalculateOut(BaseModel):
     estimated_time: int = 45
     available: bool = True
     message: str = ""
+    distance_km: Optional[float] = None

@@ -42,7 +42,7 @@ from backend.core.state_machine import order_sm, payment_sm
 from backend.models.order import Order, OrderStatus
 from backend.models.payment import Payment, PaymentEvent, PaymentMethod, PaymentStatus
 from backend.models.payment_config import PaymentGatewayConfig
-from backend.schemas.payment import PaymentCreate, PaymentOut, WebhookPayload
+from backend.schemas.payment import PaymentCreate, PaymentOut, PayOnDeliverySwitch, WebhookPayload
 from backend.services.customer_metrics_service import sync_customer_order_metrics
 from backend.services.saipos_service import sendOrderToSaipos
 
@@ -161,8 +161,6 @@ def _mp_status_to_payment(mp_status: str, status_detail: str | None = None) -> P
 def _order_status_for_payment(status: PaymentStatus) -> OrderStatus | None:
     if status == PaymentStatus.approved:
         return OrderStatus.paid
-    if status == PaymentStatus.rejected:
-        return OrderStatus.pagamento_recusado
     if status in {PaymentStatus.cancelled, PaymentStatus.expired}:
         return OrderStatus.pagamento_expirado
     return None
@@ -362,6 +360,63 @@ class PaymentService:
         if payer.get("identification"):
             body["payer"]["identification"] = payer["identification"]
         return {k: v for k, v in body.items() if v is not None}
+
+    def switch_to_pay_on_delivery(self, order_id: str, payload: PayOnDeliverySwitch) -> PaymentOut:
+        cfg = self._cfg()
+        if not cfg.accept_cash:
+            raise DomainError("Pagamento na entrega esta indisponivel no momento.", code="PaymentMethodDisabled")
+        order = self._get_order(order_id)
+        current_order_status = order.status.value if hasattr(order.status, "value") else str(order.status)
+        if current_order_status not in {"pending", "waiting_payment", "aguardando_pagamento", "pagamento_recusado", "pagamento_expirado"}:
+            raise PaymentOrderNotEligible(order.id, current_order_status)
+
+        delivery_payment_method = (payload.delivery_payment_method or "").strip().lower()
+        if delivery_payment_method not in {"cash", "card"}:
+            raise DomainError("Escolha se o pagamento na entrega sera em cartao ou dinheiro.", code="InvalidDeliveryPaymentMethod")
+        cash_needs_change = bool(payload.cash_needs_change) if delivery_payment_method == "cash" else None
+        cash_change_for = float(payload.cash_change_for or 0) if cash_needs_change else None
+        if cash_change_for is not None and cash_change_for <= float(order.total):
+            raise DomainError("O valor para troco deve ser maior que o total do pedido.", code="InvalidCashChange")
+
+        is_new_payment = order.payment is None
+        payment = order.payment or Payment(id=str(uuid.uuid4()), order_id=order.id)
+        previous_payment_status = payment.status if not is_new_payment else PaymentStatus.pending
+        if previous_payment_status == PaymentStatus.approved:
+            raise DomainError("Este pedido ja foi pago. Acesse o acompanhamento do pedido.", code="PaymentAlreadyApproved")
+        if not is_new_payment and previous_payment_status != PaymentStatus.pending:
+            payment_sm.transition(payment.id, previous_payment_status.value, PaymentStatus.pending.value)
+
+        payment.method = PaymentMethod.cash
+        payment.status = PaymentStatus.pending
+        payment.amount = float(order.total)
+        payment.gateway = "on_delivery"
+        payment.provider = "on_delivery"
+        payment.mercado_pago_payment_id = None
+        payment.payment_url = None
+        payment.qr_code = None
+        payment.qr_code_text = None
+        payment.client_secret = None
+        payment.pay_on_delivery = True
+        payment.delivery_payment_method = delivery_payment_method
+        payment.cash_needs_change = cash_needs_change
+        payment.cash_change_for = cash_change_for
+        payment.transaction_id = payment.transaction_id or f"DELIVERY-{uuid.uuid4().hex[:8].upper()}"
+        payment.external_reference = order.external_reference or order.id
+        payment.updated_at = datetime.now(timezone.utc)
+        self._db.add(payment)
+
+        if current_order_status in {"pagamento_recusado", "pagamento_expirado"}:
+            order_sm.transition(order.id, current_order_status, "aguardando_pagamento")
+            current_order_status = "aguardando_pagamento"
+        if current_order_status != OrderStatus.paid.value:
+            order_sm.transition(order.id, current_order_status, OrderStatus.paid.value)
+            order.status = OrderStatus.paid
+        order.updated_at = datetime.now(timezone.utc)
+        self._db.flush()
+        sync_customer_order_metrics(self._db, order.customer_id)
+        self._db.commit()
+        self._db.refresh(payment)
+        return PaymentOut.model_validate(payment)
 
     def _apply_status(self, payment: Payment, status: PaymentStatus, *, source: str) -> bool:
         previous = payment.status
@@ -569,6 +624,14 @@ class PaymentService:
             event.processed_at = datetime.now(timezone.utc)
             self._db.commit()
             return {"status": "ignored", "reason": f"payment '{mp_payment_id}' not found"}
+        if payment.provider != "mercado_pago" and payment.gateway != "mercadopago":
+            event.processed_at = datetime.now(timezone.utc)
+            self._db.commit()
+            return {"status": "ignored", "reason": "stale_webhook_payment_switched_provider"}
+        if payment.mercado_pago_payment_id and str(payment.mercado_pago_payment_id) != str(mp_payment_id):
+            event.processed_at = datetime.now(timezone.utc)
+            self._db.commit()
+            return {"status": "ignored", "reason": "stale_webhook_payment_replaced"}
 
         # Validate that the amount from MP matches what we have stored.
         mp_amount = response.get("transaction_amount")

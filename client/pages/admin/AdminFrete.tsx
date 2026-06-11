@@ -401,7 +401,7 @@ function TabConfig({ config, setConfig, showToast }: {
           <Input label="Tempo estimado padrão (min)" type="number"
             value={form.default_estimated_time} onChange={v => set("default_estimated_time", parseInt(v) || 45)} />
           <Input label="Distância máxima (km)" type="number" step="0.1"
-            value={form.max_delivery_distance} onChange={v => set("max_delivery_distance", parseFloat(v) || 20)} />
+            value={form.max_delivery_distance} onChange={v => set("max_delivery_distance", parseFloat(v) || 3)} />
         </div>
       </div>
 
