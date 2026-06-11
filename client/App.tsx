@@ -513,9 +513,9 @@ export default function App() {
               {/* ── Admin routes (protected by JWT guard) ── */}
               <Route element={<AdminGuard />}>
                 <Route path="/painel/bi-mobile" element={<AdminBIMobile />} />
-                <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />
                 <Route element={<AdminLayout />}>
                 <Route path="/painel" element={<AdminDashboard />} />
+                <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />
                 <Route path="/painel/products" element={<AdminProducts />} />
                 <Route path="/painel/products/landing/:productId/:promotionId" element={<PromotionalLandingEditor />} />
                 <Route path="/painel/orders" element={<AdminOrders />} />
