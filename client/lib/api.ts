@@ -3828,6 +3828,323 @@ export const biApi = {
 
 // ─── Delivery / Logistics ─────────────────────────────────────────────────────
 
+export type ApiMarketingIntelligencePeriod = ApiBIPeriod;
+
+export interface ApiMarketingIntelligenceKpi {
+  key: string;
+  label: string;
+  value: number;
+  unit: "number" | "currency" | "percent" | string;
+  helper?: string | null;
+}
+
+export interface ApiMarketingIntelligenceCampaign {
+  id: string;
+  name: string;
+  source_type: string;
+  platform?: string | null;
+  status?: string | null;
+  spend: number;
+  revenue: number;
+  orders: number;
+  visitors: number;
+  clicks: number;
+  leads: number;
+  roas: number;
+  roi: number;
+  cpa: number;
+  cpl: number;
+}
+
+export interface ApiMarketingIntelligenceChannel {
+  channel: string;
+  label: string;
+  spend: number;
+  revenue: number;
+  orders: number;
+  visitors: number;
+  clicks: number;
+  leads: number;
+  roas: number;
+  conversion_rate: number;
+}
+
+export interface ApiMarketingIntelligenceFunnelStep {
+  key: string;
+  label: string;
+  value: number;
+  conversion_pct: number;
+  previous_conversion_pct: number;
+}
+
+export interface ApiMarketingIntelligenceProduct {
+  product_id?: string | null;
+  name: string;
+  category?: string | null;
+  views: number;
+  carts: number;
+  orders: number;
+  quantity_sold: number;
+  revenue: number;
+  average_ticket: number;
+  conversion_rate: number;
+}
+
+export interface ApiMarketingIntelligencePromotion {
+  id: string;
+  name: string;
+  promotion_type: string;
+  code?: string | null;
+  uses: number;
+  orders: number;
+  revenue: number;
+  discount: number;
+  average_ticket: number;
+}
+
+export interface ApiMarketingIntelligenceDashboard {
+  period: string;
+  date_from: string;
+  date_to: string;
+  generated_at: string;
+  kpis: ApiMarketingIntelligenceKpi[];
+  campaigns: ApiMarketingIntelligenceCampaign[];
+  channels: ApiMarketingIntelligenceChannel[];
+  funnel: ApiMarketingIntelligenceFunnelStep[];
+  products: ApiMarketingIntelligenceProduct[];
+  promotions: ApiMarketingIntelligencePromotion[];
+}
+
+export interface ApiMarketingIntelligenceCampaignsResponse {
+  campaigns: ApiMarketingIntelligenceCampaign[];
+}
+
+export interface ApiMarketingIntelligenceChannelsResponse {
+  channels: ApiMarketingIntelligenceChannel[];
+}
+
+export interface ApiMarketingIntelligenceFunnelResponse {
+  funnel: ApiMarketingIntelligenceFunnelStep[];
+}
+
+export interface ApiMarketingIntelligenceProductsResponse {
+  products: ApiMarketingIntelligenceProduct[];
+}
+
+export interface ApiMarketingIntelligencePromotionsResponse {
+  promotions: ApiMarketingIntelligencePromotion[];
+}
+
+export type ApiMarketingGoalMetricKey =
+  | "revenue"
+  | "paid_orders"
+  | "leads"
+  | "conversions"
+  | "roas"
+  | "roi"
+  | "cac"
+  | "cpa"
+  | "cpl"
+  | "average_ticket";
+
+export type ApiMarketingGoalStatus = "active" | "paused" | "completed" | "cancelled";
+export type ApiMarketingPriority = "low" | "medium" | "high";
+export type ApiMarketingComparisonDirection = "increase" | "decrease";
+export type ApiMarketingTimelineImpact = "low" | "medium" | "high";
+export type ApiMarketingAttachmentType = "url" | "image" | "document" | "other";
+
+export interface ApiMarketingGoalProgress {
+  current_value: number;
+  baseline_value?: number | null;
+  target_value: number;
+  progress_pct: number;
+  remaining_value?: number | null;
+  reached: boolean;
+  metric_label: string;
+  unit: "number" | "currency" | "percent" | string;
+  calculated_at: string;
+}
+
+export interface ApiMarketingGoal {
+  id: string;
+  title: string;
+  description?: string | null;
+  metric_key: ApiMarketingGoalMetricKey;
+  target_value: number;
+  baseline_value?: number | null;
+  comparison_direction: ApiMarketingComparisonDirection;
+  period_start: string;
+  period_end: string;
+  status: ApiMarketingGoalStatus;
+  priority: ApiMarketingPriority;
+  campaign_id?: string | null;
+  traffic_campaign_id?: string | null;
+  coupon_id?: string | null;
+  promotion_id?: string | null;
+  product_id?: string | null;
+  channel?: string | null;
+  notes?: string | null;
+  metadata: Record<string, unknown>;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
+  progress: ApiMarketingGoalProgress;
+}
+
+export type ApiMarketingGoalInput = {
+  title: string;
+  description?: string | null;
+  metric_key: ApiMarketingGoalMetricKey;
+  target_value: number;
+  baseline_value?: number | null;
+  comparison_direction: ApiMarketingComparisonDirection;
+  period_start: string;
+  period_end: string;
+  status?: ApiMarketingGoalStatus;
+  priority?: ApiMarketingPriority;
+  campaign_id?: string | null;
+  traffic_campaign_id?: string | null;
+  coupon_id?: string | null;
+  promotion_id?: string | null;
+  product_id?: string | null;
+  channel?: string | null;
+  notes?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export interface ApiMarketingTimelineEvent {
+  id: string;
+  title: string;
+  description?: string | null;
+  event_type: string;
+  event_date: string;
+  impact_level: ApiMarketingTimelineImpact;
+  category?: string | null;
+  tags: string[];
+  attachment_url?: string | null;
+  attachment_type?: ApiMarketingAttachmentType | null;
+  goal_id?: string | null;
+  campaign_id?: string | null;
+  traffic_campaign_id?: string | null;
+  coupon_id?: string | null;
+  promotion_id?: string | null;
+  product_id?: string | null;
+  metadata: Record<string, unknown>;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ApiMarketingTimelineEventInput = {
+  title: string;
+  description?: string | null;
+  event_type: string;
+  event_date: string;
+  impact_level?: ApiMarketingTimelineImpact;
+  category?: string | null;
+  tags?: string[];
+  attachment_url?: string | null;
+  attachment_type?: ApiMarketingAttachmentType | null;
+  goal_id?: string | null;
+  campaign_id?: string | null;
+  traffic_campaign_id?: string | null;
+  coupon_id?: string | null;
+  promotion_id?: string | null;
+  product_id?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export interface ApiMarketingGoalsResponse {
+  goals: ApiMarketingGoal[];
+}
+
+export interface ApiMarketingTimelineResponse {
+  timeline: ApiMarketingTimelineEvent[];
+}
+
+export interface ApiMarketingPlanningResponse {
+  goals: ApiMarketingGoal[];
+  timeline: ApiMarketingTimelineEvent[];
+}
+
+export type ApiMarketingIntelligenceParams = {
+  period?: ApiMarketingIntelligencePeriod;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+};
+
+function marketingIntelligenceQuery(params?: ApiMarketingIntelligenceParams) {
+  const qs = new URLSearchParams();
+  if (params?.period) qs.set("period", params.period);
+  if (params?.date_from) qs.set("date_from", params.date_from);
+  if (params?.date_to) qs.set("date_to", params.date_to);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  const query = qs.toString();
+  return query ? `?${query}` : "";
+}
+
+export const marketingIntelligenceApi = {
+  dashboard: (params?: ApiMarketingIntelligenceParams) =>
+    get<ApiMarketingIntelligenceDashboard>(`/marketing-intelligence/dashboard${marketingIntelligenceQuery(params)}`),
+  campaigns: (params?: ApiMarketingIntelligenceParams) =>
+    get<ApiMarketingIntelligenceCampaignsResponse>(`/marketing-intelligence/campaigns${marketingIntelligenceQuery(params)}`),
+  channels: (params?: ApiMarketingIntelligenceParams) =>
+    get<ApiMarketingIntelligenceChannelsResponse>(`/marketing-intelligence/channels${marketingIntelligenceQuery(params)}`),
+  funnel: (params?: ApiMarketingIntelligenceParams) =>
+    get<ApiMarketingIntelligenceFunnelResponse>(`/marketing-intelligence/funnel${marketingIntelligenceQuery(params)}`),
+  products: (params?: ApiMarketingIntelligenceParams) =>
+    get<ApiMarketingIntelligenceProductsResponse>(`/marketing-intelligence/products${marketingIntelligenceQuery(params)}`),
+  promotions: (params?: ApiMarketingIntelligenceParams) =>
+    get<ApiMarketingIntelligencePromotionsResponse>(`/marketing-intelligence/promotions${marketingIntelligenceQuery(params)}`),
+  planning: (params?: { status?: string; date_from?: string; date_to?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.date_from) qs.set("date_from", params.date_from);
+    if (params?.date_to) qs.set("date_to", params.date_to);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const query = qs.toString();
+    return get<ApiMarketingPlanningResponse>(`/marketing-intelligence/planning${query ? `?${query}` : ""}`);
+  },
+  goals: (params?: { status?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const query = qs.toString();
+    return get<ApiMarketingGoalsResponse>(`/marketing-intelligence/goals${query ? `?${query}` : ""}`);
+  },
+  createGoal: (data: ApiMarketingGoalInput) => post<ApiMarketingGoal>("/marketing-intelligence/goals", data),
+  updateGoal: (id: string, data: Partial<ApiMarketingGoalInput>) => put<ApiMarketingGoal>(`/marketing-intelligence/goals/${id}`, data),
+  updateGoalStatus: (id: string, status: ApiMarketingGoalStatus) =>
+    patch<ApiMarketingGoal>(`/marketing-intelligence/goals/${id}/status`, { status }),
+  deleteGoal: (id: string) => del<void>(`/marketing-intelligence/goals/${id}`),
+  timeline: (params?: {
+    date_from?: string;
+    date_to?: string;
+    event_type?: string;
+    category?: string;
+    impact_level?: string;
+    search?: string;
+    limit?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.date_from) qs.set("date_from", params.date_from);
+    if (params?.date_to) qs.set("date_to", params.date_to);
+    if (params?.event_type) qs.set("event_type", params.event_type);
+    if (params?.category) qs.set("category", params.category);
+    if (params?.impact_level) qs.set("impact_level", params.impact_level);
+    if (params?.search) qs.set("search", params.search);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const query = qs.toString();
+    return get<ApiMarketingTimelineResponse>(`/marketing-intelligence/timeline${query ? `?${query}` : ""}`);
+  },
+  createTimelineEvent: (data: ApiMarketingTimelineEventInput) => post<ApiMarketingTimelineEvent>("/marketing-intelligence/timeline", data),
+  updateTimelineEvent: (id: string, data: Partial<ApiMarketingTimelineEventInput>) =>
+    put<ApiMarketingTimelineEvent>(`/marketing-intelligence/timeline/${id}`, data),
+  deleteTimelineEvent: (id: string) => del<void>(`/marketing-intelligence/timeline/${id}`),
+};
+
 export interface DeliveryPerson {
   id: string;
   name: string;

@@ -37,6 +37,7 @@ from backend.routes import email_marketing as email_marketing_routes
 from backend.routes import automations as automations_routes
 from backend.routes import ads_oauth as ads_oauth_routes
 from backend.routes import marketing_workflow as marketing_workflow_routes
+from backend.routes import marketing_intelligence as marketing_intelligence_routes
 from backend.routes import rbac as rbac_routes
 from backend.routes import customer_events as customer_events_routes
 from backend.routes import bi as bi_routes
@@ -1158,6 +1159,7 @@ app.include_router(email_marketing_routes.router)
 app.include_router(automations_routes.router)
 app.include_router(ads_oauth_routes.router)
 app.include_router(marketing_workflow_routes.router)
+app.include_router(marketing_intelligence_routes.router)
 app.include_router(rbac_routes.router)
 app.include_router(customer_events_routes.router)
 app.include_router(bi_routes.router)
@@ -1201,6 +1203,7 @@ app.include_router(email_marketing_routes.router, prefix="/api")
 app.include_router(automations_routes.router, prefix="/api")
 app.include_router(ads_oauth_routes.router, prefix="/api")
 app.include_router(marketing_workflow_routes.router, prefix="/api")
+app.include_router(marketing_intelligence_routes.router, prefix="/api")
 app.include_router(rbac_routes.router, prefix="/api")
 app.include_router(customer_events_routes.router, prefix="/api")
 app.include_router(lgpd_routes.router, prefix="/api")

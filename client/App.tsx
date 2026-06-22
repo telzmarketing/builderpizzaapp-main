@@ -415,6 +415,7 @@ const AdminBI = lazy(() => import("./pages/admin/bi/BiDashboard"));
 const AdminBIMobile = lazy(() => import("./pages/admin/bi/BiMobile"));
 const ExitPopup = lazy(() => import("./components/ExitPopup"));
 const MarketingDashboard = lazy(() => import("./pages/admin/marketing/MarketingDashboard"));
+const MarketingIntelligence = lazy(() => import("./pages/admin/marketing/MarketingIntelligence"));
 const MarketingVisitantes = lazy(() => import("./pages/admin/marketing/MarketingVisitantes"));
 const MarketingLinks = lazy(() => import("./pages/admin/marketing/MarketingLinks"));
 const MarketingIntegracoes = lazy(() => import("./pages/admin/marketing/MarketingIntegracoes"));
@@ -542,6 +543,7 @@ export default function App() {
                 <Route path="/painel/bi" element={<AdminBI />} />
                 {/* ── Marketing routes ── */}
                 <Route path="/painel/marketing" element={<MarketingDashboard />} />
+                <Route path="/painel/marketing-intelligence" element={<MarketingIntelligence />} />
                 <Route path="/painel/marketing/visitantes" element={<MarketingVisitantes />} />
                 <Route path="/painel/marketing/links" element={<MarketingLinks />} />
                 <Route path="/painel/marketing/integracoes" element={<MarketingIntegracoes />} />

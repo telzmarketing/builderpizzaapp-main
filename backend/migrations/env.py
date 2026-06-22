@@ -20,6 +20,7 @@ from backend.models import (  # noqa: F401
     delivery,
     home_config,
     loyalty,
+    marketing_intelligence,
     order,
     paid_traffic,
     payment,

@@ -97,6 +97,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     label: "Marketing",
     children: [
       { path: "/painel/marketing", icon: TrendingUp, label: "Dashboard Marketing", exact: true, permissions: ["marketing"] },
+      { path: "/painel/marketing-intelligence", icon: Brain, label: "Marketing Intelligence", exact: true, permissions: ["marketing", "relatorios"] },
       { path: "/painel/marketing/visitantes", icon: Eye, label: "Analise de Visitantes", permissions: ["marketing", "relatorios"] },
       { path: "/painel/marketing/links", icon: MousePointerClick, label: "Links Rastreaveis", permissions: ["marketing"] },
       { path: "/painel/marketing/whatsapp", icon: MessageCircle, label: "Disparador WhatsApp", permissions: ["whatsapp"] },
