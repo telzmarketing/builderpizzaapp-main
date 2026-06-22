@@ -123,6 +123,20 @@ function GatewayLoading() {
   );
 }
 
+function shouldStartConnectionForQr(status: unknown) {
+  const normalized = toDisplayText(status, "").toLowerCase();
+  return !["connecting", "qr_required", "connected"].includes(normalized);
+}
+
+function shouldStopQrPolling(status: unknown) {
+  const normalized = toDisplayText(status, "").toLowerCase();
+  return ["connected", "error", "runtime_offline", "logged_out", "package_missing", "unauthorized"].includes(normalized);
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 export default function WhatsAppGateway() {
   const [tab, setTab] = useState<Tab>("overview");
   const [overview, setOverview] = useState<ApiWhatsAppGatewayOverview | null>(null);
@@ -198,11 +212,13 @@ export default function WhatsAppGateway() {
     setActionLoading(key);
     setError(null);
     try {
-      const result =
+      let result =
         action === "connect"
           ? await whatsappGatewayApi.connectInstance(instance.id)
           : action === "qrcode"
-            ? await whatsappGatewayApi.getQrCode(instance.id)
+            ? shouldStartConnectionForQr(instance.status)
+              ? await whatsappGatewayApi.connectInstance(instance.id)
+              : await whatsappGatewayApi.getQrCode(instance.id)
             : action === "status"
               ? await whatsappGatewayApi.getInstanceStatus(instance.id)
               : action === "disconnect"
@@ -218,6 +234,19 @@ export default function WhatsAppGateway() {
           message: toDisplayText(result.message, "Acao executada."),
           dataUrl: result.qr_code_data_url,
         });
+
+        for (let attempt = 0; attempt < 8 && !result.qr_code_data_url && !shouldStopQrPolling(result.instance.status); attempt += 1) {
+          await wait(1250);
+          result = await whatsappGatewayApi.getQrCode(instance.id);
+          setInstances((current) => current.map((item) => (item.id === instance.id ? result.instance : item)));
+          setQrPreview({
+            instanceId: instance.id,
+            name: toDisplayText(instance.name, "Instancia"),
+            status: toDisplayText(result.instance.status, "unknown"),
+            message: toDisplayText(result.message, "Aguardando QR Code."),
+            dataUrl: result.qr_code_data_url,
+          });
+        }
       }
       if (action === "disconnect") {
         setQrPreview((current) => (current?.instanceId === instance.id ? null : current));
