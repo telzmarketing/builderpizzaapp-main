@@ -5,6 +5,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import makeWASocket, {
+  Browsers,
   DisconnectReason,
   fetchLatestBaileysVersion,
   useMultiFileAuthState,
@@ -51,6 +52,10 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function logRuntime(event, payload = {}) {
+  console.log(JSON.stringify({ ts: nowIso(), event, ...payload }));
+}
+
 function baseState(instanceId) {
   return {
     instanceId,
@@ -64,6 +69,7 @@ function baseState(instanceId) {
     lastSeenAt: null,
     startedAt: null,
     socket: null,
+    reconnectAttempts: 0,
   };
 }
 
@@ -86,6 +92,7 @@ function publicState(state) {
     disconnected_at: state.disconnectedAt,
     last_seen_at: state.lastSeenAt,
     started_at: state.startedAt,
+    reconnect_attempts: state.reconnectAttempts,
   };
 }
 
@@ -280,12 +287,19 @@ async function connectInstance(instanceId, body = {}) {
   state.lastError = null;
   state.qrCode = null;
   state.qrCodeDataUrl = null;
+  if (!body.reconnect) state.reconnectAttempts = 0;
 
   const { state: authState, saveCreds } = await useMultiFileAuthState(sessionDir);
   const versionResult = await fetchLatestBaileysVersion().catch(() => ({ version: undefined }));
+  logRuntime("instance_connect_start", {
+    instance_id: instanceId,
+    baileys_version: versionResult.version?.join?.(".") || null,
+    reconnect: Boolean(body.reconnect),
+    reconnect_attempts: state.reconnectAttempts,
+  });
   const socket = makeWASocket({
     auth: authState,
-    browser: ["Moschettieri ERP", "Chrome", "1.0.0"],
+    browser: Browsers.ubuntu("Chrome"),
     printQRInTerminal: false,
     logger,
     ...(versionResult.version ? { version: versionResult.version } : {}),
@@ -321,7 +335,15 @@ async function connectInstance(instanceId, body = {}) {
       state.qrCode = update.qr;
       state.qrCodeDataUrl = await makeQrDataUrl(update.qr).catch((error) => {
         state.lastError = error instanceof Error ? error.message : String(error);
+        logRuntime("instance_qr_error", {
+          instance_id: instanceId,
+          error: state.lastError,
+        });
         return null;
+      });
+      logRuntime("instance_qr_ready", {
+        instance_id: instanceId,
+        has_qr_data_url: Boolean(state.qrCodeDataUrl),
       });
     }
 
@@ -333,6 +355,11 @@ async function connectInstance(instanceId, body = {}) {
       state.disconnectedAt = null;
       state.phoneNumber = socket.user?.id || socket.user?.name || state.phoneNumber;
       state.lastError = null;
+      state.reconnectAttempts = 0;
+      logRuntime("instance_connected", {
+        instance_id: instanceId,
+        phone_number: state.phoneNumber,
+      });
     }
 
     if (update.connection === "close") {
@@ -342,6 +369,25 @@ async function connectInstance(instanceId, body = {}) {
       state.disconnectedAt = nowIso();
       state.lastError = update.lastDisconnect?.error?.message || null;
       state.socket = null;
+      logRuntime("instance_connection_closed", {
+        instance_id: instanceId,
+        status_code: statusCode || null,
+        should_reconnect: shouldReconnect,
+        reconnect_attempts: state.reconnectAttempts,
+        error: state.lastError,
+      });
+      if (shouldReconnect && state.reconnectAttempts < 3) {
+        state.reconnectAttempts += 1;
+        setTimeout(() => {
+          connectInstance(instanceId, { name: state.displayName, reconnect: true }).catch((error) => {
+            state.lastError = error instanceof Error ? error.message : String(error);
+            logRuntime("instance_reconnect_error", {
+              instance_id: instanceId,
+              error: state.lastError,
+            });
+          });
+        }, 1500);
+      }
     }
   });
 
