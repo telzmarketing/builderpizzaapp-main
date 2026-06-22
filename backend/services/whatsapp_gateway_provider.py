@@ -25,6 +25,9 @@ class WhatsAppProviderInterface(Protocol):
     def get_qr_code(self, *, instance_id: str) -> WhatsAppProviderResult:
         ...
 
+    def request_pairing_code(self, *, instance_id: str, phone_number: str) -> WhatsAppProviderResult:
+        ...
+
     def get_status(self, *, instance_id: str) -> WhatsAppProviderResult:
         ...
 

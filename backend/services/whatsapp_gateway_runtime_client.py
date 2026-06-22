@@ -24,6 +24,9 @@ class WhatsAppGatewayRuntimeClient:
     def get_qr_code(self, *, instance_id: str) -> WhatsAppProviderResult:
         return self._request("GET", f"/instances/{instance_id}/qrcode")
 
+    def request_pairing_code(self, *, instance_id: str, phone_number: str) -> WhatsAppProviderResult:
+        return self._request("POST", f"/instances/{instance_id}/pairing-code", {"phone_number": phone_number})
+
     def get_status(self, *, instance_id: str) -> WhatsAppProviderResult:
         return self._request("GET", f"/instances/{instance_id}/status")
 

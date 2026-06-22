@@ -3188,6 +3188,7 @@ export interface ApiWhatsAppGatewayRuntimeCommand {
   runtime: Record<string, unknown>;
   qr_code: string | null;
   qr_code_data_url: string | null;
+  pairing_code: string | null;
 }
 
 export const whatsappGatewayApi = {
@@ -3212,6 +3213,8 @@ export const whatsappGatewayApi = {
     post<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/connect`, {}),
   getQrCode: (id: string) =>
     get<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/qrcode`),
+  getPairingCode: (id: string, data: { phone_number: string }) =>
+    post<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/pairing-code`, data),
   getInstanceStatus: (id: string) =>
     get<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/status`),
   disconnectInstance: (id: string) =>

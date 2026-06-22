@@ -195,6 +195,20 @@ class WhatsAppGatewayService:
         self._db.flush()
         return self.serialize_runtime_result(instance, result)
 
+    def request_pairing_code(self, instance_id: str, phone_number: str) -> dict[str, Any]:
+        instance = self._require_instance(instance_id)
+        clean_phone = "".join(ch for ch in (phone_number or instance.phone_number or "") if ch.isdigit())
+        if not clean_phone:
+            raise ValueError("Telefone com codigo do pais e obrigatorio.")
+        result = self._provider(instance.provider).request_pairing_code(
+            instance_id=instance.id,
+            phone_number=clean_phone,
+        )
+        self._apply_runtime_result(instance, result, fallback_status=instance.status)
+        self._log_runtime_result(instance, "instance_pairing_code", result)
+        self._db.flush()
+        return self.serialize_runtime_result(instance, result)
+
     def get_instance_status(self, instance_id: str) -> dict[str, Any]:
         instance = self._require_instance(instance_id)
         result = self._provider(instance.provider).get_status(instance_id=instance.id)
@@ -613,6 +627,7 @@ class WhatsAppGatewayService:
             "runtime": data,
             "qr_code": data.get("qr_code"),
             "qr_code_data_url": data.get("qr_code_data_url"),
+            "pairing_code": data.get("pairing_code"),
         }
 
     def serialize_log(self, log: WhatsAppGatewayLog) -> dict[str, Any]:

@@ -44,6 +44,11 @@ class BaileysProvider:
             return self._runtime_pending("get_qr_code")
         return self._runtime.get_qr_code(instance_id=instance_id)
 
+    def request_pairing_code(self, *, instance_id: str, phone_number: str) -> WhatsAppProviderResult:
+        if not self._package_version:
+            return self._runtime_pending("request_pairing_code")
+        return self._runtime.request_pairing_code(instance_id=instance_id, phone_number=phone_number)
+
     def get_status(self, *, instance_id: str) -> WhatsAppProviderResult:
         if not self._package_version:
             return self._runtime_pending("get_status")

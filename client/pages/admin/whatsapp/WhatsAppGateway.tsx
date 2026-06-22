@@ -156,6 +156,7 @@ export default function WhatsAppGateway() {
     status: string;
     message: string;
     dataUrl: string | null;
+    pairingCode: string | null;
   } | null>(null);
 
   async function loadAll() {
@@ -206,12 +207,18 @@ export default function WhatsAppGateway() {
 
   async function runInstanceAction(
     instance: ApiWhatsAppGatewayInstance,
-    action: "connect" | "qrcode" | "status" | "disconnect" | "restart",
+    action: "connect" | "qrcode" | "pairing_code" | "status" | "disconnect" | "restart",
   ) {
     const key = `${action}:${instance.id}`;
     setActionLoading(key);
     setError(null);
     try {
+      const pairingPhone =
+        action === "pairing_code"
+          ? window.prompt("Numero com codigo do pais, somente numeros", toDisplayText(instance.phone_number, ""))?.replace(/\D/g, "")
+          : null;
+      if (action === "pairing_code" && !pairingPhone) return;
+
       let result =
         action === "connect"
           ? await whatsappGatewayApi.connectInstance(instance.id)
@@ -219,6 +226,8 @@ export default function WhatsAppGateway() {
             ? shouldStartConnectionForQr(instance.status)
               ? await whatsappGatewayApi.connectInstance(instance.id)
               : await whatsappGatewayApi.getQrCode(instance.id)
+            : action === "pairing_code"
+              ? await whatsappGatewayApi.getPairingCode(instance.id, { phone_number: pairingPhone ?? "" })
             : action === "status"
               ? await whatsappGatewayApi.getInstanceStatus(instance.id)
               : action === "disconnect"
@@ -226,16 +235,21 @@ export default function WhatsAppGateway() {
                 : await whatsappGatewayApi.restartInstance(instance.id);
 
       setInstances((current) => current.map((item) => (item.id === instance.id ? result.instance : item)));
-      if (["connect", "qrcode", "restart"].includes(action)) {
+      if (["connect", "qrcode", "pairing_code", "restart"].includes(action)) {
         setQrPreview({
           instanceId: instance.id,
           name: toDisplayText(instance.name, "Instancia"),
           status: toDisplayText(result.instance.status, "unknown"),
           message: toDisplayText(result.message, "Acao executada."),
           dataUrl: result.qr_code_data_url,
+          pairingCode: result.pairing_code,
         });
 
-        for (let attempt = 0; attempt < 8 && !result.qr_code_data_url && !shouldStopQrPolling(result.instance.status); attempt += 1) {
+        for (
+          let attempt = 0;
+          action !== "pairing_code" && attempt < 8 && !result.qr_code_data_url && !shouldStopQrPolling(result.instance.status);
+          attempt += 1
+        ) {
           await wait(1250);
           result = await whatsappGatewayApi.getQrCode(instance.id);
           setInstances((current) => current.map((item) => (item.id === instance.id ? result.instance : item)));
@@ -245,6 +259,7 @@ export default function WhatsAppGateway() {
             status: toDisplayText(result.instance.status, "unknown"),
             message: toDisplayText(result.message, "Aguardando QR Code."),
             dataUrl: result.qr_code_data_url,
+            pairingCode: result.pairing_code,
           });
         }
       }
@@ -437,7 +452,14 @@ export default function WhatsAppGateway() {
                         <StatusBadge status={qrPreview.status} />
                       </div>
                       <div className="mt-3 flex min-h-[13rem] items-center justify-center rounded-lg bg-white p-3">
-                        {qrPreview.dataUrl ? (
+                        {qrPreview.pairingCode ? (
+                          <div className="text-center">
+                            <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">Codigo de pareamento</p>
+                            <p className="mt-2 font-mono text-3xl font-black tracking-[0.18em] text-neutral-900">
+                              {qrPreview.pairingCode}
+                            </p>
+                          </div>
+                        ) : qrPreview.dataUrl ? (
                           <img src={qrPreview.dataUrl} alt="QR Code WhatsApp" className="h-48 w-48" />
                         ) : (
                           <div className="px-4 text-center text-sm font-semibold text-neutral-700">
@@ -492,6 +514,15 @@ export default function WhatsAppGateway() {
                                   className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-surface-03 bg-surface-01 text-cream hover:border-gold disabled:opacity-50"
                                 >
                                   {actionLoading === `qrcode:${instance.id}` ? <Loader2 size={14} className="animate-spin" /> : <QrCode size={14} />}
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Codigo de pareamento"
+                                  onClick={() => runInstanceAction(instance, "pairing_code")}
+                                  disabled={Boolean(actionLoading)}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-surface-03 bg-surface-01 text-cream hover:border-gold disabled:opacity-50"
+                                >
+                                  {actionLoading === `pairing_code:${instance.id}` ? <Loader2 size={14} className="animate-spin" /> : <Smartphone size={14} />}
                                 </button>
                                 <button
                                   type="button"

@@ -70,6 +70,7 @@ function baseState(instanceId) {
     startedAt: null,
     socket: null,
     reconnectAttempts: 0,
+    pairingCode: null,
   };
 }
 
@@ -93,6 +94,7 @@ function publicState(state) {
     last_seen_at: state.lastSeenAt,
     started_at: state.startedAt,
     reconnect_attempts: state.reconnectAttempts,
+    pairing_code: state.pairingCode,
   };
 }
 
@@ -394,6 +396,52 @@ async function connectInstance(instanceId, body = {}) {
   return ok("Conexao Baileys iniciada. Aguarde QR Code ou status conectado.", publicState(state));
 }
 
+async function requestPairingCode(instanceId, body = {}) {
+  const state = getState(instanceId);
+  const phone = String(body.phone_number || body.phone || "").replace(/\D/g, "");
+  if (!phone) {
+    return fail("invalid_payload", "Telefone com codigo do pais e obrigatorio.", publicState(state));
+  }
+
+  if (!state.socket || !["connecting", "qr_required", "disconnected"].includes(state.status)) {
+    await connectInstance(instanceId, { name: body.name || state.displayName || null });
+  }
+
+  if (!state.socket) {
+    return fail("not_ready", "Socket Baileys ainda nao esta pronto para gerar codigo.", publicState(state));
+  }
+
+  if (state.socket.authState?.creds?.registered) {
+    return fail("already_registered", "Instancia Baileys ja esta registrada.", publicState(state));
+  }
+
+  try {
+    const code = await state.socket.requestPairingCode(phone);
+    state.pairingCode = code;
+    state.status = "qr_required";
+    state.lastSeenAt = nowIso();
+    state.lastError = null;
+    logRuntime("instance_pairing_code_ready", {
+      instance_id: instanceId,
+      phone_number: phone,
+      code_length: code.length,
+    });
+    return ok("Codigo de pareamento gerado.", {
+      ...publicState(state),
+      pairing_code: code,
+      phone_number: phone,
+    });
+  } catch (error) {
+    state.lastError = error instanceof Error ? error.message : String(error);
+    logRuntime("instance_pairing_code_error", {
+      instance_id: instanceId,
+      phone_number: phone,
+      error: state.lastError,
+    });
+    return fail("pairing_code_error", "Nao foi possivel gerar codigo de pareamento.", publicState(state));
+  }
+}
+
 async function disconnectInstance(instanceId) {
   const state = getState(instanceId);
   if (state.socket) {
@@ -406,6 +454,7 @@ async function disconnectInstance(instanceId) {
   state.lastSeenAt = nowIso();
   state.qrCode = null;
   state.qrCodeDataUrl = null;
+  state.pairingCode = null;
   return ok("Instancia Baileys desconectada.", publicState(state));
 }
 
@@ -503,6 +552,10 @@ async function route(request, response) {
   if (request.method === "GET" && action === "qrcode") {
     const state = getState(instanceId);
     return sendJson(response, 200, ok("QR Code consultado.", publicState(state)));
+  }
+
+  if (request.method === "POST" && action === "pairing-code") {
+    return sendJson(response, 200, await requestPairingCode(instanceId, await readBody(request)));
   }
 
   if (request.method === "GET" && action === "status") {

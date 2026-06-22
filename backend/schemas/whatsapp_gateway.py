@@ -111,6 +111,10 @@ class WhatsAppGatewayUpdateConfirmOut(BaseModel):
     message: str
 
 
+class WhatsAppGatewayPairingCodeIn(BaseModel):
+    phone_number: str = Field(..., min_length=8, max_length=40)
+
+
 class WhatsAppGatewayRuntimeCommandOut(BaseModel):
     ok: bool
     message: str
@@ -118,6 +122,7 @@ class WhatsAppGatewayRuntimeCommandOut(BaseModel):
     runtime: dict[str, Any]
     qr_code: str | None = None
     qr_code_data_url: str | None = None
+    pairing_code: str | None = None
 
 
 class WhatsAppGatewayRuntimeEventIn(BaseModel):

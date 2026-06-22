@@ -11,6 +11,7 @@ from backend.schemas.whatsapp_gateway import (
     WhatsAppGatewayInstanceOut,
     WhatsAppGatewayLogOut,
     WhatsAppGatewayOverviewOut,
+    WhatsAppGatewayPairingCodeIn,
     WhatsAppGatewayProviderStatusOut,
     WhatsAppGatewayRuntimeCommandOut,
     WhatsAppGatewayRuntimeEventIn,
@@ -124,6 +125,22 @@ def get_qr_code(instance_id: str, db: Session = Depends(get_db), _=Depends(get_c
         result = service.get_qr_code(instance_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    db.commit()
+    return result
+
+
+@router.post("/instances/{instance_id}/pairing-code", response_model=WhatsAppGatewayRuntimeCommandOut)
+def request_pairing_code(
+    instance_id: str,
+    body: WhatsAppGatewayPairingCodeIn,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    service = WhatsAppGatewayService(db)
+    try:
+        result = service.request_pairing_code(instance_id, body.phone_number)
+    except ValueError as exc:
+        raise HTTPException(status_code=422 if "Telefone" in str(exc) else 404, detail=str(exc)) from exc
     db.commit()
     return result
 
