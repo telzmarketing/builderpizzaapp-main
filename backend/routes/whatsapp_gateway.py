@@ -7,6 +7,7 @@ from backend.config import get_settings
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
 from backend.schemas.whatsapp_gateway import (
+    WhatsAppGatewayDeleteOut,
     WhatsAppGatewayInstanceCreate,
     WhatsAppGatewayInstanceOut,
     WhatsAppGatewayLogOut,
@@ -161,6 +162,17 @@ def disconnect_instance(instance_id: str, db: Session = Depends(get_db), _=Depen
     service = WhatsAppGatewayService(db)
     try:
         result = service.disconnect_instance(instance_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    db.commit()
+    return result
+
+
+@router.delete("/instances/{instance_id}", response_model=WhatsAppGatewayDeleteOut)
+def delete_instance(instance_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    service = WhatsAppGatewayService(db)
+    try:
+        result = service.delete_instance(instance_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     db.commit()

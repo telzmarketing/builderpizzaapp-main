@@ -59,6 +59,11 @@ class BaileysProvider:
             return self._runtime_pending("disconnect_instance")
         return self._runtime.disconnect_instance(instance_id=instance_id)
 
+    def delete_instance(self, *, instance_id: str) -> WhatsAppProviderResult:
+        if not self._package_version:
+            return self._runtime_pending("delete_instance")
+        return self._runtime.delete_instance(instance_id=instance_id)
+
     def restart_instance(self, *, instance_id: str) -> WhatsAppProviderResult:
         if not self._package_version:
             return self._runtime_pending("restart_instance")

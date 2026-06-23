@@ -3191,6 +3191,13 @@ export interface ApiWhatsAppGatewayRuntimeCommand {
   pairing_code: string | null;
 }
 
+export interface ApiWhatsAppGatewayDeleteResponse {
+  ok: boolean;
+  message: string;
+  instance_id: string;
+  runtime: Record<string, unknown>;
+}
+
 export const whatsappGatewayApi = {
   overview: () => get<ApiWhatsAppGatewayOverview>("/whatsapp-gateway/overview"),
   providerStatus: () => get<ApiWhatsAppGatewayProviderStatus>("/whatsapp-gateway/provider/status"),
@@ -3219,6 +3226,8 @@ export const whatsappGatewayApi = {
     get<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/status`),
   disconnectInstance: (id: string) =>
     post<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/disconnect`, {}),
+  deleteInstance: (id: string) =>
+    del<ApiWhatsAppGatewayDeleteResponse>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}`),
   restartInstance: (id: string) =>
     post<ApiWhatsAppGatewayRuntimeCommand>(`/whatsapp-gateway/instances/${encodeURIComponent(id)}/restart`, {}),
   listLogs: (params?: { instance_id?: string; limit?: number }) => {

@@ -115,6 +115,13 @@ class WhatsAppGatewayPairingCodeIn(BaseModel):
     phone_number: str = Field(..., min_length=8, max_length=40)
 
 
+class WhatsAppGatewayDeleteOut(BaseModel):
+    ok: bool
+    message: str
+    instance_id: str
+    runtime: dict[str, Any] = Field(default_factory=dict)
+
+
 class WhatsAppGatewayRuntimeCommandOut(BaseModel):
     ok: bool
     message: str

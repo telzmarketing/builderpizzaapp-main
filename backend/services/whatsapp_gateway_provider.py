@@ -34,6 +34,9 @@ class WhatsAppProviderInterface(Protocol):
     def disconnect_instance(self, *, instance_id: str) -> WhatsAppProviderResult:
         ...
 
+    def delete_instance(self, *, instance_id: str) -> WhatsAppProviderResult:
+        ...
+
     def restart_instance(self, *, instance_id: str) -> WhatsAppProviderResult:
         ...
 

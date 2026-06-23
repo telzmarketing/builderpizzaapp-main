@@ -224,6 +224,22 @@ class WhatsAppGatewayService:
         self._db.flush()
         return self.serialize_runtime_result(instance, result)
 
+    def delete_instance(self, instance_id: str) -> dict[str, Any]:
+        instance = self._require_instance(instance_id)
+        provider = self._provider(instance.provider)
+        result = provider.delete_instance(instance_id=instance.id)
+        self._db.query(WhatsAppGatewayLog).filter(
+            WhatsAppGatewayLog.instance_id == instance.id
+        ).update({"instance_id": None}, synchronize_session=False)
+        self._db.delete(instance)
+        self._db.flush()
+        return {
+            "ok": True,
+            "message": "Instancia do WhatsApp Gateway removida.",
+            "instance_id": instance_id,
+            "runtime": result.data or {},
+        }
+
     def restart_instance(self, instance_id: str) -> dict[str, Any]:
         instance = self._require_instance(instance_id)
         result = self._provider(instance.provider).restart_instance(instance_id=instance.id)

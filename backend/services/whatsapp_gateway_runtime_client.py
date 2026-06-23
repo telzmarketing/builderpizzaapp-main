@@ -33,6 +33,9 @@ class WhatsAppGatewayRuntimeClient:
     def disconnect_instance(self, *, instance_id: str) -> WhatsAppProviderResult:
         return self._request("POST", f"/instances/{instance_id}/disconnect")
 
+    def delete_instance(self, *, instance_id: str) -> WhatsAppProviderResult:
+        return self._request("DELETE", f"/instances/{instance_id}")
+
     def restart_instance(self, *, instance_id: str, name: str | None = None) -> WhatsAppProviderResult:
         return self._request("POST", f"/instances/{instance_id}/restart", {"name": name})
 

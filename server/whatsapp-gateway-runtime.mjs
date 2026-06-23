@@ -458,6 +458,24 @@ async function disconnectInstance(instanceId) {
   return ok("Instancia Baileys desconectada.", publicState(state));
 }
 
+async function deleteInstance(instanceId) {
+  const state = getState(instanceId);
+  if (state.socket) {
+    await state.socket.logout().catch(() => undefined);
+    state.socket.end?.(new Error("instance deleted"));
+  }
+
+  const sessionDir = path.join(dataDir, "sessions", instanceId);
+  await fs.rm(sessionDir, { recursive: true, force: true });
+  instances.delete(instanceId);
+  logRuntime("instance_deleted", { instance_id: instanceId, session_dir: sessionDir });
+  return ok("Instancia Baileys removida do runtime.", {
+    instance_id: instanceId,
+    status: "deleted",
+    session_deleted: true,
+  });
+}
+
 async function restartInstance(instanceId, body = {}) {
   await disconnectInstance(instanceId);
   return connectInstance(instanceId, body);
@@ -565,6 +583,10 @@ async function route(request, response) {
 
   if (request.method === "POST" && action === "disconnect") {
     return sendJson(response, 200, await disconnectInstance(instanceId));
+  }
+
+  if (request.method === "DELETE" && !action) {
+    return sendJson(response, 200, await deleteInstance(instanceId));
   }
 
   if (request.method === "POST" && action === "restart") {

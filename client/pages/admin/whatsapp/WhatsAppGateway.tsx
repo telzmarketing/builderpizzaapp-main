@@ -13,6 +13,7 @@ import {
   Server,
   ShieldCheck,
   Smartphone,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -202,6 +203,27 @@ export default function WhatsAppGateway() {
       setError(toErrorMessage(err, "Falha ao criar instancia."));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteInstance(instance: ApiWhatsAppGatewayInstance) {
+    const confirmed = window.confirm(
+      `Excluir a instancia ${toDisplayText(instance.name, "Instancia")}? A sessao local do WhatsApp Gateway tambem sera removida.`,
+    );
+    if (!confirmed) return;
+
+    const key = `delete:${instance.id}`;
+    setActionLoading(key);
+    setError(null);
+    try {
+      await whatsappGatewayApi.deleteInstance(instance.id);
+      setInstances((current) => current.filter((item) => item.id !== instance.id));
+      setQrPreview((current) => (current?.instanceId === instance.id ? null : current));
+      await loadAll();
+    } catch (err) {
+      setError(toErrorMessage(err, "Falha ao excluir instancia."));
+    } finally {
+      setActionLoading(null);
     }
   }
 
@@ -550,6 +572,15 @@ export default function WhatsAppGateway() {
                                   className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 text-red-200 hover:bg-red-500/20 disabled:opacity-50"
                                 >
                                   {actionLoading === `disconnect:${instance.id}` ? <Loader2 size={14} className="animate-spin" /> : <Power size={14} />}
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Excluir instancia"
+                                  onClick={() => deleteInstance(instance)}
+                                  disabled={Boolean(actionLoading)}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 text-red-200 hover:bg-red-500/20 disabled:opacity-50"
+                                >
+                                  {actionLoading === `delete:${instance.id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                                 </button>
                               </div>
                             </td>
