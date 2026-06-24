@@ -102,8 +102,16 @@ function normalizePhoneJid(phone) {
   const value = String(phone || "").trim();
   if (!value) return null;
   if (value.endsWith("@s.whatsapp.net") || value.endsWith("@g.us")) return value;
-  const digits = value.replace(/\D/g, "");
+  let digits = value.replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (!digits.startsWith("55") && [10, 11].includes(digits.length)) {
+    digits = `55${digits}`;
+  }
   return digits ? `${digits}@s.whatsapp.net` : null;
+}
+
+function jidToPhone(jid) {
+  return String(jid || "").split("@", 1)[0] || null;
 }
 
 function assertConnected(state) {
@@ -494,11 +502,19 @@ async function sendTextMessage(instanceId, body = {}) {
 
   const result = await state.socket.sendMessage(jid, { text });
   state.lastSeenAt = nowIso();
+  logRuntime("message_text_sent", {
+    instance_id: instanceId,
+    phone: String(body.phone || ""),
+    normalized_phone: jidToPhone(jid),
+    provider_message_id: result?.key?.id || null,
+    remote_jid: result?.key?.remoteJid || jid,
+  });
   return ok("Mensagem de texto enviada pela Baileys.", {
     ...publicState(state),
     status: "sent",
     provider_message_id: result?.key?.id || null,
     remote_jid: result?.key?.remoteJid || jid,
+    normalized_phone: jidToPhone(jid),
   });
 }
 
@@ -529,11 +545,19 @@ async function sendMediaMessage(instanceId, body = {}) {
 
   const result = await state.socket.sendMessage(jid, payload);
   state.lastSeenAt = nowIso();
+  logRuntime("message_media_sent", {
+    instance_id: instanceId,
+    phone: String(body.phone || ""),
+    normalized_phone: jidToPhone(jid),
+    provider_message_id: result?.key?.id || null,
+    remote_jid: result?.key?.remoteJid || jid,
+  });
   return ok("Mensagem de midia enviada pela Baileys.", {
     ...publicState(state),
     status: "sent",
     provider_message_id: result?.key?.id || null,
     remote_jid: result?.key?.remoteJid || jid,
+    normalized_phone: jidToPhone(jid),
   });
 }
 
