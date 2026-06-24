@@ -1492,6 +1492,7 @@ export interface ApiAgenteWhatsAppAIRespond {
   tool_calls: ApiAgenteWhatsAppAIToolTrace[];
   enqueued: number;
   guardrails: ApiAgenteWhatsAppAIGuardrails;
+  manager_review: Record<string, unknown>;
   ai_settings: Record<string, unknown>;
 }
 

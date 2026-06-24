@@ -297,10 +297,19 @@ class AgenteWhatsAppAIService:
             customer=customer,
             results=results,
         )
+        manager_review = self._manager_review_response(
+            message=clean_message,
+            response=response,
+            intent=intent,
+            session=session,
+            trace=trace,
+            needs_human=needs_human,
+        )
+        needs_human = bool(needs_human or manager_review["requires_human_review"])
 
         outbound_message = None
         enqueue_result = {"enqueued": 0, "skipped": 0}
-        if auto_queue:
+        if auto_queue and manager_review["approved_for_auto_queue"]:
             outbound_message = self._service.add_message(
                 session,
                 direction="outbound",
@@ -312,9 +321,42 @@ class AgenteWhatsAppAIService:
                     "source": "agente_whatsapp_ai_runtime",
                     "intent": intent,
                     "tool_calls": trace,
+                    "manager_review": manager_review,
                 },
             )
             enqueue_result = AgenteWhatsAppOutboxService(self._db).enqueue_queued_messages(limit=20)
+        elif auto_queue:
+            outbound_message = self._service.add_message(
+                session,
+                direction="outbound",
+                sender_type="ai",
+                message_type="text",
+                body=response,
+                provider_status="blocked_review",
+                raw_payload={
+                    "source": "agente_whatsapp_ai_runtime",
+                    "intent": intent,
+                    "tool_calls": trace,
+                    "manager_review": manager_review,
+                },
+            )
+            if session.status not in {"human", "closed"}:
+                session.status = "waiting_human"
+            if manager_review["decision"] == "block":
+                session.automation_blocked = True
+            self._service.add_event(
+                event_type="agente_whatsapp_manager_review_blocked",
+                session_id=session.id,
+                customer_id=customer_id,
+                source="agente_whatsapp_manager",
+                payload={
+                    "intent": intent,
+                    "response": response,
+                    "manager_review": manager_review,
+                    "message_id": outbound_message.id,
+                },
+                flush=False,
+            )
 
         self._sync_context(session, intent=intent, message=clean_message, response=response, needs_human=needs_human)
         self._service.add_event(
@@ -329,6 +371,7 @@ class AgenteWhatsAppAIService:
                 "tools": [item["tool_name"] for item in trace],
                 "enqueued": enqueue_result.get("enqueued", 0),
                 "guardrails": guardrails,
+                "manager_review": manager_review,
             },
             flush=False,
         )
@@ -338,11 +381,12 @@ class AgenteWhatsAppAIService:
             "intent": intent,
             "response": response,
             "needs_human": needs_human,
-            "auto_queued": bool(auto_queue),
+            "auto_queued": bool(auto_queue and manager_review["approved_for_auto_queue"]),
             "message": self._service.serialize_message(outbound_message) if outbound_message else None,
             "tool_calls": trace,
             "enqueued": enqueue_result.get("enqueued", 0),
             "guardrails": guardrails,
+            "manager_review": manager_review,
             "ai_settings": {
                 "enabled": bool(ai_settings.enabled),
                 "provider": ai_settings.provider,
@@ -419,6 +463,130 @@ class AgenteWhatsAppAIService:
             "session_status": session.status,
             "ai_enabled": bool(session.ai_enabled),
             "automation_blocked": bool(session.automation_blocked),
+        }
+
+    def _manager_review_response(
+        self,
+        *,
+        message: str,
+        response: str,
+        intent: str,
+        session: AgenteWhatsAppSession,
+        trace: list[dict[str, Any]],
+        needs_human: bool,
+    ) -> dict[str, Any]:
+        text = _normalize_text(f"{message}\n{response}")
+        successful_tools = [item["tool_name"] for item in trace if item.get("success")]
+        matched_categories: list[str] = []
+        reasons: list[str] = []
+        warnings: list[str] = []
+        risk_level = "low"
+
+        risk_rules = [
+            (
+                "pagamento_financeiro",
+                "high",
+                [
+                    "pix nao caiu",
+                    "pix errado",
+                    "cobranca errada",
+                    "pagamento divergente",
+                    "estorno",
+                    "reembolso",
+                    "chargeback",
+                    "cartao recusado",
+                ],
+            ),
+            (
+                "reclamacao_qualidade",
+                "high",
+                [
+                    "reclamacao",
+                    "veio errado",
+                    "pedido errado",
+                    "pizza fria",
+                    "comida fria",
+                    "produto estragado",
+                    "intoxicacao",
+                    "alergia",
+                ],
+            ),
+            (
+                "juridico_reputacao",
+                "high",
+                ["procon", "processo", "advogado", "denunciar", "policia", "vigilancia sanitaria"],
+            ),
+            (
+                "cancelamento",
+                "medium",
+                ["cancelar", "cancela", "desistir", "nao quero mais", "cancelamento"],
+            ),
+            (
+                "atendimento_humano",
+                "medium",
+                ["atendente", "humano", "pessoa", "gerente", "responsavel", "falar com alguem"],
+            ),
+            (
+                "alteracao_pedido",
+                "medium",
+                ["alterar pedido", "mudar pedido", "trocar endereco", "trocar sabor", "adicionar item"],
+            ),
+        ]
+
+        for category, level, terms in risk_rules:
+            if any(term in text for term in terms):
+                matched_categories.append(category)
+                reasons.append(f"Detectado tema de risco: {category}.")
+                if level == "high":
+                    risk_level = "high"
+                elif risk_level == "low":
+                    risk_level = "medium"
+
+        if needs_human:
+            reasons.append("A propria resposta do Agente indicou necessidade de revisao humana.")
+            if risk_level == "low":
+                risk_level = "medium"
+
+        evidence_tools = {
+            "buscar_produtos",
+            "buscar_promocoes",
+            "validar_cupom",
+            "calcular_frete",
+            "consultar_status_pedido",
+            "buscar_ultimo_pedido",
+            "buscar_fidelidade",
+        }
+        response_mentions_money = bool(re.search(r"(?:r\$|\b\d+[,.]\d{2}\b)", response, flags=re.IGNORECASE))
+        if response_mentions_money and not any(tool in evidence_tools for tool in successful_tools):
+            reasons.append("Resposta menciona valor sem evidencia de ferramenta aprovada.")
+            risk_level = "high"
+
+        if intent == "consultar_status" and not any(tool in successful_tools for tool in ["consultar_status_pedido", "buscar_ultimo_pedido"]):
+            warnings.append("Consulta de status sem pedido encontrado; manter resposta apenas solicitando identificacao.")
+
+        if session.status in {"human", "ai_paused", "closed"} or session.automation_blocked:
+            reasons.append("Sessao nao permite resposta automatica neste momento.")
+            if risk_level == "low":
+                risk_level = "medium"
+
+        if risk_level == "high":
+            decision = "block"
+        elif reasons:
+            decision = "revise"
+        else:
+            decision = "approve"
+
+        return {
+            "reviewer": "internal_manager_rules_v1",
+            "decision": decision,
+            "risk_level": risk_level,
+            "approved_for_auto_queue": decision == "approve",
+            "requires_human_review": decision != "approve",
+            "reasons": reasons,
+            "warnings": warnings,
+            "matched_categories": matched_categories,
+            "evidence_tools": successful_tools,
+            "safe_response": "Vou encaminhar para um atendente verificar com seguranca." if decision == "block" else None,
         }
 
     def _call_tool(

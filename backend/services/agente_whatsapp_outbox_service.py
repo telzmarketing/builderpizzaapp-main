@@ -87,6 +87,16 @@ class AgenteWhatsAppOutboxService:
                 continue
 
             payload = _json_load(message.raw_payload_json)
+            manager_review = payload.get("manager_review") if isinstance(payload.get("manager_review"), dict) else {}
+            if message.sender_type == "ai" and manager_review.get("approved_for_auto_queue") is not True:
+                message.provider_status = "blocked_review"
+                message.error = "Bloqueado pelo Gerente IA antes do envio. Revisao humana necessaria."
+                if session.status not in {"human", "closed"}:
+                    session.status = "waiting_human"
+                if manager_review.get("decision") == "block":
+                    session.automation_blocked = True
+                continue
+
             payload.update(
                 {
                     "message_id": message.id,

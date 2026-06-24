@@ -274,6 +274,7 @@ class AgenteWhatsAppAIRespondOut(BaseModel):
     tool_calls: list[AgenteWhatsAppAIToolTraceOut] = Field(default_factory=list)
     enqueued: int = 0
     guardrails: AgenteWhatsAppAIGuardrailsOut
+    manager_review: dict[str, Any] = Field(default_factory=dict)
     ai_settings: dict[str, Any] = Field(default_factory=dict)
 
 
