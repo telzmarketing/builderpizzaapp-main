@@ -593,6 +593,64 @@ def _send_baileys_gateway(
     return provider_message_id, "sent" if result.ok else "failed", None if result.ok else result.message
 
 
+def _sync_marketing_message_to_agent(
+    db: Session,
+    *,
+    msg: WhatsAppMessage,
+    phone: str,
+    provider: str,
+    body: str,
+    message_type: str,
+    media_url: str | None,
+    provider_message_id: str | None,
+    template: WhatsAppTemplate | None = None,
+) -> None:
+    try:
+        from backend.services.agente_whatsapp_service import AgenteWhatsAppService
+
+        service = AgenteWhatsAppService(db)
+        session, _created = service.get_or_create_session(
+            phone=phone,
+            customer_id=msg.customer_id,
+            provider=provider,
+            provider_contact_id=phone,
+            origin="whatsapp_marketing",
+            metadata={
+                "source": "whatsapp_marketing",
+                "whatsapp_message_id": msg.id,
+                "whatsapp_campaign_id": msg.campaign_id,
+                "template_id": msg.template_id,
+                "template_name": template.name if template else None,
+                "recipient_name": msg.recipient_name,
+            },
+        )
+        service.add_message(
+            session,
+            direction="outbound",
+            sender_type="system",
+            message_type=message_type,
+            body=body,
+            media_url=media_url,
+            provider_message_id=provider_message_id or f"whatsapp-marketing:{msg.id}",
+            provider_status="sent",
+            raw_payload={
+                "source": "whatsapp_marketing",
+                "whatsapp_message_id": msg.id,
+                "provider": provider,
+                "phone": phone,
+                "message_type": message_type,
+                "media_type": msg.media_type,
+                "media_url": media_url,
+                "caption": msg.caption,
+                "template_id": msg.template_id,
+                "template_name": template.name if template else None,
+                "campaign_id": msg.campaign_id,
+                "recipient_name": msg.recipient_name,
+            },
+        )
+    except Exception as exc:
+        msg.error = f"{msg.error}; Falha ao sincronizar com Agente WhatsApp: {exc}" if msg.error else f"Falha ao sincronizar com Agente WhatsApp: {exc}"
+
 def _send_evolution_api(
     phone: str,
     body: str,
@@ -1193,6 +1251,17 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
         if status == "sent":
             msg.sent_at = _now()
             sent_count += 1
+            _sync_marketing_message_to_agent(
+                db,
+                msg=msg,
+                phone=phone,
+                provider=provider,
+                body=msg_caption or msg_body,
+                message_type=message_type,
+                media_url=media_url,
+                provider_message_id=wamid,
+                template=template,
+            )
         else:
             failed_count += 1
 
