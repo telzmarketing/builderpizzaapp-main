@@ -2240,6 +2240,27 @@ export const promotionsApi = {
 
 // ─── Orders ───────────────────────────────────────────────────────────────────
 
+export interface ApiOrderWhatsappNotificationSettings {
+  enabled: boolean;
+  recipient_admin_ids: string[];
+  message_template: string;
+}
+
+export interface ApiOrderWhatsappNotificationRecipient {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  role_id?: string | null;
+  role_name?: string | null;
+  has_phone: boolean;
+}
+
+export interface ApiOrderWhatsappNotificationConfig {
+  settings: ApiOrderWhatsappNotificationSettings;
+  available_recipients: ApiOrderWhatsappNotificationRecipient[];
+}
+
 export const ordersApi = {
   checkout: async (data: CheckoutIn) => {
     const order = await post<ApiOrder>("/orders", data);
@@ -2282,6 +2303,12 @@ export const ordersApi = {
 
   autoCancelExpired: (hours = 2) =>
     post<{ cancelled_count: number; cancelled_ids: string[] }>(`/orders/auto-cancel-expired?hours=${hours}`, {}),
+
+  getWhatsappNotifications: () =>
+    get<ApiOrderWhatsappNotificationConfig>("/orders/new-order-whatsapp-notifications"),
+
+  updateWhatsappNotifications: (body: ApiOrderWhatsappNotificationSettings) =>
+    put<ApiOrderWhatsappNotificationConfig>("/orders/new-order-whatsapp-notifications", body),
 };
 
 // ─── Payments ─────────────────────────────────────────────────────────────────

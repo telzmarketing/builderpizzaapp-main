@@ -158,3 +158,9 @@ class OrderOut(BaseModel):
 
 class OrderStatusUpdate(BaseModel):
     status: OrderStatus
+
+
+class OrderWhatsAppNotificationSettingsIn(BaseModel):
+    enabled: bool = False
+    recipient_admin_ids: list[str] = Field(default_factory=list)
+    message_template: Optional[str] = Field(default=None, max_length=500)

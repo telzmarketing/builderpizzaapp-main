@@ -804,6 +804,7 @@ class OrderService:
                 pass
 
         # 7. Publish event (after commit — DB is consistent)
+        self._notify_new_order_whatsapp(order)
         bus.publish(OrderCreated(
             order_id=order.id,
             customer_name=payload.delivery.name,
@@ -813,6 +814,15 @@ class OrderService:
         ))
 
         return order
+
+    def _notify_new_order_whatsapp(self, order: Order) -> None:
+        try:
+            from backend.services.order_whatsapp_notification_service import OrderWhatsAppNotificationService
+
+            OrderWhatsAppNotificationService(self._db).notify_new_order(order)
+        except Exception:
+            self._db.rollback()
+            pass
 
     def create_from_table_session(self, table_session_id: str, *, payment_method: str = "cash") -> Order:
         """
@@ -919,6 +929,8 @@ class OrderService:
         sync_customer_order_metrics(self._db, order.customer_id)
         self._db.commit()
         self._db.refresh(order)
+
+        self._notify_new_order_whatsapp(order)
 
         bus.publish(OrderCreated(
             order_id=order.id,

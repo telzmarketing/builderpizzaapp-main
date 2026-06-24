@@ -21,9 +21,10 @@ from backend.models.order import Order, OrderStatus
 from backend.models.admin import AdminUser
 from backend.models.product import Product
 from backend.models.rbac import Role
-from backend.schemas.order import CheckoutIn, OrderStatusUpdate
+from backend.schemas.order import CheckoutIn, OrderStatusUpdate, OrderWhatsAppNotificationSettingsIn
 from backend.services.payment_service import PaymentService
 from backend.services.order_service import OrderService
+from backend.services.order_whatsapp_notification_service import OrderWhatsAppNotificationService
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -304,6 +305,35 @@ def operational_report(
             for o in most_delayed
         ],
     })
+
+
+@router.get("/new-order-whatsapp-notifications")
+def get_new_order_whatsapp_notifications(
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    service = OrderWhatsAppNotificationService(db)
+    return ok({
+        "settings": service.get_settings(),
+        "available_recipients": service.list_recipients(),
+    })
+
+
+@router.put("/new-order-whatsapp-notifications")
+def update_new_order_whatsapp_notifications(
+    body: OrderWhatsAppNotificationSettingsIn,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    service = OrderWhatsAppNotificationService(db)
+    try:
+        settings = service.update_settings(body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok({
+        "settings": settings,
+        "available_recipients": service.list_recipients(),
+    }, "Configuracao de aviso WhatsApp atualizada.")
 
 
 @router.get("/{order_id}")
