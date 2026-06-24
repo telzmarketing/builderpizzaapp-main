@@ -5,7 +5,7 @@ import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
 import { filterAdminNavigation } from "@/lib/adminAccess";
 import { preloadAdminRoute } from "@/lib/adminRoutePreload";
-import type { ApiEffectivePermissions } from "@/lib/api";
+import { isAssetUrl, resolveAssetUrl, type ApiEffectivePermissions } from "@/lib/api";
 
 function toText(value: unknown, fallback = ""): string {
   if (value === null || value === undefined || value === "") return fallback;
@@ -22,6 +22,11 @@ function toText(value: unknown, fallback = ""): string {
     return fallback;
   }
   return fallback;
+}
+
+function isPlaceholderLogo(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "🍕" || normalized === "ðÿ•" || normalized === "ðŸ•" || normalized === "pizza";
 }
 
 function readJson<T>(value: string | null): T | null {
@@ -57,7 +62,13 @@ export default function AppSidebar() {
   const adminRole = toText(adminUser?.role_name ?? permissions?.role_name, "Admin");
   const initials = getInitials(adminName);
   const { brand } = siteContent;
-  const logo = toText(brand.logo);
+  const rawLogo = toText(brand.logo);
+  const logo = isPlaceholderLogo(rawLogo) ? "" : rawLogo;
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  useEffect(() => {
+    setLogoFailed(false);
+  }, [logo]);
 
   const handleLogout = () => {
     localStorage.removeItem("admin_token");
@@ -124,11 +135,12 @@ export default function AppSidebar() {
     <aside className="app-sidebar admin-sidebar w-full md:w-64 bg-surface-02 border-b md:border-b-0 md:border-r border-surface-03 flex flex-col flex-shrink-0 h-auto md:h-full max-h-[52vh] md:max-h-none">
       <div className="px-4 md:px-5 pt-5 pb-4 border-b border-surface-03 flex-shrink-0">
         <div className="flex min-h-[66px] flex-col items-center justify-center text-center">
-          {logo && (logo.startsWith("http") || logo.startsWith("data:")) ? (
+          {logo && isAssetUrl(logo) && !logoFailed ? (
             <img
-              src={logo}
+              src={resolveAssetUrl(logo)}
               alt="logo"
               className="mb-1 h-10 max-w-[8.75rem] object-contain"
+              onError={() => setLogoFailed(true)}
             />
           ) : logo ? (
             <span className="mb-1 text-xl leading-none">{logo}</span>

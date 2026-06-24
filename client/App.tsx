@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { themeApi, applyTheme, DEFAULT_THEME, readCachedTheme } from "./lib/themeApi";
 import { captureTrackingFromUrl, firePixelEvent, trackEvent, getTrackingData, initCampaignPixel, initStorePixels, isInternalStaffPath, requestVisitorLocation } from "./lib/tracking";
-import { customerEventsApi, resolveAssetUrl } from "./lib/api";
+import { customerEventsApi, isAssetUrl, resolveAssetUrl } from "./lib/api";
 import { getPublicExperience, isSalaoExperience } from "./lib/experience";
 
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
@@ -348,7 +348,7 @@ function DocumentHead() {
   const safePageTitle = toSafeText(pageTitle);
   const safeName = toSafeText(name);
   const safeFaviconUrl = toSafeText(faviconUrl);
-  const resolvedFavicon = safeFaviconUrl ? resolveAssetUrl(safeFaviconUrl) : "";
+  const resolvedFavicon = safeFaviconUrl && isAssetUrl(safeFaviconUrl) ? resolveAssetUrl(safeFaviconUrl) : "/favicon.ico";
 
   useEffect(() => {
     if (isSalao) {
@@ -359,20 +359,20 @@ function DocumentHead() {
   }, [isSalao, safePageTitle, safeName]);
 
   useEffect(() => {
-    if (!resolvedFavicon) return;
+    const favicon = resolvedFavicon || "/favicon.ico";
 
     document
       .querySelectorAll<HTMLLinkElement>("link[rel~='icon'], link[rel='apple-touch-icon']")
       .forEach((link) => link.remove());
 
-    const separator = resolvedFavicon.includes("?") ? "&" : "?";
-    const href = resolvedFavicon.startsWith("data:")
-      ? resolvedFavicon
-      : `${resolvedFavicon}${separator}v=${Date.now()}`;
+    const separator = favicon.includes("?") ? "&" : "?";
+    const href = favicon.startsWith("data:")
+      ? favicon
+      : `${favicon}${separator}v=${Date.now()}`;
 
     const icon = document.createElement("link");
     icon.rel = "icon";
-    icon.type = "image/png";
+    icon.type = favicon.endsWith(".ico") ? "image/x-icon" : "image/png";
     icon.href = href;
     document.head.appendChild(icon);
 
@@ -380,6 +380,11 @@ function DocumentHead() {
     shortcut.rel = "shortcut icon";
     shortcut.href = href;
     document.head.appendChild(shortcut);
+
+    const apple = document.createElement("link");
+    apple.rel = "apple-touch-icon";
+    apple.href = "/icons/icon-192.png";
+    document.head.appendChild(apple);
   }, [resolvedFavicon]);
   return null;
 }

@@ -28,6 +28,11 @@ function toText(value: unknown, fallback = ""): string {
   return fallback;
 }
 
+function isPlaceholderLogo(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "🍕" || normalized === "ðÿ•" || normalized === "ðŸ•" || normalized === "pizza";
+}
+
 function readJson<T>(key: string): T | null {
   try {
     const raw = localStorage.getItem(key);
@@ -148,7 +153,13 @@ export default function TopNavigation({
     executeSearch();
   };
 
-  const logo = toText(siteContent.brand.logo);
+  const rawLogo = toText(siteContent.brand.logo);
+  const logo = isPlaceholderLogo(rawLogo) ? "" : rawLogo;
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  useEffect(() => {
+    setLogoFailed(false);
+  }, [logo]);
 
   return (
     <>
@@ -164,8 +175,13 @@ export default function TopNavigation({
 
         <Link to="/painel" className="flex h-10 w-[6.75rem] shrink-0 items-center sm:w-[7.5rem] lg:h-11 xl:w-[8rem]" aria-label="Ir para o dashboard">
           <span className="flex h-full w-full items-center justify-start sm:justify-center">
-            {isAssetUrl(logo) ? (
-              <img src={resolveAssetUrl(logo)} alt="" className="max-h-8 w-full object-contain sm:max-h-9 lg:max-h-10" />
+            {isAssetUrl(logo) && !logoFailed ? (
+              <img
+                src={resolveAssetUrl(logo)}
+                alt=""
+                className="max-h-8 w-full object-contain sm:max-h-9 lg:max-h-10"
+                onError={() => setLogoFailed(true)}
+              />
             ) : logo ? (
               <span className="truncate whitespace-nowrap text-xl leading-none sm:text-2xl">{logo}</span>
             ) : (
