@@ -328,6 +328,28 @@ class WhatsAppGatewayService:
             self._db.flush()
             return {"ok": True, "received": 0, "duplicates": 0, "ignored": 1, "message": "Evento ignorado."}
 
+        from backend.services.delivery_driver_whatsapp_service import DeliveryDriverWhatsAppService
+
+        driver_reply = DeliveryDriverWhatsAppService(self._db).process_driver_reply(payload)
+        if driver_reply is not None:
+            self.add_log(
+                action="runtime_delivery_driver_reply_received",
+                status="success" if driver_reply.get("queued") else "info",
+                message="Mensagem inbound de entregador enfileirada com fallback.",
+                instance_id=instance.id if instance else None,
+                tenant_id=instance.tenant_id if instance else "default",
+                company_id=instance.company_id if instance else "default",
+                metadata={"event": payload, "result": driver_reply},
+            )
+            self._db.flush()
+            return {
+                "ok": True,
+                "received": 0,
+                "duplicates": int(driver_reply.get("duplicates") or 0),
+                "ignored": int(driver_reply.get("ignored") or 0),
+                "message": "Resposta de entregador enfileirada para fallback.",
+            }
+
         from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 
         result = AgenteWhatsAppService(self._db).process_baileys_runtime_event(payload)

@@ -132,6 +132,18 @@ async def lifespan(app: FastAPI):
     bus.subscribe(DeliveryAssigned, _agente_whatsapp_status_handler)
     bus.subscribe(DeliveryCompleted, _agente_whatsapp_status_handler)
 
+    def _delivery_driver_whatsapp_handler(event: DeliveryAssigned):
+        try:
+            with SessionLocal() as db:
+                from backend.services.delivery_driver_whatsapp_service import DeliveryDriverWhatsAppService
+
+                DeliveryDriverWhatsAppService(db).handle_delivery_assigned(event)
+                db.commit()
+        except Exception:
+            pass
+
+    bus.subscribe(DeliveryAssigned, _delivery_driver_whatsapp_handler)
+
     # Phase 4 - Auto-assign driver when order reaches ready_for_pickup.
     def _auto_assign_handler(event: OrderStatusChanged):
         if event.to_status not in ("ready_for_pickup", "preparing"):
