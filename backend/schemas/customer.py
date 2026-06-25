@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 from datetime import date, datetime
 
@@ -42,8 +42,11 @@ class CustomerUpdate(BaseModel):
     phone: Optional[str] = None
 
 
-class CustomerOut(CustomerBase):
+class CustomerOut(BaseModel):
     id: str
+    name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
     lgpd_consent: bool = False
     lgpd_policy_version: Optional[str] = None
     marketing_email_consent: bool = False
@@ -63,7 +66,27 @@ class CustomerOut(CustomerBase):
     avg_ticket: float = 0.0
     created_at: datetime
     updated_at: datetime
-    addresses: list[AddressOut] = []
+    addresses: list[AddressOut] = Field(default_factory=list)
+
+    @field_validator("lgpd_consent", "marketing_email_consent", "marketing_whatsapp_consent", mode="before")
+    @classmethod
+    def _bool_or_false(cls, value):
+        return False if value is None else value
+
+    @field_validator("total_orders", mode="before")
+    @classmethod
+    def _int_or_zero(cls, value):
+        return 0 if value is None else value
+
+    @field_validator("total_spent", "avg_ticket", mode="before")
+    @classmethod
+    def _float_or_zero(cls, value):
+        return 0.0 if value is None else value
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _tags_or_empty_list(cls, value):
+        return "[]" if value is None else value
 
     model_config = {"from_attributes": True}
 

@@ -11,7 +11,8 @@ from backend.core.security import hash_password
 from backend.models.customer import Customer
 from backend.models.customer_identity import CustomerAuth, CustomerChannel, CustomerPreference
 
-SYSTEM_LEAD_EMAIL_DOMAIN = "lead.whatsapp.local"
+SYSTEM_LEAD_EMAIL_DOMAIN = "leads.moschettieri.com.br"
+LEGACY_SYSTEM_LEAD_EMAIL_DOMAINS = {"lead.whatsapp.local"}
 
 
 def normalize_phone(phone: str | None) -> str:
@@ -25,7 +26,10 @@ def normalize_email(email: str | None) -> str:
 
 
 def is_system_lead_email(email: str | None) -> bool:
-    return normalize_email(email).endswith(f"@{SYSTEM_LEAD_EMAIL_DOMAIN}")
+    normalized = normalize_email(email)
+    return normalized.endswith(f"@{SYSTEM_LEAD_EMAIL_DOMAIN}") or any(
+        normalized.endswith(f"@{domain}") for domain in LEGACY_SYSTEM_LEAD_EMAIL_DOMAINS
+    )
 
 
 def system_lead_email(phone: str) -> str:
