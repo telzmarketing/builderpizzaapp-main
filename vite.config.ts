@@ -27,7 +27,12 @@ export default defineConfig(({ mode }) => ({
       registerType: "autoUpdate",
       injectRegister: "script-defer",
       includeManifestIcons: true,
-      includeAssets: ["favicon.ico", "icons/icon-192.png", "icons/icon-512.png"],
+      includeAssets: [
+        "favicon.ico",
+        "icons/favicon-moschettieri-32.png",
+        "icons/icon-192.png",
+        "icons/icon-512.png",
+      ],
       manifest: {
         name: "Motoboy Delivery",
         short_name: "Motoboy",
@@ -41,15 +46,13 @@ export default defineConfig(({ mode }) => ({
         background_color: "#000000",
         icons: [
           {
-            src: "/icons/icon-192.png",
+            src: "/api/site-config/favicon?size=192",
             sizes: "192x192",
-            type: "image/png",
             purpose: "any maskable",
           },
           {
-            src: "/icons/icon-512.png",
+            src: "/api/site-config/favicon?size=512",
             sizes: "512x512",
-            type: "image/png",
             purpose: "any maskable",
           },
         ],

@@ -344,9 +344,9 @@ function DocumentHead() {
   const { siteContent } = useApp();
   const isSalao = isSalaoExperience();
   const { pageTitle, faviconUrl, name } = siteContent.brand;
-  const defaultSmallIcon = "/icons/favicon-moschettieri-32.png";
-  const defaultFavicon = "/icons/icon-192.png";
-  const defaultLargeIcon = "/icons/icon-512.png";
+  const defaultSmallIcon = "/api/site-config/favicon?size=32";
+  const defaultFavicon = "/api/site-config/favicon?size=192";
+  const defaultLargeIcon = "/api/site-config/favicon?size=512";
 
   const safePageTitle = toSafeText(pageTitle);
   const safeName = toSafeText(name);
@@ -376,7 +376,6 @@ function DocumentHead() {
     if (favicon === defaultFavicon) {
       const smallIcon = document.createElement("link");
       smallIcon.rel = "icon";
-      smallIcon.type = "image/png";
       smallIcon.sizes = "32x32";
       smallIcon.href = defaultSmallIcon;
       document.head.appendChild(smallIcon);
@@ -384,14 +383,13 @@ function DocumentHead() {
 
     const icon = document.createElement("link");
     icon.rel = "icon";
-    icon.type = favicon.endsWith(".ico") ? "image/x-icon" : "image/png";
+    if (favicon.endsWith(".ico")) icon.type = "image/x-icon";
     icon.sizes = "192x192";
     icon.href = href;
     document.head.appendChild(icon);
 
     const largeIcon = document.createElement("link");
     largeIcon.rel = "icon";
-    largeIcon.type = "image/png";
     largeIcon.sizes = "512x512";
     largeIcon.href = favicon === defaultFavicon ? defaultLargeIcon : href;
     document.head.appendChild(largeIcon);

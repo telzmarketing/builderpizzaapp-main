@@ -13,6 +13,15 @@ declare const self: ServiceWorkerGlobalScope & {
 const LEGACY_RUNTIME_CACHES = ["motoboy-static-v1", "motoboy-runtime-v1"];
 const RUNTIME_STATIC_CACHE = "motoboy-static-v2";
 const RUNTIME_MEDIA_CACHE = "motoboy-media-v2";
+const GLOBAL_FAVICON_URL = "/api/site-config/favicon?size=192";
+
+type PushPayload = {
+  title: string;
+  body: string;
+  url: string;
+  icon?: string;
+  badge?: string;
+};
 
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
@@ -62,13 +71,13 @@ registerRoute(
 );
 
 self.addEventListener("push", (event) => {
-  const fallback = {
+  const fallback: PushPayload = {
     title: "Motoboy Delivery",
     body: "Nova atualizacao no painel do entregador.",
     url: "/motoboy",
   };
 
-  let payload = fallback;
+  let payload: PushPayload = fallback;
   try {
     payload = event.data ? event.data.json() : fallback;
   } catch {
@@ -80,8 +89,8 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(title, {
       body: payload.body || fallback.body,
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
+      icon: payload.icon || GLOBAL_FAVICON_URL,
+      badge: payload.badge || payload.icon || GLOBAL_FAVICON_URL,
       data: { url },
     }),
   );
