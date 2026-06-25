@@ -344,11 +344,14 @@ function DocumentHead() {
   const { siteContent } = useApp();
   const isSalao = isSalaoExperience();
   const { pageTitle, faviconUrl, name } = siteContent.brand;
+  const defaultSmallIcon = "/icons/favicon-moschettieri-32.png";
+  const defaultFavicon = "/icons/icon-192.png";
+  const defaultLargeIcon = "/icons/icon-512.png";
 
   const safePageTitle = toSafeText(pageTitle);
   const safeName = toSafeText(name);
   const safeFaviconUrl = toSafeText(faviconUrl);
-  const resolvedFavicon = safeFaviconUrl && isAssetUrl(safeFaviconUrl) ? resolveAssetUrl(safeFaviconUrl) : "/favicon.ico";
+  const resolvedFavicon = safeFaviconUrl && isAssetUrl(safeFaviconUrl) ? resolveAssetUrl(safeFaviconUrl) : defaultFavicon;
 
   useEffect(() => {
     if (isSalao) {
@@ -359,7 +362,7 @@ function DocumentHead() {
   }, [isSalao, safePageTitle, safeName]);
 
   useEffect(() => {
-    const favicon = resolvedFavicon || "/favicon.ico";
+    const favicon = resolvedFavicon || defaultFavicon;
 
     document
       .querySelectorAll<HTMLLinkElement>("link[rel~='icon'], link[rel='apple-touch-icon']")
@@ -370,11 +373,28 @@ function DocumentHead() {
       ? favicon
       : `${favicon}${separator}v=${Date.now()}`;
 
+    if (favicon === defaultFavicon) {
+      const smallIcon = document.createElement("link");
+      smallIcon.rel = "icon";
+      smallIcon.type = "image/png";
+      smallIcon.sizes = "32x32";
+      smallIcon.href = defaultSmallIcon;
+      document.head.appendChild(smallIcon);
+    }
+
     const icon = document.createElement("link");
     icon.rel = "icon";
     icon.type = favicon.endsWith(".ico") ? "image/x-icon" : "image/png";
+    icon.sizes = "192x192";
     icon.href = href;
     document.head.appendChild(icon);
+
+    const largeIcon = document.createElement("link");
+    largeIcon.rel = "icon";
+    largeIcon.type = "image/png";
+    largeIcon.sizes = "512x512";
+    largeIcon.href = favicon === defaultFavicon ? defaultLargeIcon : href;
+    document.head.appendChild(largeIcon);
 
     const shortcut = document.createElement("link");
     shortcut.rel = "shortcut icon";
@@ -383,7 +403,8 @@ function DocumentHead() {
 
     const apple = document.createElement("link");
     apple.rel = "apple-touch-icon";
-    apple.href = "/icons/icon-192.png";
+    apple.sizes = "192x192";
+    apple.href = favicon === defaultFavicon ? defaultFavicon : href;
     document.head.appendChild(apple);
   }, [resolvedFavicon]);
   return null;
