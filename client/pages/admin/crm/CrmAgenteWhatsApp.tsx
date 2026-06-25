@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  Bell,
   Bot,
   CheckCircle2,
   Clock3,
@@ -24,6 +25,7 @@ import {
   XCircle,
 } from "lucide-react";
 import MediaUpload from "@/components/admin/MediaUpload";
+import OrderWhatsappNotificationSettingsPanel from "@/components/admin/OrderWhatsappNotificationSettingsPanel";
 import {
   agenteWhatsAppApi,
   whatsappGatewayApi,
@@ -55,7 +57,7 @@ type StatusFilter = "all" | ApiAgenteWhatsAppConversation["status"];
 type OutboxFilter = "all" | "pending" | "processing" | "sent" | "failed" | "dead";
 type CampaignAudience = "manual" | "customers" | "leads";
 type StoryMediaType = "image" | "video";
-type ModuleTab = "conversations" | "settings";
+type ModuleTab = "conversations" | "settings" | "order_notifications";
 
 const statusLabels: Record<ApiAgenteWhatsAppConversation["status"], string> = {
   open: "Aberta",
@@ -861,6 +863,8 @@ export default function CrmAgenteWhatsApp() {
     }
   }
 
+  const activeModuleTab = moduleTab as string;
+
   return (
     <div className="space-y-5">
       {error && (
@@ -876,6 +880,7 @@ export default function CrmAgenteWhatsApp() {
         {[
           { value: "conversations" as ModuleTab, label: "Conversas", icon: MessageCircle },
           { value: "settings" as ModuleTab, label: "Configuracoes", icon: Bot },
+          { value: "order_notifications" as ModuleTab, label: "Avisos de pedido", icon: Bell },
         ].map((tab) => {
           const Icon = tab.icon;
           return (
@@ -883,7 +888,7 @@ export default function CrmAgenteWhatsApp() {
               key={tab.value}
               onClick={() => setModuleTab(tab.value)}
               className={`h-10 px-3 rounded-lg text-sm font-semibold flex items-center gap-2 whitespace-nowrap transition-colors ${
-                moduleTab === tab.value
+                activeModuleTab === tab.value
                   ? "bg-gold text-black"
                   : "text-stone hover:text-cream hover:bg-surface-03"
               }`}
@@ -895,7 +900,7 @@ export default function CrmAgenteWhatsApp() {
         })}
       </div>
 
-      {moduleTab === "conversations" && (
+      {activeModuleTab === "conversations" && (
         <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard icon={MessageCircle} label="Conversas abertas" value={dashboard?.sessions_open ?? 0} />
@@ -906,7 +911,7 @@ export default function CrmAgenteWhatsApp() {
         </>
       )}
 
-      {moduleTab === "settings" && (
+      {activeModuleTab === "settings" && (
       <>
       <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
@@ -2102,7 +2107,11 @@ export default function CrmAgenteWhatsApp() {
       </>
       )}
 
-      {moduleTab === "conversations" && (
+      {activeModuleTab === "order_notifications" && (
+        <OrderWhatsappNotificationSettingsPanel />
+      )}
+
+      {activeModuleTab === "conversations" && (
       <div className="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-4 min-h-[640px]">
         <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden flex flex-col min-h-[640px]">
           <div className="p-4 border-b border-surface-03 space-y-3">

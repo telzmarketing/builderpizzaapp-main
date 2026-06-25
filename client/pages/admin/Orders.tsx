@@ -2,15 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   AlertTriangle, Bell, BellOff, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2,
-  MessageCircle, PackageCheck, Printer, RefreshCw, Route, Save, ShoppingBag, Trash2, Truck,
-  UserCheck, Users, Utensils, X,
+  PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Trash2, Truck,
+  UserCheck, Users, Utensils,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import {
   ordersApi, paymentsApi, deliveryApi, marketingVisitorsApi,
   type ApiEffectivePermissions, type ApiOrder, type OrderStatus, type DeliveryPerson,
-  type ApiOrderWhatsappNotificationConfig, type ApiOrderWhatsappNotificationSettings,
 } from "@/lib/api";
 import { loadPrinterSettings, printConfirmedOrder, printOrder, type PrintTemplate } from "@/lib/printing";
 import OrderTimer from "@/components/OrderTimer";
@@ -291,12 +290,6 @@ export default function AdminOrders() {
   const [onlineStats, setOnlineStats] = useState({ visitors: 0, registeredCustomers: 0 });
   const [deleteModal, setDeleteModal] = useState<{ order: ApiOrder; confirmation: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [whatsappConfigOpen, setWhatsappConfigOpen] = useState(false);
-  const [whatsappConfig, setWhatsappConfig] = useState<ApiOrderWhatsappNotificationConfig | null>(null);
-  const [whatsappDraft, setWhatsappDraft] = useState<ApiOrderWhatsappNotificationSettings | null>(null);
-  const [whatsappConfigLoading, setWhatsappConfigLoading] = useState(false);
-  const [whatsappConfigSaving, setWhatsappConfigSaving] = useState(false);
-  const [whatsappConfigError, setWhatsappConfigError] = useState("");
   const adminPermissions = useMemo(() => loadStoredAdminPermissions(), []);
   const canDeleteOrders = useMemo(() => canDeleteOrdersFromPermissions(adminPermissions), [adminPermissions]);
   const orderSearchQuery = searchParams.get("q")?.trim().toLowerCase() ?? "";
@@ -468,52 +461,6 @@ export default function AdminOrders() {
     }
   }, [deleteModal]);
 
-  const loadWhatsappConfig = useCallback(async () => {
-    setWhatsappConfigLoading(true);
-    setWhatsappConfigError("");
-    try {
-      const data = await ordersApi.getWhatsappNotifications();
-      setWhatsappConfig(data);
-      setWhatsappDraft({ ...data.settings, recipient_admin_ids: [...data.settings.recipient_admin_ids] });
-    } catch (err) {
-      setWhatsappConfigError(err instanceof Error ? err.message : "Nao foi possivel carregar a configuracao.");
-    } finally {
-      setWhatsappConfigLoading(false);
-    }
-  }, []);
-
-  const openWhatsappConfig = useCallback(() => {
-    setWhatsappConfigOpen(true);
-    if (!whatsappConfig) {
-      loadWhatsappConfig();
-    }
-  }, [loadWhatsappConfig, whatsappConfig]);
-
-  const toggleWhatsappRecipient = useCallback((recipientId: string) => {
-    setWhatsappDraft((current) => {
-      if (!current) return current;
-      const selected = new Set(current.recipient_admin_ids);
-      if (selected.has(recipientId)) selected.delete(recipientId);
-      else selected.add(recipientId);
-      return { ...current, recipient_admin_ids: Array.from(selected) };
-    });
-  }, []);
-
-  const saveWhatsappConfig = useCallback(async () => {
-    if (!whatsappDraft) return;
-    setWhatsappConfigSaving(true);
-    setWhatsappConfigError("");
-    try {
-      const data = await ordersApi.updateWhatsappNotifications(whatsappDraft);
-      setWhatsappConfig(data);
-      setWhatsappDraft({ ...data.settings, recipient_admin_ids: [...data.settings.recipient_admin_ids] });
-    } catch (err) {
-      setWhatsappConfigError(err instanceof Error ? err.message : "Nao foi possivel salvar a configuracao.");
-    } finally {
-      setWhatsappConfigSaving(false);
-    }
-  }, [whatsappDraft]);
-
   const filteredOrders = useMemo(() => {
     if (!orderSearchQuery) return orders;
     return orders.filter((order) =>
@@ -538,10 +485,6 @@ export default function AdminOrders() {
   const effectiveDayRevenue = useMemo(
     () => orders.reduce((sum, order) => sum + (isEffectiveRevenueOrder(order) ? order.total : 0), 0),
     [orders],
-  );
-  const whatsappRecipientsWithPhone = useMemo(
-    () => whatsappConfig?.available_recipients.filter((recipient) => recipient.has_phone) ?? [],
-    [whatsappConfig],
   );
   const selectedDateLabel = useMemo(() => formatDayLabel(selectedDate), [selectedDate]);
   const isToday = selectedDate === todayInputValue();
@@ -683,14 +626,6 @@ export default function AdminOrders() {
                 Alertas
               </button>
               <button
-                onClick={openWhatsappConfig}
-                title="Configurar aviso WhatsApp interno de novo pedido"
-                className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-surface-03 bg-surface-02 px-4 text-sm font-semibold text-stone transition-colors hover:text-cream"
-              >
-                <MessageCircle size={16} />
-                WhatsApp interno
-              </button>
-              <button
                 onClick={() => fetchOrders(true)}
                 disabled={loading || refreshing}
                 title="Atualizar agora"
@@ -800,159 +735,6 @@ export default function AdminOrders() {
           </div>
         </div>
       </main>
-
-      {whatsappConfigOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-surface-03 bg-surface-02 p-6 shadow-xl">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gold/30 bg-gold/10 text-gold">
-                  <MessageCircle size={18} />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-lg font-bold text-cream">Aviso WhatsApp de novo pedido</h3>
-                  <p className="mt-1 text-sm text-stone">
-                    Envia um aviso interno para administradores e gestores selecionados.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setWhatsappConfigOpen(false)}
-                className="rounded-lg border border-surface-03 p-2 text-stone transition-colors hover:text-cream"
-                title="Fechar"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            {whatsappConfigError && (
-              <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-                {whatsappConfigError}
-              </div>
-            )}
-
-            {whatsappConfigLoading || !whatsappDraft ? (
-              <div className="mt-6 flex min-h-48 items-center justify-center rounded-xl border border-surface-03 bg-surface-03/40">
-                <Loader2 size={28} className="animate-spin text-gold" />
-              </div>
-            ) : (
-              <div className="mt-6 space-y-5">
-                <label className="flex items-center justify-between gap-4 rounded-xl border border-surface-03 bg-surface-03/40 px-4 py-3">
-                  <span>
-                    <span className="block text-sm font-bold text-cream">Ativar aviso interno</span>
-                    <span className="mt-0.5 block text-xs text-stone">
-                      O envio usa o WhatsApp Gateway conectado e nao aparece no Agente WhatsApp.
-                    </span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={whatsappDraft.enabled}
-                    onChange={(event) => setWhatsappDraft((current) => current ? { ...current, enabled: event.target.checked } : current)}
-                    className="h-5 w-5 accent-gold"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2">
-                  <span className="text-xs font-bold uppercase tracking-widest text-stone">
-                    Modelo da mensagem
-                  </span>
-                  <textarea
-                    value={whatsappDraft.message_template}
-                    onChange={(event) => setWhatsappDraft((current) => current ? { ...current, message_template: event.target.value } : current)}
-                    rows={3}
-                    maxLength={500}
-                    className="resize-none rounded-xl border border-surface-03 bg-surface-03 px-3 py-2 text-sm font-semibold text-cream outline-none transition-colors placeholder:text-stone focus:border-gold/60"
-                  />
-                  <span className="text-xs text-stone">
-                    Variaveis disponiveis: {"{order_number}"} e {"{customer_name}"}.
-                  </span>
-                </label>
-
-                <div>
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <span className="text-xs font-bold uppercase tracking-widest text-stone">
-                      Pessoas que receberao
-                    </span>
-                    <span className="text-xs font-semibold text-gold">
-                      {whatsappDraft.recipient_admin_ids.length} selecionado(s)
-                    </span>
-                  </div>
-
-                  {whatsappConfig?.available_recipients.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-surface-03 p-6 text-center">
-                      <Users size={30} className="mx-auto mb-2 text-stone" />
-                      <p className="text-sm text-stone">Nenhum usuario interno encontrado.</p>
-                    </div>
-                  ) : whatsappRecipientsWithPhone.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-surface-03 p-6 text-center">
-                      <Users size={30} className="mx-auto mb-2 text-stone" />
-                      <p className="text-sm text-stone">Cadastre telefone nos usuarios internos antes de ativar o aviso.</p>
-                    </div>
-                  ) : (
-                    <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
-                      {whatsappConfig?.available_recipients.map((recipient) => {
-                        const disabled = !recipient.has_phone;
-                        const selected = whatsappDraft.recipient_admin_ids.includes(recipient.id);
-                        return (
-                          <button
-                            key={recipient.id}
-                            type="button"
-                            onClick={() => !disabled && toggleWhatsappRecipient(recipient.id)}
-                            disabled={disabled}
-                            className={`flex w-full items-center justify-between gap-4 rounded-xl border px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
-                              selected
-                                ? "border-gold bg-gold/10"
-                                : "border-surface-03 bg-surface-03/40 hover:border-gold/40"
-                            }`}
-                          >
-                            <span className="min-w-0">
-                              <span className="block truncate text-sm font-bold text-cream">{recipient.name}</span>
-                              <span className="mt-0.5 block truncate text-xs text-stone">
-                                {recipient.role_name || "Sem perfil"} - {recipient.phone || "Sem telefone"}
-                              </span>
-                            </span>
-                            <input
-                              type="checkbox"
-                              checked={selected}
-                              disabled={disabled}
-                              onChange={() => null}
-                              className="h-5 w-5 shrink-0 accent-gold"
-                            />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 px-4 py-3">
-                  <p className="text-xs font-semibold text-blue-100">
-                    Avisos internos sao enviados diretamente pelo Gateway e nao entram no historico do Agente WhatsApp.
-                  </p>
-                </div>
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setWhatsappConfigOpen(false)}
-                    disabled={whatsappConfigSaving}
-                    className="flex-1 rounded-xl border border-surface-03 py-2.5 text-sm text-stone transition-colors hover:text-cream disabled:opacity-50"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={saveWhatsappConfig}
-                    disabled={whatsappConfigSaving || (whatsappDraft.enabled && whatsappDraft.recipient_admin_ids.length === 0)}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gold py-2.5 text-sm font-bold text-cream transition-colors hover:bg-gold/90 disabled:opacity-50"
-                  >
-                    {whatsappConfigSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                    Salvar configuracao
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {deleteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
