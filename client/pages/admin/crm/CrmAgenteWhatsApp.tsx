@@ -900,6 +900,10 @@ export default function CrmAgenteWhatsApp() {
         })}
       </div>
 
+      {activeModuleTab === "order_notifications" && (
+        <OrderWhatsappNotificationSettingsPanel />
+      )}
+
       {activeModuleTab === "conversations" && (
         <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1738,7 +1742,7 @@ export default function CrmAgenteWhatsApp() {
       </section>
       )}
 
-      {moduleTab === "conversations" && (
+      {activeModuleTab === "conversations" && (
         <>
 
       {false && (
@@ -2105,10 +2109,6 @@ export default function CrmAgenteWhatsApp() {
       </section>
 
       </>
-      )}
-
-      {activeModuleTab === "order_notifications" && (
-        <OrderWhatsappNotificationSettingsPanel />
       )}
 
       {activeModuleTab === "conversations" && (
