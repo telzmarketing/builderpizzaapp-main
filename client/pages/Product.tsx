@@ -624,6 +624,7 @@ export default function Product() {
 
   const handleAddToCart = () => {
     if (!product) return;
+    if (product.inventory_available === false) return;
     if (!isFixedFlavorCombination && isPizzaBrotoSelected && division > 1) {
       setDivision(1);
       setActiveSlot(null);
@@ -700,10 +701,11 @@ export default function Product() {
 
   const availableForSlot = (slotIndex: number) =>
     products.filter((p) => {
-      return isPizzaFlavorCandidate(p, { allowSweet: division === 1, categoryFilters: flavorCategoryFilters }) && !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id);
+      return p.inventory_available !== false && isPizzaFlavorCandidate(p, { allowSweet: division === 1, categoryFilters: flavorCategoryFilters }) && !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id);
     });
 
-  const canAddToCart = isDrink ? true : (allFilled && (regularCrusts.length === 0 || selectedCrust !== null));
+  const productInventoryAvailable = product.inventory_available !== false;
+  const canAddToCart = productInventoryAvailable && (isDrink ? true : (allFilled && (regularCrusts.length === 0 || selectedCrust !== null)));
 
   if (appLoading && !product) {
     return (
@@ -1128,6 +1130,12 @@ export default function Product() {
         )}
 
         {/* ── Pizza Diagram ───────────────────────────────────────────────── */}
+        {!productInventoryAvailable && (
+          <div className="mb-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-center">
+            <p className="text-sm font-bold text-amber-300">{product.inventory_unavailable_message || "Indisponivel no momento."}</p>
+          </div>
+        )}
+
         {isPizza && !isFixedFlavorCombination && effectiveDivision > 1 && (
           <div className="flex flex-col items-center mb-6 p-4 bg-surface-02/50 rounded-2xl border border-surface-03">
             <PizzaDiagram division={effectiveDivision} slots={flavorSlots} />
@@ -1271,6 +1279,8 @@ export default function Product() {
         >
           {canAddToCart
             ? `${p.addToCartButton} · R$ ${totalPrice.toFixed(2)}`
+            : !productInventoryAvailable
+            ? "Indisponivel no momento"
             : `Escolha ${activeFlavors.filter((f) => !f).length} sabor(es) restante(s)`}
         </button>
       </div>

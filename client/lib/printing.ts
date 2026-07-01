@@ -172,7 +172,7 @@ function itemLines(order: ApiOrder) {
   });
 }
 
-// ── Template 1: Pedido Completo (Saipos style) ────────────────────────────────
+// ── Template 1: Pedido Completo ───────────────────────────────────────────────
 
 export function buildCompletoHtml(order: ApiOrder, settings: PrinterSettings): string {
   const num = orderNum(order);
@@ -186,7 +186,7 @@ export function buildCompletoHtml(order: ApiOrder, settings: PrinterSettings): s
     settings.storePhone ? `<p class="c s">${settings.storePhone}</p>` : "",
   ].filter(Boolean).join("");
 
-  // Items rows (Saipos style with sub-lines)
+  // Items rows with sub-lines
   const itemRows = order.items.map((item) => {
     const isMulti = item.flavor_division > 1;
     const sizePart = item.selected_size ? ` (${item.selected_size})` : "";

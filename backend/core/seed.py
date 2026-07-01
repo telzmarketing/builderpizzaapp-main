@@ -262,6 +262,10 @@ _MODULES = [
     ("usuarios",        "Usuários e Permissões",  25),
     ("auditoria",       "Auditoria / Logs",       26),
     ("cozinha",         "Cozinha (KDS)",          27),
+    ("inventory",       "Estoque",                28),
+    ("cmv",             "CMV",                    29),
+    ("finance",         "Financeiro ERP",         30),
+    ("fiscal",          "Fiscal SEFAZ",           31),
 ]
 
 _PERMISSIONS = [
@@ -308,6 +312,10 @@ _ROLE_PERMISSIONS: dict = {
         "usuarios":         ["view", "create", "edit"],
         "auditoria":        ["view"],
         "cozinha":          ["view", "edit"],
+        "inventory":        ["view", "create", "edit", "export", "manage"],
+        "cmv":              ["view", "export", "manage"],
+        "finance":          ["view", "create", "edit", "approve", "export", "manage"],
+        "fiscal":           ["view", "create", "edit", "export", "manage"],
     },
     "gerente": {
         "dashboard":     ["view"],
@@ -326,6 +334,10 @@ _ROLE_PERMISSIONS: dict = {
         "funcionamento": ["view", "edit"],
         "frete":         ["view"],
         "cozinha":       ["view", "edit"],
+        "inventory":     ["view", "create", "edit", "export"],
+        "cmv":           ["view", "export"],
+        "finance":       ["view", "export"],
+        "fiscal":        ["view"],
     },
     "atendente": {
         "dashboard":  ["view"],
@@ -349,6 +361,10 @@ _ROLE_PERMISSIONS: dict = {
         "fluxo_caixa":      ["view", "export"],
         "formas_pagamento": ["view", "manage"],
         "relatorios":       ["view", "export"],
+        "inventory":        ["view", "export"],
+        "cmv":              ["view", "export"],
+        "finance":          ["view", "create", "edit", "approve", "export", "manage"],
+        "fiscal":           ["view", "export"],
     },
     "marketing": {
         "dashboard":   ["view"],

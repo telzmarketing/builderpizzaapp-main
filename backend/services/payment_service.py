@@ -27,7 +27,7 @@ from urllib.request import Request, urlopen
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
-from backend.core.events import bus, PaymentConfirmed, PaymentCreated, PaymentFailed
+from backend.core.events import bus, PaymentConfirmed, PaymentCreated, PaymentFailed, PaymentReversed
 from backend.core.exceptions import (
     DomainError,
     GatewayError,
@@ -44,7 +44,6 @@ from backend.models.payment import Payment, PaymentEvent, PaymentMethod, Payment
 from backend.models.payment_config import PaymentGatewayConfig
 from backend.schemas.payment import PaymentCreate, PaymentOut, PayOnDeliverySwitch, WebhookPayload
 from backend.services.customer_metrics_service import sync_customer_order_metrics
-from backend.services.saipos_service import sendOrderToSaipos
 
 settings = get_settings()
 MP_API_BASE = "https://api.mercadopago.com"
@@ -413,6 +412,9 @@ class PaymentService:
             order.status = OrderStatus.paid
         order.updated_at = datetime.now(timezone.utc)
         self._db.flush()
+        from backend.services.inventory_service import InventoryService
+
+        InventoryService(self._db).consume_order_sale(order.id)
         sync_customer_order_metrics(self._db, order.customer_id)
         self._db.commit()
         self._db.refresh(payment)
@@ -420,6 +422,9 @@ class PaymentService:
 
     def _apply_status(self, payment: Payment, status: PaymentStatus, *, source: str) -> bool:
         previous = payment.status
+        requested_status = status
+        if status == PaymentStatus.cancelled and previous in {PaymentStatus.approved, PaymentStatus.paid}:
+            status = PaymentStatus.refunded
         now = datetime.now(timezone.utc)
         status_changed = previous != status
         if status_changed:
@@ -466,6 +471,19 @@ class PaymentService:
 
         if order:
             self._db.flush()
+            inventory_service = None
+            if status == PaymentStatus.approved:
+                from backend.services.inventory_service import InventoryService
+
+                inventory_service = InventoryService(self._db)
+                inventory_service.consume_order_sale(order.id)
+            current_order_status = order.status.value if hasattr(order.status, "value") else str(order.status)
+            if current_order_status in {"cancelled", "refunded"}:
+                if inventory_service is None:
+                    from backend.services.inventory_service import InventoryService
+
+                    inventory_service = InventoryService(self._db)
+                inventory_service.reverse_order_sale(order.id)
             sync_customer_order_metrics(self._db, order.customer_id)
 
         self._db.commit()
@@ -498,10 +516,6 @@ class PaymentService:
                 except Exception as exc:
                     _logger.warning("Falha ao registrar evento de tráfego pago: order_id=%s error=%s", payment.order_id, exc)
             try:
-                sendOrderToSaipos(payment.order_id)
-            except Exception as exc:
-                _logger.error("Falha ao enviar pedido ao SaiPOS: order_id=%s error=%s", payment.order_id, exc)
-            try:
                 bus.publish(PaymentConfirmed(payment_id=payment.id, order_id=payment.order_id, amount=payment.amount, gateway=payment.gateway, transaction_id=payment.transaction_id or ""))
             except Exception as exc:
                 _logger.warning("Falha ao publicar evento PaymentConfirmed: payment_id=%s error=%s", payment.id, exc)
@@ -514,6 +528,22 @@ class PaymentService:
                 bus.publish(PaymentFailed(payment_id=payment.id, order_id=payment.order_id, reason=f"{source}:{status.value}"))
             except Exception as exc:
                 _logger.warning("Falha ao publicar evento PaymentFailed: payment_id=%s error=%s", payment.id, exc)
+        elif status == PaymentStatus.refunded and status_changed:
+            _logger.info(
+                "Pagamento estornado: payment_id=%s order_id=%s source=%s",
+                payment.id, payment.order_id, source,
+            )
+            try:
+                bus.publish(PaymentReversed(
+                    payment_id=payment.id,
+                    order_id=payment.order_id,
+                    amount=payment.amount,
+                    gateway=payment.gateway,
+                    transaction_id=payment.transaction_id or "",
+                    reason=f"{source}:{requested_status.value}",
+                ))
+            except Exception as exc:
+                _logger.warning("Falha ao publicar evento PaymentReversed: payment_id=%s error=%s", payment.id, exc)
         return True
 
     def _sync_pending_mercado_pago_payment(self, payment: Payment, *, source: str) -> bool:

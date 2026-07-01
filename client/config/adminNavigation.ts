@@ -82,6 +82,15 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     ],
   },
   {
+    label: "Gestao",
+    children: [
+      { path: "/painel/gestao/estoque", icon: Package, label: "Estoque", permissions: ["inventory"] },
+      { path: "/painel/gestao/cmv", icon: BarChart3, label: "CMV", permissions: ["cmv"] },
+      { path: "/painel/gestao/financeiro", icon: CreditCard, label: "Financeiro", permissions: ["finance"] },
+      { path: "/painel/gestao/fiscal", icon: FileText, label: "Fiscal SEFAZ", permissions: ["fiscal"] },
+    ],
+  },
+  {
     label: "CRM",
     children: [
       { path: "/painel/crm", icon: BarChart3, label: "Dashboard CRM", exact: true, permissions: ["clientes"] },

@@ -116,7 +116,7 @@ export const SALAO_PUBLIC_PAGES: SalaoPublicPage[] = [
   {
     key: "home",
     title: "Home",
-    description: "Home 2 definida como pagina inicial publica.",
+    description: "Home I definida como pagina inicial publica.",
     blockIds: [
       "781f60e",
       "8b3e972",
@@ -155,9 +155,9 @@ export const SALAO_PUBLIC_PAGES: SalaoPublicPage[] = [
   },
   {
     key: "moschettieri",
-    title: "A Moschettieri",
+    title: "Moschettieri",
     description: "Paginas institucionais do restaurante.",
-    blockIds: ["4d7a5a0", "e677573", "0d41703", "f97eb41", "5618613"],
+    blockIds: ["4d7a5a0", "e677573", "0d41703", "5618613"],
     subPages: [
       {
         key: "moschettieri",
@@ -172,20 +172,8 @@ export const SALAO_PUBLIC_PAGES: SalaoPublicPage[] = [
         blockIds: ["5618613"],
       },
       {
-        key: "pessoas",
-        title: "Pessoas",
-        description: "Equipe, pessoas e apresentacao dos profissionais.",
-        blockIds: ["f97eb41"],
-      },
-      {
-        key: "certificados",
-        title: "Certificados & History",
-        description: "Premios, certificados e historico institucional.",
-        blockIds: ["0d41703", "f97eb41"],
-      },
-      {
         key: "duvidas",
-        title: "Dúvidas e Perguntas",
+        title: "Perguntas e Dúvidas",
         description: "Conteudos de apoio, perguntas frequentes e informacoes institucionais.",
         blockIds: ["049259e", "footer"],
       },
@@ -193,8 +181,8 @@ export const SALAO_PUBLIC_PAGES: SalaoPublicPage[] = [
   },
   {
     key: "contact",
-    title: "Contato",
-    description: "Contatos, reservas e Minha Conta.",
+    title: "Contato e Reservas",
+    description: "Contatos, reservas, login e cadastro.",
     blockIds: ["2952b59", "049259e", "footer"],
     subPages: [
       {
@@ -211,8 +199,8 @@ export const SALAO_PUBLIC_PAGES: SalaoPublicPage[] = [
       },
       {
         key: "minha-conta",
-        title: "Minha Conta",
-        description: "Link de acesso a conta do cliente e rodape relacionado.",
+        title: "Login e Cadastro",
+        description: "Link de acesso e cadastro do cliente.",
         blockIds: ["049259e", "footer"],
       },
     ],
@@ -246,14 +234,15 @@ const REMOVED_MENU_ITEM_CLASSES = new Set([
   "menu-item-95",
   "menu-item-96",
   "menu-item-94",
+  "menu-item-196",
+  "menu-item-327",
   "menu-item-457",
-  "menu-item-232",
   "menu-item-233",
   "menu-item-47",
   "menu-item-48",
 ]);
 
-const DIRECT_MENU_ITEM_CLASSES = new Set(["menu-item-112", "menu-item-248", "menu-item-75"]);
+const DIRECT_MENU_ITEM_CLASSES = new Set(["menu-item-112", "menu-item-248", "menu-item-75", "menu-item-232"]);
 
 const MENU_ITEM_LABELS: Record<string, string> = {
   "menu-item-112": "Home",
@@ -262,23 +251,24 @@ const MENU_ITEM_LABELS: Record<string, string> = {
   "menu-item-247": "Menu",
   "menu-item-75": "Blog",
   "menu-item-74": "Blog",
-  "menu-item-195": "A Moschettieri",
+  "menu-item-195": "Moschettieri",
   "menu-item-893": "Moschettieri",
   "menu-item-55": "Galeria",
   "menu-item-196": "Pessoas",
   "menu-item-327": "Certificados & History",
-  "menu-item-328": "Dúvidas e Perguntas",
-  "menu-item-229": "Contato",
+  "menu-item-328": "Perguntas e Dúvidas",
+  "menu-item-229": "Contato e Reservas",
   "menu-item-230": "Contatos",
   "menu-item-56": "Reservas",
-  "menu-item-49": "Minha Conta",
+  "menu-item-232": "Login e Cadastro",
+  "menu-item-49": "Login e Cadastro",
 };
 
 const MENU_ITEM_HREFS: Record<string, string> = {
   "menu-item-112": "/",
   "menu-item-113": "/",
-  "menu-item-248": "#salao-menu",
-  "menu-item-247": "#salao-menu",
+  "menu-item-248": "/menu",
+  "menu-item-247": "/menu",
   "menu-item-75": "/blog",
   "menu-item-74": "/blog",
   "menu-item-195": "/sobre",
@@ -290,7 +280,8 @@ const MENU_ITEM_HREFS: Record<string, string> = {
   "menu-item-229": "/contato",
   "menu-item-230": "/contato",
   "menu-item-56": "/reservas",
-  "menu-item-49": "/minha-conta",
+  "menu-item-232": "/login-cadastro",
+  "menu-item-49": "/login-cadastro",
 };
 
 const SECTION_ORDER = [
@@ -647,9 +638,7 @@ export function applySalaoSiteOverrides(
   });
 
   applySalaoMenuButtonPreset(doc);
-  if (pageKey !== "home") {
-    applySalaoNavigationPreset(doc);
-  }
+  applySalaoNavigationPreset(doc);
   applySalaoPagePreset(doc, pageKey);
   applySalaoHomeMenuAnchor(doc);
   applySalaoAnimationFallbacks(doc);
@@ -729,6 +718,23 @@ function applySalaoAnimationFallbacks(doc: Document) {
     .elementor-31 .elementor-element.elementor-element-438b53c .wdt-content-item:hover .wdt-content-title h5 > a,
     .elementor-31 .elementor-element.elementor-element-438b53c .wdt-content-item:hover span {
       color: var(--e-global-color-66c7778);
+    }
+    .wdt-tabs-container.moschettieri-tabs-fallback-ready .wdt-tabs-content:not(.moschettieri-tab-active) {
+      display: none;
+    }
+    .wdt-tabs-container.moschettieri-tabs-fallback-ready .wdt-tabs-list li.moschettieri-tab-active {
+      color: var(--wdtPrimaryColor);
+    }
+    .wdt-google-map.moschettieri-map-fallback {
+      min-height: 400px;
+      overflow: hidden;
+    }
+    .wdt-google-map.moschettieri-map-fallback iframe {
+      display: block;
+      width: 100%;
+      min-height: 400px;
+      border: 0;
+      filter: grayscale(1) invert(0.88) contrast(0.9);
     }
   `;
   doc.head.appendChild(style);
@@ -815,9 +821,11 @@ function applySalaoAnimationFallbacks(doc: Document) {
           if (holder.classList.contains("moschettieri-menu-hover-ready")) return;
           holder.classList.add("moschettieri-menu-hover-ready");
 
-          var columns = Array.prototype.slice.call(holder.querySelectorAll(".wdt-column-wrapper .wdt-column"));
-          var slides = Array.prototype.slice.call(holder.querySelectorAll(".wdt-image-box-wrapper .swiper-slide"));
-          var items = columns.length ? columns : slides;
+          var isCarousel = holder.classList.contains("wdt-carousel-holder");
+          var items = Array.prototype.slice.call(holder.querySelectorAll(isCarousel
+            ? ".wdt-image-box-container .wdt-image-box-wrapper .swiper-slide"
+            : ".wdt-column-wrapper .wdt-column"
+          ));
           if (!items.length) return;
 
           function activate(item) {
@@ -831,9 +839,115 @@ function applySalaoAnimationFallbacks(doc: Document) {
           }
 
           items.forEach(function (item) {
-            item.addEventListener("mouseenter", function () { activate(item); });
+            item.addEventListener("mouseover", function () { activate(item); });
             item.addEventListener("focusin", function () { activate(item); });
           });
+        });
+      }
+
+      function installFlexBannerFallback() {
+        document.querySelectorAll(".wdt-flex-banner-options").forEach(function (banner) {
+          if (banner.classList.contains("moschettieri-flex-banner-ready")) return;
+          banner.classList.add("moschettieri-flex-banner-ready");
+
+          var items = Array.prototype.slice.call(banner.querySelectorAll(".wdt-flex-banner-option"));
+          if (!items.length) return;
+
+          function activate(item) {
+            items.forEach(function (entry) {
+              entry.classList.toggle("active", entry === item);
+            });
+          }
+
+          if (!items.some(function (item) { return item.classList.contains("active"); })) {
+            activate(items[0]);
+          }
+
+          var settings = {};
+          try {
+            settings = JSON.parse((banner.getAttribute("data-settings") || "{}").replace(/\\n=\"\"/g, ""));
+          } catch (error) {}
+
+          items.forEach(function (item) {
+            if (settings.option === "yes") {
+              item.addEventListener("mouseenter", function () { activate(item); });
+              item.addEventListener("mouseover", function () { activate(item); });
+            } else {
+              item.addEventListener("click", function () { activate(item); });
+            }
+            item.addEventListener("focusin", function () { activate(item); });
+          });
+        });
+      }
+
+      function installTabsFallback() {
+        document.querySelectorAll(".wdt-tabs-container").forEach(function (container) {
+          if (container.classList.contains("ui-tabs") || container.classList.contains("moschettieri-tabs-fallback-ready")) return;
+
+          var tabs = Array.prototype.slice.call(container.querySelectorAll(".wdt-tabs-list a[href^='#']"));
+          var contents = Array.prototype.slice.call(container.querySelectorAll(".wdt-tabs-content"));
+          if (!tabs.length || !contents.length) return;
+
+          container.classList.add("moschettieri-tabs-fallback-ready");
+
+          function activate(hash) {
+            var target = container.querySelector(hash);
+            if (!target) target = contents[0];
+
+            contents.forEach(function (content) {
+              var active = content === target;
+              content.classList.toggle("moschettieri-tab-active", active);
+              content.style.display = active ? "block" : "none";
+            });
+
+            tabs.forEach(function (link) {
+              var active = link.getAttribute("href") === "#" + target.id;
+              var item = link.closest("li");
+              if (item) {
+                item.classList.toggle("moschettieri-tab-active", active);
+                item.classList.toggle("ui-state-active", active);
+              }
+              link.setAttribute("aria-selected", active ? "true" : "false");
+            });
+          }
+
+          tabs.forEach(function (link) {
+            link.addEventListener("click", function (event) {
+              event.preventDefault();
+              activate(link.getAttribute("href") || "");
+            });
+          });
+
+          activate(tabs[0].getAttribute("href") || "");
+        });
+      }
+
+      function installMapFallback() {
+        document.querySelectorAll(".wdt-google-map").forEach(function (map) {
+          if (map.classList.contains("moschettieri-map-checked")) return;
+          map.classList.add("moschettieri-map-checked");
+
+          window.setTimeout(function () {
+            if (map.querySelector(".gm-style, iframe")) return;
+
+            var options = {};
+            try {
+              options = JSON.parse((map.getAttribute("data-options") || "{}").replace(/\\n=\"\"/g, ""));
+            } catch (error) {}
+
+            var center = options.center || { lat: 34.052235, lng: -118.243683 };
+            var lat = Number(center.lat) || 34.052235;
+            var lng = Number(center.lng) || -118.243683;
+            var zoom = Number(options.zoom) || 15;
+            var iframe = document.createElement("iframe");
+            iframe.loading = "lazy";
+            iframe.referrerPolicy = "no-referrer-when-downgrade";
+            iframe.src = "https://www.google.com/maps?q=" + encodeURIComponent(lat + "," + lng) + "&z=" + zoom + "&output=embed";
+            iframe.title = "Mapa";
+            map.classList.add("moschettieri-map-fallback");
+            map.innerHTML = "";
+            map.appendChild(iframe);
+          }, 1800);
         });
       }
 
@@ -841,6 +955,9 @@ function applySalaoAnimationFallbacks(doc: Document) {
         window.setTimeout(function () {
           installHomeCarouselFallback();
           installMenuHoverFallback();
+          installFlexBannerFallback();
+          installTabsFallback();
+          installMapFallback();
         }, 900);
       });
     })();
@@ -917,8 +1034,8 @@ function applySalaoMenuButtonPreset(doc: Document) {
     if (!link) return;
 
     setMenuLinkLabel(link, "Menu");
-    link.setAttribute("href", "#salao-menu");
-    link.removeAttribute("target");
+    link.setAttribute("href", "/menu");
+    link.setAttribute("target", "_top");
     removeDirectSubMenus(item);
     item.classList.remove("menu-item-has-children");
   });

@@ -69,6 +69,7 @@ export default function Cardapio() {
 
   const handleQuickAdd = (e: React.MouseEvent, product: typeof products[0]) => {
     e.stopPropagation();
+    if (product.inventory_available === false) return;
     const productType = (product as any).product_type as string | null | undefined;
     const isPizza = !productType || productType === "pizza";
     if (isPizza) {
@@ -207,6 +208,11 @@ export default function Cardapio() {
                   <p className="text-stone/70 text-xs mt-1 line-clamp-2 leading-tight">
                     {product.description}
                   </p>
+                  {product.inventory_available === false && (
+                    <span className="mt-2 inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-bold text-amber-300">
+                      Indisponivel no momento
+                    </span>
+                  )}
                 </button>
                 <div className="flex items-center justify-between mt-3">
                   <div>
@@ -221,12 +227,15 @@ export default function Cardapio() {
                   </div>
                   <button
                     onClick={(e) => handleQuickAdd(e, product)}
+                    disabled={product.inventory_available === false}
                     className={`w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-90 ${
-                      justAdded === product.id
+                      product.inventory_available === false
+                        ? "bg-surface-03 text-stone cursor-not-allowed"
+                        : justAdded === product.id
                         ? "bg-green-500 scale-110"
                         : "bg-gold hover:bg-gold/80"
                     }`}
-                    title="Adicionar ao carrinho"
+                    title={product.inventory_available === false ? "Indisponivel no momento" : "Adicionar ao carrinho"}
                   >
                     {justAdded === product.id
                       ? <Check size={15} className="text-cream" />

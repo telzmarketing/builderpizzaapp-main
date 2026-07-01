@@ -519,6 +519,11 @@ export default function Home() {
                 <p className="text-gold font-bold text-center text-base">
                   R$ {(product.current_price ?? product.price).toFixed(2)}
                 </p>
+                {product.inventory_available === false && (
+                  <p className="mt-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-center text-[10px] font-bold text-amber-300">
+                    Indisponivel no momento
+                  </p>
+                )}
               </button>
             ))}
           </div>
@@ -560,6 +565,11 @@ export default function Home() {
                   <p className="text-gold font-bold text-center text-sm">
                     R$ {((currentPizza as any)?.current_price ?? currentPizza?.price ?? 0).toFixed(2)}
                   </p>
+                  {currentPizza?.inventory_available === false && (
+                    <p className="mt-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-center text-[10px] font-bold text-amber-300">
+                      Indisponivel no momento
+                    </p>
+                  )}
                 </button>
               </div>
 

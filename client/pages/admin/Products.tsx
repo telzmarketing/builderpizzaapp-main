@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat, Droplets, Gift, Search, ChevronUp, ChevronDown, Truck } from "lucide-react";
+import { Plus, Trash2, Edit2, Settings2, Tag, Ruler, X, Check, Loader2, ChefHat, Droplets, Gift, Search, ChevronUp, ChevronDown, Truck, ClipboardList } from "lucide-react";
 import { useApp, Pizza, PricingRule } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import ImageUpload from "@/components/admin/ImageUpload";
-import { productsApi, sizesApi, crustApi, drinkVariantApi, categoriesApi, productPromotionsApi, ApiProduct, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, ApiProductPromotion, ApiProductPromotionCombination, ProductPromotionDiscountType, ApiBestSellerConfig, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { productsApi, sizesApi, crustApi, drinkVariantApi, categoriesApi, productPromotionsApi, inventoryApi, ApiProduct, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, ApiProductPromotion, ApiProductPromotionCombination, ProductPromotionDiscountType, ApiBestSellerConfig, InventoryItem, InventoryRecipeVersion, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { pizzaSizeDescription, pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { normalizeCrustPriceAddition } from "@/lib/pricing";
 
@@ -152,6 +152,22 @@ type ProductCategoryTab = {
   kind: "all" | "category" | "legacy" | "uncategorized";
   category?: ApiProductCategory;
 };
+type RecipeIngredientForm = {
+  inventory_item_id: string;
+  quantity: string;
+  waste_percent: string;
+  notes: string;
+};
+type RecipeFormState = {
+  product_size_id: string;
+  product_crust_type_id: string;
+  product_drink_variant_id: string;
+  complement_key: string;
+  complement_name: string;
+  active: boolean;
+  notes: string;
+  items: RecipeIngredientForm[];
+};
 
 const PRODUCT_SORT_LABELS: Record<ProductSortMode, string> = {
   recent: "Recente",
@@ -162,6 +178,16 @@ const PRODUCT_SORT_LABELS: Record<ProductSortMode, string> = {
 const PRODUCT_CATEGORY_ALL = "__all__";
 const PRODUCT_CATEGORY_UNCATEGORIZED = "__uncategorized__";
 const PRODUCT_CATEGORY_LEGACY_PREFIX = "legacy:";
+const emptyRecipeForm = (): RecipeFormState => ({
+  product_size_id: "",
+  product_crust_type_id: "",
+  product_drink_variant_id: "",
+  complement_key: "",
+  complement_name: "",
+  active: true,
+  notes: "",
+  items: [{ inventory_item_id: "", quantity: "", waste_percent: "", notes: "" }],
+});
 
 export default function AdminProducts() {
   const navigate = useNavigate();
@@ -526,6 +552,156 @@ export default function AdminProducts() {
       await deleteProduct(product.id);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao remover produto do catalogo.");
+    }
+  };
+
+  const [recipeModalProduct, setRecipeModalProduct] = useState<Pizza | null>(null);
+  const [recipeInventoryItems, setRecipeInventoryItems] = useState<InventoryItem[]>([]);
+  const [productRecipes, setProductRecipes] = useState<InventoryRecipeVersion[]>([]);
+  const [recipeLoading, setRecipeLoading] = useState(false);
+  const [recipeSaving, setRecipeSaving] = useState(false);
+  const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
+  const [recipeForm, setRecipeForm] = useState<RecipeFormState>(emptyRecipeForm());
+
+  const openRecipeModal = useCallback(async (product: Pizza) => {
+    setRecipeModalProduct(product);
+    setRecipeLoading(true);
+    setEditingRecipeId(null);
+    setRecipeForm(emptyRecipeForm());
+    try {
+      const [recipes, overview] = await Promise.all([
+        inventoryApi.listProductRecipes(product.id),
+        inventoryApi.overview(),
+      ]);
+      setProductRecipes(recipes);
+      setRecipeInventoryItems(overview.items.filter((item) => item.active));
+    } catch (err: unknown) {
+      setProductRecipes([]);
+      setRecipeInventoryItems([]);
+      alert(err instanceof Error ? err.message : "Erro ao carregar ficha tecnica.");
+    } finally {
+      setRecipeLoading(false);
+    }
+  }, []);
+
+  const closeRecipeModal = () => {
+    setRecipeModalProduct(null);
+    setProductRecipes([]);
+    setRecipeInventoryItems([]);
+    setEditingRecipeId(null);
+    setRecipeForm(emptyRecipeForm());
+  };
+
+  const handleEditRecipe = (recipe: InventoryRecipeVersion) => {
+    setEditingRecipeId(recipe.id);
+    setRecipeForm({
+      product_size_id: recipe.product_size_id || "",
+      product_crust_type_id: recipe.product_crust_type_id || "",
+      product_drink_variant_id: recipe.product_drink_variant_id || "",
+      complement_key: recipe.complement_key || "",
+      complement_name: recipe.complement_name || "",
+      active: recipe.active,
+      notes: recipe.notes || "",
+      items: recipe.items.length > 0
+        ? recipe.items.map((item) => ({
+            inventory_item_id: item.inventory_item_id,
+            quantity: String(item.quantity),
+            waste_percent: String(item.waste_percent || ""),
+            notes: item.notes || "",
+          }))
+        : [{ inventory_item_id: "", quantity: "", waste_percent: "", notes: "" }],
+    });
+  };
+
+  const handleRecipeItemChange = (index: number, patch: Partial<RecipeIngredientForm>) => {
+    setRecipeForm((form) => ({
+      ...form,
+      items: form.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item),
+    }));
+  };
+
+  const handleAddRecipeItem = () => {
+    setRecipeForm((form) => ({
+      ...form,
+      items: [...form.items, { inventory_item_id: "", quantity: "", waste_percent: "", notes: "" }],
+    }));
+  };
+
+  const handleRemoveRecipeItem = (index: number) => {
+    setRecipeForm((form) => ({
+      ...form,
+      items: form.items.length === 1 ? form.items : form.items.filter((_, itemIndex) => itemIndex !== index),
+    }));
+  };
+
+  const handleSaveRecipe = async () => {
+    if (!recipeModalProduct) return;
+    const items = recipeForm.items
+      .map((item) => ({
+        inventory_item_id: item.inventory_item_id,
+        quantity: Number(item.quantity),
+        waste_percent: item.waste_percent === "" ? 0 : Number(item.waste_percent),
+        notes: item.notes.trim() || null,
+      }))
+      .filter((item) => item.inventory_item_id && Number.isFinite(item.quantity) && item.quantity > 0);
+    if (items.length === 0) {
+      alert("Informe pelo menos um insumo com quantidade.");
+      return;
+    }
+    if (items.some((item) => !Number.isFinite(item.waste_percent) || item.waste_percent < 0 || item.waste_percent > 100)) {
+      alert("A perda tecnica deve ficar entre 0 e 100.");
+      return;
+    }
+    const payload = {
+      product_size_id: recipeForm.product_size_id || null,
+      product_crust_type_id: recipeForm.product_crust_type_id || null,
+      product_drink_variant_id: recipeForm.product_drink_variant_id || null,
+      complement_key: recipeForm.complement_key.trim() || null,
+      complement_name: recipeForm.complement_name.trim() || null,
+      active: recipeForm.active,
+      notes: recipeForm.notes.trim() || null,
+      items,
+    };
+    setRecipeSaving(true);
+    try {
+      const saved = editingRecipeId
+        ? await inventoryApi.updateProductRecipe(recipeModalProduct.id, editingRecipeId, payload)
+        : await inventoryApi.createProductRecipe(recipeModalProduct.id, payload);
+      setProductRecipes((prev) => {
+        const next = editingRecipeId
+          ? prev.map((recipe) => (recipe.id === saved.id ? saved : recipe))
+          : [saved, ...prev];
+        return next.map((recipe) => {
+          const sameScope =
+            recipe.id !== saved.id &&
+            recipe.product_size_id === saved.product_size_id &&
+            recipe.product_crust_type_id === saved.product_crust_type_id &&
+            recipe.product_drink_variant_id === saved.product_drink_variant_id &&
+            recipe.complement_key === saved.complement_key;
+          return saved.active && sameScope ? { ...recipe, active: false } : recipe;
+        });
+      });
+      setEditingRecipeId(null);
+      setRecipeForm(emptyRecipeForm());
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao salvar ficha tecnica.");
+    } finally {
+      setRecipeSaving(false);
+    }
+  };
+
+  const handleDeactivateRecipe = async (recipe: InventoryRecipeVersion) => {
+    if (!recipeModalProduct) return;
+    if (!confirm(`Arquivar a ficha tecnica v${recipe.version_number}?`)) return;
+    try {
+      await inventoryApi.removeProductRecipe(recipeModalProduct.id, recipe.id);
+      setProductRecipes((prev) => prev.map((item) => item.id === recipe.id ? { ...item, active: false } : item));
+      if (editingRecipeId === recipe.id) {
+        setEditingRecipeId(null);
+        setRecipeForm(emptyRecipeForm());
+      }
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao arquivar ficha tecnica.");
     }
   };
 
@@ -1540,6 +1716,11 @@ export default function AdminProducts() {
                           )}
                         </button>
 
+                        <button onClick={() => openRecipeModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-emerald-500/10 hover:border-emerald-500/40 text-parchment hover:text-emerald-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
+                          <ClipboardList size={15} />
+                          Ficha tecnica
+                        </button>
+
                         {isPizza && (
                           <button onClick={() => openCrustModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-amber-500/10 hover:border-amber-500/40 text-parchment hover:text-amber-400 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                             <ChefHat size={15} />
@@ -2279,6 +2460,187 @@ export default function AdminProducts() {
       )}
 
       {/* ── Sizes Modal ───────────────────────────────────────────────────────── */}
+      {recipeModalProduct && (() => {
+        const currentProduct = recipeModalProduct as any;
+        const sizeOptions = ((currentProduct.sizes ?? []) as ApiProductSize[]).filter((item) => item.active);
+        const crustOptions = ((currentProduct.crust_types ?? []) as ApiProductCrustType[]).filter((item) => item.active);
+        const drinkOptions = ((currentProduct.drink_variants ?? []) as ApiProductDrinkVariant[]).filter((item) => item.active);
+        return (
+          <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 backdrop-blur-sm p-2 sm:items-center sm:p-4" onClick={closeRecipeModal}>
+            <div className="flex h-[calc(100dvh-1rem)] w-full max-w-[1180px] flex-col overflow-hidden rounded-xl border border-surface-03 bg-surface-02 shadow-2xl sm:h-[calc(100dvh-2rem)] sm:max-h-[92dvh] sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-surface-03 bg-surface-02 px-4 py-3 sm:px-6 sm:py-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <ClipboardList size={18} className="text-emerald-300" />
+                  <div className="min-w-0">
+                    <h3 className="text-cream font-bold">Ficha tecnica</h3>
+                    <p className="truncate text-stone text-xs">{recipeModalProduct.name}</p>
+                  </div>
+                </div>
+                <button onClick={closeRecipeModal} className="shrink-0 text-stone hover:text-cream transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-scroll overscroll-contain p-3 [scrollbar-gutter:stable] sm:p-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:p-6">
+                <section className="min-w-0 space-y-4">
+                  <div className="rounded-xl border border-surface-03 bg-surface-01 p-4">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-bold text-cream">{editingRecipeId ? "Editar versao" : "Nova versao"}</h4>
+                        <p className="text-xs text-stone">Cadastro interno para estoque e CMV.</p>
+                      </div>
+                      {editingRecipeId && (
+                        <button type="button" onClick={() => { setEditingRecipeId(null); setRecipeForm(emptyRecipeForm()); }} className="rounded-lg border border-surface-03 px-3 py-2 text-xs font-bold text-stone hover:text-cream">
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div>
+                        <label className="mb-1.5 block text-xs font-bold text-parchment">Tamanho</label>
+                        <select value={recipeForm.product_size_id} onChange={(e) => setRecipeForm((form) => ({ ...form, product_size_id: e.target.value }))} className={cls}>
+                          <option value="">Produto base</option>
+                          {sizeOptions.map((size) => (
+                            <option key={size.id} value={size.id}>{size.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-bold text-parchment">Massa/Borda</label>
+                        <select value={recipeForm.product_crust_type_id} onChange={(e) => setRecipeForm((form) => ({ ...form, product_crust_type_id: e.target.value }))} className={cls}>
+                          <option value="">Sem opcao</option>
+                          {crustOptions.map((crust) => (
+                            <option key={crust.id} value={crust.id}>{crust.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-bold text-parchment">Variante</label>
+                        <select value={recipeForm.product_drink_variant_id} onChange={(e) => setRecipeForm((form) => ({ ...form, product_drink_variant_id: e.target.value }))} className={cls}>
+                          <option value="">Sem variante</option>
+                          {drinkOptions.map((variant) => (
+                            <option key={variant.id} value={variant.id}>{variant.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <div>
+                        <label className="mb-1.5 block text-xs font-bold text-parchment">Complemento interno</label>
+                        <input value={recipeForm.complement_name} onChange={(e) => setRecipeForm((form) => ({ ...form, complement_name: e.target.value, complement_key: e.target.value.trim().toLowerCase().replace(/\s+/g, "-") }))} className={cls} placeholder="Ex: borda especial" maxLength={180} />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-bold text-parchment">Observacao</label>
+                        <input value={recipeForm.notes} onChange={(e) => setRecipeForm((form) => ({ ...form, notes: e.target.value }))} className={cls} placeholder="Uso interno" />
+                      </div>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <h5 className="text-sm font-bold text-cream">Insumos</h5>
+                        <button type="button" onClick={handleAddRecipeItem} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500/15 px-3 py-2 text-xs font-bold text-emerald-300 hover:bg-emerald-500/25">
+                          <Plus size={14} /> Adicionar
+                        </button>
+                      </div>
+                      {recipeInventoryItems.length === 0 && (
+                        <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">Cadastre insumos em Gestao &gt; Estoque antes de montar a ficha.</p>
+                      )}
+                      {recipeForm.items.map((item, index) => {
+                        const selectedItem = recipeInventoryItems.find((inventoryItem) => inventoryItem.id === item.inventory_item_id);
+                        return (
+                          <div key={index} className="grid gap-2 rounded-xl border border-surface-03 bg-surface-02 p-3 md:grid-cols-[minmax(0,1fr)_110px_100px_36px]">
+                            <div>
+                              <label className="mb-1 block text-[11px] font-bold text-stone">Insumo</label>
+                              <select value={item.inventory_item_id} onChange={(e) => handleRecipeItemChange(index, { inventory_item_id: e.target.value })} className={cls}>
+                                <option value="">Selecione</option>
+                                {recipeInventoryItems.map((inventoryItem) => (
+                                  <option key={inventoryItem.id} value={inventoryItem.id}>{inventoryItem.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-[11px] font-bold text-stone">Qtd {selectedItem?.unit_symbol ? `(${selectedItem.unit_symbol})` : ""}</label>
+                              <input value={item.quantity} onChange={(e) => handleRecipeItemChange(index, { quantity: e.target.value })} className={cls} type="number" min="0" step="0.001" />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-[11px] font-bold text-stone">Perda %</label>
+                              <input value={item.waste_percent} onChange={(e) => handleRecipeItemChange(index, { waste_percent: e.target.value })} className={cls} type="number" min="0" max="100" step="0.01" />
+                            </div>
+                            <button type="button" onClick={() => handleRemoveRecipeItem(index)} className="mt-5 flex h-10 w-10 items-center justify-center rounded-lg border border-red-500/25 text-red-300 hover:bg-red-500/10" title="Remover insumo">
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                      <label className="flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-02 px-3 py-2 text-sm text-parchment">
+                        <input type="checkbox" checked={recipeForm.active} onChange={(e) => setRecipeForm((form) => ({ ...form, active: e.target.checked }))} className="accent-gold" />
+                        Ativa
+                      </label>
+                      <button type="button" onClick={handleSaveRecipe} disabled={recipeSaving || recipeInventoryItems.length === 0} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-gold px-4 py-2 font-bold text-cream transition-colors hover:bg-gold/90 disabled:opacity-60">
+                        {recipeSaving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                        {editingRecipeId ? "Salvar versao" : "Criar versao"}
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
+                <aside className="min-w-0 space-y-3">
+                  <h4 className="text-sm font-bold text-cream">Versoes</h4>
+                  {recipeLoading ? (
+                    <div className="flex justify-center py-10">
+                      <Loader2 size={28} className="animate-spin text-gold" />
+                    </div>
+                  ) : productRecipes.length === 0 ? (
+                    <p className="rounded-xl border border-surface-03 bg-surface-01 p-4 text-sm text-stone">Nenhuma ficha cadastrada.</p>
+                  ) : (
+                    productRecipes.map((recipe) => (
+                      <div key={recipe.id} className="rounded-xl border border-surface-03 bg-surface-01 p-4">
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-bold text-cream">v{recipe.version_number}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${recipe.active ? "bg-emerald-500/15 text-emerald-300" : "bg-surface-03 text-stone"}`}>
+                                {recipe.active ? "Ativa" : "Arquivada"}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-stone">
+                              {[recipe.product_size_label, recipe.product_crust_type_name, recipe.product_drink_variant_name, recipe.complement_name].filter(Boolean).join(" / ") || "Produto base"}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 gap-1">
+                            <button type="button" onClick={() => handleEditRecipe(recipe)} className="rounded-lg p-2 text-blue-300 hover:bg-blue-500/10" title="Editar">
+                              <Edit2 size={14} />
+                            </button>
+                            {recipe.active && (
+                              <button type="button" onClick={() => handleDeactivateRecipe(recipe)} className="rounded-lg p-2 text-red-300 hover:bg-red-500/10" title="Arquivar">
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          {recipe.items.map((item) => (
+                            <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface-02 px-3 py-2 text-xs">
+                              <span className="min-w-0 truncate text-parchment">{item.inventory_item_name || "Insumo"}</span>
+                              <span className="shrink-0 font-bold text-gold">{item.quantity} {item.unit_symbol || ""}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </aside>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {promotionModalProduct && (
         <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 backdrop-blur-sm p-2 sm:items-center sm:p-4" onClick={closePromotionModal}>
           <div className="flex h-[calc(100dvh-1rem)] w-full max-w-[1180px] flex-col overflow-hidden rounded-xl border border-surface-03 bg-surface-02 shadow-2xl sm:h-[calc(100dvh-2rem)] sm:max-h-[92dvh] sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>

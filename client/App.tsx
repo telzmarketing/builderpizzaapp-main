@@ -457,6 +457,10 @@ const CrmGrupos = lazy(() => import("./pages/admin/crm/CrmGrupos"));
 const CrmTarefas = lazy(() => import("./pages/admin/crm/CrmTarefas"));
 const CrmInteligencia = lazy(() => import("./pages/admin/crm/CrmInteligencia"));
 const CrmAgenteWhatsApp = lazy(() => import("./pages/admin/crm/CrmAgenteWhatsApp"));
+const GestaoInventory = lazy(() => import("./pages/admin/gestao/GestaoInventory"));
+const GestaoCmv = lazy(() => import("./pages/admin/gestao/GestaoCmv"));
+const GestaoFinance = lazy(() => import("./pages/admin/gestao/GestaoFinance"));
+const GestaoFiscal = lazy(() => import("./pages/admin/gestao/GestaoFiscal"));
 const AdminLogistica = lazy(() => import("./pages/admin/logistica/AdminLogistica"));
 const AdminSalao = lazy(() => import("./pages/admin/salao/AdminSalao"));
 const AdminSalaoPage = lazy(() => import("./pages/admin/salao/AdminSalaoPage"));
@@ -586,6 +590,10 @@ export default function App() {
                 <Route path="/painel/crm/grupos" element={<CrmGrupos />} />
                 <Route path="/painel/crm/tarefas" element={<CrmTarefas />} />
                 <Route path="/painel/crm/agente-whatsapp" element={<CrmAgenteWhatsApp />} />
+                <Route path="/painel/gestao/estoque" element={<GestaoInventory />} />
+                <Route path="/painel/gestao/cmv" element={<GestaoCmv />} />
+                <Route path="/painel/gestao/financeiro" element={<GestaoFinance />} />
+                <Route path="/painel/gestao/fiscal" element={<GestaoFiscal />} />
                 {/* ── Logistics routes ── */}
                 <Route path="/painel/logistica" element={<AdminLogistica />} />
                 </Route>

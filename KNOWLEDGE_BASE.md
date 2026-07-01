@@ -37,6 +37,7 @@
 15. [Atualizacao 2026-04-24 - Estado Atual Consolidado](#15-atualizacao-2026-04-24---estado-atual-consolidado)
 16. [Atualizacao 2026-05-03 - Estado Atual do Admin SaaS](#16-atualizacao-2026-05-03---estado-atual-do-admin-saas)
 17. [Atualizacao 2026-05-13 - Estado Atual Completo](#17-atualizacao-2026-05-13---estado-atual-completo)
+18. [Atualizacao 2026-07-01 - Gestao ERP Concluida](#18-atualizacao-2026-07-01---gestao-erp-concluida)
 
 ---
 
@@ -1472,7 +1473,7 @@ Responsabilidades:
 - salvar `mercado_pago_payment_id`, `raw_response` e `webhook_data`;
 - nao marcar aprovado por resposta do frontend ou resposta imediata do create;
 - processar webhook, consultar `/v1/payments/{id}` e aplicar status real;
-- chamar `sendOrderToSaipos(orderId)` apenas quando o status muda pela primeira vez para `approved`.
+- publicar `PaymentConfirmed` quando o status muda pela primeira vez para `approved`, sem chamar sistema fiscal externo.
 
 Mapeamento de status Mercado Pago:
 
@@ -1489,27 +1490,15 @@ Mapeamento de status Mercado Pago:
 Regras obrigatorias implementadas:
 - Pedido nao e duplicado pelo webhook.
 - Pagamento ja aprovado nao e recriado.
-- Webhook pode ser chamado mais de uma vez sem reenviar pedido para Saipos.
+- Webhook pode ser chamado mais de uma vez sem duplicar efeitos de pagamento.
 - `external_reference` vincula pagamento Mercado Pago ao pedido interno.
 - Backend nao confia no payload do webhook: sempre consulta a API do Mercado Pago.
 - Frontend nunca marca pedido como pago.
-- Pedido nao e enviado para Saipos antes de `payment_status=approved`.
+- Pedido pago nao aciona sistema fiscal externo automaticamente.
 
-### 14.8 Saipos
+### 14.8 Sistemas fiscais externos
 
-Arquivo:
-
-```txt
-backend/services/saipos_service.py
-```
-
-Funcao stub atual:
-
-```python
-sendOrderToSaipos(order_id: str) -> None
-```
-
-Ela registra log quando chamada. Quando a integracao real Saipos estiver disponivel, a implementacao deve substituir o stub mantendo a mesma assinatura para preservar o contrato com `PaymentService`.
+O ERP nao deve chamar, preparar ou depender de sistema fiscal externo por padrao. O fluxo de pagamento aprovado publica eventos internos; qualquer modulo fiscal deve ser autossuficiente e idempotente dentro do proprio ERP, salvo autorizacao explicita para uma integracao futura.
 
 ### 14.9 Validacao executada
 
@@ -1588,7 +1577,7 @@ O fluxo oficial de pagamento e Mercado Pago Payment Brick:
 6. Backend cria/processa o pagamento no Mercado Pago.
 7. Mercado Pago notifica o backend em `/webhooks/mercadopago`.
 8. Backend valida o evento consultando a API do Mercado Pago.
-9. Apenas apos status real aprovado, backend atualiza `payment_status=approved`, `pedido_status=pago` e chama `sendOrderToSaipos(orderId)`.
+9. Apenas apos status real aprovado, backend atualiza `payment_status=approved`, `pedido_status=pago` e publica eventos internos.
 
 Endpoints relevantes:
 - `POST /orders` e `POST /orders/checkout`: criacao de pedido.
@@ -1615,7 +1604,7 @@ Regras criticas:
 - Registrar eventos em `payment_events`.
 - Webhook deve ser idempotente.
 - Pedido aprovado nao pode ser duplicado.
-- Saipos so pode ser chamado quando o pagamento for aprovado pelo webhook validado.
+- Nenhum sistema fiscal externo deve ser chamado pelo fluxo de pagamento.
 
 ### 15.4 Produto, pizzas e categorias
 
@@ -1751,7 +1740,7 @@ Validoes recentes ja executadas neste ciclo:
 - O ambiente local Windows apresentou historico de indisponibilidade do Python no PATH em alguns momentos; quando validar backend, preferir o Python embarcado do projeto se estiver disponivel.
 
 Pendencias controladas:
-- A integracao Saipos real ainda e stub em `backend/services/saipos_service.py`.
+- Historico: nesta leitura, o fluxo fiscal autossuficiente ainda estava pendente. Status atualizado na secao 18, com base interna Fiscal SEFAZ implementada na trilha Gestao.
 - Documentacao antiga acima desta secao ainda pode conter referencias legadas; esta secao 15 e a referencia consolidada mais atual ate a limpeza completa linha a linha.
 
 ---
@@ -1903,7 +1892,7 @@ Services atuais em `backend/services/`:
 - Catalogo e preco: `product_category_service.py`, `product_pricing_service.py`.
 - Marketing e CRM: `campaign_service.py`, `paid_traffic_service.py`, `automation_service.py`, `customer_ai_service.py`, `customer_metrics_service.py`.
 - Atendimento e contexto: `chatbot_service.py`, `context_builder.py`.
-- Integracoes/IA: `saipos_service.py`, `ai/base.py`, `ai/factory.py`, `ai/openai_provider.py`, `ai/claude_provider.py`.
+- Integracoes/IA: `ai/base.py`, `ai/factory.py`, `ai/openai_provider.py`, `ai/claude_provider.py`.
 
 Observacoes de startup:
 - `backend/main.py` inclui routers diretos e aliases `/api` para grande parte das rotas.
@@ -1951,7 +1940,7 @@ Observacao:
 
 - A documentacao historica antes das secoes 15 e 16 ainda possui trechos legados e pode citar rotas/modulos antigos incompletos.
 - O inventario de aliases `/api` no backend deve ser revisado quando alguma integracao externa depender de prefixo especifico, pois nem todos os routers novos aparecem necessariamente com alias `/api` no mesmo bloco de inclusao.
-- A integracao Saipos continua indicada como stub em `backend/services/saipos_service.py`.
+- O ERP nao deve depender de integracao fiscal externa. O fiscal interno/autossuficiente da trilha Gestao esta descrito na secao 18 e exige validacao real em SEFAZ/homologacao antes de producao.
 - A padronizacao visual deve ser conferida manualmente em navegador nas rotas administrativas principais, principalmente paginas densas de Marketing, CRM, Logistica, Configuracoes e Pedidos.
 - O estado local deve ser sempre verificado com `git status -sb`; em 2026-05-13 o remoto `origin/main` estava sincronizado apos o commit `f5fa13a`, restando apenas ruido local em `.claude/*` e `backend/__pycache__/*`.
 
@@ -2299,3 +2288,120 @@ Configuracoes:
 - Para testes, executar `npm.cmd test` isoladamente neste ambiente.
 - Python local nao esta disponivel; validacao backend Python precisa ocorrer em ambiente com Python instalado.
 - Ao fazer push, manter `.claude/*` e `backend/__pycache__/*` fora do commit.
+
+---
+
+## 18. Atualizacao 2026-07-01 - Gestao ERP Concluida
+
+Status: trilha Gestao ERP executada ate a Fase 10.
+
+Documento operacional principal:
+
+- `docs/gestao-operacao-fase-10.md`
+
+Documento de desenho e historico:
+
+- `docs/GESTAO_AUDIT.md`
+
+### 18.1 Navegacao e configuracao
+
+Rotas administrativas:
+
+- `/painel/gestao/estoque`
+- `/painel/gestao/cmv`
+- `/painel/gestao/financeiro`
+- `/painel/gestao/fiscal`
+
+Backend:
+
+- `backend/routes/gestao.py`
+- `backend/services/gestao_service.py`
+- `backend/models/gestao.py`
+
+Os modulos Estoque, CMV, Financeiro e Fiscal possuem configuracao persistida em `gestao_module_settings`.
+
+### 18.2 Estoque
+
+Arquivos principais:
+
+- `backend/models/inventory.py`
+- `backend/schemas/inventory.py`
+- `backend/services/inventory_service.py`
+- `backend/routes/inventory.py`
+- `client/pages/admin/gestao/GestaoInventory.tsx`
+
+Regras:
+
+- Estoque nasce opcional.
+- Venda publica so e bloqueada quando `inventory.enabled=true` e `inventory.sales_control_enabled=true`.
+- Falta de insumo obrigatorio deixa produtos dependentes indisponiveis.
+- Cozinha nao e bloqueada pelo Estoque.
+
+### 18.3 CMV
+
+Arquivos principais:
+
+- `backend/models/cmv.py`
+- `backend/services/cmv_service.py`
+- `backend/services/cmv_snapshot_service.py`
+- `backend/routes/cmv.py`
+- `client/pages/admin/gestao/GestaoCmv.tsx`
+
+Regras:
+
+- CMV e analitico e nao altera cozinha, pedido, estoque ou StateMachine.
+- DRE sem CMV aparece parcial.
+- DRE com snapshots operacionais confiaveis aparece completa.
+
+### 18.4 Financeiro
+
+Arquivos principais:
+
+- `backend/models/finance.py`
+- `backend/schemas/finance.py`
+- `backend/services/finance_service.py`
+- `backend/routes/finance.py`
+- `client/pages/admin/gestao/GestaoFinance.tsx`
+
+Regras:
+
+- Recebiveis por pagamento confirmado sao idempotentes.
+- Estornos geram reversao financeira por `PaymentReversed`.
+- Compras de estoque confirmadas podem gerar contas a pagar.
+- O painel mostra caixa, competencia, DRE e relatorios por origem, categoria, centro de custo e canal.
+
+### 18.5 Fiscal SEFAZ
+
+Arquivos principais:
+
+- `backend/models/fiscal.py`
+- `backend/schemas/fiscal.py`
+- `backend/services/fiscal_service.py`
+- `backend/routes/fiscal.py`
+- `client/pages/admin/gestao/GestaoFiscal.tsx`
+
+Regras:
+
+- Fiscal e interno/autossuficiente.
+- Nao usar Saipos, Bling, Tiny, PlugNotas, TecnoSpeed ou middleware fiscal externo.
+- Empresa fiscal, certificado, series e perfis tributarios sao administrados no ERP.
+- Documentos fiscais guardam snapshot, XML interno, status e eventos.
+- Transmissao/autorizacao real depende de certificado valido e integracao SEFAZ direta habilitada.
+- O sistema nao simula autorizacao fiscal.
+
+### 18.6 Validacao e operacao
+
+Validacoes locais disponiveis neste host:
+
+- `npm.cmd run typecheck`
+- `npm.cmd run build`
+- `npm.cmd test`
+- `git diff --check`
+
+Validacoes backend que devem ocorrer em ambiente com Python:
+
+- `py -m py_compile ...`
+- `alembic -c backend/alembic.ini heads`
+- `alembic -c backend/alembic.ini upgrade head`
+
+Ativacao em producao deve seguir a ordem documentada em `docs/gestao-operacao-fase-10.md`.

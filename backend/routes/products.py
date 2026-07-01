@@ -25,6 +25,7 @@ from backend.routes.admin_auth import get_current_admin
 from backend.services import product_category_service
 from backend.services.product_pricing_service import ProductPricingService
 from backend.services.promotion_landing_service import PromotionLandingService
+from backend.services.inventory_service import ProductInventoryAvailabilityService
 
 _VALID_BADGE_STATUSES = [
     OrderStatus.paid, OrderStatus.pago, OrderStatus.preparing,
@@ -117,7 +118,12 @@ def _add_promotion_combinations(
         ))
 
 
-def _product_payload(product: Product, db: Session, auto_badge_ids: set[str] | None = None) -> dict:
+def _product_payload(
+    product: Product,
+    db: Session,
+    auto_badge_ids: set[str] | None = None,
+    inventory_payload: dict | None = None,
+) -> dict:
     payload = ProductOut.model_validate(product).model_dump()
     default_size = next((size for size in product.sizes if size.active and size.is_default), None)
     if not default_size:
@@ -169,6 +175,12 @@ def _product_payload(product: Product, db: Session, auto_badge_ids: set[str] | N
         "promotion_landing_url": f"/promocao/{landing.slug}" if landing else None,
         "show_best_seller_badge": show_badge,
     })
+    if inventory_payload:
+        payload.update({
+            "inventory_available": inventory_payload.get("inventory_available", True),
+            "inventory_status": inventory_payload.get("inventory_status"),
+            "inventory_unavailable_message": inventory_payload.get("inventory_unavailable_message"),
+        })
     return payload
 
 
@@ -291,7 +303,8 @@ def list_products(
         if any((product.best_seller_badge_mode or "off") == "auto" for product in products)
         else set()
     )
-    return [_product_payload(product, db, auto_badge_ids) for product in products]
+    inventory_payloads = ProductInventoryAvailabilityService(db).product_payloads([product.id for product in products])
+    return [_product_payload(product, db, auto_badge_ids, inventory_payloads.get(product.id)) for product in products]
 
 
 @router.get("/{product_id}", response_model=ProductOut)
@@ -301,7 +314,8 @@ def get_product(product_id: str, request: Request, db: Session = Depends(get_db)
         raise HTTPException(404, "Produto não encontrado.")
     if not product.active:
         _require_admin(request, db)
-    return _product_payload(product, db)
+    inventory_payload = ProductInventoryAvailabilityService(db).product_payloads([product.id]).get(product.id)
+    return _product_payload(product, db, inventory_payload=inventory_payload)
 
 
 @router.get("/{product_id}/price", response_model=ProductPriceQuoteOut)

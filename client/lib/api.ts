@@ -305,6 +305,9 @@ export interface ApiProduct {
   promotion_landing_url?: string | null;
   best_seller_badge_mode?: "off" | "manual" | "auto";
   show_best_seller_badge?: boolean;
+  inventory_available?: boolean;
+  inventory_status?: "disabled" | "not_configured" | "available" | "unavailable" | string | null;
+  inventory_unavailable_message?: string | null;
 }
 
 declare global {
@@ -1122,6 +1125,601 @@ export interface StoreOperationLog {
   new_value: string | null;
   created_at: string;
 }
+
+export type GestaoModuleKey = "inventory" | "cmv" | "finance" | "fiscal";
+
+export interface GestaoModuleSettings {
+  id: string;
+  tenant_id: string;
+  module_key: GestaoModuleKey;
+  title: string;
+  description: string;
+  enabled: boolean;
+  status: "disabled" | "setup" | "ready" | "active";
+  settings: Record<string, unknown>;
+  notes: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface GestaoSettingsResponse {
+  modules: GestaoModuleSettings[];
+}
+
+export interface GestaoModuleSettingsUpdate {
+  enabled?: boolean;
+  status?: GestaoModuleSettings["status"];
+  settings?: Record<string, unknown>;
+  notes?: string;
+}
+
+export interface InventoryUnit {
+  id: string;
+  tenant_id?: string;
+  name: string;
+  symbol: string;
+  unit_type: "unit" | "mass" | "volume" | "package";
+  active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface InventoryCategory {
+  id: string;
+  tenant_id?: string;
+  name: string;
+  description?: string | null;
+  active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface InventoryLocation {
+  id: string;
+  tenant_id?: string;
+  name: string;
+  description?: string | null;
+  active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface InventorySupplier {
+  id: string;
+  tenant_id?: string;
+  name: string;
+  document?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  notes?: string | null;
+  active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface InventoryItem {
+  id: string;
+  tenant_id?: string;
+  name: string;
+  sku?: string | null;
+  item_type: "ingredient" | "finished_good" | "packaging" | "supply";
+  category_id?: string | null;
+  category_name?: string | null;
+  unit_id?: string | null;
+  unit_name?: string | null;
+  unit_symbol?: string | null;
+  default_location_id?: string | null;
+  default_location_name?: string | null;
+  min_stock: number;
+  current_stock?: number;
+  available_stock?: number;
+  notes?: string | null;
+  active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface InventoryPurchaseItem {
+  id?: string;
+  purchase_id?: string;
+  item_id: string;
+  item_name?: string | null;
+  quantity: number;
+  unit_cost: number;
+  total_cost?: number;
+}
+
+export interface InventoryPurchase {
+  id: string;
+  tenant_id?: string;
+  supplier_id?: string | null;
+  supplier_name?: string | null;
+  status: "draft" | "confirmed";
+  invoice_number?: string | null;
+  expected_date?: string | null;
+  notes?: string | null;
+  total_amount: number;
+  items: InventoryPurchaseItem[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface InventoryManualEntry {
+  id: string;
+  tenant_id?: string;
+  item_id: string;
+  item_name?: string | null;
+  location_id?: string | null;
+  location_name?: string | null;
+  movement_type: "in" | "out" | string;
+  quantity: number;
+  unit_cost: number;
+  reason: string;
+  notes?: string | null;
+  created_at?: string | null;
+}
+
+export interface InventoryStockMovement {
+  id: string;
+  tenant_id?: string;
+  item_id: string;
+  item_name?: string | null;
+  location_id?: string | null;
+  location_name?: string | null;
+  source_type: string;
+  source_id?: string | null;
+  movement_type: string;
+  quantity_delta: number;
+  unit_cost: number;
+  reason: string;
+  notes?: string | null;
+  created_at?: string | null;
+}
+
+export interface InventoryStockBalance {
+  item_id: string;
+  item_name: string;
+  unit_symbol?: string | null;
+  current_stock: number;
+  min_stock: number;
+  below_min_stock: boolean;
+  active: boolean;
+}
+
+export interface InventoryRecipeItem {
+  id?: string;
+  recipe_id?: string;
+  inventory_item_id: string;
+  inventory_item_name?: string | null;
+  unit_symbol?: string | null;
+  quantity: number;
+  waste_percent: number;
+  notes?: string | null;
+}
+
+export interface InventoryRecipeVersion {
+  id: string;
+  tenant_id?: string;
+  product_id: string;
+  product_name?: string | null;
+  product_size_id?: string | null;
+  product_size_label?: string | null;
+  product_crust_type_id?: string | null;
+  product_crust_type_name?: string | null;
+  product_drink_variant_id?: string | null;
+  product_drink_variant_name?: string | null;
+  complement_key?: string | null;
+  complement_name?: string | null;
+  version_number: number;
+  active: boolean;
+  notes?: string | null;
+  items: InventoryRecipeItem[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface InventoryOverview {
+  units: InventoryUnit[];
+  categories: InventoryCategory[];
+  locations: InventoryLocation[];
+  suppliers: InventorySupplier[];
+  items: InventoryItem[];
+  purchases: InventoryPurchase[];
+  manual_entries: InventoryManualEntry[];
+  movements: InventoryStockMovement[];
+  balances: InventoryStockBalance[];
+}
+
+export interface CmvIngredientCost {
+  inventory_item_id: string;
+  inventory_item_name?: string | null;
+  unit_symbol?: string | null;
+  quantity: number;
+  waste_percent: number;
+  unit_cost: number;
+  total_cost: number;
+  cost_source: string;
+  missing_cost: boolean;
+}
+
+export interface CmvRecipeCost {
+  recipe_id: string;
+  version_number: number;
+  scope_label: string;
+  product_size_id?: string | null;
+  product_crust_type_id?: string | null;
+  product_drink_variant_id?: string | null;
+  complement_key?: string | null;
+  cost_total: number;
+  missing_cost: boolean;
+  ingredients: CmvIngredientCost[];
+}
+
+export interface CmvProductCost {
+  product_id: string;
+  product_name: string;
+  product_type?: string | null;
+  sale_price: number;
+  recipe_count: number;
+  has_recipe: boolean;
+  missing_cost: boolean;
+  cost_min: number;
+  cost_max: number;
+  cmv_percent_min?: number | null;
+  cmv_percent_max?: number | null;
+  margin_min: number;
+  margin_max: number;
+  status: "ok" | "missing_recipe" | "missing_cost" | string;
+  recipes: CmvRecipeCost[];
+}
+
+export interface CmvOverview {
+  module_enabled: boolean;
+  module_status: string;
+  dre_status:
+    | "partial_without_cmv"
+    | "partial_with_pending_cmv"
+    | "partial_operational_waiting_sales"
+    | "partial_with_operational_cmv_pending"
+    | "complete_with_operational_cmv"
+    | "complete_with_cmv"
+    | string;
+  dre_label: string;
+  operational_snapshot_count: number;
+  operational_sale_total: number;
+  operational_cost_total: number;
+  operational_cmv_percent?: number | null;
+  operational_pending_count: number;
+  products_total: number;
+  products_with_recipe: number;
+  products_missing_recipe: number;
+  products_missing_cost: number;
+  average_cmv_percent?: number | null;
+  products: CmvProductCost[];
+}
+
+export type FinanceAccountType = "cash" | "bank" | "credit_card" | "wallet" | "other";
+export type FinanceEntryType = "income" | "expense";
+export type FinanceTransactionStatus = "pending" | "partial" | "paid" | "cancelled";
+export type FinanceCounterpartyType = "supplier" | "customer" | "employee" | "partner" | "other";
+
+export interface FinanceAccount {
+  id: string;
+  tenant_id?: string;
+  name: string;
+  account_type: FinanceAccountType;
+  opening_balance: number;
+  current_balance: number;
+  notes?: string | null;
+  active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface FinanceCategory {
+  id: string;
+  tenant_id?: string;
+  name: string;
+  entry_type: FinanceEntryType;
+  dre_group: string;
+  parent_id?: string | null;
+  parent_name?: string | null;
+  notes?: string | null;
+  active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface FinanceCounterparty {
+  id: string;
+  tenant_id?: string;
+  name: string;
+  counterparty_type: FinanceCounterpartyType;
+  document?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  notes?: string | null;
+  active: boolean;
+  open_amount: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface FinanceTransaction {
+  id: string;
+  tenant_id?: string;
+  account_id?: string | null;
+  account_name?: string | null;
+  category_id?: string | null;
+  category_name?: string | null;
+  cost_center?: string | null;
+  counterparty_id?: string | null;
+  counterparty_type?: FinanceCounterpartyType | null;
+  counterparty_name?: string | null;
+  counterparty_document?: string | null;
+  entry_type: FinanceEntryType;
+  status: FinanceTransactionStatus;
+  description: string;
+  amount: number;
+  paid_amount: number;
+  interest_amount: number;
+  fine_amount: number;
+  discount_amount: number;
+  fee_amount: number;
+  net_amount: number;
+  competence_date: string;
+  due_date?: string | null;
+  paid_at?: string | null;
+  document_number?: string | null;
+  document_date?: string | null;
+  payment_method?: string | null;
+  payment_reference?: string | null;
+  installment_group_id?: string | null;
+  installment_number: number;
+  installment_total: number;
+  order_id?: string | null;
+  payment_id?: string | null;
+  inventory_purchase_id?: string | null;
+  origin_type: string;
+  origin_id?: string | null;
+  notes?: string | null;
+  created_by_admin_id?: string | null;
+  updated_by_admin_id?: string | null;
+  overdue: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface FinanceSummary {
+  income_paid: number;
+  expense_paid: number;
+  income_pending: number;
+  expense_pending: number;
+  balance: number;
+  overdue_count: number;
+  pending_count: number;
+}
+
+export interface FinanceDreLine {
+  group: string;
+  entry_type: FinanceEntryType;
+  amount: number;
+}
+
+export interface FinanceOriginSummary {
+  origin_type: string;
+  entry_type: FinanceEntryType;
+  amount: number;
+  count: number;
+}
+
+export interface FinanceDimensionSummary {
+  label: string;
+  entry_type: FinanceEntryType;
+  amount: number;
+  count: number;
+}
+
+export interface FinanceManagement {
+  cash_realized_income: number;
+  cash_realized_expense: number;
+  cash_realized_result: number;
+  accrual_income: number;
+  accrual_expense: number;
+  accrual_result: number;
+  dre_status: string;
+  dre_label: string;
+  dre_lines: FinanceDreLine[];
+  by_origin: FinanceOriginSummary[];
+  by_category: FinanceDimensionSummary[];
+  by_cost_center: FinanceDimensionSummary[];
+  by_channel: FinanceDimensionSummary[];
+}
+
+export interface FinanceOverview {
+  summary: FinanceSummary;
+  management: FinanceManagement;
+  accounts: FinanceAccount[];
+  categories: FinanceCategory[];
+  counterparties: FinanceCounterparty[];
+  transactions: FinanceTransaction[];
+}
+
+export type FinanceAccountInput = Omit<FinanceAccount, "id" | "tenant_id" | "current_balance" | "created_at" | "updated_at">;
+export type FinanceCategoryInput = Omit<FinanceCategory, "id" | "tenant_id" | "parent_name" | "created_at" | "updated_at">;
+export type FinanceCounterpartyInput = Omit<FinanceCounterparty, "id" | "tenant_id" | "open_amount" | "created_at" | "updated_at">;
+export type FinanceTransactionInput = Omit<FinanceTransaction, "id" | "tenant_id" | "account_name" | "category_name" | "overdue" | "created_at" | "updated_at" | "created_by_admin_id" | "updated_by_admin_id">;
+
+export interface FinanceSettlementInput {
+  account_id?: string | null;
+  paid_amount?: number | null;
+  paid_at?: string | null;
+  interest_amount?: number;
+  fine_amount?: number;
+  discount_amount?: number;
+  fee_amount?: number;
+  payment_method?: string | null;
+  payment_reference?: string | null;
+  notes?: string | null;
+}
+
+export type FiscalEnvironment = "homologation" | "production";
+export type FiscalDocumentModel = "NFCe" | "NFe";
+
+export interface FiscalCompany {
+  id: string;
+  tenant_id: string;
+  legal_name: string;
+  trade_name?: string | null;
+  document: string;
+  state_registration?: string | null;
+  municipal_registration?: string | null;
+  tax_regime: string;
+  cnae?: string | null;
+  address_street?: string | null;
+  address_number?: string | null;
+  address_complement?: string | null;
+  neighborhood?: string | null;
+  city?: string | null;
+  city_ibge_code?: string | null;
+  state?: string | null;
+  zip_code?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface FiscalCertificate {
+  id: string;
+  tenant_id: string;
+  certificate_type: "a1" | "a3";
+  subject_name?: string | null;
+  serial_number?: string | null;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  storage_reference?: string | null;
+  password_configured: boolean;
+  active: boolean;
+  valid: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface FiscalSeries {
+  id: string;
+  tenant_id: string;
+  document_model: FiscalDocumentModel;
+  series: string;
+  environment: FiscalEnvironment;
+  next_number: number;
+  active: boolean;
+  notes?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface FiscalProductProfile {
+  id: string;
+  tenant_id: string;
+  product_id: string;
+  product_name?: string | null;
+  ncm: string;
+  cest?: string | null;
+  cfop: string;
+  origin: string;
+  cst?: string | null;
+  csosn?: string | null;
+  icms_rate: number;
+  pis_cst?: string | null;
+  pis_rate: number;
+  cofins_cst?: string | null;
+  cofins_rate: number;
+  fiscal_description?: string | null;
+  active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface FiscalDocumentItem {
+  id: string;
+  product_id?: string | null;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  ncm?: string | null;
+  cest?: string | null;
+  cfop?: string | null;
+  origin?: string | null;
+  cst?: string | null;
+  csosn?: string | null;
+  icms_rate: number;
+  pis_cst?: string | null;
+  pis_rate: number;
+  cofins_cst?: string | null;
+  cofins_rate: number;
+}
+
+export interface FiscalDocumentEvent {
+  id: string;
+  event_type: string;
+  status: string;
+  protocol?: string | null;
+  message?: string | null;
+  created_at?: string | null;
+}
+
+export interface FiscalDocument {
+  id: string;
+  tenant_id: string;
+  order_id?: string | null;
+  company_id?: string | null;
+  series_id?: string | null;
+  document_model: FiscalDocumentModel;
+  environment: FiscalEnvironment;
+  status: string;
+  operation_type: string;
+  series?: string | null;
+  number?: number | null;
+  access_key?: string | null;
+  issue_date?: string | null;
+  customer_name?: string | null;
+  customer_document?: string | null;
+  total_products: number;
+  total_shipping: number;
+  total_discount: number;
+  total_document: number;
+  protocol?: string | null;
+  rejection_reason?: string | null;
+  cancellation_protocol?: string | null;
+  inutilization_protocol?: string | null;
+  sefaz_status_code?: string | null;
+  sefaz_status_message?: string | null;
+  xml_content?: string | null;
+  signed_xml_content?: string | null;
+  items: FiscalDocumentItem[];
+  events: FiscalDocumentEvent[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface FiscalOverview {
+  company?: FiscalCompany | null;
+  certificate?: FiscalCertificate | null;
+  series: FiscalSeries[];
+  product_profiles: FiscalProductProfile[];
+  documents: FiscalDocument[];
+  document_status_counts: Record<string, number>;
+  ready_for_homologation: boolean;
+  missing_setup: string[];
+}
+
+export type FiscalCompanyInput = Omit<FiscalCompany, "id" | "tenant_id" | "created_at" | "updated_at">;
+export type FiscalCertificateInput = Omit<FiscalCertificate, "id" | "tenant_id" | "valid" | "created_at" | "updated_at">;
+export type FiscalSeriesInput = Omit<FiscalSeries, "id" | "tenant_id" | "created_at" | "updated_at">;
+export type FiscalProductProfileInput = Omit<FiscalProductProfile, "id" | "tenant_id" | "product_name" | "created_at" | "updated_at">;
 
 export interface ApiPayment {
   id: string;
@@ -2507,6 +3105,98 @@ export const storeOperationApi = {
     put<StoreOperationException>(`/store-operation/exceptions/${id}`, data),
   removeException: (id: string) => del<void>(`/store-operation/exceptions/${id}`),
   logs: (limit = 100) => get<StoreOperationLog[]>(`/store-operation/logs?limit=${limit}`),
+};
+
+export const gestaoApi = {
+  settings: () => get<GestaoSettingsResponse>("/gestao/settings"),
+  updateSettings: (moduleKey: GestaoModuleKey, data: GestaoModuleSettingsUpdate) =>
+    put<GestaoModuleSettings>(`/gestao/settings/${moduleKey}`, data),
+};
+
+export const inventoryApi = {
+  overview: () => get<InventoryOverview>("/gestao/inventory/overview"),
+  createUnit: (data: Omit<InventoryUnit, "id" | "tenant_id" | "created_at" | "updated_at">) =>
+    post<InventoryUnit>("/gestao/inventory/units", data),
+  updateUnit: (id: string, data: Omit<InventoryUnit, "id" | "tenant_id" | "created_at" | "updated_at">) =>
+    put<InventoryUnit>(`/gestao/inventory/units/${id}`, data),
+  removeUnit: (id: string) => del<void>(`/gestao/inventory/units/${id}`),
+  createCategory: (data: Omit<InventoryCategory, "id" | "tenant_id" | "created_at" | "updated_at">) =>
+    post<InventoryCategory>("/gestao/inventory/categories", data),
+  updateCategory: (id: string, data: Omit<InventoryCategory, "id" | "tenant_id" | "created_at" | "updated_at">) =>
+    put<InventoryCategory>(`/gestao/inventory/categories/${id}`, data),
+  removeCategory: (id: string) => del<void>(`/gestao/inventory/categories/${id}`),
+  createLocation: (data: Omit<InventoryLocation, "id" | "tenant_id" | "created_at" | "updated_at">) =>
+    post<InventoryLocation>("/gestao/inventory/locations", data),
+  updateLocation: (id: string, data: Omit<InventoryLocation, "id" | "tenant_id" | "created_at" | "updated_at">) =>
+    put<InventoryLocation>(`/gestao/inventory/locations/${id}`, data),
+  removeLocation: (id: string) => del<void>(`/gestao/inventory/locations/${id}`),
+  createSupplier: (data: Omit<InventorySupplier, "id" | "tenant_id" | "created_at" | "updated_at">) =>
+    post<InventorySupplier>("/gestao/inventory/suppliers", data),
+  updateSupplier: (id: string, data: Omit<InventorySupplier, "id" | "tenant_id" | "created_at" | "updated_at">) =>
+    put<InventorySupplier>(`/gestao/inventory/suppliers/${id}`, data),
+  removeSupplier: (id: string) => del<void>(`/gestao/inventory/suppliers/${id}`),
+  createItem: (data: Omit<InventoryItem, "id" | "tenant_id" | "category_name" | "unit_name" | "unit_symbol" | "default_location_name" | "created_at" | "updated_at">) =>
+    post<InventoryItem>("/gestao/inventory/items", data),
+  updateItem: (id: string, data: Omit<InventoryItem, "id" | "tenant_id" | "category_name" | "unit_name" | "unit_symbol" | "default_location_name" | "created_at" | "updated_at">) =>
+    put<InventoryItem>(`/gestao/inventory/items/${id}`, data),
+  removeItem: (id: string) => del<void>(`/gestao/inventory/items/${id}`),
+  createPurchase: (data: Omit<InventoryPurchase, "id" | "tenant_id" | "supplier_name" | "total_amount" | "created_at" | "updated_at">) =>
+    post<InventoryPurchase>("/gestao/inventory/purchases", data),
+  updatePurchase: (id: string, data: Omit<InventoryPurchase, "id" | "tenant_id" | "supplier_name" | "total_amount" | "created_at" | "updated_at">) =>
+    put<InventoryPurchase>(`/gestao/inventory/purchases/${id}`, data),
+  removePurchase: (id: string) => del<void>(`/gestao/inventory/purchases/${id}`),
+  createManualEntry: (data: Omit<InventoryManualEntry, "id" | "tenant_id" | "item_name" | "location_name" | "created_at">) =>
+    post<InventoryManualEntry>("/gestao/inventory/manual-entries", data),
+  removeManualEntry: (id: string) => del<void>(`/gestao/inventory/manual-entries/${id}`),
+  movements: () => get<InventoryStockMovement[]>("/gestao/inventory/movements"),
+  balances: () => get<InventoryStockBalance[]>("/gestao/inventory/balances"),
+  listProductRecipes: (productId: string) =>
+    get<InventoryRecipeVersion[]>(`/gestao/inventory/products/${productId}/recipes`),
+  createProductRecipe: (productId: string, data: Omit<InventoryRecipeVersion, "id" | "tenant_id" | "product_id" | "product_name" | "product_size_label" | "product_crust_type_name" | "product_drink_variant_name" | "version_number" | "created_at" | "updated_at">) =>
+    post<InventoryRecipeVersion>(`/gestao/inventory/products/${productId}/recipes`, data),
+  updateProductRecipe: (productId: string, recipeId: string, data: Omit<InventoryRecipeVersion, "id" | "tenant_id" | "product_id" | "product_name" | "product_size_label" | "product_crust_type_name" | "product_drink_variant_name" | "version_number" | "created_at" | "updated_at">) =>
+    put<InventoryRecipeVersion>(`/gestao/inventory/products/${productId}/recipes/${recipeId}`, data),
+  removeProductRecipe: (productId: string, recipeId: string) =>
+    del<void>(`/gestao/inventory/products/${productId}/recipes/${recipeId}`),
+};
+
+export const cmvApi = {
+  overview: () => get<CmvOverview>("/gestao/cmv/overview"),
+};
+
+export const financeApi = {
+  overview: () => get<FinanceOverview>("/gestao/finance/overview"),
+  createAccount: (data: FinanceAccountInput) => post<FinanceAccount>("/gestao/finance/accounts", data),
+  updateAccount: (id: string, data: FinanceAccountInput) => put<FinanceAccount>(`/gestao/finance/accounts/${id}`, data),
+  removeAccount: (id: string) => del<void>(`/gestao/finance/accounts/${id}`),
+  createCategory: (data: FinanceCategoryInput) => post<FinanceCategory>("/gestao/finance/categories", data),
+  updateCategory: (id: string, data: FinanceCategoryInput) => put<FinanceCategory>(`/gestao/finance/categories/${id}`, data),
+  removeCategory: (id: string) => del<void>(`/gestao/finance/categories/${id}`),
+  createCounterparty: (data: FinanceCounterpartyInput) => post<FinanceCounterparty>("/gestao/finance/counterparties", data),
+  updateCounterparty: (id: string, data: FinanceCounterpartyInput) => put<FinanceCounterparty>(`/gestao/finance/counterparties/${id}`, data),
+  removeCounterparty: (id: string) => del<void>(`/gestao/finance/counterparties/${id}`),
+  createTransaction: (data: FinanceTransactionInput) => post<FinanceTransaction>("/gestao/finance/transactions", data),
+  updateTransaction: (id: string, data: FinanceTransactionInput) => put<FinanceTransaction>(`/gestao/finance/transactions/${id}`, data),
+  settleTransaction: (id: string, data: FinanceSettlementInput) => post<FinanceTransaction>(`/gestao/finance/transactions/${id}/settle`, data),
+  removeTransaction: (id: string) => del<void>(`/gestao/finance/transactions/${id}`),
+};
+
+export const fiscalApi = {
+  overview: () => get<FiscalOverview>("/gestao/fiscal/overview"),
+  updateCompany: (data: FiscalCompanyInput) => put<FiscalCompany>("/gestao/fiscal/company", data),
+  updateCertificate: (data: FiscalCertificateInput) => put<FiscalCertificate>("/gestao/fiscal/certificate", data),
+  createSeries: (data: FiscalSeriesInput) => post<FiscalSeries>("/gestao/fiscal/series", data),
+  updateSeries: (id: string, data: FiscalSeriesInput) => put<FiscalSeries>(`/gestao/fiscal/series/${id}`, data),
+  updateProductProfile: (productId: string, data: FiscalProductProfileInput) =>
+    put<FiscalProductProfile>(`/gestao/fiscal/products/${productId}/tax-profile`, data),
+  createDocumentFromOrder: (orderId: string, data: { document_model: FiscalDocumentModel; environment: FiscalEnvironment; series_id?: string | null }) =>
+    post<FiscalDocument>(`/gestao/fiscal/documents/from-order/${orderId}`, data),
+  signDocument: (id: string) => post<FiscalDocument>(`/gestao/fiscal/documents/${id}/sign`, {}),
+  transmitDocument: (id: string) => post<FiscalDocument>(`/gestao/fiscal/documents/${id}/transmit`, {}),
+  consultDocument: (id: string) => post<FiscalDocument>(`/gestao/fiscal/documents/${id}/consult`, {}),
+  cancelDocument: (id: string, reason: string) => post<FiscalDocument>(`/gestao/fiscal/documents/${id}/cancel`, { reason }),
+  invalidateNumber: (seriesId: string, data: { number: number; reason: string }) =>
+    post<FiscalDocument>(`/gestao/fiscal/series/${seriesId}/invalidate-number`, data),
 };
 
 export const paymentsApi = {

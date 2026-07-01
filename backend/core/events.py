@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Callable, Type
 
 logger = logging.getLogger("events")
@@ -89,10 +89,29 @@ class PaymentConfirmed(DomainEvent):
 
 
 @dataclass
+class PaymentReversed(DomainEvent):
+    payment_id: str
+    order_id: str
+    amount: float
+    gateway: str
+    transaction_id: str
+    reason: str
+
+
+@dataclass
 class PaymentFailed(DomainEvent):
     payment_id: str
     order_id: str
     reason: str
+
+
+@dataclass
+class InventoryPurchaseConfirmed(DomainEvent):
+    purchase_id: str
+    supplier_id: str | None
+    total_amount: float
+    invoice_number: str | None
+    expected_date: date | None
 
 
 # ── Delivery events ───────────────────────────────────────────────────────────

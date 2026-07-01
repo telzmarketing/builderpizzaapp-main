@@ -6,6 +6,7 @@ import { applySalaoSiteOverrides, type SalaoRenderPageKey } from "@/lib/salaoSit
 const SALAO_SITE_URL = "/salao-site/index.html";
 
 function resolveSalaoPageKey(pathname: string): SalaoRenderPageKey {
+  if (pathname.startsWith("/menu") || pathname.startsWith("/cardapio")) return "menu";
   if (pathname.startsWith("/blog")) return "blog";
   if (pathname.startsWith("/galeria")) return "galeria";
   if (pathname.startsWith("/pessoas")) return "pessoas";
@@ -13,6 +14,7 @@ function resolveSalaoPageKey(pathname: string): SalaoRenderPageKey {
   if (pathname.startsWith("/duvidas")) return "duvidas";
   if (pathname.startsWith("/reservas")) return "reservas";
   if (pathname.startsWith("/contato")) return "contato";
+  if (pathname.startsWith("/login-cadastro")) return "minha-conta";
   if (pathname.startsWith("/minha-conta")) return "minha-conta";
   if (pathname.startsWith("/sobre")) return "moschettieri";
   return "home";

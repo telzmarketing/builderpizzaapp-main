@@ -178,6 +178,9 @@ class ProductOut(ProductBase):
     promotion_landing_slug: Optional[str] = None
     promotion_landing_url: Optional[str] = None
     show_best_seller_badge: bool = False
+    inventory_available: bool = True
+    inventory_status: Optional[str] = None
+    inventory_unavailable_message: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

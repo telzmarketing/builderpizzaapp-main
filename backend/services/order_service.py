@@ -353,6 +353,10 @@ class OrderService:
         else:
             pricing = ProductPriceResult(standard_price=server_price, final_price=server_price)
 
+        from backend.services.inventory_service import ProductInventoryAvailabilityService
+
+        ProductInventoryAvailabilityService(self._db).validate_cart_item(item)
+
         return server_price, flavor_products, pricing, selected_size_obj, selected_crust_obj
 
     def _collect_promotion_gifts(
@@ -680,6 +684,9 @@ class OrderService:
         self._db.flush()
 
         # 5. Order items and flavor breakdown
+        from backend.services.cmv_snapshot_service import CmvOrderItemContext, OrderCmvSnapshotService
+
+        cmv_contexts: list[CmvOrderItemContext] = []
         for item, unit_price, flavor_products, pricing, size_obj, crust_obj in item_data:
             oi = OrderItem(
                 id=str(uuid.uuid4()),
@@ -708,6 +715,7 @@ class OrderService:
             )
             self._db.add(oi)
             self._db.flush()
+            cmv_contexts.append(CmvOrderItemContext(order_item=oi, cart_item=item))
             for idx, (flavor_in, product) in enumerate(zip(item.flavors, flavor_products)):
                 self._db.add(OrderItemFlavor(
                     id=str(uuid.uuid4()),
@@ -740,6 +748,8 @@ class OrderService:
                 notes=f"Brinde do cupom {coupon_code}" if coupon_code else "Brinde do cupom",
             )
             self._db.add(gift_item)
+            self._db.flush()
+            cmv_contexts.append(CmvOrderItemContext(order_item=gift_item))
 
         for gift in promotion_gifts:
             gift_item = OrderItem(
@@ -763,6 +773,12 @@ class OrderService:
                 notes=f"Brinde da promocao {gift['promotion_name']}",
             )
             self._db.add(gift_item)
+            self._db.flush()
+            cmv_contexts.append(CmvOrderItemContext(order_item=gift_item))
+
+        OrderCmvSnapshotService(self._db).create_for_order(order, cmv_contexts)
+        if order.status == OrderStatus.paid:
+            self._consume_inventory_for_effective_sale(order.id)
 
         # 6. Record coupon usage
         if resolved_coupon_id:
@@ -886,10 +902,13 @@ class OrderService:
         self._db.add(order)
         self._db.flush()
 
+        from backend.services.cmv_snapshot_service import CmvOrderItemContext, OrderCmvSnapshotService
+
         items_count = 0
+        cmv_contexts: list[CmvOrderItemContext] = []
         for item in session.items:
             items_count += int(item.quantity or 0)
-            self._db.add(OrderItem(
+            order_item = OrderItem(
                 id=str(uuid.uuid4()),
                 order_id=order.id,
                 product_id=item.product_id,
@@ -908,7 +927,10 @@ class OrderService:
                 applied_unit_price=item.unit_price,
                 original_price=item.unit_price,
                 is_gift=False,
-            ))
+            )
+            self._db.add(order_item)
+            self._db.flush()
+            cmv_contexts.append(CmvOrderItemContext(order_item=order_item))
 
         self._db.add(Payment(
             id=str(uuid.uuid4()),
@@ -926,6 +948,7 @@ class OrderService:
         session.total = total
         session.status = "pending_payment"
         session.updated_at = now
+        OrderCmvSnapshotService(self._db).create_for_order(order, cmv_contexts)
         sync_customer_order_metrics(self._db, order.customer_id)
         self._db.commit()
         self._db.refresh(order)
@@ -1000,6 +1023,7 @@ class OrderService:
             session.table.status = "cleaning"
 
         self._db.flush()
+        self._consume_inventory_for_effective_sale(order.id)
         sync_customer_order_metrics(self._db, order.customer_id)
         self._db.commit()
         self._db.refresh(order)
@@ -1053,6 +1077,10 @@ class OrderService:
                 order.preparation_time_minutes = int((order.out_for_delivery_at - order.preparation_started_at).total_seconds() / 60)
 
         self._db.flush()
+        if new_status in {"paid", "pago", "preparing"}:
+            self._consume_inventory_for_effective_sale(order.id)
+        if new_status in {"cancelled", "refunded"}:
+            self._reverse_inventory_for_cancelled_sale(order.id)
         sync_customer_order_metrics(self._db, order.customer_id)
         self._db.commit()
 
@@ -1076,6 +1104,16 @@ class OrderService:
 
         self._db.refresh(order)
         return order
+
+    def _consume_inventory_for_effective_sale(self, order_id: str) -> None:
+        from backend.services.inventory_service import InventoryService
+
+        InventoryService(self._db).consume_order_sale(order_id)
+
+    def _reverse_inventory_for_cancelled_sale(self, order_id: str) -> None:
+        from backend.services.inventory_service import InventoryService
+
+        InventoryService(self._db).reverse_order_sale(order_id)
 
     def cancel(
         self,
@@ -1137,9 +1175,24 @@ class OrderService:
         from backend.models.agente_whatsapp import AgenteWhatsAppEvent
         from backend.models.customer_event import CustomerEvent
         from backend.models.delivery import Delivery, DeliveryEarning, DeliveryEvent
+        from backend.models.inventory import InventoryStockMovement
         from backend.models.loyalty import LoyaltyBenefitUsage, LoyaltyTransaction
         from backend.models.store_notification import StoreNotificationCaptured, StoreNotificationImpression
         from backend.models.upsell import OrderUpsell, UpsellEvent
+
+        has_inventory_movements = (
+            self._db.query(InventoryStockMovement.id)
+            .filter(
+                InventoryStockMovement.source_type.in_(["order_sale", "order_sale_reversal"]),
+                InventoryStockMovement.source_id == order_id,
+            )
+            .first()
+        )
+        if has_inventory_movements:
+            raise DomainError(
+                "Pedido possui movimentacao de estoque e nao pode ser excluido fisicamente. Cancele ou estorne pelo fluxo operacional.",
+                code="OrderHasInventoryMovements",
+            )
 
         delivery = self._db.query(Delivery).filter(Delivery.order_id == order_id).first()
         if delivery:

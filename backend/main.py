@@ -47,6 +47,11 @@ from backend.routes import agente_whatsapp as agente_whatsapp_routes
 from backend.routes import whatsapp_gateway as whatsapp_gateway_routes
 from backend.routes import salao as salao_routes
 from backend.routes import salao_page as salao_page_routes
+from backend.routes import gestao as gestao_routes
+from backend.routes import inventory as inventory_routes
+from backend.routes import cmv as cmv_routes
+from backend.routes import finance as finance_routes
+from backend.routes import fiscal as fiscal_routes
 
 settings = get_settings()
 
@@ -75,7 +80,7 @@ async def lifespan(app: FastAPI):
     from backend.core.events import (
         bus,
         OrderCreated, OrderStatusChanged, OrderCancelled,
-        PaymentConfirmed, PaymentFailed, DeliveryAssigned, DeliveryCompleted,
+        PaymentConfirmed, PaymentFailed, PaymentReversed, InventoryPurchaseConfirmed, DeliveryAssigned, DeliveryCompleted,
         erp_order_created_handler, erp_order_status_handler,
         erp_payment_confirmed_handler, erp_delivery_completed_handler,
         push_notification_handler,
@@ -89,6 +94,52 @@ async def lifespan(app: FastAPI):
     bus.subscribe(DeliveryAssigned, push_notification_handler)
     bus.subscribe(DeliveryCompleted, erp_delivery_completed_handler)
     bus.subscribe(DeliveryCompleted, push_notification_handler)
+
+    def _finance_payment_confirmed_handler(event: PaymentConfirmed):
+        try:
+            with SessionLocal() as db:
+                from backend.services.finance_service import FinanceService
+
+                FinanceService(db).sync_payment_confirmed(
+                    payment_id=event.payment_id,
+                    order_id=event.order_id,
+                    amount=event.amount,
+                    gateway=event.gateway,
+                    transaction_id=event.transaction_id,
+                )
+        except Exception:
+            pass
+
+    bus.subscribe(PaymentConfirmed, _finance_payment_confirmed_handler)
+
+    def _finance_payment_reversed_handler(event: PaymentReversed):
+        try:
+            with SessionLocal() as db:
+                from backend.services.finance_service import FinanceService
+
+                FinanceService(db).sync_payment_reversed(
+                    payment_id=event.payment_id,
+                    order_id=event.order_id,
+                    amount=event.amount,
+                    gateway=event.gateway,
+                    transaction_id=event.transaction_id,
+                    reason=event.reason,
+                )
+        except Exception:
+            pass
+
+    bus.subscribe(PaymentReversed, _finance_payment_reversed_handler)
+
+    def _finance_purchase_confirmed_handler(event: InventoryPurchaseConfirmed):
+        try:
+            with SessionLocal() as db:
+                from backend.services.finance_service import FinanceService
+
+                FinanceService(db).sync_purchase_confirmed(purchase_id=event.purchase_id)
+        except Exception:
+            pass
+
+    bus.subscribe(InventoryPurchaseConfirmed, _finance_purchase_confirmed_handler)
 
     # AGENTE WHATSAPP Phase 6: queue order status messages without sending externally.
     def _agente_whatsapp_status_handler(event):
@@ -1181,6 +1232,11 @@ app.include_router(agente_whatsapp_routes.router)
 app.include_router(whatsapp_gateway_routes.router)
 app.include_router(salao_routes.router)
 app.include_router(salao_page_routes.router)
+app.include_router(gestao_routes.router)
+app.include_router(inventory_routes.router)
+app.include_router(cmv_routes.router)
+app.include_router(finance_routes.router)
+app.include_router(fiscal_routes.router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")
@@ -1227,6 +1283,11 @@ app.include_router(agente_whatsapp_routes.router, prefix="/api")
 app.include_router(whatsapp_gateway_routes.router, prefix="/api")
 app.include_router(salao_routes.router, prefix="/api")
 app.include_router(salao_page_routes.router, prefix="/api")
+app.include_router(gestao_routes.router, prefix="/api")
+app.include_router(inventory_routes.router, prefix="/api")
+app.include_router(cmv_routes.router, prefix="/api")
+app.include_router(finance_routes.router, prefix="/api")
+app.include_router(fiscal_routes.router, prefix="/api")
 app.include_router(upload_optimized_routes.router)
 app.include_router(upload_optimized_routes.router, prefix="/api")
 
