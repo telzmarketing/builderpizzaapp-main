@@ -82,7 +82,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     ],
   },
   {
-    label: "Gestao",
+    label: "Gestão",
     children: [
       { path: "/painel/gestao/estoque", icon: Package, label: "Estoque", permissions: ["inventory"] },
       { path: "/painel/gestao/cmv", icon: BarChart3, label: "CMV", permissions: ["cmv"] },
@@ -116,7 +116,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
       { path: "/painel/marketing/workflow", icon: CheckSquare, label: "Workflow de Aprovacao", permissions: ["marketing"] },
       { path: "/painel/marketing/cupons", icon: Tag, label: "Cupons de Desconto", aliases: ["/painel/cupons"], permissions: ["cupons"] },
       { path: "/painel/marketing/notificacoes", icon: Bell, label: "Notificacoes de Compradores", permissions: ["marketing"] },
-      { path: "/painel/marketing/upsell", icon: ShoppingCart, label: "Gestao de Upsell", permissions: ["marketing"] },
+      { path: "/painel/marketing/upsell", icon: ShoppingCart, label: "Gestão de Upsell", permissions: ["marketing"] },
       { path: "/painel/chatbot", icon: MessageCircle, label: "Chatbot", permissions: ["whatsapp", "marketing"] },
       { path: "/painel/campanhas", icon: Sparkles, label: "Banner Delivery", permissions: ["promocoes", "campanhas"] },
       { path: "/painel/fidelidade", icon: Trophy, label: "Fidelidade", permissions: ["clientes", "promocoes"] },

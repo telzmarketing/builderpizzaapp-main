@@ -104,7 +104,7 @@ export default function AdminGestao({
       })
       .catch((err) => {
         if (!mounted) return;
-        setError(err instanceof Error ? err.message : "Nao foi possivel carregar Gestao.");
+        setError(err instanceof Error ? err.message : "Não foi possivel carregar Gestão.");
       })
       .finally(() => {
         if (mounted) setLoading(false);
@@ -134,7 +134,7 @@ export default function AdminGestao({
       setModules((prev) => prev.map((item) => item.module_key === saved.module_key ? saved : item));
       setMessage("Configuracao salva. Nenhuma automacao operacional foi ativada nesta fase.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Nao foi possivel salvar Gestao.");
+      setError(err instanceof Error ? err.message : "Não foi possivel salvar Gestão.");
     } finally {
       setSaving(false);
     }
@@ -157,7 +157,7 @@ export default function AdminGestao({
     <AdminPageShell>
       <AdminPageHeader
         icon={<ShieldCheck size={20} />}
-        title="Gestao"
+        title="Gestão"
         description="Base dos modulos ERP sem impacto operacional nos pedidos atuais"
         actions={showSettings ? (
           <button
@@ -175,7 +175,7 @@ export default function AdminGestao({
       <AdminPageContent>
         {loading && (
           <div className="flex min-h-[18rem] items-center justify-center rounded-lg border border-surface-03 bg-surface-02 text-stone">
-            <Loader2 size={18} className="mr-2 animate-spin" /> Carregando Gestao...
+            <Loader2 size={18} className="mr-2 animate-spin" /> Carregando Gestão...
           </div>
         )}
 

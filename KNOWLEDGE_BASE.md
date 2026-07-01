@@ -37,7 +37,7 @@
 15. [Atualizacao 2026-04-24 - Estado Atual Consolidado](#15-atualizacao-2026-04-24---estado-atual-consolidado)
 16. [Atualizacao 2026-05-03 - Estado Atual do Admin SaaS](#16-atualizacao-2026-05-03---estado-atual-do-admin-saas)
 17. [Atualizacao 2026-05-13 - Estado Atual Completo](#17-atualizacao-2026-05-13---estado-atual-completo)
-18. [Atualizacao 2026-07-01 - Gestao ERP Concluida](#18-atualizacao-2026-07-01---gestao-erp-concluida)
+18. [Atualizacao 2026-07-01 - Gestão ERP Concluida](#18-atualizacao-2026-07-01---gestao-erp-concluida)
 
 ---
 
@@ -2291,9 +2291,9 @@ Configuracoes:
 
 ---
 
-## 18. Atualizacao 2026-07-01 - Gestao ERP Concluida
+## 18. Atualizacao 2026-07-01 - Gestão ERP Concluida
 
-Status: trilha Gestao ERP executada ate a Fase 10.
+Status: trilha Gestão ERP executada ate a Fase 10.
 
 Documento operacional principal:
 
@@ -2319,6 +2319,20 @@ Backend:
 - `backend/models/gestao.py`
 
 Os modulos Estoque, CMV, Financeiro e Fiscal possuem configuracao persistida em `gestao_module_settings`.
+
+Regra de UX atual:
+
+- A categoria deve aparecer como `Gestão` na navegacao e no titulo de pagina.
+- Os submodulos Estoque, CMV, Financeiro e Fiscal ficam na sidebar da categoria Gestão.
+- Dentro de cada submodulo, as abas devem representar secoes internas do modulo selecionado, nunca repetir `Estoque / CMV / Financeiro / Fiscal`.
+- `AdminGestao.tsx` e o wrapper comum para configuracao/habilitacao do modulo, mas as abas locais sao definidas por cada pagina.
+
+Abas internas atuais:
+
+- Estoque: `Configuracoes`, `Insumos`, `Base`, `Fornecedores`, `Compras`, `Entradas`.
+- CMV: `Configuracoes`, `Indicadores`, `Produtos e fichas`.
+- Financeiro: `Configuracoes`, `Resumo e DRE`, `Cadastros`, `Lancamentos`.
+- Fiscal: `Configuracoes`, `Resumo`, `Empresa`, `Certificado e serie`, `Perfis tributarios`, `Documentos`.
 
 ### 18.2 Estoque
 
@@ -2405,3 +2419,31 @@ Validacoes backend que devem ocorrer em ambiente com Python:
 - `alembic -c backend/alembic.ini upgrade head`
 
 Ativacao em producao deve seguir a ordem documentada em `docs/gestao-operacao-fase-10.md`.
+
+### 18.7 Deploy VPS validado em 2026-07-01
+
+Commits relevantes:
+
+- `7a3f6b0 feat(gestao): concluir modulos ERP`
+- `01d9202 fix(gestao): ajustar abas internas dos modulos`
+
+Fluxo executado na VPS:
+
+- `git pull origin main`
+- `pnpm install --frozen-lockfile`
+- `pnpm run build`
+- `python -m alembic -c backend/alembic.ini upgrade 20260630_gestao_fiscal_sefaz_base`
+- `sudo systemctl restart moschettieri-api moschettieri-web`
+- `curl -i http://127.0.0.1:8000/health`
+
+Resultado validado:
+
+- Build passou.
+- Alembic ficou em `20260630_gestao_fiscal_sefaz_base (head)`.
+- `moschettieri-api` ficou `active (running)`.
+- `moschettieri-web` ficou `active (running)`.
+- `/health` respondeu `200 OK` com `{"success":true,"data":{"status":"ok","version":"1.0.0"}}`.
+
+Observacao operacional:
+
+- Ajustes apenas de frontend, como abas internas e ortografia de `Gestão`, nao exigem Alembic nem restart da API. Para esses casos, usar `git pull origin main`, `pnpm run build` e `sudo systemctl restart moschettieri-web`.
