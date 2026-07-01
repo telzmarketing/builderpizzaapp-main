@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { CheckCircle2, Database, Layers3, Loader2, Package, Plus, RefreshCw, Settings, ShoppingCart, Trash2, Truck } from "lucide-react";
+import { AdminPageTabs, type AdminPageTab } from "@/components/admin/AdminPageChrome";
 import AdminGestao from "./AdminGestao";
 import {
   inventoryApi,
@@ -14,14 +15,15 @@ import {
   type InventoryUnit,
 } from "@/lib/api";
 
-type Section = "items" | "base" | "suppliers" | "purchases" | "entries";
+type Section = "settings" | "items" | "base" | "suppliers" | "purchases" | "entries";
 
-const sections: Array<{ id: Section; label: string }> = [
-  { id: "items", label: "Insumos" },
-  { id: "base", label: "Base" },
-  { id: "suppliers", label: "Fornecedores" },
-  { id: "purchases", label: "Compras" },
-  { id: "entries", label: "Entradas" },
+const sections: AdminPageTab<Section>[] = [
+  { id: "settings", label: "Configuracoes", icon: Settings },
+  { id: "items", label: "Insumos", icon: Package },
+  { id: "base", label: "Base", icon: Layers3 },
+  { id: "suppliers", label: "Fornecedores", icon: Truck },
+  { id: "purchases", label: "Compras", icon: ShoppingCart },
+  { id: "entries", label: "Entradas", icon: Database },
 ];
 
 const emptyOverview: InventoryOverview = {
@@ -45,15 +47,20 @@ function currency(value: number) {
 }
 
 export default function GestaoInventory() {
+  const [section, setSection] = useState<Section>("settings");
+
   return (
-    <AdminGestao moduleKey="inventory">
-      <InventoryBase />
+    <AdminGestao
+      moduleKey="inventory"
+      showSettings={section === "settings"}
+      moduleTabs={<AdminPageTabs<Section> tabs={sections} active={section} onChange={setSection} />}
+    >
+      {section !== "settings" && <InventoryBase section={section} />}
     </AdminGestao>
   );
 }
 
-function InventoryBase() {
-  const [section, setSection] = useState<Section>("items");
+function InventoryBase({ section }: { section: Exclude<Section, "settings"> }) {
   const [data, setData] = useState<InventoryOverview>(emptyOverview);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -100,21 +107,6 @@ function InventoryBase() {
         <button type="button" onClick={load} className={ghostButtonClass}>
           <RefreshCw size={15} /> Atualizar
         </button>
-      </div>
-
-      <div className="flex gap-1 overflow-x-auto rounded-lg border border-surface-03 bg-surface-01 p-1">
-        {sections.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setSection(item.id)}
-            className={`whitespace-nowrap rounded-md px-3 py-2 text-sm font-bold transition ${
-              section === item.id ? "bg-gold text-black" : "text-stone hover:bg-surface-03 hover:text-cream"
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
       </div>
 
       {loading && (

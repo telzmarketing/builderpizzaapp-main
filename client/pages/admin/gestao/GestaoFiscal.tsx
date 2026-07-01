@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, FileCheck2, Loader2, Plus, RefreshCw, Send, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Building2, FileCheck2, FileText, KeyRound, LayoutDashboard, Loader2, Plus, RefreshCw, Send, Settings, ShieldCheck, Tags } from "lucide-react";
+import { AdminPageTabs, type AdminPageTab } from "@/components/admin/AdminPageChrome";
 import AdminGestao from "./AdminGestao";
 import {
   fiscalApi,
@@ -11,6 +12,17 @@ import {
   type FiscalProductProfileInput,
   type FiscalSeriesInput,
 } from "@/lib/api";
+
+type FiscalSection = "settings" | "overview" | "company" | "certificate" | "profiles" | "documents";
+
+const sections: AdminPageTab<FiscalSection>[] = [
+  { id: "settings", label: "Configuracoes", icon: Settings },
+  { id: "overview", label: "Resumo", icon: LayoutDashboard },
+  { id: "company", label: "Empresa", icon: Building2 },
+  { id: "certificate", label: "Certificado e serie", icon: KeyRound },
+  { id: "profiles", label: "Perfis tributarios", icon: Tags },
+  { id: "documents", label: "Documentos", icon: FileText },
+];
 
 const panelClass = "rounded-lg border border-surface-03 bg-surface-02 p-5";
 const inputClass = "w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream outline-none transition focus:border-gold";
@@ -83,14 +95,20 @@ const emptyProfile: FiscalProductProfileInput = {
 };
 
 export default function GestaoFiscal() {
+  const [section, setSection] = useState<FiscalSection>("settings");
+
   return (
-    <AdminGestao moduleKey="fiscal">
-      <FiscalPanel />
+    <AdminGestao
+      moduleKey="fiscal"
+      showSettings={section === "settings"}
+      moduleTabs={<AdminPageTabs<FiscalSection> tabs={sections} active={section} onChange={setSection} />}
+    >
+      {section !== "settings" && <FiscalPanel section={section} />}
     </AdminGestao>
   );
 }
 
-function FiscalPanel() {
+function FiscalPanel({ section }: { section: Exclude<FiscalSection, "settings"> }) {
   const [data, setData] = useState<FiscalOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState("");
@@ -164,22 +182,26 @@ function FiscalPanel() {
 
       {!loading && data && (
         <>
-          <div className="grid gap-4 md:grid-cols-4">
-            <Metric title="Setup" value={data.ready_for_homologation ? "Homologacao pronta" : "Pendente"} tone={data.ready_for_homologation ? "success" : "warn"} />
-            <Metric title="Empresa" value={data.company?.document || "Nao cadastrada"} />
-            <Metric title="Certificado" value={data.certificate?.valid ? "Valido" : "Pendente"} tone={data.certificate?.valid ? "success" : "warn"} />
-            <Metric title="Documentos" value={String(data.documents.length)} />
-          </div>
+          {section === "overview" && (
+            <>
+              <div className="grid gap-4 md:grid-cols-4">
+                <Metric title="Setup" value={data.ready_for_homologation ? "Homologacao pronta" : "Pendente"} tone={data.ready_for_homologation ? "success" : "warn"} />
+                <Metric title="Empresa" value={data.company?.document || "Nao cadastrada"} />
+                <Metric title="Certificado" value={data.certificate?.valid ? "Valido" : "Pendente"} tone={data.certificate?.valid ? "success" : "warn"} />
+                <Metric title="Documentos" value={String(data.documents.length)} />
+              </div>
 
-          {data.missing_setup.length > 0 && (
-            <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-4 text-sm text-amber-200">
-              <div className="flex items-center gap-2 font-black"><AlertTriangle size={16} /> Pendencias fiscais</div>
-              <p className="mt-1">{data.missing_setup.join(", ")}</p>
-            </div>
+              {data.missing_setup.length > 0 && (
+                <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-4 text-sm text-amber-200">
+                  <div className="flex items-center gap-2 font-black"><AlertTriangle size={16} /> Pendencias fiscais</div>
+                  <p className="mt-1">{data.missing_setup.join(", ")}</p>
+                </div>
+              )}
+            </>
           )}
 
           <div className="grid gap-5 xl:grid-cols-3">
-            <div className={panelClass}>
+            {section === "company" && <div className={panelClass}>
               <h4 className="mb-4 text-sm font-black uppercase tracking-wide text-parchment">Empresa fiscal</h4>
               <div className="space-y-3">
                 <input className={inputClass} placeholder="Razao social" value={companyDraft.legal_name} onChange={(e) => setCompanyDraft({ ...companyDraft, legal_name: e.target.value })} />
@@ -204,9 +226,9 @@ function FiscalPanel() {
                   Salvar empresa
                 </button>
               </div>
-            </div>
+            </div>}
 
-            <div className={panelClass}>
+            {section === "certificate" && <div className={panelClass}>
               <h4 className="mb-4 text-sm font-black uppercase tracking-wide text-parchment">Certificado e serie</h4>
               <div className="space-y-3">
                 <select className={inputClass} value={certificateDraft.certificate_type} onChange={(e) => setCertificateDraft({ ...certificateDraft, certificate_type: e.target.value as "a1" | "a3" })}>
@@ -244,9 +266,9 @@ function FiscalPanel() {
                   <Plus size={15} /> Criar serie
                 </button>
               </div>
-            </div>
+            </div>}
 
-            <div className={panelClass}>
+            {section === "profiles" && <div className={panelClass}>
               <h4 className="mb-4 text-sm font-black uppercase tracking-wide text-parchment">Perfil tributario</h4>
               <div className="space-y-3">
                 <input className={inputClass} placeholder="ID do produto" value={profileDraft.product_id} onChange={(e) => setProfileDraft({ ...profileDraft, product_id: e.target.value })} />
@@ -271,9 +293,10 @@ function FiscalPanel() {
                 </button>
               </div>
             </div>
+            }
           </div>
 
-          <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
+          {section === "documents" && <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
             <div className={panelClass}>
               <h4 className="mb-4 text-sm font-black uppercase tracking-wide text-parchment">Documento por pedido</h4>
               <div className="space-y-3">
@@ -305,7 +328,7 @@ function FiscalPanel() {
                 {data.documents.length === 0 && <EmptyText text="Nenhum documento fiscal preparado." />}
               </div>
             </div>
-          </div>
+          </div>}
         </>
       )}
     </section>

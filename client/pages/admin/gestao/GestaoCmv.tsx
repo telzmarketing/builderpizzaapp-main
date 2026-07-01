@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, CheckCircle2, ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, BarChart3, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, Gauge, Loader2, RefreshCw, Settings } from "lucide-react";
+import { AdminPageTabs, type AdminPageTab } from "@/components/admin/AdminPageChrome";
 import AdminGestao from "./AdminGestao";
 import { cmvApi, type CmvOverview, type CmvProductCost } from "@/lib/api";
+
+type CmvSection = "settings" | "overview" | "products";
+
+const sections: AdminPageTab<CmvSection>[] = [
+  { id: "settings", label: "Configuracoes", icon: Settings },
+  { id: "overview", label: "Indicadores", icon: Gauge },
+  { id: "products", label: "Produtos e fichas", icon: ClipboardList },
+];
 
 const panelClass = "rounded-lg border border-surface-03 bg-surface-02 p-5";
 const mutedPanelClass = "rounded-lg border border-surface-03 bg-surface-01 p-4";
@@ -30,14 +39,20 @@ function dreComplete(status: string) {
 }
 
 export default function GestaoCmv() {
+  const [section, setSection] = useState<CmvSection>("settings");
+
   return (
-    <AdminGestao moduleKey="cmv">
-      <CmvAnalytics />
+    <AdminGestao
+      moduleKey="cmv"
+      showSettings={section === "settings"}
+      moduleTabs={<AdminPageTabs<CmvSection> tabs={sections} active={section} onChange={setSection} />}
+    >
+      {section !== "settings" && <CmvAnalytics section={section} />}
     </AdminGestao>
   );
 }
 
-function CmvAnalytics() {
+function CmvAnalytics({ section }: { section: Exclude<CmvSection, "settings"> }) {
   const [data, setData] = useState<CmvOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -100,20 +115,24 @@ function CmvAnalytics() {
 
       {!loading && data && (
         <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Metric title="DRE" value={data.dre_label} tone={dreComplete(data.dre_status) ? "success" : "warn"} />
-            <Metric title="CMV vendas" value={percent(data.operational_cmv_percent)} />
-            <Metric title="Vendas com snapshot" value={String(data.operational_snapshot_count)} tone={data.operational_snapshot_count ? "success" : "warn"} />
-            <Metric title="Pendencias" value={String(data.operational_pending_count + data.products_missing_recipe + data.products_missing_cost)} tone={data.operational_pending_count || data.products_missing_recipe || data.products_missing_cost ? "warn" : "success"} />
-          </div>
+          {section === "overview" && (
+            <>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <Metric title="DRE" value={data.dre_label} tone={dreComplete(data.dre_status) ? "success" : "warn"} />
+                <Metric title="CMV vendas" value={percent(data.operational_cmv_percent)} />
+                <Metric title="Vendas com snapshot" value={String(data.operational_snapshot_count)} tone={data.operational_snapshot_count ? "success" : "warn"} />
+                <Metric title="Pendencias" value={String(data.operational_pending_count + data.products_missing_recipe + data.products_missing_cost)} tone={data.operational_pending_count || data.products_missing_recipe || data.products_missing_cost ? "warn" : "success"} />
+              </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
-            <Metric title="Receita snapshot" value={currency(data.operational_sale_total)} />
-            <Metric title="Custo snapshot" value={currency(data.operational_cost_total)} />
-            <Metric title="CMV medio catalogo" value={percent(data.average_cmv_percent)} />
-          </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                <Metric title="Receita snapshot" value={currency(data.operational_sale_total)} />
+                <Metric title="Custo snapshot" value={currency(data.operational_cost_total)} />
+                <Metric title="CMV medio catalogo" value={percent(data.average_cmv_percent)} />
+              </div>
+            </>
+          )}
 
-          <div className={panelClass}>
+          {section === "products" && <div className={panelClass}>
             <div className="mb-4 flex items-center gap-2">
               <BarChart3 size={18} className="text-gold" />
               <h3 className="text-sm font-black uppercase tracking-wide text-parchment">Produtos</h3>
@@ -182,7 +201,7 @@ function CmvAnalytics() {
                 </div>
               )}
             </div>
-          </div>
+          </div>}
         </>
       )}
     </section>

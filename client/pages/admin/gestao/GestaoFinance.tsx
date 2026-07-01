@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardList, LayoutDashboard, Loader2, Plus, RefreshCw, Settings, Tags, Trash2 } from "lucide-react";
+import { AdminPageTabs, type AdminPageTab } from "@/components/admin/AdminPageChrome";
 import AdminGestao from "./AdminGestao";
 import {
   financeApi,
@@ -15,6 +16,15 @@ import {
   type FinanceTransaction,
   type FinanceTransactionInput,
 } from "@/lib/api";
+
+type FinanceSection = "settings" | "summary" | "registries" | "transactions";
+
+const sections: AdminPageTab<FinanceSection>[] = [
+  { id: "settings", label: "Configuracoes", icon: Settings },
+  { id: "summary", label: "Resumo e DRE", icon: LayoutDashboard },
+  { id: "registries", label: "Cadastros", icon: Tags },
+  { id: "transactions", label: "Lancamentos", icon: ClipboardList },
+];
 
 const panelClass = "rounded-lg border border-surface-03 bg-surface-02 p-5";
 const inputClass = "w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream outline-none transition focus:border-gold";
@@ -92,14 +102,20 @@ const emptyTransaction: FinanceTransactionInput = {
 };
 
 export default function GestaoFinance() {
+  const [section, setSection] = useState<FinanceSection>("settings");
+
   return (
-    <AdminGestao moduleKey="finance">
-      <FinancePanel />
+    <AdminGestao
+      moduleKey="finance"
+      showSettings={section === "settings"}
+      moduleTabs={<AdminPageTabs<FinanceSection> tabs={sections} active={section} onChange={setSection} />}
+    >
+      {section !== "settings" && <FinancePanel section={section} />}
     </AdminGestao>
   );
 }
 
-function FinancePanel() {
+function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"> }) {
   const [data, setData] = useState<FinanceOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState("");
@@ -324,28 +340,32 @@ function FinancePanel() {
 
       {!loading && data && (
         <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Metric title="Saldo caixa" value={currency(data.summary.balance)} tone={data.summary.balance >= 0 ? "success" : "warn"} />
-            <Metric title="Receitas pagas" value={currency(data.summary.income_paid)} tone="success" />
-            <Metric title="Despesas pagas" value={currency(data.summary.expense_paid)} tone="warn" />
-            <Metric title="Pendencias" value={`${data.summary.pending_count} abertas`} tone={data.summary.overdue_count ? "warn" : "default"} />
-          </div>
+          {section === "summary" && (
+            <>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <Metric title="Saldo caixa" value={currency(data.summary.balance)} tone={data.summary.balance >= 0 ? "success" : "warn"} />
+                <Metric title="Receitas pagas" value={currency(data.summary.income_paid)} tone="success" />
+                <Metric title="Despesas pagas" value={currency(data.summary.expense_paid)} tone="warn" />
+                <Metric title="Pendencias" value={`${data.summary.pending_count} abertas`} tone={data.summary.overdue_count ? "warn" : "default"} />
+              </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Metric title="Resultado caixa" value={currency(data.management.cash_realized_result)} tone={data.management.cash_realized_result >= 0 ? "success" : "warn"} />
-            <Metric title="Resultado competencia" value={currency(data.management.accrual_result)} tone={data.management.accrual_result >= 0 ? "success" : "warn"} />
-            <Metric title="DRE" value={data.management.dre_label} tone={data.management.dre_status.includes("complete") ? "success" : "warn"} />
-            <Metric title="Receita competencia" value={currency(data.management.accrual_income)} tone="success" />
-          </div>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <Metric title="Resultado caixa" value={currency(data.management.cash_realized_result)} tone={data.management.cash_realized_result >= 0 ? "success" : "warn"} />
+                <Metric title="Resultado competencia" value={currency(data.management.accrual_result)} tone={data.management.accrual_result >= 0 ? "success" : "warn"} />
+                <Metric title="DRE" value={data.management.dre_label} tone={data.management.dre_status.includes("complete") ? "success" : "warn"} />
+                <Metric title="Receita competencia" value={currency(data.management.accrual_income)} tone="success" />
+              </div>
 
-          <div className="grid gap-5 xl:grid-cols-4">
-            <DimensionList title="DRE por grupo" rows={data.management.dre_lines.map((item) => ({ label: item.group, entry_type: item.entry_type, amount: item.amount, count: 1 }))} />
-            <DimensionList title="Por canal" rows={data.management.by_channel} />
-            <DimensionList title="Por categoria" rows={data.management.by_category} />
-            <DimensionList title="Por centro de custo" rows={data.management.by_cost_center} />
-          </div>
+              <div className="grid gap-5 xl:grid-cols-4">
+                <DimensionList title="DRE por grupo" rows={data.management.dre_lines.map((item) => ({ label: item.group, entry_type: item.entry_type, amount: item.amount, count: 1 }))} />
+                <DimensionList title="Por canal" rows={data.management.by_channel} />
+                <DimensionList title="Por categoria" rows={data.management.by_category} />
+                <DimensionList title="Por centro de custo" rows={data.management.by_cost_center} />
+              </div>
+            </>
+          )}
 
-          <div className="grid gap-5 xl:grid-cols-4">
+          {section === "registries" && <div className="grid gap-5 xl:grid-cols-4">
             <div className={panelClass}>
               <h4 className="mb-4 text-sm font-black uppercase tracking-wide text-parchment">Nova conta</h4>
               <div className="space-y-3">
@@ -457,9 +477,9 @@ function FinancePanel() {
                 </button>
               </div>
             </div>
-          </div>
+          </div>}
 
-          <div className="grid gap-5 xl:grid-cols-[.9fr_.9fr_1.4fr]">
+          {section === "transactions" && <div className="grid gap-5 xl:grid-cols-[.9fr_.9fr_1.4fr]">
             <div className={panelClass}>
               <h4 className="mb-4 text-sm font-black uppercase tracking-wide text-parchment">Contas</h4>
               <div className="space-y-2">
@@ -540,7 +560,7 @@ function FinancePanel() {
                 {data.transactions.length === 0 && <EmptyText text="Nenhum lancamento cadastrado." />}
               </div>
             </div>
-          </div>
+          </div>}
         </>
       )}
     </section>
