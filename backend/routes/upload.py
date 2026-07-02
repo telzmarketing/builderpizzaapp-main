@@ -30,10 +30,18 @@ _VIDEO_TYPES = {
     "video/webm",
     "video/quicktime",
 }
-_ALLOWED_TYPES = _IMAGE_TYPES | _VIDEO_TYPES
+_AUDIO_TYPES = {
+    "audio/ogg",
+    "audio/opus",
+    "audio/mpeg",
+    "audio/mp4",
+    "audio/webm",
+}
+_ALLOWED_TYPES = _IMAGE_TYPES | _VIDEO_TYPES | _AUDIO_TYPES
 
 _MAX_IMAGE_BYTES = 5 * 1024 * 1024   # 5 MB
 _MAX_VIDEO_BYTES = 50 * 1024 * 1024  # 50 MB
+_MAX_AUDIO_BYTES = 20 * 1024 * 1024  # 20 MB
 
 _EXT_MAP = {
     "image/jpeg":     "jpg",
@@ -43,6 +51,11 @@ _EXT_MAP = {
     "video/mp4":      "mp4",
     "video/webm":     "webm",
     "video/quicktime": "mov",
+    "audio/ogg":      "ogg",
+    "audio/opus":     "opus",
+    "audio/mpeg":     "mp3",
+    "audio/mp4":      "m4a",
+    "audio/webm":     "webm",
 }
 
 
@@ -54,15 +67,15 @@ async def upload_image(
     """
     Upload an image and save it permanently under the project-root ``uploads/`` directory.
 
-    - Accepts: jpeg, png, gif, webp, mp4, webm, mov
-    - Maximum file size: 5 MB for images, 50 MB for videos
+    - Accepts: jpeg, png, gif, webp, mp4, webm, mov, ogg, opus, mp3, m4a
+    - Maximum file size: 5 MB for images, 50 MB for videos, 20 MB for audio
     - Returns: ``{ "url": "/uploads/<uuid>.<ext>" }``
     """
     # ── Content-type validation ───────────────────────────────────────────────
     content_type = (file.content_type or "").lower()
     if content_type not in _ALLOWED_TYPES:
         return err_msg(
-            "Tipo de arquivo nao permitido. Use JPEG, PNG, GIF ou WebP para imagens, ou MP4, WebM, MOV para videos.",
+            "Tipo de arquivo nao permitido. Use JPEG, PNG, GIF ou WebP para imagens, MP4, WebM, MOV para videos, ou OGG, OPUS, MP3, M4A para audio.",
             code="InvalidFileType",
             status_code=400,
         )
@@ -70,9 +83,10 @@ async def upload_image(
     # ── Read + size validation ────────────────────────────────────────────────
     data = await file.read()
     is_video = content_type in _VIDEO_TYPES
-    max_bytes = _MAX_VIDEO_BYTES if is_video else _MAX_IMAGE_BYTES
+    is_audio = content_type in _AUDIO_TYPES
+    max_bytes = _MAX_AUDIO_BYTES if is_audio else _MAX_VIDEO_BYTES if is_video else _MAX_IMAGE_BYTES
     if len(data) > max_bytes:
-        limit_label = "50 MB" if is_video else "5 MB"
+        limit_label = "20 MB" if is_audio else "50 MB" if is_video else "5 MB"
         return err_msg(
             f"Arquivo muito grande. O tamanho máximo permitido é {limit_label}.",
             code="FileTooLarge",

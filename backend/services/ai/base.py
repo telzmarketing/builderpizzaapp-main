@@ -21,6 +21,28 @@ class AIResponse:
     error_reason: str  = ""
 
 
+@dataclass
+class AudioTranscriptionResponse:
+    text: str
+    provider: str
+    model: str
+    language: str = ""
+    latencia_ms: int = 0
+    error_reason: str = ""
+
+
+@dataclass
+class AudioSpeechResponse:
+    audio: bytes
+    provider: str
+    model: str
+    voice: str
+    response_format: str
+    mime_type: str
+    latencia_ms: int = 0
+    error_reason: str = ""
+
+
 _FALLBACK = (
     "Desculpe, estou com dificuldades técnicas no momento. "
     "Por favor, entre em contato pelo WhatsApp ou tente novamente em instantes."

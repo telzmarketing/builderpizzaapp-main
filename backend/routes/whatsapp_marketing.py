@@ -83,6 +83,42 @@ class WhatsAppMessage(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class WhatsAppCampaignDelivery(Base):
+    __tablename__ = "whatsapp_campaign_deliveries"
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String(80), nullable=False, default="default")
+    company_id = Column(String(80), nullable=False, default="default")
+    whatsapp_message_id = Column(String, ForeignKey("whatsapp_messages.id", ondelete="SET NULL"), nullable=True)
+    campaign_id = Column(String, ForeignKey("whatsapp_campaigns.id", ondelete="SET NULL"), nullable=True)
+    template_id = Column(String, ForeignKey("whatsapp_templates.id", ondelete="SET NULL"), nullable=True)
+    customer_id = Column(String, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
+    conversation_id = Column(String, ForeignKey("agente_whatsapp_sessions.id", ondelete="SET NULL"), nullable=True)
+    agente_message_id = Column(String, ForeignKey("agente_whatsapp_messages.id", ondelete="SET NULL"), nullable=True)
+    phone_normalized = Column(String(30), nullable=False)
+    recipient_name = Column(String(200), nullable=True)
+    provider = Column(String(40), nullable=False, default="official")
+    provider_message_id = Column(String(255), nullable=True)
+    message_type = Column(String(30), nullable=False, default="text")
+    message_text_snapshot = Column(Text, nullable=True)
+    media_type = Column(String(20), nullable=True)
+    media_url = Column(Text, nullable=True)
+    caption_snapshot = Column(Text, nullable=True)
+    template_name_snapshot = Column(String(200), nullable=True)
+    campaign_name_snapshot = Column(String(300), nullable=True)
+    variables_json = Column(Text, nullable=False, default="{}")
+    provider_payload_json = Column(Text, nullable=False, default="{}")
+    status = Column(String(30), nullable=False, default="pending")
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
+    replied_at = Column(DateTime(timezone=True), nullable=True)
+    failed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
 class WhatsAppCampaign(Base):
     __tablename__ = "whatsapp_campaigns"
     id = Column(String, primary_key=True)
@@ -226,11 +262,19 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _json_dump(value: dict | list | None) -> str:
+    return json.dumps(value or {}, ensure_ascii=False, default=str)
+
+
+def _normalize_phone_value(value: str | None) -> str:
+    return "".join(ch for ch in (value or "") if ch.isdigit())
+
+
 def _append_recipient(result: list[dict], seen: set[str], phone: str, *, customer_id: str | None = None, name: str | None = None) -> None:
     clean_phone = (phone or "").strip()
     if not clean_phone:
         return
-    dedupe_key = "".join(c for c in clean_phone if c.isdigit()) or clean_phone
+    dedupe_key = _normalize_phone_value(clean_phone) or clean_phone
     if dedupe_key in seen:
         return
     seen.add(dedupe_key)
@@ -343,6 +387,89 @@ def _campaign_to_dict(c: WhatsAppCampaign) -> dict:
     }
 
 
+def _campaign_name_snapshot(db: Session, campaign_id: str | None) -> str | None:
+    if not campaign_id:
+        return None
+    campaign = db.query(WhatsAppCampaign).filter(WhatsAppCampaign.id == campaign_id).first()
+    return campaign.name if campaign else None
+
+
+def _create_campaign_delivery(
+    db: Session,
+    *,
+    msg: WhatsAppMessage,
+    provider: str,
+    phone: str,
+    message_text: str,
+    caption: str | None,
+    template: WhatsAppTemplate | None,
+    variables: list[str] | None = None,
+) -> WhatsAppCampaignDelivery:
+    delivery = WhatsAppCampaignDelivery(
+        id=str(uuid.uuid4()),
+        tenant_id="default",
+        company_id="default",
+        whatsapp_message_id=msg.id,
+        campaign_id=msg.campaign_id,
+        template_id=msg.template_id,
+        customer_id=msg.customer_id,
+        phone_normalized=_normalize_phone_value(phone),
+        recipient_name=msg.recipient_name,
+        provider=provider,
+        provider_message_id=msg.wamid,
+        message_type=msg.message_type or "text",
+        message_text_snapshot=message_text,
+        media_type=msg.media_type,
+        media_url=msg.media_url,
+        caption_snapshot=caption,
+        template_name_snapshot=template.name if template else None,
+        campaign_name_snapshot=_campaign_name_snapshot(db, msg.campaign_id),
+        variables_json=_json_dump({"variables": variables or []}),
+        provider_payload_json=_json_dump({
+            "source": "whatsapp_marketing",
+            "whatsapp_message_id": msg.id,
+            "provider": provider,
+        }),
+        status=msg.status or "pending",
+        sent_at=msg.sent_at,
+        created_at=_now(),
+        updated_at=_now(),
+    )
+    db.add(delivery)
+    db.flush()
+    return delivery
+
+
+def _apply_delivery_status(
+    delivery: WhatsAppCampaignDelivery | None,
+    *,
+    status: str,
+    provider_message_id: str | None = None,
+    error: str | None = None,
+    provider_payload: dict | None = None,
+) -> None:
+    if not delivery:
+        return
+    now = _now()
+    delivery.status = status
+    if provider_message_id:
+        delivery.provider_message_id = provider_message_id
+    if status == "sent" and not delivery.sent_at:
+        delivery.sent_at = now
+    if status == "delivered" and not delivery.delivered_at:
+        delivery.delivered_at = now
+    if status == "read" and not delivery.read_at:
+        delivery.read_at = now
+    if status == "failed" and not delivery.failed_at:
+        delivery.failed_at = now
+    payload = provider_payload or {}
+    if error:
+        payload = {**payload, "error": error}
+    if payload:
+        delivery.provider_payload_json = _json_dump(payload)
+    delivery.updated_at = now
+
+
 def _contact_list_to_dict(item: WhatsAppContactList, db: Session, *, include_contacts: bool = False) -> dict:
     count = db.execute(
         text("SELECT COUNT(*) FROM whatsapp_contact_list_items WHERE list_id = :list_id"),
@@ -417,11 +544,15 @@ def _normalize_media_type(media_type: Optional[str], media_url: Optional[str]) -
     if not media_url:
         return None
     value = (media_type or "").strip().lower()
-    if value in {"image", "video"}:
+    if value in {"image", "video", "audio", "document"}:
         return value
     lower_url = media_url.lower().split("?")[0]
+    if lower_url.endswith((".ogg", ".opus", ".mp3", ".m4a", ".aac", ".wav", ".flac")):
+        return "audio"
     if lower_url.endswith((".mp4", ".mov", ".m4v", ".webm")):
         return "video"
+    if lower_url.endswith((".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt")):
+        return "document"
     return "image"
 
 
@@ -437,6 +568,18 @@ def _guess_mimetype(media_type: Optional[str], media_url: Optional[str], mimetyp
         return "video/quicktime"
     if lower_url.endswith(".webm"):
         return "video/webm"
+    if lower_url.endswith((".ogg", ".opus")):
+        return "audio/ogg"
+    if lower_url.endswith(".mp3"):
+        return "audio/mpeg"
+    if lower_url.endswith(".m4a"):
+        return "audio/mp4"
+    if lower_url.endswith(".aac"):
+        return "audio/aac"
+    if lower_url.endswith(".wav"):
+        return "audio/wav"
+    if media_type == "audio":
+        return "audio/ogg"
     if media_type == "video":
         return "video/mp4"
     return "image/jpeg"
@@ -528,14 +671,14 @@ def _send_whatsapp_api(
             "template": template,
         }
     elif media_url and normalized_media:
+        media_payload = {"link": media_url}
+        if normalized_media in {"image", "video", "document"}:
+            media_payload["caption"] = caption or body or ""
         payload = {
             "messaging_product": "whatsapp",
             "to": clean_phone,
             "type": normalized_media,
-            normalized_media: {
-                "link": media_url,
-                "caption": caption or body or "",
-            },
+            normalized_media: media_payload,
         }
     else:
         payload = {
@@ -597,6 +740,7 @@ def _sync_marketing_message_to_agent(
     db: Session,
     *,
     msg: WhatsAppMessage,
+    delivery: WhatsAppCampaignDelivery | None,
     phone: str,
     provider: str,
     body: str,
@@ -619,23 +763,28 @@ def _sync_marketing_message_to_agent(
                 "source": "whatsapp_marketing",
                 "whatsapp_message_id": msg.id,
                 "whatsapp_campaign_id": msg.campaign_id,
+                "campaign_delivery_id": delivery.id if delivery else None,
                 "template_id": msg.template_id,
                 "template_name": template.name if template else None,
                 "recipient_name": msg.recipient_name,
             },
         )
-        service.add_message(
+        agent_message = service.add_message(
             session,
             direction="outbound",
             sender_type="system",
+            provider=provider,
             message_type=message_type,
             body=body,
             media_url=media_url,
             provider_message_id=provider_message_id or f"whatsapp-marketing:{msg.id}",
+            campaign_id=msg.campaign_id,
+            campaign_delivery_id=delivery.id if delivery else None,
             provider_status="sent",
             raw_payload={
                 "source": "whatsapp_marketing",
                 "whatsapp_message_id": msg.id,
+                "campaign_delivery_id": delivery.id if delivery else None,
                 "provider": provider,
                 "phone": phone,
                 "message_type": message_type,
@@ -648,6 +797,10 @@ def _sync_marketing_message_to_agent(
                 "recipient_name": msg.recipient_name,
             },
         )
+        if delivery:
+            delivery.conversation_id = session.id
+            delivery.agente_message_id = agent_message.id
+            delivery.updated_at = _now()
     except Exception as exc:
         msg.error = f"{msg.error}; Falha ao sincronizar com Agente WhatsApp: {exc}" if msg.error else f"Falha ao sincronizar com Agente WhatsApp: {exc}"
 
@@ -875,6 +1028,18 @@ async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
                     {"status": status, "error": error_message, "wamid": wamid},
                 )
                 updated += int(result.rowcount or 0)
+                delivery = (
+                    db.query(WhatsAppCampaignDelivery)
+                    .filter(WhatsAppCampaignDelivery.provider_message_id == wamid)
+                    .first()
+                )
+                _apply_delivery_status(
+                    delivery,
+                    status=status,
+                    provider_message_id=wamid,
+                    error=error_message,
+                    provider_payload={"webhook_status": item},
+                )
 
     db.commit()
     return ok({"updated": updated})
@@ -1219,6 +1384,16 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
         )
         db.add(msg)
         db.flush()
+        delivery = _create_campaign_delivery(
+            db,
+            msg=msg,
+            provider=provider,
+            phone=phone,
+            message_text=msg_body,
+            caption=msg_caption,
+            template=template,
+            variables=recipient_variables,
+        )
 
         if provider == "baileys":
             wamid, status, error = _send_baileys_gateway(
@@ -1248,12 +1423,26 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
         msg.status = status
         msg.wamid = wamid
         msg.error = error
+        _apply_delivery_status(
+            delivery,
+            status=status,
+            provider_message_id=wamid,
+            error=error,
+            provider_payload={
+                "provider": provider,
+                "wamid": wamid,
+                "message_type": message_type,
+                "media_type": media_type,
+            },
+        )
         if status == "sent":
             msg.sent_at = _now()
+            delivery.sent_at = msg.sent_at
             sent_count += 1
             _sync_marketing_message_to_agent(
                 db,
                 msg=msg,
+                delivery=delivery,
                 phone=phone,
                 provider=provider,
                 body=msg_caption or msg_body,
@@ -1272,6 +1461,7 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
             "media_type": media_type,
             "status": status,
             "wamid": wamid,
+            "campaign_delivery_id": delivery.id,
             "error": error,
         })
         if index < len(recipients) - 1:
@@ -1297,10 +1487,12 @@ def list_messages(db: Session = Depends(get_db), _=Depends(get_current_admin)):
             wm.sent_at, wm.created_at,
             COALESCE(wm.provider, 'official') AS provider,
             COALESCE(wm.message_type, 'text') AS message_type,
-            wm.media_type, wm.media_url, wm.caption
+            wm.media_type, wm.media_url, wm.caption,
+            wcd.id AS campaign_delivery_id
         FROM whatsapp_messages wm
         LEFT JOIN customers c ON c.id = wm.customer_id
         LEFT JOIN whatsapp_templates wt ON wt.id = wm.template_id
+        LEFT JOIN whatsapp_campaign_deliveries wcd ON wcd.whatsapp_message_id = wm.id
         ORDER BY wm.created_at DESC
         LIMIT 200
     """)).fetchall()
@@ -1324,6 +1516,7 @@ def list_messages(db: Session = Depends(get_db), _=Depends(get_current_admin)):
         "media_type": r[15],
         "media_url": r[16],
         "caption": r[17],
+        "campaign_delivery_id": r[18],
     } for r in rows])
 
 

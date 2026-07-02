@@ -1955,16 +1955,35 @@ export interface ApiAgenteWhatsAppMessage {
   id: string;
   session_id: string;
   customer_id: string | null;
+  provider: string | null;
   direction: "inbound" | "outbound";
   sender_type: "customer" | "ai" | "human" | "system";
   message_type: string;
   body: string | null;
   media_url: string | null;
+  media_storage_key: string | null;
+  media_mime_type: string | null;
+  media_duration_ms: number | null;
+  media_size_bytes: number | null;
   provider_message_id: string | null;
+  quoted_provider_message_id: string | null;
+  response_to_message_id: string | null;
+  campaign_id: string | null;
+  campaign_delivery_id: string | null;
   provider_status: string | null;
+  processing_status: string | null;
+  idempotency_key: string | null;
+  transcription_status: string | null;
+  transcription_text: string | null;
+  transcription_language: string | null;
+  transcription_provider: string | null;
+  transcription_model: string | null;
+  transcription_error: string | null;
+  transcription_quality: Record<string, unknown>;
   error: string | null;
   raw_payload: Record<string, unknown>;
   created_at: string;
+  processed_at: string | null;
   delivered_at: string | null;
   read_at: string | null;
 }
@@ -1993,6 +2012,80 @@ export interface ApiAgenteWhatsAppOperationalMetrics {
   active_ai_agents: number;
   human_attendants_online: number;
   generated_at: string | null;
+}
+
+export interface ApiAgenteWhatsAppAudioMetrics {
+  period: { days: number; start_at: string; end_at: string } & Record<string, unknown>;
+  audio: {
+    inbound_messages: number;
+    outbound_messages: number;
+    audio_minutes: number;
+    missing_duration_messages: number;
+    tts_characters: number;
+  } & Record<string, unknown>;
+  stt: {
+    done: number;
+    low_confidence: number;
+    failed: number;
+    success_rate: number;
+    avg_latency_ms: number | null;
+  } & Record<string, unknown>;
+  tts: {
+    generated: number;
+    failed: number;
+    avg_latency_ms: number | null;
+  } & Record<string, unknown>;
+  jobs: Record<string, Record<string, number>>;
+  cost_estimate: {
+    currency: string;
+    stt: number;
+    tts: number;
+    total: number;
+    pricing_note: string;
+  } & Record<string, unknown>;
+  conversions: {
+    campaigns: Array<{
+      campaign_id: string;
+      messages: number;
+      sessions: number;
+      customers: number;
+      orders: number;
+      revenue: number;
+      conversion_rate: number;
+      attribution: string;
+    }>;
+    orders: number;
+    revenue: number;
+    attribution: string;
+  } & Record<string, unknown>;
+  generated_at: string | null;
+}
+
+export interface ApiAgenteWhatsAppProductionReadiness {
+  status: "ready" | "degraded" | "blocked" | string;
+  flags: Record<string, boolean>;
+  limits: Record<string, unknown>;
+  rollout: string[];
+  rollback: string[];
+  checks: Array<{
+    code: string;
+    ok: boolean;
+    message: string;
+  } & Record<string, unknown>>;
+  generated_at: string | null;
+}
+
+export interface ApiAgenteWhatsAppAudioRetentionCleanup {
+  dry_run: boolean;
+  enabled: boolean;
+  retention_days: number;
+  cutoff_at: string;
+  scanned: number;
+  eligible: number;
+  deleted_files: number;
+  cleared_messages: number;
+  skipped: number;
+  errors: Array<Record<string, string>>;
 }
 
 export interface ApiAgenteWhatsAppTool {
@@ -2080,6 +2173,29 @@ export interface ApiAgenteWhatsAppAITest {
   prompt_preview: string;
 }
 
+export interface ApiAgenteWhatsAppAudioSettings {
+  enabled: boolean;
+  response_mode: "never" | "mirror_customer_audio" | "always" | "manual_only" | string;
+  tts_model: string;
+  tts_voice: string;
+  tts_format: "mp3" | "opus" | "aac" | "flac" | "wav" | "pcm" | string;
+  max_chars: number;
+  send_as_ptt: boolean;
+  updated_at: string | null;
+}
+
+export interface ApiAgenteWhatsAppRolloutSettings {
+  mode: "all" | "pilot" | "off" | string;
+  pilot_phones: string;
+  pilot_phones_count: number;
+  hours: string;
+  daily_input_limit: number;
+  daily_reply_limit: number;
+  daily_tts_limit: number;
+  daily_usage: Record<string, number>;
+  updated_at: string | null;
+}
+
 export interface ApiAgenteWhatsAppAIRespond {
   session_id: string;
   intent: string;
@@ -2091,6 +2207,7 @@ export interface ApiAgenteWhatsAppAIRespond {
   enqueued: number;
   guardrails: ApiAgenteWhatsAppAIGuardrails;
   manager_review: Record<string, unknown>;
+  campaign_context: Record<string, unknown>;
   ai_settings: Record<string, unknown>;
 }
 
@@ -2247,6 +2364,99 @@ export interface ApiAgenteWhatsAppOutboxProcess {
   processed: number;
   sent: number;
   failed: number;
+}
+
+export interface ApiAgenteWhatsAppProcessingJob {
+  id: string;
+  message_id: string;
+  session_id: string;
+  customer_id: string | null;
+  job_type: string;
+  status: "pending" | "processing" | "done" | "failed" | "dead" | string;
+  attempts: number;
+  max_attempts: number;
+  idempotency_key: string;
+  payload: Record<string, unknown>;
+  error: string | null;
+  next_attempt_at: string | null;
+  locked_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiAgenteWhatsAppProcessingSummary {
+  pending: number;
+  processing: number;
+  done: number;
+  failed: number;
+  dead: number;
+  queued_messages: number;
+}
+
+export interface ApiAgenteWhatsAppProcessingEnqueue {
+  eligible: number;
+  enqueued: number;
+  skipped: number;
+}
+
+export interface ApiAgenteWhatsAppCampaignContext {
+  status: string;
+  source: string;
+  message_id: string | null;
+  session_id: string | null;
+  campaign_delivery_id: string | null;
+  campaign_id: string | null;
+  selected: Record<string, unknown> | null;
+  candidates: Array<Record<string, unknown>>;
+  ambiguous: boolean;
+  instructions: string[];
+  resolved_at: string | null;
+}
+
+export interface ApiAgenteWhatsAppAudioProcess {
+  processed: number;
+  done: number;
+  failed: number;
+}
+
+export interface ApiAgenteWhatsAppAgentResponseProcess {
+  processed: number;
+  responded: number;
+  skipped: number;
+  failed: number;
+}
+
+export interface ApiAgenteWhatsAppTTSProcess {
+  processed: number;
+  generated: number;
+  skipped: number;
+  failed: number;
+}
+
+export interface ApiAgenteWhatsAppTTSState {
+  status: string;
+  message: Record<string, unknown> | null;
+}
+
+export interface ApiAgenteWhatsAppAudioState {
+  message_id: string;
+  message_type: string;
+  media_url: string | null;
+  media_storage_key: string | null;
+  media_mime_type: string | null;
+  media_duration_ms: number | null;
+  media_size_bytes: number | null;
+  transcription_status: string;
+  transcription_text: string | null;
+  transcription_language: string | null;
+  transcription_provider: string | null;
+  transcription_model: string | null;
+  transcription_error: string | null;
+  transcription_quality: Record<string, unknown>;
+  processing_status: string;
+  processed_at: string | null;
 }
 
 export interface ApiAgenteWhatsAppOutboxMetrics extends ApiAgenteWhatsAppOutboxSummary {
@@ -3959,6 +4169,14 @@ export const whatsappGatewayApi = {
 export const agenteWhatsAppApi = {
   dashboard: () => get<ApiAgenteWhatsAppDashboard>("/agente-whatsapp/dashboard"),
   operationalMetrics: () => get<ApiAgenteWhatsAppOperationalMetrics>("/agente-whatsapp/operational-metrics"),
+  audioMetrics: (days = 7) => get<ApiAgenteWhatsAppAudioMetrics>(`/agente-whatsapp/audio/metrics?days=${days}`),
+  audioProductionReadiness: () => get<ApiAgenteWhatsAppProductionReadiness>("/agente-whatsapp/audio/production-readiness"),
+  cleanupAudioRetention: (params: { dry_run?: boolean; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.dry_run !== undefined) qs.set("dry_run", String(params.dry_run));
+    if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    return post<ApiAgenteWhatsAppAudioRetentionCleanup>(`/agente-whatsapp/audio/retention/cleanup${qs.toString() ? `?${qs}` : ""}`, {});
+  },
   observability: () => get<ApiAgenteWhatsAppObservability>("/agente-whatsapp/observability"),
   listAutomationTemplates: () => get<ApiAgenteWhatsAppAutomationTemplate[]>("/agente-whatsapp/automations/templates"),
   runAutomation: (data: { key: string; limit?: number; dry_run?: boolean; message_template?: string | null }) =>
@@ -4026,13 +4244,24 @@ export const agenteWhatsAppApi = {
     put<ApiAgenteWhatsAppAIProviderStatus>("/agente-whatsapp/ai/settings/keys", data),
   testAISettings: (message?: string) =>
     post<ApiAgenteWhatsAppAITest>("/agente-whatsapp/ai/settings/test", { message }),
+  getAudioSettings: () => get<ApiAgenteWhatsAppAudioSettings>("/agente-whatsapp/audio/settings"),
+  updateAudioSettings: (data: Partial<ApiAgenteWhatsAppAudioSettings>) =>
+    put<ApiAgenteWhatsAppAudioSettings>("/agente-whatsapp/audio/settings", data),
+  getAudioRolloutSettings: () => get<ApiAgenteWhatsAppRolloutSettings>("/agente-whatsapp/audio/rollout"),
+  updateAudioRolloutSettings: (data: Partial<ApiAgenteWhatsAppRolloutSettings>) =>
+    put<ApiAgenteWhatsAppRolloutSettings>("/agente-whatsapp/audio/rollout", data),
   aiRespond: (sessionId: string, data: {
     message: string;
     auto_queue?: boolean;
     record_inbound?: boolean;
+    source_message_id?: string | null;
   }) => post<ApiAgenteWhatsAppAIRespond>(`/agente-whatsapp/sessions/${sessionId}/ai/respond`, data),
   aiGuardrails: (sessionId: string) =>
     get<ApiAgenteWhatsAppAIGuardrails>(`/agente-whatsapp/sessions/${sessionId}/ai/guardrails`),
+  getCampaignContext: (sessionId: string) =>
+    get<ApiAgenteWhatsAppCampaignContext>(`/agente-whatsapp/sessions/${sessionId}/campaign-context`),
+  resolveMessageCampaignContext: (messageId: string) =>
+    post<ApiAgenteWhatsAppCampaignContext>(`/agente-whatsapp/messages/${encodeURIComponent(messageId)}/resolve-campaign-context`, {}),
   outboxSummary: () => get<ApiAgenteWhatsAppOutboxSummary>("/agente-whatsapp/outbox/summary"),
   outboxMetrics: () => get<ApiAgenteWhatsAppOutboxMetrics>("/agente-whatsapp/outbox/metrics"),
   outboxAlerts: () => get<ApiAgenteWhatsAppOutboxAlerts>("/agente-whatsapp/outbox/alerts"),
@@ -4064,6 +4293,25 @@ export const agenteWhatsAppApi = {
     post<{ enqueued: number; skipped: number }>(`/agente-whatsapp/outbox/enqueue?limit=${limit}`, {}),
   processOutbox: (limit = 20) =>
     post<ApiAgenteWhatsAppOutboxProcess>("/agente-whatsapp/outbox/process", { limit }),
+  processingSummary: () => get<ApiAgenteWhatsAppProcessingSummary>("/agente-whatsapp/processing/summary"),
+  listProcessingJobs: (params?: { status?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    return get<ApiAgenteWhatsAppProcessingJob[]>(`/agente-whatsapp/processing/jobs${qs.toString() ? `?${qs}` : ""}`);
+  },
+  enqueueProcessingJobs: (limit = 100) =>
+    post<ApiAgenteWhatsAppProcessingEnqueue>(`/agente-whatsapp/processing/enqueue?limit=${limit}`, {}),
+  processAudioTranscriptions: (limit = 10) =>
+    post<ApiAgenteWhatsAppAudioProcess>(`/agente-whatsapp/processing/audio-transcriptions/process?limit=${limit}`, {}),
+  processAgentResponses: (limit = 10) =>
+    post<ApiAgenteWhatsAppAgentResponseProcess>(`/agente-whatsapp/processing/agent-responses/process?limit=${limit}`, {}),
+  processTTSGenerations: (limit = 10) =>
+    post<ApiAgenteWhatsAppTTSProcess>(`/agente-whatsapp/processing/tts-generations/process?limit=${limit}`, {}),
+  retryMessageTTS: (messageId: string) =>
+    post<ApiAgenteWhatsAppTTSState>(`/agente-whatsapp/messages/${encodeURIComponent(messageId)}/retry-tts`, {}),
+  retryMessageTranscription: (messageId: string) =>
+    post<ApiAgenteWhatsAppAudioState>(`/agente-whatsapp/messages/${encodeURIComponent(messageId)}/retry-transcription`, {}),
   retryOutbox: (id: string) => post<ApiAgenteWhatsAppOutbox>(`/agente-whatsapp/outbox/${id}/retry`, {}),
   listSessions: (params?: { status?: string; limit?: number }) => {
     const qs = new URLSearchParams();
@@ -4112,7 +4360,16 @@ export const agenteWhatsAppApi = {
     message_type?: string;
     body?: string | null;
     media_url?: string | null;
+    media_storage_key?: string | null;
+    media_mime_type?: string | null;
+    media_duration_ms?: number | null;
+    media_size_bytes?: number | null;
     provider_message_id?: string | null;
+    provider?: string | null;
+    quoted_provider_message_id?: string | null;
+    response_to_message_id?: string | null;
+    campaign_id?: string | null;
+    campaign_delivery_id?: string | null;
     provider_status?: string | null;
     raw_payload?: Record<string, unknown>;
   }) => post<ApiAgenteWhatsAppMessage>(`/agente-whatsapp/sessions/${sessionId}/messages`, data),

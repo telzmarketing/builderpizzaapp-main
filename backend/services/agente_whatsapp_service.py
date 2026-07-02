@@ -25,6 +25,7 @@ from backend.models.customer_identity import CustomerChannel
 from backend.models.loyalty import CustomerLoyalty
 from backend.models.order import Order
 from backend.services.agente_whatsapp_outbox_service import AgenteWhatsAppOutboxService
+from backend.services.agente_whatsapp_processing_service import AgenteWhatsAppProcessingService
 from backend.services.customer_identity_service import CustomerIdentityService, normalize_phone
 
 
@@ -40,6 +41,15 @@ def _json_load(value: str | None) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return loaded if isinstance(loaded, dict) else {}
+
+
+def _safe_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
 
 
 class AgenteWhatsAppService:
@@ -1012,10 +1022,19 @@ class AgenteWhatsAppService:
         *,
         direction: str,
         sender_type: str,
+        provider: str | None = None,
         message_type: str = "text",
         body: str | None = None,
         media_url: str | None = None,
+        media_storage_key: str | None = None,
+        media_mime_type: str | None = None,
+        media_duration_ms: int | None = None,
+        media_size_bytes: int | None = None,
         provider_message_id: str | None = None,
+        quoted_provider_message_id: str | None = None,
+        response_to_message_id: str | None = None,
+        campaign_id: str | None = None,
+        campaign_delivery_id: str | None = None,
         provider_status: str | None = None,
         raw_payload: dict[str, Any] | None = None,
     ) -> AgenteWhatsAppMessage:
@@ -1026,24 +1045,60 @@ class AgenteWhatsAppService:
                 .first()
             )
             if existing:
-                return existing
+                if provider and not existing.provider:
+                    existing.provider = provider
+                if quoted_provider_message_id and not existing.quoted_provider_message_id:
+                    existing.quoted_provider_message_id = quoted_provider_message_id
+                if response_to_message_id and not existing.response_to_message_id:
+                    existing.response_to_message_id = response_to_message_id
+                if campaign_id and not existing.campaign_id:
+                    existing.campaign_id = campaign_id
+            if campaign_delivery_id and not existing.campaign_delivery_id:
+                existing.campaign_delivery_id = campaign_delivery_id
+            if media_storage_key and not existing.media_storage_key:
+                existing.media_storage_key = media_storage_key
+            if media_mime_type and not existing.media_mime_type:
+                existing.media_mime_type = media_mime_type
+            if media_duration_ms and not existing.media_duration_ms:
+                existing.media_duration_ms = media_duration_ms
+            if media_size_bytes and not existing.media_size_bytes:
+                existing.media_size_bytes = media_size_bytes
+            if existing.direction == "inbound":
+                AgenteWhatsAppProcessingService(self._db).enqueue_inbound_message(existing)
+            return existing
 
         now = datetime.now(timezone.utc)
+        resolved_provider = provider or session.provider
+        idempotency_key = f"{resolved_provider}:{provider_message_id}" if provider_message_id else None
         message = AgenteWhatsAppMessage(
             id=str(uuid.uuid4()),
             session_id=session.id,
             customer_id=session.customer_id,
+            provider=resolved_provider,
             direction=direction,
             sender_type=sender_type,
             message_type=message_type,
             body=body,
             media_url=media_url,
+            media_storage_key=media_storage_key,
+            media_mime_type=media_mime_type,
+            media_duration_ms=media_duration_ms,
+            media_size_bytes=media_size_bytes,
             provider_message_id=provider_message_id,
+            quoted_provider_message_id=quoted_provider_message_id,
+            response_to_message_id=response_to_message_id,
+            campaign_id=campaign_id,
+            campaign_delivery_id=campaign_delivery_id,
             provider_status=provider_status,
+            processing_status="recorded",
+            idempotency_key=idempotency_key,
             raw_payload_json=_json_dump(raw_payload),
             created_at=now,
         )
         self._db.add(message)
+        self._db.flush()
+        if direction == "inbound":
+            AgenteWhatsAppProcessingService(self._db).enqueue_inbound_message(message)
         session.last_message_at = now
         session.updated_at = now
         self.add_event(
@@ -1101,14 +1156,17 @@ class AgenteWhatsAppService:
                         customer.name = display_name
 
                     message_type, body, media_url = self._extract_meta_message_content(item)
+                    quoted_provider_message_id = self._extract_meta_quoted_provider_message_id(item)
                     self.add_message(
                         session,
                         direction="inbound",
                         sender_type="customer",
+                        provider="official",
                         message_type=message_type,
                         body=body,
                         media_url=media_url,
                         provider_message_id=provider_message_id,
+                        quoted_provider_message_id=quoted_provider_message_id,
                         provider_status="received",
                         raw_payload=item,
                     )
@@ -1145,14 +1203,17 @@ class AgenteWhatsAppService:
                 session.customer.name = item.get("pushName")
 
             message_type, body, media_url = self._extract_evolution_message_content(item)
+            quoted_provider_message_id = self._extract_evolution_quoted_provider_message_id(item)
             self.add_message(
                 session,
                 direction="inbound",
                 sender_type="customer",
+                provider="evolution",
                 message_type=message_type,
                 body=body,
                 media_url=media_url,
                 provider_message_id=str(provider_message_id),
+                quoted_provider_message_id=quoted_provider_message_id,
                 provider_status="received",
                 raw_payload=item,
             )
@@ -1190,14 +1251,21 @@ class AgenteWhatsAppService:
         message_type = str(item.get("message_type") or "text")
         body = item.get("body")
         media_url = item.get("media_url")
+        quoted_provider_message_id = item.get("quoted_provider_message_id")
         self.add_message(
             session,
             direction="inbound",
             sender_type="customer",
+            provider="baileys",
             message_type=message_type,
             body=str(body) if body is not None else None,
             media_url=str(media_url) if media_url else None,
+            media_storage_key=str(item.get("media_storage_key")) if item.get("media_storage_key") else None,
+            media_mime_type=str(item.get("media_mime_type")) if item.get("media_mime_type") else None,
+            media_duration_ms=_safe_int(item.get("media_duration_ms")),
+            media_size_bytes=_safe_int(item.get("media_size_bytes")),
             provider_message_id=str(provider_message_id),
+            quoted_provider_message_id=str(quoted_provider_message_id) if quoted_provider_message_id else None,
             provider_status="received",
             raw_payload=payload,
         )
@@ -1258,6 +1326,12 @@ class AgenteWhatsAppService:
         return str(message_type), json.dumps(item.get(message_type) or {}, ensure_ascii=False), None
 
     @staticmethod
+    def _extract_meta_quoted_provider_message_id(item: dict[str, Any]) -> str | None:
+        context = item.get("context") if isinstance(item.get("context"), dict) else {}
+        quoted = context.get("id") or context.get("message_id")
+        return str(quoted) if quoted else None
+
+    @staticmethod
     def _extract_evolution_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
         data = payload.get("data")
         if isinstance(data, list):
@@ -1294,6 +1368,23 @@ class AgenteWhatsAppService:
         if isinstance(item.get("text"), str):
             return "text", item.get("text"), None
         return "unknown", json.dumps(message or item, ensure_ascii=False), None
+
+    @staticmethod
+    def _extract_evolution_quoted_provider_message_id(item: dict[str, Any]) -> str | None:
+        message = item.get("message") or {}
+        candidates: list[Any] = []
+        if isinstance(message.get("extendedTextMessage"), dict):
+            candidates.append(((message["extendedTextMessage"].get("contextInfo") or {}).get("stanzaId")))
+        for key in ["imageMessage", "audioMessage", "videoMessage", "documentMessage", "stickerMessage"]:
+            media = message.get(key)
+            if isinstance(media, dict):
+                candidates.append(((media.get("contextInfo") or {}).get("stanzaId")))
+        candidates.append(item.get("quoted_provider_message_id"))
+        candidates.append(item.get("quotedMessageId"))
+        for value in candidates:
+            if value:
+                return str(value)
+        return None
 
     def add_event(
         self,
@@ -1355,16 +1446,35 @@ class AgenteWhatsAppService:
             "id": message.id,
             "session_id": message.session_id,
             "customer_id": message.customer_id,
+            "provider": message.provider,
             "direction": message.direction,
             "sender_type": message.sender_type,
             "message_type": message.message_type,
             "body": message.body,
             "media_url": message.media_url,
+            "media_storage_key": message.media_storage_key,
+            "media_mime_type": message.media_mime_type,
+            "media_duration_ms": message.media_duration_ms,
+            "media_size_bytes": message.media_size_bytes,
             "provider_message_id": message.provider_message_id,
+            "quoted_provider_message_id": message.quoted_provider_message_id,
+            "response_to_message_id": message.response_to_message_id,
+            "campaign_id": message.campaign_id,
+            "campaign_delivery_id": message.campaign_delivery_id,
             "provider_status": message.provider_status,
+            "processing_status": message.processing_status,
+            "idempotency_key": message.idempotency_key,
+            "transcription_status": message.transcription_status,
+            "transcription_text": message.transcription_text,
+            "transcription_language": message.transcription_language,
+            "transcription_provider": message.transcription_provider,
+            "transcription_model": message.transcription_model,
+            "transcription_error": message.transcription_error,
+            "transcription_quality": _json_load(message.transcription_quality_json),
             "error": message.error,
             "raw_payload": _json_load(message.raw_payload_json),
             "created_at": message.created_at,
+            "processed_at": message.processed_at,
             "delivered_at": message.delivered_at,
             "read_at": message.read_at,
         }

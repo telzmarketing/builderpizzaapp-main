@@ -2,11 +2,13 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 import makeWASocket, {
   Browsers,
   DisconnectReason,
+  downloadMediaMessage,
   fetchLatestBaileysVersion,
   useMultiFileAuthState,
 } from "@whiskeysockets/baileys";
@@ -152,7 +154,93 @@ function unwrapMessage(message) {
   return current;
 }
 
-function extractInboundMessage(item) {
+function quotedProviderMessageId(message) {
+  const entries = [
+    message?.extendedTextMessage,
+    message?.imageMessage,
+    message?.videoMessage,
+    message?.audioMessage,
+    message?.documentMessage,
+    message?.stickerMessage,
+  ].filter(Boolean);
+  for (const entry of entries) {
+    const quoted = entry?.contextInfo?.stanzaId || entry?.contextInfo?.quotedMessageId;
+    if (quoted) return String(quoted);
+  }
+  return null;
+}
+
+function mediaExtension(mimetype = "") {
+  const value = String(mimetype || "").toLowerCase().split(";", 1)[0];
+  if (value === "audio/ogg") return "ogg";
+  if (value === "audio/opus") return "opus";
+  if (value === "audio/mpeg" || value === "audio/mp3") return "mp3";
+  if (value === "audio/mp4") return "m4a";
+  if (value === "audio/webm") return "webm";
+  if (value === "video/mp4") return "mp4";
+  return "bin";
+}
+
+function mediaReference(mediaUrl = "") {
+  const value = String(mediaUrl || "").trim();
+  if (value.startsWith("/uploads/") || value.startsWith("uploads/")) {
+    return { url: path.join(projectRoot, value.replace(/^\/+/, "")) };
+  }
+  return { url: value };
+}
+
+function numericValue(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (typeof value?.toNumber === "function") {
+    const parsed = value.toNumber();
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function storeInboundMedia(item, media, messageType, providerMessageId) {
+  if (!media || !["audio"].includes(messageType)) {
+    return { media_url: media?.url || null, media_storage_key: null, media_size_bytes: numericValue(media?.fileLength) };
+  }
+  try {
+    const buffer = await downloadMediaMessage(item, "buffer", {}, { logger });
+    if (!buffer || !buffer.length) {
+      return { media_url: media.url || null, media_storage_key: null, media_size_bytes: numericValue(media.fileLength) };
+    }
+    const mimetype = media.mimetype || (messageType === "audio" ? "audio/ogg" : "application/octet-stream");
+    const dir = path.join(projectRoot, "uploads", "agente-whatsapp-audio");
+    await fs.mkdir(dir, { recursive: true });
+    const filename = `${providerMessageId}-${randomUUID()}.${mediaExtension(mimetype)}`;
+    const absolutePath = path.join(dir, filename);
+    await fs.writeFile(absolutePath, buffer);
+    const storageKey = path.relative(projectRoot, absolutePath).replaceAll("\\", "/");
+    return {
+      media_url: `/${storageKey}`,
+      media_storage_key: storageKey,
+      media_mime_type: mimetype,
+      media_size_bytes: buffer.length,
+      media_duration_ms: numericValue(media.seconds) ? numericValue(media.seconds) * 1000 : null,
+    };
+  } catch (error) {
+    return {
+      media_url: media.url || null,
+      media_storage_key: null,
+      media_download_error: error instanceof Error ? error.message : String(error),
+      media_mime_type: media.mimetype || null,
+      media_size_bytes: numericValue(media.fileLength),
+      media_duration_ms: numericValue(media.seconds) ? numericValue(media.seconds) * 1000 : null,
+    };
+  }
+}
+
+async function extractInboundMessage(item) {
   const key = item?.key || {};
   if (key.fromMe) return null;
   const remoteJid = key.remoteJid || item?.remoteJid || "";
@@ -161,6 +249,7 @@ function extractInboundMessage(item) {
   const message = unwrapMessage(item?.message);
   const providerMessageId = key.id || item?.messageID || item?.messageId;
   if (!providerMessageId || !message || Object.keys(message).length === 0) return null;
+  const quotedId = quotedProviderMessageId(message);
 
   if (message.conversation) {
     return {
@@ -172,6 +261,7 @@ function extractInboundMessage(item) {
       message_type: "text",
       body: message.conversation,
       media_url: null,
+      quoted_provider_message_id: quotedId,
       timestamp: messageTimestamp(item?.messageTimestamp),
       raw_payload: jsonSafe(item),
     };
@@ -187,6 +277,7 @@ function extractInboundMessage(item) {
       message_type: "text",
       body: message.extendedTextMessage.text || "",
       media_url: null,
+      quoted_provider_message_id: quotedId,
       timestamp: messageTimestamp(item?.messageTimestamp),
       raw_payload: jsonSafe(item),
     };
@@ -201,6 +292,7 @@ function extractInboundMessage(item) {
   ].filter(([, value]) => value);
   if (mediaEntries.length) {
     const [messageType, media] = mediaEntries[0];
+    const storedMedia = await storeInboundMedia(item, media, messageType, providerMessageId);
     return {
       id: providerMessageId,
       remote_jid: remoteJid,
@@ -209,7 +301,13 @@ function extractInboundMessage(item) {
       from_me: false,
       message_type: messageType,
       body: media.caption || media.fileName || null,
-      media_url: media.url || null,
+      media_url: storedMedia.media_url || null,
+      media_storage_key: storedMedia.media_storage_key || null,
+      media_mime_type: storedMedia.media_mime_type || media.mimetype || null,
+      media_duration_ms: storedMedia.media_duration_ms || null,
+      media_size_bytes: storedMedia.media_size_bytes || numericValue(media.fileLength),
+      media_download_error: storedMedia.media_download_error || null,
+      quoted_provider_message_id: quotedId,
       timestamp: messageTimestamp(item?.messageTimestamp),
       raw_payload: jsonSafe(item),
     };
@@ -224,6 +322,7 @@ function extractInboundMessage(item) {
     message_type: "unknown",
     body: JSON.stringify(jsonSafe(message)),
     media_url: null,
+    quoted_provider_message_id: quotedId,
     timestamp: messageTimestamp(item?.messageTimestamp),
     raw_payload: jsonSafe(item),
   };
@@ -321,7 +420,7 @@ async function connectInstance(instanceId, body = {}) {
   socket.ev.on("creds.update", saveCreds);
   socket.ev.on("messages.upsert", async ({ messages }) => {
     for (const item of messages || []) {
-      const inbound = extractInboundMessage(item);
+      const inbound = await extractInboundMessage(item);
       if (!inbound) continue;
       await postBackendEvent({
         event_type: "message_received",
@@ -531,17 +630,24 @@ async function sendMediaMessage(instanceId, body = {}) {
 
   const mediaType = String(body.media_type || "").trim().toLowerCase();
   const caption = String(body.caption || "").trim() || undefined;
+  const media = mediaReference(mediaUrl);
   const payload =
-    mediaType === "video"
-      ? { video: { url: mediaUrl }, caption }
+    mediaType === "audio"
+      ? {
+          audio: media,
+          mimetype: body.mimetype || "audio/ogg; codecs=opus",
+          ptt: body.ptt !== false,
+        }
+      : mediaType === "video"
+      ? { video: media, caption }
       : mediaType === "document"
         ? {
-            document: { url: mediaUrl },
+            document: media,
             fileName: body.file_name || "arquivo",
             mimetype: body.mimetype || "application/octet-stream",
             caption,
           }
-        : { image: { url: mediaUrl }, caption };
+        : { image: media, caption };
 
   const result = await state.socket.sendMessage(jid, payload);
   state.lastSeenAt = nowIso();

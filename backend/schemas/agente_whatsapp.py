@@ -51,10 +51,19 @@ class AgenteWhatsAppSessionOut(BaseModel):
 class AgenteWhatsAppMessageCreate(BaseModel):
     direction: MessageDirection
     sender_type: MessageSenderType
+    provider: str | None = None
     message_type: str = "text"
     body: str | None = None
     media_url: str | None = None
+    media_storage_key: str | None = None
+    media_mime_type: str | None = None
+    media_duration_ms: int | None = None
+    media_size_bytes: int | None = None
     provider_message_id: str | None = None
+    quoted_provider_message_id: str | None = None
+    response_to_message_id: str | None = None
+    campaign_id: str | None = None
+    campaign_delivery_id: str | None = None
     provider_status: str | None = None
     raw_payload: dict[str, Any] = Field(default_factory=dict)
 
@@ -63,16 +72,35 @@ class AgenteWhatsAppMessageOut(BaseModel):
     id: str
     session_id: str
     customer_id: str | None
+    provider: str | None = None
     direction: str
     sender_type: str
     message_type: str
     body: str | None
     media_url: str | None
+    media_storage_key: str | None = None
+    media_mime_type: str | None = None
+    media_duration_ms: int | None = None
+    media_size_bytes: int | None = None
     provider_message_id: str | None
+    quoted_provider_message_id: str | None = None
+    response_to_message_id: str | None = None
+    campaign_id: str | None = None
+    campaign_delivery_id: str | None = None
     provider_status: str | None
+    processing_status: str | None = None
+    idempotency_key: str | None = None
+    transcription_status: str | None = None
+    transcription_text: str | None = None
+    transcription_language: str | None = None
+    transcription_provider: str | None = None
+    transcription_model: str | None = None
+    transcription_error: str | None = None
+    transcription_quality: dict[str, Any] = Field(default_factory=dict)
     error: str | None
     raw_payload: dict[str, Any]
     created_at: datetime
+    processed_at: datetime | None
     delivered_at: datetime | None
     read_at: datetime | None
 
@@ -96,6 +124,115 @@ class AgenteWhatsAppOperationalMetricsOut(BaseModel):
     active_ai_agents: int = 0
     human_attendants_online: int = 0
     generated_at: datetime | None = None
+
+
+class AgenteWhatsAppAudioMetricsPeriodOut(BaseModel):
+    days: int
+    start_at: datetime
+    end_at: datetime
+
+
+class AgenteWhatsAppAudioMetricsAudioOut(BaseModel):
+    inbound_messages: int = 0
+    outbound_messages: int = 0
+    audio_minutes: float = 0
+    missing_duration_messages: int = 0
+    tts_characters: int = 0
+
+
+class AgenteWhatsAppAudioMetricsSttOut(BaseModel):
+    done: int = 0
+    low_confidence: int = 0
+    failed: int = 0
+    success_rate: float = 100
+    avg_latency_ms: float | None = None
+
+
+class AgenteWhatsAppAudioMetricsTtsOut(BaseModel):
+    generated: int = 0
+    failed: int = 0
+    avg_latency_ms: float | None = None
+
+
+class AgenteWhatsAppAudioMetricsCostOut(BaseModel):
+    currency: str = "USD"
+    stt: float = 0
+    tts: float = 0
+    total: float = 0
+    pricing_note: str
+
+
+class AgenteWhatsAppAudioMetricsCampaignOut(BaseModel):
+    campaign_id: str
+    messages: int = 0
+    sessions: int = 0
+    customers: int = 0
+    orders: int = 0
+    revenue: float = 0
+    conversion_rate: float = 0
+    attribution: str
+
+
+class AgenteWhatsAppAudioMetricsConversionsOut(BaseModel):
+    campaigns: list[AgenteWhatsAppAudioMetricsCampaignOut] = Field(default_factory=list)
+    orders: int = 0
+    revenue: float = 0
+    attribution: str
+
+
+class AgenteWhatsAppAudioMetricsOut(BaseModel):
+    period: AgenteWhatsAppAudioMetricsPeriodOut
+    audio: AgenteWhatsAppAudioMetricsAudioOut
+    stt: AgenteWhatsAppAudioMetricsSttOut
+    tts: AgenteWhatsAppAudioMetricsTtsOut
+    jobs: dict[str, dict[str, int]] = Field(default_factory=dict)
+    cost_estimate: AgenteWhatsAppAudioMetricsCostOut
+    conversions: AgenteWhatsAppAudioMetricsConversionsOut
+    generated_at: datetime | None = None
+
+
+class AgenteWhatsAppProductionReadinessOut(BaseModel):
+    status: Literal["ready", "degraded", "blocked"] = "ready"
+    flags: dict[str, bool]
+    limits: dict[str, Any]
+    rollout: list[str]
+    rollback: list[str]
+    checks: list[dict[str, Any]]
+    generated_at: datetime | None = None
+
+
+class AgenteWhatsAppAudioRetentionCleanupOut(BaseModel):
+    dry_run: bool
+    enabled: bool
+    retention_days: int
+    cutoff_at: datetime
+    scanned: int
+    eligible: int
+    deleted_files: int
+    cleared_messages: int
+    skipped: int
+    errors: list[dict[str, str]] = Field(default_factory=list)
+
+
+class AgenteWhatsAppRolloutSettingsOut(BaseModel):
+    mode: Literal["all", "pilot", "off"] = "all"
+    pilot_phones: str = ""
+    pilot_phones_count: int = 0
+    hours: str = ""
+    daily_input_limit: int = 0
+    daily_reply_limit: int = 0
+    daily_tts_limit: int = 0
+    daily_usage: dict[str, int] = Field(default_factory=dict)
+    updated_at: datetime | None = None
+
+
+class AgenteWhatsAppRolloutSettingsUpdate(BaseModel):
+    mode: Literal["all", "pilot", "off"] | None = None
+    pilot_phones: str | None = None
+    hours: str | None = None
+    daily_input_limit: int | None = Field(default=None, ge=0, le=10000)
+    daily_reply_limit: int | None = Field(default=None, ge=0, le=10000)
+    daily_tts_limit: int | None = Field(default=None, ge=0, le=10000)
 
 
 class AgenteWhatsAppEventCreate(BaseModel):
@@ -160,6 +297,7 @@ class AgenteWhatsAppAIRespondIn(BaseModel):
     message: str = Field(..., min_length=1)
     auto_queue: bool = False
     record_inbound: bool = False
+    source_message_id: str | None = None
 
 
 class AgenteWhatsAppAISettingsUpdate(BaseModel):
@@ -180,6 +318,27 @@ class AgenteWhatsAppAISettingsUpdate(BaseModel):
 class AgenteWhatsAppAIKeysUpdate(BaseModel):
     openai_api_key: str | None = Field(default=None, min_length=1, max_length=500)
     anthropic_api_key: str | None = Field(default=None, min_length=1, max_length=500)
+
+
+class AgenteWhatsAppAudioSettingsUpdate(BaseModel):
+    enabled: bool | None = None
+    response_mode: Literal["never", "mirror_customer_audio", "always", "manual_only"] | None = None
+    tts_model: str | None = Field(default=None, min_length=2, max_length=120)
+    tts_voice: str | None = Field(default=None, min_length=2, max_length=80)
+    tts_format: Literal["mp3", "opus", "aac", "flac", "wav", "pcm"] | None = None
+    max_chars: int | None = Field(default=None, ge=120, le=2000)
+    send_as_ptt: bool | None = None
+
+
+class AgenteWhatsAppAudioSettingsOut(BaseModel):
+    enabled: bool
+    response_mode: str
+    tts_model: str
+    tts_voice: str
+    tts_format: str
+    max_chars: int
+    send_as_ptt: bool
+    updated_at: datetime | None = None
 
 
 class AgenteWhatsAppAISettingsOut(BaseModel):
@@ -275,6 +434,7 @@ class AgenteWhatsAppAIRespondOut(BaseModel):
     enqueued: int = 0
     guardrails: AgenteWhatsAppAIGuardrailsOut
     manager_review: dict[str, Any] = Field(default_factory=dict)
+    campaign_context: dict[str, Any] = Field(default_factory=dict)
     ai_settings: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -457,6 +617,99 @@ class AgenteWhatsAppOutboxProcessOut(BaseModel):
     processed: int
     sent: int
     failed: int
+
+
+class AgenteWhatsAppProcessingJobOut(BaseModel):
+    id: str
+    message_id: str
+    session_id: str
+    customer_id: str | None
+    job_type: str
+    status: str
+    attempts: int
+    max_attempts: int
+    idempotency_key: str
+    payload: dict[str, Any]
+    error: str | None
+    next_attempt_at: datetime | None
+    locked_at: datetime | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgenteWhatsAppProcessingSummaryOut(BaseModel):
+    pending: int
+    processing: int
+    done: int
+    failed: int
+    dead: int
+    queued_messages: int
+
+
+class AgenteWhatsAppProcessingEnqueueOut(BaseModel):
+    eligible: int
+    enqueued: int
+    skipped: int
+
+
+class AgenteWhatsAppCampaignContextOut(BaseModel):
+    status: str
+    source: str
+    message_id: str | None
+    session_id: str | None
+    campaign_delivery_id: str | None
+    campaign_id: str | None
+    selected: dict[str, Any] | None = None
+    candidates: list[dict[str, Any]] = Field(default_factory=list)
+    ambiguous: bool = False
+    instructions: list[str] = Field(default_factory=list)
+    resolved_at: datetime | None = None
+
+
+class AgenteWhatsAppAudioProcessOut(BaseModel):
+    processed: int
+    done: int
+    failed: int
+
+
+class AgenteWhatsAppAgentResponseProcessOut(BaseModel):
+    processed: int
+    responded: int
+    skipped: int
+    failed: int
+
+
+class AgenteWhatsAppTTSProcessOut(BaseModel):
+    processed: int
+    generated: int
+    skipped: int
+    failed: int
+
+
+class AgenteWhatsAppTTSStateOut(BaseModel):
+    status: str
+    message: dict[str, Any] | None = None
+
+
+class AgenteWhatsAppAudioStateOut(BaseModel):
+    message_id: str
+    message_type: str
+    media_url: str | None
+    media_storage_key: str | None
+    media_mime_type: str | None
+    media_duration_ms: int | None
+    media_size_bytes: int | None
+    transcription_status: str
+    transcription_text: str | None
+    transcription_language: str | None
+    transcription_provider: str | None
+    transcription_model: str | None
+    transcription_error: str | None
+    transcription_quality: dict[str, Any]
+    processing_status: str
+    processed_at: datetime | None
 
 
 class AgenteWhatsAppOutboxMetricsOut(AgenteWhatsAppOutboxSummaryOut):

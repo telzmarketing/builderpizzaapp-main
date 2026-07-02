@@ -56,6 +56,7 @@ class WhatsAppGatewayRuntimeClient:
         media_type: str | None = None,
         mimetype: str | None = None,
         file_name: str | None = None,
+        ptt: bool | None = None,
     ) -> WhatsAppProviderResult:
         return self._request(
             "POST",
@@ -67,6 +68,7 @@ class WhatsAppGatewayRuntimeClient:
                 "media_type": media_type,
                 "mimetype": mimetype,
                 "file_name": file_name,
+                "ptt": ptt,
             },
         )
 

@@ -84,6 +84,7 @@ class BaileysProvider:
         media_type: str | None = None,
         mimetype: str | None = None,
         file_name: str | None = None,
+        ptt: bool | None = None,
     ) -> WhatsAppProviderResult:
         if not self._package_version:
             return self._runtime_pending("send_media_message")
@@ -95,6 +96,7 @@ class BaileysProvider:
             media_type=media_type,
             mimetype=mimetype,
             file_name=file_name,
+            ptt=ptt,
         )
 
     def receive_message(self, *, payload: dict[str, Any]) -> WhatsAppProviderResult:

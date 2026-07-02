@@ -10,6 +10,7 @@ from urllib import error, request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from backend.config import get_settings
 from backend.models.whatsapp_gateway import (
     WhatsAppGatewayInstance,
     WhatsAppGatewayLog,
@@ -282,6 +283,7 @@ class WhatsAppGatewayService:
         media_type: str | None = None,
         mimetype: str | None = None,
         file_name: str | None = None,
+        ptt: bool | None = None,
         instance_id: str | None = None,
     ) -> WhatsAppProviderResult:
         instance = self._select_send_instance(instance_id)
@@ -292,6 +294,13 @@ class WhatsAppGatewayService:
                 message="Nenhuma instancia Baileys conectada no WhatsApp Gateway.",
                 data={"provider": "baileys"},
             )
+        if (media_type or "").strip().lower() == "audio" and not get_settings().WHATSAPP_GATEWAY_AUDIO_BAILEYS_ENABLED:
+            return WhatsAppProviderResult(
+                ok=False,
+                status="audio_disabled",
+                message="Envio de audio via Gateway Baileys desativado por configuracao.",
+                data={"provider": "baileys", "media_type": media_type},
+            )
 
         result = self._provider(instance.provider).send_media_message(
             instance_id=instance.id,
@@ -301,6 +310,7 @@ class WhatsAppGatewayService:
             media_type=media_type,
             mimetype=mimetype,
             file_name=file_name,
+            ptt=ptt,
         )
         self._record_send_result(instance, "message_send_media", result)
         self._db.flush()

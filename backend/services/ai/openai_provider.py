@@ -4,7 +4,7 @@ import logging
 import time
 
 from backend.config import get_ai_api_key
-from backend.services.ai.base import AIMessage, AIProvider, AIResponse
+from backend.services.ai.base import AIMessage, AIProvider, AIResponse, AudioSpeechResponse, AudioTranscriptionResponse
 
 log = logging.getLogger("chatbot.ai.openai")
 
@@ -61,3 +61,135 @@ class OpenAIProvider(AIProvider):
         except Exception as exc:
             log.exception("Erro ao chamar OpenAI: %s", exc)
             return self._fallback(str(exc))
+
+    def transcribe_audio(
+        self,
+        *,
+        file_path: str,
+        model: str = "gpt-4o-mini-transcribe",
+        language: str | None = "pt",
+    ) -> AudioTranscriptionResponse:
+        if not self._api_key:
+            return AudioTranscriptionResponse(
+                text="",
+                provider=self.provider_name,
+                model=model,
+                language=language or "",
+                error_reason="OPENAI_API_KEY nao configurada",
+            )
+
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=self._api_key, timeout=60)
+            t0 = time.monotonic()
+            with open(file_path, "rb") as audio_file:
+                response = client.audio.transcriptions.create(
+                    model=model,
+                    file=audio_file,
+                    language=language,
+                )
+            latencia = int((time.monotonic() - t0) * 1000)
+            return AudioTranscriptionResponse(
+                text=(getattr(response, "text", "") or "").strip(),
+                provider=self.provider_name,
+                model=model,
+                language=language or "",
+                latencia_ms=latencia,
+            )
+        except ImportError:
+            return AudioTranscriptionResponse(
+                text="",
+                provider=self.provider_name,
+                model=model,
+                language=language or "",
+                error_reason="pacote 'openai' nao instalado",
+            )
+        except Exception as exc:
+            log.exception("Erro ao transcrever audio OpenAI: %s", exc)
+            return AudioTranscriptionResponse(
+                text="",
+                provider=self.provider_name,
+                model=model,
+                language=language or "",
+                error_reason=str(exc),
+            )
+
+    def synthesize_speech(
+        self,
+        *,
+        text: str,
+        model: str = "gpt-4o-mini-tts",
+        voice: str = "marin",
+        response_format: str = "opus",
+        instructions: str | None = None,
+    ) -> AudioSpeechResponse:
+        mime_by_format = {
+            "mp3": "audio/mpeg",
+            "opus": "audio/ogg",
+            "aac": "audio/aac",
+            "flac": "audio/flac",
+            "wav": "audio/wav",
+            "pcm": "audio/pcm",
+        }
+        if not self._api_key:
+            return AudioSpeechResponse(
+                audio=b"",
+                provider=self.provider_name,
+                model=model,
+                voice=voice,
+                response_format=response_format,
+                mime_type=mime_by_format.get(response_format, "application/octet-stream"),
+                error_reason="OPENAI_API_KEY nao configurada",
+            )
+
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=self._api_key, timeout=60)
+            t0 = time.monotonic()
+            kwargs = {
+                "model": model,
+                "voice": voice,
+                "input": text,
+                "response_format": response_format,
+            }
+            if instructions:
+                kwargs["instructions"] = instructions
+            response = client.audio.speech.create(**kwargs)
+            audio = getattr(response, "content", None)
+            if audio is None and hasattr(response, "read"):
+                audio = response.read()
+            if audio is None:
+                audio = bytes(response)
+            latencia = int((time.monotonic() - t0) * 1000)
+            return AudioSpeechResponse(
+                audio=audio or b"",
+                provider=self.provider_name,
+                model=model,
+                voice=voice,
+                response_format=response_format,
+                mime_type=mime_by_format.get(response_format, "application/octet-stream"),
+                latencia_ms=latencia,
+            )
+        except ImportError:
+            return AudioSpeechResponse(
+                audio=b"",
+                provider=self.provider_name,
+                model=model,
+                voice=voice,
+                response_format=response_format,
+                mime_type=mime_by_format.get(response_format, "application/octet-stream"),
+                error_reason="pacote 'openai' nao instalado",
+            )
+        except Exception as exc:
+            log.exception("Erro ao gerar audio OpenAI: %s", exc)
+            return AudioSpeechResponse(
+                audio=b"",
+                provider=self.provider_name,
+                model=model,
+                voice=voice,
+                response_format=response_format,
+                mime_type=mime_by_format.get(response_format, "application/octet-stream"),
+                error_reason=str(exc),
+            )

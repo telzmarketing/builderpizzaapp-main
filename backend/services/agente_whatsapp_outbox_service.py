@@ -104,6 +104,8 @@ class AgenteWhatsAppOutboxService:
                     "message_type": message.message_type,
                     "body": message.body,
                     "media_url": message.media_url,
+                    "mimetype": message.media_mime_type,
+                    "media_storage_key": message.media_storage_key,
                 }
             )
             self._db.add(
@@ -649,18 +651,23 @@ class AgenteWhatsAppOutboxService:
         body = message.body or payload.get("body") or ""
         media_url = message.media_url or payload.get("media_url")
         media_type = _normalize_media_type(message.message_type, media_url)
+        is_audio = media_type == "audio"
 
         if provider == "baileys":
+            if is_audio and not self._settings.WHATSAPP_GATEWAY_AUDIO_BAILEYS_ENABLED:
+                return self._defer_item(item, "Envio de audio via Gateway Baileys desativado por configuracao.")
+
             gateway = WhatsAppGatewayService(self._db)
             instance_id = self._channel_gateway_instance_id()
             if media_url:
                 result = gateway.send_media_message(
                     phone=item.phone,
                     media_url=media_url,
-                    caption=body if media_url else None,
+                    caption=None if is_audio else (body if media_url else None),
                     media_type=media_type,
-                    mimetype=payload.get("mimetype"),
+                    mimetype=payload.get("mimetype") or message.media_mime_type,
                     file_name=payload.get("file_name"),
+                    ptt=bool((payload.get("tts") or {}).get("ptt")) if isinstance(payload.get("tts"), dict) else None,
                     instance_id=instance_id,
                 )
             else:
@@ -675,7 +682,7 @@ class AgenteWhatsAppOutboxService:
                 self._db,
                 media_type=media_type,
                 media_url=media_url,
-                caption=body if media_url else None,
+                caption=None if is_audio else (body if media_url else None),
             )
 
         if status == "sent":

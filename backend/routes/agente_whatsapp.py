@@ -1,9 +1,10 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
+from backend.config import get_settings
 from backend.core.response import created, err_msg, ok
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
@@ -18,6 +19,14 @@ from backend.schemas.agente_whatsapp import (
     AgenteWhatsAppAISettingsUpdate,
     AgenteWhatsAppAITestIn,
     AgenteWhatsAppAITestOut,
+    AgenteWhatsAppAgentResponseProcessOut,
+    AgenteWhatsAppAudioMetricsOut,
+    AgenteWhatsAppAudioProcessOut,
+    AgenteWhatsAppAudioRetentionCleanupOut,
+    AgenteWhatsAppAudioSettingsOut,
+    AgenteWhatsAppAudioSettingsUpdate,
+    AgenteWhatsAppAudioStateOut,
+    AgenteWhatsAppCampaignContextOut,
     AgenteWhatsAppCampaignCreate,
     AgenteWhatsAppCampaignDispatchOut,
     AgenteWhatsAppCampaignOut,
@@ -40,8 +49,14 @@ from backend.schemas.agente_whatsapp import (
     AgenteWhatsAppOutboxProcessIn,
     AgenteWhatsAppOutboxProcessOut,
     AgenteWhatsAppOutboxSummaryOut,
+    AgenteWhatsAppProcessingEnqueueOut,
+    AgenteWhatsAppProcessingJobOut,
+    AgenteWhatsAppProcessingSummaryOut,
+    AgenteWhatsAppProductionReadinessOut,
     AgenteWhatsAppProviderPauseIn,
     AgenteWhatsAppProviderStateOut,
+    AgenteWhatsAppRolloutSettingsOut,
+    AgenteWhatsAppRolloutSettingsUpdate,
     AgenteWhatsAppSessionCreate,
     AgenteWhatsAppSessionOut,
     AgenteWhatsAppSessionUpdate,
@@ -50,13 +65,22 @@ from backend.schemas.agente_whatsapp import (
     AgenteWhatsAppStoryPublishOut,
     AgenteWhatsAppStoryTemplateOut,
     AgenteWhatsAppStoryUpdate,
+    AgenteWhatsAppTTSProcessOut,
+    AgenteWhatsAppTTSStateOut,
     AgenteWhatsAppToolCallIn,
     AgenteWhatsAppToolCallOut,
     AgenteWhatsAppToolOut,
 )
-from backend.models.agente_whatsapp import AgenteWhatsAppChannelSettings
+from backend.models.agente_whatsapp import AgenteWhatsAppChannelSettings, AgenteWhatsAppMessage
 from backend.services.agente_whatsapp_ai_service import AgenteWhatsAppAIService
+from backend.services.agente_whatsapp_analytics_service import AgenteWhatsAppAnalyticsService
+from backend.services.agente_whatsapp_audio_settings_service import AgenteWhatsAppAudioSettingsService
+from backend.services.agente_whatsapp_audio_service import AgenteWhatsAppAudioService
+from backend.services.agente_whatsapp_campaign_context_service import AgenteWhatsAppCampaignContextService
 from backend.services.agente_whatsapp_outbox_service import AgenteWhatsAppOutboxService
+from backend.services.agente_whatsapp_processing_service import AgenteWhatsAppProcessingService
+from backend.services.agente_whatsapp_retention_service import AgenteWhatsAppRetentionService
+from backend.services.agente_whatsapp_rollout_service import AgenteWhatsAppRolloutService
 from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 from backend.services.agente_whatsapp_tools import AgenteWhatsAppToolService
 from backend.services.whatsapp_gateway_service import WhatsAppGatewayService
@@ -130,6 +154,124 @@ def dashboard(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 @router.get("/operational-metrics", response_model=AgenteWhatsAppOperationalMetricsOut)
 def operational_metrics(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     return AgenteWhatsAppService(db).operational_metrics()
+
+
+@router.get("/audio/metrics", response_model=AgenteWhatsAppAudioMetricsOut)
+def audio_metrics(
+    days: int = Query(default=7, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    return AgenteWhatsAppAnalyticsService(db).audio_metrics(days=days)
+
+
+@router.get("/audio/production-readiness", response_model=AgenteWhatsAppProductionReadinessOut)
+def audio_production_readiness(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    settings = get_settings()
+    outbox_service = AgenteWhatsAppOutboxService(db)
+    processing_summary = AgenteWhatsAppProcessingService(db).summary()
+    outbox_metrics = outbox_service.metrics()
+    audio_settings = AgenteWhatsAppAudioSettingsService(db).get_settings()
+    rollout_status = AgenteWhatsAppRolloutService(db).status()
+
+    checks = [
+        {
+            "code": "worker_enabled",
+            "ok": bool(settings.AGENTE_WHATSAPP_WORKER_ENABLED),
+            "message": "Worker do AGENTE WHATSAPP habilitado." if settings.AGENTE_WHATSAPP_WORKER_ENABLED else "Worker geral desativado.",
+        },
+        {
+            "code": "audio_input",
+            "ok": bool(settings.WHATSAPP_AUDIO_INPUT_ENABLED),
+            "message": "Entrada de audio habilitada." if settings.WHATSAPP_AUDIO_INPUT_ENABLED else "Entrada de audio desativada.",
+        },
+        {
+            "code": "auto_reply",
+            "ok": bool(settings.WHATSAPP_AI_AUTO_REPLY_ENABLED),
+            "message": "Resposta automatica habilitada." if settings.WHATSAPP_AI_AUTO_REPLY_ENABLED else "Resposta automatica desativada; atendimento texto/humano preservado.",
+        },
+        {
+            "code": "audio_output",
+            "ok": bool(audio_settings["enabled"] and settings.WHATSAPP_AUDIO_TTS_WORKER_ENABLED),
+            "message": "Saida por voz habilitada." if audio_settings["enabled"] else "Saida por voz desativada.",
+        },
+        {
+            "code": "outbox_dead",
+            "ok": int(outbox_metrics.get("dead") or 0) == 0,
+            "message": f"{int(outbox_metrics.get('dead') or 0)} item(ns) mortos na fila.",
+        },
+        {
+            "code": "processing_dead",
+            "ok": int(processing_summary.get("dead") or 0) == 0,
+            "message": f"{int(processing_summary.get('dead') or 0)} job(s) mortos no processamento.",
+        },
+        {
+            "code": "retention_cleanup",
+            "ok": bool(settings.WHATSAPP_AUDIO_RETENTION_CLEANUP_ENABLED),
+            "message": "Cleanup automatico de audio habilitado." if settings.WHATSAPP_AUDIO_RETENTION_CLEANUP_ENABLED else "Cleanup automatico desativado; usar dry-run antes de habilitar.",
+        },
+    ]
+    blocking_codes = {"worker_enabled", "outbox_dead", "processing_dead"}
+    status = "ready"
+    if any(not item["ok"] and item["code"] in blocking_codes for item in checks):
+        status = "blocked"
+    elif any(not item["ok"] for item in checks):
+        status = "degraded"
+
+    return {
+        "status": status,
+        "flags": {
+            "agente_whatsapp_worker_enabled": bool(settings.AGENTE_WHATSAPP_WORKER_ENABLED),
+            "audio_input_enabled": bool(settings.WHATSAPP_AUDIO_INPUT_ENABLED),
+            "audio_transcription_worker_enabled": bool(settings.WHATSAPP_AUDIO_TRANSCRIPTION_WORKER_ENABLED),
+            "campaign_context_enabled": bool(settings.WHATSAPP_CAMPAIGN_CONTEXT_ENABLED),
+            "ai_auto_reply_enabled": bool(settings.WHATSAPP_AI_AUTO_REPLY_ENABLED),
+            "audio_output_enabled": bool(audio_settings["enabled"]),
+            "audio_tts_worker_enabled": bool(settings.WHATSAPP_AUDIO_TTS_WORKER_ENABLED),
+            "audio_text_fallback_enabled": bool(settings.WHATSAPP_AUDIO_TEXT_FALLBACK_ENABLED),
+            "audio_low_confidence_handoff_enabled": bool(settings.WHATSAPP_AUDIO_LOW_CONFIDENCE_HANDOFF_ENABLED),
+            "audio_retention_cleanup_enabled": bool(settings.WHATSAPP_AUDIO_RETENTION_CLEANUP_ENABLED),
+            "gateway_audio_baileys_enabled": bool(settings.WHATSAPP_GATEWAY_AUDIO_BAILEYS_ENABLED),
+            "audio_rollout_enabled": rollout_status["mode"] != "off",
+        },
+        "limits": {
+            "audio_max_input_bytes": settings.WHATSAPP_AUDIO_MAX_INPUT_BYTES,
+            "audio_retention_days": settings.WHATSAPP_AUDIO_RETENTION_DAYS,
+            "audio_retention_batch_size": settings.WHATSAPP_AUDIO_RETENTION_BATCH_SIZE,
+            "worker_interval_seconds": settings.AGENTE_WHATSAPP_WORKER_INTERVAL_SECONDS,
+            "worker_batch_size": settings.AGENTE_WHATSAPP_WORKER_BATCH_SIZE,
+            "rollout": rollout_status,
+        },
+        "rollout": [
+            "Validar migrations/current/heads na VPS antes do restart.",
+            "Habilitar audio input antes de audio output.",
+            "Manter fallback textual ligado no piloto.",
+            "Testar Android, iPhone, WhatsApp Web e Desktop antes da expansao.",
+            "Rodar /audio/retention/cleanup em dry_run antes de habilitar cleanup automatico.",
+        ],
+        "rollback": [
+            "Desligar WHATSAPP_AUDIO_INPUT_ENABLED para parar STT.",
+            "Desligar WHATSAPP_AI_AUTO_REPLY_ENABLED para parar respostas automaticas.",
+            "Desligar a saida por voz nas configuracoes do Agente para parar TTS.",
+            "Desligar WHATSAPP_GATEWAY_AUDIO_BAILEYS_ENABLED para bloquear envio de audio pelo Gateway.",
+            "Manter atendimento humano e texto funcionando.",
+        ],
+        "checks": checks,
+        "generated_at": datetime.now(timezone.utc),
+    }
+
+
+@router.post("/audio/retention/cleanup", response_model=AgenteWhatsAppAudioRetentionCleanupOut)
+def cleanup_audio_retention(
+    dry_run: bool = Query(default=True),
+    limit: int = Query(default=50, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    result = AgenteWhatsAppRetentionService(db).audio_cleanup(dry_run=dry_run, limit=limit)
+    if not dry_run:
+        db.commit()
+    return result
 
 
 @router.get("/conversations", response_model=list[AgenteWhatsAppConversationOut])
@@ -396,6 +538,38 @@ def execute_tool(
     return result
 
 
+@router.get("/audio/settings", response_model=AgenteWhatsAppAudioSettingsOut)
+def get_audio_settings(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    return AgenteWhatsAppAudioSettingsService(db).get_settings()
+
+
+@router.put("/audio/settings", response_model=AgenteWhatsAppAudioSettingsOut)
+def update_audio_settings(
+    body: AgenteWhatsAppAudioSettingsUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    result = AgenteWhatsAppAudioSettingsService(db).update_settings(body.model_dump(exclude_none=True))
+    db.commit()
+    return result
+
+
+@router.get("/audio/rollout", response_model=AgenteWhatsAppRolloutSettingsOut)
+def get_audio_rollout_settings(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    return AgenteWhatsAppRolloutService(db).get_settings()
+
+
+@router.put("/audio/rollout", response_model=AgenteWhatsAppRolloutSettingsOut)
+def update_audio_rollout_settings(
+    body: AgenteWhatsAppRolloutSettingsUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    result = AgenteWhatsAppRolloutService(db).update_settings(body.model_dump(exclude_none=True))
+    db.commit()
+    return result
+
+
 @router.post("/sessions/{session_id}/ai/respond", response_model=AgenteWhatsAppAIRespondOut)
 def ai_respond(
     session_id: str,
@@ -409,6 +583,7 @@ def ai_respond(
             message=body.message,
             auto_queue=body.auto_queue,
             record_inbound=body.record_inbound,
+            source_message_id=body.source_message_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -426,6 +601,34 @@ def ai_guardrails(
         return AgenteWhatsAppAIService(db).guardrails(session_id=session_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/sessions/{session_id}/campaign-context", response_model=AgenteWhatsAppCampaignContextOut)
+def get_session_campaign_context(
+    session_id: str,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    service = AgenteWhatsAppService(db)
+    if not service.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Sessao nao encontrada.")
+    payload = AgenteWhatsAppCampaignContextService(db).resolve_latest_for_session(session_id, persist=True)
+    db.commit()
+    return payload
+
+
+@router.post("/messages/{message_id}/resolve-campaign-context", response_model=AgenteWhatsAppCampaignContextOut)
+def resolve_message_campaign_context(
+    message_id: str,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    try:
+        payload = AgenteWhatsAppCampaignContextService(db).resolve_for_message(message_id, persist=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    db.commit()
+    return payload
 
 
 @router.get("/outbox/summary", response_model=AgenteWhatsAppOutboxSummaryOut)
@@ -581,6 +784,102 @@ def process_outbox(
     return result
 
 
+@router.get("/processing/summary", response_model=AgenteWhatsAppProcessingSummaryOut)
+def processing_summary(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    return AgenteWhatsAppProcessingService(db).summary()
+
+
+@router.get("/processing/jobs", response_model=list[AgenteWhatsAppProcessingJobOut])
+def list_processing_jobs(
+    status: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=300),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    service = AgenteWhatsAppProcessingService(db)
+    return [service.serialize_job(job) for job in service.list_jobs(status=status, limit=limit)]
+
+
+@router.post("/processing/enqueue", response_model=AgenteWhatsAppProcessingEnqueueOut)
+def enqueue_processing_jobs(
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    result = AgenteWhatsAppProcessingService(db).enqueue_pending_inbound(limit=limit)
+    db.commit()
+    return result
+
+
+@router.post("/processing/audio-transcriptions/process", response_model=AgenteWhatsAppAudioProcessOut)
+def process_audio_transcriptions(
+    limit: int = Query(default=10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    result = AgenteWhatsAppProcessingService(db).process_audio_transcriptions(limit=limit)
+    db.commit()
+    return result
+
+
+@router.post("/processing/agent-responses/process", response_model=AgenteWhatsAppAgentResponseProcessOut)
+def process_agent_responses(
+    limit: int = Query(default=10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    result = AgenteWhatsAppProcessingService(db).process_agent_responses(limit=limit)
+    db.commit()
+    return result
+
+
+@router.post("/processing/tts-generations/process", response_model=AgenteWhatsAppTTSProcessOut)
+def process_tts_generations(
+    limit: int = Query(default=10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    result = AgenteWhatsAppProcessingService(db).process_tts_generations(limit=limit)
+    db.commit()
+    return result
+
+
+@router.post("/messages/{message_id}/retry-tts", response_model=AgenteWhatsAppTTSStateOut)
+def retry_message_tts(
+    message_id: str,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    try:
+        result = AgenteWhatsAppAudioService(db).synthesize_response_audio(message_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    message_payload = result.get("message") if isinstance(result.get("message"), dict) else None
+    generated_id = message_payload.get("id") if message_payload else None
+    if generated_id:
+        generated = db.query(AgenteWhatsAppMessage).filter(AgenteWhatsAppMessage.id == generated_id).first()
+        if generated:
+            generated.provider_status = "queued"
+            generated.error = None
+    AgenteWhatsAppOutboxService(db).enqueue_queued_messages(limit=20)
+    db.commit()
+    return result
+
+
+@router.post("/messages/{message_id}/retry-transcription", response_model=AgenteWhatsAppAudioStateOut)
+def retry_message_transcription(
+    message_id: str,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    try:
+        result = AgenteWhatsAppAudioService(db).transcribe_message(message_id, force=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    db.commit()
+    return result
+
+
 @router.post("/outbox/{outbox_id}/retry", response_model=AgenteWhatsAppOutboxOut)
 def retry_outbox(
     outbox_id: str,
@@ -695,10 +994,19 @@ def add_message(
         session,
         direction=body.direction,
         sender_type=body.sender_type,
+        provider=body.provider,
         message_type=body.message_type,
         body=body.body,
         media_url=body.media_url,
+        media_storage_key=body.media_storage_key,
+        media_mime_type=body.media_mime_type,
+        media_duration_ms=body.media_duration_ms,
+        media_size_bytes=body.media_size_bytes,
         provider_message_id=body.provider_message_id,
+        quoted_provider_message_id=body.quoted_provider_message_id,
+        response_to_message_id=body.response_to_message_id,
+        campaign_id=body.campaign_id,
+        campaign_delivery_id=body.campaign_delivery_id,
         provider_status=body.provider_status,
         raw_payload=body.raw_payload,
     )

@@ -30,6 +30,11 @@ jobs:
             source .venv/bin/activate
             pip install -r backend/requirements.txt --quiet
 
+            echo "=== [3/6] Migracoes Alembic ==="
+            alembic -c backend/alembic.ini current
+            alembic -c backend/alembic.ini heads
+            alembic -c backend/alembic.ini upgrade 20260701_whatsapp_audio_phase5_agent_response
+
             echo "━━━ [3/5] Build do frontend ━━━"
             pnpm install --frozen-lockfile --silent
             pnpm build

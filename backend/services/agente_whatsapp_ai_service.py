@@ -18,6 +18,7 @@ from backend.models.agente_whatsapp import (
 from backend.services.ai.base import AIMessage
 from backend.services.ai.claude_provider import ClaudeProvider
 from backend.services.ai.openai_provider import OpenAIProvider
+from backend.services.agente_whatsapp_campaign_context_service import AgenteWhatsAppCampaignContextService
 from backend.services.agente_whatsapp_outbox_service import AgenteWhatsAppOutboxService
 from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 from backend.services.agente_whatsapp_tools import AgenteWhatsAppToolService
@@ -176,6 +177,7 @@ class AgenteWhatsAppAIService:
             f"Transferencia humana: {row.transfer_instructions}" if row.transfer_instructions else "",
             f"Limitacoes e proibicoes: {row.forbidden_topics}" if row.forbidden_topics else "",
             "Use as ferramentas reais do AGENTE WHATSAPP para consultar dados antes de afirmar qualquer informacao operacional.",
+            "Quando houver contexto de campanha, use somente o snapshot resolvido como evidencia. Se houver ambiguidade, pergunte de qual oferta o cliente esta falando antes de citar valores, cupons ou beneficios.",
         ]
         return "\n\n".join(part.strip() for part in parts if part and part.strip())
 
@@ -231,6 +233,7 @@ class AgenteWhatsAppAIService:
         message: str,
         auto_queue: bool = False,
         record_inbound: bool = False,
+        source_message_id: str | None = None,
     ) -> dict[str, Any]:
         session = self._service.get_session(session_id)
         if not session:
@@ -243,8 +246,44 @@ class AgenteWhatsAppAIService:
         if not clean_message:
             raise ValueError("Informe a mensagem do cliente.")
 
+        source_message = None
+        if source_message_id:
+            source_message = (
+                self._db.query(AgenteWhatsAppMessage)
+                .filter(
+                    AgenteWhatsAppMessage.id == source_message_id,
+                    AgenteWhatsAppMessage.session_id == session.id,
+                )
+                .first()
+            )
+            if not source_message:
+                raise ValueError("Mensagem de origem nao encontrada nesta sessao.")
+            existing_response = self._existing_response_to(source_message.id)
+            if existing_response:
+                payload = _json_load(existing_response.raw_payload_json)
+                guardrails = self.guardrails(session_id=session.id)
+                return {
+                    "session_id": session.id,
+                    "intent": payload.get("intent") or "atendimento",
+                    "response": existing_response.body or "",
+                    "needs_human": existing_response.provider_status in {"blocked_review", "failed"},
+                    "auto_queued": existing_response.provider_status == "queued",
+                    "message": self._service.serialize_message(existing_response),
+                    "tool_calls": payload.get("tool_calls") if isinstance(payload.get("tool_calls"), list) else [],
+                    "enqueued": 0,
+                    "guardrails": guardrails,
+                    "manager_review": payload.get("manager_review") if isinstance(payload.get("manager_review"), dict) else {},
+                    "campaign_context": payload.get("campaign_context") if isinstance(payload.get("campaign_context"), dict) else {},
+                    "ai_settings": {
+                        "enabled": bool(ai_settings.enabled),
+                        "provider": ai_settings.provider,
+                        "model": ai_settings.model,
+                    },
+                }
+
+        inbound_message = None
         if record_inbound:
-            self._service.add_message(
+            inbound_message = self._service.add_message(
                 session,
                 direction="inbound",
                 sender_type="customer",
@@ -252,6 +291,13 @@ class AgenteWhatsAppAIService:
                 body=clean_message,
                 raw_payload={"source": "agente_whatsapp_ai_runtime"},
             )
+            source_message_id = source_message_id or inbound_message.id
+            source_message = source_message or inbound_message
+        campaign_context = (
+            AgenteWhatsAppCampaignContextService(self._db).resolve_message(source_message, persist=True)
+            if source_message
+            else AgenteWhatsAppCampaignContextService(self._db).resolve_latest_for_session(session.id, persist=True)
+        )
 
         guardrails = self.guardrails(session_id=session.id)
         if auto_queue and not guardrails["allowed_auto_queue"]:
@@ -296,6 +342,7 @@ class AgenteWhatsAppAIService:
             session=session,
             customer=customer,
             results=results,
+            campaign_context=campaign_context,
         )
         manager_review = self._manager_review_response(
             message=clean_message,
@@ -304,6 +351,7 @@ class AgenteWhatsAppAIService:
             session=session,
             trace=trace,
             needs_human=needs_human,
+            campaign_context=campaign_context,
         )
         needs_human = bool(needs_human or manager_review["requires_human_review"])
 
@@ -316,12 +364,15 @@ class AgenteWhatsAppAIService:
                 sender_type="ai",
                 message_type="text",
                 body=response,
+                response_to_message_id=source_message_id,
                 provider_status="queued",
                 raw_payload={
                     "source": "agente_whatsapp_ai_runtime",
                     "intent": intent,
                     "tool_calls": trace,
                     "manager_review": manager_review,
+                    "campaign_context": campaign_context,
+                    "source_message_id": source_message_id,
                 },
             )
             enqueue_result = AgenteWhatsAppOutboxService(self._db).enqueue_queued_messages(limit=20)
@@ -332,12 +383,15 @@ class AgenteWhatsAppAIService:
                 sender_type="ai",
                 message_type="text",
                 body=response,
+                response_to_message_id=source_message_id,
                 provider_status="blocked_review",
                 raw_payload={
                     "source": "agente_whatsapp_ai_runtime",
                     "intent": intent,
                     "tool_calls": trace,
                     "manager_review": manager_review,
+                    "campaign_context": campaign_context,
+                    "source_message_id": source_message_id,
                 },
             )
             if session.status not in {"human", "closed"}:
@@ -358,7 +412,14 @@ class AgenteWhatsAppAIService:
                 flush=False,
             )
 
-        self._sync_context(session, intent=intent, message=clean_message, response=response, needs_human=needs_human)
+        self._sync_context(
+            session,
+            intent=intent,
+            message=clean_message,
+            response=response,
+            needs_human=needs_human,
+            campaign_context=campaign_context,
+        )
         self._service.add_event(
             event_type="agente_whatsapp_ai_response_generated",
             session_id=session.id,
@@ -372,6 +433,7 @@ class AgenteWhatsAppAIService:
                 "enqueued": enqueue_result.get("enqueued", 0),
                 "guardrails": guardrails,
                 "manager_review": manager_review,
+                "campaign_context": campaign_context,
             },
             flush=False,
         )
@@ -387,6 +449,7 @@ class AgenteWhatsAppAIService:
             "enqueued": enqueue_result.get("enqueued", 0),
             "guardrails": guardrails,
             "manager_review": manager_review,
+            "campaign_context": campaign_context,
             "ai_settings": {
                 "enabled": bool(ai_settings.enabled),
                 "provider": ai_settings.provider,
@@ -465,6 +528,17 @@ class AgenteWhatsAppAIService:
             "automation_blocked": bool(session.automation_blocked),
         }
 
+    def _existing_response_to(self, message_id: str) -> AgenteWhatsAppMessage | None:
+        return (
+            self._db.query(AgenteWhatsAppMessage)
+            .filter(
+                AgenteWhatsAppMessage.direction == "outbound",
+                AgenteWhatsAppMessage.response_to_message_id == message_id,
+            )
+            .order_by(AgenteWhatsAppMessage.created_at.asc())
+            .first()
+        )
+
     def _manager_review_response(
         self,
         *,
@@ -474,6 +548,7 @@ class AgenteWhatsAppAIService:
         session: AgenteWhatsAppSession,
         trace: list[dict[str, Any]],
         needs_human: bool,
+        campaign_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         text = _normalize_text(f"{message}\n{response}")
         successful_tools = [item["tool_name"] for item in trace if item.get("success")]
@@ -557,7 +632,13 @@ class AgenteWhatsAppAIService:
             "buscar_fidelidade",
         }
         response_mentions_money = bool(re.search(r"(?:r\$|\b\d+[,.]\d{2}\b)", response, flags=re.IGNORECASE))
-        if response_mentions_money and not any(tool in evidence_tools for tool in successful_tools):
+        campaign_context_resolved = bool(
+            campaign_context
+            and campaign_context.get("status") == "resolved"
+            and campaign_context.get("selected")
+            and not campaign_context.get("ambiguous")
+        )
+        if response_mentions_money and not any(tool in evidence_tools for tool in successful_tools) and not campaign_context_resolved:
             reasons.append("Resposta menciona valor sem evidencia de ferramenta aprovada.")
             risk_level = "high"
 
@@ -585,7 +666,7 @@ class AgenteWhatsAppAIService:
             "reasons": reasons,
             "warnings": warnings,
             "matched_categories": matched_categories,
-            "evidence_tools": successful_tools,
+            "evidence_tools": successful_tools + (["campaign_context_snapshot"] if campaign_context_resolved else []),
             "safe_response": "Vou encaminhar para um atendente verificar com seguranca." if decision == "block" else None,
         }
 
@@ -683,10 +764,14 @@ class AgenteWhatsAppAIService:
         session: AgenteWhatsAppSession,
         customer: dict[str, Any],
         results: dict[str, dict[str, Any]],
+        campaign_context: dict[str, Any] | None = None,
     ) -> tuple[str, bool]:
         session_customer_name = session.customer.name if session.customer else None
         name = _first_name(customer.get("name") or session_customer_name)
         greeting = f"{name}, " if name else ""
+        campaign_response = self._campaign_context_response(greeting, campaign_context)
+        if campaign_response and intent in {"promocoes", "venda_cardapio", "atendimento", "validar_cupom"}:
+            return campaign_response
 
         if intent == "consultar_status":
             status_result = results.get("consultar_status_pedido")
@@ -766,6 +851,38 @@ class AgenteWhatsAppAIService:
             return ("Nao encontrei item ativo para essa busca. Me diga o sabor ou tipo de produto que voce quer.", False)
 
         return ("Posso te ajudar com cardapio, promocoes, frete, cupom, pedido ou fidelidade. O que voce quer fazer agora?", False)
+
+    def _campaign_context_response(self, greeting: str, campaign_context: dict[str, Any] | None) -> tuple[str, bool] | None:
+        if not campaign_context:
+            return None
+        if campaign_context.get("ambiguous"):
+            candidates = campaign_context.get("candidates") or []
+            labels = [
+                item.get("campaign_name") or item.get("template_name") or "oferta recente"
+                for item in candidates[:3]
+            ]
+            label_text = ", ".join(label for label in labels if label)
+            return (
+                f"{greeting}vi mais de uma campanha recente{f': {label_text}' if label_text else ''}. "
+                "Para eu nao te passar uma oferta errada, me diga de qual delas voce esta falando?",
+                False,
+            )
+        selected = campaign_context.get("selected") or {}
+        if campaign_context.get("status") != "resolved" or not selected:
+            return None
+        campaign_name = selected.get("campaign_name") or selected.get("template_name") or "essa oferta"
+        snapshot = selected.get("message_text") or selected.get("caption")
+        if not snapshot:
+            return (
+                f"{greeting}achei o disparo da campanha {campaign_name}, mas ele nao tem snapshot comercial suficiente. "
+                "Vou conferir pelo cardapio real antes de confirmar valores ou disponibilidade.",
+                False,
+            )
+        return (
+            f"{greeting}sobre {campaign_name}, o texto enviado foi:\n{snapshot}\n\n"
+            "Posso te ajudar a montar o pedido com base nessa oferta. Se quiser preco, cupom ou disponibilidade, eu confirmo pelo sistema antes de fechar.",
+            False,
+        )
 
     def _format_products(self, result: dict[str, Any] | None) -> str:
         data = self._tool_data(result) or {}
@@ -850,6 +967,7 @@ class AgenteWhatsAppAIService:
         message: str,
         response: str,
         needs_human: bool,
+        campaign_context: dict[str, Any] | None = None,
     ) -> None:
         context = session.context
         if not context:
@@ -861,13 +979,12 @@ class AgenteWhatsAppAIService:
             self._db.add(context)
         context.last_intent = intent
         context.sentiment = "needs_human" if needs_human else "neutral"
-        context.short_context_json = (
-            '{"last_customer_message": '
-            + self._safe_json_string(message)
-            + ', "last_ai_response": '
-            + self._safe_json_string(response)
-            + "}"
-        )
+        short_context = _json_load(context.short_context_json)
+        short_context["last_customer_message"] = message
+        short_context["last_ai_response"] = response
+        if campaign_context:
+            short_context["campaign_context"] = campaign_context
+        context.short_context_json = _json_dump(short_context)
         context.updated_at = datetime.now(timezone.utc)
         session.current_intent = intent
         session.updated_at = datetime.now(timezone.utc)

@@ -28,6 +28,7 @@ from backend.services.order_service import OrderService
 from backend.services.payment_service import PaymentService
 from backend.services.product_pricing_service import ProductPricingService
 from backend.services.shipping_service import ShippingService
+from backend.services.agente_whatsapp_campaign_context_service import AgenteWhatsAppCampaignContextService
 
 
 def _json_dump(value: Any) -> str:
@@ -59,6 +60,7 @@ class AgenteWhatsAppToolService:
             "buscar_enderecos": self._buscar_enderecos,
             "buscar_ultimo_pedido": self._buscar_ultimo_pedido,
             "buscar_fidelidade": self._buscar_fidelidade,
+            "resolver_contexto_campanha": self._resolver_contexto_campanha,
             "validar_item_pedido": self._validar_item_pedido,
             "simular_checkout": self._simular_checkout,
             "criar_pedido": self._criar_pedido,
@@ -181,6 +183,21 @@ class AgenteWhatsAppToolService:
                 "category": "fidelidade",
                 "input_schema": {"type": "object", "required": ["customer_id"], "properties": {"customer_id": {"type": "string"}}},
                 "mutates_data": False,
+                "enabled": True,
+            },
+            {
+                "name": "resolver_contexto_campanha",
+                "description": "Resolve a campanha/oferta de origem da conversa usando quote, delivery ou janela recente.",
+                "category": "marketing",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "message_id": {"type": "string"},
+                        "persist": {"type": "boolean", "default": True},
+                    },
+                },
+                "mutates_data": False,
+                "requires_confirmation": False,
                 "enabled": True,
             },
             {
@@ -326,6 +343,17 @@ class AgenteWhatsAppToolService:
         if not customer:
             return {"found": False, "phone": normalize_phone(str(phone))}
         return {"found": True, "customer": self._customer_payload(customer)}
+
+    def _resolver_contexto_campanha(self, args: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        service = AgenteWhatsAppCampaignContextService(self._db)
+        persist = bool(args.get("persist", True))
+        message_id = args.get("message_id")
+        if message_id:
+            return service.resolve_for_message(str(message_id), persist=persist)
+        session_id = context.get("session_id")
+        if not session_id:
+            raise ValueError("Informe a sessao ou a mensagem para resolver contexto de campanha.")
+        return service.resolve_latest_for_session(str(session_id), persist=persist)
 
     def _buscar_produtos(self, args: dict[str, Any], _context: dict[str, Any]) -> dict[str, Any]:
         limit = max(1, min(int(args.get("limit") or 20), 50))

@@ -62,7 +62,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 const isGatewayProvider = (provider?: string) => provider === "baileys";
 
 interface WaTemplate { id: string; name: string; body: string; category: string; language: string; provider?: string; media_type?: string; media_url?: string; caption?: string; mimetype?: string; file_name?: string; active: boolean; created_at: string; }
-interface WaMessage  { id: string; phone: string; body_sent: string; status: string; sent_at: string; error?: string; customer_name?: string; template_name?: string; provider?: string; message_type?: string; media_type?: string; media_url?: string; caption?: string; }
+interface WaMessage  { id: string; phone: string; body_sent: string; status: string; sent_at: string; error?: string; customer_name?: string; template_name?: string; provider?: string; message_type?: string; media_type?: string; media_url?: string; caption?: string; campaign_delivery_id?: string; }
 interface WaCampaign { id: string; name: string; status: string; template_id?: string; group_id?: string; scheduled_at?: string; sent_count: number; delivered_count: number; read_count: number; error_count: number; created_at: string; }
 interface WaContactList { id: string; name: string; contact_count: number; created_at?: string; }
 interface WaDashboard { sent: number; delivered: number; read: number; responded: number; errors: number; active_campaigns: number; scheduled_campaigns: number; response_rate: number; orders_generated: number; revenue_generated: number; }

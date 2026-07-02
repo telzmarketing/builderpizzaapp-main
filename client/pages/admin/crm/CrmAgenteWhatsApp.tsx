@@ -22,6 +22,7 @@ import {
   UserRound,
   Users,
   Video,
+  Volume2,
   XCircle,
 } from "lucide-react";
 import MediaUpload from "@/components/admin/MediaUpload";
@@ -33,6 +34,8 @@ import {
   type ApiAgenteWhatsAppAIProviderStatus,
   type ApiAgenteWhatsAppAISettings,
   type ApiAgenteWhatsAppAITest,
+  type ApiAgenteWhatsAppAudioSettings,
+  type ApiAgenteWhatsAppAudioMetrics,
   type ApiAgenteWhatsAppCampaign,
   type ApiAgenteWhatsAppCampaignTemplate,
   type ApiAgenteWhatsAppConversation,
@@ -47,6 +50,7 @@ import {
   type ApiAgenteWhatsAppOperationalMetrics,
   type ApiAgenteWhatsAppProviderState,
   type ApiAgenteWhatsAppChannelSettings,
+  type ApiAgenteWhatsAppRolloutSettings,
   type ApiAgenteWhatsAppStory,
   type ApiAgenteWhatsAppStoryTemplate,
   type ApiWhatsAppGatewayInstance,
@@ -125,7 +129,17 @@ function fmtDate(value?: string | null) {
 
 function firstLine(message?: ApiAgenteWhatsAppMessage) {
   if (!message) return "Sem mensagens";
+  if (message.message_type === "audio") {
+    return message.transcription_text || message.body || "Audio";
+  }
   return message.body || message.message_type;
+}
+
+function messageText(message: ApiAgenteWhatsAppMessage) {
+  if (message.message_type === "audio") {
+    return message.transcription_text || message.body || "";
+  }
+  return message.body || "";
 }
 
 function shortId(value: string) {
@@ -244,6 +258,8 @@ export default function CrmAgenteWhatsApp() {
   const [stories, setStories] = useState<ApiAgenteWhatsAppStory[]>([]);
   const [storyTemplates, setStoryTemplates] = useState<ApiAgenteWhatsAppStoryTemplate[]>([]);
   const [aiSettings, setAiSettings] = useState<ApiAgenteWhatsAppAISettings | null>(null);
+  const [audioSettings, setAudioSettings] = useState<ApiAgenteWhatsAppAudioSettings | null>(null);
+  const [rolloutSettings, setRolloutSettings] = useState<ApiAgenteWhatsAppRolloutSettings | null>(null);
   const [aiProviderStatus, setAiProviderStatus] = useState<ApiAgenteWhatsAppAIProviderStatus | null>(null);
   const [aiTestResult, setAiTestResult] = useState<ApiAgenteWhatsAppAITest | null>(null);
   const [aiKeys, setAiKeys] = useState({ openai_api_key: "", anthropic_api_key: "" });
@@ -280,6 +296,8 @@ export default function CrmAgenteWhatsApp() {
   const [selectedOutbox, setSelectedOutbox] = useState<ApiAgenteWhatsAppOutbox | null>(null);
   const [sessions, setSessions] = useState<ApiAgenteWhatsAppConversation[]>([]);
   const [operationalMetrics, setOperationalMetrics] = useState<ApiAgenteWhatsAppOperationalMetrics | null>(null);
+  const [audioMetrics, setAudioMetrics] = useState<ApiAgenteWhatsAppAudioMetrics | null>(null);
+  const [audioMetricsError, setAudioMetricsError] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ApiAgenteWhatsAppMessage[]>([]);
   const [filter, setFilter] = useState<StatusFilter>("all");
@@ -298,6 +316,8 @@ export default function CrmAgenteWhatsApp() {
   const [aiSuggestion, setAiSuggestion] = useState("");
   const [aiGuardrails, setAiGuardrails] = useState<ApiAgenteWhatsAppAIGuardrails | null>(null);
   const [aiSettingsSaving, setAiSettingsSaving] = useState(false);
+  const [audioSettingsSaving, setAudioSettingsSaving] = useState(false);
+  const [rolloutSaving, setRolloutSaving] = useState(false);
   const [processingQueue, setProcessingQueue] = useState(false);
   const [campaignSaving, setCampaignSaving] = useState(false);
   const [campaignDispatchingId, setCampaignDispatchingId] = useState<string | null>(null);
@@ -305,6 +325,7 @@ export default function CrmAgenteWhatsApp() {
   const [storyPublishingId, setStoryPublishingId] = useState<string | null>(null);
   const [automationRunning, setAutomationRunning] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [audioActionId, setAudioActionId] = useState<string | null>(null);
   const [providerAction, setProviderAction] = useState<string | null>(null);
   const [channelSaving, setChannelSaving] = useState(false);
   const [error, setError] = useState("");
@@ -344,7 +365,7 @@ export default function CrmAgenteWhatsApp() {
   }, [messages, selected, sessions]);
 
   const latestInboundMessage = useMemo(() => {
-    return [...messages].reverse().find((message) => message.direction === "inbound" && !!message.body) ?? null;
+    return [...messages].reverse().find((message) => message.direction === "inbound" && !!messageText(message)) ?? null;
   }, [messages]);
 
   async function loadSessions(preferredId?: string | null) {
@@ -362,9 +383,20 @@ export default function CrmAgenteWhatsApp() {
           limit: 120,
         }),
       ]);
-      const [liveMetrics, aiSettingsPayload, aiStatusPayload, channelPayload, gatewayPayload] = await Promise.all([
+      const [liveMetrics, audioMetricsPayload, aiSettingsPayload, audioSettingsPayload, rolloutPayload, aiStatusPayload, channelPayload, gatewayPayload] = await Promise.all([
         agenteWhatsAppApi.operationalMetrics().catch(() => null),
+        agenteWhatsAppApi.audioMetrics(7)
+          .then((payload) => {
+            setAudioMetricsError("");
+            return payload;
+          })
+          .catch((err) => {
+            setAudioMetricsError(err instanceof Error ? err.message : "Falha ao carregar metricas de audio.");
+            return null;
+          }),
         agenteWhatsAppApi.getAISettings().catch(() => null),
+        agenteWhatsAppApi.getAudioSettings().catch(() => null),
+        agenteWhatsAppApi.getAudioRolloutSettings().catch(() => null),
         agenteWhatsAppApi.aiProviderStatus().catch(() => null),
         agenteWhatsAppApi.getChannelSettings().catch(() => null),
         whatsappGatewayApi.listInstances().catch(() => []),
@@ -372,7 +404,10 @@ export default function CrmAgenteWhatsApp() {
       setDashboard(dash);
       setSessions(rows);
       setOperationalMetrics(liveMetrics);
+      setAudioMetrics(audioMetricsPayload);
       setAiSettings(aiSettingsPayload);
+      setAudioSettings(audioSettingsPayload);
+      setRolloutSettings(rolloutPayload);
       setAiProviderStatus(aiStatusPayload);
       setChannelSettings(channelPayload);
       setGatewayInstances(gatewayPayload);
@@ -454,6 +489,14 @@ export default function CrmAgenteWhatsApp() {
         limit: 120,
       }).then(setSessions).catch(() => {});
       agenteWhatsAppApi.operationalMetrics().then(setOperationalMetrics).catch(() => {});
+      agenteWhatsAppApi.audioMetrics(7)
+        .then((payload) => {
+          setAudioMetrics(payload);
+          setAudioMetricsError("");
+        })
+        .catch((err) => {
+          setAudioMetricsError(err instanceof Error ? err.message : "Falha ao atualizar metricas de audio.");
+        });
       if (selectedId) loadDetail(selectedId);
     }, 15000);
     return () => window.clearInterval(interval);
@@ -504,7 +547,7 @@ export default function CrmAgenteWhatsApp() {
 
   async function suggestAiReply() {
     if (!selected) return;
-    const prompt = reply.trim() || latestInboundMessage?.body?.trim();
+    const prompt = reply.trim() || (latestInboundMessage ? messageText(latestInboundMessage).trim() : "");
     if (!prompt) return;
     setAiGenerating(true);
     setError("");
@@ -764,6 +807,14 @@ export default function CrmAgenteWhatsApp() {
     setAiSettings((current) => current ? { ...current, [key]: value } : current);
   }
 
+  function updateAudioSetting<K extends keyof ApiAgenteWhatsAppAudioSettings>(key: K, value: ApiAgenteWhatsAppAudioSettings[K]) {
+    setAudioSettings((current) => current ? { ...current, [key]: value } : current);
+  }
+
+  function updateRolloutSetting<K extends keyof ApiAgenteWhatsAppRolloutSettings>(key: K, value: ApiAgenteWhatsAppRolloutSettings[K]) {
+    setRolloutSettings((current) => current ? { ...current, [key]: value } : current);
+  }
+
   async function saveAISettings() {
     if (!aiSettings) return;
     setAiSettingsSaving(true);
@@ -791,6 +842,92 @@ export default function CrmAgenteWhatsApp() {
       setError(err instanceof Error ? err.message : "Falha ao salvar configuracoes da IA.");
     } finally {
       setAiSettingsSaving(false);
+    }
+  }
+
+  async function saveAudioSettings() {
+    if (!audioSettings) return;
+    setAudioSettingsSaving(true);
+    setError("");
+    try {
+      const updated = await agenteWhatsAppApi.updateAudioSettings({
+        enabled: audioSettings.enabled,
+        response_mode: audioSettings.response_mode,
+        tts_model: audioSettings.tts_model,
+        tts_voice: audioSettings.tts_voice,
+        tts_format: audioSettings.tts_format,
+        max_chars: audioSettings.max_chars,
+        send_as_ptt: audioSettings.send_as_ptt,
+      });
+      setAudioSettings(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao salvar configuracoes de audio.");
+    } finally {
+      setAudioSettingsSaving(false);
+    }
+  }
+
+  async function saveRolloutSettings() {
+    if (!rolloutSettings) return;
+    setRolloutSaving(true);
+    setError("");
+    try {
+      const updated = await agenteWhatsAppApi.updateAudioRolloutSettings({
+        mode: rolloutSettings.mode,
+        pilot_phones: rolloutSettings.pilot_phones,
+        hours: rolloutSettings.hours,
+        daily_input_limit: rolloutSettings.daily_input_limit,
+        daily_reply_limit: rolloutSettings.daily_reply_limit,
+        daily_tts_limit: rolloutSettings.daily_tts_limit,
+      });
+      setRolloutSettings(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao salvar rollout de audio.");
+    } finally {
+      setRolloutSaving(false);
+    }
+  }
+
+  async function processAudioQueue() {
+    setProcessingQueue(true);
+    setError("");
+    try {
+      await agenteWhatsAppApi.processAudioTranscriptions(10).catch(() => null);
+      await agenteWhatsAppApi.processAgentResponses(10).catch(() => null);
+      await agenteWhatsAppApi.processTTSGenerations(10).catch(() => null);
+      await agenteWhatsAppApi.processOutbox(20).catch(() => null);
+      await Promise.all([loadOutbox(), selectedId ? loadDetail(selectedId) : Promise.resolve()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao processar filas de audio.");
+    } finally {
+      setProcessingQueue(false);
+    }
+  }
+
+  async function retryTranscription(message: ApiAgenteWhatsAppMessage) {
+    setAudioActionId(message.id);
+    setError("");
+    try {
+      await agenteWhatsAppApi.retryMessageTranscription(message.id);
+      if (selectedId) await loadDetail(selectedId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao reprocessar transcricao.");
+    } finally {
+      setAudioActionId(null);
+    }
+  }
+
+  async function retryTTS(message: ApiAgenteWhatsAppMessage) {
+    setAudioActionId(message.id);
+    setError("");
+    try {
+      await agenteWhatsAppApi.retryMessageTTS(message.id);
+      await agenteWhatsAppApi.processOutbox(10).catch(() => null);
+      await Promise.all([loadOutbox(), selectedId ? loadDetail(selectedId) : Promise.resolve()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao gerar audio da resposta.");
+    } finally {
+      setAudioActionId(null);
     }
   }
 
@@ -912,6 +1049,99 @@ export default function CrmAgenteWhatsApp() {
         <StatCard icon={Clock3} label="Aguardando resposta" value={operationalMetrics?.waiting_response ?? 0} />
         <StatCard icon={Eye} label="Nao lidas" value={operationalMetrics?.unread_messages ?? 0} />
       </div>
+
+      <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
+        <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-cream">Metricas de audio e conversao</h2>
+            <p className="text-xs text-stone mt-1">
+              Janela de {audioMetrics?.period.days ?? 7} dias com STT, TTS, custo estimado e pedidos atribuidos
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-2 rounded-full border border-surface-03 px-3 py-1.5 text-xs text-stone">
+            <BarChart3 size={14} />
+            {fmtDate(audioMetrics?.generated_at)}
+          </span>
+        </div>
+
+        {audioMetricsError && (
+          <div className="mx-4 mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-100 flex items-start gap-2">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+            <span>{audioMetricsError}</span>
+          </div>
+        )}
+
+        <div className="p-4 grid grid-cols-2 lg:grid-cols-6 gap-3">
+          <StatCard icon={Volume2} label="Audios recebidos" value={audioMetrics?.audio.inbound_messages ?? 0} />
+          <StatCard icon={CheckCircle2} label="STT sucesso" value={`${audioMetrics?.stt.success_rate ?? 100}%`} />
+          <StatCard icon={Volume2} label="Vozes geradas" value={audioMetrics?.tts.generated ?? 0} />
+          <StatCard icon={AlertTriangle} label="Falhas audio" value={(audioMetrics?.stt.failed ?? 0) + (audioMetrics?.tts.failed ?? 0)} />
+          <StatCard icon={BarChart3} label="Custo estimado" value={`US$ ${(audioMetrics?.cost_estimate.total ?? 0).toFixed(4)}`} />
+          <StatCard icon={Send} label="Pedidos atribuidos" value={audioMetrics?.conversions.orders ?? 0} />
+        </div>
+
+        <div className="border-t border-surface-03 p-4 grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
+          <div className="rounded-xl border border-surface-03 overflow-hidden">
+            <div className="px-4 py-3 border-b border-surface-03">
+              <h3 className="text-sm font-bold text-cream">Campanhas com pedidos atribuidos</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[620px] text-sm">
+                <thead className="bg-surface-03/60 text-xs text-stone">
+                  <tr>
+                    <th className="text-left font-medium px-4 py-3">Campanha</th>
+                    <th className="text-left font-medium px-4 py-3">Mensagens</th>
+                    <th className="text-left font-medium px-4 py-3">Clientes</th>
+                    <th className="text-left font-medium px-4 py-3">Pedidos</th>
+                    <th className="text-left font-medium px-4 py-3">Receita</th>
+                    <th className="text-left font-medium px-4 py-3">Conv.</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-03">
+                  {(audioMetrics?.conversions.campaigns ?? []).map((campaign) => (
+                    <tr key={campaign.campaign_id} className="text-cream">
+                      <td className="px-4 py-3 font-semibold">{shortId(campaign.campaign_id)}</td>
+                      <td className="px-4 py-3 text-stone">{campaign.messages}</td>
+                      <td className="px-4 py-3 text-stone">{campaign.customers}</td>
+                      <td className="px-4 py-3 text-stone">{campaign.orders}</td>
+                      <td className="px-4 py-3 text-stone">R$ {campaign.revenue.toFixed(2)}</td>
+                      <td className="px-4 py-3 text-stone">{campaign.conversion_rate}%</td>
+                    </tr>
+                  ))}
+
+                  {(audioMetrics?.conversions.campaigns ?? []).length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-stone">Sem pedidos atribuidos na janela</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-surface-03 p-4 space-y-3">
+            <div>
+              <p className="text-xs uppercase text-stone">Latencia media</p>
+              <p className="text-sm text-cream mt-1">
+                STT: {audioMetrics?.stt.avg_latency_ms ? `${audioMetrics.stt.avg_latency_ms}ms` : "-"} / TTS: {audioMetrics?.tts.avg_latency_ms ? `${audioMetrics.tts.avg_latency_ms}ms` : "-"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-stone">Volume medido</p>
+              <p className="text-sm text-cream mt-1">
+                {audioMetrics?.audio.audio_minutes ?? 0} min audio / {audioMetrics?.audio.tts_characters ?? 0} chars TTS
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-stone">Receita atribuida</p>
+              <p className="text-sm text-cream mt-1">R$ {(audioMetrics?.conversions.revenue ?? 0).toFixed(2)}</p>
+            </div>
+            <p className="text-[11px] text-stone leading-relaxed">
+              {audioMetrics?.cost_estimate.pricing_note ?? "Estimativa operacional; conferir billing oficial antes de fechamento financeiro."}
+            </p>
+          </div>
+        </div>
+      </section>
         </>
       )}
 
@@ -975,6 +1205,261 @@ export default function CrmAgenteWhatsApp() {
             </p>
           </div>
         </div>
+      </section>
+
+      <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
+        <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-cream">Rollout do audio/IA</h2>
+            <p className="text-xs text-stone mt-1">
+              Piloto, janela horaria e limites diarios da automacao por audio
+            </p>
+          </div>
+          <button
+            onClick={saveRolloutSettings}
+            disabled={rolloutSaving || !rolloutSettings}
+            className="h-9 px-3 rounded-xl bg-gold text-black text-xs font-semibold flex items-center gap-2 disabled:opacity-50"
+          >
+            {rolloutSaving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+            Salvar rollout
+          </button>
+        </div>
+
+        {rolloutSettings && (
+          <div className="p-4 grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-4">
+            <div className="rounded-xl border border-surface-03 bg-surface-00/30 p-4 space-y-4">
+              <div>
+                <label className="text-xs text-stone">Modo</label>
+                <select
+                  value={rolloutSettings.mode}
+                  onChange={(event) => updateRolloutSetting("mode", event.target.value)}
+                  className="mt-1 w-full h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
+                >
+                  <option value="all">Todos</option>
+                  <option value="pilot">Piloto</option>
+                  <option value="off">Desligado</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-stone">Telefones piloto</label>
+                <textarea
+                  value={rolloutSettings.pilot_phones}
+                  onChange={(event) => updateRolloutSetting("pilot_phones", event.target.value)}
+                  rows={5}
+                  className="mt-1 w-full bg-surface-03 border border-surface-03 rounded-xl px-3 py-2 text-sm text-cream outline-none focus:border-gold resize-none"
+                  placeholder="5511999999999, 5511888888888"
+                />
+                <p className="mt-1 text-[11px] text-stone">{rolloutSettings.pilot_phones_count} telefone(s) normalizado(s)</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-surface-03 bg-surface-00/30 p-4 grid grid-cols-1 lg:grid-cols-3 gap-3">
+              <div className="lg:col-span-3">
+                <label className="text-xs text-stone">Janela horaria</label>
+                <input
+                  value={rolloutSettings.hours}
+                  onChange={(event) => updateRolloutSetting("hours", event.target.value)}
+                  className="mt-1 w-full h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
+                  placeholder="18:00-23:00,10:00-14:00"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-stone">Limite audio recebido</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={10000}
+                  value={rolloutSettings.daily_input_limit}
+                  onChange={(event) => updateRolloutSetting("daily_input_limit", Number(event.target.value) || 0)}
+                  className="mt-1 w-full h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-stone">Limite resposta IA</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={10000}
+                  value={rolloutSettings.daily_reply_limit}
+                  onChange={(event) => updateRolloutSetting("daily_reply_limit", Number(event.target.value) || 0)}
+                  className="mt-1 w-full h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-stone">Limite TTS</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={10000}
+                  value={rolloutSettings.daily_tts_limit}
+                  onChange={(event) => updateRolloutSetting("daily_tts_limit", Number(event.target.value) || 0)}
+                  className="mt-1 w-full h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
+                />
+              </div>
+
+              <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div className="rounded-xl border border-surface-03 px-3 py-3">
+                  <p className="text-[11px] uppercase text-stone">Status</p>
+                  <p className={`mt-1 text-sm font-semibold ${rolloutSettings.mode === "off" ? "text-red-300" : "text-green-300"}`}>
+                    {rolloutSettings.mode === "off" ? "Desligado" : rolloutSettings.mode === "pilot" ? "Piloto" : "Todos"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-surface-03 px-3 py-3">
+                  <p className="text-[11px] uppercase text-stone">Recebidos hoje</p>
+                  <p className="mt-1 text-sm font-semibold text-cream">{rolloutSettings.daily_usage.audio_input ?? 0}</p>
+                </div>
+                <div className="rounded-xl border border-surface-03 px-3 py-3">
+                  <p className="text-[11px] uppercase text-stone">IA hoje</p>
+                  <p className="mt-1 text-sm font-semibold text-cream">{rolloutSettings.daily_usage.ai_auto_reply ?? 0}</p>
+                </div>
+                <div className="rounded-xl border border-surface-03 px-3 py-3">
+                  <p className="text-[11px] uppercase text-stone">TTS hoje</p>
+                  <p className="mt-1 text-sm font-semibold text-cream">{rolloutSettings.daily_usage.audio_output ?? 0}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
+        <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-cream">Audio e voz</h2>
+            <p className="text-xs text-stone mt-1">
+              Entrada por audio, transcricao, resposta por voz e fila TTS do AGENTE WHATSAPP
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={processAudioQueue}
+              disabled={processingQueue}
+              className="h-9 px-3 rounded-xl border border-surface-03 text-stone text-xs font-semibold flex items-center gap-2 disabled:opacity-50"
+            >
+              {processingQueue ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+              Processar audio
+            </button>
+            <button
+              onClick={saveAudioSettings}
+              disabled={audioSettingsSaving || !audioSettings}
+              className="h-9 px-3 rounded-xl bg-gold text-black text-xs font-semibold flex items-center gap-2 disabled:opacity-50"
+            >
+              {audioSettingsSaving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+              Salvar audio
+            </button>
+          </div>
+        </div>
+
+        {audioSettings && (
+          <div className="p-4 grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-4">
+            <div className="rounded-xl border border-surface-03 bg-surface-00/30 p-4 space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-cream">Resposta por voz</p>
+                  <p className="text-xs text-stone mt-0.5">Saida TTS pelo Gateway Baileys</p>
+                </div>
+                <button
+                  onClick={() => updateAudioSetting("enabled", !audioSettings.enabled)}
+                  className={`h-8 px-3 rounded-full border text-xs font-semibold ${
+                    audioSettings.enabled ? "border-green-500/30 bg-green-500/10 text-green-300" : "border-surface-03 text-stone"
+                  }`}
+                >
+                  {audioSettings.enabled ? "Ativa" : "Desativada"}
+                </button>
+              </div>
+
+              <div>
+                <label className="text-xs text-stone">Modo de resposta</label>
+                <select
+                  value={audioSettings.response_mode}
+                  onChange={(event) => updateAudioSetting("response_mode", event.target.value)}
+                  className="mt-1 w-full h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
+                >
+                  <option value="never">Nunca enviar audio</option>
+                  <option value="mirror_customer_audio">Espelhar quando cliente enviar audio</option>
+                  <option value="always">Sempre enviar audio</option>
+                  <option value="manual_only">Somente manual</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-surface-03 px-3 py-2">
+                <div>
+                  <p className="text-xs font-semibold text-cream">Voice note/PTT</p>
+                  <p className="text-[11px] text-stone">Enviar como mensagem de voz</p>
+                </div>
+                <button
+                  onClick={() => updateAudioSetting("send_as_ptt", !audioSettings.send_as_ptt)}
+                  className={`h-7 px-3 rounded-full border text-[11px] font-semibold ${
+                    audioSettings.send_as_ptt ? "border-green-500/30 bg-green-500/10 text-green-300" : "border-surface-03 text-stone"
+                  }`}
+                >
+                  {audioSettings.send_as_ptt ? "PTT" : "Audio"}
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-surface-03 bg-surface-00/30 p-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-stone">Modelo TTS</label>
+                <input
+                  value={audioSettings.tts_model}
+                  onChange={(event) => updateAudioSetting("tts_model", event.target.value)}
+                  className="mt-1 w-full h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-stone">Voz</label>
+                <input
+                  value={audioSettings.tts_voice}
+                  onChange={(event) => updateAudioSetting("tts_voice", event.target.value)}
+                  className="mt-1 w-full h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-stone">Formato</label>
+                <select
+                  value={audioSettings.tts_format}
+                  onChange={(event) => updateAudioSetting("tts_format", event.target.value)}
+                  className="mt-1 w-full h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
+                >
+                  <option value="opus">opus</option>
+                  <option value="mp3">mp3</option>
+                  <option value="aac">aac</option>
+                  <option value="wav">wav</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-stone">Limite de texto</label>
+                <input
+                  type="number"
+                  min={120}
+                  max={2000}
+                  value={audioSettings.max_chars}
+                  onChange={(event) => updateAudioSetting("max_chars", Number(event.target.value) || 900)}
+                  className="mt-1 w-full h-10 bg-surface-03 border border-surface-03 rounded-xl px-3 text-sm text-cream outline-none focus:border-gold"
+                />
+              </div>
+              <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-xl border border-surface-03 px-3 py-3">
+                  <p className="text-[11px] uppercase text-stone">Saida</p>
+                  <p className={`mt-1 text-sm font-semibold ${audioSettings.enabled ? "text-green-300" : "text-stone"}`}>
+                    {audioSettings.enabled ? "Habilitada" : "Desabilitada"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-surface-03 px-3 py-3">
+                  <p className="text-[11px] uppercase text-stone">Modo</p>
+                  <p className="mt-1 text-sm font-semibold text-cream">{audioSettings.response_mode}</p>
+                </div>
+                <div className="rounded-xl border border-surface-03 px-3 py-3">
+                  <p className="text-[11px] uppercase text-stone">Atualizado</p>
+                  <p className="mt-1 text-sm font-semibold text-cream">{fmtDate(audioSettings.updated_at)}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
@@ -2326,6 +2811,10 @@ export default function CrmAgenteWhatsApp() {
                 {!detailLoading && messages.map((message) => {
                   const outbound = message.direction === "outbound";
                   const sourceLabel = messageSourceLabel(message.raw_payload?.source);
+                  const isAudio = message.message_type === "audio";
+                  const displayText = messageText(message);
+                  const canRetryTranscription = !outbound && isAudio;
+                  const canGenerateTts = outbound && message.sender_type === "ai" && message.message_type === "text";
                   return (
                     <div key={message.id} className={`flex ${outbound ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[78%] rounded-2xl px-4 py-3 border ${
@@ -2344,10 +2833,57 @@ export default function CrmAgenteWhatsApp() {
                           {sourceLabel && (
                             <span className="text-[11px] text-blue-300">{sourceLabel}</span>
                           )}
+                          {isAudio && (
+                            <span className="text-[11px] text-gold flex items-center gap-1">
+                              <Volume2 size={12} /> audio
+                            </span>
+                          )}
                         </div>
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                          {message.body || message.message_type}
-                        </p>
+                        {isAudio && message.media_url && (
+                          <audio
+                            controls
+                            preload="metadata"
+                            src={resolveAssetUrl(message.media_url)}
+                            className="w-full min-w-[220px] max-w-full h-9 my-2"
+                          />
+                        )}
+                        {displayText ? (
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                            {displayText}
+                          </p>
+                        ) : (
+                          <p className="text-sm leading-relaxed text-stone">{message.message_type}</p>
+                        )}
+                        {isAudio && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-stone">
+                            <span>STT: {message.transcription_status || "none"}</span>
+                            {message.transcription_error && <span className="text-red-300">{message.transcription_error}</span>}
+                          </div>
+                        )}
+                        {(canRetryTranscription || canGenerateTts) && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {canRetryTranscription && (
+                              <button
+                                onClick={() => retryTranscription(message)}
+                                disabled={audioActionId === message.id}
+                                className="h-7 px-2 rounded-lg border border-surface-03 text-[11px] text-stone hover:text-cream disabled:opacity-50 flex items-center gap-1"
+                              >
+                                {audioActionId === message.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                                STT
+                              </button>
+                            )}
+                            {canGenerateTts && (
+                              <button
+                                onClick={() => retryTTS(message)}
+                                disabled={audioActionId === message.id}
+                                className="h-7 px-2 rounded-lg border border-gold/40 text-[11px] text-gold hover:bg-gold/10 disabled:opacity-50 flex items-center gap-1"
+                              >
+                                {audioActionId === message.id ? <Loader2 size={12} className="animate-spin" /> : <Volume2 size={12} />}
+                                Voz
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
