@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     MERCADO_PAGO_ACCESS_TOKEN: str = ""
     MERCADO_PAGO_PUBLIC_KEY: str = ""
     MERCADO_PAGO_WEBHOOK_SECRET: str = ""
+    ASAAS_API_KEY: str = ""
+    ASAAS_WEBHOOK_TOKEN: str = ""
 
     # Admin JWT
     JWT_SECRET_KEY: str = "troque-esta-chave-secreta-em-producao"

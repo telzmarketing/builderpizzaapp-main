@@ -269,22 +269,125 @@ CREATE TABLE IF NOT EXISTS payments (
     amount         FLOAT NOT NULL,
     transaction_id VARCHAR(300),
     gateway        VARCHAR(50) NOT NULL DEFAULT 'mock',
+    provider       VARCHAR(50) NOT NULL DEFAULT 'mock',
+    provider_payment_id VARCHAR(160),
+    provider_customer_id VARCHAR(160),
+    provider_status VARCHAR(80),
+    mercado_pago_payment_id VARCHAR(100),
+    external_reference VARCHAR(120),
+    currency      VARCHAR(3) NOT NULL DEFAULT 'BRL',
+    installments  INTEGER,
     qr_code        TEXT,
     qr_code_text   TEXT,
+    pix_payload    TEXT,
+    pix_qr_code    TEXT,
+    pix_expires_at TIMESTAMPTZ,
     payment_url    VARCHAR(500),
     client_secret  VARCHAR(300),
+    pay_on_delivery BOOLEAN NOT NULL DEFAULT FALSE,
+    delivery_payment_method VARCHAR(20),
+    cash_needs_change BOOLEAN,
+    cash_change_for FLOAT,
+    provider_error_code VARCHAR(120),
+    provider_error_message TEXT,
     webhook_data   TEXT,
+    raw_response   TEXT,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    paid_at        TIMESTAMPTZ
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    paid_at        TIMESTAMPTZ,
+    cancelled_at   TIMESTAMPTZ,
+    refunded_at    TIMESTAMPTZ
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS ix_payments_mercado_pago_payment_id
+    ON payments(mercado_pago_payment_id)
+    WHERE mercado_pago_payment_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS ix_payments_provider_payment_id
+    ON payments(provider, provider_payment_id)
+    WHERE provider_payment_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS ix_payments_provider_customer_id
+    ON payments(provider, provider_customer_id)
+    WHERE provider_customer_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS payment_events (
+    id                    VARCHAR PRIMARY KEY,
+    provider              VARCHAR(50) NOT NULL DEFAULT 'mercado_pago',
+    event_type            VARCHAR(100),
+    provider_event_id     VARCHAR(200),
+    provider_payment_id   VARCHAR(160),
+    payload_hash          VARCHAR(64),
+    processing_status     VARCHAR(30) NOT NULL DEFAULT 'received',
+    error_message         TEXT,
+    mercado_pago_payment_id VARCHAR(100),
+    external_reference    VARCHAR(120),
+    raw_payload           TEXT NOT NULL,
+    processed_at          TIMESTAMPTZ,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ix_payment_events_provider_event_id
+    ON payment_events(provider, provider_event_id)
+    WHERE provider_event_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS ix_payment_events_provider_payload_hash
+    ON payment_events(provider, payload_hash)
+    WHERE provider_event_id IS NULL AND payload_hash IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS ix_payment_events_provider_payment_id
+    ON payment_events(provider, provider_payment_id)
+    WHERE provider_payment_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS payment_provider_customers (
+    id                     VARCHAR PRIMARY KEY,
+    customer_id            VARCHAR NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    provider               VARCHAR(50) NOT NULL,
+    provider_customer_id   VARCHAR(160) NOT NULL,
+    external_reference     VARCHAR(160),
+    raw_response_sanitized TEXT,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_payment_provider_customer UNIQUE (customer_id, provider),
+    CONSTRAINT uq_payment_provider_customer_external_id UNIQUE (provider, provider_customer_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_payment_provider_customers_provider
+    ON payment_provider_customers(provider);
+
+CREATE INDEX IF NOT EXISTS ix_payment_provider_customers_external_reference
+    ON payment_provider_customers(provider, external_reference)
+    WHERE external_reference IS NOT NULL;
 
 -- ── Configuração de gateway de pagamento (singleton: id = 'default') ─────────
 CREATE TABLE IF NOT EXISTS payment_gateway_config (
     id                    VARCHAR PRIMARY KEY DEFAULT 'default',
     gateway               VARCHAR(50) NOT NULL DEFAULT 'mock',
+    pix_provider          VARCHAR(50) NOT NULL DEFAULT 'mercado_pago',
+    credit_card_provider  VARCHAR(50) NOT NULL DEFAULT 'mercado_pago',
+    mp_enabled            BOOLEAN NOT NULL DEFAULT TRUE,
+    mp_environment        VARCHAR(20) NOT NULL DEFAULT 'sandbox',
     mp_public_key         VARCHAR(300),
     mp_access_token       VARCHAR(300),
     mp_webhook_secret     VARCHAR(300),
+    mp_pix_enabled        BOOLEAN NOT NULL DEFAULT TRUE,
+    mp_credit_card_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    mp_max_installments   INTEGER NOT NULL DEFAULT 6,
+    mp_last_health_check_at TIMESTAMPTZ,
+    mp_last_health_check_status VARCHAR(30) NOT NULL DEFAULT 'not_tested',
+    mp_last_health_check_message TEXT,
+    asaas_enabled         BOOLEAN NOT NULL DEFAULT FALSE,
+    asaas_environment     VARCHAR(20) NOT NULL DEFAULT 'sandbox',
+    asaas_api_key         VARCHAR(500),
+    asaas_webhook_token   VARCHAR(300),
+    asaas_pix_enabled     BOOLEAN NOT NULL DEFAULT FALSE,
+    asaas_credit_card_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    asaas_max_installments INTEGER NOT NULL DEFAULT 1,
+    asaas_tokenization_status VARCHAR(30) NOT NULL DEFAULT 'not_validated',
+    asaas_last_health_check_at TIMESTAMPTZ,
+    asaas_last_health_check_status VARCHAR(30) NOT NULL DEFAULT 'not_tested',
+    asaas_last_health_check_message TEXT,
     stripe_publishable_key VARCHAR(300),
     stripe_secret_key     VARCHAR(300),
     stripe_webhook_secret VARCHAR(300),
@@ -460,9 +563,49 @@ ON CONFLICT (id) DO NOTHING;
 
 -- ── Configuração de gateway de pagamento ──────────────────────────────────────
 INSERT INTO payment_gateway_config (
-    id, gateway, accept_pix, accept_credit_card, accept_debit_card, accept_cash, sandbox
+    id,
+    gateway,
+    pix_provider,
+    credit_card_provider,
+    mp_enabled,
+    mp_environment,
+    mp_pix_enabled,
+    mp_credit_card_enabled,
+    mp_max_installments,
+    asaas_enabled,
+    asaas_environment,
+    asaas_pix_enabled,
+    asaas_credit_card_enabled,
+    asaas_max_installments,
+    asaas_tokenization_status,
+    accept_pix,
+    accept_credit_card,
+    accept_debit_card,
+    accept_cash,
+    sandbox
 )
-VALUES ('default', 'mock', TRUE, TRUE, FALSE, TRUE, TRUE)
+VALUES (
+    'default',
+    'mercadopago',
+    'mercado_pago',
+    'mercado_pago',
+    TRUE,
+    'sandbox',
+    TRUE,
+    TRUE,
+    6,
+    FALSE,
+    'sandbox',
+    FALSE,
+    FALSE,
+    1,
+    'not_validated',
+    TRUE,
+    TRUE,
+    FALSE,
+    TRUE,
+    TRUE
+)
 ON CONFLICT (id) DO NOTHING;
 
 -- ── Produtos ──────────────────────────────────────────────────────────────────

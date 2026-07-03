@@ -38,6 +38,7 @@ class Customer(Base):
     addresses = relationship("Address", back_populates="customer")
     orders = relationship("Order", back_populates="customer")
     loyalty_account = relationship("CustomerLoyalty", back_populates="customer", uselist=False)
+    payment_provider_customers = relationship("PaymentProviderCustomer", back_populates="customer")
 
 
 class Address(Base):

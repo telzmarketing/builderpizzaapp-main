@@ -14,7 +14,7 @@ from backend.models.admin import AdminUser
 from backend.models.order import Order
 from backend.routes.admin_auth import get_current_admin
 from backend.routes.order_access import require_order_or_admin
-from backend.schemas.payment import PaymentCreate, PayOnDeliverySwitch, WebhookPayload
+from backend.schemas.payment import PaymentCreate, PaymentOperationRequest, PayOnDeliverySwitch, WebhookPayload
 from backend.services.payment_service import PaymentService
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -57,6 +57,11 @@ def get_public_key(db: Session = Depends(get_db)):
 @router.get("/methods")
 def get_payment_methods(db: Session = Depends(get_db)):
     return ok(PaymentService(db).accepted_methods())
+
+
+@router.get("/config/public")
+def get_public_payment_config(db: Session = Depends(get_db)):
+    return ok(PaymentService(db).public_config())
 
 
 @router.get("/{order_id}")
@@ -139,6 +144,47 @@ def approve_payment(
     try:
         payment = PaymentService(db).approve_manual(order_id)
         return ok(payment, "Pagamento aprovado manualmente.")
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/reconcile/{order_id}")
+def reconcile_payment(
+    order_id: str,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    try:
+        payment = PaymentService(db).reconcile(order_id)
+        return ok(payment, "Pagamento conciliado pelo provider historico.")
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/cancel/{order_id}")
+def cancel_payment(
+    order_id: str,
+    body: PaymentOperationRequest = PaymentOperationRequest(),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    try:
+        payment = PaymentService(db).cancel_payment(order_id, reason=body.reason)
+        return ok(payment, "Cobranca cancelada pelo provider historico.")
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/refund/{order_id}")
+def refund_payment(
+    order_id: str,
+    body: PaymentOperationRequest = PaymentOperationRequest(),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    try:
+        payment = PaymentService(db).refund_payment(order_id, reason=body.reason, value=body.value)
+        return ok(payment, "Pagamento estornado pelo provider historico.")
     except DomainError as exc:
         return err(exc)
 

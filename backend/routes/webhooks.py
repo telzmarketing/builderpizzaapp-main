@@ -53,3 +53,25 @@ async def mercadopago_webhook(
         return ok(result)
     except DomainError as exc:
         return err(exc)
+
+
+@router.post("/asaas")
+async def asaas_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+    asaas_access_token: str | None = Header(default=None),
+):
+    raw_body = await request.body()
+    try:
+        body = await request.json() if raw_body else {}
+    except Exception:
+        return err_msg("Payload de webhook invalido ou malformado.", code="WebhookParseError")
+
+    if not isinstance(body, dict):
+        return err_msg("Payload de webhook invalido ou malformado.", code="WebhookParseError")
+
+    try:
+        result = PaymentService(db).process_asaas_webhook(body, raw_body, asaas_access_token)
+        return ok(result)
+    except DomainError as exc:
+        return err(exc)

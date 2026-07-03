@@ -39,6 +39,7 @@ import {
   type ApiOrder,
   type ApiPayment,
   type ApiPaymentMethods,
+  type ApiPaymentPublicConfig,
   type ApiShipping,
   type CheckoutIn,
   type StoreOperationStatus,
@@ -71,6 +72,27 @@ function formatCpf(v: string) {
   if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
   if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
   return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+}
+function formatCpfCnpj(v: string) {
+  const d = v.replace(/\D/g, "").slice(0, 14);
+  if (d.length <= 11) return formatCpf(d);
+  if (d.length <= 2) return d;
+  if (d.length <= 5) return `${d.slice(0, 2)}.${d.slice(2)}`;
+  if (d.length <= 8) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5)}`;
+  if (d.length <= 12) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8)}`;
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+}
+function documentDigits(value: string) {
+  return value.replace(/\D/g, "");
+}
+function validCpfCnpjDigits(value: string) {
+  const digits = documentDigits(value);
+  return digits.length === 11 || digits.length === 14;
+}
+function paymentExpiryMs(payment: ApiPayment | null) {
+  if (!payment?.pix_expires_at) return Date.now() + 30 * 60 * 1000;
+  const parsed = new Date(payment.pix_expires_at).getTime();
+  return Number.isFinite(parsed) && parsed > Date.now() ? parsed : Date.now() + 30 * 60 * 1000;
 }
 
 // sessionStorage key that persists the locked order across page refreshes and back-navigation
@@ -115,6 +137,7 @@ export default function Checkout() {
   const [cashNeedsChange, setCashNeedsChange] = useState(false);
   const [cashChangeFor, setCashChangeFor] = useState("");
   const [paymentMethods, setPaymentMethods] = useState<ApiPaymentMethods | null>(null);
+  const [paymentPublicConfig, setPaymentPublicConfig] = useState<ApiPaymentPublicConfig | null>(null);
   const [payment, setPayment] = useState<ApiPayment | null>(null);
   const [paymentState, setPaymentState] = useState<PaymentState>("idle");
   const [paymentMessage, setPaymentMessage] = useState("");
@@ -126,12 +149,33 @@ export default function Checkout() {
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvv, setCardCvv] = useState("");
   const [cardCpf, setCardCpf] = useState("");
+  const [pixCpfCnpj, setPixCpfCnpj] = useState("");
   const [cardFunction, setCardFunction] = useState<"credit" | "debit">("credit");
   const [cardSubmitting, setCardSubmitting] = useState(false);
   const [cardError, setCardError] = useState("");
   const [pixExpiresAt, setPixExpiresAt] = useState<number | null>(null);
   const [pixSecondsLeft, setPixSecondsLeft] = useState<number | null>(null);
   const paymentMethodsRef = useRef<ApiPaymentMethods | null>(null);
+  const pixProvider = paymentPublicConfig?.methods.pix.provider || paymentMethods?.pix_provider || payment?.provider || "";
+  const isAsaasPix = pixProvider === "asaas";
+  const pixGatewayName = pixProvider === "asaas" ? "ASAAS" : "Mercado Pago";
+  const pixDocument = documentDigits(pixCpfCnpj || cardCpf);
+  const displayPixQrCode = payment?.qr_code || payment?.pix_qr_code || "";
+  const displayPixPayload = payment?.qr_code_text || payment?.pix_payload || "";
+  const creditCardConfig = paymentPublicConfig?.methods.credit_card;
+  const debitCardConfig = paymentPublicConfig?.methods.debit_card;
+  const creditCardMercadoPagoAvailable = paymentPublicConfig
+    ? creditCardConfig?.enabled === true && creditCardConfig.provider === "mercado_pago" && creditCardConfig.implementation_status === "available"
+    : paymentMethods?.accept_credit_card !== false;
+  const debitCardMercadoPagoAvailable = paymentPublicConfig
+    ? debitCardConfig?.enabled === true && debitCardConfig.provider === "mercado_pago" && debitCardConfig.implementation_status === "available"
+    : paymentMethods?.accept_debit_card !== false;
+  const onlineCardAvailable = creditCardMercadoPagoAvailable || debitCardMercadoPagoAvailable;
+  const selectedCardAvailable = cardFunction === "debit" ? debitCardMercadoPagoAvailable : creditCardMercadoPagoAvailable;
+  const cardUnavailableReason =
+    creditCardConfig?.reason ||
+    debitCardConfig?.reason ||
+    "Cartao online disponivel apenas via Mercado Pago neste checkout.";
 
   // Guard: if a payment was already initiated for a previous session, redirect to order tracking immediately.
   useEffect(() => {
@@ -160,6 +204,21 @@ export default function Checkout() {
     window.addEventListener("popstate", handlePop);
     return () => window.removeEventListener("popstate", handlePop);
   }, [createdOrder?.id, navigate]);
+
+  useEffect(() => {
+    if (selectedPaymentMethod !== "card") return;
+    if (cardFunction === "credit" && !creditCardMercadoPagoAvailable && debitCardMercadoPagoAvailable) {
+      setCardFunction("debit");
+    }
+    if (cardFunction === "debit" && !debitCardMercadoPagoAvailable && creditCardMercadoPagoAvailable) {
+      setCardFunction("credit");
+    }
+  }, [
+    selectedPaymentMethod,
+    cardFunction,
+    creditCardMercadoPagoAvailable,
+    debitCardMercadoPagoAvailable,
+  ]);
 
   const savedAddresses = checkoutAddresses ?? customer?.addresses ?? [];
   const savedAddressSignature = savedAddresses
@@ -251,6 +310,7 @@ export default function Checkout() {
 
   useEffect(() => {
     storeOperationApi.status().then(setStoreStatus).catch(() => setStoreStatus(null));
+    paymentsApi.publicConfig().then(setPaymentPublicConfig).catch(() => setPaymentPublicConfig(null));
     paymentsApi.methods().then((methods) => {
       setPaymentMethods(methods);
       paymentMethodsRef.current = methods;
@@ -318,8 +378,15 @@ export default function Checkout() {
             ...prev,
             qr_code: status.qr_code ?? prev.qr_code,
             qr_code_text: status.qr_code_text ?? prev.qr_code_text,
+            pix_payload: status.pix_payload ?? prev.pix_payload,
+            pix_qr_code: status.pix_qr_code ?? prev.pix_qr_code,
+            pix_expires_at: status.pix_expires_at ?? prev.pix_expires_at,
             payment_url: status.payment_url ?? prev.payment_url,
           } : prev);
+          if (status.pix_expires_at) {
+            const expiresAt = new Date(status.pix_expires_at).getTime();
+            if (Number.isFinite(expiresAt)) setPixExpiresAt(expiresAt);
+          }
         }
         if (
           status.payment_status === "approved" ||
@@ -502,12 +569,16 @@ export default function Checkout() {
     }
     if (paymentMethods) {
       const pixDisabled = selectedPaymentMethod === "pix" && !paymentMethods.accept_pix;
-      const cardDisabled = selectedPaymentMethod === "card" && !paymentMethods.accept_credit_card && !paymentMethods.accept_debit_card;
+      const cardDisabled = selectedPaymentMethod === "card" && !onlineCardAvailable;
       const deliveryDisabled = selectedPaymentMethod === "delivery" && !paymentMethods.accept_cash;
       if (pixDisabled || cardDisabled || deliveryDisabled) {
         setApiError("Forma de pagamento indisponivel no momento.");
         return;
       }
+    }
+    if (selectedPaymentMethod === "pix" && isAsaasPix && !validCpfCnpjDigits(pixCpfCnpj)) {
+      setApiError("Informe CPF ou CNPJ valido para gerar o Pix.");
+      return;
     }
     if (selectedPaymentMethod === "delivery" && deliveryPaymentMethod === "cash" && cashNeedsChange) {
       const changeFor = Number(cashChangeFor.replace(",", "."));
@@ -595,14 +666,14 @@ export default function Checkout() {
         sessionStorage.setItem(LOCKED_ORDER_KEY, order.id);
         setPaymentState("loading");
         setPaymentMessage("Gerando PIX seguro...");
-        const pixPayment = await paymentsApi.createPix(order.id, order.total);
+        const pixPayment = await paymentsApi.createPix(order.id, order.total, isAsaasPix ? pixDocument : undefined);
         setPayment(pixPayment);
-        setPixExpiresAt(Date.now() + 30 * 60 * 1000); // 30 min de validade
+        setPixExpiresAt(paymentExpiryMs(pixPayment));
         setPaymentState("pending");
         setPaymentMessage(
           pixPayment.qr_code_text
             ? "PIX gerado. Pague pelo QR Code ou copia-e-cola."
-            : "PIX criado. Aguardando retorno do QR Code do Mercado Pago.",
+            : `PIX criado. Aguardando retorno do QR Code do ${pixGatewayName}.`,
         );
       } else {
         if (selectedPaymentMethod === "card") {
@@ -635,6 +706,10 @@ export default function Checkout() {
   const handleCardPay = async () => {
     if (!createdOrder) return;
     setCardError("");
+    if (!selectedCardAvailable) {
+      setCardError(cardUnavailableReason);
+      return;
+    }
     setCardSubmitting(true);
     try {
       if (!window.MercadoPago) {
@@ -713,24 +788,29 @@ export default function Checkout() {
 
   const handleSwitchToPix = async () => {
     if (!createdOrder) return;
+    if (isAsaasPix && !validCpfCnpjDigits(pixCpfCnpj || cardCpf)) {
+      setPaymentState("error");
+      setPaymentMessage("Informe CPF ou CNPJ valido para gerar o Pix.");
+      return;
+    }
     setSelectedPaymentMethod("pix");
     sessionStorage.setItem(LOCKED_ORDER_KEY, createdOrder.id);
     setPaymentState("loading");
     setPaymentMessage("Gerando PIX seguro...");
     setCardError("");
     try {
-      const pixPayment = await paymentsApi.createPix(createdOrder.id, createdOrder.total);
+      const pixPayment = await paymentsApi.createPix(createdOrder.id, createdOrder.total, isAsaasPix ? pixDocument : undefined);
       setPayment(pixPayment);
-      setPixExpiresAt(Date.now() + 30 * 60 * 1000);
+      setPixExpiresAt(paymentExpiryMs(pixPayment));
       setPaymentState("pending");
       setPaymentMessage(
         pixPayment.qr_code_text
           ? "PIX gerado. Pague pelo QR Code ou copia-e-cola."
-          : "PIX criado. Aguardando retorno do QR Code do Mercado Pago.",
+          : `PIX criado. Aguardando retorno do QR Code do ${pixGatewayName}.`,
       );
-    } catch {
+    } catch (err) {
       setPaymentState("error");
-      setPaymentMessage("Erro ao gerar PIX. Tente novamente.");
+      setPaymentMessage(err instanceof Error ? err.message : "Erro ao gerar PIX. Tente novamente.");
     }
   };
 
@@ -964,7 +1044,9 @@ export default function Checkout() {
               Forma de pagamento
             </h2>
             <p className="mb-3 rounded-xl border border-surface-03 bg-surface-02 px-3 py-2 text-xs leading-relaxed text-parchment">
-              Pagamento 100% seguro via Mercado Pago. Seus dados são protegidos durante toda a transação.
+              {selectedPaymentMethod === "pix" && isAsaasPix
+                ? "Pagamento Pix seguro via ASAAS. Seus dados sao protegidos durante toda a transacao."
+                : "Pagamento 100% seguro via Mercado Pago. Seus dados sao protegidos durante toda a transacao."}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {([
@@ -975,7 +1057,7 @@ export default function Checkout() {
                 const disabled = value === "pix"
                   ? paymentMethods?.accept_pix === false
                   : value === "card"
-                    ? paymentMethods ? !paymentMethods.accept_credit_card && !paymentMethods.accept_debit_card : false
+                    ? paymentMethods ? !onlineCardAvailable : false
                     : paymentMethods?.accept_cash === false;
                 return (
                   <button
@@ -998,6 +1080,18 @@ export default function Checkout() {
                 );
               })}
             </div>
+            {selectedPaymentMethod === "pix" && isAsaasPix && (
+              <div className="mt-3">
+                <Field
+                  icon={Hash}
+                  placeholder="CPF/CNPJ para gerar o Pix"
+                  value={pixCpfCnpj}
+                  disabled={!!createdOrder}
+                  onChange={(v) => setPixCpfCnpj(formatCpfCnpj(v))}
+                  error={pixCpfCnpj && !validCpfCnpjDigits(pixCpfCnpj) ? "Informe 11 ou 14 digitos." : undefined}
+                />
+              </div>
+            )}
             {selectedPaymentMethod === "delivery" && (
               <div className="mt-3 rounded-xl border border-surface-03 bg-surface-02 p-3">
                 <div className="grid grid-cols-2 gap-2">
@@ -1127,7 +1221,11 @@ export default function Checkout() {
         {createdOrder && (
           <section className="bg-surface-02 rounded-xl p-4 border border-surface-03">
             <h2 className="text-cream font-bold text-lg mb-3">
-              {selectedPaymentMethod === "delivery" ? "Pagamento na entrega" : "Pagamento Mercado Pago"}
+              {selectedPaymentMethod === "delivery"
+                ? "Pagamento na entrega"
+                : selectedPaymentMethod === "pix"
+                  ? `Pagamento Pix ${pixGatewayName}`
+                  : "Pagamento Mercado Pago"}
             </h2>
             <p className={`text-sm mb-3 ${statusClass(paymentState)}`}>{paymentMessage || "Aguardando pagamento."}</p>
             {selectedPaymentMethod === "delivery" ? (
@@ -1170,23 +1268,23 @@ export default function Checkout() {
 
                 {paymentState !== "expired" && (
                   <>
-                    {payment?.qr_code && paymentState !== "approved" && (
+                    {displayPixQrCode && paymentState !== "approved" && (
                       <div className="mx-auto w-full max-w-[260px] rounded-xl bg-white p-3">
-                        <img src={payment.qr_code} alt="QR Code PIX" className="h-auto w-full rounded-lg" />
+                        <img src={displayPixQrCode} alt="QR Code PIX" className="h-auto w-full rounded-lg" />
                       </div>
                     )}
-                    {payment?.qr_code_text && paymentState !== "approved" && (
+                    {displayPixPayload && paymentState !== "approved" && (
                       <div className="space-y-2">
                         <label className="text-xs font-medium text-stone">Codigo copia-e-cola</label>
                         <textarea
                           readOnly
-                          value={payment.qr_code_text}
+                          value={displayPixPayload}
                           rows={4}
                           className="w-full resize-none rounded-xl border border-surface-03 bg-surface-03 px-3 py-2 text-xs text-cream outline-none"
                         />
                         <button
                           type="button"
-                          onClick={() => navigator.clipboard?.writeText(payment.qr_code_text || "")}
+                          onClick={() => navigator.clipboard?.writeText(displayPixPayload)}
                           className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold px-4 py-3 text-sm font-bold text-cream transition-colors hover:bg-gold/90"
                         >
                           <Copy size={16} />
@@ -1194,9 +1292,9 @@ export default function Checkout() {
                         </button>
                       </div>
                     )}
-                    {paymentState !== "loading" && !payment?.qr_code_text && paymentState !== "approved" && (
+                    {paymentState !== "loading" && !displayPixPayload && paymentState !== "approved" && (
                       <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
-                        O Mercado Pago ainda nao retornou o QR Code. A tela continua verificando o pagamento.
+                        O {pixGatewayName} ainda nao retornou o QR Code. A tela continua verificando o pagamento.
                       </div>
                     )}
                   </>
@@ -1215,6 +1313,15 @@ export default function Checkout() {
                       <p className="text-stone text-xs">
                         Este pedido continua aberto. Escolha PIX ou pagamento na entrega para continuar.
                       </p>
+                      {isAsaasPix && (
+                        <Field
+                          icon={Hash}
+                          placeholder="CPF/CNPJ para gerar o Pix"
+                          value={pixCpfCnpj}
+                          onChange={(v) => setPixCpfCnpj(formatCpfCnpj(v))}
+                          error={pixCpfCnpj && !validCpfCnpjDigits(pixCpfCnpj) ? "Informe 11 ou 14 digitos." : undefined}
+                        />
+                      )}
                       <button
                         onClick={handleSwitchToPix}
                         className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 hover:bg-green-500 active:scale-95 text-white font-bold py-3 transition-colors"
@@ -1282,15 +1389,21 @@ export default function Checkout() {
                     </div>
                   )}
                   {/* Formulário do cartão — oculto quando recusado */}
-                  {paymentState !== "rejected" && (
+                  {!onlineCardAvailable && (
+                    <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
+                      {cardUnavailableReason}
+                    </div>
+                  )}
+                  {paymentState !== "rejected" && onlineCardAvailable && (
                     <>
                       <div className="grid grid-cols-2 gap-2">
                         {(["credit", "debit"] as const).map((fn) => (
                           <button
                             key={fn}
                             type="button"
+                            disabled={fn === "credit" ? !creditCardMercadoPagoAvailable : !debitCardMercadoPagoAvailable}
                             onClick={() => setCardFunction(fn)}
-                            className={`py-2 rounded-xl border text-sm font-semibold transition-colors ${
+                            className={`py-2 rounded-xl border text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
                               cardFunction === fn
                                 ? "border-gold bg-gold/10 text-gold-light"
                                 : "border-surface-03 bg-surface-03 text-stone"
@@ -1350,7 +1463,7 @@ export default function Checkout() {
                       {cardError && <p className="text-red-400 text-xs ml-1">{cardError}</p>}
                       <button
                         onClick={handleCardPay}
-                        disabled={cardSubmitting || !cardNumber || !cardName || !cardExpiry || !cardCvv}
+                        disabled={cardSubmitting || !selectedCardAvailable || !cardNumber || !cardName || !cardExpiry || !cardCvv}
                         className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold hover:bg-gold/90 active:scale-95 text-cream font-bold py-4 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {cardSubmitting ? <Loader2 size={20} className="animate-spin" /> : <CreditCard size={20} />}

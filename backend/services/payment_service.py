@@ -1,14 +1,13 @@
 """
-PaymentService - Mercado Pago hybrid flow.
+PaymentService - multi-gateway payment flow.
 
 Rules:
-- Mercado Pago is the only active gateway for customer checkout.
+- The payment provider is resolved server-side from PaymentGatewayConfig.
 - PIX is generated directly by the backend so the checkout can show QR Code
-  and copia-e-cola without using the Payment Brick.
+  and copia-e-cola without using a card SDK.
 - Card payments keep using Mercado Pago Payment Brick.
 - The frontend never marks an order as paid.
-- Payment approval is applied only after webhook processing re-fetches the
-  payment from Mercado Pago.
+- Payment approval is applied only after trusted backend/webhook processing.
 """
 from __future__ import annotations
 
@@ -24,6 +23,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
@@ -43,7 +43,16 @@ from backend.models.order import Order, OrderStatus
 from backend.models.payment import Payment, PaymentEvent, PaymentMethod, PaymentStatus
 from backend.models.payment_config import PaymentGatewayConfig
 from backend.schemas.payment import PaymentCreate, PaymentOut, PayOnDeliverySwitch, WebhookPayload
+from backend.services.asaas_client import sanitize_asaas_payload
+from backend.services.asaas_gateway import AsaasGateway
 from backend.services.customer_metrics_service import sync_customer_order_metrics
+from backend.services.payment_gateway_resolver import (
+    ASAAS_CARD_SAFETY_REASON,
+    PROVIDER_ASAAS,
+    PROVIDER_MERCADO_PAGO,
+    PaymentGatewayResolver,
+    normalize_payment_provider,
+)
 
 settings = get_settings()
 MP_API_BASE = "https://api.mercadopago.com"
@@ -72,6 +81,8 @@ def _load_config(db: Session) -> PaymentGatewayConfig:
         config.mp_access_token = settings.MERCADO_PAGO_ACCESS_TOKEN or config.mp_access_token
         config.mp_public_key = settings.MERCADO_PAGO_PUBLIC_KEY or config.mp_public_key
         config.mp_webhook_secret = settings.MERCADO_PAGO_WEBHOOK_SECRET or config.mp_webhook_secret
+    config.asaas_api_key = settings.ASAAS_API_KEY or config.asaas_api_key
+    config.asaas_webhook_token = settings.ASAAS_WEBHOOK_TOKEN or config.asaas_webhook_token
 
     db.commit()
     db.refresh(config)
@@ -141,6 +152,25 @@ def _payment_method(form_data: dict[str, Any], fallback: PaymentMethod | None) -
     return PaymentMethod.credit_card
 
 
+def _payer_document(form_data: dict[str, Any]) -> str | None:
+    payer = form_data.get("payer") or {}
+    identification = payer.get("identification") if isinstance(payer, dict) else {}
+    candidates = [
+        identification.get("number") if isinstance(identification, dict) else None,
+        payer.get("cpf_cnpj") if isinstance(payer, dict) else None,
+        payer.get("cpfCnpj") if isinstance(payer, dict) else None,
+        form_data.get("cpf_cnpj"),
+        form_data.get("cpfCnpj"),
+        form_data.get("document"),
+        form_data.get("identification_number"),
+    ]
+    for candidate in candidates:
+        digits = "".join(ch for ch in str(candidate or "") if ch.isdigit())
+        if digits:
+            return digits
+    return None
+
+
 def _mp_status_to_payment(mp_status: str, status_detail: str | None = None) -> PaymentStatus:
     status = (mp_status or "").lower()
     detail = (status_detail or "").lower()
@@ -157,9 +187,27 @@ def _mp_status_to_payment(mp_status: str, status_detail: str | None = None) -> P
     return PaymentStatus.pending
 
 
+def _asaas_status_to_payment(asaas_status: str | None, event_type: str | None = None) -> PaymentStatus:
+    status = (asaas_status or "").strip().upper()
+    event = (event_type or "").strip().upper()
+    if status in {"RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"} or event in {"PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"}:
+        return PaymentStatus.approved
+    if status == "REFUNDED" or event in {"PAYMENT_REFUNDED", "PAYMENT_PARTIALLY_REFUNDED"}:
+        return PaymentStatus.refunded
+    if status in {"DELETED", "CANCELLED", "CANCELED"} or event in {"PAYMENT_DELETED", "PAYMENT_BANK_SLIP_CANCELLED"}:
+        return PaymentStatus.cancelled
+    if status == "OVERDUE" or event == "PAYMENT_OVERDUE":
+        return PaymentStatus.expired
+    if event in {"PAYMENT_CREDIT_CARD_CAPTURE_REFUSED", "PAYMENT_REPROVED_BY_RISK_ANALYSIS"}:
+        return PaymentStatus.rejected
+    return PaymentStatus.pending
+
+
 def _order_status_for_payment(status: PaymentStatus) -> OrderStatus | None:
     if status == PaymentStatus.approved:
         return OrderStatus.paid
+    if status == PaymentStatus.refunded:
+        return OrderStatus.refunded
     if status in {PaymentStatus.cancelled, PaymentStatus.expired}:
         return OrderStatus.pagamento_expirado
     return None
@@ -192,9 +240,11 @@ def _store_mp_payment_data(payment: Payment, response: dict[str, Any]) -> None:
 
     if qr_code_text:
         payment.qr_code_text = qr_code_text
+        payment.pix_payload = qr_code_text
     if qr_code_base64:
         qr_code = str(qr_code_base64)
         payment.qr_code = qr_code if qr_code.startswith("data:image") else f"data:image/png;base64,{qr_code}"
+        payment.pix_qr_code = payment.qr_code
     if ticket_url:
         payment.payment_url = ticket_url
 
@@ -209,19 +259,28 @@ class PaymentService:
             self._config = _load_config(self._db)
         return self._config
 
+    def _resolver(self) -> PaymentGatewayResolver:
+        return PaymentGatewayResolver(self._cfg())
+
     def public_key(self) -> dict[str, str]:
         cfg = self._cfg()
         return {"public_key": settings.MERCADO_PAGO_PUBLIC_KEY or cfg.mp_public_key or ""}
 
-    def accepted_methods(self) -> dict[str, bool | str]:
+    def accepted_methods(self) -> dict[str, Any]:
         cfg = self._cfg()
+        public_methods = self._resolver().public_config()["methods"]
         return {
             "gateway": "mercadopago",
-            "accept_pix": bool(cfg.accept_pix),
-            "accept_credit_card": bool(cfg.accept_credit_card),
-            "accept_debit_card": bool(cfg.accept_debit_card),
+            "accept_pix": bool(public_methods["pix"]["enabled"]),
+            "accept_credit_card": bool(public_methods["credit_card"]["enabled"]),
+            "accept_debit_card": bool(public_methods["debit_card"]["enabled"]),
             "accept_cash": bool(cfg.accept_cash),
+            "pix_provider": cfg.pix_provider or PROVIDER_MERCADO_PAGO,
+            "credit_card_provider": cfg.credit_card_provider or PROVIDER_MERCADO_PAGO,
         }
+
+    def public_config(self) -> dict[str, Any]:
+        return self._resolver().public_config()
 
     def _get_order(self, order_id: str) -> Order:
         order = self._db.query(Order).filter(Order.id == order_id).first()
@@ -249,6 +308,7 @@ class PaymentService:
                 gateway="mercadopago" if provider == "mercado_pago" else provider,
                 provider=provider,
                 external_reference=order.external_reference or order.id,
+                currency="BRL",
             )
             self._db.add(payment)
             self._db.flush()
@@ -259,6 +319,7 @@ class PaymentService:
             payment.provider = provider
             payment.gateway = "mercadopago" if provider == "mercado_pago" else provider
             payment.external_reference = order.external_reference or order.id
+            payment.currency = payment.currency or "BRL"
         return payment
 
     def create(self, payload: PaymentCreate) -> PaymentOut:
@@ -272,16 +333,38 @@ class PaymentService:
         if abs(order.total - amount) > 0.01:
             raise PaymentAmountMismatch(order.total, amount)
 
-        cfg = self._cfg()
-        provider = _provider_name(settings.PAYMENT_PROVIDER or settings.PAYMENT_GATEWAY or cfg.gateway)
-        if provider != "mercado_pago":
-            provider = "mercado_pago"
         method = _payment_method(form_data, payload.payment_method)
+        cfg = self._cfg()
         _ensure_method_enabled(cfg, method)
         if method == PaymentMethod.cash:
             raise DomainError(
                 "Pagamento na entrega deve ser criado junto com o pedido.",
                 code="PaymentMethodDisabled",
+            )
+        resolved_gateway = self._resolver().resolve(method)
+        if not resolved_gateway.enabled:
+            raise DomainError(
+                resolved_gateway.reason or "Forma de pagamento indisponivel.",
+                code="PaymentMethodDisabled",
+            )
+        provider = resolved_gateway.provider
+        if provider == PROVIDER_ASAAS:
+            if method != PaymentMethod.pix:
+                raise DomainError(
+                    ASAAS_CARD_SAFETY_REASON,
+                    code="PaymentGatewayNotImplemented",
+                )
+            return self._create_asaas_pix_payment(
+                order,
+                payload,
+                form_data,
+                amount,
+                current_order_status,
+            )
+        if provider != PROVIDER_MERCADO_PAGO:
+            raise DomainError(
+                "Provedor de pagamento indisponivel para checkout.",
+                code="PaymentGatewayNotImplemented",
             )
 
         if order.payment and order.payment.mercado_pago_payment_id:
@@ -321,8 +404,13 @@ class PaymentService:
         mp_id = str(response.get("id", ""))
         _logger.info("Resposta MP: mp_payment_id=%s status=%s order_id=%s", mp_id, response.get("status"), order.id)
         payment.mercado_pago_payment_id = mp_id or payment.mercado_pago_payment_id
+        payment.provider_payment_id = mp_id or payment.provider_payment_id
+        payment.provider_status = response.get("status") or payment.provider_status
         payment.transaction_id = mp_id or payment.transaction_id
         payment.external_reference = response.get("external_reference") or payment.external_reference
+        payment.currency = "BRL"
+        if form_data.get("installments"):
+            payment.installments = int(form_data["installments"])
         payment.raw_response = json.dumps(response, ensure_ascii=False)
         payment.webhook_data = payment.raw_response
         _store_mp_payment_data(payment, response)
@@ -335,6 +423,68 @@ class PaymentService:
             payment.status = PaymentStatus.pending
             self._db.commit()
 
+        self._db.refresh(payment)
+        bus.publish(PaymentCreated(payment_id=payment.id, order_id=payment.order_id, method=payment.method.value, amount=payment.amount, gateway=payment.gateway))
+        return PaymentOut.model_validate(payment)
+
+    def _create_asaas_pix_payment(
+        self,
+        order: Order,
+        payload: PaymentCreate,
+        form_data: dict[str, Any],
+        amount: float,
+        current_order_status: str,
+    ) -> PaymentOut:
+        if order.payment:
+            if order.payment.status == PaymentStatus.approved:
+                raise DomainError(
+                    "Este pedido ja foi pago. Acesse o acompanhamento do pedido.",
+                    code="PaymentAlreadyApproved",
+                )
+            if order.payment.status == PaymentStatus.pending:
+                same_asaas_attempt = (
+                    order.payment.provider == PROVIDER_ASAAS
+                    and order.payment.method == PaymentMethod.pix
+                    and abs(order.payment.amount - amount) <= 0.01
+                )
+                if same_asaas_attempt and order.payment.provider_payment_id and (
+                    order.payment.qr_code_text or order.payment.pix_payload
+                ):
+                    return PaymentOut.model_validate(order.payment)
+                if order.payment.mercado_pago_payment_id:
+                    raise DomainError(
+                        "Este pedido ja possui um pagamento Mercado Pago em andamento. Aguarde a confirmacao ou crie um novo pedido.",
+                        code="PaymentAlreadyInProgress",
+                    )
+
+        cpf_cnpj = _payer_document(form_data)
+        if not cpf_cnpj:
+            raise DomainError(
+                "CPF/CNPJ do cliente e obrigatorio para gerar Pix ASAAS.",
+                code="AsaasCustomerDocumentRequired",
+            )
+
+        if not order.external_reference:
+            order.external_reference = f"order-{order.id}"
+
+        if current_order_status == "pending":
+            order_sm.transition(order.id, current_order_status, "aguardando_pagamento")
+            order.status = OrderStatus.aguardando_pagamento
+            self._db.flush()
+
+        payment = self._pending_payment(order, payload, amount, PaymentMethod.pix, PROVIDER_ASAAS)
+        payment.mercado_pago_payment_id = None
+        payment.pay_on_delivery = False
+        payment.method = PaymentMethod.pix
+        payment.status = PaymentStatus.pending
+
+        AsaasGateway(self._db).create_pix_payment(
+            order=order,
+            payment=payment,
+            amount=amount,
+            cpf_cnpj=cpf_cnpj,
+        )
+        self._db.commit()
         self._db.refresh(payment)
         bus.publish(PaymentCreated(payment_id=payment.id, order_id=payment.order_id, method=payment.method.value, amount=payment.amount, gateway=payment.gateway))
         return PaymentOut.model_validate(payment)
@@ -401,6 +551,7 @@ class PaymentService:
         payment.cash_change_for = cash_change_for
         payment.transaction_id = payment.transaction_id or f"DELIVERY-{uuid.uuid4().hex[:8].upper()}"
         payment.external_reference = order.external_reference or order.id
+        payment.currency = payment.currency or "BRL"
         payment.updated_at = datetime.now(timezone.utc)
         self._db.add(payment)
 
@@ -435,6 +586,10 @@ class PaymentService:
             payment.updated_at = now
             if status == PaymentStatus.approved:
                 payment.paid_at = payment.paid_at or now
+            if status == PaymentStatus.cancelled:
+                payment.cancelled_at = payment.cancelled_at or now
+            if status == PaymentStatus.refunded:
+                payment.refunded_at = payment.refunded_at or now
         elif status != PaymentStatus.approved:
             return False
         else:
@@ -460,8 +615,13 @@ class PaymentService:
                     if _allowed_order_transition(order, OrderStatus.cancelled):
                         order_sm.transition(order.id, target_order_status.value, "cancelled")
                         order.status = OrderStatus.cancelled
-                        order.cancelled_by = "system"
-                        order.cancellation_reason = "PIX não pago — expirado pelo Mercado Pago"
+                        is_admin_cancel = source.startswith("admin_cancel")
+                        order.cancelled_by = "admin" if is_admin_cancel else "system"
+                        order.cancellation_reason = (
+                            "Cobranca cancelada pelo administrador"
+                            if is_admin_cancel
+                            else "PIX nao pago - expirado pelo gateway de pagamento"
+                        )
                         order.cancelled_at = now
             else:
                 order.updated_at = now
@@ -576,6 +736,8 @@ class PaymentService:
 
         mp_payment_id = str(response.get("id") or payment.mercado_pago_payment_id)
         payment.mercado_pago_payment_id = mp_payment_id
+        payment.provider_payment_id = mp_payment_id
+        payment.provider_status = response.get("status") or payment.provider_status
         payment.transaction_id = mp_payment_id
         payment.external_reference = response.get("external_reference") or payment.external_reference
         payment.raw_response = json.dumps(response, ensure_ascii=False)
@@ -587,6 +749,84 @@ class PaymentService:
             payment.updated_at = datetime.now(timezone.utc)
             self._db.commit()
         return changed
+
+    def _payment_provider(self, payment: Payment) -> str:
+        provider = normalize_payment_provider(payment.provider or payment.gateway)
+        if provider == "mercadopago":
+            return PROVIDER_MERCADO_PAGO
+        return provider
+
+    def _sync_provider_payment(self, payment: Payment, *, source: str) -> bool:
+        provider = self._payment_provider(payment)
+        if provider == PROVIDER_MERCADO_PAGO:
+            return self._sync_pending_mercado_pago_payment(payment, source=source)
+        if provider == PROVIDER_ASAAS:
+            return self._sync_asaas_payment(payment, source=source)
+        return False
+
+    def _sync_asaas_payment(self, payment: Payment, *, source: str) -> bool:
+        provider_payment_id = payment.provider_payment_id or payment.transaction_id
+        if not provider_payment_id:
+            return False
+        if payment.status in {PaymentStatus.cancelled, PaymentStatus.expired, PaymentStatus.refunded}:
+            return False
+
+        try:
+            response = AsaasGateway(self._db).retrieve_payment(str(provider_payment_id))
+        except DomainError as exc:
+            _logger.warning(
+                "Nao foi possivel sincronizar pagamento ASAAS: payment_id=%s asaas_payment_id=%s error=%s",
+                payment.id,
+                provider_payment_id,
+                exc,
+            )
+            return False
+        except Exception as exc:
+            _logger.warning(
+                "Falha inesperada ao sincronizar pagamento ASAAS: payment_id=%s asaas_payment_id=%s error=%s",
+                payment.id,
+                provider_payment_id,
+                exc,
+            )
+            return False
+
+        asaas_payment_id = str(response.get("id") or provider_payment_id)
+        payment.provider = PROVIDER_ASAAS
+        payment.gateway = PROVIDER_ASAAS
+        payment.provider_payment_id = asaas_payment_id
+        payment.provider_status = response.get("status") or payment.provider_status
+        payment.transaction_id = asaas_payment_id
+        payment.external_reference = response.get("externalReference") or payment.external_reference
+        payment.currency = "BRL"
+        payment.raw_response = json.dumps(sanitize_asaas_payload(response), ensure_ascii=False)
+
+        new_status = _asaas_status_to_payment(response.get("status"), None)
+        changed = self._apply_status(payment, new_status, source=source)
+        if not changed:
+            payment.updated_at = datetime.now(timezone.utc)
+            self._db.commit()
+        return changed
+
+    def _find_payment_event(self, provider: str, provider_event_id: str | None, payload_hash: str | None) -> PaymentEvent | None:
+        if provider_event_id:
+            event = (
+                self._db.query(PaymentEvent)
+                .filter(PaymentEvent.provider == provider, PaymentEvent.provider_event_id == provider_event_id)
+                .first()
+            )
+            if event:
+                return event
+        if payload_hash:
+            return (
+                self._db.query(PaymentEvent)
+                .filter(
+                    PaymentEvent.provider == provider,
+                    PaymentEvent.provider_event_id.is_(None),
+                    PaymentEvent.payload_hash == payload_hash,
+                )
+                .first()
+            )
+        return None
 
     def process_webhook(
         self,
@@ -604,11 +844,21 @@ class PaymentService:
 
         event_type = payload.type or query_params.get("type") or "payment"
         action = payload.action or ""
+        normalized_payload = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        payload_hash = hashlib.sha256(normalized_payload.encode("utf-8")).hexdigest()
+        provider_event_id = payload.id
+        existing_event = self._find_payment_event("mercado_pago", provider_event_id, payload_hash)
+        if existing_event:
+            return {"status": "duplicate", "event_id": existing_event.id, "changed": False}
+
         if event_type != "payment" and "payment" not in action:
             event = PaymentEvent(
                 id=str(uuid.uuid4()),
                 provider="mercado_pago",
                 event_type=action or event_type,
+                provider_event_id=provider_event_id,
+                payload_hash=payload_hash,
+                processing_status="ignored",
                 mercado_pago_payment_id=None,
                 raw_payload=raw_body.decode("utf-8", errors="replace"),
             )
@@ -626,6 +876,10 @@ class PaymentService:
             id=str(uuid.uuid4()),
             provider="mercado_pago",
             event_type=payload.action or payload.type or "payment",
+            provider_event_id=provider_event_id,
+            provider_payment_id=mp_payment_id or None,
+            payload_hash=payload_hash,
+            processing_status="received",
             mercado_pago_payment_id=mp_payment_id or None,
             raw_payload=raw_body.decode("utf-8", errors="replace"),
         )
@@ -634,6 +888,7 @@ class PaymentService:
 
         if not mp_payment_id:
             event.processed_at = datetime.now(timezone.utc)
+            event.processing_status = "ignored"
             self._db.commit()
             return {"status": "ignored", "reason": "no mercado_pago_payment_id"}
 
@@ -652,14 +907,17 @@ class PaymentService:
         if not payment:
             _logger.warning("Webhook MP: pagamento não encontrado no banco — mp_payment_id=%s external_reference=%s", mp_payment_id, external_reference)
             event.processed_at = datetime.now(timezone.utc)
+            event.processing_status = "ignored"
             self._db.commit()
             return {"status": "ignored", "reason": f"payment '{mp_payment_id}' not found"}
         if payment.provider != "mercado_pago" and payment.gateway != "mercadopago":
             event.processed_at = datetime.now(timezone.utc)
+            event.processing_status = "ignored"
             self._db.commit()
             return {"status": "ignored", "reason": "stale_webhook_payment_switched_provider"}
         if payment.mercado_pago_payment_id and str(payment.mercado_pago_payment_id) != str(mp_payment_id):
             event.processed_at = datetime.now(timezone.utc)
+            event.processing_status = "ignored"
             self._db.commit()
             return {"status": "ignored", "reason": "stale_webhook_payment_replaced"}
 
@@ -672,6 +930,8 @@ class PaymentService:
             )
 
         payment.mercado_pago_payment_id = mp_payment_id
+        payment.provider_payment_id = mp_payment_id
+        payment.provider_status = response.get("status") or payment.provider_status
         payment.transaction_id = mp_payment_id
         payment.external_reference = external_reference or payment.external_reference
         payment.raw_response = json.dumps(response, ensure_ascii=False)
@@ -681,8 +941,127 @@ class PaymentService:
         new_status = _mp_status_to_payment(response.get("status", ""), response.get("status_detail"))
         changed = self._apply_status(payment, new_status, source="webhook")
         event.processed_at = datetime.now(timezone.utc)
+        event.processing_status = "processed"
         self._db.commit()
         return {"status": "ok", "payment_status": new_status.value, "changed": changed}
+
+    def process_asaas_webhook(self, payload: dict[str, Any], raw_body: bytes, access_token: str | None) -> dict:
+        cfg = self._cfg()
+        if not self._verify_asaas_access_token(access_token, cfg):
+            raise WebhookSignatureInvalid()
+
+        event_type = str(payload.get("event") or "").strip()
+        payment_payload = payload.get("payment") if isinstance(payload.get("payment"), dict) else {}
+        provider_event_id = str(payload.get("id") or "").strip() or None
+        normalized_payload = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        payload_hash = hashlib.sha256(normalized_payload.encode("utf-8")).hexdigest()
+
+        existing_event = self._find_payment_event(PROVIDER_ASAAS, provider_event_id, payload_hash)
+        if existing_event:
+            return {"status": "duplicate", "event_id": existing_event.id, "changed": False}
+
+        provider_payment_id = str(
+            payment_payload.get("id")
+            or payload.get("paymentId")
+            or payload.get("payment_id")
+            or ""
+        ).strip()
+        event = PaymentEvent(
+            id=str(uuid.uuid4()),
+            provider=PROVIDER_ASAAS,
+            event_type=event_type or "unknown",
+            provider_event_id=provider_event_id,
+            provider_payment_id=provider_payment_id or None,
+            payload_hash=payload_hash,
+            processing_status="received",
+            raw_payload=raw_body.decode("utf-8", errors="replace"),
+        )
+        self._db.add(event)
+        try:
+            self._db.flush()
+        except IntegrityError:
+            self._db.rollback()
+            existing_event = self._find_payment_event(PROVIDER_ASAAS, provider_event_id, payload_hash)
+            if existing_event:
+                return {"status": "duplicate", "event_id": existing_event.id, "changed": False}
+            raise
+
+        if not event_type.startswith("PAYMENT_"):
+            event.processed_at = datetime.now(timezone.utc)
+            event.processing_status = "ignored"
+            self._db.commit()
+            return {"status": "ignored", "reason": f"unsupported_event:{event_type or 'unknown'}"}
+
+        if not provider_payment_id:
+            event.processed_at = datetime.now(timezone.utc)
+            event.processing_status = "ignored"
+            self._db.commit()
+            return {"status": "ignored", "reason": "no asaas_payment_id"}
+
+        response = AsaasGateway(self._db).retrieve_payment(provider_payment_id)
+        external_reference = response.get("externalReference") or payment_payload.get("externalReference")
+        event.external_reference = external_reference
+
+        payment = (
+            self._db.query(Payment)
+            .filter(Payment.provider == PROVIDER_ASAAS, Payment.provider_payment_id == provider_payment_id)
+            .first()
+            or self._db.query(Payment)
+            .filter(Payment.provider == PROVIDER_ASAAS, Payment.transaction_id == provider_payment_id)
+            .first()
+        )
+        if not payment and external_reference:
+            order = self._db.query(Order).filter(Order.external_reference == external_reference).first()
+            if order and order.payment and order.payment.provider == PROVIDER_ASAAS:
+                payment = order.payment
+        if not payment:
+            _logger.warning("Webhook ASAAS: pagamento nao encontrado no banco - asaas_payment_id=%s external_reference=%s", provider_payment_id, external_reference)
+            event.processed_at = datetime.now(timezone.utc)
+            event.processing_status = "ignored"
+            self._db.commit()
+            return {"status": "ignored", "reason": f"payment '{provider_payment_id}' not found"}
+
+        if payment.provider_payment_id and str(payment.provider_payment_id) != provider_payment_id:
+            event.processed_at = datetime.now(timezone.utc)
+            event.processing_status = "ignored"
+            self._db.commit()
+            return {"status": "ignored", "reason": "stale_webhook_payment_replaced"}
+
+        asaas_amount = response.get("value")
+        if asaas_amount is not None and abs(float(asaas_amount) - payment.amount) > 0.05:
+            _logger.error(
+                "ALERTA: Discrepancia de valor no webhook ASAAS - payment_id=%s payment.amount=%.2f asaas_amount=%.2f asaas_payment_id=%s",
+                payment.id,
+                payment.amount,
+                float(asaas_amount),
+                provider_payment_id,
+            )
+
+        payment.provider = PROVIDER_ASAAS
+        payment.gateway = PROVIDER_ASAAS
+        payment.provider_payment_id = provider_payment_id
+        payment.provider_status = response.get("status") or payment.provider_status
+        payment.transaction_id = provider_payment_id
+        payment.external_reference = external_reference or payment.external_reference
+        payment.currency = "BRL"
+        payment.raw_response = json.dumps(sanitize_asaas_payload(response), ensure_ascii=False)
+        payment.webhook_data = event.raw_payload
+
+        new_status = _asaas_status_to_payment(response.get("status"), event_type)
+        event.processed_at = datetime.now(timezone.utc)
+        event.processing_status = "processed"
+        changed = self._apply_status(payment, new_status, source="webhook_asaas")
+        if not changed:
+            payment.updated_at = datetime.now(timezone.utc)
+            self._db.commit()
+        return {"status": "ok", "payment_status": new_status.value, "changed": changed}
+
+    def _verify_asaas_access_token(self, access_token: str | None, config: PaymentGatewayConfig) -> bool:
+        expected = (settings.ASAAS_WEBHOOK_TOKEN or config.asaas_webhook_token or "").strip()
+        received = (access_token or "").strip()
+        if not expected or not received:
+            return False
+        return hmac.compare_digest(expected, received)
 
     def _verify_mercado_pago_signature(
         self,
@@ -747,7 +1126,6 @@ class PaymentService:
     def create_preference(self, order_id: str) -> dict:
         order = self._get_order(order_id)
         cfg = self._cfg()
-        token = _mp_token(cfg)
         if not (cfg.accept_credit_card or cfg.accept_debit_card):
             raise DomainError(
                 "Forma de pagamento indisponivel. Configure os metodos aceitos em Admin > Pagamentos.",
@@ -762,12 +1140,29 @@ class PaymentService:
             order.external_reference = f"order-{order.id}"
 
         method = PaymentMethod.credit_card if cfg.accept_credit_card else PaymentMethod.debit_card
+        resolved_gateway = self._resolver().resolve(method)
+        if not resolved_gateway.enabled:
+            raise DomainError(
+                resolved_gateway.reason or "Forma de pagamento indisponivel.",
+                code="PaymentMethodDisabled",
+            )
+        if resolved_gateway.provider == PROVIDER_ASAAS:
+            raise DomainError(
+                ASAAS_CARD_SAFETY_REASON,
+                code="PaymentGatewayNotImplemented",
+            )
+        if resolved_gateway.provider != PROVIDER_MERCADO_PAGO:
+            raise DomainError(
+                "Provedor de pagamento indisponivel para checkout.",
+                code="PaymentGatewayNotImplemented",
+            )
+        token = _mp_token(cfg)
         payment = self._pending_payment(
             order,
             PaymentCreate(order_id=order.id, amount=order.total, payment_method=method),
             float(order.total),
             method,
-            "mercado_pago",
+            resolved_gateway.provider,
         )
 
         if current_order_status == "pending":
@@ -844,6 +1239,7 @@ class PaymentService:
             provider="cash",
             transaction_id=f"CASH-{uuid.uuid4().hex[:8].upper()}",
             external_reference=order.external_reference or order.id,
+            currency="BRL",
         )
         self._db.add(payment)
         self._db.flush()
@@ -866,6 +1262,7 @@ class PaymentService:
             gateway="manual",
             provider="manual",
             external_reference=order.external_reference or order.id,
+            currency="BRL",
         )
         if payment.status in {PaymentStatus.approved, PaymentStatus.paid}:
             return PaymentOut.model_validate(payment)
@@ -877,6 +1274,121 @@ class PaymentService:
         self._db.add(payment)
         self._db.flush()
         self._apply_status(payment, PaymentStatus.approved, source="admin_manual")
+        self._db.refresh(payment)
+        return PaymentOut.model_validate(payment)
+
+    def reconcile(self, order_id: str) -> PaymentOut:
+        payment = self._get_payment_by_order(order_id)
+        self._sync_provider_payment(payment, source="admin_reconcile")
+        self._db.refresh(payment)
+        return PaymentOut.model_validate(payment)
+
+    def cancel_payment(self, order_id: str, *, reason: str | None = None) -> PaymentOut:
+        payment = self._get_payment_by_order(order_id)
+        if payment.status in {PaymentStatus.cancelled, PaymentStatus.expired}:
+            return PaymentOut.model_validate(payment)
+        if payment.status in {PaymentStatus.approved, PaymentStatus.paid, PaymentStatus.refunded}:
+            raise DomainError(
+                "Pagamento aprovado nao pode ser cancelado; use estorno.",
+                code="PaymentCancelRequiresRefund",
+            )
+
+        provider = self._payment_provider(payment)
+        provider_payment_id = payment.provider_payment_id or payment.mercado_pago_payment_id or payment.transaction_id
+        if provider not in {PROVIDER_MERCADO_PAGO, PROVIDER_ASAAS} or not provider_payment_id:
+            raise DomainError("Pagamento nao possui cobranca remota cancelavel.", code="PaymentOperationUnsupported")
+
+        if provider == PROVIDER_MERCADO_PAGO:
+            response = _mp_request(
+                "PUT",
+                f"/v1/payments/{provider_payment_id}",
+                _mp_token(self._cfg()),
+                {"status": "cancelled"},
+                idempotency_key=hashlib.sha256(f"{payment.id}:cancel:{reason or ''}".encode()).hexdigest(),
+            )
+            payment.mercado_pago_payment_id = str(response.get("id") or provider_payment_id)
+            payment.provider_payment_id = payment.mercado_pago_payment_id
+            payment.provider_status = response.get("status") or payment.provider_status
+            payment.transaction_id = payment.mercado_pago_payment_id
+            payment.raw_response = json.dumps(response, ensure_ascii=False)
+            _store_mp_payment_data(payment, response)
+            status = _mp_status_to_payment(response.get("status", "cancelled"), response.get("status_detail"))
+        else:
+            response = AsaasGateway(self._db).delete_payment(str(provider_payment_id))
+            payment.provider = PROVIDER_ASAAS
+            payment.gateway = PROVIDER_ASAAS
+            payment.provider_payment_id = str(response.get("id") or provider_payment_id)
+            payment.provider_status = response.get("status") or "DELETED"
+            payment.transaction_id = payment.provider_payment_id
+            payment.raw_response = json.dumps(sanitize_asaas_payload(response), ensure_ascii=False)
+            status = _asaas_status_to_payment(payment.provider_status, "PAYMENT_DELETED")
+
+        self._apply_status(payment, status, source="admin_cancel")
+        self._db.refresh(payment)
+        return PaymentOut.model_validate(payment)
+
+    def refund_payment(self, order_id: str, *, reason: str | None = None, value: float | None = None) -> PaymentOut:
+        payment = self._get_payment_by_order(order_id)
+        if payment.status == PaymentStatus.refunded:
+            return PaymentOut.model_validate(payment)
+        if payment.status not in {PaymentStatus.approved, PaymentStatus.paid}:
+            raise DomainError("Somente pagamentos aprovados podem ser estornados.", code="PaymentRefundNotAllowed")
+
+        refund_value = float(value or payment.amount)
+        if abs(refund_value - float(payment.amount)) > 0.01:
+            raise DomainError(
+                "Estorno parcial ainda nao e suportado por este fluxo operacional.",
+                code="PartialRefundNotSupported",
+            )
+
+        provider = self._payment_provider(payment)
+        provider_payment_id = payment.provider_payment_id or payment.mercado_pago_payment_id or payment.transaction_id
+        if provider not in {PROVIDER_MERCADO_PAGO, PROVIDER_ASAAS} or not provider_payment_id:
+            raise DomainError("Pagamento nao possui cobranca remota estornavel.", code="PaymentOperationUnsupported")
+
+        if provider == PROVIDER_MERCADO_PAGO:
+            refund_response = _mp_request(
+                "POST",
+                f"/v1/payments/{provider_payment_id}/refunds",
+                _mp_token(self._cfg()),
+                {},
+                idempotency_key=hashlib.sha256(f"{payment.id}:refund:{refund_value:.2f}".encode()).hexdigest(),
+            )
+            try:
+                payment_response = _mp_request("GET", f"/v1/payments/{provider_payment_id}", _mp_token(self._cfg()))
+            except DomainError:
+                payment_response = {}
+            payment.provider_status = payment_response.get("status") or "refunded"
+            payment.raw_response = json.dumps(
+                {"refund": refund_response, "payment": payment_response},
+                ensure_ascii=False,
+            )
+            if payment_response:
+                _store_mp_payment_data(payment, payment_response)
+            status = _mp_status_to_payment(payment.provider_status, payment_response.get("status_detail"))
+        else:
+            refund_response = AsaasGateway(self._db).refund_payment(
+                str(provider_payment_id),
+                description=reason or "Estorno solicitado pelo administrador",
+            )
+            try:
+                payment_response = AsaasGateway(self._db).retrieve_payment(str(provider_payment_id))
+            except DomainError:
+                payment_response = {}
+            payment.provider = PROVIDER_ASAAS
+            payment.gateway = PROVIDER_ASAAS
+            payment.provider_payment_id = str(payment_response.get("id") or provider_payment_id)
+            payment.provider_status = payment_response.get("status") or refund_response.get("status") or "REFUNDED"
+            payment.transaction_id = payment.provider_payment_id
+            payment.raw_response = json.dumps(
+                sanitize_asaas_payload({"refund": refund_response, "payment": payment_response}),
+                ensure_ascii=False,
+            )
+            status = _asaas_status_to_payment(payment.provider_status, "PAYMENT_REFUNDED")
+
+        if status != PaymentStatus.refunded:
+            status = PaymentStatus.refunded
+        self._apply_status(payment, status, source="admin_refund")
         self._db.refresh(payment)
         return PaymentOut.model_validate(payment)
 
@@ -902,7 +1414,7 @@ class PaymentService:
 
     def get_by_order(self, order_id: str) -> PaymentOut:
         payment = self._get_payment_by_order(order_id)
-        self._sync_pending_mercado_pago_payment(payment, source="status_poll")
+        self._sync_provider_payment(payment, source="status_poll")
         self._db.refresh(payment)
         return PaymentOut.model_validate(payment)
 
@@ -910,7 +1422,7 @@ class PaymentService:
         order = self._get_order(order_id)
         payment = order.payment
         if payment:
-            self._sync_pending_mercado_pago_payment(payment, source="status_poll")
+            self._sync_provider_payment(payment, source="status_poll")
             self._db.refresh(order)
             payment = order.payment
         # Checkout is locked when a payment was submitted to MP and is still active (pending or approved).
@@ -918,7 +1430,7 @@ class PaymentService:
         blocking_statuses = {PaymentStatus.pending, PaymentStatus.approved}
         checkout_locked = bool(
             payment
-            and (payment.mercado_pago_payment_id or payment.payment_url)
+            and (payment.provider_payment_id or payment.mercado_pago_payment_id or payment.payment_url or payment.qr_code_text)
             and payment.status in blocking_statuses
         )
         return {
@@ -926,12 +1438,18 @@ class PaymentService:
             "pedido_status": order.status.value,
             "payment_status": payment.status.value if payment else "pending",
             "mercado_pago_payment_id": payment.mercado_pago_payment_id if payment else None,
+            "provider_payment_id": payment.provider_payment_id if payment else None,
+            "provider_status": payment.provider_status if payment else None,
             "external_reference": order.external_reference,
             "qr_code": payment.qr_code if payment else None,
             "qr_code_text": payment.qr_code_text if payment else None,
+            "pix_payload": payment.pix_payload if payment else None,
+            "pix_qr_code": payment.pix_qr_code if payment else None,
+            "pix_expires_at": payment.pix_expires_at if payment else None,
             "payment_url": payment.payment_url if payment else None,
             "checkout_locked": checkout_locked,
             "payment_method": payment.method.value if payment else None,
+            "payment_provider": payment.provider if payment else None,
             "pay_on_delivery": bool(payment.pay_on_delivery) if payment else False,
             "delivery_payment_method": payment.delivery_payment_method if payment else None,
             "cash_needs_change": payment.cash_needs_change if payment else None,

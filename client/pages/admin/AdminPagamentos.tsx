@@ -1,5 +1,21 @@
-import { useState, useEffect } from "react";
-import { Save, Eye, EyeOff, CheckCircle, AlertCircle, Loader2, CreditCard, QrCode, Wallet, Banknote } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  AlertCircle,
+  Banknote,
+  CheckCircle,
+  Copy,
+  CreditCard,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Loader2,
+  QrCode,
+  Route,
+  Save,
+  ShieldCheck,
+  TestTube2,
+  Wallet,
+} from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import {
@@ -8,124 +24,212 @@ import {
   type ApiPaymentGatewayConfigUpdate,
 } from "@/lib/api";
 
-type Gateway = "mock" | "mercadopago" | "stripe" | "pagseguro";
+type Provider = "mercado_pago" | "asaas";
 
-type GatewayConfig = ApiPaymentGatewayConfig & { gateway: Gateway };
+type FormState = Record<string, string | boolean | number>;
 
-const GATEWAYS: { id: Gateway; label: string; icon: string; description: string; color: string }[] = [
-  {
-    id: "mock",
-    label: "Modo Teste (Mock)",
-    icon: "🧪",
-    description: "Simula pagamentos localmente. Nenhum dado real é processado.",
-    color: "border-slate-500 bg-slate-500/10",
-  },
-  {
-    id: "mercadopago",
-    label: "Mercado Pago",
-    icon: "💙",
-    description: "PIX, cartão de crédito/débito. Gateway mais usado no Brasil.",
-    color: "border-blue-500 bg-blue-500/10",
-  },
-  {
-    id: "stripe",
-    label: "Stripe",
-    icon: "⚡",
-    description: "Cartão de crédito internacional. Ideal para escalar globalmente.",
-    color: "border-purple-500 bg-purple-500/10",
-  },
-  {
-    id: "pagseguro",
-    label: "PagSeguro",
-    icon: "🟡",
-    description: "PIX e cartão. Solução completa da UOL para o mercado brasileiro.",
-    color: "border-yellow-500 bg-yellow-500/10",
-  },
-];
+const inputClass =
+  "w-full rounded-lg border border-surface-03 bg-surface-03 px-4 py-2.5 text-sm text-cream placeholder-stone outline-none transition-colors focus:border-gold";
+
+const providerLabels: Record<Provider, string> = {
+  mercado_pago: "Mercado Pago",
+  asaas: "ASAAS",
+};
+
+const asaasCardRuntimeAvailable = false;
+const asaasCardSafetyReason = "Cartao ASAAS aguarda tokenizacao client-side oficial homologada.";
+
+function bool(value: unknown) {
+  return value === true;
+}
+
+function text(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function numberValue(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "Nunca testado";
+  return new Date(value).toLocaleString("pt-BR");
+}
+
+function masked(value?: string | null) {
+  return value || "Nao configurado";
+}
 
 export default function AdminPagamentos() {
-  const [config, setConfig] = useState<GatewayConfig | null>(null);
-  const [form, setForm] = useState<Record<string, string | boolean>>({});
+  const [config, setConfig] = useState<ApiPaymentGatewayConfig | null>(null);
+  const [form, setForm] = useState<FormState>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testingProvider, setTestingProvider] = useState<Provider | null>(null);
+  const [testMessage, setTestMessage] = useState<string | null>(null);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    adminApi.getPaymentGateway()
-      .then((data) => {
-        const gatewayData = data as GatewayConfig;
-        setConfig(gatewayData);
-        setForm({
-          gateway: "mercadopago",
-          sandbox: gatewayData.sandbox,
-          accept_pix: gatewayData.accept_pix,
-          accept_credit_card: gatewayData.accept_credit_card,
-          accept_debit_card: gatewayData.accept_debit_card,
-          accept_cash: gatewayData.accept_cash,
-          mp_public_key: gatewayData.mp_public_key || "",
-          mp_access_token: "",
-          mp_webhook_secret: "",
-        });
-      })
-      .catch(() => setError("Não foi possível carregar a configuração. O backend está rodando?"))
-      .finally(() => setLoading(false));
-  }, []);
+  const asaasCardValidated = text(form.asaas_tokenization_status) === "validated";
+  const asaasCardSelectable = asaasCardRuntimeAvailable && asaasCardValidated;
+  const mpWebhookUrl = `${window.location.origin}/api/webhooks/mercadopago`;
+  const asaasWebhookUrl = `${window.location.origin}/api/webhooks/asaas`;
 
-  const set = (key: string, value: string | boolean) =>
-    setForm((prev) => ({ ...prev, [key]: value }));
-
-  const toggleSecret = (key: string) =>
-    setShowSecrets((prev) => ({ ...prev, [key]: !prev[key] }));
-
-  const handleSave = async () => {
-    setSaving(true);
+  const loadConfig = async () => {
+    setLoading(true);
     setError(null);
     try {
-      // Send only non-empty strings for secrets (empty = don't update)
-      const payload: Record<string, string | boolean | null> = {};
-      for (const [key, value] of Object.entries(form)) {
-        if (value === "" && ["mp_access_token", "mp_webhook_secret"].includes(key)) {
-          continue; // skip blank secret fields
-        }
-        payload[key] = value;
-      }
+      const data = await adminApi.getPaymentGateway();
+      setConfig(data);
+      setForm({
+        accept_pix: data.accept_pix,
+        accept_credit_card: data.accept_credit_card,
+        accept_debit_card: data.accept_debit_card,
+        accept_cash: data.accept_cash,
+        pix_provider: data.pix_provider || "mercado_pago",
+        credit_card_provider: data.credit_card_provider || "mercado_pago",
+        mp_enabled: data.mp_enabled,
+        mp_environment: data.mp_environment || "sandbox",
+        mp_public_key: data.mp_public_key || "",
+        mp_access_token: "",
+        mp_webhook_secret: "",
+        mp_pix_enabled: data.mp_pix_enabled,
+        mp_credit_card_enabled: data.mp_credit_card_enabled,
+        mp_max_installments: data.mp_max_installments || 6,
+        asaas_enabled: data.asaas_enabled,
+        asaas_environment: data.asaas_environment || "sandbox",
+        asaas_api_key: "",
+        asaas_webhook_token: "",
+        asaas_pix_enabled: data.asaas_pix_enabled,
+        asaas_credit_card_enabled: data.asaas_credit_card_enabled && asaasCardRuntimeAvailable && data.asaas_tokenization_status === "validated",
+        asaas_max_installments: data.asaas_max_installments || 1,
+        asaas_tokenization_status: data.asaas_tokenization_status === "validated" && !asaasCardRuntimeAvailable ? "not_validated" : data.asaas_tokenization_status || "not_validated",
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel carregar a configuracao.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      payload.gateway = "mercadopago";
-      const updated = await adminApi.updatePaymentGateway(payload as ApiPaymentGatewayConfigUpdate) as GatewayConfig;
+  useEffect(() => {
+    loadConfig();
+  }, []);
+
+  useEffect(() => {
+    if (!asaasCardSelectable && form.credit_card_provider === "asaas") {
+      setForm((prev) => ({ ...prev, credit_card_provider: "mercado_pago" }));
+    }
+    if ((!asaasCardSelectable && form.asaas_credit_card_enabled === true) || (!asaasCardRuntimeAvailable && form.asaas_tokenization_status === "validated")) {
+      setForm((prev) => ({
+        ...prev,
+        asaas_credit_card_enabled: false,
+        asaas_tokenization_status: !asaasCardRuntimeAvailable && prev.asaas_tokenization_status === "validated" ? "not_validated" : prev.asaas_tokenization_status,
+      }));
+    }
+  }, [asaasCardSelectable, form.credit_card_provider, form.asaas_credit_card_enabled, form.asaas_tokenization_status]);
+
+  const currentRouting = useMemo(() => ({
+    pix: providerLabels[(text(form.pix_provider) as Provider) || "mercado_pago"] || text(form.pix_provider),
+    card: providerLabels[(text(form.credit_card_provider) as Provider) || "mercado_pago"] || text(form.credit_card_provider),
+  }), [form.pix_provider, form.credit_card_provider]);
+
+  const set = (key: string, value: string | boolean | number) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const toggleSecret = (key: string) => {
+    setShowSecrets((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const creditCardProvider = asaasCardSelectable ? text(form.credit_card_provider) : "mercado_pago";
+      const payload: ApiPaymentGatewayConfigUpdate = {
+        gateway: "mercadopago",
+        sandbox: text(form.mp_environment) !== "production",
+        accept_pix: bool(form.accept_pix),
+        accept_credit_card: bool(form.accept_credit_card),
+        accept_debit_card: bool(form.accept_debit_card),
+        accept_cash: bool(form.accept_cash),
+        pix_provider: text(form.pix_provider) || "mercado_pago",
+        credit_card_provider: creditCardProvider,
+        mp_enabled: bool(form.mp_enabled),
+        mp_environment: text(form.mp_environment) || "sandbox",
+        mp_public_key: text(form.mp_public_key) || null,
+        mp_pix_enabled: bool(form.mp_pix_enabled),
+        mp_credit_card_enabled: bool(form.mp_credit_card_enabled),
+        mp_max_installments: numberValue(form.mp_max_installments, 6),
+        asaas_enabled: bool(form.asaas_enabled),
+        asaas_environment: text(form.asaas_environment) || "sandbox",
+        asaas_pix_enabled: bool(form.asaas_pix_enabled),
+        asaas_credit_card_enabled: asaasCardSelectable ? bool(form.asaas_credit_card_enabled) : false,
+        asaas_max_installments: numberValue(form.asaas_max_installments, 1),
+        asaas_tokenization_status: !asaasCardRuntimeAvailable && text(form.asaas_tokenization_status) === "validated"
+          ? "not_validated"
+          : text(form.asaas_tokenization_status) || "not_validated",
+      };
+      if (text(form.mp_access_token)) payload.mp_access_token = text(form.mp_access_token);
+      if (text(form.mp_webhook_secret)) payload.mp_webhook_secret = text(form.mp_webhook_secret);
+      if (text(form.asaas_api_key)) payload.asaas_api_key = text(form.asaas_api_key);
+      if (text(form.asaas_webhook_token)) payload.asaas_webhook_token = text(form.asaas_webhook_token);
+
+      const updated = await adminApi.updatePaymentGateway(payload);
       setConfig(updated);
+      setForm((prev) => ({
+        ...prev,
+        mp_access_token: "",
+        mp_webhook_secret: "",
+        asaas_api_key: "",
+        asaas_webhook_token: "",
+        credit_card_provider: updated.credit_card_provider || "mercado_pago",
+        asaas_credit_card_enabled: updated.asaas_credit_card_enabled && asaasCardRuntimeAvailable && updated.asaas_tokenization_status === "validated",
+      }));
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao salvar.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao salvar configuracao.");
     } finally {
       setSaving(false);
     }
   };
 
-  const selectedGateway = "mercadopago" as Gateway;
-  const webhookUrl = `${window.location.origin}/api/webhooks/mercadopago`;
+  const testProvider = async (provider: Provider) => {
+    setTestingProvider(provider);
+    setTestMessage(null);
+    setError(null);
+    try {
+      const result = await adminApi.testPaymentGatewayProvider(provider);
+      setTestMessage(`${providerLabels[provider]}: ${result.message}`);
+      await loadConfig();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel testar o gateway.");
+    } finally {
+      setTestingProvider(null);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-00 to-surface-00">
-      <div className="flex flex-col md:flex-row min-h-screen md:h-screen">
+    <div className="min-h-screen bg-surface-00">
+      <div className="flex min-h-screen flex-col md:flex-row md:h-screen">
         <AdminSidebar />
 
         <div className="flex-1 overflow-auto">
-          {/* Header */}
-          <div className="bg-surface-02 px-8 py-4 border-b border-surface-03 flex justify-between items-center sticky top-0 z-20">
+          <div className="sticky top-0 z-20 flex items-center justify-between border-b border-surface-03 bg-surface-02 px-8 py-4">
             <div>
-              <h2 className="text-2xl font-bold text-cream">Gateway de Pagamento</h2>
-              <p className="text-stone text-sm mt-0.5">
-                Configure o processador de pagamentos da loja
-              </p>
+              <h2 className="text-2xl font-bold text-cream">Pagamentos</h2>
+              <p className="mt-0.5 text-sm text-stone">Roteamento e credenciais dos gateways de pagamento</p>
             </div>
             <div className="flex items-center gap-3">
               <button
-                onClick={handleSave}
+                onClick={save}
                 disabled={saving || loading}
-                className="flex items-center gap-2 bg-gold hover:bg-gold/90 disabled:opacity-50 text-cream font-bold py-2 px-5 rounded-lg transition-colors"
+                className="flex items-center gap-2 rounded-lg bg-gold px-5 py-2 font-bold text-cream transition-colors hover:bg-gold/90 disabled:opacity-50"
               >
                 {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                 {saving ? "Salvando..." : "Salvar"}
@@ -134,273 +238,455 @@ export default function AdminPagamentos() {
             </div>
           </div>
 
-          <div className="p-8 space-y-8">
-            {/* Feedback */}
+          <main className="space-y-6 p-8">
             {error && (
-              <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/40 rounded-xl px-4 py-3 text-red-400">
-                <AlertCircle size={20} />
-                <span className="text-sm">{error}</span>
-              </div>
+              <StatusBanner tone="error" icon={AlertCircle} text={error} />
             )}
             {saved && (
-              <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/40 rounded-xl px-4 py-3 text-green-400">
-                <CheckCircle size={20} />
-                <span className="text-sm">Configuração salva com sucesso!</span>
-              </div>
+              <StatusBanner tone="success" icon={CheckCircle} text="Configuracao salva com sucesso." />
+            )}
+            {testMessage && (
+              <StatusBanner tone="info" icon={TestTube2} text={testMessage} />
             )}
 
             {loading ? (
               <div className="flex items-center justify-center py-24">
-                <Loader2 size={40} className="animate-spin text-orange-500" />
+                <Loader2 size={40} className="animate-spin text-gold" />
               </div>
             ) : (
               <>
-                {/* ── Gateway selector ───────────────────────────────────── */}
-                <section className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-surface-03">
-                    <h3 className="text-lg font-bold text-cream">Processador de Pagamento</h3>
-                    <p className="text-stone text-sm">Selecione o gateway ativo para a loja</p>
-                  </div>
-                  <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {GATEWAYS.filter((gw) => gw.id === "mercadopago").map((gw) => (
-                      <button
-                        key={gw.id}
-                        onClick={() => set("gateway", gw.id)}
-                        className={`flex items-start gap-4 p-4 rounded-xl border-2 text-left transition-all ${
-                          selectedGateway === gw.id
-                            ? gw.color + " border-opacity-100"
-                            : "border-surface-03 hover:border-slate-500"
-                        }`}
-                      >
-                        <span className="text-3xl mt-0.5">{gw.icon}</span>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="text-cream font-bold text-sm">{gw.label}</p>
-                            {selectedGateway === gw.id && (
-                              <span className="text-xs bg-gold text-cream px-2 py-0.5 rounded-full">Ativo</span>
-                            )}
-                          </div>
-                          <p className="text-stone text-xs mt-1 leading-relaxed">{gw.description}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                {/* ── Ambiente ──────────────────────────────────────────── */}
-                <section className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-surface-03">
-                    <h3 className="text-lg font-bold text-cream">Ambiente</h3>
-                  </div>
-                  <div className="p-6 flex gap-4">
-                    {[
-                      { value: true, label: "🧪 Sandbox (Testes)", desc: "Nenhum valor real é cobrado" },
-                      { value: false, label: "🚀 Produção", desc: "Pagamentos reais — ative com cuidado" },
-                    ].map((opt) => (
-                      <button
-                        key={String(opt.value)}
-                        onClick={() => set("sandbox", opt.value)}
-                        className={`flex-1 p-4 rounded-xl border-2 text-left transition-all ${
-                          form.sandbox === opt.value
-                            ? "border-gold bg-gold/10"
-                            : "border-surface-03 hover:border-slate-500"
-                        }`}
-                      >
-                        <p className="text-cream font-bold text-sm">{opt.label}</p>
-                        <p className="text-stone text-xs mt-1">{opt.desc}</p>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                {/* ── Métodos aceitos ───────────────────────────────────── */}
-                <section className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-surface-03">
-                    <h3 className="text-lg font-bold text-cream">Métodos de Pagamento Aceitos</h3>
-                  </div>
-                  <div className="p-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-                    {[
-                      { key: "accept_pix", icon: QrCode, label: "PIX" },
-                      { key: "accept_credit_card", icon: CreditCard, label: "Cartão de Crédito" },
-                      { key: "accept_debit_card", icon: Wallet, label: "Cartão de Débito" },
-                      { key: "accept_cash", icon: Banknote, label: "Pagamento na Entrega" },
-                    ].map(({ key, icon: Icon, label }) => (
-                      <button
-                        key={key}
-                        onClick={() => set(key, !form[key])}
-                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
-                          form[key]
-                            ? "border-gold bg-gold/10 text-orange-400"
-                            : "border-surface-03 text-stone/70 hover:border-slate-500"
-                        }`}
-                      >
-                        <Icon size={24} />
-                        <span className="text-sm font-medium text-center">{label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                {/* ── Mercado Pago credentials ──────────────────────────── */}
-                {selectedGateway === "mercadopago" && (
-                  <CredentialSection
-                    title="Credenciais — Mercado Pago"
-                    badge="mp"
-                    docUrl="https://www.mercadopago.com.br/developers/pt/docs/getting-started"
-                    fields={[
-                      { key: "mp_public_key", label: "Public Key", placeholder: "APP_USR-...", secret: false },
-                      { key: "mp_access_token", label: "Access Token", placeholder: config?.mp_access_token_masked || "Não configurado — cole o novo valor", secret: true },
-                      { key: "mp_webhook_secret", label: "Webhook Secret", placeholder: config?.mp_webhook_secret_masked || "Não configurado — cole o novo valor", secret: true },
-                    ]}
-                    form={form}
-                    showSecrets={showSecrets}
-                    set={set}
-                    toggleSecret={toggleSecret}
+                <section className="rounded-lg border border-surface-03 bg-surface-02">
+                  <SectionHeader
+                    icon={Route}
+                    title="Roteamento"
+                    description="Define qual gateway sera usado para novos pagamentos. Pedidos ja criados permanecem no provider historico."
                   />
-                )}
-
-                {/* ── Stripe credentials ─────────────────────────────────── */}
-                {selectedGateway === "stripe" && (
-                  <CredentialSection
-                    title="Credenciais — Stripe"
-                    badge="stripe"
-                    docUrl="https://stripe.com/docs/keys"
-                    fields={[
-                      { key: "stripe_publishable_key", label: "Publishable Key", placeholder: "pk_test_...", secret: false },
-                      { key: "stripe_secret_key", label: "Secret Key", placeholder: config?.stripe_secret_key_masked || "Não configurado — cole o novo valor", secret: true },
-                      { key: "stripe_webhook_secret", label: "Webhook Secret", placeholder: "whsec_...", secret: true },
-                    ]}
-                    form={form}
-                    showSecrets={showSecrets}
-                    set={set}
-                    toggleSecret={toggleSecret}
-                  />
-                )}
-
-                {/* ── PagSeguro credentials ──────────────────────────────── */}
-                {selectedGateway === "pagseguro" && (
-                  <CredentialSection
-                    title="Credenciais — PagSeguro"
-                    badge="pagseguro"
-                    docUrl="https://dev.pagseguro.uol.com.br/"
-                    fields={[
-                      { key: "pagseguro_email", label: "E-mail da conta PagSeguro", placeholder: "seu@email.com", secret: false },
-                      { key: "pagseguro_token", label: "Token de Integração", placeholder: config?.pagseguro_token_masked || "Não configurado — cole o novo valor", secret: true },
-                    ]}
-                    form={form}
-                    showSecrets={showSecrets}
-                    set={set}
-                    toggleSecret={toggleSecret}
-                  />
-                )}
-
-                {/* ── Status e webhook URL ──────────────────────────────── */}
-                <section className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-surface-03">
-                    <h3 className="text-lg font-bold text-cream">URL do Webhook</h3>
-                    <p className="text-stone text-sm mt-1">
-                      Cadastre esta URL no painel do gateway para receber confirmações automáticas
-                    </p>
-                  </div>
-                  <div className="p-6">
-                    <div className="flex items-center gap-3 bg-surface-00 rounded-xl px-4 py-3 border border-surface-03">
-                      <code className="text-orange-400 text-sm flex-1 break-all">
-                        {webhookUrl}
-                      </code>
-                      <button
-                        onClick={() => navigator.clipboard.writeText(webhookUrl)}
-                        className="text-stone hover:text-cream text-xs border border-surface-03 rounded px-2 py-1 transition-colors flex-shrink-0"
-                      >
-                        Copiar
-                      </button>
+                  <div className="grid gap-5 p-6 lg:grid-cols-2">
+                    <RoutingControl
+                      title="Gateway do Pix"
+                      value={text(form.pix_provider) as Provider}
+                      onChange={(provider) => set("pix_provider", provider)}
+                      options={[
+                        { provider: "mercado_pago", enabled: true },
+                        { provider: "asaas", enabled: true },
+                      ]}
+                    />
+                    <RoutingControl
+                      title="Gateway do cartao"
+                      value={text(form.credit_card_provider) as Provider}
+                      onChange={(provider) => set("credit_card_provider", provider)}
+                      options={[
+                        { provider: "mercado_pago", enabled: true },
+                        {
+                          provider: "asaas",
+                          enabled: asaasCardSelectable,
+                          reason: asaasCardSafetyReason,
+                        },
+                      ]}
+                    />
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 lg:col-span-2">
+                      Sem fallback automatico: se o gateway escolhido estiver indisponivel, o checkout retornara erro em vez de trocar de provedor sozinho.
                     </div>
-                    <p className="text-stone/70 text-xs mt-2">
-                      Em produção, cadastre esta URL no painel do gateway usando o domínio público da loja.
-                    </p>
-
-                    {/* Last updated */}
-                    {config?.updated_at && (
-                      <p className="text-slate-600 text-xs mt-4">
-                        Última atualização:{" "}
-                        {new Date(config.updated_at).toLocaleString("pt-BR")}
-                      </p>
-                    )}
+                    <div className="rounded-lg border border-surface-03 bg-surface-03 px-4 py-3 text-sm text-parchment lg:col-span-2">
+                      Rotas atuais: Pix via <strong>{currentRouting.pix}</strong>; cartao via <strong>{currentRouting.card}</strong>.
+                    </div>
                   </div>
                 </section>
+
+                <section className="rounded-lg border border-surface-03 bg-surface-02">
+                  <SectionHeader icon={Wallet} title="Metodos aceitos" description="Controla o que o cliente pode escolher no checkout." />
+                  <div className="grid gap-3 p-6 md:grid-cols-4">
+                    <ToggleTile icon={QrCode} label="Pix" checked={bool(form.accept_pix)} onClick={() => set("accept_pix", !bool(form.accept_pix))} />
+                    <ToggleTile icon={CreditCard} label="Credito" checked={bool(form.accept_credit_card)} onClick={() => set("accept_credit_card", !bool(form.accept_credit_card))} />
+                    <ToggleTile icon={Wallet} label="Debito" checked={bool(form.accept_debit_card)} onClick={() => set("accept_debit_card", !bool(form.accept_debit_card))} />
+                    <ToggleTile icon={Banknote} label="Na entrega" checked={bool(form.accept_cash)} onClick={() => set("accept_cash", !bool(form.accept_cash))} />
+                  </div>
+                </section>
+
+                <ProviderSection
+                  provider="mercado_pago"
+                  title="Mercado Pago"
+                  enabled={bool(form.mp_enabled)}
+                  onEnabledChange={(value) => set("mp_enabled", value)}
+                  environment={text(form.mp_environment)}
+                  onEnvironmentChange={(value) => set("mp_environment", value)}
+                  healthStatus={config?.mp_last_health_check_status}
+                  healthMessage={config?.mp_last_health_check_message}
+                  lastCheck={config?.mp_last_health_check_at}
+                  testing={testingProvider === "mercado_pago"}
+                  onTest={() => testProvider("mercado_pago")}
+                  webhookUrl={mpWebhookUrl}
+                >
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <Field label="Public Key">
+                      <input className={inputClass} value={text(form.mp_public_key)} onChange={(e) => set("mp_public_key", e.target.value)} placeholder="APP_USR-..." />
+                    </Field>
+                    <SecretField
+                      label="Access Token"
+                      fieldKey="mp_access_token"
+                      value={text(form.mp_access_token)}
+                      placeholder={masked(config?.mp_access_token_masked)}
+                      show={!!showSecrets.mp_access_token}
+                      onToggle={() => toggleSecret("mp_access_token")}
+                      onChange={(value) => set("mp_access_token", value)}
+                    />
+                    <SecretField
+                      label="Webhook Secret"
+                      fieldKey="mp_webhook_secret"
+                      value={text(form.mp_webhook_secret)}
+                      placeholder={masked(config?.mp_webhook_secret_masked)}
+                      show={!!showSecrets.mp_webhook_secret}
+                      onToggle={() => toggleSecret("mp_webhook_secret")}
+                      onChange={(value) => set("mp_webhook_secret", value)}
+                    />
+                    <Field label="Maximo de parcelas">
+                      <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        className={inputClass}
+                        value={numberValue(form.mp_max_installments, 6)}
+                        onChange={(e) => set("mp_max_installments", Number(e.target.value))}
+                      />
+                    </Field>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <InlineToggle label="Pix Mercado Pago" checked={bool(form.mp_pix_enabled)} onChange={() => set("mp_pix_enabled", !bool(form.mp_pix_enabled))} />
+                    <InlineToggle label="Cartao Mercado Pago" checked={bool(form.mp_credit_card_enabled)} onChange={() => set("mp_credit_card_enabled", !bool(form.mp_credit_card_enabled))} />
+                  </div>
+                </ProviderSection>
+
+                <ProviderSection
+                  provider="asaas"
+                  title="ASAAS"
+                  enabled={bool(form.asaas_enabled)}
+                  onEnabledChange={(value) => set("asaas_enabled", value)}
+                  environment={text(form.asaas_environment)}
+                  onEnvironmentChange={(value) => set("asaas_environment", value)}
+                  healthStatus={config?.asaas_last_health_check_status}
+                  healthMessage={config?.asaas_last_health_check_message}
+                  lastCheck={config?.asaas_last_health_check_at}
+                  testing={testingProvider === "asaas"}
+                  onTest={() => testProvider("asaas")}
+                  webhookUrl={asaasWebhookUrl}
+                >
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <SecretField
+                      label="API Key"
+                      fieldKey="asaas_api_key"
+                      value={text(form.asaas_api_key)}
+                      placeholder={masked(config?.asaas_api_key_masked)}
+                      show={!!showSecrets.asaas_api_key}
+                      onToggle={() => toggleSecret("asaas_api_key")}
+                      onChange={(value) => set("asaas_api_key", value)}
+                    />
+                    <SecretField
+                      label="Token do webhook"
+                      fieldKey="asaas_webhook_token"
+                      value={text(form.asaas_webhook_token)}
+                      placeholder={masked(config?.asaas_webhook_token_masked)}
+                      show={!!showSecrets.asaas_webhook_token}
+                      onToggle={() => toggleSecret("asaas_webhook_token")}
+                      onChange={(value) => set("asaas_webhook_token", value)}
+                    />
+                    <Field label="Status da tokenizacao">
+                      <select className={inputClass} value={text(form.asaas_tokenization_status)} onChange={(e) => set("asaas_tokenization_status", e.target.value)}>
+                        <option value="not_validated">Nao validada</option>
+                        <option value="unavailable">Indisponivel</option>
+                        <option value="pending">Em validacao</option>
+                        {asaasCardRuntimeAvailable && <option value="validated">Validada</option>}
+                      </select>
+                    </Field>
+                    <Field label="Maximo de parcelas">
+                      <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        className={inputClass}
+                        value={numberValue(form.asaas_max_installments, 1)}
+                        onChange={(e) => set("asaas_max_installments", Number(e.target.value))}
+                      />
+                    </Field>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <InlineToggle label="Pix ASAAS" checked={bool(form.asaas_pix_enabled)} onChange={() => set("asaas_pix_enabled", !bool(form.asaas_pix_enabled))} />
+                    <InlineToggle
+                      label="Cartao ASAAS"
+                      checked={bool(form.asaas_credit_card_enabled)}
+                      disabled={!asaasCardSelectable}
+                      disabledText={asaasCardSafetyReason}
+                      onChange={() => set("asaas_credit_card_enabled", !bool(form.asaas_credit_card_enabled))}
+                    />
+                  </div>
+                  {!asaasCardSelectable && (
+                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                      {asaasCardSafetyReason} O checkout nao deve receber PAN/CVV no backend.
+                    </div>
+                  )}
+                </ProviderSection>
               </>
             )}
-          </div>
+          </main>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Reusable credential section ───────────────────────────────────────────────
-
-interface CredentialField {
-  key: string;
-  label: string;
-  placeholder: string;
-  secret: boolean;
+function StatusBanner({ tone, icon: Icon, text }: { tone: "error" | "success" | "info"; icon: typeof AlertCircle; text: string }) {
+  const styles = {
+    error: "border-red-500/40 bg-red-500/10 text-red-300",
+    success: "border-green-500/40 bg-green-500/10 text-green-300",
+    info: "border-blue-500/40 bg-blue-500/10 text-blue-200",
+  };
+  return (
+    <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${styles[tone]}`}>
+      <Icon size={18} />
+      <span className="text-sm">{text}</span>
+    </div>
+  );
 }
 
-function CredentialSection({
-  title, badge, docUrl, fields, form, showSecrets, set, toggleSecret,
+function SectionHeader({ icon: Icon, title, description }: { icon: typeof Route; title: string; description: string }) {
+  return (
+    <div className="flex items-start gap-3 border-b border-surface-03 px-6 py-4">
+      <Icon size={20} className="mt-0.5 text-gold" />
+      <div>
+        <h3 className="text-lg font-bold text-cream">{title}</h3>
+        <p className="mt-1 text-sm text-stone">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+function RoutingControl({
+  title,
+  value,
+  onChange,
+  options,
 }: {
   title: string;
-  badge: string;
-  docUrl: string;
-  fields: CredentialField[];
-  form: Record<string, string | boolean>;
-  showSecrets: Record<string, boolean>;
-  set: (key: string, value: string | boolean) => void;
-  toggleSecret: (key: string) => void;
+  value: Provider;
+  onChange: (provider: Provider) => void;
+  options: { provider: Provider; enabled: boolean; reason?: string }[];
 }) {
   return (
-    <section className="bg-surface-02 rounded-xl border border-surface-03 overflow-hidden">
-      <div className="px-6 py-4 border-b border-surface-03 flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-bold text-cream">{title}</h3>
-          <p className="text-stone text-sm mt-1">
-            Chaves secretas são mascaradas após salvar. Deixe em branco para manter o valor atual.
-          </p>
-        </div>
-        <a
-          href={docUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs text-orange-400 border border-gold/40 px-3 py-1.5 rounded-lg hover:bg-gold/10 transition-colors flex-shrink-0"
-        >
-          Documentação ↗
-        </a>
-      </div>
-      <div className="p-6 space-y-4">
-        {fields.map(({ key, label, placeholder, secret }) => (
-          <div key={key}>
-            <label className="block text-parchment text-sm font-medium mb-2">{label}</label>
-            <div className="flex items-center gap-2 bg-surface-03 border border-surface-03 rounded-lg px-4 py-2 focus-within:border-gold transition-colors">
-              <input
-                type={secret && !showSecrets[key] ? "password" : "text"}
-                value={(form[key] as string) || ""}
-                onChange={(e) => set(key, e.target.value)}
-                placeholder={placeholder}
-                autoComplete="off"
-                className="flex-1 bg-transparent text-cream placeholder-slate-500 outline-none text-sm font-mono"
-              />
-              {secret && (
-                <button
-                  type="button"
-                  onClick={() => toggleSecret(key)}
-                  className="text-stone hover:text-cream transition-colors flex-shrink-0"
-                >
-                  {showSecrets[key] ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              )}
-            </div>
-          </div>
+    <div>
+      <p className="mb-2 text-sm font-semibold text-parchment">{title}</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {options.map((option) => (
+          <button
+            key={option.provider}
+            type="button"
+            disabled={!option.enabled}
+            onClick={() => onChange(option.provider)}
+            className={`rounded-lg border px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              value === option.provider ? "border-gold bg-gold/10 text-gold-light" : "border-surface-03 bg-surface-03 text-stone hover:border-brand-mid"
+            }`}
+          >
+            <span className="block text-sm font-bold">{providerLabels[option.provider]}</span>
+            <span className="block text-xs opacity-80">{option.enabled ? "Disponivel para selecao" : option.reason}</span>
+          </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ToggleTile({ icon: Icon, label, checked, onClick }: { icon: typeof QrCode; label: string; checked: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex flex-col items-center gap-2 rounded-lg border p-4 transition-colors ${
+        checked ? "border-gold bg-gold/10 text-gold-light" : "border-surface-03 bg-surface-03 text-stone hover:border-brand-mid"
+      }`}
+    >
+      <Icon size={22} />
+      <span className="text-center text-sm font-semibold">{label}</span>
+    </button>
+  );
+}
+
+function ProviderSection({
+  provider,
+  title,
+  enabled,
+  onEnabledChange,
+  environment,
+  onEnvironmentChange,
+  healthStatus,
+  healthMessage,
+  lastCheck,
+  testing,
+  onTest,
+  webhookUrl,
+  children,
+}: {
+  provider: Provider;
+  title: string;
+  enabled: boolean;
+  onEnabledChange: (value: boolean) => void;
+  environment: string;
+  onEnvironmentChange: (value: string) => void;
+  healthStatus?: string | null;
+  healthMessage?: string | null;
+  lastCheck?: string | null;
+  testing: boolean;
+  onTest: () => void;
+  webhookUrl: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-lg border border-surface-03 bg-surface-02">
+      <div className="flex flex-col gap-4 border-b border-surface-03 px-6 py-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          {provider === "mercado_pago" ? <ShieldCheck size={20} className="mt-0.5 text-gold" /> : <KeyRound size={20} className="mt-0.5 text-gold" />}
+          <div>
+            <h3 className="text-lg font-bold text-cream">{title}</h3>
+            <p className="mt-1 text-sm text-stone">Ambiente, credenciais, metodos e webhook do provider.</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onEnabledChange(!enabled)}
+            className={`rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${
+              enabled ? "border-green-500/50 bg-green-500/10 text-green-300" : "border-surface-03 bg-surface-03 text-stone"
+            }`}
+          >
+            {enabled ? "Ativo" : "Inativo"}
+          </button>
+          <button
+            type="button"
+            onClick={onTest}
+            disabled={testing}
+            className="flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-03 px-3 py-2 text-xs font-bold text-parchment transition-colors hover:border-gold disabled:opacity-50"
+          >
+            {testing ? <Loader2 size={14} className="animate-spin" /> : <TestTube2 size={14} />}
+            Testar conexao
+          </button>
+        </div>
+      </div>
+      <div className="space-y-5 p-6">
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Field label="Ambiente">
+            <select className={inputClass} value={environment} onChange={(e) => onEnvironmentChange(e.target.value)}>
+              <option value="sandbox">Sandbox</option>
+              <option value="production">Producao</option>
+            </select>
+          </Field>
+          <InfoBlock label="Ultimo teste" value={formatDate(lastCheck)} />
+          <InfoBlock label="Status" value={`${healthStatus || "not_tested"}${healthMessage ? ` - ${healthMessage}` : ""}`} />
+        </div>
+        {children}
+        <WebhookBox url={webhookUrl} />
+      </div>
     </section>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-medium text-parchment">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function SecretField({
+  label,
+  fieldKey,
+  value,
+  placeholder,
+  show,
+  onToggle,
+  onChange,
+}: {
+  label: string;
+  fieldKey: string;
+  value: string;
+  placeholder: string;
+  show: boolean;
+  onToggle: () => void;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Field label={label}>
+      <div className="flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-03 px-4 py-2.5 focus-within:border-gold">
+        <input
+          type={show ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          autoComplete="off"
+          className="min-w-0 flex-1 bg-transparent font-mono text-sm text-cream outline-none placeholder-stone"
+          aria-label={fieldKey}
+        />
+        <button type="button" onClick={onToggle} className="text-stone transition-colors hover:text-cream">
+          {show ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
+    </Field>
+  );
+}
+
+function InlineToggle({
+  label,
+  checked,
+  disabled,
+  disabledText,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+  disabledText?: string;
+  onChange: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onChange}
+      className={`flex items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+        checked ? "border-gold bg-gold/10 text-gold-light" : "border-surface-03 bg-surface-03 text-stone hover:border-brand-mid"
+      }`}
+    >
+      <span>
+        <span className="block text-sm font-bold">{label}</span>
+        {disabled && disabledText && <span className="block text-xs opacity-80">{disabledText}</span>}
+      </span>
+      <span className={`h-3 w-3 rounded-full ${checked ? "bg-gold" : "bg-stone/40"}`} />
+    </button>
+  );
+}
+
+function InfoBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-surface-03 bg-surface-03 px-4 py-3">
+      <p className="text-xs font-semibold uppercase text-stone">{label}</p>
+      <p className="mt-1 break-words text-sm text-parchment">{value}</p>
+    </div>
+  );
+}
+
+function WebhookBox({ url }: { url: string }) {
+  return (
+    <div>
+      <p className="mb-2 text-sm font-medium text-parchment">URL do webhook</p>
+      <div className="flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-03 px-4 py-3">
+        <code className="min-w-0 flex-1 break-all text-sm text-gold">{url}</code>
+        <button
+          type="button"
+          onClick={() => navigator.clipboard?.writeText(url)}
+          className="flex items-center gap-1 rounded border border-surface-03 px-2 py-1 text-xs text-parchment transition-colors hover:border-gold"
+        >
+          <Copy size={13} />
+          Copiar
+        </button>
+      </div>
+    </div>
   );
 }

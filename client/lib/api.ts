@@ -1728,18 +1728,30 @@ export interface ApiPayment {
   status: "pending" | "approved" | "rejected" | "cancelled" | "expired" | "paid" | "failed" | "refunded";
   amount: number;
   provider: string | null;
+  provider_payment_id?: string | null;
+  provider_customer_id?: string | null;
+  provider_status?: string | null;
   mercado_pago_payment_id: string | null;
   external_reference: string | null;
   transaction_id: string | null;
+  currency?: string | null;
+  installments?: number | null;
   qr_code: string | null;
   qr_code_text: string | null;
+  pix_payload?: string | null;
+  pix_qr_code?: string | null;
+  pix_expires_at?: string | null;
   payment_url: string | null;
+  provider_error_code?: string | null;
+  provider_error_message?: string | null;
   pay_on_delivery?: boolean;
   delivery_payment_method?: "cash" | "card" | string | null;
   cash_needs_change?: boolean | null;
   cash_change_for?: number | null;
   created_at: string;
   paid_at: string | null;
+  cancelled_at?: string | null;
+  refunded_at?: string | null;
 }
 
 export interface ApiPaymentStatus {
@@ -1747,9 +1759,15 @@ export interface ApiPaymentStatus {
   pedido_status: OrderStatus;
   payment_status: ApiPayment["status"] | "pending";
   mercado_pago_payment_id: string | null;
+  payment_provider?: string | null;
+  provider_payment_id?: string | null;
+  provider_status?: string | null;
   external_reference: string | null;
   qr_code?: string | null;
   qr_code_text?: string | null;
+  pix_payload?: string | null;
+  pix_qr_code?: string | null;
+  pix_expires_at?: string | null;
   payment_url?: string | null;
   checkout_locked: boolean;
   payment_method: string | null;
@@ -1759,12 +1777,44 @@ export interface ApiPaymentStatus {
   cash_change_for?: number | null;
 }
 
+export interface ApiPaymentOperationInput {
+  reason?: string | null;
+  value?: number | null;
+}
+
 export interface ApiPaymentMethods {
   gateway: "mercadopago";
   accept_pix: boolean;
   accept_credit_card: boolean;
   accept_debit_card: boolean;
   accept_cash: boolean;
+  pix_provider?: string;
+  credit_card_provider?: string;
+}
+
+export interface ApiPaymentPublicMethod {
+  enabled: boolean;
+  provider: string;
+  gateway: string;
+  reason?: string | null;
+  implementation_status: "available" | "pending_backend" | string;
+  public_key?: string;
+  max_installments?: number;
+}
+
+export interface ApiPaymentPublicConfig {
+  gateway: "multi" | string;
+  routing: {
+    pix_provider: string;
+    credit_card_provider: string;
+  };
+  methods: {
+    pix: ApiPaymentPublicMethod;
+    credit_card: ApiPaymentPublicMethod;
+    debit_card: ApiPaymentPublicMethod;
+    cash: ApiPaymentPublicMethod;
+  };
+  providers: Record<string, unknown>;
 }
 
 export interface ApiLoyaltyLevel {
@@ -2760,6 +2810,10 @@ export interface ApiPaymentGatewayConfig {
   accept_credit_card: boolean;
   accept_debit_card: boolean;
   accept_cash: boolean;
+  pix_provider: "mercado_pago" | "asaas" | string;
+  credit_card_provider: "mercado_pago" | "asaas" | string;
+  mp_enabled: boolean;
+  mp_environment: string;
   pix_key: string | null;
   pix_key_type: string | null;
   pix_beneficiary_name: string | null;
@@ -2767,6 +2821,23 @@ export interface ApiPaymentGatewayConfig {
   mp_public_key: string | null;
   mp_access_token_masked: string | null;
   mp_webhook_secret_masked: string | null;
+  mp_pix_enabled: boolean;
+  mp_credit_card_enabled: boolean;
+  mp_max_installments: number;
+  mp_last_health_check_at: string | null;
+  mp_last_health_check_status: string;
+  mp_last_health_check_message: string | null;
+  asaas_enabled: boolean;
+  asaas_environment: string;
+  asaas_api_key_masked: string | null;
+  asaas_webhook_token_masked: string | null;
+  asaas_pix_enabled: boolean;
+  asaas_credit_card_enabled: boolean;
+  asaas_max_installments: number;
+  asaas_tokenization_status: string;
+  asaas_last_health_check_at: string | null;
+  asaas_last_health_check_status: string;
+  asaas_last_health_check_message: string | null;
   stripe_publishable_key: string | null;
   stripe_secret_key_masked: string | null;
   pagseguro_email: string | null;
@@ -2781,13 +2852,28 @@ export interface ApiPaymentGatewayConfigUpdate {
   accept_credit_card?: boolean;
   accept_debit_card?: boolean;
   accept_cash?: boolean;
+  pix_provider?: "mercado_pago" | "asaas" | string;
+  credit_card_provider?: "mercado_pago" | "asaas" | string;
   pix_key?: string | null;
   pix_key_type?: string | null;
   pix_beneficiary_name?: string | null;
   pix_beneficiary_city?: string | null;
+  mp_enabled?: boolean;
+  mp_environment?: string;
   mp_public_key?: string | null;
   mp_access_token?: string | null;
   mp_webhook_secret?: string | null;
+  mp_pix_enabled?: boolean;
+  mp_credit_card_enabled?: boolean;
+  mp_max_installments?: number;
+  asaas_enabled?: boolean;
+  asaas_environment?: string;
+  asaas_api_key?: string | null;
+  asaas_webhook_token?: string | null;
+  asaas_pix_enabled?: boolean;
+  asaas_credit_card_enabled?: boolean;
+  asaas_max_installments?: number;
+  asaas_tokenization_status?: string;
   stripe_publishable_key?: string | null;
   stripe_secret_key?: string | null;
   stripe_webhook_secret?: string | null;
@@ -3418,11 +3504,19 @@ export const paymentsApi = {
       orderAccessHeaders(order_id),
     ),
 
-  createPix: (order_id: string, amount: number) =>
+  createPix: (order_id: string, amount: number, document?: string) =>
     request<ApiPayment>(
       "POST",
       "/payments/create",
-      { order_id, amount, payment_method: "pix", formData: { payment_method_id: "pix" } },
+      {
+        order_id,
+        amount,
+        payment_method: "pix",
+        formData: {
+          payment_method_id: "pix",
+          ...(document ? { payer: { identification: { type: document.replace(/\D/g, "").length > 11 ? "CNPJ" : "CPF", number: document.replace(/\D/g, "") } } } : {}),
+        },
+      },
       orderAccessHeaders(order_id),
     ),
 
@@ -3456,6 +3550,8 @@ export const paymentsApi = {
 
   methods: () => get<ApiPaymentMethods>("/payments/methods"),
 
+  publicConfig: () => get<ApiPaymentPublicConfig>("/payments/config/public"),
+
   createPreference: (order_id: string) =>
     request<{ preference_id: string; init_point: string }>(
       "POST",
@@ -3465,6 +3561,11 @@ export const paymentsApi = {
     ),
 
   approve: (order_id: string) => post<ApiPayment>(`/payments/approve/${order_id}`, {}),
+  reconcile: (order_id: string) => post<ApiPayment>(`/payments/reconcile/${order_id}`, {}),
+  cancelRemote: (order_id: string, data: ApiPaymentOperationInput = {}) =>
+    post<ApiPayment>(`/payments/cancel/${order_id}`, data),
+  refund: (order_id: string, data: ApiPaymentOperationInput = {}) =>
+    post<ApiPayment>(`/payments/refund/${order_id}`, data),
 };
 
 // ─── Coupons ──────────────────────────────────────────────────────────────────
@@ -4602,6 +4703,28 @@ export const adminApi = {
 
   updatePaymentGateway: (data: ApiPaymentGatewayConfigUpdate) =>
     put<ApiPaymentGatewayConfig>("/admin/payment-gateway", data),
+
+  getPaymentGateways: () =>
+    get<{
+      routing: {
+        pix_provider: string;
+        credit_card_provider: string;
+      };
+      providers: Record<string, unknown>;
+      config: ApiPaymentGatewayConfig;
+    }>("/admin/payment-gateways"),
+
+  updatePaymentGatewayRouting: (data: Pick<ApiPaymentGatewayConfigUpdate, "pix_provider" | "credit_card_provider">) =>
+    put<ApiPaymentGatewayConfig>("/admin/payment-gateways/routing", data),
+
+  updatePaymentGatewayProvider: (provider: "mercado_pago" | "asaas" | string, data: Record<string, unknown>) =>
+    put<ApiPaymentGatewayConfig>(`/admin/payment-gateways/${provider}`, data),
+
+  testPaymentGatewayProvider: (provider: "mercado_pago" | "asaas" | string) =>
+    post<{ provider: string; status: string; message: string }>(`/admin/payment-gateways/${provider}/test`, {}),
+
+  paymentGatewaysHealth: () =>
+    get<Record<string, unknown>>("/admin/payment-gateways/health"),
 };
 
 // ─── Upload ───────────────────────────────────────────────────────────────────

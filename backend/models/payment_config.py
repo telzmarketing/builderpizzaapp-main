@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, Text
+from sqlalchemy import Column, String, Boolean, DateTime, Integer, Text
 from datetime import datetime, timezone
 from backend.database import Base
 
@@ -18,11 +18,33 @@ class PaymentGatewayConfig(Base):
 
     # Which gateway is active
     gateway = Column(String(50), default="mock")   # mock | mercadopago | stripe | pagseguro
+    pix_provider = Column(String(50), nullable=False, default="mercado_pago")
+    credit_card_provider = Column(String(50), nullable=False, default="mercado_pago")
 
     # ── Mercado Pago ──────────────────────────────────────────────────────────
+    mp_enabled = Column(Boolean, default=True)
+    mp_environment = Column(String(20), nullable=False, default="sandbox")
     mp_public_key = Column(String(300), nullable=True)
     mp_access_token = Column(String(300), nullable=True)
     mp_webhook_secret = Column(String(300), nullable=True)
+    mp_pix_enabled = Column(Boolean, default=True)
+    mp_credit_card_enabled = Column(Boolean, default=True)
+    mp_max_installments = Column(Integer, default=6)
+    mp_last_health_check_at = Column(DateTime(timezone=True), nullable=True)
+    mp_last_health_check_status = Column(String(30), nullable=False, default="not_tested")
+    mp_last_health_check_message = Column(Text, nullable=True)
+
+    asaas_enabled = Column(Boolean, default=False)
+    asaas_environment = Column(String(20), nullable=False, default="sandbox")
+    asaas_api_key = Column(String(500), nullable=True)
+    asaas_webhook_token = Column(String(300), nullable=True)
+    asaas_pix_enabled = Column(Boolean, default=False)
+    asaas_credit_card_enabled = Column(Boolean, default=False)
+    asaas_max_installments = Column(Integer, default=1)
+    asaas_tokenization_status = Column(String(30), nullable=False, default="not_validated")
+    asaas_last_health_check_at = Column(DateTime(timezone=True), nullable=True)
+    asaas_last_health_check_status = Column(String(30), nullable=False, default="not_tested")
+    asaas_last_health_check_message = Column(Text, nullable=True)
 
     # ── Stripe ────────────────────────────────────────────────────────────────
     stripe_publishable_key = Column(String(300), nullable=True)

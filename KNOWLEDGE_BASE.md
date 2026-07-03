@@ -38,6 +38,7 @@
 16. [Atualizacao 2026-05-03 - Estado Atual do Admin SaaS](#16-atualizacao-2026-05-03---estado-atual-do-admin-saas)
 17. [Atualizacao 2026-05-13 - Estado Atual Completo](#17-atualizacao-2026-05-13---estado-atual-completo)
 18. [Atualizacao 2026-07-01 - Gestão ERP Concluida](#18-atualizacao-2026-07-01---gestao-erp-concluida)
+19. [Atualizacao 2026-07-03 - ASAAS Multi-Gateway](#19-atualizacao-2026-07-03---asaas-multi-gateway)
 
 ---
 
@@ -2447,3 +2448,139 @@ Resultado validado:
 Observacao operacional:
 
 - Ajustes apenas de frontend, como abas internas e ortografia de `Gestão`, nao exigem Alembic nem restart da API. Para esses casos, usar `git pull origin main`, `pnpm run build` e `sudo systemctl restart moschettieri-web`.
+
+## 19. Atualizacao 2026-07-03 - ASAAS Multi-Gateway
+
+### 19.1 Escopo consolidado
+
+O projeto passou a suportar multi-gateway no dominio existente `payments`, sem criar um segundo dominio de pagamentos. Mercado Pago permanece preservado como provider compativel para Pix/cartao e ASAAS entra como provider adicional para Pix.
+
+Arquivos principais:
+
+- `backend/services/payment_service.py`
+- `backend/services/payment_gateway_resolver.py`
+- `backend/services/asaas_client.py`
+- `backend/services/asaas_gateway.py`
+- `backend/routes/payments.py`
+- `backend/routes/webhooks.py`
+- `backend/models/payment.py`
+- `backend/models/payment_config.py`
+- `backend/models/customer.py`
+- `client/lib/api.ts`
+- `client/pages/Checkout.tsx`
+- `client/pages/admin/AdminPagamentos.tsx`
+- `client/pages/admin/Orders.tsx`
+- `docs/ASAAS_MULTI_GATEWAY_EXECUTION_PLAN.md`
+
+### 19.2 Modelo de dados
+
+Novas/alteradas estruturas:
+
+- `payment_gateway_configs`: credenciais por provider, status ativo/inativo, modo sandbox/producao e roteamento por modalidade.
+- `payments.provider`: provider historico usado na cobranca.
+- `payments.provider_payment_id`: id normalizado da cobranca no gateway.
+- `payments.provider_status`: status bruto recebido do gateway.
+- `payments.pix_qr_code`, `payments.pix_qr_code_base64`, `payments.pix_copy_paste`, `payments.checkout_url`, `payments.expires_at`: dados publicos de pagamento.
+- `payments.cancelled_at`, `payments.cancellation_reason`, `payments.refunded_at`, `payments.refund_amount`, `payments.refund_reason`: operacao e pos-pagamento.
+- `payment_events`: provider, event id, event type e payload para idempotencia e auditoria.
+- `customers.provider_customer_id_asaas` e `customers.provider_customer_id_mercado_pago`: vinculo externo por gateway.
+
+Migrations:
+
+- `backend/migrations/versions/20260702_asaas_multi_gateway_config.py`
+- `backend/migrations/versions/20260702_asaas_payment_generic_fields.py`
+- `backend/migrations/versions/20260702_asaas_provider_customers.py`
+
+### 19.3 Compatibilidade Mercado Pago
+
+O fluxo Mercado Pago foi preservado. A configuracao inicial continua usando `PAYMENT_PROVIDER=mercado_pago`, webhooks Mercado Pago continuam em `/webhooks/mercadopago` e `/api/webhooks/mercadopago`, e o checkout de cartao segue pelo fluxo Mercado Pago atual.
+
+Regra critica: operacoes administrativas de consulta, cancelamento e estorno usam `payments.provider`, nao o provider atualmente selecionado no painel. Isso evita operar uma cobranca antiga no gateway errado apos troca de configuracao.
+
+### 19.4 ASAAS Pix
+
+Fluxo ASAAS Pix:
+
+1. Checkout consulta `/payments/config/public`.
+2. Cliente cria pedido pelo fluxo atual.
+3. `POST /payments/create` delega ao `PaymentService`.
+4. `PaymentGatewayResolver` escolhe ASAAS quando Pix esta roteado para ASAAS.
+5. `AsaasGateway` cria/reutiliza customer ASAAS e cria cobranca Pix.
+6. QR Code/copia e cola sao persistidos em `payments`.
+7. Checkout renderiza QR Code, codigo Pix e polling/status sem sair do dominio `payments`.
+8. Webhook ASAAS ou conciliacao atualiza status final.
+
+### 19.5 Cartao ASAAS seguro
+
+Cartao ASAAS permanece bloqueado por decisao de seguranca. O backend nao deve receber PAN, CVV ou dados sensiveis de cartao. A liberacao futura exige tokenizacao client-side oficial/homologada, validacao de recusa/aprovacao/parcelamento e revisao de logs para garantir ausencia de dados sensiveis.
+
+### 19.6 Webhooks e idempotencia
+
+Webhooks atuais:
+
+- Mercado Pago: `/webhooks/mercadopago` e `/api/webhooks/mercadopago`.
+- ASAAS: `/webhooks/asaas` e `/api/webhooks/asaas`.
+
+Regras:
+
+- ASAAS valida `asaas-access-token`, token diferente da API key.
+- Evento externo e gravado em `payment_events`.
+- Status final e confirmado por consulta ao gateway antes de aplicar mudanca interna.
+- Eventos duplicados nao devem duplicar financeiro, estoque, WhatsApp ou BI.
+
+### 19.7 Painel administrativo
+
+`/painel/pagamentos` passa a administrar Mercado Pago e ASAAS:
+
+- salva credenciais sem reexpor segredo salvo;
+- permite escolher provider de Pix e cartao separadamente;
+- mostra status de configuracao;
+- bloqueia combinacoes inseguras, como cartao ASAAS sem tokenizacao validada;
+- preserva Mercado Pago como fallback seguro.
+
+Em `client/pages/admin/Orders.tsx`, pedidos exibem provider e operacoes de conciliacao, cancelamento e estorno quando ha pagamento remoto associado.
+
+### 19.8 Checkout
+
+`client/pages/Checkout.tsx` consome apenas `client/lib/api.ts`. O checkout:
+
+- preserva cartao Mercado Pago;
+- preserva Pix Mercado Pago;
+- renderiza Pix ASAAS quando configurado;
+- trata provider indisponivel com mensagem funcional;
+- bloqueia cartao ASAAS;
+- mantem polling/status pelo endpoint oficial de pagamentos.
+
+### 19.9 Validacao e operacao
+
+Validacoes locais esperadas para esta entrega:
+
+- `git diff --check`
+- `npm.cmd run typecheck`
+- `npm.cmd test`
+- `npm.cmd run build`
+
+Validacoes obrigatorias em ambiente com Python antes de producao:
+
+- `alembic -c backend/alembic.ini heads`
+- `alembic -c backend/alembic.ini current`
+- `alembic -c backend/alembic.ini upgrade head`
+
+Cenarios manuais recomendados:
+
+- Pix Mercado Pago preservado.
+- Pix ASAAS com CPF/CNPJ valido.
+- Cartao Mercado Pago preservado.
+- Cartao ASAAS bloqueado.
+- Webhook ASAAS com token valido/invalido.
+- Duplicidade de webhook sem duplicar efeitos internos.
+- Conciliacao/cancelamento/estorno por provider historico.
+
+### 19.10 Riscos conhecidos
+
+- `payments.order_id` unico limita multiplas tentativas reais por pedido.
+- Segredos ficam em env/banco sem camada dedicada de criptografia.
+- Valores monetarios ainda dependem de campos legados com `Float`.
+- Webhook ASAAS processa regra sensivel e deve responder rapido.
+- Ambientes sandbox/producao precisam ser separados com rigor.
+- Cartao ASAAS so pode ser retomado apos validacao oficial de tokenizacao.

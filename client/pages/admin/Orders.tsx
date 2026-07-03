@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   AlertTriangle, Bell, BellOff, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2,
   PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Trash2, Truck,
-  UserCheck, Users, Utensils,
+  Undo2, UserCheck, Users, Utensils,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
@@ -264,8 +264,14 @@ function orderTimeLabel(order: ApiOrder) {
 // ── Main component ─────────────────────────────────────────────────────────────
 
 function paymentInfoLabel(order: ApiOrder) {
+  const provider = order.payment_provider === "asaas"
+    ? "ASAAS"
+    : order.payment_provider === "mercado_pago"
+      ? "Mercado Pago"
+      : null;
   if (order.pay_on_delivery) return "Pagamento na entrega";
-  if (order.payment_status === "approved" || order.payment_status === "paid") return "Pagamento online efetuado";
+  if (order.payment_status === "approved" || order.payment_status === "paid") return `Pagamento online efetuado${provider ? ` via ${provider}` : ""}`;
+  if (order.payment_status === "pending" && provider) return `Pagamento pendente via ${provider}`;
   return null;
 }
 
@@ -391,6 +397,30 @@ export default function AdminOrders() {
       setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
     } catch {
       alert("Erro ao aprovar pagamento.");
+    } finally {
+      setUpdatingId(null);
+    }
+  }, []);
+
+  const handlePaymentOperation = useCallback(async (
+    orderId: string,
+    action: "reconcile" | "cancel" | "refund",
+  ) => {
+    if (action === "cancel" && !window.confirm("Cancelar a cobranca pendente no gateway historico?")) return;
+    if (action === "refund" && !window.confirm("Estornar este pagamento aprovado no gateway historico?")) return;
+    setUpdatingId(orderId);
+    try {
+      if (action === "reconcile") {
+        await paymentsApi.reconcile(orderId);
+      } else if (action === "cancel") {
+        await paymentsApi.cancelRemote(orderId, { reason: "Cancelamento pelo painel de pedidos" });
+      } else {
+        await paymentsApi.refund(orderId, { reason: "Estorno pelo painel de pedidos" });
+      }
+      const updated = await ordersApi.get(orderId);
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Nao foi possivel executar a operacao de pagamento.");
     } finally {
       setUpdatingId(null);
     }
@@ -716,6 +746,9 @@ export default function AdminOrders() {
                                     handleStatusChange(order.id, next);
                                   }
                                 }}
+                                onReconcilePayment={() => handlePaymentOperation(order.id, "reconcile")}
+                                onCancelRemotePayment={() => handlePaymentOperation(order.id, "cancel")}
+                                onRefundPayment={() => handlePaymentOperation(order.id, "refund")}
                                 onAssignMotoboy={() => openAssignModal(order)}
                                 onPrint={(tpl) => printOrder(order, tpl)}
                                 canDelete={canDeleteOrders}
@@ -874,6 +907,9 @@ interface OrderCardProps {
   order: ApiOrder;
   updating: boolean;
   onAdvance: () => void;
+  onReconcilePayment: () => void;
+  onCancelRemotePayment: () => void;
+  onRefundPayment: () => void;
   onAssignMotoboy?: () => void;
   onPrint: (template: PrintTemplate) => void;
   canDelete: boolean;
@@ -886,6 +922,9 @@ function OrderCard({
   order,
   updating,
   onAdvance,
+  onReconcilePayment,
+  onCancelRemotePayment,
+  onRefundPayment,
   onAssignMotoboy,
   onPrint,
   canDelete,
@@ -903,6 +942,12 @@ function OrderCard({
     (order.payment_status === "failed" || order.payment_status === "rejected" || unresolvedDeliveryProblem),
   );
   const paymentInfo = paymentInfoLabel(order);
+  const remoteProvider = (order.payment_provider || "").toLowerCase();
+  const hasRemotePayment = remoteProvider === "mercado_pago" || remoteProvider === "asaas";
+  const paymentStatus = order.payment_status || "pending";
+  const canReconcilePayment = hasRemotePayment && ["pending", "approved", "paid"].includes(paymentStatus);
+  const canCancelRemotePayment = hasRemotePayment && paymentStatus === "pending" && WAITING_PAYMENT_STATUSES.has(order.status);
+  const canRefundPayment = hasRemotePayment && CONFIRMED_PAYMENT_VALUES.has(paymentStatus) && order.status !== "refunded";
 
   const itemSummary = order.items.slice(0, 2).map((item) => {
     const isMulti = item.flavor_division > 1;
@@ -966,6 +1011,41 @@ function OrderCard({
       {paymentInfo && (
         <div className="mt-2 rounded-lg border border-gold/25 bg-gold/10 px-2 py-1.5">
           <p className="text-[11px] font-bold text-gold">{paymentInfo}</p>
+        </div>
+      )}
+
+      {(canReconcilePayment || canCancelRemotePayment || canRefundPayment) && (
+        <div className="mt-2 grid grid-cols-1 gap-1.5 rounded-lg border border-surface-03 bg-surface-02/80 p-1.5">
+          {canReconcilePayment && (
+            <button
+              onClick={onReconcilePayment}
+              disabled={updating}
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-blue-500/25 bg-blue-500/10 px-2 py-1.5 text-[10px] font-bold text-blue-200 transition-colors hover:bg-blue-500/20 disabled:opacity-50"
+            >
+              {updating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              Conciliar gateway
+            </button>
+          )}
+          {canCancelRemotePayment && (
+            <button
+              onClick={onCancelRemotePayment}
+              disabled={updating}
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2 py-1.5 text-[10px] font-bold text-amber-200 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+            >
+              <AlertTriangle size={12} />
+              Cancelar cobranca
+            </button>
+          )}
+          {canRefundPayment && (
+            <button
+              onClick={onRefundPayment}
+              disabled={updating}
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-red-500/25 bg-red-500/10 px-2 py-1.5 text-[10px] font-bold text-red-200 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+            >
+              <Undo2 size={12} />
+              Estornar pagamento
+            </button>
+          )}
         </div>
       )}
 

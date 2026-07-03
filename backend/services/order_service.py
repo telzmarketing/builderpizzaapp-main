@@ -676,6 +676,7 @@ class OrderService:
             gateway="on_delivery" if is_pay_on_delivery else "mercadopago",
             provider="on_delivery" if is_pay_on_delivery else "mercado_pago",
             external_reference=external_reference,
+            currency="BRL",
             pay_on_delivery=is_pay_on_delivery,
             delivery_payment_method=delivery_payment_method,
             cash_needs_change=cash_needs_change,
@@ -941,6 +942,7 @@ class OrderService:
             gateway="dine_in",
             provider="salao",
             external_reference=order.external_reference,
+            currency="BRL",
             pay_on_delivery=False,
         ))
 
@@ -996,6 +998,7 @@ class OrderService:
             gateway="dine_in",
             provider="salao",
             external_reference=order.external_reference or order.id,
+            currency="BRL",
         )
         if payment.status not in {PaymentStatus.pending, PaymentStatus.approved, PaymentStatus.paid}:
             raise DomainError("Somente pagamentos pendentes podem ser confirmados.", code="PaymentNotPending")
