@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -13,7 +14,27 @@ _logger = logging.getLogger(__name__)
 
 ASAAS_SANDBOX_BASE_URL = "https://api-sandbox.asaas.com/v3"
 ASAAS_PRODUCTION_BASE_URL = "https://api.asaas.com/v3"
-SENSITIVE_KEYS = {"access_token", "api_key", "apikey", "token", "password", "secret"}
+SENSITIVE_KEYS = {
+    "access_token",
+    "api_key",
+    "apikey",
+    "token",
+    "password",
+    "secret",
+    "creditcard",
+    "creditcardholderinfo",
+    "card",
+    "number",
+    "ccv",
+    "cvv",
+    "cvc",
+    "securitycode",
+    "holdername",
+    "expirationmonth",
+    "expirationyear",
+    "expirymonth",
+    "expiryyear",
+}
 
 
 def asaas_base_url(environment: str | None) -> str:
@@ -24,8 +45,8 @@ def sanitize_asaas_payload(value: Any) -> Any:
     if isinstance(value, dict):
         sanitized: dict[str, Any] = {}
         for key, item in value.items():
-            normalized = str(key).lower().replace("-", "_")
-            if normalized in SENSITIVE_KEYS or normalized.endswith("_token") or normalized.endswith("_key"):
+            normalized = "".join(ch for ch in str(key).lower() if ch.isalnum())
+            if normalized in SENSITIVE_KEYS or normalized.endswith("token") or normalized.endswith("key"):
                 sanitized[key] = "***"
             else:
                 sanitized[key] = sanitize_asaas_payload(item)
@@ -35,8 +56,14 @@ def sanitize_asaas_payload(value: Any) -> Any:
     return value
 
 
+def sanitize_asaas_text(value: str) -> str:
+    sanitized = re.sub(r"\b\d{12,19}\b", "***", value or "")
+    sanitized = re.sub(r'("?(?:ccv|cvv|cvc|securityCode)"?\s*:\s*)"?[^",}\s]+"?', r'\1"***"', sanitized, flags=re.IGNORECASE)
+    return sanitized
+
+
 class AsaasClient:
-    def __init__(self, api_key: str | None, *, environment: str | None = "sandbox", timeout: int = 30):
+    def __init__(self, api_key: str | None, *, environment: str | None = "sandbox", timeout: int = 60):
         self.api_key = (api_key or "").strip()
         self.environment = environment or "sandbox"
         self.base_url = asaas_base_url(self.environment)
@@ -140,14 +167,15 @@ class AsaasClient:
                 return json.loads(payload) if payload else {}
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
+            sanitized_detail = sanitize_asaas_text(detail)
             _logger.error(
                 "ASAAS HTTP error %s %s -> %s: %s",
                 method,
                 path,
                 exc.code,
-                json.dumps(sanitize_asaas_payload({"detail": detail}), ensure_ascii=False)[:500],
+                json.dumps(sanitize_asaas_payload({"detail": sanitized_detail}), ensure_ascii=False)[:500],
             )
-            raise GatewayError("asaas", detail or f"HTTP {exc.code}") from exc
+            raise GatewayError("asaas", sanitized_detail or f"HTTP {exc.code}") from exc
         except URLError as exc:
             _logger.error("ASAAS network error %s %s: %s", method, path, exc.reason)
             raise GatewayError("asaas", str(exc.reason)) from exc

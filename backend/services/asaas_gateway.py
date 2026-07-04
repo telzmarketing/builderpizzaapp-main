@@ -14,6 +14,7 @@ from backend.models.customer import Customer
 from backend.models.order import Order
 from backend.models.payment import Payment, PaymentProviderCustomer
 from backend.models.payment_config import PaymentGatewayConfig
+from backend.schemas.payment import AsaasCreditCardPaymentCreate
 from backend.services.asaas_client import AsaasClient, sanitize_asaas_payload
 
 settings = get_settings()
@@ -66,6 +67,52 @@ class AsaasGateway:
 
         qr_code = self._client_or_default().get_pix_qr_code(provider_payment_id)
         self._store_pix_payment_data(payment, asaas_payment, qr_code, customer_link.provider_customer_id)
+        return payment
+
+    def create_credit_card_payment(
+        self,
+        *,
+        order: Order,
+        payment: Payment,
+        amount: float,
+        card_payload: AsaasCreditCardPaymentCreate,
+        remote_ip: str,
+    ) -> Payment:
+        if not order.customer:
+            raise DomainError(
+                "Cliente do pedido e obrigatorio para criar pagamento ASAAS.",
+                code="AsaasCustomerRequired",
+            )
+
+        holder_info = card_payload.credit_card_holder_info
+        customer_link = self.ensure_customer(order.customer, cpf_cnpj=holder_info.cpf_cnpj, order=order)
+        external_reference = order.external_reference or f"order-{order.id}"
+        asaas_payment = self._find_remote_payment(external_reference, billing_type="CREDIT_CARD")
+        if not asaas_payment:
+            asaas_payment = self._client_or_default().create_payment(
+                self._build_credit_card_payment_payload(
+                    provider_customer_id=customer_link.provider_customer_id,
+                    order=order,
+                    amount=amount,
+                    external_reference=external_reference,
+                    card_payload=card_payload,
+                    remote_ip=remote_ip,
+                )
+            )
+
+        provider_payment_id = str(asaas_payment.get("id") or "").strip()
+        if not provider_payment_id:
+            raise DomainError(
+                "ASAAS nao retornou identificador da cobranca de cartao.",
+                code="AsaasPaymentInvalidResponse",
+            )
+
+        self._store_credit_card_payment_data(
+            payment,
+            asaas_payment,
+            customer_link.provider_customer_id,
+            installments=card_payload.installments,
+        )
         return payment
 
     def retrieve_payment(self, payment_id: str) -> dict[str, Any]:
@@ -166,10 +213,10 @@ class AsaasGateway:
                 return data[0]
         return None
 
-    def _find_remote_payment(self, external_reference: str) -> dict[str, Any] | None:
+    def _find_remote_payment(self, external_reference: str, *, billing_type: str = "PIX") -> dict[str, Any] | None:
         response = self._client_or_default().list_payments(
             external_reference=external_reference,
-            billing_type="PIX",
+            billing_type=billing_type,
             limit=1,
         )
         data = response.get("data") if isinstance(response, dict) else None
@@ -196,6 +243,49 @@ class AsaasGateway:
             "description": f"Pedido #{order.order_code or order.id}",
             "externalReference": external_reference,
         }
+
+    def _build_credit_card_payment_payload(
+        self,
+        *,
+        provider_customer_id: str,
+        order: Order,
+        amount: float,
+        external_reference: str,
+        card_payload: AsaasCreditCardPaymentCreate,
+        remote_ip: str,
+    ) -> dict[str, Any]:
+        card = card_payload.credit_card
+        holder = card_payload.credit_card_holder_info
+        payload: dict[str, Any] = {
+            "customer": provider_customer_id,
+            "billingType": "CREDIT_CARD",
+            "value": round(float(amount), 2),
+            "dueDate": date.today().isoformat(),
+            "description": f"Pedido #{order.order_code or order.id}",
+            "externalReference": external_reference,
+            "creditCard": {
+                "holderName": card.holder_name,
+                "number": card.number,
+                "expiryMonth": card.expiry_month,
+                "expiryYear": card.expiry_year,
+                "ccv": card.ccv,
+            },
+            "creditCardHolderInfo": {
+                "name": holder.name,
+                "email": holder.email,
+                "cpfCnpj": holder.cpf_cnpj,
+                "postalCode": holder.postal_code,
+                "addressNumber": holder.address_number,
+                "addressComplement": holder.address_complement,
+                "phone": holder.phone,
+                "mobilePhone": holder.mobile_phone,
+            },
+            "remoteIp": remote_ip,
+        }
+        if card_payload.installments > 1:
+            payload["installmentCount"] = card_payload.installments
+            payload["totalValue"] = round(float(amount), 2)
+        return self._compact(payload)
 
     def _store_pix_payment_data(
         self,
@@ -234,6 +324,41 @@ class AsaasGateway:
         self._db.add(payment)
         self._db.flush()
 
+    def _store_credit_card_payment_data(
+        self,
+        payment: Payment,
+        asaas_payment: dict[str, Any],
+        provider_customer_id: str,
+        *,
+        installments: int,
+    ) -> None:
+        provider_payment_id = str(asaas_payment.get("id") or "").strip()
+        brand = self._extract_card_brand(asaas_payment)
+
+        payment.provider = self.provider
+        payment.gateway = self.provider
+        payment.method = payment.method
+        payment.provider_payment_id = provider_payment_id or payment.provider_payment_id
+        payment.provider_customer_id = provider_customer_id
+        payment.provider_status = asaas_payment.get("status") or payment.provider_status
+        payment.transaction_id = provider_payment_id or payment.transaction_id
+        payment.external_reference = asaas_payment.get("externalReference") or payment.external_reference
+        payment.currency = "BRL"
+        payment.payment_url = asaas_payment.get("invoiceUrl") or payment.payment_url
+        payment.installments = installments
+        payment.card_brand = brand or payment.card_brand
+        payment.card_brand_logo = self._card_brand_logo(brand) or payment.card_brand_logo
+        payment.qr_code = None
+        payment.qr_code_text = None
+        payment.pix_payload = None
+        payment.pix_qr_code = None
+        payment.pix_expires_at = None
+        payment.raw_response = json.dumps(sanitize_asaas_payload(asaas_payment), ensure_ascii=False)
+        payment.webhook_data = payment.raw_response
+        payment.updated_at = datetime.now(timezone.utc)
+        self._db.add(payment)
+        self._db.flush()
+
     def _parse_expiration(self, value: Any) -> datetime | None:
         if not value:
             return None
@@ -265,7 +390,7 @@ class AsaasGateway:
             payload["mobilePhone"] = phone
         if order:
             payload.update(self._address_payload(order))
-        return {key: value for key, value in payload.items() if value not in (None, "")}
+        return self._compact(payload)
 
     def _address_payload(self, order: Order) -> dict[str, Any]:
         address = order.address
@@ -281,3 +406,42 @@ class AsaasGateway:
             "address": order.delivery_street,
             "complement": order.delivery_complement,
         }
+
+    def _extract_card_brand(self, asaas_payment: dict[str, Any]) -> str | None:
+        candidates = [
+            asaas_payment.get("creditCardBrand"),
+            asaas_payment.get("cardBrand"),
+            (asaas_payment.get("creditCard") or {}).get("creditCardBrand")
+            if isinstance(asaas_payment.get("creditCard"), dict)
+            else None,
+            (asaas_payment.get("creditCard") or {}).get("brand")
+            if isinstance(asaas_payment.get("creditCard"), dict)
+            else None,
+        ]
+        for candidate in candidates:
+            text = str(candidate or "").strip()
+            if text:
+                return text.upper()
+        return None
+
+    def _card_brand_logo(self, brand: str | None) -> str | None:
+        if not brand:
+            return None
+        normalized = re.sub(r"[^a-z0-9]+", "_", brand.lower()).strip("_")
+        aliases = {
+            "master": "mastercard",
+            "master_card": "mastercard",
+            "american_express": "amex",
+        }
+        return aliases.get(normalized, normalized)
+
+    def _compact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        compact: dict[str, Any] = {}
+        for key, value in payload.items():
+            if isinstance(value, dict):
+                nested = self._compact(value)
+                if nested:
+                    compact[key] = nested
+            elif value not in (None, ""):
+                compact[key] = value
+        return compact

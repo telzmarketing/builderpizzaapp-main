@@ -35,6 +35,7 @@ import {
   isAssetUrl,
   resolveAssetUrl,
   type ApiAddress,
+  type ApiAsaasCreditCardPaymentInput,
   type ApiCouponGift,
   type ApiOrder,
   type ApiPayment,
@@ -93,6 +94,11 @@ function paymentExpiryMs(payment: ApiPayment | null) {
   if (!payment?.pix_expires_at) return Date.now() + 30 * 60 * 1000;
   const parsed = new Date(payment.pix_expires_at).getTime();
   return Number.isFinite(parsed) && parsed > Date.now() ? parsed : Date.now() + 30 * 60 * 1000;
+}
+function addressNumberFrom(value: string) {
+  const afterComma = value.split(",").slice(1).join(",").match(/\d+[a-zA-Z]?/);
+  if (afterComma?.[0]) return afterComma[0];
+  return value.match(/\d+[a-zA-Z]?/)?.[0] || "";
 }
 
 // sessionStorage key that persists the locked order across page refreshes and back-navigation
@@ -167,11 +173,17 @@ export default function Checkout() {
   const creditCardMercadoPagoAvailable = paymentPublicConfig
     ? creditCardConfig?.enabled === true && creditCardConfig.provider === "mercado_pago" && creditCardConfig.implementation_status === "available"
     : paymentMethods?.accept_credit_card !== false;
+  const creditCardAsaasAvailable = paymentPublicConfig
+    ? creditCardConfig?.enabled === true && creditCardConfig.provider === "asaas" && creditCardConfig.implementation_status === "available"
+    : false;
+  const creditCardAvailable = creditCardMercadoPagoAvailable || creditCardAsaasAvailable;
   const debitCardMercadoPagoAvailable = paymentPublicConfig
     ? debitCardConfig?.enabled === true && debitCardConfig.provider === "mercado_pago" && debitCardConfig.implementation_status === "available"
     : paymentMethods?.accept_debit_card !== false;
-  const onlineCardAvailable = creditCardMercadoPagoAvailable || debitCardMercadoPagoAvailable;
-  const selectedCardAvailable = cardFunction === "debit" ? debitCardMercadoPagoAvailable : creditCardMercadoPagoAvailable;
+  const onlineCardAvailable = creditCardAvailable || debitCardMercadoPagoAvailable;
+  const selectedCardAvailable = cardFunction === "debit" ? debitCardMercadoPagoAvailable : creditCardAvailable;
+  const isAsaasCard = cardFunction === "credit" && creditCardAsaasAvailable;
+  const cardGatewayName = isAsaasCard ? "ASAAS" : "Mercado Pago";
   const cardUnavailableReason =
     creditCardConfig?.reason ||
     debitCardConfig?.reason ||
@@ -207,16 +219,16 @@ export default function Checkout() {
 
   useEffect(() => {
     if (selectedPaymentMethod !== "card") return;
-    if (cardFunction === "credit" && !creditCardMercadoPagoAvailable && debitCardMercadoPagoAvailable) {
+    if (cardFunction === "credit" && !creditCardAvailable && debitCardMercadoPagoAvailable) {
       setCardFunction("debit");
     }
-    if (cardFunction === "debit" && !debitCardMercadoPagoAvailable && creditCardMercadoPagoAvailable) {
+    if (cardFunction === "debit" && !debitCardMercadoPagoAvailable && creditCardAvailable) {
       setCardFunction("credit");
     }
   }, [
     selectedPaymentMethod,
     cardFunction,
-    creditCardMercadoPagoAvailable,
+    creditCardAvailable,
     debitCardMercadoPagoAvailable,
   ]);
 
@@ -711,7 +723,63 @@ export default function Checkout() {
       return;
     }
     setCardSubmitting(true);
+    let submittedSensitiveCardData = false;
     try {
+      const [expMonth, expYearShort] = cardExpiry.split("/");
+      const expYear = (expYearShort?.length === 2) ? `20${expYearShort}` : expYearShort;
+      const cardDigits = cardNumber.replace(/\s/g, "");
+      const cpfDigits = cardCpf.replace(/\D/g, "");
+
+      if (isAsaasCard) {
+        const postalCode = documentDigits(form.zip_code);
+        const addressNumber = addressNumberFrom(form.address);
+        if (!validCpfCnpjDigits(cardCpf)) {
+          setCardError("Informe CPF ou CNPJ valido do titular do cartao.");
+          return;
+        }
+        if (postalCode.length !== 8 || !addressNumber) {
+          setCardError("Informe CEP e numero do endereco para validar o titular no ASAAS.");
+          return;
+        }
+
+        submittedSensitiveCardData = true;
+        const phoneDigits = documentDigits(form.phone);
+        const holderInfo: ApiAsaasCreditCardPaymentInput["creditCardHolderInfo"] = {
+          name: cardName.trim(),
+          email: customer?.email || `cliente.${createdOrder.id.slice(0, 8).toLowerCase()}@delivery.moschettieri.com.br`,
+          cpfCnpj: cpfDigits,
+          postalCode,
+          addressNumber,
+          addressComplement: form.complement || null,
+          phone: phoneDigits || null,
+          mobilePhone: phoneDigits || null,
+        };
+
+        const createdPayment = await paymentsApi.createAsaasCreditCard(createdOrder.id, {
+          amount: createdOrder.total,
+          installments: 1,
+          creditCard: {
+            holderName: cardName.trim(),
+            number: cardDigits,
+            expiryMonth: expMonth,
+            expiryYear: expYear,
+            ccv: cardCvv,
+          },
+          creditCardHolderInfo: holderInfo,
+        });
+
+        setPayment(createdPayment);
+        if (createdPayment.status === "rejected" || createdPayment.status === "cancelled") {
+          setPaymentState("rejected");
+          sessionStorage.removeItem(LOCKED_ORDER_KEY);
+          setPaymentMessage("O ASAAS recusou o cartao. Revise os dados ou escolha outra forma de pagamento.");
+        } else {
+          setPaymentState("pending");
+          setPaymentMessage("Pagamento enviado ao ASAAS. Aguardando confirmacao do banco.");
+        }
+        return;
+      }
+
       if (!window.MercadoPago) {
         await new Promise<void>((resolve, reject) => {
           const existing = document.querySelector<HTMLScriptElement>("script[src='https://sdk.mercadopago.com/js/v2']");
@@ -743,20 +811,17 @@ export default function Checkout() {
         }
       } catch { /* será omitido do body se vazio */ }
 
-      const [expMonth, expYearShort] = cardExpiry.split("/");
-      const expYear = (expYearShort?.length === 2) ? `20${expYearShort}` : expYearShort;
-
+      submittedSensitiveCardData = true;
       const token = await mp.createCardToken({
-        cardNumber: cardNumber.replace(/\s/g, ""),
+        cardNumber: cardDigits,
         cardholderName: cardName.trim(),
         cardExpirationMonth: expMonth,
         cardExpirationYear: expYear,
         securityCode: cardCvv,
-        identificationType: "CPF",
-        identificationNumber: cardCpf.replace(/\D/g, ""),
+        identificationType: cpfDigits.length > 11 ? "CNPJ" : "CPF",
+        identificationNumber: cpfDigits,
       });
 
-      const cpfDigits = cardCpf.replace(/\D/g, "");
       const createdPayment = await paymentsApi.createFromBrick(createdOrder.id, {
         token: token.id,
         ...(paymentMethodId ? { payment_method_id: paymentMethodId } : {}),
@@ -782,6 +847,13 @@ export default function Checkout() {
       const msg = err instanceof Error ? err.message : "";
       setCardError(msg || "Erro ao processar cartao. Verifique os dados e tente novamente.");
     } finally {
+      if (submittedSensitiveCardData) {
+        setCardNumber("");
+        setCardName("");
+        setCardExpiry("");
+        setCardCvv("");
+        setCardCpf("");
+      }
       setCardSubmitting(false);
     }
   };
@@ -1046,6 +1118,8 @@ export default function Checkout() {
             <p className="mb-3 rounded-xl border border-surface-03 bg-surface-02 px-3 py-2 text-xs leading-relaxed text-parchment">
               {selectedPaymentMethod === "pix" && isAsaasPix
                 ? "Pagamento Pix seguro via ASAAS. Seus dados sao protegidos durante toda a transacao."
+                : selectedPaymentMethod === "card" && creditCardAsaasAvailable
+                  ? "Pagamento com cartao seguro via ASAAS. Nao armazenamos os dados do seu cartao."
                 : "Pagamento 100% seguro via Mercado Pago. Seus dados sao protegidos durante toda a transacao."}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -1401,7 +1475,7 @@ export default function Checkout() {
                           <button
                             key={fn}
                             type="button"
-                            disabled={fn === "credit" ? !creditCardMercadoPagoAvailable : !debitCardMercadoPagoAvailable}
+                            disabled={fn === "credit" ? !creditCardAvailable : !debitCardMercadoPagoAvailable}
                             onClick={() => setCardFunction(fn)}
                             className={`py-2 rounded-xl border text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
                               cardFunction === fn
@@ -1417,6 +1491,7 @@ export default function Checkout() {
                         <input
                           type="text"
                           inputMode="numeric"
+                          autoComplete="cc-number"
                           placeholder="Numero do cartao"
                           value={cardNumber}
                           onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
@@ -1425,6 +1500,7 @@ export default function Checkout() {
                         />
                         <input
                           type="text"
+                          autoComplete="cc-name"
                           placeholder="Nome no cartao (como no cartao)"
                           value={cardName}
                           onChange={(e) => setCardName(e.target.value.toUpperCase())}
@@ -1434,6 +1510,7 @@ export default function Checkout() {
                           <input
                             type="text"
                             inputMode="numeric"
+                            autoComplete="cc-exp"
                             placeholder="Validade MM/AA"
                             value={cardExpiry}
                             onChange={(e) => setCardExpiry(formatExpiry(e.target.value))}
@@ -1443,6 +1520,7 @@ export default function Checkout() {
                           <input
                             type="text"
                             inputMode="numeric"
+                            autoComplete="cc-csc"
                             placeholder="CVV"
                             value={cardCvv}
                             onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, "").slice(0, 4))}
@@ -1453,13 +1531,19 @@ export default function Checkout() {
                         <input
                           type="text"
                           inputMode="numeric"
-                          placeholder="CPF do titular (opcional)"
+                          autoComplete="off"
+                          placeholder={isAsaasCard ? "CPF/CNPJ do titular" : "CPF do titular (opcional)"}
                           value={cardCpf}
-                          onChange={(e) => setCardCpf(formatCpf(e.target.value))}
-                          maxLength={14}
+                          onChange={(e) => setCardCpf(isAsaasCard ? formatCpfCnpj(e.target.value) : formatCpf(e.target.value))}
+                          maxLength={isAsaasCard ? 18 : 14}
                           className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
                         />
                       </div>
+                      {isAsaasCard && (
+                        <p className="rounded-xl border border-surface-03 bg-surface-02 px-3 py-2 text-xs leading-relaxed text-stone">
+                          Nao armazenamos os dados do seu cartao. Eles sao usados apenas para processar esta compra com seguranca.
+                        </p>
+                      )}
                       {cardError && <p className="text-red-400 text-xs ml-1">{cardError}</p>}
                       <button
                         onClick={handleCardPay}
@@ -1470,7 +1554,7 @@ export default function Checkout() {
                         {cardSubmitting ? "Processando..." : "Pagar com cartao"}
                       </button>
                       <p className="text-center text-stone text-xs">
-                        Pagamento seguro via Mercado Pago. Seus dados de cartao nao sao armazenados.
+                        Pagamento seguro via {cardGatewayName}. Seus dados de cartao nao sao armazenados.
                       </p>
                     </>
                   )}

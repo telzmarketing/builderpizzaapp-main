@@ -39,6 +39,10 @@
 17. [Atualizacao 2026-05-13 - Estado Atual Completo](#17-atualizacao-2026-05-13---estado-atual-completo)
 18. [Atualizacao 2026-07-01 - Gestão ERP Concluida](#18-atualizacao-2026-07-01---gestao-erp-concluida)
 19. [Atualizacao 2026-07-03 - ASAAS Multi-Gateway](#19-atualizacao-2026-07-03---asaas-multi-gateway)
+20. [Atualizacao 2026-07-03 - Cartao ASAAS na Tela Propria](#20-atualizacao-2026-07-03---cartao-asaas-na-tela-propria)
+21. [Atualizacao 2026-07-03 - Backend ASAAS Cartao](#21-atualizacao-2026-07-03---backend-asaas-cartao)
+22. [Atualizacao 2026-07-04 - Checkout ASAAS Cartao](#22-atualizacao-2026-07-04---checkout-asaas-cartao)
+23. [Atualizacao 2026-07-04 - Admin ASAAS Cartao](#23-atualizacao-2026-07-04---admin-asaas-cartao)
 
 ---
 
@@ -2512,7 +2516,7 @@ Fluxo ASAAS Pix:
 
 ### 19.5 Cartao ASAAS seguro
 
-Cartao ASAAS permanece bloqueado por decisao de seguranca. O backend nao deve receber PAN, CVV ou dados sensiveis de cartao. A liberacao futura exige tokenizacao client-side oficial/homologada, validacao de recusa/aprovacao/parcelamento e revisao de logs para garantir ausencia de dados sensiveis.
+Cartao ASAAS foi retomado em fases posteriores por decisao de negocio, usando fluxo dedicado no checkout da loja. O sistema continua proibido de persistir numero completo, CVV, validade completa, payload bruto `creditCard`, payload `creditCardHolderInfo` ou ultimos 4 digitos. A persistencia permitida fica limitada a metadados nao sensiveis, como provider, id externo, status, parcelas, bandeira e logo/identificador visual da bandeira.
 
 ### 19.6 Webhooks e idempotencia
 
@@ -2535,8 +2539,8 @@ Regras:
 - salva credenciais sem reexpor segredo salvo;
 - permite escolher provider de Pix e cartao separadamente;
 - mostra status de configuracao;
-- bloqueia combinacoes inseguras, como cartao ASAAS sem tokenizacao validada;
-- preserva Mercado Pago como fallback seguro.
+- exige ASAAS ativo, Cartao ASAAS ativo e API Key configurada para rotear cartao pelo ASAAS;
+- preserva Mercado Pago Payment Brick quando o provider de cartao e Mercado Pago.
 
 Em `client/pages/admin/Orders.tsx`, pedidos exibem provider e operacoes de conciliacao, cancelamento e estorno quando ha pagamento remoto associado.
 
@@ -2547,8 +2551,8 @@ Em `client/pages/admin/Orders.tsx`, pedidos exibem provider e operacoes de conci
 - preserva cartao Mercado Pago;
 - preserva Pix Mercado Pago;
 - renderiza Pix ASAAS quando configurado;
+- renderiza cartao ASAAS na tela da loja quando configurado;
 - trata provider indisponivel com mensagem funcional;
-- bloqueia cartao ASAAS;
 - mantem polling/status pelo endpoint oficial de pagamentos.
 
 ### 19.9 Validacao e operacao
@@ -2571,7 +2575,7 @@ Cenarios manuais recomendados:
 - Pix Mercado Pago preservado.
 - Pix ASAAS com CPF/CNPJ valido.
 - Cartao Mercado Pago preservado.
-- Cartao ASAAS bloqueado.
+- Cartao ASAAS com CPF/CNPJ, CEP e numero do titular.
 - Webhook ASAAS com token valido/invalido.
 - Duplicidade de webhook sem duplicar efeitos internos.
 - Conciliacao/cancelamento/estorno por provider historico.
@@ -2583,4 +2587,192 @@ Cenarios manuais recomendados:
 - Valores monetarios ainda dependem de campos legados com `Float`.
 - Webhook ASAAS processa regra sensivel e deve responder rapido.
 - Ambientes sandbox/producao precisam ser separados com rigor.
-- Cartao ASAAS so pode ser retomado apos validacao oficial de tokenizacao.
+- Cartao ASAAS exige HTTPS, sanitizacao de logs, idempotencia e conferencia real de webhook antes de operacao em producao.
+
+## 20. Atualizacao 2026-07-03 - Cartao ASAAS na Tela Propria
+
+### 20.1 Decisao
+
+O objetivo do ASAAS foi ajustado: alem de Pix, ASAAS tambem deve processar cartao de credito para reduzir rejeicoes do Mercado Pago.
+
+Decisao arquitetural: o cliente permanecera no checkout da loja. Nao usar redirecionamento para invoiceUrl ASAAS como solucao principal.
+
+Documento de seguranca da fase: `docs/ASAAS_CREDIT_CARD_SECURITY_PHASE_12.md`.
+
+### 20.2 Regra de armazenamento
+
+Dados de cartao nunca podem ficar salvos no sistema.
+
+Proibido salvar ou logar:
+
+- numero completo do cartao;
+- CVV/CCV;
+- validade completa;
+- payload `creditCard`;
+- payload `creditCardHolderInfo`;
+- payload bruto de requisicao ou resposta ASAAS com dados sensiveis;
+- dados de cartao em localStorage, sessionStorage, cookies, analytics ou eventos internos.
+
+Permitido nesta decisao:
+
+- provider;
+- id da cobranca;
+- status;
+- valor;
+- parcelas;
+- bandeira do cartao;
+- identificador visual/logo da bandeira.
+
+Nao salvar ultimos 4 digitos nesta etapa.
+
+### 20.3 Mensagem ao cliente
+
+O checkout deve exibir perto dos campos de cartao:
+
+> Nao armazenamos os dados do seu cartao. Eles sao usados apenas para processar esta compra com seguranca.
+
+### 20.4 Carteira do celular
+
+O checkout pode usar atributos HTML de autocomplete para permitir preenchimento por cartoes salvos no navegador/celular:
+
+- `cc-name`
+- `cc-number`
+- `cc-exp-month`
+- `cc-exp-year`
+- `cc-csc`
+
+Isso nao significa salvar cartao na loja. Botao nativo Apple Pay/Google Pay fica fora do escopo ate confirmacao oficial de suporte.
+
+### 20.5 Regras tecnicas para implementacao
+
+- HTTPS obrigatorio.
+- `remoteIp` deve ser o IP real do comprador.
+- Timeout ASAAS de pelo menos 60 segundos.
+- Idempotencia por pedido/pagamento para evitar dupla captura.
+- Logs devem ser sanitizados.
+- Erros ao cliente devem ser genericos e amigaveis.
+- Mercado Pago permanece como fallback.
+- Webhook ASAAS confirma status final e nao pode duplicar efeitos internos.
+
+### 20.6 Proximas fases
+
+- Fase 13: backend ASAAS cartao.
+- Fase 14: checkout ASAAS cartao.
+- Fase 15: admin, validacao e deploy.
+
+## 21. Atualizacao 2026-07-03 - Backend ASAAS Cartao
+
+### 21.1 Entrega
+
+A Fase 13 implementou o backend para cartao ASAAS na tela propria, mantendo o dominio unico `payments`.
+
+Arquivos principais:
+
+- `backend/schemas/payment.py`
+- `backend/routes/payments.py`
+- `backend/services/payment_service.py`
+- `backend/services/asaas_gateway.py`
+- `backend/services/asaas_client.py`
+- `backend/services/payment_gateway_resolver.py`
+- `backend/models/payment.py`
+- `backend/migrations/versions/20260703_asaas_card_metadata.py`
+
+### 21.2 Contrato backend
+
+Nova rota:
+
+- `POST /payments/asaas/credit-card`
+
+Entrada validada por `AsaasCreditCardPaymentCreate`, separada do `PaymentCreate` generico. O endpoint generico continua bloqueando dados brutos de cartao.
+
+O backend calcula `remoteIp` a partir de `x-forwarded-for`, `x-real-ip` ou IP da conexao, sem confiar em campo enviado pelo cliente.
+
+### 21.3 Persistencia permitida
+
+Adicionados campos nao sensiveis:
+
+- `payments.card_brand`
+- `payments.card_brand_logo`
+
+O sistema continua proibido de salvar numero completo, CVV, validade completa, payload bruto do cartao, payload do titular e ultimos 4 digitos.
+
+### 21.4 Idempotencia e seguranca
+
+- Pedido com pagamento ASAAS cartao pendente e `provider_payment_id` retorna a mesma tentativa.
+- `AsaasClient` usa timeout padrao de 60 segundos.
+- `sanitize_asaas_payload` mascara cartao, titular, CVV, numero, tokens e chaves.
+- Mercado Pago permanece como fallback.
+
+### 21.5 Proxima etapa
+
+Fase 14 executada em `client/pages/Checkout.tsx` e `client/lib/api.ts`: chamada ao novo endpoint, autocomplete do celular, mensagem de nao armazenamento e limpeza de estado sensivel apos a tentativa.
+
+## 22. Atualizacao 2026-07-04 - Checkout ASAAS Cartao
+
+### 22.1 Entrega
+
+A Fase 14 ligou o checkout ao backend ASAAS cartao, mantendo o cliente na tela da loja.
+
+Arquivos principais:
+
+- `client/lib/api.ts`
+- `client/pages/Checkout.tsx`
+- `docs/ASAAS_MULTI_GATEWAY_EXECUTION_PLAN.md`
+
+### 22.2 Fluxo
+
+Quando `GET /payments/config/public` indicar `credit_card.provider="asaas"` e `implementation_status="available"`, o checkout:
+
+1. Mantem o formulario de cartao na loja.
+2. Exige CPF/CNPJ, CEP e numero de endereco do titular.
+3. Envia a tentativa para `POST /payments/asaas/credit-card`.
+4. Limpa numero, nome, validade, CVV e CPF/CNPJ do estado apos tentativa real.
+5. Exibe pagamento pendente ou recusado conforme resposta.
+
+Mercado Pago continua preservado quando o provider de cartao e Mercado Pago.
+
+### 22.3 Seguranca
+
+- Campos usam autocomplete do navegador/celular.
+- A mensagem "Nao armazenamos os dados do seu cartao..." aparece no fluxo ASAAS.
+- O frontend nao salva cartao em storage.
+- O backend continua responsavel por sanitizacao, idempotencia e webhook.
+
+### 22.4 Proxima etapa
+
+Fase 15 deve concluir o painel administrativo e a validacao local. Alembic em ambiente Python, deploy e teste real de webhook ASAAS cartao seguem como etapa operacional de VPS.
+
+## 23. Atualizacao 2026-07-04 - Admin ASAAS Cartao
+
+### 23.1 Entrega
+
+A Fase 15 alinhou o painel `/painel/pagamentos` com o fluxo ASAAS cartao implementado no backend e no checkout.
+
+Arquivo principal:
+
+- `client/pages/admin/AdminPagamentos.tsx`
+
+### 23.2 Comportamento do painel
+
+- ASAAS cartao nao e mais bloqueado por uma trava antiga de tokenizacao client-side.
+- O admin pode ligar `Cartao ASAAS`.
+- O roteamento de cartao para ASAAS fica selecionavel quando ASAAS esta ativo, `Cartao ASAAS` esta ativo e existe API Key salva ou sendo informada.
+- O campo visual foi renomeado para `Status operacional do cartao`, preservando `asaas_tokenization_status` no contrato para compatibilidade.
+- O painel informa que dados de cartao sao usados apenas para processar a compra e nao ficam salvos no sistema.
+
+### 23.3 Compatibilidade
+
+- Mercado Pago Payment Brick permanece preservado quando `credit_card_provider` e `mercado_pago`.
+- Pix Mercado Pago e Pix ASAAS continuam no mesmo dominio `payments`.
+- Nao foi criado segundo dominio de pagamentos.
+- Sem fallback automatico em runtime: o checkout usa o provider configurado.
+
+### 23.4 Operacao pendente
+
+Antes de producao, executar em ambiente com Python/Alembic:
+
+- `alembic -c backend/alembic.ini heads`
+- `alembic -c backend/alembic.ini current`
+- `alembic -c backend/alembic.ini upgrade head`
+
+Tambem testar pagamento ASAAS cartao e webhook real, confirmando idempotencia e ausencia de dados sensiveis nos logs.

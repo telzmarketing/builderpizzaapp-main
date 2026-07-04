@@ -181,7 +181,6 @@ def _provider_ready_for_method(config: PaymentGatewayConfig, provider: str, meth
             return bool(
                 config.asaas_credit_card_enabled
                 and config.asaas_api_key
-                and config.asaas_tokenization_status == "validated"
                 and asaas_credit_card_runtime_available()
             )
     return False
@@ -333,7 +332,7 @@ def _to_out(config: PaymentGatewayConfig) -> PaymentGatewayConfigOut:
         asaas_api_key_masked=_mask(config.asaas_api_key),
         asaas_webhook_token_masked=_mask(config.asaas_webhook_token),
         asaas_pix_enabled=bool(config.asaas_pix_enabled),
-        asaas_credit_card_enabled=bool(config.asaas_credit_card_enabled and asaas_credit_card_runtime_available()),
+        asaas_credit_card_enabled=bool(config.asaas_credit_card_enabled),
         asaas_max_installments=config.asaas_max_installments or 1,
         asaas_tokenization_status=config.asaas_tokenization_status or "not_validated",
         asaas_last_health_check_at=config.asaas_last_health_check_at,

@@ -404,6 +404,8 @@ def _run_migrations():
         "ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider_status VARCHAR(80)",
         "ALTER TABLE payments ADD COLUMN IF NOT EXISTS currency VARCHAR(3) DEFAULT 'BRL'",
         "ALTER TABLE payments ADD COLUMN IF NOT EXISTS installments INTEGER",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS card_brand VARCHAR(40)",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS card_brand_logo VARCHAR(80)",
         "ALTER TABLE payments ADD COLUMN IF NOT EXISTS pix_payload TEXT",
         "ALTER TABLE payments ADD COLUMN IF NOT EXISTS pix_qr_code TEXT",
         "ALTER TABLE payments ADD COLUMN IF NOT EXISTS pix_expires_at TIMESTAMPTZ",

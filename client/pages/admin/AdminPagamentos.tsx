@@ -36,8 +36,8 @@ const providerLabels: Record<Provider, string> = {
   asaas: "ASAAS",
 };
 
-const asaasCardRuntimeAvailable = false;
-const asaasCardSafetyReason = "Cartao ASAAS aguarda tokenizacao client-side oficial homologada.";
+const asaasCardSafetyReason =
+  "Ative ASAAS, Cartao ASAAS e uma API Key para rotear cartao pelo ASAAS.";
 
 function bool(value: unknown) {
   return value === true;
@@ -72,8 +72,9 @@ export default function AdminPagamentos() {
   const [testMessage, setTestMessage] = useState<string | null>(null);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
 
-  const asaasCardValidated = text(form.asaas_tokenization_status) === "validated";
-  const asaasCardSelectable = asaasCardRuntimeAvailable && asaasCardValidated;
+  const asaasApiConfigured = Boolean(config?.asaas_api_key_masked || text(form.asaas_api_key));
+  const asaasCardSelectable =
+    bool(form.asaas_enabled) && bool(form.asaas_credit_card_enabled) && asaasApiConfigured;
   const mpWebhookUrl = `${window.location.origin}/api/webhooks/mercadopago`;
   const asaasWebhookUrl = `${window.location.origin}/api/webhooks/asaas`;
 
@@ -103,9 +104,9 @@ export default function AdminPagamentos() {
         asaas_api_key: "",
         asaas_webhook_token: "",
         asaas_pix_enabled: data.asaas_pix_enabled,
-        asaas_credit_card_enabled: data.asaas_credit_card_enabled && asaasCardRuntimeAvailable && data.asaas_tokenization_status === "validated",
+        asaas_credit_card_enabled: data.asaas_credit_card_enabled,
         asaas_max_installments: data.asaas_max_installments || 1,
-        asaas_tokenization_status: data.asaas_tokenization_status === "validated" && !asaasCardRuntimeAvailable ? "not_validated" : data.asaas_tokenization_status || "not_validated",
+        asaas_tokenization_status: data.asaas_tokenization_status || "not_validated",
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nao foi possivel carregar a configuracao.");
@@ -117,19 +118,6 @@ export default function AdminPagamentos() {
   useEffect(() => {
     loadConfig();
   }, []);
-
-  useEffect(() => {
-    if (!asaasCardSelectable && form.credit_card_provider === "asaas") {
-      setForm((prev) => ({ ...prev, credit_card_provider: "mercado_pago" }));
-    }
-    if ((!asaasCardSelectable && form.asaas_credit_card_enabled === true) || (!asaasCardRuntimeAvailable && form.asaas_tokenization_status === "validated")) {
-      setForm((prev) => ({
-        ...prev,
-        asaas_credit_card_enabled: false,
-        asaas_tokenization_status: !asaasCardRuntimeAvailable && prev.asaas_tokenization_status === "validated" ? "not_validated" : prev.asaas_tokenization_status,
-      }));
-    }
-  }, [asaasCardSelectable, form.credit_card_provider, form.asaas_credit_card_enabled, form.asaas_tokenization_status]);
 
   const currentRouting = useMemo(() => ({
     pix: providerLabels[(text(form.pix_provider) as Provider) || "mercado_pago"] || text(form.pix_provider),
@@ -168,11 +156,9 @@ export default function AdminPagamentos() {
         asaas_enabled: bool(form.asaas_enabled),
         asaas_environment: text(form.asaas_environment) || "sandbox",
         asaas_pix_enabled: bool(form.asaas_pix_enabled),
-        asaas_credit_card_enabled: asaasCardSelectable ? bool(form.asaas_credit_card_enabled) : false,
+        asaas_credit_card_enabled: bool(form.asaas_credit_card_enabled),
         asaas_max_installments: numberValue(form.asaas_max_installments, 1),
-        asaas_tokenization_status: !asaasCardRuntimeAvailable && text(form.asaas_tokenization_status) === "validated"
-          ? "not_validated"
-          : text(form.asaas_tokenization_status) || "not_validated",
+        asaas_tokenization_status: text(form.asaas_tokenization_status) || "not_validated",
       };
       if (text(form.mp_access_token)) payload.mp_access_token = text(form.mp_access_token);
       if (text(form.mp_webhook_secret)) payload.mp_webhook_secret = text(form.mp_webhook_secret);
@@ -188,7 +174,7 @@ export default function AdminPagamentos() {
         asaas_api_key: "",
         asaas_webhook_token: "",
         credit_card_provider: updated.credit_card_provider || "mercado_pago",
-        asaas_credit_card_enabled: updated.asaas_credit_card_enabled && asaasCardRuntimeAvailable && updated.asaas_tokenization_status === "validated",
+        asaas_credit_card_enabled: updated.asaas_credit_card_enabled,
       }));
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -389,12 +375,12 @@ export default function AdminPagamentos() {
                       onToggle={() => toggleSecret("asaas_webhook_token")}
                       onChange={(value) => set("asaas_webhook_token", value)}
                     />
-                    <Field label="Status da tokenizacao">
+                    <Field label="Status operacional do cartao">
                       <select className={inputClass} value={text(form.asaas_tokenization_status)} onChange={(e) => set("asaas_tokenization_status", e.target.value)}>
                         <option value="not_validated">Nao validada</option>
                         <option value="unavailable">Indisponivel</option>
                         <option value="pending">Em validacao</option>
-                        {asaasCardRuntimeAvailable && <option value="validated">Validada</option>}
+                        <option value="validated">Validada</option>
                       </select>
                     </Field>
                     <Field label="Maximo de parcelas">
@@ -413,14 +399,15 @@ export default function AdminPagamentos() {
                     <InlineToggle
                       label="Cartao ASAAS"
                       checked={bool(form.asaas_credit_card_enabled)}
-                      disabled={!asaasCardSelectable}
-                      disabledText={asaasCardSafetyReason}
                       onChange={() => set("asaas_credit_card_enabled", !bool(form.asaas_credit_card_enabled))}
                     />
                   </div>
+                  <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-100">
+                    Cartao ASAAS usa o checkout seguro da loja: os dados sao enviados somente para processar a compra e nao ficam salvos no sistema.
+                  </div>
                   {!asaasCardSelectable && (
-                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                      {asaasCardSafetyReason} O checkout nao deve receber PAN/CVV no backend.
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                      {asaasCardSafetyReason}
                     </div>
                   )}
                 </ProviderSection>

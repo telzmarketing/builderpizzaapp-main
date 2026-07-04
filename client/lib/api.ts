@@ -1736,6 +1736,8 @@ export interface ApiPayment {
   transaction_id: string | null;
   currency?: string | null;
   installments?: number | null;
+  card_brand?: string | null;
+  card_brand_logo?: string | null;
   qr_code: string | null;
   qr_code_text: string | null;
   pix_payload?: string | null;
@@ -1780,6 +1782,29 @@ export interface ApiPaymentStatus {
 export interface ApiPaymentOperationInput {
   reason?: string | null;
   value?: number | null;
+}
+
+export interface ApiAsaasCreditCardPaymentInput {
+  order_id: string;
+  amount?: number;
+  installments: number;
+  creditCard: {
+    holderName: string;
+    number: string;
+    expiryMonth: string;
+    expiryYear: string;
+    ccv: string;
+  };
+  creditCardHolderInfo: {
+    name: string;
+    email: string;
+    cpfCnpj: string;
+    postalCode: string;
+    addressNumber: string;
+    addressComplement?: string | null;
+    phone?: string | null;
+    mobilePhone?: string | null;
+  };
 }
 
 export interface ApiPaymentMethods {
@@ -3525,6 +3550,14 @@ export const paymentsApi = {
       "POST",
       "/payments/create",
       { order_id, formData },
+      orderAccessHeaders(order_id),
+    ),
+
+  createAsaasCreditCard: (order_id: string, data: Omit<ApiAsaasCreditCardPaymentInput, "order_id">) =>
+    request<ApiPayment>(
+      "POST",
+      "/payments/asaas/credit-card",
+      { order_id, ...data },
       orderAccessHeaders(order_id),
     ),
 

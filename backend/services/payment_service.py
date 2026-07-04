@@ -5,7 +5,7 @@ Rules:
 - The payment provider is resolved server-side from PaymentGatewayConfig.
 - PIX is generated directly by the backend so the checkout can show QR Code
   and copia-e-cola without using a card SDK.
-- Card payments keep using Mercado Pago Payment Brick.
+- Card payments use Mercado Pago token flow or the dedicated ASAAS card route.
 - The frontend never marks an order as paid.
 - Payment approval is applied only after trusted backend/webhook processing.
 """
@@ -42,7 +42,13 @@ from backend.core.state_machine import order_sm, payment_sm
 from backend.models.order import Order, OrderStatus
 from backend.models.payment import Payment, PaymentEvent, PaymentMethod, PaymentStatus
 from backend.models.payment_config import PaymentGatewayConfig
-from backend.schemas.payment import PaymentCreate, PaymentOut, PayOnDeliverySwitch, WebhookPayload
+from backend.schemas.payment import (
+    AsaasCreditCardPaymentCreate,
+    PaymentCreate,
+    PaymentOut,
+    PayOnDeliverySwitch,
+    WebhookPayload,
+)
 from backend.services.asaas_client import sanitize_asaas_payload
 from backend.services.asaas_gateway import AsaasGateway
 from backend.services.customer_metrics_service import sync_customer_order_metrics
@@ -485,6 +491,91 @@ class PaymentService:
             cpf_cnpj=cpf_cnpj,
         )
         self._db.commit()
+        self._db.refresh(payment)
+        bus.publish(PaymentCreated(payment_id=payment.id, order_id=payment.order_id, method=payment.method.value, amount=payment.amount, gateway=payment.gateway))
+        return PaymentOut.model_validate(payment)
+
+    def create_asaas_credit_card(self, payload: AsaasCreditCardPaymentCreate, *, client_ip: str | None) -> PaymentOut:
+        order = self._get_order(payload.order_id)
+        current_order_status = order.status.value if hasattr(order.status, "value") else str(order.status)
+        if current_order_status not in {"pending", "waiting_payment", "aguardando_pagamento", "pagamento_recusado", "pagamento_expirado"}:
+            raise PaymentOrderNotEligible(order.id, current_order_status)
+
+        if not client_ip:
+            raise DomainError(
+                "Nao foi possivel identificar o IP do comprador para processar cartao ASAAS.",
+                code="BuyerIpRequired",
+            )
+
+        amount = float(payload.amount or order.total)
+        if abs(order.total - amount) > 0.01:
+            raise PaymentAmountMismatch(order.total, amount)
+
+        cfg = self._cfg()
+        _ensure_method_enabled(cfg, PaymentMethod.credit_card)
+        resolved_gateway = self._resolver().resolve(PaymentMethod.credit_card)
+        if not resolved_gateway.enabled:
+            raise DomainError(
+                resolved_gateway.reason or "Cartao indisponivel.",
+                code="PaymentMethodDisabled",
+            )
+        if resolved_gateway.provider != PROVIDER_ASAAS:
+            raise DomainError(
+                "Cartao ASAAS nao esta selecionado no painel de pagamentos.",
+                code="PaymentGatewayNotSelected",
+            )
+
+        if order.payment:
+            if order.payment.status == PaymentStatus.approved:
+                raise DomainError(
+                    "Este pedido ja foi pago. Acesse o acompanhamento do pedido.",
+                    code="PaymentAlreadyApproved",
+                )
+            if order.payment.status == PaymentStatus.pending:
+                same_asaas_card_attempt = (
+                    order.payment.provider == PROVIDER_ASAAS
+                    and order.payment.method == PaymentMethod.credit_card
+                    and abs(order.payment.amount - amount) <= 0.01
+                )
+                if same_asaas_card_attempt and order.payment.provider_payment_id:
+                    return PaymentOut.model_validate(order.payment)
+                if order.payment.provider_payment_id or order.payment.mercado_pago_payment_id or order.payment.qr_code_text:
+                    raise DomainError(
+                        "Este pedido ja possui um pagamento em andamento. Aguarde a confirmacao ou crie um novo pedido.",
+                        code="PaymentAlreadyInProgress",
+                    )
+
+        if not order.external_reference:
+            order.external_reference = f"order-{order.id}"
+
+        if current_order_status == "pending":
+            order_sm.transition(order.id, current_order_status, "aguardando_pagamento")
+            order.status = OrderStatus.aguardando_pagamento
+            self._db.flush()
+
+        payment = self._pending_payment(order, PaymentCreate(order_id=order.id, amount=amount), amount, PaymentMethod.credit_card, PROVIDER_ASAAS)
+        payment.mercado_pago_payment_id = None
+        payment.pay_on_delivery = False
+        payment.method = PaymentMethod.credit_card
+        payment.status = PaymentStatus.pending
+        payment.provider_error_code = None
+        payment.provider_error_message = None
+
+        AsaasGateway(self._db).create_credit_card_payment(
+            order=order,
+            payment=payment,
+            amount=amount,
+            card_payload=payload,
+            remote_ip=client_ip,
+        )
+
+        response_status = _asaas_status_to_payment(payment.provider_status, None)
+        if response_status in {PaymentStatus.rejected, PaymentStatus.cancelled, PaymentStatus.expired}:
+            self._apply_status(payment, response_status, source="create_response")
+        else:
+            payment.status = PaymentStatus.pending
+            self._db.commit()
+
         self._db.refresh(payment)
         bus.publish(PaymentCreated(payment_id=payment.id, order_id=payment.order_id, method=payment.method.value, amount=payment.amount, gateway=payment.gateway))
         return PaymentOut.model_validate(payment)
@@ -974,7 +1065,7 @@ class PaymentService:
             provider_payment_id=provider_payment_id or None,
             payload_hash=payload_hash,
             processing_status="received",
-            raw_payload=raw_body.decode("utf-8", errors="replace"),
+            raw_payload=json.dumps(sanitize_asaas_payload(payload), ensure_ascii=False),
         )
         self._db.add(event)
         try:

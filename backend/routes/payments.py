@@ -14,7 +14,13 @@ from backend.models.admin import AdminUser
 from backend.models.order import Order
 from backend.routes.admin_auth import get_current_admin
 from backend.routes.order_access import require_order_or_admin
-from backend.schemas.payment import PaymentCreate, PaymentOperationRequest, PayOnDeliverySwitch, WebhookPayload
+from backend.schemas.payment import (
+    AsaasCreditCardPaymentCreate,
+    PaymentCreate,
+    PaymentOperationRequest,
+    PayOnDeliverySwitch,
+    WebhookPayload,
+)
 from backend.services.payment_service import PaymentService
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -29,6 +35,18 @@ def _payload_from_query(query_params: dict[str, str]) -> dict:
         "action": query_params.get("action"),
         "data": {"id": data_id},
     }
+
+
+def _client_ip(request: Request) -> str | None:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        first_ip = forwarded_for.split(",", 1)[0].strip()
+        if first_ip:
+            return first_ip
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    return request.client.host if request.client else None
 
 
 @router.post("/create", status_code=201)
@@ -62,6 +80,28 @@ def get_payment_methods(db: Session = Depends(get_db)):
 @router.get("/config/public")
 def get_public_payment_config(db: Session = Depends(get_db)):
     return ok(PaymentService(db).public_config())
+
+
+@router.post("/asaas/credit-card", status_code=201)
+def create_asaas_credit_card_payment(
+    body: AsaasCreditCardPaymentCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    try:
+        order = db.query(Order).filter(Order.id == body.order_id).first()
+        if order:
+            require_order_or_admin(
+                order,
+                db,
+                request.headers.get("authorization"),
+                request.headers.get("x-customer-phone"),
+                request.headers.get("x-customer-email"),
+            )
+        payment = PaymentService(db).create_asaas_credit_card(body, client_ip=_client_ip(request))
+        return created(payment, "Pagamento ASAAS cartao iniciado. Aguardando confirmacao.")
+    except DomainError as exc:
+        return err(exc)
 
 
 @router.get("/{order_id}")

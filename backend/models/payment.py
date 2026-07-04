@@ -44,6 +44,8 @@ class Payment(Base):
     external_reference = Column(String(120), nullable=True)
     currency = Column(String(3), default="BRL")
     installments = Column(Integer, nullable=True)
+    card_brand = Column(String(40), nullable=True)
+    card_brand_logo = Column(String(80), nullable=True)
 
     # PIX fields
     qr_code = Column(Text, nullable=True)

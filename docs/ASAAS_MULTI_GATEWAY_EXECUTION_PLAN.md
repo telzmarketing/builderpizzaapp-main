@@ -576,3 +576,111 @@ Validacoes Python/Alembic seguem pendentes neste host porque `py` nao possui run
 - Retrieve single payment ASAAS: https://docs.asaas.com/reference/retrieve-a-single-payment
 - Refund payment ASAAS: https://docs.asaas.com/reference/refund-payment
 - Mercado Pago payments update reference: https://www.mercadopago.com.br/developers/en/reference/payments/_payments_id/put
+
+## 17. Fase 12 - Cartao ASAAS na tela propria
+
+Status: executada como arquitetura e seguranca. Nenhuma captura real de cartao foi habilitada nesta fase.
+
+Decisao atualizada: o objetivo de negocio do ASAAS inclui cartao de credito, porque o Mercado Pago rejeita muitas transacoes. O cartao ASAAS deve ser implementado sem redirecionar o cliente para a ASAAS, mantendo o cliente no checkout da loja.
+
+Documento detalhado: `docs/ASAAS_CREDIT_CARD_SECURITY_PHASE_12.md`.
+
+Regras aprovadas:
+
+- HTTPS obrigatorio em producao.
+- O sistema nunca deve salvar numero do cartao, CVV, validade completa, payload bruto ou dados sensiveis em logs.
+- O checkout deve informar: "Nao armazenamos os dados do seu cartao. Eles sao usados apenas para processar esta compra com seguranca."
+- O frontend pode usar autocomplete de cartao do navegador/celular para facilitar carteira do aparelho, mas nao deve salvar dados localmente.
+- Botao nativo Apple Pay/Google Pay fica fora do escopo ate haver confirmacao oficial de suporte ASAAS/conta/navegador.
+- Por decisao desta fase, persistir somente bandeira/logo do cartao, sem ultimos 4 digitos.
+- `remoteIp` deve ser o IP real do comprador.
+- A chamada ASAAS para cartao deve ter timeout minimo de 60 segundos.
+- Idempotencia por pedido/pagamento deve impedir dupla captura.
+- Mercado Pago permanece como fallback de cartao.
+
+Fontes oficiais adicionais:
+
+- Credit Card Charges ASAAS: https://docs.asaas.com/docs/payments-via-credit-card.md
+- Create new payment with credit card ASAAS: https://docs.asaas.com/reference/create-new-payment-with-credit-card
+
+## 18. Fase 13 - Backend ASAAS cartao
+
+Status: executada como backend. O checkout visual ainda sera ajustado na Fase 14.
+
+Entregas:
+
+- Criado schema dedicado `AsaasCreditCardPaymentCreate`, separado do `PaymentCreate` generico que continua bloqueando cartao bruto.
+- Criada rota `POST /payments/asaas/credit-card` dentro do dominio existente `payments`.
+- `remoteIp` e resolvido pelo backend a partir de `x-forwarded-for`, `x-real-ip` ou IP da conexao.
+- `AsaasGateway` cria cobranca `CREDIT_CARD` com `creditCard`, `creditCardHolderInfo`, parcelas e timeout minimo de 60 segundos no cliente ASAAS.
+- `PaymentService` implementa idempotencia: pedido com cobranca ASAAS cartao pendente e `provider_payment_id` retorna a mesma tentativa.
+- `sanitize_asaas_payload` passou a mascarar dados de cartao, titular e tokens antes de salvar/logar.
+- Persistencia limitada a metadados nao sensiveis: provider, id da cobranca, status, valor, parcelas, bandeira e identificador visual da bandeira.
+- Adicionada migration `20260703_asaas_card_metadata` com `card_brand` e `card_brand_logo`.
+- `PaymentGatewayResolver` passa a considerar ASAAS cartao disponivel no backend quando configurado e habilitado.
+
+Continua proibido:
+
+- salvar numero completo do cartao;
+- salvar CVV/CCV;
+- salvar validade completa;
+- salvar payload bruto `creditCard` ou `creditCardHolderInfo`;
+- salvar ultimos 4 digitos nesta etapa.
+
+Proxima fase:
+
+- Fase 14 - Checkout ASAAS cartao: adaptar UI, autocomplete do celular, mensagem de nao armazenamento, limpeza de estado sensivel e chamada ao novo endpoint.
+
+## 19. Fase 14 - Checkout ASAAS cartao
+
+Status: executada como frontend do checkout. Admin/fallback operacional completo segue para a Fase 15.
+
+Entregas:
+
+- `client/lib/api.ts` ganhou `ApiAsaasCreditCardPaymentInput` e `paymentsApi.createAsaasCreditCard`.
+- `client/pages/Checkout.tsx` passa a reconhecer `credit_card.provider="asaas"` na configuracao publica.
+- O formulario atual de cartao permanece na tela da loja e chama `POST /payments/asaas/credit-card` quando o provider de credito e ASAAS.
+- Mercado Pago continua preservado quando o provider de credito/debito e Mercado Pago.
+- Campos de cartao usam autocomplete do navegador/celular: `cc-number`, `cc-name`, `cc-exp`, `cc-csc`.
+- O checkout mostra a mensagem de nao armazenamento antes do envio ASAAS.
+- Dados sensiveis de cartao sao limpos do estado apos tentativa real de envio.
+- ASAAS exige CPF/CNPJ, CEP e numero de endereco do titular antes de enviar a cobranca.
+- O texto de gateway passa a exibir ASAAS ou Mercado Pago conforme provider ativo.
+
+Proxima fase:
+
+- Fase 15 - Admin, validacao e preparo operacional: revisar painel para ativar ASAAS cartao sem friccao, validar build/testes locais e deixar Alembic/deploy real para ambiente Python/VPS.
+
+## 20. Fase 15 - Admin ASAAS cartao e validacao local
+
+Status: executada como alinhamento do painel administrativo e validacao local. Deploy real/VPS nao foi executado nesta fase.
+
+Entregas:
+
+- `client/pages/admin/AdminPagamentos.tsx` nao bloqueia mais ASAAS cartao por uma trava antiga de tokenizacao.
+- O painel permite habilitar `Cartao ASAAS` e selecionar ASAAS como gateway de cartao quando ASAAS esta ativo e uma API Key esta configurada ou sendo informada.
+- O campo antigo foi renomeado na UI para `Status operacional do cartao`, preservando o contrato `asaas_tokenization_status` para compatibilidade de API/banco.
+- O painel mostra aviso de seguranca: dados do cartao sao usados apenas para processar a compra e nao ficam salvos no sistema.
+- O salvamento preserva Mercado Pago Payment Brick quando o provider de cartao continua Mercado Pago.
+- O salvamento nao cria um segundo dominio de pagamentos; continua usando a configuracao multi-gateway existente.
+
+Regras operacionais:
+
+- Sem fallback automatico em runtime: o checkout usa o provider configurado e retorna erro se ele nao estiver disponivel.
+- Para rotear cartao pelo ASAAS, o admin precisa manter ASAAS ativo, `Cartao ASAAS` ativo e API Key configurada.
+- Dados sensiveis de cartao continuam proibidos em banco, logs, localStorage, sessionStorage, cookies, analytics ou eventos internos.
+- A migration `20260703_asaas_card_metadata` deve ser aplicada no ambiente Python antes do deploy em producao.
+
+Validacoes desta fase:
+
+- `git diff --check`
+- `npm.cmd run typecheck`
+- `npm.cmd test`
+- `npm.cmd run build`
+
+Pendencias de ambiente real:
+
+- Executar `alembic -c backend/alembic.ini heads`, `current` e `upgrade head` na VPS.
+- Configurar `ASAAS_API_KEY` e `ASAAS_WEBHOOK_TOKEN` no backend.
+- Testar pagamento ASAAS cartao em sandbox/producao controlada.
+- Testar webhook ASAAS real confirmando idempotencia e ausencia de dados sensiveis nos logs.

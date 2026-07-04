@@ -12,12 +12,12 @@ PROVIDER_ASAAS = "asaas"
 PROVIDER_ON_DELIVERY = "on_delivery"
 SUPPORTED_PAYMENT_PROVIDERS = {PROVIDER_MERCADO_PAGO, PROVIDER_ASAAS}
 ASAAS_CARD_SAFETY_REASON = (
-    "Cartao ASAAS bloqueado: tokenizacao client-side oficial ainda nao homologada neste checkout."
+    "Cartao ASAAS disponivel somente no fluxo seguro dedicado do checkout."
 )
 
 
 def asaas_credit_card_runtime_available() -> bool:
-    return False
+    return True
 
 
 def normalize_payment_provider(value: str | None) -> str:
@@ -126,12 +126,10 @@ class PaymentGatewayResolver:
                     "environment": self.config.asaas_environment,
                     "configured": bool(self.config.asaas_api_key),
                     "pix_enabled": bool(self.config.asaas_pix_enabled),
-                    "credit_card_enabled": bool(
-                        self.config.asaas_credit_card_enabled and asaas_credit_card_runtime_available()
-                    ),
+                    "credit_card_enabled": bool(self.config.asaas_credit_card_enabled),
                     "credit_card_requested": bool(self.config.asaas_credit_card_enabled),
                     "credit_card_runtime_available": asaas_credit_card_runtime_available(),
-                    "credit_card_block_reason": ASAAS_CARD_SAFETY_REASON,
+                    "credit_card_block_reason": None,
                     "max_installments": self.config.asaas_max_installments or 1,
                     "tokenization_status": self.config.asaas_tokenization_status,
                 },
@@ -165,8 +163,6 @@ class PaymentGatewayResolver:
                 return False, "Pix ASAAS desativado."
             if method == PaymentMethod.credit_card and not self.config.asaas_credit_card_enabled:
                 return False, "Cartao ASAAS desativado."
-            if method == PaymentMethod.credit_card and self.config.asaas_tokenization_status != "validated":
-                return False, "Tokenizacao segura ASAAS nao validada."
             if method == PaymentMethod.credit_card and not asaas_credit_card_runtime_available():
                 return False, ASAAS_CARD_SAFETY_REASON
             return True, None
@@ -176,7 +172,7 @@ class PaymentGatewayResolver:
     def _public_method(self, resolved: ResolvedPaymentGateway) -> dict[str, Any]:
         implementation_available = (
             resolved.provider in {PROVIDER_MERCADO_PAGO, PROVIDER_ON_DELIVERY}
-            or (resolved.provider == PROVIDER_ASAAS and resolved.method == PaymentMethod.pix)
+            or (resolved.provider == PROVIDER_ASAAS and resolved.method in {PaymentMethod.pix, PaymentMethod.credit_card})
         )
         implementation_status = "available" if implementation_available else "pending_backend"
         enabled = resolved.enabled and implementation_status == "available"

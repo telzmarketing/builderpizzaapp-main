@@ -64,6 +64,68 @@ class PaymentCreate(BaseModel):
         return value
 
 
+class AsaasCreditCardData(BaseModel):
+    holder_name: str = Field(min_length=2, max_length=120, repr=False, alias="holderName")
+    number: str = Field(min_length=12, max_length=19, repr=False)
+    expiry_month: str = Field(min_length=1, max_length=2, repr=False, alias="expiryMonth")
+    expiry_year: str = Field(min_length=2, max_length=4, repr=False, alias="expiryYear")
+    ccv: str = Field(min_length=3, max_length=4, repr=False)
+
+    model_config = {"populate_by_name": True}
+
+    @field_validator("number", "expiry_month", "expiry_year", "ccv", mode="before")
+    @classmethod
+    def digits_only(cls, value: Any) -> str:
+        return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+    @field_validator("expiry_month")
+    @classmethod
+    def valid_month(cls, value: str) -> str:
+        month = int(value or "0")
+        if month < 1 or month > 12:
+            raise ValueError("Mes de validade invalido.")
+        return value.zfill(2)
+
+    @field_validator("expiry_year")
+    @classmethod
+    def normalize_year(cls, value: str) -> str:
+        if len(value) == 2:
+            return f"20{value}"
+        if len(value) != 4:
+            raise ValueError("Ano de validade invalido.")
+        return value
+
+
+class AsaasCreditCardHolderInfo(BaseModel):
+    name: str = Field(min_length=2, max_length=120, repr=False)
+    email: str = Field(min_length=5, max_length=160, repr=False)
+    cpf_cnpj: str = Field(min_length=11, max_length=14, repr=False, alias="cpfCnpj")
+    postal_code: str = Field(min_length=8, max_length=8, repr=False, alias="postalCode")
+    address_number: str = Field(min_length=1, max_length=20, repr=False, alias="addressNumber")
+    address_complement: Optional[str] = Field(default=None, max_length=120, repr=False, alias="addressComplement")
+    phone: Optional[str] = Field(default=None, max_length=20, repr=False)
+    mobile_phone: Optional[str] = Field(default=None, max_length=20, repr=False, alias="mobilePhone")
+
+    model_config = {"populate_by_name": True}
+
+    @field_validator("cpf_cnpj", "postal_code", "phone", "mobile_phone", mode="before")
+    @classmethod
+    def normalize_digits(cls, value: Any) -> str | None:
+        if value in (None, ""):
+            return None
+        return "".join(ch for ch in str(value) if ch.isdigit())
+
+
+class AsaasCreditCardPaymentCreate(BaseModel):
+    order_id: str
+    amount: Optional[float] = Field(default=None, gt=0)
+    installments: int = Field(default=1, ge=1, le=21)
+    credit_card: AsaasCreditCardData = Field(alias="creditCard", repr=False)
+    credit_card_holder_info: AsaasCreditCardHolderInfo = Field(alias="creditCardHolderInfo", repr=False)
+
+    model_config = {"populate_by_name": True}
+
+
 class PayOnDeliverySwitch(BaseModel):
     delivery_payment_method: str = "card"
     cash_needs_change: Optional[bool] = None
@@ -90,6 +152,8 @@ class PaymentOut(BaseModel):
     transaction_id: Optional[str] = None
     currency: Optional[str] = "BRL"
     installments: Optional[int] = None
+    card_brand: Optional[str] = None
+    card_brand_logo: Optional[str] = None
     qr_code: Optional[str] = None
     qr_code_text: Optional[str] = None
     pix_payload: Optional[str] = None

@@ -277,6 +277,8 @@ CREATE TABLE IF NOT EXISTS payments (
     external_reference VARCHAR(120),
     currency      VARCHAR(3) NOT NULL DEFAULT 'BRL',
     installments  INTEGER,
+    card_brand    VARCHAR(40),
+    card_brand_logo VARCHAR(80),
     qr_code        TEXT,
     qr_code_text   TEXT,
     pix_payload    TEXT,
