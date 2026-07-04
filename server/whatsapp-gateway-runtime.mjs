@@ -617,6 +617,44 @@ async function sendTextMessage(instanceId, body = {}) {
   });
 }
 
+async function checkContactExists(instanceId, body = {}) {
+  const state = getState(instanceId);
+  const connectionError = assertConnected(state);
+  if (connectionError) return connectionError;
+
+  const jid = normalizePhoneJid(body.phone);
+  if (!jid) {
+    return fail("invalid_payload", "Telefone invalido.", publicState(state));
+  }
+
+  try {
+    const matches = await state.socket.onWhatsApp(jid);
+    const match = Array.isArray(matches) ? matches.find((item) => item?.jid === jid || item?.exists) : null;
+    const exists = Boolean(match?.exists);
+    state.lastSeenAt = nowIso();
+    logRuntime("contact_checked", {
+      instance_id: instanceId,
+      phone: String(body.phone || ""),
+      normalized_phone: jidToPhone(match?.jid || jid),
+      remote_jid: match?.jid || jid,
+      exists,
+    });
+    return ok("Contato verificado no WhatsApp.", {
+      ...publicState(state),
+      status: exists ? "exists" : "not_exists",
+      phone: String(body.phone || ""),
+      normalized_phone: jidToPhone(match?.jid || jid),
+      remote_jid: match?.jid || jid,
+      exists,
+    });
+  } catch (error) {
+    return fail("contact_check_failed", "Falha ao verificar contato no WhatsApp.", {
+      ...publicState(state),
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 async function sendMediaMessage(instanceId, body = {}) {
   const state = getState(instanceId);
   const connectionError = assertConnected(state);
@@ -725,6 +763,10 @@ async function route(request, response) {
 
   if (request.method === "POST" && action === "messages" && parts[3] === "text") {
     return sendJson(response, 200, await sendTextMessage(instanceId, await readBody(request)));
+  }
+
+  if (request.method === "POST" && action === "contacts" && parts[3] === "exists") {
+    return sendJson(response, 200, await checkContactExists(instanceId, await readBody(request)));
   }
 
   if (request.method === "POST" && action === "messages" && parts[3] === "media") {

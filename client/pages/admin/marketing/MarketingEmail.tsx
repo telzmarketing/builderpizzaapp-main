@@ -6,8 +6,9 @@ import {
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
+import ContactListImportBox from "@/components/admin/ContactListImportBox";
 import PromotionLandingsTab from "@/components/admin/PromotionLandingsTab";
-import type { ApiPromotionLandingPage } from "@/lib/api";
+import { emailMarketingApi, type ApiMarketingContactList, type ApiPromotionLandingPage } from "@/lib/api";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -149,9 +150,12 @@ export default function MarketingEmail() {
   const [showCampModal, setShowCampModal] = useState(false);
   const [campForm, setCampForm] = useState({ name: "", template_id: "", group_id: "", scheduled_at: "" });
   // ── Disparo ──
-  const [dispForm, setDispForm] = useState({ template_id: "", emails: "", subject: "", body_html: "", mode: "template", schedule: "" });
-  const [dispResult, setDispResult] = useState<{ sent: number; failed: number } | null>(null);
+  const [dispForm, setDispForm] = useState({ template_id: "", contact_list_id: "", emails: "", subject: "", body_html: "", mode: "template", schedule: "" });
+  const [dispResult, setDispResult] = useState<{ sent: number; failed: number; skipped?: number } | null>(null);
   const [dispatching, setDispatching] = useState(false);
+  const [contactLists, setContactLists] = useState<ApiMarketingContactList[]>([]);
+  const [showListModal, setShowListModal] = useState(false);
+  const [listForm, setListForm] = useState({ name: "", contacts: "" });
   // ── Monitoramento ──
   const [messages, setMessages] = useState<EmailMessage[]>([]);
   const [msgLoading, setMsgLoading] = useState(false);
@@ -162,6 +166,7 @@ export default function MarketingEmail() {
   const [cfgTesting, setCfgTesting] = useState(false);
   // ── Global ──
   const [saving, setSaving] = useState(false);
+  const selectedContactList = contactLists.find(list => list.id === dispForm.contact_list_id);
 
   // fetch helpers
   const fetchDash = () => {
@@ -190,12 +195,15 @@ export default function MarketingEmail() {
     fetch(`${BASE}/email/config`, { headers })
       .then(r => r.json()).then(d => setCfg({ ...EMPTY_CFG, ...unwrap(d) })).catch(() => {});
   };
+  const fetchContactLists = () => {
+    emailMarketingApi.listContactLists().then(setContactLists).catch(() => setContactLists([]));
+  };
 
   useEffect(() => {
     if (tab === "dashboard")    { fetchDash(); }
     if (tab === "templates")    { fetchTemplates(); }
     if (tab === "campanhas")    { fetchCampaigns(); fetchTemplates(); }
-    if (tab === "disparo")      { fetchTemplates(); }
+    if (tab === "disparo")      { fetchTemplates(); fetchContactLists(); }
     if (tab === "monitoramento"){ fetchMessages(); }
     if (tab === "configuracoes"){ fetchConfig(); }
   }, [tab]); // eslint-disable-line
@@ -271,13 +279,45 @@ export default function MarketingEmail() {
     setDispResult(null);
     try {
       const emails = dispForm.emails.split(/[\n,]/).map(p => p.trim()).filter(Boolean);
-      const body = dispForm.mode === "template"
-        ? JSON.stringify({ template_id: dispForm.template_id, emails, scheduled_at: dispForm.schedule || undefined })
-        : JSON.stringify({ subject: dispForm.subject, body_html: dispForm.body_html, emails, scheduled_at: dispForm.schedule || undefined });
-      const r = await fetch(`${BASE}/email/send`, { method: "POST", headers, body });
-      const d = unwrap(await r.json());
-      setDispResult({ sent: d.sent ?? 0, failed: d.failed ?? 0 });
-    } catch { alert("Erro ao enviar."); } finally { setDispatching(false); }
+      const payload = dispForm.mode === "template"
+        ? { template_id: dispForm.template_id, contact_list_id: dispForm.contact_list_id, emails, scheduled_at: dispForm.schedule || undefined }
+        : { subject: dispForm.subject, body_html: dispForm.body_html, contact_list_id: dispForm.contact_list_id, emails, scheduled_at: dispForm.schedule || undefined };
+      const d = await emailMarketingApi.send(payload);
+      setDispResult({ sent: d.sent ?? 0, failed: d.failed ?? 0, skipped: d.skipped ?? 0 });
+    } catch (err) { alert(err instanceof Error ? err.message : "Erro ao enviar."); } finally { setDispatching(false); }
+  };
+
+  const parseEmailLines = (value: string) => value
+    .split(/\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const parts = line.split(/[;,]/).map(part => part.trim()).filter(Boolean);
+      return { name: parts[0] ?? "", email: parts.slice(1).join("").trim() };
+    })
+    .filter(contact => contact.name && contact.email);
+
+  const saveContactList = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const contacts = parseEmailLines(listForm.contacts);
+    if (!listForm.name.trim()) { alert("Informe o nome da lista."); return; }
+    if (!contacts.length) { alert("Inclua contatos no formato Nome, email."); return; }
+    setSaving(true);
+    try {
+      await emailMarketingApi.createContactList({ name: listForm.name.trim(), contacts });
+      setShowListModal(false);
+      setListForm({ name: "", contacts: "" });
+      fetchContactLists();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao criar lista.");
+    } finally { setSaving(false); }
+  };
+
+  const deleteContactList = async (id: string) => {
+    if (!confirm("Desativar lista de emails?")) return;
+    await emailMarketingApi.deleteContactList(id);
+    setDispForm(f => ({ ...f, contact_list_id: f.contact_list_id === id ? "" : f.contact_list_id }));
+    fetchContactLists();
   };
 
   // ── Test connection ──
@@ -556,6 +596,21 @@ export default function MarketingEmail() {
                 )}
                 <div className="space-y-1">
                   <label className="text-xs text-stone">Endereços de email (um por linha ou separado por vírgula) *</label>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <label className="text-xs text-stone">Lista de transmissao</label>
+                    <button type="button" onClick={() => { setListForm({ name: "", contacts: "" }); setShowListModal(true); }}
+                      className="text-xs text-gold hover:underline">Nova lista</button>
+                  </div>
+                  <select value={dispForm.contact_list_id} onChange={e => setDispForm(f => ({ ...f, contact_list_id: e.target.value }))} className={`${IC} mb-3`}>
+                    <option value="">Sem lista cadastrada</option>
+                    {contactLists.map(list => <option key={list.id} value={list.id}>{list.name} ({list.contact_count})</option>)}
+                  </select>
+                  {selectedContactList && (
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <p className="text-xs text-stone/60">{selectedContactList.contact_count} email(s) selecionado(s) na lista.</p>
+                      <button type="button" onClick={() => deleteContactList(selectedContactList.id)} className="text-xs text-red-400 hover:underline">Desativar</button>
+                    </div>
+                  )}
                   <textarea value={dispForm.emails} onChange={e => setDispForm(f => ({ ...f, emails: e.target.value }))}
                     rows={4} placeholder={"joao@exemplo.com\nmaria@exemplo.com"} className={`${IC} resize-none font-mono text-xs`} />
                   <p className="text-xs text-stone/60">
@@ -570,6 +625,7 @@ export default function MarketingEmail() {
                   <div className="rounded-xl bg-surface-03 p-4 flex items-center justify-around">
                     <div className="text-center"><p className="text-2xl font-bold text-green-400">{dispResult.sent}</p><p className="text-xs text-stone mt-0.5">Enviados</p></div>
                     <div className="text-center"><p className="text-2xl font-bold text-red-400">{dispResult.failed}</p><p className="text-xs text-stone mt-0.5">Falhas</p></div>
+                    <div className="text-center"><p className="text-2xl font-bold text-yellow-400">{dispResult.skipped ?? 0}</p><p className="text-xs text-stone mt-0.5">Ignorados</p></div>
                   </div>
                 )}
                 <button type="submit" disabled={dispatching}
@@ -734,6 +790,46 @@ export default function MarketingEmail() {
       </main>
 
       {/* ── Template modal ── */}
+      {showListModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-surface-02 border border-surface-03 rounded-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between p-5 border-b border-surface-03">
+              <h2 className="text-cream font-semibold">Nova Lista de Emails</h2>
+              <button onClick={() => setShowListModal(false)} className="text-stone hover:text-cream"><X size={18} /></button>
+            </div>
+            <form onSubmit={saveContactList} className="p-5 space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs text-stone">Nome da lista *</label>
+                <input type="text" value={listForm.name} onChange={e => setListForm(f => ({ ...f, name: e.target.value }))}
+                  placeholder="Clientes VIP" className={IC} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-stone">Contatos *</label>
+                <ContactListImportBox
+                  channel="email"
+                  onContacts={(contacts) => {
+                    const lines = contacts
+                      .filter((contact) => contact.name && contact.email)
+                      .map((contact) => `${contact.name}, ${contact.email}`)
+                      .join("\n");
+                    setListForm((form) => ({ ...form, contacts: lines }));
+                  }}
+                />
+                <textarea value={listForm.contacts} onChange={e => setListForm(f => ({ ...f, contacts: e.target.value }))}
+                  rows={8} placeholder={"Maria Silva, maria@email.com\nJoao Souza, joao@email.com"} className={`${IC} resize-none font-mono text-xs`} />
+                <p className="text-xs text-stone/60">{parseEmailLines(listForm.contacts).length} contato(s) valido(s)</p>
+              </div>
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setShowListModal(false)} className="flex-1 py-2 rounded-xl border border-surface-03 text-stone text-sm">Cancelar</button>
+                <button type="submit" disabled={saving} className="flex-1 py-2 rounded-xl bg-gold hover:bg-gold/90 text-black font-semibold text-sm disabled:opacity-60 flex items-center justify-center gap-2">
+                  {saving && <Loader2 size={14} className="animate-spin" />} Criar Lista
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {showTplModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="bg-surface-02 border border-surface-03 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">

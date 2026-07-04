@@ -11,6 +11,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import Column, String, Boolean, Text, DateTime, Integer, Float, ForeignKey, text
 from sqlalchemy.orm import Session
+from email_validator import EmailNotValidError, validate_email
+
+try:
+    import dns.exception
+    import dns.resolver
+except Exception:  # pragma: no cover - dependency is declared, fallback keeps app importable
+    dns = None
 
 from backend.database import get_db, Base
 from backend.routes.admin_auth import get_current_admin
@@ -32,6 +39,25 @@ class EmailTemplate(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
+
+
+class EmailContactList(Base):
+    __tablename__ = "email_contact_lists"
+    id = Column(String, primary_key=True)
+    name = Column(String(200), nullable=False)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
+class EmailContactListItem(Base):
+    __tablename__ = "email_contact_list_items"
+    id = Column(String, primary_key=True)
+    list_id = Column(String, ForeignKey("email_contact_lists.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(200), nullable=False)
+    email = Column(String(300), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class EmailMessage(Base):
@@ -108,8 +134,24 @@ class EmailSendRequest(BaseModel):
     body_html: Optional[str] = None
     customer_ids: list[str] = []
     group_id: Optional[str] = None
+    contact_list_id: Optional[str] = None
     emails: list[str] = []
     scheduled_at: Optional[str] = None
+
+
+class EmailContactListItemPayload(BaseModel):
+    name: str
+    email: str
+
+
+class EmailContactListCreate(BaseModel):
+    name: str
+    contacts: list[EmailContactListItemPayload] = []
+
+
+class EmailContactListUpdate(BaseModel):
+    name: Optional[str] = None
+    contacts: Optional[list[EmailContactListItemPayload]] = None
 
 
 class CampaignCreate(BaseModel):
@@ -144,6 +186,81 @@ class ConfigUpdate(BaseModel):
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _normalize_email_address(value: str | None) -> tuple[str | None, str | None]:
+    email = (value or "").strip()
+    if not email:
+        return None, "Email vazio."
+    try:
+        validated = validate_email(email, check_deliverability=False)
+    except EmailNotValidError as exc:
+        return None, str(exc)
+    normalized = validated.normalized.lower()
+    return normalized, None
+
+
+def _email_domain_is_deliverable(email: str, cache: dict[str, tuple[bool, str | None]]) -> tuple[bool, str | None]:
+    domain = email.rsplit("@", 1)[-1].lower()
+    if domain in cache:
+        return cache[domain]
+    if dns is None:
+        cache[domain] = (False, "Validador DNS indisponivel no ambiente.")
+        return cache[domain]
+
+    try:
+        answers = dns.resolver.resolve(domain, "MX", lifetime=5.0)
+        if answers:
+            cache[domain] = (True, None)
+            return cache[domain]
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        pass
+    except dns.exception.DNSException as exc:
+        cache[domain] = (False, f"Falha ao verificar dominio do email: {exc}")
+        return cache[domain]
+
+    for record_type in ("A", "AAAA"):
+        try:
+            answers = dns.resolver.resolve(domain, record_type, lifetime=5.0)
+            if answers:
+                cache[domain] = (True, None)
+                return cache[domain]
+        except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+            continue
+        except dns.exception.DNSException as exc:
+            cache[domain] = (False, f"Falha ao verificar dominio do email: {exc}")
+            return cache[domain]
+
+    cache[domain] = (False, "Dominio do email nao possui MX/A/AAAA valido.")
+    return cache[domain]
+
+
+def _append_email_recipient(
+    result: list[dict],
+    seen: set[str],
+    email: str,
+    *,
+    customer_id: str | None = None,
+    name: str | None = None,
+) -> None:
+    normalized, error = _normalize_email_address(email)
+    if error or not normalized or normalized in seen:
+        return
+    seen.add(normalized)
+    result.append({"id": customer_id, "name": name, "email": normalized})
+
+
+def _prepare_email_contact_list_contacts(contacts: list[EmailContactListItemPayload]) -> list[dict]:
+    result: list[dict] = []
+    seen: set[str] = set()
+    for contact in contacts:
+        name = contact.name.strip()
+        normalized, error = _normalize_email_address(contact.email)
+        if not name or error or not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append({"name": name, "email": normalized})
+    return result
 
 
 def _get_config(db: Session) -> EmailConfig:
@@ -207,27 +324,66 @@ def _send_email(to_email: str, subject: str, body_html: str, cfg: EmailConfig) -
 
 
 def _resolve_recipients(customer_ids: list[str], group_id: Optional[str],
-                         emails: list[str], db: Session) -> list[dict]:
+                         contact_list_id: Optional[str], emails: list[str], db: Session) -> list[dict]:
     """Resolve recipients to list of {id?, name?, email}."""
     result: list[dict] = []
+    seen: set[str] = set()
+    if contact_list_id:
+        rows = db.execute(text(
+            "SELECT i.name, i.email FROM email_contact_list_items i "
+            "JOIN email_contact_lists l ON l.id = i.list_id "
+            "WHERE i.list_id = :list_id AND l.active = TRUE "
+            "ORDER BY i.created_at ASC"
+        ), {"list_id": contact_list_id}).fetchall()
+        for row in rows:
+            _append_email_recipient(result, seen, row[1], name=row[0])
     if group_id:
         rows = db.execute(text(
             "SELECT c.id, c.name, c.email FROM customers c "
             "JOIN customer_group_members cgm ON cgm.customer_id = c.id "
             "WHERE cgm.group_id = :gid AND c.email IS NOT NULL AND c.email != ''"
         ), {"gid": group_id}).fetchall()
-        result = [{"id": r[0], "name": r[1], "email": r[2]} for r in rows]
-    elif customer_ids:
+        for row in rows:
+            _append_email_recipient(result, seen, row[2], customer_id=row[0], name=row[1])
+    if customer_ids:
         for cid in customer_ids:
             row = db.execute(text(
                 "SELECT id, name, email FROM customers WHERE id = :cid "
                 "AND email IS NOT NULL AND email != ''"
             ), {"cid": cid}).fetchone()
             if row:
-                result.append({"id": row[0], "name": row[1], "email": row[2]})
-    elif emails:
-        result = [{"id": None, "name": None, "email": e} for e in emails if e.strip()]
+                _append_email_recipient(result, seen, row[2], customer_id=row[0], name=row[1])
+    if emails:
+        for email in emails:
+            _append_email_recipient(result, seen, email)
     return result
+
+
+def _contact_list_to_dict(item: EmailContactList, db: Session, *, include_contacts: bool = False) -> dict:
+    count = db.execute(
+        text("SELECT COUNT(*) FROM email_contact_list_items WHERE list_id = :list_id"),
+        {"list_id": item.id},
+    ).scalar() or 0
+    payload = {
+        "id": item.id,
+        "name": item.name,
+        "active": item.active,
+        "contact_count": int(count),
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+    }
+    if include_contacts:
+        rows = db.execute(
+            text("""
+                SELECT id, name, email
+                FROM email_contact_list_items
+                WHERE list_id = :list_id
+                ORDER BY created_at ASC
+            """),
+            {"list_id": item.id},
+        ).fetchall()
+        payload["contacts"] = [{"id": r[0], "name": r[1], "email": r[2]} for r in rows]
+    return payload
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -340,6 +496,90 @@ def delete_template(template_id: str, db: Session = Depends(get_db),
 
 # ── Campaigns ─────────────────────────────────────────────────────────────────
 
+@router.get("/contact-lists")
+def list_contact_lists(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    items = (
+        db.query(EmailContactList)
+        .filter(EmailContactList.active == True)  # noqa: E712
+        .order_by(EmailContactList.created_at.desc())
+        .all()
+    )
+    return ok([_contact_list_to_dict(item, db) for item in items])
+
+
+@router.get("/contact-lists/{list_id}")
+def get_contact_list(list_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    item = db.query(EmailContactList).filter(
+        EmailContactList.id == list_id,
+        EmailContactList.active == True,  # noqa: E712
+    ).first()
+    if not item:
+        raise HTTPException(404, "Lista de emails nao encontrada.")
+    return ok(_contact_list_to_dict(item, db, include_contacts=True))
+
+
+@router.post("/contact-lists")
+def create_contact_list(body: EmailContactListCreate, db: Session = Depends(get_db),
+                        _=Depends(get_current_admin)):
+    clean_contacts = _prepare_email_contact_list_contacts(body.contacts)
+    if not body.name.strip():
+        raise HTTPException(400, "Informe o nome da lista.")
+    if not clean_contacts:
+        raise HTTPException(400, "Inclua pelo menos um contato com nome e email valido.")
+
+    item = EmailContactList(id=str(uuid.uuid4()), name=body.name.strip())
+    db.add(item)
+    db.flush()
+    for contact in clean_contacts:
+        db.add(EmailContactListItem(
+            id=str(uuid.uuid4()),
+            list_id=item.id,
+            name=contact["name"],
+            email=contact["email"],
+        ))
+    db.commit()
+    db.refresh(item)
+    return created(_contact_list_to_dict(item, db, include_contacts=True), "Lista de emails criada.")
+
+
+@router.patch("/contact-lists/{list_id}")
+def update_contact_list(list_id: str, body: EmailContactListUpdate,
+                        db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    item = db.query(EmailContactList).filter(EmailContactList.id == list_id).first()
+    if not item or not item.active:
+        raise HTTPException(404, "Lista de emails nao encontrada.")
+    if body.name is not None:
+        if not body.name.strip():
+            raise HTTPException(400, "Informe o nome da lista.")
+        item.name = body.name.strip()
+    if body.contacts is not None:
+        clean_contacts = _prepare_email_contact_list_contacts(body.contacts)
+        if not clean_contacts:
+            raise HTTPException(400, "Inclua pelo menos um contato com nome e email valido.")
+        db.execute(text("DELETE FROM email_contact_list_items WHERE list_id = :list_id"), {"list_id": list_id})
+        for contact in clean_contacts:
+            db.add(EmailContactListItem(
+                id=str(uuid.uuid4()),
+                list_id=item.id,
+                name=contact["name"],
+                email=contact["email"],
+            ))
+    item.updated_at = _now()
+    db.commit()
+    return ok(_contact_list_to_dict(item, db, include_contacts=True))
+
+
+@router.delete("/contact-lists/{list_id}")
+def delete_contact_list(list_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    item = db.query(EmailContactList).filter(EmailContactList.id == list_id).first()
+    if not item:
+        raise HTTPException(404, "Lista de emails nao encontrada.")
+    item.active = False
+    item.updated_at = _now()
+    db.commit()
+    return ok(None, "Lista de emails desativada.")
+
+
 @router.get("/campaigns")
 def list_campaigns(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     campaigns = db.query(EmailCampaign).order_by(EmailCampaign.created_at.desc()).all()
@@ -424,12 +664,14 @@ def send_emails(body: EmailSendRequest, db: Session = Depends(get_db),
     else:
         raise HTTPException(400, "Informe template_id ou subject + body_html.")
 
-    recipients = _resolve_recipients(body.customer_ids, body.group_id, body.emails, db)
+    recipients = _resolve_recipients(body.customer_ids, body.group_id, body.contact_list_id, body.emails, db)
     if not recipients:
         raise HTTPException(400, "Nenhum destinatário com email encontrado.")
 
     sent_count = 0
     failed_count = 0
+    domain_cache: dict[str, tuple[bool, str | None]] = {}
+    results = []
 
     for r in recipients:
         msg = EmailMessage(
@@ -443,8 +685,24 @@ def send_emails(body: EmailSendRequest, db: Session = Depends(get_db),
         db.add(msg)
         db.flush()
 
+        normalized_email, syntax_error = _normalize_email_address(r["email"])
+        if syntax_error or not normalized_email:
+            msg.status = "failed"
+            msg.error = syntax_error
+            failed_count += 1
+            results.append({"email": r["email"], "status": "failed", "error": syntax_error})
+            continue
+
+        deliverable, deliverability_error = _email_domain_is_deliverable(normalized_email, domain_cache)
+        if not deliverable:
+            msg.status = "failed"
+            msg.error = deliverability_error
+            failed_count += 1
+            results.append({"email": normalized_email, "status": "failed", "error": deliverability_error})
+            continue
+
         try:
-            success, error = _send_email(r["email"], subject, html, cfg)
+            success, error = _send_email(normalized_email, subject, html, cfg)
         except Exception as exc:
             success, error = False, str(exc)
 
@@ -452,14 +710,16 @@ def send_emails(body: EmailSendRequest, db: Session = Depends(get_db),
             msg.status = "sent"
             msg.sent_at = _now()
             sent_count += 1
+            results.append({"email": normalized_email, "status": "sent", "error": None})
         else:
             msg.status = "failed"
             msg.error = error
             failed_count += 1
+            results.append({"email": normalized_email, "status": "failed", "error": error})
 
     db.commit()
     skipped = max(0, len(body.customer_ids) - sent_count - failed_count) if body.customer_ids else 0
-    return ok({"sent": sent_count, "failed": failed_count, "skipped": skipped})
+    return ok({"sent": sent_count, "failed": failed_count, "skipped": skipped, "messages": results})
 
 
 # ── Messages (monitoring) ─────────────────────────────────────────────────────

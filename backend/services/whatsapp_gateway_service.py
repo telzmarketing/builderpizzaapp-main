@@ -316,6 +316,23 @@ class WhatsAppGatewayService:
         self._db.flush()
         return result
 
+    def check_contact_exists(self, *, phone: str, instance_id: str | None = None) -> WhatsAppProviderResult:
+        instance = self._select_send_instance(instance_id)
+        if not instance:
+            return WhatsAppProviderResult(
+                ok=False,
+                status="no_connected_instance",
+                message="Nenhuma instancia Baileys conectada no WhatsApp Gateway.",
+                data={"provider": "baileys"},
+            )
+        result = self._provider(instance.provider).check_contact_exists(
+            instance_id=instance.id,
+            phone=phone,
+        )
+        self._record_send_result(instance, "contact_check", result)
+        self._db.flush()
+        return result
+
     def process_runtime_event(self, payload: dict[str, Any]) -> dict[str, Any]:
         event_type = str(payload.get("event_type") or "")
         instance_id = str(payload.get("instance_id") or "")

@@ -4091,6 +4091,51 @@ export interface ApiAutomationQueueWorkerResult {
 
 // ─── Marketing Automations ───────────────────────────────────────────────────
 
+export interface ApiMarketingContactListContact {
+  id?: string;
+  name: string;
+  phone?: string;
+  email?: string;
+}
+
+export interface ApiMarketingContactList {
+  id: string;
+  name: string;
+  active: boolean;
+  contact_count: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+  contacts?: ApiMarketingContactListContact[];
+}
+
+export interface ApiMarketingSendResult {
+  sent: number;
+  failed: number;
+  skipped?: number;
+  messages?: Array<{
+    phone?: string;
+    email?: string;
+    status: string;
+    error?: string | null;
+  }>;
+}
+
+export const whatsappMarketingApi = {
+  listContactLists: () => get<ApiMarketingContactList[]>("/whatsapp/contact-lists"),
+  createContactList: (data: { name: string; contacts: Array<{ name: string; phone: string }> }) =>
+    post<ApiMarketingContactList>("/whatsapp/contact-lists", data),
+  deleteContactList: (id: string) => del<void>(`/whatsapp/contact-lists/${id}`),
+  send: (data: Record<string, unknown>) => post<ApiMarketingSendResult>("/whatsapp/send", data),
+};
+
+export const emailMarketingApi = {
+  listContactLists: () => get<ApiMarketingContactList[]>("/email/contact-lists"),
+  createContactList: (data: { name: string; contacts: Array<{ name: string; email: string }> }) =>
+    post<ApiMarketingContactList>("/email/contact-lists", data),
+  deleteContactList: (id: string) => del<void>(`/email/contact-lists/${id}`),
+  send: (data: Record<string, unknown>) => post<ApiMarketingSendResult>("/email/send", data),
+};
+
 export const marketingAutomationsApi = {
   list: () => get<ApiMarketingAutomation[]>("/automations"),
   create: (data: ApiMarketingAutomationPayload) =>

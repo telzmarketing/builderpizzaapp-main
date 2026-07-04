@@ -57,6 +57,9 @@ class WhatsAppProviderInterface(Protocol):
     ) -> WhatsAppProviderResult:
         ...
 
+    def check_contact_exists(self, *, instance_id: str, phone: str) -> WhatsAppProviderResult:
+        ...
+
     def receive_message(self, *, payload: dict[str, Any]) -> WhatsAppProviderResult:
         ...
 

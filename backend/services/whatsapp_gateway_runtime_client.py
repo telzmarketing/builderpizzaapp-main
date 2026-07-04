@@ -72,6 +72,13 @@ class WhatsAppGatewayRuntimeClient:
             },
         )
 
+    def check_contact_exists(self, *, instance_id: str, phone: str) -> WhatsAppProviderResult:
+        return self._request(
+            "POST",
+            f"/instances/{instance_id}/contacts/exists",
+            {"phone": phone},
+        )
+
     def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> WhatsAppProviderResult:
         body = None
         headers = {"Accept": "application/json"}

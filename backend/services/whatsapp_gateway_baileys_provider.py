@@ -99,6 +99,11 @@ class BaileysProvider:
             ptt=ptt,
         )
 
+    def check_contact_exists(self, *, instance_id: str, phone: str) -> WhatsAppProviderResult:
+        if not self._package_version:
+            return self._runtime_pending("check_contact_exists")
+        return self._runtime.check_contact_exists(instance_id=instance_id, phone=phone)
+
     def receive_message(self, *, payload: dict[str, Any]) -> WhatsAppProviderResult:
         return self._runtime_pending("receive_message")
 

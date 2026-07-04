@@ -267,18 +267,63 @@ def _json_dump(value: dict | list | None) -> str:
 
 
 def _normalize_phone_value(value: str | None) -> str:
-    return "".join(ch for ch in (value or "") if ch.isdigit())
+    digits = "".join(ch for ch in (value or "") if ch.isdigit())
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if not digits.startswith("55") and len(digits) in {10, 11}:
+        digits = f"55{digits}"
+    return digits
+
+
+def _validate_whatsapp_phone(phone: str | None) -> tuple[str | None, str | None]:
+    digits = _normalize_phone_value(phone)
+    if not digits:
+        return None, "Telefone vazio."
+    if len(digits) < 8 or len(digits) > 15:
+        return None, "Telefone fora do padrao internacional."
+    return digits, None
+
+
+def _verify_whatsapp_contact(phone: str, db: Session, cfg: WhatsAppConfig) -> tuple[bool, str | None]:
+    gateway = WhatsAppGatewayService(db)
+    if cfg.whatsapp_gateway_instance_id:
+        instance = gateway.get_instance(cfg.whatsapp_gateway_instance_id)
+        if not instance or instance.status != "connected":
+            return False, "Verificacao de cadastro exige instancia do WhatsApp Gateway conectada."
+    elif not gateway.overview().get("connected_instances"):
+        return False, "Verificacao de cadastro exige ao menos uma instancia do WhatsApp Gateway conectada."
+
+    result = gateway.check_contact_exists(phone=phone, instance_id=cfg.whatsapp_gateway_instance_id)
+    if not result.ok:
+        return False, result.message or "Falha ao verificar cadastro no WhatsApp."
+    exists = bool((result.data or {}).get("exists"))
+    if not exists:
+        return False, "Numero nao cadastrado no WhatsApp."
+    return True, None
 
 
 def _append_recipient(result: list[dict], seen: set[str], phone: str, *, customer_id: str | None = None, name: str | None = None) -> None:
-    clean_phone = (phone or "").strip()
+    clean_phone = _normalize_phone_value(phone)
     if not clean_phone:
         return
-    dedupe_key = _normalize_phone_value(clean_phone) or clean_phone
+    dedupe_key = clean_phone
     if dedupe_key in seen:
         return
     seen.add(dedupe_key)
     result.append({"phone": clean_phone, "customer_id": customer_id, "name": name})
+
+
+def _prepare_contact_list_contacts(contacts: list[ContactListItemPayload]) -> list[dict]:
+    result: list[dict] = []
+    seen: set[str] = set()
+    for contact in contacts:
+        name = contact.name.strip()
+        phone, error = _validate_whatsapp_phone(contact.phone)
+        if not name or error or not phone or phone in seen:
+            continue
+        seen.add(phone)
+        result.append({"name": name, "phone": phone})
+    return result
 
 
 def _resolve_phones(body: SendRequest, db: Session) -> list[dict]:
@@ -1157,15 +1202,11 @@ def get_contact_list(list_id: str, db: Session = Depends(get_db), _=Depends(get_
 
 @router.post("/contact-lists")
 def create_contact_list(body: ContactListCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    clean_contacts = [
-        {"name": c.name.strip(), "phone": c.phone.strip()}
-        for c in body.contacts
-        if c.name.strip() and c.phone.strip()
-    ]
+    clean_contacts = _prepare_contact_list_contacts(body.contacts)
     if not body.name.strip():
         raise HTTPException(400, "Informe o nome da lista.")
     if not clean_contacts:
-        raise HTTPException(400, "Inclua pelo menos um contato com nome e telefone.")
+        raise HTTPException(400, "Inclua pelo menos um contato com nome e telefone valido.")
 
     item = WhatsAppContactList(id=str(uuid.uuid4()), name=body.name.strip())
     db.add(item)
@@ -1193,13 +1234,9 @@ def update_contact_list(list_id: str, body: ContactListUpdate,
             raise HTTPException(400, "Informe o nome da lista.")
         item.name = body.name.strip()
     if body.contacts is not None:
-        clean_contacts = [
-            {"name": c.name.strip(), "phone": c.phone.strip()}
-            for c in body.contacts
-            if c.name.strip() and c.phone.strip()
-        ]
+        clean_contacts = _prepare_contact_list_contacts(body.contacts)
         if not clean_contacts:
-            raise HTTPException(400, "Inclua pelo menos um contato com nome e telefone.")
+            raise HTTPException(400, "Inclua pelo menos um contato com nome e telefone valido.")
         db.execute(text("DELETE FROM whatsapp_contact_list_items WHERE list_id = :list_id"), {"list_id": list_id})
         for contact in clean_contacts:
             db.add(WhatsAppContactListItem(
@@ -1367,12 +1404,13 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
         msg_caption = _render_contact_variables(caption, rec) if caption else None
         recipient_variables = [_render_contact_variables(str(value), rec) for value in body.variables]
         message_type = "template" if template else (media_type or "text")
+        normalized_phone, phone_error = _validate_whatsapp_phone(phone)
 
         msg = WhatsAppMessage(
             id=str(uuid.uuid4()),
             template_id=template.id if template else None,
             customer_id=rec.get("customer_id"),
-            phone=phone,
+            phone=normalized_phone or phone,
             recipient_name=rec.get("name"),
             body_sent=msg_body,
             provider=provider,
@@ -1384,11 +1422,44 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
         )
         db.add(msg)
         db.flush()
+        if phone_error:
+            msg.status = "failed"
+            msg.error = phone_error
+            failed_count += 1
+            results.append({
+                "phone": phone,
+                "provider": provider,
+                "message_type": message_type,
+                "media_type": media_type,
+                "status": "failed",
+                "wamid": None,
+                "campaign_delivery_id": None,
+                "error": phone_error,
+            })
+            continue
+
+        verified, verification_error = _verify_whatsapp_contact(normalized_phone or phone, db, cfg)
+        if not verified:
+            msg.status = "failed"
+            msg.error = verification_error
+            failed_count += 1
+            results.append({
+                "phone": normalized_phone or phone,
+                "provider": provider,
+                "message_type": message_type,
+                "media_type": media_type,
+                "status": "failed",
+                "wamid": None,
+                "campaign_delivery_id": None,
+                "error": verification_error,
+            })
+            continue
+
         delivery = _create_campaign_delivery(
             db,
             msg=msg,
             provider=provider,
-            phone=phone,
+            phone=normalized_phone or phone,
             message_text=msg_body,
             caption=msg_caption,
             template=template,
@@ -1397,7 +1468,7 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
 
         if provider == "baileys":
             wamid, status, error = _send_baileys_gateway(
-                phone,
+                normalized_phone or phone,
                 msg_body,
                 db,
                 instance_id=cfg.whatsapp_gateway_instance_id,
@@ -1409,7 +1480,7 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
             )
         else:
             wamid, status, error = _send_whatsapp_api(
-                phone,
+                normalized_phone or phone,
                 msg_body,
                 db,
                 template_name=template.name if template else None,
@@ -1443,7 +1514,7 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
                 db,
                 msg=msg,
                 delivery=delivery,
-                phone=phone,
+                phone=normalized_phone or phone,
                 provider=provider,
                 body=msg_caption or msg_body,
                 message_type=message_type,
@@ -1455,7 +1526,7 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
             failed_count += 1
 
         results.append({
-            "phone": phone,
+            "phone": normalized_phone or phone,
             "provider": provider,
             "message_type": message_type,
             "media_type": media_type,

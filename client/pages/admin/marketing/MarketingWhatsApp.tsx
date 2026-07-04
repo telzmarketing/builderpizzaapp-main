@@ -12,8 +12,10 @@ import {
   AdminPageTabs,
   type AdminPageTab,
 } from "@/components/admin/AdminPageChrome";
+import ContactListImportBox from "@/components/admin/ContactListImportBox";
 import PromotionLandingsTab from "@/components/admin/PromotionLandingsTab";
 import {
+  whatsappMarketingApi,
   whatsappGatewayApi,
   type ApiPromotionLandingPage,
   type ApiWhatsAppGatewayInstance,
@@ -107,7 +109,7 @@ export default function MarketingWhatsApp() {
     mimetype: "",
     file_name: "",
   });
-  const [dispResult, setDispResult] = useState<{ sent: number; failed: number } | null>(null);
+  const [dispResult, setDispResult] = useState<{ sent: number; failed: number; skipped?: number } | null>(null);
   const [dispatching, setDispatching] = useState(false);
   const [contactLists, setContactLists] = useState<WaContactList[]>([]);
   const [listLoading, setListLoading] = useState(false);
@@ -150,8 +152,9 @@ export default function MarketingWhatsApp() {
   };
   const fetchContactLists = () => {
     setListLoading(true);
-    fetch(`${BASE}/whatsapp/contact-lists`, { headers })
-      .then(r => r.json()).then(d => setContactLists(unwrap(d) ?? [])).catch(() => setContactLists([]))
+    whatsappMarketingApi.listContactLists()
+      .then((items) => setContactLists(items ?? []))
+      .catch(() => setContactLists([]))
       .finally(() => setListLoading(false));
   };
   const fetchMessages = () => {
@@ -258,15 +261,7 @@ export default function MarketingWhatsApp() {
     if (!contacts.length) { alert("Inclua contatos no formato Nome, telefone."); return; }
     setSaving(true);
     try {
-      const response = await fetch(`${BASE}/whatsapp/contact-lists`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ name: listForm.name.trim(), contacts }),
-      });
-      const json = await response.json();
-      if (!response.ok || json?.success === false) {
-        throw new Error(json?.error?.message ?? "Erro ao criar lista.");
-      }
+      await whatsappMarketingApi.createContactList({ name: listForm.name.trim(), contacts });
       setShowListModal(false);
       setListForm(EMPTY_LIST);
       fetchContactLists();
@@ -277,7 +272,7 @@ export default function MarketingWhatsApp() {
 
   const deleteContactList = async (id: string) => {
     if (!confirm("Desativar lista de contatos?")) return;
-    await fetch(`${BASE}/whatsapp/contact-lists/${id}`, { method: "DELETE", headers });
+    await whatsappMarketingApi.deleteContactList(id);
     setDispForm(f => ({ ...f, contact_list_id: f.contact_list_id === id ? "" : f.contact_list_id }));
     fetchContactLists();
   };
@@ -299,14 +294,8 @@ export default function MarketingWhatsApp() {
       const payload = dispForm.mode === "template"
         ? { provider: dispForm.provider, template_id: dispForm.template_id, contact_list_id: dispForm.contact_list_id, phones, variables, ...mediaPayload }
         : { provider: dispForm.provider, free_text: dispForm.free_text, contact_list_id: dispForm.contact_list_id, phones, ...mediaPayload };
-      const body = JSON.stringify(payload);
-      const r = await fetch(`${BASE}/whatsapp/send`, { method: "POST", headers, body });
-      const json = await r.json();
-      if (!r.ok || json?.success === false) {
-        throw new Error(json?.error?.message ?? "Erro ao enviar.");
-      }
-      const d = unwrap(json);
-      setDispResult({ sent: d.sent ?? 0, failed: d.failed ?? 0 });
+      const d = await whatsappMarketingApi.send(payload);
+      setDispResult({ sent: d.sent ?? 0, failed: d.failed ?? 0, skipped: d.skipped ?? 0 });
     } catch (err) {
       alert(err instanceof Error ? err.message : "Erro ao enviar.");
     } finally { setDispatching(false); }
@@ -695,6 +684,7 @@ export default function MarketingWhatsApp() {
                   <div className="rounded-xl bg-surface-03 p-4 flex items-center justify-around">
                     <div className="text-center"><p className="text-2xl font-bold text-green-400">{dispResult.sent}</p><p className="text-xs text-stone mt-0.5">Enviadas</p></div>
                     <div className="text-center"><p className="text-2xl font-bold text-red-400">{dispResult.failed}</p><p className="text-xs text-stone mt-0.5">Falhas</p></div>
+                    <div className="text-center"><p className="text-2xl font-bold text-yellow-400">{dispResult.skipped ?? 0}</p><p className="text-xs text-stone mt-0.5">Ignoradas</p></div>
                   </div>
                 )}
                 <button type="submit" disabled={dispatching}
@@ -969,6 +959,16 @@ export default function MarketingWhatsApp() {
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-stone">Contatos *</label>
+                <ContactListImportBox
+                  channel="whatsapp"
+                  onContacts={(contacts) => {
+                    const lines = contacts
+                      .filter((contact) => contact.name && contact.whatsapp)
+                      .map((contact) => `${contact.name}, ${contact.whatsapp}`)
+                      .join("\n");
+                    setListForm((form) => ({ ...form, contacts: lines }));
+                  }}
+                />
                 <textarea value={listForm.contacts} onChange={e => setListForm(f => ({ ...f, contacts: e.target.value }))}
                   rows={8} placeholder={"Maria Silva, 5511999999999\nJoao Souza, 5511888888888"} className={`${IC} resize-none font-mono text-xs`} />
                 <p className="text-xs text-stone/60">{parseContactLines(listForm.contacts).length} contato(s) valido(s)</p>
