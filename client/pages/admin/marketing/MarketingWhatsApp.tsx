@@ -65,7 +65,7 @@ const isGatewayProvider = (provider?: string) => provider === "baileys";
 
 interface WaTemplate { id: string; name: string; body: string; category: string; language: string; provider?: string; media_type?: string; media_url?: string; caption?: string; mimetype?: string; file_name?: string; active: boolean; created_at: string; }
 interface WaMessage  { id: string; phone: string; body_sent: string; status: string; sent_at: string; error?: string; customer_name?: string; template_name?: string; provider?: string; message_type?: string; media_type?: string; media_url?: string; caption?: string; campaign_delivery_id?: string; }
-interface WaCampaign { id: string; name: string; status: string; template_id?: string; group_id?: string; scheduled_at?: string; sent_count: number; delivered_count: number; read_count: number; error_count: number; created_at: string; }
+interface WaCampaign { id: string; name: string; status: string; template_id?: string; group_id?: string; contact_list_id?: string; scheduled_at?: string; sent_count: number; delivered_count: number; read_count: number; error_count: number; created_at: string; }
 interface WaContactList { id: string; name: string; contact_count: number; created_at?: string; }
 interface WaDashboard { sent: number; delivered: number; read: number; responded: number; errors: number; active_campaigns: number; scheduled_campaigns: number; response_rate: number; orders_generated: number; revenue_generated: number; }
 interface WaConfig { connection_type: string; status: string; messages_per_minute: number; interval_seconds: number; interval_min_seconds: number; interval_max_seconds: number; daily_limit: number; webhook_url: string; whatsapp_gateway_instance_id: string | null; evolution_base_url: string; evolution_api_key: string; evolution_instance: string; uazapi_base_url: string; uazapi_token: string; uazapi_instance: string; }
@@ -92,7 +92,7 @@ export default function MarketingWhatsApp() {
   const [campaigns, setCampaigns] = useState<WaCampaign[]>([]);
   const [campLoading, setCampLoading] = useState(false);
   const [showCampModal, setShowCampModal] = useState(false);
-  const [campForm, setCampForm] = useState({ name: "", template_id: "", group_id: "", scheduled_at: "" });
+  const [campForm, setCampForm] = useState({ name: "", template_id: "", group_id: "", contact_list_id: "", scheduled_at: "" });
   // ── Disparo ──
   const [dispForm, setDispForm] = useState({
     provider: "official",
@@ -174,7 +174,7 @@ export default function MarketingWhatsApp() {
   useEffect(() => {
     if (tab === "dashboard") { fetchDash(); }
     if (tab === "templates") { fetchTemplates(); }
-    if (tab === "campanhas") { fetchCampaigns(); fetchTemplates(); }
+    if (tab === "campanhas") { fetchCampaigns(); fetchTemplates(); fetchContactLists(); }
     if (tab === "disparo")   { fetchTemplates(); fetchContactLists(); fetchConfig(); fetchGatewayInstances(); }
     if (tab === "monitoramento") { fetchMessages(); }
     if (tab === "configuracoes") { fetchConfig(); fetchGatewayInstances(); }
@@ -217,7 +217,7 @@ export default function MarketingWhatsApp() {
     try {
       await fetch(`${BASE}/whatsapp/campaigns`, { method: "POST", headers, body: JSON.stringify(campForm) });
       setShowCampModal(false);
-      setCampForm({ name: "", template_id: "", group_id: "", scheduled_at: "" });
+      setCampForm({ name: "", template_id: "", group_id: "", contact_list_id: "", scheduled_at: "" });
       fetchCampaigns();
     } catch { alert("Erro ao criar campanha."); } finally { setSaving(false); }
   };
@@ -237,6 +237,7 @@ export default function MarketingWhatsApp() {
       name: landing.title || landing.promotion_name || "Campanha promocional",
       template_id: "",
       group_id: "",
+      contact_list_id: "",
       scheduled_at: "",
     });
     setTab("campanhas");
@@ -494,6 +495,7 @@ export default function MarketingWhatsApp() {
               <div className="space-y-3">
                 {campaigns.map(c => {
                   const isRunning = c.status === "running";
+                  const linkedList = contactLists.find(list => list.id === c.contact_list_id);
                   return (
                     <div key={c.id} className="bg-surface-02 border border-surface-03 rounded-2xl p-4">
                       <div className="flex items-center justify-between gap-4">
@@ -512,6 +514,7 @@ export default function MarketingWhatsApp() {
                             <span>Entregues: <span className="text-green-400">{c.delivered_count}</span></span>
                             <span>Lidos: <span className="text-emerald-400">{c.read_count}</span></span>
                             <span>Erros: <span className="text-red-400">{c.error_count}</span></span>
+                            {linkedList && <span>Lista: <span className="text-cream">{linkedList.name}</span></span>}
                             {c.scheduled_at && <span>Agend: {fmtDate(c.scheduled_at)}</span>}
                           </div>
                         </div>
@@ -1006,6 +1009,13 @@ export default function MarketingWhatsApp() {
               <div className="space-y-1">
                 <label className="text-xs text-stone">Grupo de Clientes</label>
                 <input type="text" value={campForm.group_id} onChange={e => setCampForm(f => ({ ...f, group_id: e.target.value }))} placeholder="ID do grupo (opcional)" className={IC} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-stone">Lista de transmissao</label>
+                <select value={campForm.contact_list_id} onChange={e => setCampForm(f => ({ ...f, contact_list_id: e.target.value }))} className={IC}>
+                  <option value="">Sem lista cadastrada</option>
+                  {contactLists.map(list => <option key={list.id} value={list.id}>{list.name} ({list.contact_count})</option>)}
+                </select>
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-stone">Agendar para</label>

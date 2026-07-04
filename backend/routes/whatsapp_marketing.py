@@ -21,6 +21,8 @@ from backend.services.whatsapp_gateway_service import WhatsAppGatewayService
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp-marketing"])
 
+WHATSAPP_NOT_FOUND_ERROR = "Whatsapp não existe"
+
 
 # ── ORM Models ────────────────────────────────────────────────────────────────
 
@@ -126,6 +128,7 @@ class WhatsAppCampaign(Base):
     status = Column(String(30), default="draft")
     template_id = Column(String, ForeignKey("whatsapp_templates.id", ondelete="SET NULL"), nullable=True)
     group_id = Column(String, nullable=True)
+    contact_list_id = Column(String, ForeignKey("whatsapp_contact_lists.id", ondelete="SET NULL"), nullable=True)
     scheduled_at = Column(DateTime(timezone=True), nullable=True)
     sent_count = Column(Integer, default=0)
     delivered_count = Column(Integer, default=0)
@@ -228,6 +231,7 @@ class CampaignCreate(BaseModel):
     name: str
     template_id: Optional[str] = None
     group_id: Optional[str] = None
+    contact_list_id: Optional[str] = None
     scheduled_at: Optional[str] = None
 
 
@@ -236,6 +240,7 @@ class CampaignUpdate(BaseModel):
     status: Optional[str] = None
     template_id: Optional[str] = None
     group_id: Optional[str] = None
+    contact_list_id: Optional[str] = None
     scheduled_at: Optional[str] = None
 
 
@@ -298,7 +303,7 @@ def _verify_whatsapp_contact(phone: str, db: Session, cfg: WhatsAppConfig) -> tu
         return False, result.message or "Falha ao verificar cadastro no WhatsApp."
     exists = bool((result.data or {}).get("exists"))
     if not exists:
-        return False, "Numero nao cadastrado no WhatsApp."
+        return False, WHATSAPP_NOT_FOUND_ERROR
     return True, None
 
 
@@ -422,6 +427,7 @@ def _campaign_to_dict(c: WhatsAppCampaign) -> dict:
         "status": c.status,
         "template_id": c.template_id,
         "group_id": c.group_id,
+        "contact_list_id": c.contact_list_id,
         "scheduled_at": c.scheduled_at.isoformat() if c.scheduled_at else None,
         "sent_count": c.sent_count or 0,
         "delivered_count": c.delivered_count or 0,
@@ -1282,6 +1288,7 @@ def create_campaign(body: CampaignCreate, db: Session = Depends(get_db), _=Depen
         status="draft",
         template_id=body.template_id or None,
         group_id=body.group_id or None,
+        contact_list_id=body.contact_list_id or None,
         scheduled_at=scheduled,
     )
     db.add(c)
@@ -1304,6 +1311,8 @@ def update_campaign(campaign_id: str, body: CampaignUpdate,
         c.template_id = body.template_id or None
     if body.group_id is not None:
         c.group_id = body.group_id or None
+    if body.contact_list_id is not None:
+        c.contact_list_id = body.contact_list_id or None
     if body.scheduled_at is not None:
         try:
             c.scheduled_at = datetime.fromisoformat(body.scheduled_at) if body.scheduled_at else None

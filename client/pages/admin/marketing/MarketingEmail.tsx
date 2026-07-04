@@ -81,6 +81,7 @@ interface EmailCampaign {
   status: string;
   template_id?: string;
   group_id?: string;
+  contact_list_id?: string;
   scheduled_at?: string;
   sent_count: number;
   delivered_count: number;
@@ -148,7 +149,7 @@ export default function MarketingEmail() {
   const [campaigns, setCampaigns] = useState<EmailCampaign[]>([]);
   const [campLoading, setCampLoading] = useState(false);
   const [showCampModal, setShowCampModal] = useState(false);
-  const [campForm, setCampForm] = useState({ name: "", template_id: "", group_id: "", scheduled_at: "" });
+  const [campForm, setCampForm] = useState({ name: "", template_id: "", group_id: "", contact_list_id: "", scheduled_at: "" });
   // ── Disparo ──
   const [dispForm, setDispForm] = useState({ template_id: "", contact_list_id: "", emails: "", subject: "", body_html: "", mode: "template", schedule: "" });
   const [dispResult, setDispResult] = useState<{ sent: number; failed: number; skipped?: number } | null>(null);
@@ -202,7 +203,7 @@ export default function MarketingEmail() {
   useEffect(() => {
     if (tab === "dashboard")    { fetchDash(); }
     if (tab === "templates")    { fetchTemplates(); }
-    if (tab === "campanhas")    { fetchCampaigns(); fetchTemplates(); }
+    if (tab === "campanhas")    { fetchCampaigns(); fetchTemplates(); fetchContactLists(); }
     if (tab === "disparo")      { fetchTemplates(); fetchContactLists(); }
     if (tab === "monitoramento"){ fetchMessages(); }
     if (tab === "configuracoes"){ fetchConfig(); }
@@ -246,7 +247,7 @@ export default function MarketingEmail() {
     try {
       await fetch(`${BASE}/email/campaigns`, { method: "POST", headers, body: JSON.stringify(campForm) });
       setShowCampModal(false);
-      setCampForm({ name: "", template_id: "", group_id: "", scheduled_at: "" });
+      setCampForm({ name: "", template_id: "", group_id: "", contact_list_id: "", scheduled_at: "" });
       fetchCampaigns();
     } catch { alert("Erro ao criar campanha."); } finally { setSaving(false); }
   };
@@ -266,6 +267,7 @@ export default function MarketingEmail() {
       name: landing.title || landing.promotion_name || "Campanha promocional",
       template_id: "",
       group_id: "",
+      contact_list_id: "",
       scheduled_at: "",
     });
     setTab("campanhas");
@@ -506,6 +508,7 @@ export default function MarketingEmail() {
               <div className="space-y-3">
                 {campaigns.map(c => {
                   const isRunning = c.status === "running";
+                  const linkedList = contactLists.find(list => list.id === c.contact_list_id);
                   return (
                     <div key={c.id} className="bg-surface-02 border border-surface-03 rounded-2xl p-4">
                       <div className="flex items-center justify-between gap-4">
@@ -526,6 +529,7 @@ export default function MarketingEmail() {
                             <span>Cliques: <span className="text-purple-400">{c.click_count}</span></span>
                             <span>Bounces: <span className="text-orange-400">{c.bounce_count}</span></span>
                             <span>Descad: <span className="text-red-400">{c.unsubscribe_count}</span></span>
+                            {linkedList && <span>Lista: <span className="text-cream">{linkedList.name}</span></span>}
                             {c.scheduled_at && <span>Agend: {fmtDate(c.scheduled_at)}</span>}
                           </div>
                         </div>
@@ -939,6 +943,13 @@ export default function MarketingEmail() {
                 <label className="text-xs text-stone">Grupo de Clientes</label>
                 <input type="text" value={campForm.group_id} onChange={e => setCampForm(f => ({ ...f, group_id: e.target.value }))}
                   placeholder="ID do grupo (opcional)" className={IC} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-stone">Lista de transmissao</label>
+                <select value={campForm.contact_list_id} onChange={e => setCampForm(f => ({ ...f, contact_list_id: e.target.value }))} className={IC}>
+                  <option value="">Sem lista cadastrada</option>
+                  {contactLists.map(list => <option key={list.id} value={list.id}>{list.name} ({list.contact_count})</option>)}
+                </select>
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-stone">Agendar para</label>

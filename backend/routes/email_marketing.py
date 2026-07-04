@@ -25,6 +25,8 @@ from backend.core.response import ok, created
 
 router = APIRouter(prefix="/email", tags=["email-marketing"])
 
+EMAIL_NOT_FOUND_ERROR = "Email não existe"
+
 
 # ── ORM Models ────────────────────────────────────────────────────────────────
 
@@ -81,6 +83,7 @@ class EmailCampaign(Base):
     status = Column(String(30), nullable=False, default="draft")
     template_id = Column(String, ForeignKey("email_templates.id", ondelete="SET NULL"), nullable=True)
     group_id = Column(String, nullable=True)
+    contact_list_id = Column(String, ForeignKey("email_contact_lists.id", ondelete="SET NULL"), nullable=True)
     scheduled_at = Column(DateTime(timezone=True), nullable=True)
     sent_count = Column(Integer, default=0)
     delivered_count = Column(Integer, default=0)
@@ -158,6 +161,7 @@ class CampaignCreate(BaseModel):
     name: str
     template_id: Optional[str] = None
     group_id: Optional[str] = None
+    contact_list_id: Optional[str] = None
     scheduled_at: Optional[str] = None
 
 
@@ -166,6 +170,7 @@ class CampaignUpdate(BaseModel):
     status: Optional[str] = None
     template_id: Optional[str] = None
     group_id: Optional[str] = None
+    contact_list_id: Optional[str] = None
     scheduled_at: Optional[str] = None
 
 
@@ -286,7 +291,7 @@ def _cfg_to_dict(cfg: EmailConfig) -> dict:
 def _campaign_to_dict(c: EmailCampaign) -> dict:
     return {
         "id": c.id, "name": c.name, "status": c.status,
-        "template_id": c.template_id, "group_id": c.group_id,
+        "template_id": c.template_id, "group_id": c.group_id, "contact_list_id": c.contact_list_id,
         "scheduled_at": c.scheduled_at.isoformat() if c.scheduled_at else None,
         "sent_count": c.sent_count or 0, "delivered_count": c.delivered_count or 0,
         "open_count": c.open_count or 0, "click_count": c.click_count or 0,
@@ -599,6 +604,7 @@ def create_campaign(body: CampaignCreate, db: Session = Depends(get_db),
         id=str(uuid.uuid4()), name=body.name,
         template_id=body.template_id or None,
         group_id=body.group_id or None,
+        contact_list_id=body.contact_list_id or None,
         scheduled_at=sched,
         status="scheduled" if sched else "draft",
     )
@@ -618,6 +624,7 @@ def update_campaign(campaign_id: str, body: CampaignUpdate,
     if body.status is not None:      c.status = body.status
     if body.template_id is not None: c.template_id = body.template_id or None
     if body.group_id is not None:    c.group_id = body.group_id or None
+    if body.contact_list_id is not None: c.contact_list_id = body.contact_list_id or None
     if body.scheduled_at is not None:
         try:
             c.scheduled_at = datetime.fromisoformat(body.scheduled_at.replace("Z", "+00:00"))
@@ -688,17 +695,17 @@ def send_emails(body: EmailSendRequest, db: Session = Depends(get_db),
         normalized_email, syntax_error = _normalize_email_address(r["email"])
         if syntax_error or not normalized_email:
             msg.status = "failed"
-            msg.error = syntax_error
+            msg.error = EMAIL_NOT_FOUND_ERROR
             failed_count += 1
-            results.append({"email": r["email"], "status": "failed", "error": syntax_error})
+            results.append({"email": r["email"], "status": "failed", "error": EMAIL_NOT_FOUND_ERROR})
             continue
 
         deliverable, deliverability_error = _email_domain_is_deliverable(normalized_email, domain_cache)
         if not deliverable:
             msg.status = "failed"
-            msg.error = deliverability_error
+            msg.error = EMAIL_NOT_FOUND_ERROR
             failed_count += 1
-            results.append({"email": normalized_email, "status": "failed", "error": deliverability_error})
+            results.append({"email": normalized_email, "status": "failed", "error": EMAIL_NOT_FOUND_ERROR})
             continue
 
         try:

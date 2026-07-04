@@ -845,6 +845,7 @@ def _run_migrations():
         # WhatsApp campaigns + config
         "CREATE TABLE IF NOT EXISTS whatsapp_campaigns (id VARCHAR PRIMARY KEY, name VARCHAR(300) NOT NULL, status VARCHAR(30) NOT NULL DEFAULT 'draft', template_id VARCHAR REFERENCES whatsapp_templates(id) ON DELETE SET NULL, group_id VARCHAR, scheduled_at TIMESTAMPTZ, sent_count INTEGER DEFAULT 0, delivered_count INTEGER DEFAULT 0, read_count INTEGER DEFAULT 0, error_count INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE INDEX IF NOT EXISTS ix_whatsapp_campaigns_status ON whatsapp_campaigns(status)",
+        "ALTER TABLE whatsapp_campaigns ADD COLUMN IF NOT EXISTS contact_list_id VARCHAR REFERENCES whatsapp_contact_lists(id) ON DELETE SET NULL",
         "CREATE TABLE IF NOT EXISTS whatsapp_config (id VARCHAR PRIMARY KEY DEFAULT 'default', connection_type VARCHAR(30) DEFAULT 'official', status VARCHAR(20) DEFAULT 'disconnected', messages_per_minute INTEGER DEFAULT 10, interval_seconds INTEGER DEFAULT 3, daily_limit INTEGER DEFAULT 1000, webhook_url VARCHAR(500) DEFAULT '', updated_at TIMESTAMPTZ DEFAULT NOW())",
         "INSERT INTO whatsapp_config (id) VALUES ('default') ON CONFLICT DO NOTHING",
         "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS campaign_id VARCHAR REFERENCES whatsapp_campaigns(id) ON DELETE SET NULL",
@@ -869,6 +870,7 @@ def _run_migrations():
         "ALTER TABLE email_templates ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT 'marketing'",
         "CREATE TABLE IF NOT EXISTS email_campaigns (id VARCHAR PRIMARY KEY, name VARCHAR(300) NOT NULL, status VARCHAR(30) NOT NULL DEFAULT 'draft', template_id VARCHAR REFERENCES email_templates(id) ON DELETE SET NULL, group_id VARCHAR, scheduled_at TIMESTAMPTZ, sent_count INTEGER DEFAULT 0, delivered_count INTEGER DEFAULT 0, open_count INTEGER DEFAULT 0, click_count INTEGER DEFAULT 0, bounce_count INTEGER DEFAULT 0, unsubscribe_count INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE INDEX IF NOT EXISTS ix_email_campaigns_status ON email_campaigns(status)",
+        "ALTER TABLE email_campaigns ADD COLUMN IF NOT EXISTS contact_list_id VARCHAR REFERENCES email_contact_lists(id) ON DELETE SET NULL",
         "CREATE TABLE IF NOT EXISTS email_contact_lists (id VARCHAR PRIMARY KEY, name VARCHAR(200) NOT NULL, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         "CREATE INDEX IF NOT EXISTS ix_email_contact_lists_active ON email_contact_lists(active)",
         "CREATE TABLE IF NOT EXISTS email_contact_list_items (id VARCHAR PRIMARY KEY, list_id VARCHAR NOT NULL REFERENCES email_contact_lists(id) ON DELETE CASCADE, name VARCHAR(200) NOT NULL, email VARCHAR(300) NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())",
