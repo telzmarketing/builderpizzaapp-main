@@ -42,6 +42,7 @@ import {
   type ApiAgenteWhatsAppAutomationRun,
   type ApiAgenteWhatsAppAutomationTemplate,
   type ApiAgenteWhatsAppDashboard,
+  type ApiAgenteWhatsAppInternalAlert,
   type ApiAgenteWhatsAppMessage,
   type ApiAgenteWhatsAppObservability,
   type ApiAgenteWhatsAppOutboxAlert,
@@ -158,6 +159,16 @@ function alertClass(level: string) {
   return level === "critical"
     ? "border-red-500/30 bg-red-500/10 text-red-200"
     : "border-amber-500/30 bg-amber-500/10 text-amber-200";
+}
+
+function alertPayloadText(alert: ApiAgenteWhatsAppInternalAlert, key: string) {
+  const value = alert.payload?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+function alertPayloadSessionId(alert: ApiAgenteWhatsAppInternalAlert) {
+  const value = alert.payload?.session_id;
+  return typeof value === "string" ? value : "";
 }
 
 function healthClass(status?: string) {
@@ -289,6 +300,7 @@ export default function CrmAgenteWhatsApp() {
   const [outboxSummary, setOutboxSummary] = useState<ApiAgenteWhatsAppOutboxMetrics | null>(null);
   const [outboxItems, setOutboxItems] = useState<ApiAgenteWhatsAppOutbox[]>([]);
   const [outboxAlerts, setOutboxAlerts] = useState<ApiAgenteWhatsAppOutboxAlert[]>([]);
+  const [internalAlerts, setInternalAlerts] = useState<ApiAgenteWhatsAppInternalAlert[]>([]);
   const [providerStates, setProviderStates] = useState<ApiAgenteWhatsAppProviderState[]>([]);
   const [channelSettings, setChannelSettings] = useState<ApiAgenteWhatsAppChannelSettings | null>(null);
   const [gatewayInstances, setGatewayInstances] = useState<ApiWhatsAppGatewayInstance[]>([]);
@@ -298,7 +310,7 @@ export default function CrmAgenteWhatsApp() {
   const [operationalMetrics, setOperationalMetrics] = useState<ApiAgenteWhatsAppOperationalMetrics | null>(null);
   const [audioMetrics, setAudioMetrics] = useState<ApiAgenteWhatsAppAudioMetrics | null>(null);
   const [audioMetricsError, setAudioMetricsError] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("session"));
   const [messages, setMessages] = useState<ApiAgenteWhatsAppMessage[]>([]);
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [moduleTab, setModuleTab] = useState<ModuleTab>("conversations");
@@ -329,11 +341,17 @@ export default function CrmAgenteWhatsApp() {
   const [providerAction, setProviderAction] = useState<string | null>(null);
   const [channelSaving, setChannelSaving] = useState(false);
   const [error, setError] = useState("");
+  const [dismissedPopupAlertId, setDismissedPopupAlertId] = useState<string | null>(null);
 
   const selected = sessions.find((session) => session.id === selectedId) ?? null;
   const channelProvider = channelSettings?.active_provider === "baileys" ? "baileys" : "official";
   const connectedGatewayInstances = gatewayInstances.filter((instance) => instance.status === "connected");
   const selectedAutomation = automationTemplates.find((item) => item.key === automationForm.key) ?? automationTemplates[0] ?? null;
+  const handoffAlerts = useMemo(
+    () => internalAlerts.filter((alert) => alert.alert_type === "human_handoff" && alert.status === "active"),
+    [internalAlerts],
+  );
+  const popupHandoffAlert = handoffAlerts.find((alert) => alert.id !== dismissedPopupAlertId) ?? null;
   const aiModels = aiSettings?.provider === "claude"
     ? ["claude-sonnet-4-20250514", "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"]
     : aiSettings?.provider === "openai"
@@ -383,7 +401,7 @@ export default function CrmAgenteWhatsApp() {
           limit: 120,
         }),
       ]);
-      const [liveMetrics, audioMetricsPayload, aiSettingsPayload, audioSettingsPayload, rolloutPayload, aiStatusPayload, channelPayload, gatewayPayload] = await Promise.all([
+      const [liveMetrics, audioMetricsPayload, aiSettingsPayload, audioSettingsPayload, rolloutPayload, aiStatusPayload, channelPayload, gatewayPayload, internalAlertsPayload] = await Promise.all([
         agenteWhatsAppApi.operationalMetrics().catch(() => null),
         agenteWhatsAppApi.audioMetrics(7)
           .then((payload) => {
@@ -400,6 +418,7 @@ export default function CrmAgenteWhatsApp() {
         agenteWhatsAppApi.aiProviderStatus().catch(() => null),
         agenteWhatsAppApi.getChannelSettings().catch(() => null),
         whatsappGatewayApi.listInstances().catch(() => []),
+        agenteWhatsAppApi.listInternalAlerts({ status: "active", limit: 30 }).catch(() => []),
       ]);
       setDashboard(dash);
       setSessions(rows);
@@ -411,6 +430,7 @@ export default function CrmAgenteWhatsApp() {
       setAiProviderStatus(aiStatusPayload);
       setChannelSettings(channelPayload);
       setGatewayInstances(gatewayPayload);
+      setInternalAlerts(internalAlertsPayload);
       const nextId = preferredId ?? selectedId ?? rows[0]?.id ?? null;
       setSelectedId(nextId);
       if (nextId) await loadDetail(nextId);
@@ -464,6 +484,7 @@ export default function CrmAgenteWhatsApp() {
       setOutboxItems(rows);
       setOutboxSummary(metrics.metrics);
       setOutboxAlerts(metrics.alerts);
+      setInternalAlerts(metrics.internal_alerts ?? []);
       setProviderStates(metrics.providers);
       agenteWhatsAppApi.observability().then(setObservability).catch(() => {});
       setSelectedOutbox((current) => {
@@ -489,6 +510,7 @@ export default function CrmAgenteWhatsApp() {
         limit: 120,
       }).then(setSessions).catch(() => {});
       agenteWhatsAppApi.operationalMetrics().then(setOperationalMetrics).catch(() => {});
+      agenteWhatsAppApi.listInternalAlerts({ status: "active", limit: 30 }).then(setInternalAlerts).catch(() => {});
       agenteWhatsAppApi.audioMetrics(7)
         .then((payload) => {
           setAudioMetrics(payload);
@@ -515,6 +537,48 @@ export default function CrmAgenteWhatsApp() {
       } : session));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao atualizar conversa.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function openHandoffAlert(alert: ApiAgenteWhatsAppInternalAlert) {
+    const sessionId = alertPayloadSessionId(alert);
+    if (!sessionId) return;
+    setModuleTab("conversations");
+    setSelectedId(sessionId);
+    setDismissedPopupAlertId(alert.id);
+    await loadDetail(sessionId);
+  }
+
+  async function acknowledgeHandoffAlert(alert: ApiAgenteWhatsAppInternalAlert) {
+    setSaving(true);
+    setError("");
+    try {
+      await agenteWhatsAppApi.acknowledgeInternalAlert(alert.id);
+      setInternalAlerts((current) => current.filter((item) => item.id !== alert.id));
+      if (dismissedPopupAlertId === alert.id) setDismissedPopupAlertId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao reconhecer alerta.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function assumeHandoffAlert(alert: ApiAgenteWhatsAppInternalAlert) {
+    const sessionId = alertPayloadSessionId(alert);
+    if (!sessionId) return;
+    setSaving(true);
+    setError("");
+    try {
+      await agenteWhatsAppApi.updateSession(sessionId, { status: "human", ai_enabled: false });
+      await agenteWhatsAppApi.acknowledgeInternalAlert(alert.id).catch(() => null);
+      setInternalAlerts((current) => current.filter((item) => item.id !== alert.id));
+      setModuleTab("conversations");
+      setDismissedPopupAlertId(null);
+      await loadSessions(sessionId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao assumir atendimento.");
     } finally {
       setSaving(false);
     }
@@ -1049,6 +1113,58 @@ export default function CrmAgenteWhatsApp() {
         <StatCard icon={Clock3} label="Aguardando resposta" value={operationalMetrics?.waiting_response ?? 0} />
         <StatCard icon={Eye} label="Nao lidas" value={operationalMetrics?.unread_messages ?? 0} />
       </div>
+
+      {handoffAlerts.length > 0 && (
+        <section className="rounded-xl border border-red-500/30 bg-red-500/10 p-4">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-red-200">
+                <Bell size={16} />
+                <h2 className="text-sm font-bold">Atendimento humano pendente</h2>
+              </div>
+              <p className="mt-1 text-xs text-red-100/80">
+                {handoffAlerts.length} cliente(s) aguardando alguem assumir a conversa.
+              </p>
+            </div>
+            <button
+              onClick={() => openHandoffAlert(handoffAlerts[0])}
+              className="h-9 px-3 rounded-lg border border-red-300/30 bg-red-300/10 text-xs font-semibold text-red-100 hover:bg-red-300/15"
+            >
+              Abrir primeiro
+            </button>
+          </div>
+          <div className="mt-3 grid gap-2">
+            {handoffAlerts.slice(0, 3).map((alert) => (
+              <div key={alert.id} className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 rounded-lg border border-red-500/20 bg-surface-00/30 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-cream truncate">
+                    {alertPayloadText(alert, "customer_name") || alertPayloadText(alert, "phone") || alert.title}
+                  </p>
+                  <p className="mt-1 text-xs text-stone truncate">
+                    {alertPayloadText(alert, "last_message") || alert.message}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[11px] text-stone">{fmtDate(alert.last_seen_at)}</span>
+                  <button
+                    onClick={() => openHandoffAlert(alert)}
+                    className="h-8 px-3 rounded-lg border border-surface-03 text-xs font-semibold text-stone hover:text-cream"
+                  >
+                    Abrir
+                  </button>
+                  <button
+                    onClick={() => assumeHandoffAlert(alert)}
+                    disabled={saving}
+                    className="h-8 px-3 rounded-lg bg-gold text-xs font-semibold text-black disabled:opacity-50"
+                  >
+                    Assumir
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="bg-surface-02 border border-surface-03 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-surface-03 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
@@ -2947,6 +3063,46 @@ export default function CrmAgenteWhatsApp() {
       </div>
       )}
         </>
+      )}
+
+      {popupHandoffAlert && (
+        <div className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-2rem))] rounded-xl border border-red-500/30 bg-surface-02 shadow-2xl">
+          <div className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2 text-red-200">
+                <Bell size={17} />
+                <span className="text-sm font-bold">Cliente chamando humano</span>
+              </div>
+              <button
+                onClick={() => setDismissedPopupAlertId(popupHandoffAlert.id)}
+                className="text-stone hover:text-cream"
+              >
+                <XCircle size={16} />
+              </button>
+            </div>
+            <p className="mt-2 text-sm font-semibold text-cream truncate">
+              {alertPayloadText(popupHandoffAlert, "customer_name") || alertPayloadText(popupHandoffAlert, "phone") || popupHandoffAlert.title}
+            </p>
+            <p className="mt-1 line-clamp-2 text-xs text-stone">
+              {alertPayloadText(popupHandoffAlert, "last_message") || popupHandoffAlert.message}
+            </p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                onClick={() => openHandoffAlert(popupHandoffAlert)}
+                className="h-9 px-3 rounded-lg border border-surface-03 text-xs font-semibold text-stone hover:text-cream"
+              >
+                Abrir
+              </button>
+              <button
+                onClick={() => assumeHandoffAlert(popupHandoffAlert)}
+                disabled={saving}
+                className="h-9 px-3 rounded-lg bg-gold text-xs font-semibold text-black disabled:opacity-50"
+              >
+                Assumir
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

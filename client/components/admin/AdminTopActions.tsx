@@ -13,6 +13,8 @@ type AdminNotification = {
   href: string;
   icon: "new_order" | "ready" | "delivered" | "chat" | "agente_whatsapp";
   ackId?: string;
+  alertType?: string;
+  sessionId?: string;
 };
 
 const NOTIFICATION_ORDER_STATUSES = new Set(["paid", "pago", "ready_for_pickup", "delivered"]);
@@ -108,14 +110,19 @@ function chatNotification(conversation: ChatbotConversation): AdminNotification 
 function agenteWhatsAppNotification(alert: ApiAgenteWhatsAppInternalAlert): AdminNotification {
   const id = toText(alert.id);
   const time = toText(alert.last_seen_at || alert.updated_at || alert.created_at, new Date().toISOString());
+  const alertType = toText(alert.alert_type);
+  const sessionId = toText(alert.payload?.session_id);
+  const lastMessage = toText(alert.payload?.last_message);
   return {
     id: `agente-whatsapp:${id}:${time}`,
-    title: toText(alert.title, "Alerta do agente WhatsApp"),
-    description: toText(alert.message, "Verifique o agente WhatsApp."),
+    title: alertType === "human_handoff" ? "Cliente chamando atendente" : toText(alert.title, "Alerta do agente WhatsApp"),
+    description: lastMessage || toText(alert.message, "Verifique o agente WhatsApp."),
     time,
-    href: "/painel/crm/agente-whatsapp",
+    href: sessionId ? `/painel/crm/agente-whatsapp?session=${encodeURIComponent(sessionId)}` : "/painel/crm/agente-whatsapp",
     icon: "agente_whatsapp",
     ackId: id || undefined,
+    alertType,
+    sessionId: sessionId || undefined,
   };
 }
 
@@ -148,6 +155,7 @@ function AdminTopActionsContent({ hideSearch = false }: { hideSearch?: boolean }
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [dismissedPopupId, setDismissedPopupId] = useState<string | null>(null);
 
   const bellRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -205,6 +213,11 @@ function AdminTopActionsContent({ hideSearch = false }: { hideSearch?: boolean }
   };
 
   const count = notifications.length;
+  const handoffPopup = notifications.find((notification) => (
+    notification.icon === "agente_whatsapp"
+    && notification.alertType === "human_handoff"
+    && notification.id !== dismissedPopupId
+  ));
 
   const handleClearNotifications = () => {
     const nextDismissed = new Set([...dismissedRef.current, ...notifications.map((notification) => notification.id)]);
@@ -217,6 +230,7 @@ function AdminTopActionsContent({ hideSearch = false }: { hideSearch?: boolean }
   };
 
   return (
+    <>
     <div className="flex items-center gap-1.5 flex-shrink-0 rounded-xl border border-surface-03 bg-surface-01/70 p-1 shadow-sm">
       {!hideSearch && (searchOpen ? (
         <form
@@ -302,7 +316,9 @@ function AdminTopActionsContent({ hideSearch = false }: { hideSearch?: boolean }
                   <button
                     key={notification.id}
                     onClick={() => {
-                      if (notification.ackId) agenteWhatsAppApi.acknowledgeInternalAlert(notification.ackId).catch(() => {});
+                      if (notification.ackId && notification.alertType !== "human_handoff") {
+                        agenteWhatsAppApi.acknowledgeInternalAlert(notification.ackId).catch(() => {});
+                      }
                       navigate(notification.href);
                       setBellOpen(false);
                     }}
@@ -334,6 +350,49 @@ function AdminTopActionsContent({ hideSearch = false }: { hideSearch?: boolean }
         )}
       </div>
     </div>
+    {handoffPopup && (
+      <div className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-red-500/30 bg-surface-02 shadow-2xl">
+        <div className="border-b border-red-500/20 bg-red-500/10 px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2 text-red-200">
+              <AlertTriangle size={17} />
+              <span className="text-sm font-bold">{handoffPopup.title}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDismissedPopupId(handoffPopup.id)}
+              className="text-red-100/70 transition-colors hover:text-white"
+              title="Fechar alerta"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+        <div className="px-4 py-3">
+          <p className="line-clamp-2 text-sm text-cream">{handoffPopup.description}</p>
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setDismissedPopupId(handoffPopup.id)}
+              className="h-9 rounded-lg border border-surface-03 px-3 text-xs font-bold text-stone transition-colors hover:text-cream"
+            >
+              Depois
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                navigate(handoffPopup.href);
+                setDismissedPopupId(handoffPopup.id);
+              }}
+              className="h-9 rounded-lg bg-gold px-3 text-xs font-bold text-black transition-colors hover:bg-gold/90"
+            >
+              Abrir conversa
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

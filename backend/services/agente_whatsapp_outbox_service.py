@@ -513,6 +513,45 @@ class AgenteWhatsAppOutboxService:
                 "payload": {"metrics": metrics},
             }
 
+        waiting_human_sessions = (
+            self._db.query(AgenteWhatsAppSession)
+            .filter(AgenteWhatsAppSession.status == "waiting_human")
+            .order_by(AgenteWhatsAppSession.last_message_at.desc().nullslast())
+            .limit(100)
+            .all()
+        )
+        for session in waiting_human_sessions:
+            last_message = (
+                self._db.query(AgenteWhatsAppMessage)
+                .filter(
+                    AgenteWhatsAppMessage.session_id == session.id,
+                    AgenteWhatsAppMessage.direction == "inbound",
+                )
+                .order_by(AgenteWhatsAppMessage.created_at.desc())
+                .first()
+            )
+            customer_name = session.customer.name if session.customer else None
+            customer_label = customer_name or session.phone
+            last_body = (last_message.transcription_text or last_message.body) if last_message else None
+            desired[f"agente_whatsapp:human_handoff:{session.id}"] = {
+                "alert_type": "human_handoff",
+                "level": "critical",
+                "title": "Cliente aguardando atendimento humano",
+                "message": f"{customer_label} precisa de atendimento humano no WhatsApp.",
+                "payload": {
+                    "session_id": session.id,
+                    "phone": session.phone,
+                    "customer_id": session.customer_id,
+                    "customer_name": customer_name,
+                    "current_intent": session.current_intent,
+                    "last_message_id": last_message.id if last_message else None,
+                    "last_message": last_body,
+                    "last_message_at": session.last_message_at,
+                    "ai_enabled": session.ai_enabled,
+                    "automation_blocked": session.automation_blocked,
+                },
+            }
+
         active_keys = set(desired)
         current_alerts = (
             self._db.query(AgenteWhatsAppInternalAlert)
