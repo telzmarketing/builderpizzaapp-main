@@ -1,6 +1,6 @@
 # Base de Conhecimento — PizzaApp
 > Documento técnico completo: telas, funcionalidades, banco de dados, endpoints e integrações.
-> Gerado em: 2026-04-13 | **Atualizado em: 2026-05-13** | Versao: 3.0.0
+> Gerado em: 2026-04-13 | **Atualizado em: 2026-07-04** | Versao: 3.1.0
 
 ---
 
@@ -43,6 +43,7 @@
 21. [Atualizacao 2026-07-03 - Backend ASAAS Cartao](#21-atualizacao-2026-07-03---backend-asaas-cartao)
 22. [Atualizacao 2026-07-04 - Checkout ASAAS Cartao](#22-atualizacao-2026-07-04---checkout-asaas-cartao)
 23. [Atualizacao 2026-07-04 - Admin ASAAS Cartao](#23-atualizacao-2026-07-04---admin-asaas-cartao)
+24. [Atualizacao 2026-07-04 - Alerta de Atendimento Humano no Agente WhatsApp](#24-atualizacao-2026-07-04---alerta-de-atendimento-humano-no-agente-whatsapp)
 
 ---
 
@@ -2776,3 +2777,148 @@ Antes de producao, executar em ambiente com Python/Alembic:
 - `alembic -c backend/alembic.ini upgrade head`
 
 Tambem testar pagamento ASAAS cartao e webhook real, confirmando idempotencia e ausencia de dados sensiveis nos logs.
+
+## 24. Atualizacao 2026-07-04 - Alerta de Atendimento Humano no Agente WhatsApp
+
+### 24.1 Entrega
+
+Foi implementado alerta operacional para quando o cliente pedir atendimento humano, fizer reclamacao ou o Agente WhatsApp classificar a conversa como `waiting_human`.
+
+Commit publicado:
+
+- `9cbaa67 feat(whatsapp): alertar atendimento humano`
+
+Arquivos principais:
+
+- `backend/services/agente_whatsapp_outbox_service.py`
+- `client/components/admin/AdminTopActions.tsx`
+- `client/pages/admin/crm/CrmAgenteWhatsApp.tsx`
+
+### 24.2 Decisao arquitetural
+
+A solucao reutiliza o modulo nativo `Agente WhatsApp` e a tabela existente `agente_whatsapp_internal_alerts`.
+
+Nao foi criada nova tabela, migration, endpoint paralelo ou sistema separado de atendimento.
+
+Persistencia existente:
+
+- Model: `backend/models/agente_whatsapp.py` (`AgenteWhatsAppInternalAlert`)
+- Schema: `backend/schemas/agente_whatsapp.py` (`AgenteWhatsAppInternalAlertOut`)
+- Migration original: `backend/migrations/versions/20260514_agente_whatsapp_internal_alerts.py`
+
+O alerta e tratado como um tipo novo de alerta interno:
+
+- `alert_type`: `human_handoff`
+- `level`: `critical`
+- `dedupe_key`: `agente_whatsapp:human_handoff:{session_id}`
+
+### 24.3 Fluxo backend
+
+`AgenteWhatsAppOutboxService.sync_internal_alerts()` agora inclui sessoes com:
+
+- `AgenteWhatsAppSession.status == "waiting_human"`
+
+Para cada sessao elegivel, o backend busca a ultima mensagem inbound e cria/atualiza um alerta interno com payload:
+
+- `session_id`
+- `phone`
+- `customer_id`
+- `customer_name`
+- `current_intent`
+- `last_message_id`
+- `last_message`
+- `last_message_at`
+- `ai_enabled`
+- `automation_blocked`
+
+O alerta permanece ativo enquanto a sessao estiver em `waiting_human`. Quando a sessao deixa esse estado, a sincronizacao existente resolve o alerta por ausencia da chave desejada.
+
+### 24.4 Fluxo global do painel
+
+`AdminTopActions.tsx` continua buscando:
+
+- `agenteWhatsAppApi.listInternalAlerts({ status: "active", limit: 10 })`
+
+Quando recebe `human_handoff`, o painel:
+
+- mostra o alerta no sino global;
+- mostra popup fixo no canto inferior direito;
+- usa a ultima mensagem como descricao quando disponivel;
+- navega para `/painel/crm/agente-whatsapp?session={session_id}`.
+
+Regra importante:
+
+- Abrir um alerta `human_handoff` pelo sino global nao faz `ack` automatico.
+- Isso evita esconder o alerta antes de alguem realmente assumir ou tratar a conversa.
+- Alertas internos de outros tipos continuam podendo ser reconhecidos pelo fluxo normal.
+
+### 24.5 Fluxo na tela CRM / Agente WhatsApp
+
+`CrmAgenteWhatsApp.tsx` passou a:
+
+- carregar alertas internos ativos;
+- filtrar alertas `human_handoff`;
+- destacar "Atendimento humano pendente" acima das metricas;
+- exibir ate 3 conversas pendentes no destaque;
+- mostrar popup local "Cliente chamando humano";
+- aceitar deep link por query param `?session=...`;
+- abrir conversa especifica a partir do alerta;
+- permitir assumir a conversa pelo botao `Assumir`.
+
+Ao assumir pelo alerta, o frontend:
+
+1. atualiza a sessao para `status: "human"`;
+2. desativa IA com `ai_enabled: false`;
+3. tenta reconhecer o alerta interno;
+4. recarrega as sessoes mantendo a conversa selecionada.
+
+### 24.6 Contratos e endpoints reutilizados
+
+Sem contrato novo.
+
+Endpoints existentes reutilizados:
+
+- `GET /agente-whatsapp/outbox/internal-alerts`
+- `POST /agente-whatsapp/outbox/internal-alerts/{alert_id}/ack`
+- `PATCH /agente-whatsapp/sessions/{session_id}`
+- `GET /agente-whatsapp/sessions/{session_id}`
+
+API frontend reutilizada via `client/lib/api.ts`:
+
+- `agenteWhatsAppApi.listInternalAlerts`
+- `agenteWhatsAppApi.acknowledgeInternalAlert`
+- `agenteWhatsAppApi.updateSession`
+- `agenteWhatsAppApi.getSession`
+
+### 24.7 Criterios de funcionamento
+
+O alerta deve aparecer quando:
+
+- a IA/guardrails ou o gerente do Agente WhatsApp colocarem a sessao em `waiting_human`;
+- existir reclamacao, risco de qualidade, pedido de atendente, pedido de gerente ou necessidade de revisao humana ja coberta pelo fluxo de IA.
+
+O alerta deve deixar de aparecer quando:
+
+- a sessao for assumida como `human`;
+- a sessao for encerrada;
+- a sessao voltar para `open`/IA;
+- a sincronizacao de alertas internos resolver a chave `human_handoff` por nao existir mais sessao `waiting_human`.
+
+### 24.8 Validacao executada
+
+Validacoes locais da entrega:
+
+- `npm.cmd run typecheck`: passou.
+- `npm.cmd run build`: passou.
+- `npm.cmd test`: passou com 7 arquivos e 33 testes.
+
+Limitacao local:
+
+- Validacao Python nao executada porque este Windows nao possui runtime Python instalado (`python` nao existe no PATH e `py` retorna `No installed Python found!`).
+
+### 24.9 Operacao e cuidados
+
+- Nao usar `git add -A` em publish desta trilha; o worktree pode conter ruido local em `.claude/*`.
+- O popup global usa polling do sino do admin, atualmente a cada 30 segundos.
+- O alerta de atendimento humano e operacional, nao promocional; nao deve ser misturado com notificacoes de prova social da loja.
+- A regra de negocio continua no backend/service; o frontend apenas exibe, abre e assume conversas via API oficial.

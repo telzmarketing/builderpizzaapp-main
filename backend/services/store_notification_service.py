@@ -46,7 +46,7 @@ PAID_ORDER_STATUSES = {
 }
 PAID_PAYMENT_STATUSES = {PaymentStatus.approved, PaymentStatus.paid}
 PRIORITY_SCORE = {"low": 1, "medium": 2, "high": 3}
-CAPTURE_LOOKBACK_HOURS = 72
+CAPTURE_LOOKBACK_DAYS = 30
 MAX_IMPORT_ROWS = 1000
 IMPORT_HEADER_ALIASES = {
     "nome": "display_name",
@@ -503,7 +503,7 @@ class StoreNotificationService:
         return self.serialize_notification(notification)
 
     def _sync_captured_from_orders(self) -> None:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=CAPTURE_LOOKBACK_HOURS)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=CAPTURE_LOOKBACK_DAYS)
         orders = (
             self._db.query(Order)
             .options(
@@ -541,7 +541,9 @@ class StoreNotificationService:
                 continue
             product_id, product_name, product_image = self._main_product(order, product_lookup)
             if not product_name:
-                continue
+                product_id = None
+                product_name = "Produto"
+                product_image = None
             neighborhood = self._order_neighborhood(order)
             buyer_name = self._first_name(
                 order.customer.name if order.customer else order.delivery_name
@@ -558,10 +560,7 @@ class StoreNotificationService:
                 order_time=order.paid_at or order.created_at,
             )
             self._db.add(captured)
-        try:
-            self._db.commit()
-        except Exception:
-            self._db.rollback()
+        self._db.commit()
 
     def _serialize_captured(self, item: StoreNotificationCaptured) -> dict:
         return {
