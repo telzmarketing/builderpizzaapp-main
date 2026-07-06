@@ -4,6 +4,7 @@ import {
   Bell,
   CheckCircle2,
   Copy,
+  Download,
   Eye,
   Inbox,
   Loader2,
@@ -509,7 +510,7 @@ export default function MarketingStoreNotifications() {
                   <h2 className="text-sm font-semibold text-cream">Importar compradores</h2>
                   <p className="mt-1 text-xs text-stone">CSV ou XLSX com colunas nome, produto ou product_id, bairro e minutos opcional.</p>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] lg:min-w-[520px]">
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] lg:min-w-[640px]">
                   <input
                     ref={importInputRef}
                     className={IC}
@@ -520,6 +521,14 @@ export default function MarketingStoreNotifications() {
                       setImportResult(null);
                     }}
                   />
+                  <a
+                    href="/templates/compradores-notificacoes-modelo.csv"
+                    download="compradores-notificacoes-modelo.csv"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-surface-03 bg-surface-03 px-4 py-2 text-sm font-semibold text-cream transition-colors hover:border-gold/50"
+                  >
+                    <Download size={16} />
+                    Baixar modelo CSV
+                  </a>
                   <button
                     type="button"
                     onClick={importBuyers}
