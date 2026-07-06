@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import csv
 import json
 import random
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+import unicodedata
+from datetime import datetime, time, timedelta, timezone
+from io import BytesIO, StringIO
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, func, or_
@@ -44,6 +47,31 @@ PAID_ORDER_STATUSES = {
 PAID_PAYMENT_STATUSES = {PaymentStatus.approved, PaymentStatus.paid}
 PRIORITY_SCORE = {"low": 1, "medium": 2, "high": 3}
 CAPTURE_LOOKBACK_HOURS = 72
+MAX_IMPORT_ROWS = 1000
+IMPORT_HEADER_ALIASES = {
+    "nome": "display_name",
+    "nomedocomprador": "display_name",
+    "comprador": "display_name",
+    "cliente": "display_name",
+    "buyer": "display_name",
+    "buyername": "display_name",
+    "displayname": "display_name",
+    "produtoid": "product_id",
+    "idproduto": "product_id",
+    "productid": "product_id",
+    "produto": "product_name",
+    "nomeproduto": "product_name",
+    "produtonome": "product_name",
+    "product": "product_name",
+    "productname": "product_name",
+    "bairro": "neighborhood",
+    "neighborhood": "neighborhood",
+    "regiao": "neighborhood",
+    "minutos": "purchase_minutes_ago",
+    "minutoscompra": "purchase_minutes_ago",
+    "compradoha": "purchase_minutes_ago",
+    "purchaseminutesago": "purchase_minutes_ago",
+}
 
 
 class StoreNotificationService:
@@ -182,6 +210,164 @@ class StoreNotificationService:
         notification = self._notification(notification_id)
         self._db.delete(notification)
         self._db.commit()
+
+    def import_notifications_file(self, filename: str, contents: bytes) -> dict:
+        rows = self._parse_import_file(filename, contents)
+        if not rows:
+            raise ValueError("Arquivo sem linhas para importar.")
+        if len(rows) > MAX_IMPORT_ROWS:
+            raise ValueError(f"Importacao limitada a {MAX_IMPORT_ROWS} linhas por arquivo.")
+
+        created = []
+        errors = []
+        for row_number, row in rows:
+            try:
+                payload = self._payload_from_import_row(row)
+                notification = self.create_notification(payload)
+                created.append(self.serialize_notification(notification))
+            except (LookupError, ValueError) as exc:
+                errors.append({"row": row_number, "message": str(exc)})
+
+        return {
+            "created_count": len(created),
+            "skipped_count": len(errors),
+            "errors": errors,
+            "notifications": created,
+        }
+
+    def _parse_import_file(self, filename: str, contents: bytes) -> list[tuple[int, dict[str, str]]]:
+        name = (filename or "").lower().strip()
+        if name.endswith(".csv"):
+            return self._parse_csv_import(contents)
+        if name.endswith(".xlsx"):
+            return self._parse_xlsx_import(contents)
+        raise ValueError("Envie um arquivo .csv ou .xlsx.")
+
+    def _parse_csv_import(self, contents: bytes) -> list[tuple[int, dict[str, str]]]:
+        text = None
+        for encoding in ("utf-8-sig", "latin-1"):
+            try:
+                text = contents.decode(encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        if text is None:
+            raise ValueError("Nao foi possivel ler o CSV. Use UTF-8 ou Latin-1.")
+
+        sample = text[:2048]
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;")
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.DictReader(StringIO(text), dialect=dialect)
+        if not reader.fieldnames:
+            raise ValueError("CSV sem cabecalho.")
+        return self._normalize_import_rows(
+            (index, row) for index, row in enumerate(reader, start=2)
+        )
+
+    def _parse_xlsx_import(self, contents: bytes) -> list[tuple[int, dict[str, str]]]:
+        try:
+            from openpyxl import load_workbook
+        except ImportError as exc:
+            raise ValueError("Leitura de Excel indisponivel. Instale openpyxl no backend.") from exc
+
+        workbook = load_workbook(BytesIO(contents), read_only=True, data_only=True)
+        sheet = workbook.active
+        rows = sheet.iter_rows(values_only=True)
+        headers = next(rows, None)
+        if not headers:
+            return []
+        header_names = [str(value or "").strip() for value in headers]
+        raw_rows = []
+        for row_number, values in enumerate(rows, start=2):
+            raw_rows.append((row_number, dict(zip(header_names, values))))
+        return self._normalize_import_rows(raw_rows)
+
+    def _normalize_import_rows(self, rows) -> list[tuple[int, dict[str, str]]]:
+        normalized_rows = []
+        for row_number, row in rows:
+            normalized = {}
+            for key, value in row.items():
+                mapped_key = IMPORT_HEADER_ALIASES.get(self._normalize_import_key(key))
+                if not mapped_key:
+                    continue
+                normalized[mapped_key] = self._safe_text(str(value)) if value is not None else None
+            if any(normalized.values()):
+                normalized_rows.append((row_number, normalized))
+        return normalized_rows
+
+    def _payload_from_import_row(self, row: dict[str, str]) -> StoreNotificationCreate:
+        buyer_name = self._safe_text(row.get("display_name"))
+        if not buyer_name:
+            raise ValueError("Informe o nome do comprador.")
+
+        product_id = self._product_id_from_import_row(row)
+        neighborhood = self._safe_text(row.get("neighborhood"))
+        if not neighborhood:
+            raise ValueError("Informe o bairro do comprador.")
+
+        purchase_minutes = self._parse_purchase_minutes(row.get("purchase_minutes_ago"))
+        product = self._db.query(Product).filter(Product.id == product_id).first()
+        product_name = self._product_display_name(product, product.name if product else None) or "Produto"
+        display_name = self._first_name(buyer_name)
+
+        return StoreNotificationCreate(
+            type="manual",
+            status="active",
+            internal_name=f"Importado: {display_name} - {product_name}"[:200],
+            display_name=display_name,
+            product_id=product_id,
+            neighborhood=neighborhood,
+            template_text=DEFAULT_TEMPLATE,
+            priority="medium",
+            weight=1,
+            display_seconds=7,
+            purchase_minutes_ago=purchase_minutes,
+            clear_after_view=False,
+            start_time=time(18, 0),
+            end_time=time(23, 30),
+            start_date=None,
+            end_date=None,
+            weekdays=[0, 1, 2, 3, 4, 5, 6],
+        )
+
+    def _product_id_from_import_row(self, row: dict[str, str]) -> str:
+        product_id = self._safe_text(row.get("product_id"))
+        if product_id:
+            self._ensure_product(product_id)
+            return product_id
+
+        product_name = self._safe_text(row.get("product_name"))
+        if not product_name:
+            raise ValueError("Informe o produto ou product_id.")
+
+        target = self._normalize_import_key(product_name.removeprefix("Pizza "))
+        products = self._db.query(Product).all()
+        for product in products:
+            names = [product.name, self._product_display_name(product, product.name)]
+            for name in names:
+                normalized = self._normalize_import_key(name)
+                normalized_without_pizza = self._normalize_import_key((name or "").removeprefix("Pizza "))
+                if target in {normalized, normalized_without_pizza}:
+                    return product.id
+        raise ValueError(f"Produto nao encontrado: {product_name}.")
+
+    def _parse_purchase_minutes(self, value: str | None) -> int:
+        if not value:
+            return 14
+        try:
+            minutes = int(float(str(value).replace(",", ".")))
+        except ValueError as exc:
+            raise ValueError("Minutos da compra deve ser numero inteiro positivo.") from exc
+        if minutes <= 0 or minutes > 1440:
+            raise ValueError("Minutos da compra deve ficar entre 1 e 1440.")
+        return minutes
+
+    def _normalize_import_key(self, value: str | None) -> str:
+        normalized = unicodedata.normalize("NFKD", value or "")
+        ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
+        return re.sub(r"[^a-z0-9]+", "", ascii_value.lower())
 
     def preview(self, payload: StoreNotificationPreviewIn) -> dict:
         product_name = self._safe_text(payload.product_name) or "Produto"

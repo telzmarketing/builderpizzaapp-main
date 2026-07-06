@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from backend.core.response import ok, created
@@ -8,6 +8,7 @@ from backend.schemas.store_notification import (
     StoreNotificationCapturedOut,
     StoreNotificationCreate,
     StoreNotificationImpressionIn,
+    StoreNotificationImportResult,
     StoreNotificationNextEnvelope,
     StoreNotificationOut,
     StoreNotificationPreviewIn,
@@ -127,6 +128,18 @@ def activate_captured(
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
+
+@router.post("/import", response_model=StoreNotificationImportResult)
+def import_notifications(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    try:
+        contents = file.file.read()
+        return _service(db).import_notifications_file(file.filename or "", contents)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 @router.post("", response_model=StoreNotificationOut, status_code=201)
 def create_notification(

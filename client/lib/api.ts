@@ -102,6 +102,42 @@ async function fetchApi(path: string, init: RequestInit): Promise<Response> {
   throw lastError ?? new Error("Nao foi possivel conectar a API.");
 }
 
+async function requestForm<T>(method: string, path: string, body: FormData): Promise<T> {
+  const res = await fetchApi(path, {
+    method,
+    headers: {
+      ...authHeaders(),
+    },
+    body,
+  });
+
+  if (!res.ok) {
+    if (res.status === 401) {
+      localStorage.removeItem("admin_token");
+      localStorage.removeItem("admin_user");
+      window.location.replace("/painel/login");
+      throw new Error("Sessao expirada. Redirecionando para o login...");
+    }
+    let message = `HTTP ${res.status}`;
+    try {
+      const data = await res.json();
+      const detail = data?.error?.message ?? data?.detail;
+      if (Array.isArray(detail)) {
+        message = detail.map((e: { msg?: string }) => e.msg ?? String(e)).join("; ");
+      } else if (typeof detail === "string") {
+        message = detail;
+      }
+    } catch {
+      /* ignore parse errors */
+    }
+    throw new Error(message);
+  }
+
+  if (res.status === 204) return undefined as unknown as T;
+  const json = await res.json();
+  return ("data" in json ? json.data : json) as T;
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -159,6 +195,7 @@ export function apiRequest<T>(
 
 const get = <T>(path: string) => request<T>("GET", path);
 const post = <T>(path: string, body: unknown) => request<T>("POST", path, body);
+const postForm = <T>(path: string, body: FormData) => requestForm<T>("POST", path, body);
 const put = <T>(path: string, body: unknown) => request<T>("PUT", path, body);
 const patch = <T>(path: string, body: unknown) => request<T>("PATCH", path, body);
 const del = <T>(path: string) => request<T>("DELETE", path);
@@ -641,6 +678,18 @@ export interface ApiStoreNotificationSummary {
   manual_notifications: number;
   real_impressions: number;
   total_impressions: number;
+}
+
+export interface ApiStoreNotificationImportError {
+  row: number;
+  message: string;
+}
+
+export interface ApiStoreNotificationImportResult {
+  created_count: number;
+  skipped_count: number;
+  errors: ApiStoreNotificationImportError[];
+  notifications: ApiStoreNotification[];
 }
 
 export interface ApiStoreNotificationNext {
@@ -5620,6 +5669,11 @@ export const storeNotificationsApi = {
   summary: () => get<ApiStoreNotificationSummary>("/store-notifications/summary"),
   create: (data: ApiStoreNotificationInput) =>
     post<ApiStoreNotification>("/store-notifications", data),
+  importFile: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return postForm<ApiStoreNotificationImportResult>("/store-notifications/import", formData);
+  },
   update: (id: string, data: Partial<ApiStoreNotificationInput>) =>
     put<ApiStoreNotification>(`/store-notifications/${id}`, data),
   duplicate: (id: string) =>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Bell,
@@ -15,6 +15,7 @@ import {
   Settings,
   Sparkles,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import {
@@ -24,6 +25,7 @@ import {
   type ApiStoreNotification,
   type ApiStoreNotificationCaptured,
   type ApiStoreNotificationInput,
+  type ApiStoreNotificationImportResult,
   type ApiStoreNotificationPage,
   type ApiStoreNotificationPriority,
   type ApiStoreNotificationSettings,
@@ -159,6 +161,10 @@ export default function MarketingStoreNotifications() {
   const [activatingCaptured, setActivatingCaptured] = useState<ApiStoreNotificationCaptured | null>(null);
   const [form, setForm] = useState<ApiStoreNotificationInput>(emptyForm());
   const [preview, setPreview] = useState("");
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ApiStoreNotificationImportResult | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -329,6 +335,26 @@ export default function MarketingStoreNotifications() {
     }
   };
 
+  const importBuyers = async () => {
+    if (!importFile) {
+      alert("Selecione um arquivo CSV ou Excel.");
+      return;
+    }
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const result = await storeNotificationsApi.importFile(importFile);
+      setImportResult(result);
+      setImportFile(null);
+      if (importInputRef.current) importInputRef.current.value = "";
+      load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao importar compradores.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const previewForm = async () => {
     const pName = productName(products, form.product_id);
     try {
@@ -477,6 +503,49 @@ export default function MarketingStoreNotifications() {
           </div>
         ) : view === "notifications" ? (
           <>
+            <div className="rounded-2xl border border-surface-03 bg-surface-02 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-cream">Importar compradores</h2>
+                  <p className="mt-1 text-xs text-stone">CSV ou XLSX com colunas nome, produto ou product_id, bairro e minutos opcional.</p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] lg:min-w-[520px]">
+                  <input
+                    ref={importInputRef}
+                    className={IC}
+                    type="file"
+                    accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    onChange={(event) => {
+                      setImportFile(event.target.files?.[0] ?? null);
+                      setImportResult(null);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={importBuyers}
+                    disabled={!importFile || importing}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-gold px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                    Importar
+                  </button>
+                </div>
+              </div>
+              {importResult && (
+                <div className="mt-3 rounded-xl border border-surface-03 bg-surface-03/50 p-3 text-xs text-stone">
+                  <span className="font-medium text-cream">{importResult.created_count}</span> compradores importados
+                  {importResult.skipped_count > 0 && <span> e {importResult.skipped_count} linhas ignoradas.</span>}
+                  {importResult.errors.length > 0 && (
+                    <ul className="mt-2 space-y-1 text-red-300">
+                      {importResult.errors.slice(0, 5).map((item) => (
+                        <li key={`${item.row}-${item.message}`}>Linha {item.row}: {item.message}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               {metrics.map((metric) => (
                 <div key={metric.label} className="rounded-2xl border border-surface-03 bg-surface-02 p-4">

@@ -132,6 +132,18 @@ class StoreNotificationSummary(BaseModel):
     total_impressions: int
 
 
+class StoreNotificationImportError(BaseModel):
+    row: int
+    message: str
+
+
+class StoreNotificationImportResult(BaseModel):
+    created_count: int
+    skipped_count: int
+    errors: list[StoreNotificationImportError] = Field(default_factory=list)
+    notifications: list[StoreNotificationOut] = Field(default_factory=list)
+
+
 class StoreNotificationPreviewIn(BaseModel):
     display_name: str
     product_name: str | None = None
