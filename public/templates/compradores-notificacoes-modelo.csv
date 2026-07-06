@@ -1,4 +1,4 @@
-nome;produto;product_id;bairro;minutos
-Maria Silva;Pizza Margherita;;Centro;12
-Joao Souza;Pizza Calabresa;;Jardim Paulista;25
-Ana Lima;Bebida Coca-Cola;;Vila Nova;40
+nome;bairro
+Maria Silva;Centro
+Joao Souza;Jardim Paulista
+Ana Lima;Vila Nova

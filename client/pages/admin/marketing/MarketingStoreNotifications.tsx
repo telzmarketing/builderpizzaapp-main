@@ -508,7 +508,7 @@ export default function MarketingStoreNotifications() {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <h2 className="text-sm font-semibold text-cream">Importar compradores</h2>
-                  <p className="mt-1 text-xs text-stone">CSV ou XLSX com colunas nome, produto ou product_id, bairro e minutos opcional.</p>
+                  <p className="mt-1 text-xs text-stone">CSV ou XLSX com nome e bairro. O sistema escolhe produto ativo e minutos automaticamente.</p>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] lg:min-w-[640px]">
                   <input

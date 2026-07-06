@@ -340,7 +340,7 @@ class StoreNotificationService:
 
         product_name = self._safe_text(row.get("product_name"))
         if not product_name:
-            raise ValueError("Informe o produto ou product_id.")
+            return self._random_import_product_id()
 
         target = self._normalize_import_key(product_name.removeprefix("Pizza "))
         products = self._db.query(Product).all()
@@ -353,9 +353,23 @@ class StoreNotificationService:
                     return product.id
         raise ValueError(f"Produto nao encontrado: {product_name}.")
 
+    def _random_import_product_id(self) -> str:
+        products = (
+            self._db.query(Product)
+            .filter(Product.active.is_(True), Product.visible_delivery.is_(True))
+            .all()
+        )
+        if not products:
+            products = self._db.query(Product).filter(Product.active.is_(True)).all()
+        if not products:
+            products = self._db.query(Product).all()
+        if not products:
+            raise ValueError("Cadastre ao menos um produto antes de importar compradores.")
+        return random.choice(products).id
+
     def _parse_purchase_minutes(self, value: str | None) -> int:
         if not value:
-            return 14
+            return random.randint(8, 45)
         try:
             minutes = int(float(str(value).replace(",", ".")))
         except ValueError as exc:
