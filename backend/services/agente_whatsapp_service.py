@@ -1053,19 +1053,19 @@ class AgenteWhatsAppService:
                     existing.response_to_message_id = response_to_message_id
                 if campaign_id and not existing.campaign_id:
                     existing.campaign_id = campaign_id
-            if campaign_delivery_id and not existing.campaign_delivery_id:
-                existing.campaign_delivery_id = campaign_delivery_id
-            if media_storage_key and not existing.media_storage_key:
-                existing.media_storage_key = media_storage_key
-            if media_mime_type and not existing.media_mime_type:
-                existing.media_mime_type = media_mime_type
-            if media_duration_ms and not existing.media_duration_ms:
-                existing.media_duration_ms = media_duration_ms
-            if media_size_bytes and not existing.media_size_bytes:
-                existing.media_size_bytes = media_size_bytes
-            if existing.direction == "inbound":
-                AgenteWhatsAppProcessingService(self._db).enqueue_inbound_message(existing)
-            return existing
+                if campaign_delivery_id and not existing.campaign_delivery_id:
+                    existing.campaign_delivery_id = campaign_delivery_id
+                if media_storage_key and not existing.media_storage_key:
+                    existing.media_storage_key = media_storage_key
+                if media_mime_type and not existing.media_mime_type:
+                    existing.media_mime_type = media_mime_type
+                if media_duration_ms and not existing.media_duration_ms:
+                    existing.media_duration_ms = media_duration_ms
+                if media_size_bytes and not existing.media_size_bytes:
+                    existing.media_size_bytes = media_size_bytes
+                if existing.direction == "inbound":
+                    AgenteWhatsAppProcessingService(self._db).enqueue_inbound_message(existing)
+                return existing
 
         now = datetime.now(timezone.utc)
         resolved_provider = provider or session.provider
