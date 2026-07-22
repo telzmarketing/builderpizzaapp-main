@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -42,6 +42,11 @@ class CustomerChannel(Base):
         UniqueConstraint("channel", "normalized_identifier", name="uq_customer_channel_identifier"),
         Index("uq_customer_channels_tenant_id_id", "tenant_id", "id", unique=True),
         Index("uq_customer_channels_tenant_identifier", "tenant_id", "channel", "normalized_identifier", unique=True),
+        Index("ix_customer_channels_tenant_marketing_status", "tenant_id", "marketing_status"),
+        CheckConstraint(
+            "marketing_status IN ('active', 'blocked', 'opted_out', 'complaint_hold')",
+            name="ck_customer_channels_marketing_status",
+        ),
     )
 
     id = Column(String, primary_key=True)
@@ -53,6 +58,10 @@ class CustomerChannel(Base):
     is_primary = Column(Boolean, nullable=False, default=False)
     verified_at = Column(DateTime(timezone=True), nullable=True)
     marketing_consent = Column(Boolean, nullable=False, default=False)
+    marketing_status = Column(String(30), nullable=False, default="active", server_default="active")
+    marketing_block_reason = Column(String(500), nullable=True)
+    marketing_blocked_at = Column(DateTime(timezone=True), nullable=True)
+    marketing_status_updated_at = Column(DateTime(timezone=True), nullable=True)
     source = Column(String(100), nullable=True)
     metadata_json = Column(Text, nullable=False, default="{}")
     created_at = Column(DateTime(timezone=True), default=_now_utc)

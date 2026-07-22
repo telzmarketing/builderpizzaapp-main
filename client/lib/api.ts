@@ -2045,6 +2045,38 @@ export interface ApiCustomerIdentity {
   profile_level: "lead" | "partial" | "complete";
 }
 
+export type ApiCustomerContactRiskLevel = "low" | "attention" | "high" | "blocked";
+
+export interface ApiCustomerContactRisk {
+  customer_id?: string;
+  channel: string;
+  score: number;
+  risk_level: ApiCustomerContactRiskLevel;
+  is_blocked: boolean;
+  block_reason: string | null;
+  campaign_deliveries_15d: number;
+  last_event_at: string | null;
+}
+
+export interface ApiCustomerContactRiskEvent {
+  id?: string;
+  event_type: string;
+  points_delta: number;
+  score_before: number;
+  score_after: number;
+  blocks_contact: boolean;
+  source_type: string | null;
+  source_id: string | null;
+  occurred_at: string;
+  metadata_json?: Record<string, unknown> | null;
+}
+
+export interface ApiCustomerContactRiskOverridePayload {
+  action: "set_score" | "block" | "unblock" | "complaint" | "reported" | "opt_out" | "whatsapp_blocked";
+  reason: string;
+  score?: number;
+}
+
 export interface ApiAgenteWhatsAppDashboard {
   sessions_open: number;
   sessions_human: number;
@@ -4259,6 +4291,12 @@ export const customersApi = {
   getEvents: (id: string, event_type?: string) =>
     get<ApiCustomerEvent[]>(`/customers/${id}/events${event_type ? `?event_type=${event_type}` : ""}`),
   getSummary: (id: string) => get<ApiCustomerSummary>(`/customers/${id}/summary`),
+  getContactRisk: (id: string, channel = "whatsapp") =>
+    get<ApiCustomerContactRisk>(`/customers/${id}/contact-risk?channel=${encodeURIComponent(channel)}`),
+  getContactRiskEvents: (id: string, channel = "whatsapp") =>
+    get<ApiCustomerContactRiskEvent[]>(`/customers/${id}/contact-risk/events?channel=${encodeURIComponent(channel)}`),
+  overrideContactRisk: (id: string, data: ApiCustomerContactRiskOverridePayload, channel = "whatsapp") =>
+    post<ApiCustomerContactRisk>(`/customers/${id}/contact-risk/override?channel=${encodeURIComponent(channel)}`, data),
   analyzeProfile: (id: string) =>
     post<{ profile: ApiCustomerAIProfile; suggestions: ApiCustomerAISuggestion[] }>(`/customers/${id}/analyze`, {}),
   getAIProfile: (id: string) => get<ApiCustomerAIProfile | null>(`/customers/${id}/profile`),

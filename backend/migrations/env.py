@@ -16,6 +16,7 @@ from backend.models import (  # noqa: F401
     business_intelligence,
     coupon,
     customer,
+    customer_contact_risk,
     customer_event,
     delivery,
     home_config,

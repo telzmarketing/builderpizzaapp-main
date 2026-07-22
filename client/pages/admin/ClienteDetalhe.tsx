@@ -2,6 +2,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
+import CustomerContactRiskPanel from "@/components/admin/CustomerContactRiskPanel";
 import {
   ArrowLeft, User, ShoppingBag, Clock, BarChart2, Phone,
   MapPin, Star, ShoppingCart, Eye, MessageSquare, Tag, Gift,
@@ -535,6 +536,7 @@ export default function ClienteDetalhe() {
 
       {tab === "overview" && (
         <div className="space-y-4">
+          <CustomerContactRiskPanel customerId={customer.id} />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard label="Total de pedidos" value={totalOrders} icon={ShoppingBag} color="text-green-400" />
             <StatCard label="Ticket médio" value={`R$ ${averageTicket.toFixed(2).replace(".", ",")}`} icon={DollarSign} color="text-gold" />

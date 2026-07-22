@@ -33,6 +33,7 @@ from backend.routes import admin_users as admin_users_routes
 from backend.routes import crm as crm_routes
 from backend.routes import marketing as marketing_routes
 from backend.routes import whatsapp_marketing as whatsapp_marketing_routes
+from backend.routes import customer_contact_risk as customer_contact_risk_routes
 from backend.routes import email_marketing as email_marketing_routes
 from backend.routes import automations as automations_routes
 from backend.routes import ads_oauth as ads_oauth_routes
@@ -1279,6 +1280,7 @@ app.include_router(crm_routes.router)
 app.include_router(marketing_routes.router)
 app.include_router(marketing_routes.public_router)
 app.include_router(whatsapp_marketing_routes.router)
+app.include_router(customer_contact_risk_routes.router)
 app.include_router(email_marketing_routes.router)
 app.include_router(automations_routes.router)
 app.include_router(ads_oauth_routes.router)
@@ -1328,6 +1330,7 @@ app.include_router(store_operation.router, prefix="/api")
 app.include_router(marketing_routes.router, prefix="/api")
 app.include_router(marketing_routes.public_router, prefix="/api")
 app.include_router(whatsapp_marketing_routes.router, prefix="/api")
+app.include_router(customer_contact_risk_routes.router, prefix="/api")
 app.include_router(email_marketing_routes.router, prefix="/api")
 app.include_router(automations_routes.router, prefix="/api")
 app.include_router(ads_oauth_routes.router, prefix="/api")

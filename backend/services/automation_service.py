@@ -69,7 +69,7 @@ def load_automation(db: Session, automation_id: str) -> dict[str, Any]:
         text(
             """
             SELECT
-                id, name, trigger, trigger_value, trigger_delay_hours, channel,
+                id, tenant_id, name, trigger, trigger_value, trigger_delay_hours, channel,
                 template_id, message_body, active, runs_total, last_run_at,
                 COALESCE(description, '') AS description,
                 COALESCE(conditions_json, '[]') AS conditions_json,
@@ -990,6 +990,8 @@ def _load_pending_executions(db: Session, limit: int) -> list[dict[str, Any]]:
 
 
 def process_pending_executions(db: Session, limit: int = 100) -> dict[str, int]:
+    from backend.services.customer_contact_risk_service import CustomerContactRiskService
+
     executions = _load_pending_executions(db, limit)
     totals = {"processed": 0, "sent": 0, "failed": 0, "retried": 0, "skipped": 0}
 
@@ -1006,6 +1008,14 @@ def process_pending_executions(db: Session, limit: int = 100) -> dict[str, int]:
         totals["processed"] += 1
 
         allowed, reason = customer_allows_channel(customer, execution["channel"])
+        risk_service = None
+        if allowed and execution["channel"] == "whatsapp":
+            risk_service = CustomerContactRiskService(db, automation.get("tenant_id") or "default")
+            eligibility = risk_service.evaluate_whatsapp_marketing(
+                customer_id=execution["customer_id"],
+                phone=execution.get("phone") or "",
+            )
+            allowed, reason = eligibility.allowed, eligibility.reason
         if not allowed:
             update_execution(db, execution["execution_id"], "cancelled", error=reason)
             log_execution_event(
@@ -1071,6 +1081,12 @@ def process_pending_executions(db: Session, limit: int = 100) -> dict[str, int]:
         log_legacy_automation(db, execution["automation_id"], execution["customer_id"], execution["channel"], status, error_msg)
 
         if status == "sent":
+            if risk_service and execution["customer_id"]:
+                risk_service.record_campaign_sent(
+                    execution["customer_id"],
+                    source_type="automation_execution",
+                    source_id=execution["execution_id"],
+                )
             totals["sent"] += 1
         else:
             totals["failed"] += 1

@@ -15,9 +15,12 @@ from sqlalchemy import Column, String, Boolean, Text, DateTime, ForeignKey, Inte
 from sqlalchemy.orm import Session
 
 from backend.database import get_db, Base
+from backend.core.tenant_runtime import resolve_panel_tenant_context
 from backend.core.wave6_tenant_orm import wave6_tenant_column
+from backend.models.admin import AdminUser
 from backend.routes.admin_auth import get_current_admin
 from backend.core.response import ok, created, err_msg
+from backend.services.customer_contact_risk_service import CustomerContactRiskService
 from backend.services.whatsapp_gateway_service import WhatsAppGatewayService
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp-marketing"])
@@ -338,7 +341,7 @@ def _prepare_contact_list_contacts(contacts: list[ContactListItemPayload]) -> li
     return result
 
 
-def _resolve_phones(body: SendRequest, db: Session) -> list[dict]:
+def _resolve_phones(body: SendRequest, db: Session, tenant_id: str = "default") -> list[dict]:
     """Resolve lista de {phone, customer_id} a partir das diferentes fontes."""
     result = []
     seen: set[str] = set()
@@ -351,9 +354,10 @@ def _resolve_phones(body: SendRequest, db: Session) -> list[dict]:
                 FROM whatsapp_contact_list_items i
                 JOIN whatsapp_contact_lists l ON l.id = i.list_id
                 WHERE i.list_id = :list_id AND l.active = TRUE
+                  AND i.tenant_id = :tenant_id AND l.tenant_id = :tenant_id
                 ORDER BY i.created_at ASC
             """),
-            {"list_id": body.contact_list_id},
+            {"list_id": body.contact_list_id, "tenant_id": tenant_id},
         ).fetchall()
         for row in rows:
             _append_recipient(result, seen, row[1], name=row[0])
@@ -366,8 +370,8 @@ def _resolve_phones(body: SendRequest, db: Session) -> list[dict]:
                 continue
             # Tenta encontrar cliente pelo telefone
             row = db.execute(
-                text("SELECT id, name FROM customers WHERE phone = :ph LIMIT 1"),
-                {"ph": ph},
+                text("SELECT id, name FROM customers WHERE phone = :ph AND tenant_id = :tenant_id LIMIT 1"),
+                {"ph": ph, "tenant_id": tenant_id},
             ).fetchone()
             _append_recipient(result, seen, ph, customer_id=row[0] if row else None, name=row[1] if row else None)
 
@@ -377,9 +381,9 @@ def _resolve_phones(body: SendRequest, db: Session) -> list[dict]:
             text(
                 "SELECT c.id, c.phone FROM customers c "
                 "JOIN customer_group_members cgm ON cgm.customer_id = c.id "
-                "WHERE cgm.group_id = :gid AND c.phone IS NOT NULL"
+                "WHERE cgm.group_id = :gid AND c.phone IS NOT NULL AND c.tenant_id = :tenant_id"
             ),
-            {"gid": body.group_id},
+            {"gid": body.group_id, "tenant_id": tenant_id},
         ).fetchall()
         for row in rows:
             _append_recipient(result, seen, row[1], customer_id=row[0])
@@ -388,8 +392,8 @@ def _resolve_phones(body: SendRequest, db: Session) -> list[dict]:
     if body.customer_ids:
         for cid in body.customer_ids:
             row = db.execute(
-                text("SELECT id, phone FROM customers WHERE id = :cid AND phone IS NOT NULL"),
-                {"cid": cid},
+                text("SELECT id, phone FROM customers WHERE id = :cid AND tenant_id = :tenant_id AND phone IS NOT NULL"),
+                {"cid": cid, "tenant_id": tenant_id},
             ).fetchone()
             if row:
                 _append_recipient(result, seen, row[1], customer_id=row[0])
@@ -462,11 +466,12 @@ def _create_campaign_delivery(
     caption: str | None,
     template: WhatsAppTemplate | None,
     variables: list[str] | None = None,
+    tenant_id: str = "default",
 ) -> WhatsAppCampaignDelivery:
     delivery = WhatsAppCampaignDelivery(
         id=str(uuid.uuid4()),
-        tenant_id="default",
-        company_id="default",
+        tenant_id=tenant_id,
+        company_id=tenant_id,
         whatsapp_message_id=msg.id,
         campaign_id=msg.campaign_id,
         template_id=msg.template_id,
@@ -1343,7 +1348,15 @@ def delete_campaign(campaign_id: str, db: Session = Depends(get_db), _=Depends(g
 # ── Disparo ───────────────────────────────────────────────────────────────────
 
 @router.post("/send")
-def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def send_messages(
+    body: SendRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    tenant_context = resolve_panel_tenant_context(request, db, admin)
+    tenant_id = tenant_context.tenant_id if tenant_context else "default"
+    risk_service = CustomerContactRiskService(db, tenant_id)
     cfg = _get_config(db)
     provider = _normalize_provider(body.provider or cfg.connection_type)
     if provider == "qr":
@@ -1398,7 +1411,7 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
         raise HTTPException(400, "media_type deve ser image ou video.")
 
     # Resolve destinatários
-    recipients = _resolve_phones(body, db)
+    recipients = _resolve_phones(body, db, tenant_id)
     if not recipients:
         raise HTTPException(400, "Nenhum destinatário encontrado.")
 
@@ -1421,6 +1434,27 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
         recipient_variables = [_render_contact_variables(str(value), rec) for value in body.variables]
         message_type = "template" if template else (media_type or "text")
         normalized_phone, phone_error = _validate_whatsapp_phone(phone)
+
+        if not phone_error:
+            eligibility = risk_service.evaluate_whatsapp_marketing(
+                customer_id=rec.get("customer_id"),
+                phone=normalized_phone or phone,
+            )
+            if not eligibility.allowed:
+                failed_count += 1
+                results.append({
+                    "phone": normalized_phone or phone,
+                    "provider": provider,
+                    "message_type": message_type,
+                    "media_type": media_type,
+                    "status": "blocked",
+                    "wamid": None,
+                    "campaign_delivery_id": None,
+                    "error": eligibility.reason,
+                    "error_code": eligibility.code,
+                })
+                continue
+            rec["customer_id"] = eligibility.customer_id
 
         msg = WhatsAppMessage(
             id=str(uuid.uuid4()),
@@ -1480,6 +1514,7 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
             caption=msg_caption,
             template=template,
             variables=recipient_variables,
+            tenant_id=tenant_id,
         )
 
         if provider == "baileys":
@@ -1526,6 +1561,12 @@ def send_messages(body: SendRequest, db: Session = Depends(get_db), _=Depends(ge
             msg.sent_at = _now()
             delivery.sent_at = msg.sent_at
             sent_count += 1
+            if msg.customer_id:
+                risk_service.record_campaign_sent(
+                    msg.customer_id,
+                    source_type="whatsapp_campaign_delivery",
+                    source_id=delivery.id,
+                )
             _sync_marketing_message_to_agent(
                 db,
                 msg=msg,
