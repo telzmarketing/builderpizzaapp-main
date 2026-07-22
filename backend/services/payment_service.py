@@ -72,7 +72,10 @@ def _provider_name(value: str | None) -> str:
     return raw or "mock"
 
 
-def _load_config(db: Session) -> PaymentGatewayConfig:
+def _load_config(db: Session, tenant_id: str | None = None) -> PaymentGatewayConfig:
+    if tenant_id:
+        from backend.services.tenant_credential_service import TenantCredentialService
+        return TenantCredentialService(db).payment_gateway(tenant_id)
     config = db.query(PaymentGatewayConfig).filter(PaymentGatewayConfig.id == "default").first()
     if not config:
         config = PaymentGatewayConfig(id="default")
@@ -256,13 +259,14 @@ def _store_mp_payment_data(payment: Payment, response: dict[str, Any]) -> None:
 
 
 class PaymentService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_id: str | None = None):
         self._db = db
+        self._tenant_id = tenant_id
         self._config: PaymentGatewayConfig | None = None
 
     def _cfg(self) -> PaymentGatewayConfig:
         if self._config is None:
-            self._config = _load_config(self._db)
+            self._config = _load_config(self._db, self._tenant_id)
         return self._config
 
     def _resolver(self) -> PaymentGatewayResolver:
@@ -687,7 +691,7 @@ class PaymentService:
             payment.updated_at = now
             payment.paid_at = payment.paid_at or now
 
-        order = self._db.query(Order).filter(Order.id == payment.order_id).first()
+        order = self._db.query(Order).filter(Order.id == payment.order_id, *self._tenant_order_filter()).first()
         target_order_status = _order_status_for_payment(status)
         if order and target_order_status and order.status != target_order_status:
             current_order_status = order.status.value if hasattr(order.status, "value") else str(order.status)
@@ -805,7 +809,7 @@ class PaymentService:
         if payment.status not in {PaymentStatus.pending, PaymentStatus.approved}:
             return False
         if payment.status == PaymentStatus.approved:
-            order = self._db.query(Order).filter(Order.id == payment.order_id).first()
+            order = self._db.query(Order).filter(Order.id == payment.order_id, *self._tenant_order_filter()).first()
             current_order_status = order.status.value if order and hasattr(order.status, "value") else str(order.status) if order else ""
             if current_order_status in {"paid", "pago", "preparing", "ready_for_pickup", "on_the_way", "delivered"}:
                 return False
@@ -899,10 +903,11 @@ class PaymentService:
         return changed
 
     def _find_payment_event(self, provider: str, provider_event_id: str | None, payload_hash: str | None) -> PaymentEvent | None:
+        tenant_filter = (PaymentEvent.tenant_id == self._tenant_id,) if self._tenant_id else ()
         if provider_event_id:
             event = (
                 self._db.query(PaymentEvent)
-                .filter(PaymentEvent.provider == provider, PaymentEvent.provider_event_id == provider_event_id)
+                .filter(PaymentEvent.provider == provider, PaymentEvent.provider_event_id == provider_event_id, *tenant_filter)
                 .first()
             )
             if event:
@@ -914,6 +919,7 @@ class PaymentService:
                     PaymentEvent.provider == provider,
                     PaymentEvent.provider_event_id.is_(None),
                     PaymentEvent.payload_hash == payload_hash,
+                    *tenant_filter,
                 )
                 .first()
             )
@@ -952,6 +958,7 @@ class PaymentService:
                 processing_status="ignored",
                 mercado_pago_payment_id=None,
                 raw_payload=raw_body.decode("utf-8", errors="replace"),
+                tenant_id=self._tenant_id,
             )
             event.processed_at = datetime.now(timezone.utc)
             self._db.add(event)
@@ -973,6 +980,7 @@ class PaymentService:
             processing_status="received",
             mercado_pago_payment_id=mp_payment_id or None,
             raw_payload=raw_body.decode("utf-8", errors="replace"),
+            tenant_id=self._tenant_id,
         )
         self._db.add(event)
         self._db.flush()
@@ -983,16 +991,19 @@ class PaymentService:
             self._db.commit()
             return {"status": "ignored", "reason": "no mercado_pago_payment_id"}
 
-        response = _mp_request("GET", f"/v1/payments/{mp_payment_id}", _mp_token(cfg))
+        mp_token = cfg.mp_access_token if self._tenant_id else _mp_token(cfg)
+        if not mp_token:
+            raise GatewayNotConfigured("mercado_pago", "tenant mp_access_token")
+        response = _mp_request("GET", f"/v1/payments/{mp_payment_id}", mp_token)
         external_reference = response.get("external_reference")
         event.external_reference = external_reference
 
         payment = (
-            self._db.query(Payment).filter(Payment.mercado_pago_payment_id == mp_payment_id).first()
-            or self._db.query(Payment).filter(Payment.transaction_id == mp_payment_id).first()
+            self._db.query(Payment).filter(Payment.mercado_pago_payment_id == mp_payment_id, *self._tenant_payment_filter()).first()
+            or self._db.query(Payment).filter(Payment.transaction_id == mp_payment_id, *self._tenant_payment_filter()).first()
         )
         if not payment and external_reference:
-            order = self._db.query(Order).filter(Order.external_reference == external_reference).first()
+            order = self._db.query(Order).filter(Order.external_reference == external_reference, *self._tenant_order_filter()).first()
             if order:
                 payment = order.payment
         if not payment:
@@ -1066,6 +1077,7 @@ class PaymentService:
             payload_hash=payload_hash,
             processing_status="received",
             raw_payload=json.dumps(sanitize_asaas_payload(payload), ensure_ascii=False),
+            tenant_id=self._tenant_id,
         )
         self._db.add(event)
         try:
@@ -1089,20 +1101,24 @@ class PaymentService:
             self._db.commit()
             return {"status": "ignored", "reason": "no asaas_payment_id"}
 
-        response = AsaasGateway(self._db).retrieve_payment(provider_payment_id)
+        asaas_client = None
+        if self._tenant_id:
+            from backend.services.asaas_client import AsaasClient
+            asaas_client = AsaasClient(cfg.asaas_api_key, environment=cfg.asaas_environment)
+        response = AsaasGateway(self._db, client=asaas_client).retrieve_payment(provider_payment_id)
         external_reference = response.get("externalReference") or payment_payload.get("externalReference")
         event.external_reference = external_reference
 
         payment = (
             self._db.query(Payment)
-            .filter(Payment.provider == PROVIDER_ASAAS, Payment.provider_payment_id == provider_payment_id)
+            .filter(Payment.provider == PROVIDER_ASAAS, Payment.provider_payment_id == provider_payment_id, *self._tenant_payment_filter())
             .first()
             or self._db.query(Payment)
-            .filter(Payment.provider == PROVIDER_ASAAS, Payment.transaction_id == provider_payment_id)
+            .filter(Payment.provider == PROVIDER_ASAAS, Payment.transaction_id == provider_payment_id, *self._tenant_payment_filter())
             .first()
         )
         if not payment and external_reference:
-            order = self._db.query(Order).filter(Order.external_reference == external_reference).first()
+            order = self._db.query(Order).filter(Order.external_reference == external_reference, *self._tenant_order_filter()).first()
             if order and order.payment and order.payment.provider == PROVIDER_ASAAS:
                 payment = order.payment
         if not payment:
@@ -1147,8 +1163,14 @@ class PaymentService:
             self._db.commit()
         return {"status": "ok", "payment_status": new_status.value, "changed": changed}
 
+    def _tenant_payment_filter(self) -> tuple:
+        return (Payment.tenant_id == self._tenant_id,) if self._tenant_id else ()
+
+    def _tenant_order_filter(self) -> tuple:
+        return (Order.tenant_id == self._tenant_id,) if self._tenant_id else ()
+
     def _verify_asaas_access_token(self, access_token: str | None, config: PaymentGatewayConfig) -> bool:
-        expected = (settings.ASAAS_WEBHOOK_TOKEN or config.asaas_webhook_token or "").strip()
+        expected = ((config.asaas_webhook_token if self._tenant_id else settings.ASAAS_WEBHOOK_TOKEN or config.asaas_webhook_token) or "").strip()
         received = (access_token or "").strip()
         if not expected or not received:
             return False
@@ -1162,7 +1184,7 @@ class PaymentService:
         config: PaymentGatewayConfig,
         query_params: dict[str, str] | None = None,
     ) -> bool:
-        secret = settings.MERCADO_PAGO_WEBHOOK_SECRET or config.mp_webhook_secret
+        secret = config.mp_webhook_secret if self._tenant_id else settings.MERCADO_PAGO_WEBHOOK_SECRET or config.mp_webhook_secret
         if not secret:
             if settings.DEBUG:
                 _logger.warning(

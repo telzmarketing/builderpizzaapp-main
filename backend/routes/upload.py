@@ -7,15 +7,21 @@ POST /admin/upload — upload an image file; returns a permanent /uploads/<filen
 """
 from __future__ import annotations
 
-import os
+from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Request, UploadFile
+from sqlalchemy.orm import Session
 
 from backend.core.response import ok, err_msg
 from backend.routes.admin_auth import get_current_admin
 from backend.models.admin import AdminUser
 from backend.services.media_compression_service import compress_uploaded_media
+from backend.config import get_settings
+from backend.core.tenant_execution import tenant_upload_path
+from backend.core.tenant_context import TenantContextMissing
+from backend.core.tenant_runtime import resolve_panel_tenant_context
+from backend.database import get_db
 
 router = APIRouter(prefix="/admin", tags=["admin-upload"])
 
@@ -61,8 +67,10 @@ _EXT_MAP = {
 
 @router.post("/upload", response_model=None)
 async def upload_image(
+    request: Request,
     file: UploadFile = File(...),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
 ):
     """
     Upload an image and save it permanently under the project-root ``uploads/`` directory.
@@ -94,17 +102,27 @@ async def upload_image(
         )
 
     # ── Ensure uploads directory exists ──────────────────────────────────────
-    os.makedirs("uploads", exist_ok=True)
-
     # ── Write to disk ─────────────────────────────────────────────────────────
     ext = _EXT_MAP.get(content_type, "bin")
     media = compress_uploaded_media(data, content_type, ext)
     data = media.data
     ext = media.extension
     filename = f"{uuid4().hex}.{ext}"
-    dest = os.path.join("uploads", filename)
+    upload_root = Path("uploads")
+    if get_settings().TENANT_UPLOAD_NAMESPACE_ENABLED:
+        context = resolve_panel_tenant_context(request, db, admin)
+        if context is None:
+            raise TenantContextMissing("Upload tenantizado exige autenticacao multiempresa ativa.")
+        dest_path = tenant_upload_path(upload_root, context, filename)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        url = f"/uploads/{context.tenant_id}/{filename}"
+    else:
+        # Exact legacy layout remains active while the rollout flag is off.
+        upload_root.mkdir(parents=True, exist_ok=True)
+        dest_path = upload_root / filename
+        url = f"/uploads/{filename}"
 
-    with open(dest, "wb") as fh:
+    with open(dest_path, "wb") as fh:
         fh.write(data)
 
-    return ok({"url": f"/uploads/{filename}"})
+    return ok({"url": url})

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, String, Text
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -14,7 +14,7 @@ class OrderCmvSnapshot(Base):
     __tablename__ = "order_cmv_snapshots"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_order_cmv_snapshots_tenant"), nullable=True)
     order_id = Column(String, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     source = Column(String(40), nullable=False, default="order_created")
     status = Column(String(40), nullable=False, default="complete")
@@ -28,13 +28,17 @@ class OrderCmvSnapshot(Base):
 
     order = relationship("Order")
     items = relationship("OrderItemCmvSnapshot", cascade="all, delete-orphan", back_populates="snapshot")
+    __table_args__ = (
+        Index("uq_order_cmv_snapshots_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_mt_order_cmv_snapshot_order", "tenant_id", "order_id", unique=True),
+    )
 
 
 class OrderItemCmvSnapshot(Base):
     __tablename__ = "order_item_cmv_snapshots"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_order_item_cmv_snapshots_tenant"), nullable=True)
     snapshot_id = Column(String, ForeignKey("order_cmv_snapshots.id", ondelete="CASCADE"), nullable=False, index=True)
     order_item_id = Column(String, ForeignKey("order_items.id", ondelete="CASCADE"), nullable=False, index=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -52,13 +56,14 @@ class OrderItemCmvSnapshot(Base):
     order_item = relationship("OrderItem")
     product = relationship("Product")
     ingredients = relationship("OrderItemCmvIngredientSnapshot", cascade="all, delete-orphan", back_populates="item_snapshot")
+    __table_args__ = (Index("uq_order_item_cmv_snapshots_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class OrderItemCmvIngredientSnapshot(Base):
     __tablename__ = "order_item_cmv_ingredient_snapshots"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_order_item_cmv_ingredient_snapshots_tenant"), nullable=True)
     item_snapshot_id = Column(String, ForeignKey("order_item_cmv_snapshots.id", ondelete="CASCADE"), nullable=False, index=True)
     inventory_item_id = Column(String, ForeignKey("inventory_items.id", ondelete="SET NULL"), nullable=True, index=True)
     inventory_item_name = Column(String(180), nullable=False)
@@ -71,3 +76,4 @@ class OrderItemCmvIngredientSnapshot(Base):
 
     item_snapshot = relationship("OrderItemCmvSnapshot", back_populates="ingredients")
     inventory_item = relationship("InventoryItem")
+    __table_args__ = (Index("uq_order_item_cmv_ingredient_snapshots_tenant_id_id", "tenant_id", "id", unique=True),)

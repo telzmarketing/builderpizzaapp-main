@@ -5,10 +5,12 @@ from datetime import datetime, timezone
 from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 
 from backend.database import Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 
 
 class BusinessInsight(Base):
     __tablename__ = "business_insights"
+    tenant_id = wave6_tenant_column("business_insights")
     __table_args__ = (
         UniqueConstraint("dedupe_key", name="uq_business_insights_dedupe_key"),
     )
@@ -39,6 +41,7 @@ class BusinessInsight(Base):
 
 class ProductPerformance(Base):
     __tablename__ = "product_performance"
+    tenant_id = wave6_tenant_column("product_performance")
     __table_args__ = (
         UniqueConstraint("metric_date", "product_id", name="uq_product_performance_date_product"),
     )

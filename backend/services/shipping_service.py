@@ -20,8 +20,14 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
+from backend.core.tenant_context import TenantContext
 from backend.core.events import bus, ShippingCalculated
 from backend.core.exceptions import DomainError
+from backend.core.tenant_ownership import (
+    assign_tenant_on_create,
+    operations_enforcement_enabled,
+    scope_query_to_tenant,
+)
 
 # Legacy models (kept for backward compat)
 from backend.models.shipping import (
@@ -78,15 +84,34 @@ def _strip_cep(cep: str) -> str:
 
 
 class ShippingService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
+        self._tenant_context = tenant_context
+        self._tenant_enabled = operations_enforcement_enabled()
+
+    def _query(self, model):
+        return scope_query_to_tenant(
+            self._db.query(model),
+            model,
+            self._tenant_context,
+            enabled=self._tenant_enabled,
+        )
+
+    def _own(self, resource):
+        return assign_tenant_on_create(resource, self._tenant_context, enabled=self._tenant_enabled)
+
+    def _singleton_id(self, prefix: str) -> str:
+        if not self._tenant_enabled:
+            return "default"
+        assert self._tenant_context is not None
+        return f"{prefix}-{self._tenant_context.tenant_id}"
 
     # ─── Config ──────────────────────────────────────────────────────────────
 
     def get_config(self) -> ShippingConfig:
-        cfg = self._db.query(ShippingConfig).filter(ShippingConfig.id == "default").first()
+        cfg = self._query(ShippingConfig).filter(ShippingConfig.id == self._singleton_id("shipping-config")).first()
         if not cfg:
-            cfg = ShippingConfig(id="default")
+            cfg = self._own(ShippingConfig(id=self._singleton_id("shipping-config")))
             self._db.add(cfg)
             self._db.commit()
             self._db.refresh(cfg)
@@ -104,12 +129,12 @@ class ShippingService:
 
     def list_type_configs(self) -> list[FreightTypeConfigOut]:
         self._ensure_type_configs()
-        rows = self._db.query(FreightTypeConfig).order_by(FreightTypeConfig.priority.desc()).all()
+        rows = self._query(FreightTypeConfig).order_by(FreightTypeConfig.priority.desc()).all()
         return [FreightTypeConfigOut.model_validate(r) for r in rows]
 
     def update_type_config(self, freight_type: str, payload: FreightTypeConfigUpdate) -> FreightTypeConfigOut:
         self._ensure_type_configs()
-        row = self._db.query(FreightTypeConfig).filter(FreightTypeConfig.freight_type == freight_type).first()
+        row = self._query(FreightTypeConfig).filter(FreightTypeConfig.freight_type == freight_type).first()
         if not row:
             raise DomainError(f"Tipo de frete '{freight_type}' não encontrado.", "FreightTypeNotFound", 404)
         for field, value in payload.model_dump(exclude_none=True).items():
@@ -120,26 +145,26 @@ class ShippingService:
 
     def _ensure_type_configs(self):
         for ft in _FREIGHT_TYPES:
-            exists = self._db.query(FreightTypeConfig).filter(FreightTypeConfig.freight_type == ft).first()
+            exists = self._query(FreightTypeConfig).filter(FreightTypeConfig.freight_type == ft).first()
             if not exists:
-                self._db.add(FreightTypeConfig(id=str(uuid.uuid4()), freight_type=ft, active=False, priority=0))
+                self._db.add(self._own(FreightTypeConfig(id=str(uuid.uuid4()), freight_type=ft, active=False, priority=0)))
         self._db.commit()
 
     # ─── Neighborhoods ────────────────────────────────────────────────────────
 
     def list_neighborhoods(self) -> list[ShippingNeighborhoodOut]:
-        rows = self._db.query(ShippingNeighborhood).order_by(ShippingNeighborhood.priority.desc(), ShippingNeighborhood.name).all()
+        rows = self._query(ShippingNeighborhood).order_by(ShippingNeighborhood.priority.desc(), ShippingNeighborhood.name).all()
         return [ShippingNeighborhoodOut.model_validate(r) for r in rows]
 
     def create_neighborhood(self, payload: ShippingNeighborhoodCreate) -> ShippingNeighborhoodOut:
-        row = ShippingNeighborhood(id=str(uuid.uuid4()), **payload.model_dump())
+        row = self._own(ShippingNeighborhood(id=str(uuid.uuid4()), **payload.model_dump()))
         self._db.add(row)
         self._db.commit()
         self._db.refresh(row)
         return ShippingNeighborhoodOut.model_validate(row)
 
     def update_neighborhood(self, nid: str, payload: ShippingNeighborhoodUpdate) -> ShippingNeighborhoodOut:
-        row = self._db.query(ShippingNeighborhood).filter(ShippingNeighborhood.id == nid).first()
+        row = self._query(ShippingNeighborhood).filter(ShippingNeighborhood.id == nid).first()
         if not row:
             raise DomainError("Bairro não encontrado.", "NeighborhoodNotFound", 404)
         for field, value in payload.model_dump(exclude_none=True).items():
@@ -149,7 +174,7 @@ class ShippingService:
         return ShippingNeighborhoodOut.model_validate(row)
 
     def delete_neighborhood(self, nid: str) -> None:
-        row = self._db.query(ShippingNeighborhood).filter(ShippingNeighborhood.id == nid).first()
+        row = self._query(ShippingNeighborhood).filter(ShippingNeighborhood.id == nid).first()
         if not row:
             raise DomainError("Bairro não encontrado.", "NeighborhoodNotFound", 404)
         self._db.delete(row)
@@ -158,18 +183,18 @@ class ShippingService:
     # ─── CEP Ranges ──────────────────────────────────────────────────────────
 
     def list_cep_ranges(self) -> list[ShippingCepRangeOut]:
-        rows = self._db.query(ShippingCepRange).order_by(ShippingCepRange.priority.desc()).all()
+        rows = self._query(ShippingCepRange).order_by(ShippingCepRange.priority.desc()).all()
         return [ShippingCepRangeOut.model_validate(r) for r in rows]
 
     def create_cep_range(self, payload: ShippingCepRangeCreate) -> ShippingCepRangeOut:
-        row = ShippingCepRange(id=str(uuid.uuid4()), **payload.model_dump())
+        row = self._own(ShippingCepRange(id=str(uuid.uuid4()), **payload.model_dump()))
         self._db.add(row)
         self._db.commit()
         self._db.refresh(row)
         return ShippingCepRangeOut.model_validate(row)
 
     def update_cep_range(self, rid: str, payload: ShippingCepRangeUpdate) -> ShippingCepRangeOut:
-        row = self._db.query(ShippingCepRange).filter(ShippingCepRange.id == rid).first()
+        row = self._query(ShippingCepRange).filter(ShippingCepRange.id == rid).first()
         if not row:
             raise DomainError("Faixa de CEP não encontrada.", "CepRangeNotFound", 404)
         for field, value in payload.model_dump(exclude_none=True).items():
@@ -179,7 +204,7 @@ class ShippingService:
         return ShippingCepRangeOut.model_validate(row)
 
     def delete_cep_range(self, rid: str) -> None:
-        row = self._db.query(ShippingCepRange).filter(ShippingCepRange.id == rid).first()
+        row = self._query(ShippingCepRange).filter(ShippingCepRange.id == rid).first()
         if not row:
             raise DomainError("Faixa de CEP não encontrada.", "CepRangeNotFound", 404)
         self._db.delete(row)
@@ -188,18 +213,18 @@ class ShippingService:
     # ─── Distance Rules ───────────────────────────────────────────────────────
 
     def list_distance_rules(self) -> list[ShippingDistanceRuleOut]:
-        rows = self._db.query(ShippingDistanceRule).order_by(ShippingDistanceRule.km_min).all()
+        rows = self._query(ShippingDistanceRule).order_by(ShippingDistanceRule.km_min).all()
         return [ShippingDistanceRuleOut.model_validate(r) for r in rows]
 
     def create_distance_rule(self, payload: ShippingDistanceRuleCreate) -> ShippingDistanceRuleOut:
-        row = ShippingDistanceRule(id=str(uuid.uuid4()), **payload.model_dump())
+        row = self._own(ShippingDistanceRule(id=str(uuid.uuid4()), **payload.model_dump()))
         self._db.add(row)
         self._db.commit()
         self._db.refresh(row)
         return ShippingDistanceRuleOut.model_validate(row)
 
     def update_distance_rule(self, rid: str, payload: ShippingDistanceRuleUpdate) -> ShippingDistanceRuleOut:
-        row = self._db.query(ShippingDistanceRule).filter(ShippingDistanceRule.id == rid).first()
+        row = self._query(ShippingDistanceRule).filter(ShippingDistanceRule.id == rid).first()
         if not row:
             raise DomainError("Regra de distância não encontrada.", "DistanceRuleNotFound", 404)
         for field, value in payload.model_dump(exclude_none=True).items():
@@ -209,7 +234,7 @@ class ShippingService:
         return ShippingDistanceRuleOut.model_validate(row)
 
     def delete_distance_rule(self, rid: str) -> None:
-        row = self._db.query(ShippingDistanceRule).filter(ShippingDistanceRule.id == rid).first()
+        row = self._query(ShippingDistanceRule).filter(ShippingDistanceRule.id == rid).first()
         if not row:
             raise DomainError("Regra de distância não encontrada.", "DistanceRuleNotFound", 404)
         self._db.delete(row)
@@ -218,18 +243,18 @@ class ShippingService:
     # ─── Order Value Tiers ────────────────────────────────────────────────────
 
     def list_order_value_tiers(self) -> list[ShippingOrderValueTierOut]:
-        rows = self._db.query(ShippingOrderValueTier).order_by(ShippingOrderValueTier.order_value_min).all()
+        rows = self._query(ShippingOrderValueTier).order_by(ShippingOrderValueTier.order_value_min).all()
         return [ShippingOrderValueTierOut.model_validate(r) for r in rows]
 
     def create_order_value_tier(self, payload: ShippingOrderValueTierCreate) -> ShippingOrderValueTierOut:
-        row = ShippingOrderValueTier(id=str(uuid.uuid4()), **payload.model_dump())
+        row = self._own(ShippingOrderValueTier(id=str(uuid.uuid4()), **payload.model_dump()))
         self._db.add(row)
         self._db.commit()
         self._db.refresh(row)
         return ShippingOrderValueTierOut.model_validate(row)
 
     def update_order_value_tier(self, tid: str, payload: ShippingOrderValueTierUpdate) -> ShippingOrderValueTierOut:
-        row = self._db.query(ShippingOrderValueTier).filter(ShippingOrderValueTier.id == tid).first()
+        row = self._query(ShippingOrderValueTier).filter(ShippingOrderValueTier.id == tid).first()
         if not row:
             raise DomainError("Faixa de valor não encontrada.", "ValueTierNotFound", 404)
         for field, value in payload.model_dump(exclude_none=True).items():
@@ -239,7 +264,7 @@ class ShippingService:
         return ShippingOrderValueTierOut.model_validate(row)
 
     def delete_order_value_tier(self, tid: str) -> None:
-        row = self._db.query(ShippingOrderValueTier).filter(ShippingOrderValueTier.id == tid).first()
+        row = self._query(ShippingOrderValueTier).filter(ShippingOrderValueTier.id == tid).first()
         if not row:
             raise DomainError("Faixa de valor não encontrada.", "ValueTierNotFound", 404)
         self._db.delete(row)
@@ -248,18 +273,18 @@ class ShippingService:
     # ─── Promotions ───────────────────────────────────────────────────────────
 
     def list_promotions(self) -> list[ShippingPromotionOut]:
-        rows = self._db.query(ShippingPromotion).order_by(ShippingPromotion.priority.desc()).all()
+        rows = self._query(ShippingPromotion).order_by(ShippingPromotion.priority.desc()).all()
         return [ShippingPromotionOut.model_validate(r) for r in rows]
 
     def create_promotion(self, payload: ShippingPromotionCreate) -> ShippingPromotionOut:
-        row = ShippingPromotion(id=str(uuid.uuid4()), **payload.model_dump())
+        row = self._own(ShippingPromotion(id=str(uuid.uuid4()), **payload.model_dump()))
         self._db.add(row)
         self._db.commit()
         self._db.refresh(row)
         return ShippingPromotionOut.model_validate(row)
 
     def update_promotion(self, pid: str, payload: ShippingPromotionUpdate) -> ShippingPromotionOut:
-        row = self._db.query(ShippingPromotion).filter(ShippingPromotion.id == pid).first()
+        row = self._query(ShippingPromotion).filter(ShippingPromotion.id == pid).first()
         if not row:
             raise DomainError("Promoção não encontrada.", "PromotionNotFound", 404)
         for field, value in payload.model_dump(exclude_none=True).items():
@@ -269,7 +294,7 @@ class ShippingService:
         return ShippingPromotionOut.model_validate(row)
 
     def delete_promotion(self, pid: str) -> None:
-        row = self._db.query(ShippingPromotion).filter(ShippingPromotion.id == pid).first()
+        row = self._query(ShippingPromotion).filter(ShippingPromotion.id == pid).first()
         if not row:
             raise DomainError("Promoção não encontrada.", "PromotionNotFound", 404)
         self._db.delete(row)
@@ -278,18 +303,18 @@ class ShippingService:
     # ─── Extra Rules ─────────────────────────────────────────────────────────
 
     def list_extra_rules(self) -> list[ShippingExtraRuleOut]:
-        rows = self._db.query(ShippingExtraRule).order_by(ShippingExtraRule.priority.desc()).all()
+        rows = self._query(ShippingExtraRule).order_by(ShippingExtraRule.priority.desc()).all()
         return [ShippingExtraRuleOut.model_validate(r) for r in rows]
 
     def create_extra_rule(self, payload: ShippingExtraRuleCreate) -> ShippingExtraRuleOut:
-        row = ShippingExtraRule(id=str(uuid.uuid4()), **payload.model_dump())
+        row = self._own(ShippingExtraRule(id=str(uuid.uuid4()), **payload.model_dump()))
         self._db.add(row)
         self._db.commit()
         self._db.refresh(row)
         return ShippingExtraRuleOut.model_validate(row)
 
     def update_extra_rule(self, rid: str, payload: ShippingExtraRuleUpdate) -> ShippingExtraRuleOut:
-        row = self._db.query(ShippingExtraRule).filter(ShippingExtraRule.id == rid).first()
+        row = self._query(ShippingExtraRule).filter(ShippingExtraRule.id == rid).first()
         if not row:
             raise DomainError("Regra extra não encontrada.", "ExtraRuleNotFound", 404)
         for field, value in payload.model_dump(exclude_none=True).items():
@@ -299,7 +324,7 @@ class ShippingService:
         return ShippingExtraRuleOut.model_validate(row)
 
     def delete_extra_rule(self, rid: str) -> None:
-        row = self._db.query(ShippingExtraRule).filter(ShippingExtraRule.id == rid).first()
+        row = self._query(ShippingExtraRule).filter(ShippingExtraRule.id == rid).first()
         if not row:
             raise DomainError("Regra extra não encontrada.", "ExtraRuleNotFound", 404)
         self._db.delete(row)
@@ -360,7 +385,7 @@ class ShippingService:
 
         # ── 3. Region blocks (extra rules) ───────────────────────────────────
         blocks = (
-            self._db.query(ShippingExtraRule)
+            self._query(ShippingExtraRule)
             .filter(ShippingExtraRule.active == True, ShippingExtraRule.rule_type == "region_block")
             .all()
         )
@@ -396,7 +421,7 @@ class ShippingService:
 
         # ── 5. Promotions (highest priority) ─────────────────────────────────
         promos = (
-            self._db.query(ShippingPromotion)
+            self._query(ShippingPromotion)
             .filter(ShippingPromotion.active == True)
             .order_by(ShippingPromotion.priority.desc())
             .all()
@@ -417,7 +442,7 @@ class ShippingService:
                 except Exception:
                     nbhd_ids = []
                 if nbhd_ids and nbhd_lower:
-                    nbhds = self._db.query(ShippingNeighborhood).filter(ShippingNeighborhood.id.in_(nbhd_ids)).all()
+                    nbhds = self._query(ShippingNeighborhood).filter(ShippingNeighborhood.id.in_(nbhd_ids)).all()
                     for n in nbhds:
                         if n.name.lower() == nbhd_lower:
                             matched = True
@@ -442,7 +467,7 @@ class ShippingService:
         # ── 6. Freight type rules (priority order) ────────────────────────────
         self._ensure_type_configs()
         type_cfgs = (
-            self._db.query(FreightTypeConfig)
+            self._query(FreightTypeConfig)
             .filter(FreightTypeConfig.active == True)
             .order_by(FreightTypeConfig.priority.desc())
             .all()
@@ -475,7 +500,7 @@ class ShippingService:
 
             elif tc.freight_type == "by_neighborhood" and nbhd_lower:
                 nbhds = (
-                    self._db.query(ShippingNeighborhood)
+                    self._query(ShippingNeighborhood)
                     .filter(ShippingNeighborhood.active == True)
                     .order_by(ShippingNeighborhood.priority.desc())
                     .all()
@@ -498,7 +523,7 @@ class ShippingService:
 
             elif tc.freight_type == "by_cep_range" and cep_clean:
                 ranges = (
-                    self._db.query(ShippingCepRange)
+                    self._query(ShippingCepRange)
                     .filter(ShippingCepRange.active == True)
                     .order_by(ShippingCepRange.priority.desc())
                     .all()
@@ -526,7 +551,7 @@ class ShippingService:
                     km = None  # geocoding would go here
                 if km is not None:
                     d_rules = (
-                        self._db.query(ShippingDistanceRule)
+                        self._query(ShippingDistanceRule)
                         .filter(ShippingDistanceRule.active == True)
                         .order_by(ShippingDistanceRule.km_min)
                         .all()
@@ -548,7 +573,7 @@ class ShippingService:
 
             elif tc.freight_type == "by_order_value":
                 tiers = (
-                    self._db.query(ShippingOrderValueTier)
+                    self._query(ShippingOrderValueTier)
                     .filter(ShippingOrderValueTier.active == True)
                     .order_by(ShippingOrderValueTier.order_value_min.desc())
                     .all()
@@ -645,7 +670,7 @@ class ShippingService:
         if not base.available:
             return base
         extras = (
-            self._db.query(ShippingExtraRule)
+            self._query(ShippingExtraRule)
             .filter(ShippingExtraRule.active == True, ShippingExtraRule.rule_type != "region_block")
             .order_by(ShippingExtraRule.priority.desc())
             .all()
@@ -703,38 +728,38 @@ class ShippingService:
     # ─── Legacy zone/rule CRUD (backward compat) ──────────────────────────────
 
     def list_zones(self) -> list[ShippingZoneOut]:
-        zones = self._db.query(ShippingZone).all()
+        zones = self._query(ShippingZone).all()
         return [self._zone_to_out(z) for z in zones]
 
     def create_zone(self, payload: ShippingZoneCreate) -> ShippingZoneOut:
         from backend.core.exceptions import ShippingZoneNotFound
-        zone = ShippingZone(id=str(uuid.uuid4()), name=payload.name, active=payload.active)
+        zone = self._own(ShippingZone(id=str(uuid.uuid4()), name=payload.name, active=payload.active))
         self._db.add(zone)
         self._db.flush()
         for area_in in payload.areas:
-            self._db.add(ShippingZoneArea(id=str(uuid.uuid4()), zone_id=zone.id, area_type=area_in.area_type, value=area_in.value))
+            self._db.add(self._own(ShippingZoneArea(id=str(uuid.uuid4()), zone_id=zone.id, area_type=area_in.area_type, value=area_in.value)))
         self._db.commit()
         self._db.refresh(zone)
         return self._zone_to_out(zone)
 
     def delete_zone(self, zone_id: str) -> None:
         from backend.core.exceptions import ShippingZoneNotFound
-        zone = self._db.query(ShippingZone).filter(ShippingZone.id == zone_id).first()
+        zone = self._query(ShippingZone).filter(ShippingZone.id == zone_id).first()
         if not zone:
             raise ShippingZoneNotFound(zone_id)
         self._db.delete(zone)
         self._db.commit()
 
     def list_rules(self) -> list[ShippingRuleOut]:
-        rules = self._db.query(ShippingRule).order_by(ShippingRule.priority.desc()).all()
+        rules = self._query(ShippingRule).order_by(ShippingRule.priority.desc()).all()
         return [ShippingRuleOut.model_validate(r) for r in rules]
 
     def create_rule(self, payload: ShippingRuleCreate) -> ShippingRuleOut:
         from backend.core.exceptions import ShippingZoneNotFound
         if payload.zone_id:
-            if not self._db.query(ShippingZone).filter(ShippingZone.id == payload.zone_id).first():
+            if not self._query(ShippingZone).filter(ShippingZone.id == payload.zone_id).first():
                 raise ShippingZoneNotFound(payload.zone_id)
-        rule = ShippingRule(id=str(uuid.uuid4()), **payload.model_dump(exclude_none=True))
+        rule = self._own(ShippingRule(id=str(uuid.uuid4()), **payload.model_dump(exclude_none=True)))
         self._db.add(rule)
         self._db.commit()
         self._db.refresh(rule)
@@ -742,7 +767,7 @@ class ShippingService:
 
     def delete_rule(self, rule_id: str) -> None:
         from backend.core.exceptions import ShippingRuleNotFound
-        rule = self._db.query(ShippingRule).filter(ShippingRule.id == rule_id).first()
+        rule = self._query(ShippingRule).filter(ShippingRule.id == rule_id).first()
         if not rule:
             raise ShippingRuleNotFound(rule_id)
         self._db.delete(rule)

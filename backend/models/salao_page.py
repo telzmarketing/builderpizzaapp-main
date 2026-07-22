@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String, Text
 
 from backend.database import Base
 
@@ -9,6 +9,7 @@ class SalaoPageSettings(Base):
     __tablename__ = "salao_page_settings"
 
     id = Column(String, primary_key=True, default="default")
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_salao_page_settings_tenant_id_tenants"), nullable=True)
     enabled = Column(Boolean, nullable=False, default=True)
 
     hero_eyebrow = Column(String(200), nullable=False, default="Restaurante italiano em Sao Paulo")
@@ -50,4 +51,8 @@ class SalaoPageSettings(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
+    )
+    __table_args__ = (
+        Index("uq_salao_page_settings_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_salao_page_settings_tenant_singleton", "tenant_id", unique=True),
     )

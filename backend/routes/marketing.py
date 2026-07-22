@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.local_time import local_period_bounds, local_today
 from backend.database import get_db, Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 from backend.models.customer_event import CustomerEvent
 from backend.models.paid_traffic import TrafficCampaign
 from backend.routes.admin_auth import get_current_admin
@@ -28,6 +29,7 @@ public_router = APIRouter(prefix="/marketing", tags=["marketing-public"])
 
 class MarketingCampaign(Base):
     __tablename__ = "marketing_campaigns"
+    tenant_id = wave6_tenant_column("marketing_campaigns")
     id = Column(String, primary_key=True)
     name = Column(String(300), nullable=False)
     campaign_type = Column(String(50), nullable=False)
@@ -55,6 +57,7 @@ class MarketingCampaign(Base):
 
 class VisitorProfile(Base):
     __tablename__ = "visitor_profiles"
+    tenant_id = wave6_tenant_column("visitor_profiles")
     id = Column(String, primary_key=True)
     fingerprint = Column(String(128), unique=True)
     customer_id = Column(String, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
@@ -79,6 +82,7 @@ class VisitorProfile(Base):
 
 class VisitorSession(Base):
     __tablename__ = "visitor_sessions"
+    tenant_id = wave6_tenant_column("visitor_sessions")
     id = Column(String, primary_key=True)
     visitor_id = Column(String, ForeignKey("visitor_profiles.id", ondelete="CASCADE"), nullable=False)
     utm_source = Column(String(100))
@@ -95,6 +99,7 @@ class VisitorSession(Base):
 
 class VisitorEvent(Base):
     __tablename__ = "visitor_events"
+    tenant_id = wave6_tenant_column("visitor_events")
     id = Column(String, primary_key=True)
     visitor_id = Column(String, ForeignKey("visitor_profiles.id", ondelete="CASCADE"), nullable=False)
     session_id = Column(String, ForeignKey("visitor_sessions.id", ondelete="SET NULL"), nullable=True)
@@ -107,6 +112,7 @@ class VisitorEvent(Base):
 
 class TrackingLink(Base):
     __tablename__ = "tracking_links"
+    tenant_id = wave6_tenant_column("tracking_links")
     id = Column(String, primary_key=True)
     slug = Column(String(100), unique=True, nullable=False)
     destination_url = Column(Text, nullable=False)
@@ -128,6 +134,7 @@ class TrackingLink(Base):
 
 class MarketingSettings(Base):
     __tablename__ = "marketing_settings"
+    tenant_id = wave6_tenant_column("marketing_settings")
     id = Column(String, primary_key=True, default="default")
     tracking_enabled = Column(Boolean, default=True)
     ip_anonymization = Column(Boolean, default=True)
@@ -144,6 +151,7 @@ class MarketingSettings(Base):
 
 class IntegrationConnection(Base):
     __tablename__ = "integration_connections"
+    tenant_id = wave6_tenant_column("integration_connections")
     id = Column(String, primary_key=True)
     integration_type = Column(String(50), nullable=False, unique=True)
     status = Column(String(20), default="disconnected")

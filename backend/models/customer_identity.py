@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -15,9 +15,14 @@ class CustomerAuth(Base):
     __table_args__ = (
         UniqueConstraint("customer_id", "auth_provider", name="uq_customer_auth_customer_provider"),
         UniqueConstraint("auth_provider", "identifier", name="uq_customer_auth_provider_identifier"),
+        Index("uq_customer_auth_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_customer_auth_tenant_customer_provider", "tenant_id", "customer_id", "auth_provider", unique=True),
+        Index("uq_customer_auth_tenant_provider_identifier", "tenant_id", "auth_provider", "identifier", unique=True,
+              postgresql_where=text("identifier IS NOT NULL")),
     )
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_customer_auth_tenant_id_tenants"), nullable=True)
     customer_id = Column(String, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
     auth_provider = Column(String(40), nullable=False, default="password")
     identifier = Column(String(255), nullable=True)
@@ -35,9 +40,12 @@ class CustomerChannel(Base):
     __tablename__ = "customer_channels"
     __table_args__ = (
         UniqueConstraint("channel", "normalized_identifier", name="uq_customer_channel_identifier"),
+        Index("uq_customer_channels_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_customer_channels_tenant_identifier", "tenant_id", "channel", "normalized_identifier", unique=True),
     )
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_customer_channels_tenant_id_tenants"), nullable=True)
     customer_id = Column(String, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
     channel = Column(String(40), nullable=False)
     identifier = Column(String(255), nullable=False)
@@ -55,8 +63,13 @@ class CustomerChannel(Base):
 
 class CustomerPreference(Base):
     __tablename__ = "customer_preferences"
+    __table_args__ = (
+        Index("uq_customer_preferences_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_customer_preferences_tenant_customer", "tenant_id", "customer_id", unique=True),
+    )
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_customer_preferences_tenant_id_tenants"), nullable=True)
     customer_id = Column(String, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, unique=True)
     preferred_channel = Column(String(40), nullable=True)
     preferred_contact_time = Column(String(40), nullable=True)

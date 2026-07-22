@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 
 from backend.database import get_db, Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 from backend.routes.admin_auth import get_current_admin
 
 router = APIRouter(prefix="/exit-popup", tags=["exit_popup"])
@@ -13,6 +14,7 @@ router = APIRouter(prefix="/exit-popup", tags=["exit_popup"])
 
 class ExitPopupConfig(Base):
     __tablename__ = "exit_popup_config"
+    tenant_id = wave6_tenant_column("exit_popup_config")
     id = Column(String, primary_key=True, default="default")
     enabled = Column(Boolean, default=False)
     title = Column(String(200), default="Espera! Temos uma oferta para você 🍕")

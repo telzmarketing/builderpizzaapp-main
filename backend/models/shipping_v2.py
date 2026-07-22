@@ -11,7 +11,7 @@ Tables:
   shipping_promotions        — time-bound or threshold-based promotions
   shipping_extra_rules       — surcharges, blocks, time-based extras
 """
-from sqlalchemy import Column, String, Float, Boolean, Integer, DateTime, Text
+from sqlalchemy import Column, String, Float, Boolean, Integer, DateTime, ForeignKey, Index, Text
 from datetime import datetime, timezone
 from backend.database import Base
 
@@ -25,6 +25,7 @@ class ShippingConfig(Base):
     __tablename__ = "shipping_config"
 
     id = Column(String, primary_key=True, default="default")
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_shipping_config_tenant_id_tenants"), nullable=True)
     delivery_enabled = Column(Boolean, default=True)
     pickup_enabled = Column(Boolean, default=False)
     pickup_message = Column(String(300), default="Retire em nossa loja")
@@ -36,6 +37,10 @@ class ShippingConfig(Base):
     store_lat = Column(Float, nullable=True)
     store_lng = Column(Float, nullable=True)
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
+    __table_args__ = (
+        Index("uq_shipping_config_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_shipping_config_tenant_singleton", "tenant_id", unique=True),
+    )
 
 
 class FreightTypeConfig(Base):
@@ -49,6 +54,7 @@ class FreightTypeConfig(Base):
     __tablename__ = "freight_type_configs"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_freight_type_configs_tenant_id_tenants"), nullable=True)
     freight_type = Column(String(50), nullable=False, unique=True)
     active = Column(Boolean, default=False)
     priority = Column(Integer, default=0)   # higher = evaluated first
@@ -60,6 +66,10 @@ class FreightTypeConfig(Base):
     scheduled_surcharge = Column(Float, default=0.0)
     scheduled_surcharge_type = Column(String(20), default="fixed")   # "fixed" | "percentage"
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
+    __table_args__ = (
+        Index("uq_freight_type_configs_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_freight_type_configs_tenant_type", "tenant_id", "freight_type", unique=True),
+    )
 
 
 class ShippingNeighborhood(Base):
@@ -67,6 +77,7 @@ class ShippingNeighborhood(Base):
     __tablename__ = "shipping_neighborhoods"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_shipping_neighborhoods_tenant_id_tenants"), nullable=True)
     name = Column(String(150), nullable=False)
     city = Column(String(150), default="")
     shipping_value = Column(Float, default=0.0)
@@ -78,6 +89,7 @@ class ShippingNeighborhood(Base):
     priority = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), default=_now)
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
+    __table_args__ = (Index("uq_shipping_neighborhoods_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class ShippingCepRange(Base):
@@ -85,6 +97,7 @@ class ShippingCepRange(Base):
     __tablename__ = "shipping_cep_ranges"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_shipping_cep_ranges_tenant_id_tenants"), nullable=True)
     name = Column(String(150), default="")
     cep_start = Column(String(9), nullable=False)
     cep_end = Column(String(9), nullable=False)
@@ -95,6 +108,7 @@ class ShippingCepRange(Base):
     priority = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), default=_now)
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
+    __table_args__ = (Index("uq_shipping_cep_ranges_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class ShippingDistanceRule(Base):
@@ -102,6 +116,7 @@ class ShippingDistanceRule(Base):
     __tablename__ = "shipping_distance_rules"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_shipping_distance_rules_tenant_id_tenants"), nullable=True)
     name = Column(String(150), default="")
     km_min = Column(Float, default=0.0)
     km_max = Column(Float, default=5.0)
@@ -114,6 +129,7 @@ class ShippingDistanceRule(Base):
     priority = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), default=_now)
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
+    __table_args__ = (Index("uq_shipping_distance_rules_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class ShippingOrderValueTier(Base):
@@ -121,6 +137,7 @@ class ShippingOrderValueTier(Base):
     __tablename__ = "shipping_order_value_tiers"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_shipping_order_value_tiers_tenant_id_tenants"), nullable=True)
     name = Column(String(150), default="")
     order_value_min = Column(Float, default=0.0)
     order_value_max = Column(Float, nullable=True)   # None = no upper limit
@@ -130,6 +147,7 @@ class ShippingOrderValueTier(Base):
     priority = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), default=_now)
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
+    __table_args__ = (Index("uq_shipping_order_value_tiers_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class ShippingPromotion(Base):
@@ -145,6 +163,7 @@ class ShippingPromotion(Base):
     __tablename__ = "shipping_promotions"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_shipping_promotions_tenant_id_tenants"), nullable=True)
     name = Column(String(150), nullable=False)
     promo_type = Column(String(50), nullable=False)
     min_order_value = Column(Float, default=0.0)
@@ -156,6 +175,7 @@ class ShippingPromotion(Base):
     priority = Column(Integer, default=100)
     created_at = Column(DateTime(timezone=True), default=_now)
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
+    __table_args__ = (Index("uq_shipping_promotions_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class ShippingExtraRule(Base):
@@ -172,6 +192,7 @@ class ShippingExtraRule(Base):
     __tablename__ = "shipping_extra_rules"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_shipping_extra_rules_tenant_id_tenants"), nullable=True)
     rule_type = Column(String(50), nullable=False)
     name = Column(String(150), nullable=False)
     value = Column(Float, default=0.0)
@@ -184,3 +205,4 @@ class ShippingExtraRule(Base):
     time_end = Column(String(5), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_now)
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
+    __table_args__ = (Index("uq_shipping_extra_rules_tenant_id_id", "tenant_id", "id", unique=True),)

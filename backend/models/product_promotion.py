@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -8,8 +8,10 @@ from backend.database import Base
 
 class ProductPromotion(Base):
     __tablename__ = "product_promotions"
+    __table_args__ = (Index("uq_product_promotions_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_product_promotions_tenant_id_tenants"), nullable=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(200), nullable=False)
     active = Column(Boolean, default=True, nullable=False)
@@ -46,6 +48,7 @@ class ProductPromotion(Base):
 class ProductPromotionCombination(Base):
     __tablename__ = "product_promotion_combinations"
     __table_args__ = (
+        Index("uq_product_promotion_combinations_tenant_id_id", "tenant_id", "id", unique=True),
         UniqueConstraint(
             "promotion_id",
             "product_size_id",
@@ -55,6 +58,7 @@ class ProductPromotionCombination(Base):
     )
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_product_promotion_combinations_tenant_id_tenants"), nullable=True)
     promotion_id = Column(String, ForeignKey("product_promotions.id", ondelete="CASCADE"), nullable=False, index=True)
     product_size_id = Column(String, ForeignKey("product_sizes.id", ondelete="CASCADE"), nullable=True, index=True)
     product_crust_type_id = Column(String, ForeignKey("product_crust_types.id", ondelete="CASCADE"), nullable=True, index=True)

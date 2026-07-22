@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -14,7 +14,7 @@ class FinanceAccount(Base):
     __tablename__ = "finance_accounts"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_finance_accounts_tenant"), nullable=True)
     name = Column(String(140), nullable=False)
     account_type = Column(String(40), nullable=False, default="bank")
     opening_balance = Column(Float, nullable=False, default=0.0)
@@ -24,13 +24,14 @@ class FinanceAccount(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     transactions = relationship("FinanceTransaction", back_populates="account")
+    __table_args__ = (Index("uq_finance_accounts_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class FinanceCategory(Base):
     __tablename__ = "finance_categories"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_finance_categories_tenant"), nullable=True)
     name = Column(String(140), nullable=False)
     entry_type = Column(String(20), nullable=False, default="expense", index=True)
     dre_group = Column(String(80), nullable=False, default="operational")
@@ -42,13 +43,14 @@ class FinanceCategory(Base):
 
     parent = relationship("FinanceCategory", remote_side=[id])
     transactions = relationship("FinanceTransaction", back_populates="category")
+    __table_args__ = (Index("uq_finance_categories_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class FinanceCounterparty(Base):
     __tablename__ = "finance_counterparties"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_finance_counterparties_tenant"), nullable=True)
     name = Column(String(180), nullable=False)
     counterparty_type = Column(String(40), nullable=False, default="supplier", index=True)
     document = Column(String(40), nullable=True, index=True)
@@ -60,13 +62,14 @@ class FinanceCounterparty(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     transactions = relationship("FinanceTransaction", back_populates="counterparty")
+    __table_args__ = (Index("uq_finance_counterparties_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class FinanceTransaction(Base):
     __tablename__ = "finance_transactions"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_finance_transactions_tenant"), nullable=True)
     account_id = Column(String, ForeignKey("finance_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     category_id = Column(String, ForeignKey("finance_categories.id", ondelete="SET NULL"), nullable=True, index=True)
     cost_center = Column(String(120), nullable=True, index=True)
@@ -112,13 +115,14 @@ class FinanceTransaction(Base):
     order = relationship("Order")
     payment = relationship("Payment")
     inventory_purchase = relationship("InventoryPurchase")
+    __table_args__ = (Index("uq_finance_transactions_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class FinanceSettlement(Base):
     __tablename__ = "finance_settlements"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_finance_settlements_tenant"), nullable=True)
     transaction_id = Column(String, ForeignKey("finance_transactions.id", ondelete="CASCADE"), nullable=False, index=True)
     account_id = Column(String, ForeignKey("finance_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     settled_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, index=True)
@@ -140,3 +144,7 @@ class FinanceSettlement(Base):
 
     transaction = relationship("FinanceTransaction", back_populates="settlements")
     account = relationship("FinanceAccount")
+    __table_args__ = (
+        Index("uq_finance_settlements_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_mt_finance_settlement_idempotency", "tenant_id", "idempotency_key", unique=True, postgresql_where=idempotency_key.is_not(None)),
+    )

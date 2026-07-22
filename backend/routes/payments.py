@@ -22,6 +22,7 @@ from backend.schemas.payment import (
     WebhookPayload,
 )
 from backend.services.payment_service import PaymentService
+from backend.config import get_settings
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
@@ -236,6 +237,8 @@ async def payment_webhook(
     x_signature: str | None = Header(default=None),
     x_request_id: str | None = Header(default=None),
 ):
+    if get_settings().TENANT_PAYMENT_WEBHOOKS_ENABLED:
+        return err_msg("Webhook global desabilitado no modo multiempresa.", code="AmbiguousWebhookEndpoint", status_code=404)
     raw_body = await request.body()
     query_params = dict(request.query_params)
 

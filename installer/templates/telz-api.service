@@ -1,0 +1,16 @@
+[Unit]
+Description=Telz API
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+Group=__SERVICE_USER__
+WorkingDirectory=__INSTALL_DIR__
+EnvironmentFile=__INSTALL_DIR__/backend/.env
+ExecStart=__INSTALL_DIR__/.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port __API_PORT__ --workers __API_WORKERS__
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

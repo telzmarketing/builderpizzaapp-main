@@ -5,10 +5,12 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Index, String, Text
 
 from backend.database import Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 
 
 class MarketingGoal(Base):
     __tablename__ = "marketing_goals"
+    tenant_id = wave6_tenant_column("marketing_goals")
 
     id = Column(String, primary_key=True)
     title = Column(String(200), nullable=False)
@@ -53,6 +55,7 @@ class MarketingGoal(Base):
 
 class MarketingTimelineEvent(Base):
     __tablename__ = "marketing_timeline_events"
+    tenant_id = wave6_tenant_column("marketing_timeline_events")
 
     id = Column(String, primary_key=True)
     title = Column(String(200), nullable=False)

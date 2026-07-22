@@ -26,6 +26,9 @@ from backend.services import product_category_service
 from backend.services.product_pricing_service import ProductPricingService
 from backend.services.promotion_landing_service import PromotionLandingService
 from backend.services.inventory_service import ProductInventoryAvailabilityService
+from backend.core.tenant_context import TenantContext
+from backend.core.tenant_ownership import assign_tenant_on_create, identity_catalog_enforcement_enabled, scope_query_to_tenant
+from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
 
 _VALID_BADGE_STATUSES = [
     OrderStatus.paid, OrderStatus.pago, OrderStatus.preparing,
@@ -55,6 +58,10 @@ def _get_best_seller_badge_ids(db: Session) -> set[str]:
     return {row.product_id for row in top}
 
 router = APIRouter(prefix="/products", tags=["products"])
+
+
+def _tenant_query(db: Session, model, context: TenantContext | None):
+    return scope_query_to_tenant(db.query(model), model, context, enabled=identity_catalog_enforcement_enabled())
 
 
 def _require_admin(request: Request, db: Session) -> AdminUser:
@@ -221,24 +228,25 @@ def list_categories(
     active_only: bool = False,
     db: Session = Depends(get_db),
 ):
+    context = resolve_public_tenant_context(request, db) if active_only else resolve_panel_tenant_context(request, db, _require_admin(request, db))
     if not active_only:
-        _require_admin(request, db)
-    return product_category_service.list_categories(db, active_only=active_only)
+        pass
+    return product_category_service.list_categories(db, active_only=active_only, tenant_context=context)
 
 
 @router.post("/categories", response_model=ProductCategoryOut, status_code=201)
-def create_category(body: ProductCategoryCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return product_category_service.create_category(db, body)
+def create_category(body: ProductCategoryCreate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    return product_category_service.create_category(db, body, resolve_panel_tenant_context(request, db, admin))
 
 
 @router.put("/categories/{category_id}", response_model=ProductCategoryOut)
-def update_category(category_id: str, body: ProductCategoryUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return product_category_service.update_category(db, category_id, body)
+def update_category(category_id: str, body: ProductCategoryUpdate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    return product_category_service.update_category(db, category_id, body, resolve_panel_tenant_context(request, db, admin))
 
 
 @router.delete("/categories/{category_id}", status_code=204)
-def delete_category(category_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    product_category_service.delete_category(db, category_id)
+def delete_category(category_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    product_category_service.delete_category(db, category_id, resolve_panel_tenant_context(request, db, admin))
 
 
 @router.get("/config/best-seller", response_model=BestSellerConfigOut)
@@ -278,9 +286,11 @@ def list_products(
     channel: str | None = Query(default=None, pattern="^(delivery|dine_in)$"),
     db: Session = Depends(get_db),
 ):
+    context = resolve_public_tenant_context(request, db)
     if not active_only or product_type == "brinde":
-        _require_admin(request, db)
-    q = db.query(Product).options(
+        admin = _require_admin(request, db)
+        context = resolve_panel_tenant_context(request, db, admin)
+    q = _tenant_query(db, Product, context).options(
         selectinload(Product.sizes),
         selectinload(Product.crust_types),
         selectinload(Product.drink_variants),
@@ -309,11 +319,16 @@ def list_products(
 
 @router.get("/{product_id}", response_model=ProductOut)
 def get_product(product_id: str, request: Request, db: Session = Depends(get_db)):
-    product = db.query(Product).filter(Product.id == product_id).first()
+    context = resolve_public_tenant_context(request, db)
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
     if not product.active:
-        _require_admin(request, db)
+        admin = _require_admin(request, db)
+        context = resolve_panel_tenant_context(request, db, admin)
+        product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
+        if not product:
+            raise HTTPException(404, "Produto nao encontrado.")
     inventory_payload = ProductInventoryAvailabilityService(db).product_payloads([product.id]).get(product.id)
     return _product_payload(product, db, inventory_payload=inventory_payload)
 
@@ -321,20 +336,22 @@ def get_product(product_id: str, request: Request, db: Session = Depends(get_db)
 @router.get("/{product_id}/price", response_model=ProductPriceQuoteOut)
 def quote_product_price(
     product_id: str,
+    request: Request,
     size_id: str | None = Query(default=None),
     crust_id: str | None = Query(default=None),
     flavor_count: int = Query(default=1, ge=1, le=3),
     flavor_ids: list[str] | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    product = db.query(Product).filter(Product.id == product_id, Product.active == True).first()  # noqa: E712
+    context = resolve_public_tenant_context(request, db)
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id, Product.active == True).first()  # noqa: E712
     if not product:
         raise HTTPException(404, "Produto nao encontrado.")
 
     size = None
     if size_id:
         size = (
-            db.query(ProductSize)
+            _tenant_query(db, ProductSize, context)
             .filter(ProductSize.id == size_id, ProductSize.product_id == product_id, ProductSize.active == True)  # noqa: E712
             .first()
         )
@@ -344,7 +361,7 @@ def quote_product_price(
     crust = None
     if crust_id:
         crust = (
-            db.query(ProductCrustType)
+            _tenant_query(db, ProductCrustType, context)
             .filter(ProductCrustType.id == crust_id, ProductCrustType.product_id == product_id, ProductCrustType.active == True)  # noqa: E712
             .first()
         )
@@ -465,8 +482,10 @@ def delete_product_promotion(product_id: str, promotion_id: str, db: Session = D
 
 
 @router.post("", response_model=ProductOut, status_code=201)
-def create_product(body: ProductCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def create_product(body: ProductCreate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
     product = Product(id=f"prod-{uuid.uuid4().hex[:8]}", **body.model_dump())
+    assign_tenant_on_create(product, context, enabled=identity_catalog_enforcement_enabled())
     db.add(product)
     db.commit()
     db.refresh(product)
@@ -474,8 +493,9 @@ def create_product(body: ProductCreate, db: Session = Depends(get_db), _=Depends
 
 
 @router.put("/{product_id}", response_model=ProductOut)
-def update_product(product_id: str, body: ProductUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    product = db.query(Product).filter(Product.id == product_id).first()
+def update_product(product_id: str, body: ProductUpdate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
     for key, value in body.model_dump(exclude_unset=True).items():
@@ -486,8 +506,9 @@ def update_product(product_id: str, body: ProductUpdate, db: Session = Depends(g
 
 
 @router.delete("/{product_id}", status_code=204)
-def delete_product(product_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    product = db.query(Product).filter(Product.id == product_id).first()
+def delete_product(product_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
     product.active = False

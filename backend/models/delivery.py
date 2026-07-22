@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Float, Integer, Enum, DateTime, Date, ForeignKey, Text
+from sqlalchemy import Column, String, Boolean, Float, Integer, Enum, DateTime, Date, ForeignKey, Index, Text, func
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -9,6 +9,7 @@ class LogisticsSettings(Base):
     __tablename__ = "logistics_settings"
 
     id                         = Column(String, primary_key=True, default="default")
+    tenant_id                  = Column(String, ForeignKey("tenants.id", name="fk_logistics_settings_tenant_id_tenants"), nullable=True)
     auto_assign                = Column(Boolean, default=False)
     max_concurrent_deliveries  = Column(Integer, default=3)
     default_estimated_minutes  = Column(Integer, default=40)
@@ -17,6 +18,10 @@ class LogisticsSettings(Base):
     updated_at                 = Column(DateTime(timezone=True),
                                         default=lambda: datetime.now(timezone.utc),
                                         onupdate=lambda: datetime.now(timezone.utc))
+    __table_args__ = (
+        Index("uq_logistics_settings_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_logistics_settings_tenant_singleton", "tenant_id", unique=True),
+    )
 
 
 class VehicleType(str, enum.Enum):
@@ -47,6 +52,7 @@ class DeliveryPerson(Base):
     __tablename__ = "delivery_persons"
 
     id            = Column(String, primary_key=True)
+    tenant_id     = Column(String, ForeignKey("tenants.id", name="fk_delivery_persons_tenant_id_tenants"), nullable=True)
     name          = Column(String(200), nullable=False)
     phone         = Column(String(30), nullable=False)
     vehicle_type  = Column(Enum(VehicleType), default=VehicleType.motorcycle)
@@ -79,12 +85,17 @@ class DeliveryPerson(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     deliveries = relationship("Delivery", back_populates="delivery_person")
+    __table_args__ = (
+        Index("uq_delivery_persons_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_delivery_persons_tenant_email", "tenant_id", func.lower(email), unique=True),
+    )
 
 
 class Delivery(Base):
     __tablename__ = "deliveries"
 
     id                 = Column(String, primary_key=True)
+    tenant_id          = Column(String, ForeignKey("tenants.id", name="fk_deliveries_tenant_id_tenants"), nullable=True)
     order_id           = Column(String, ForeignKey("orders.id"), nullable=False, unique=True)
     delivery_person_id = Column(String, ForeignKey("delivery_persons.id"), nullable=True)
 
@@ -123,12 +134,17 @@ class Delivery(Base):
     order           = relationship("Order", back_populates="delivery")
     events          = relationship("DeliveryEvent", back_populates="delivery",
                                    order_by="DeliveryEvent.created_at", cascade="all, delete-orphan")
+    __table_args__ = (
+        Index("uq_deliveries_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_deliveries_tenant_order", "tenant_id", "order_id", unique=True),
+    )
 
 
 class DeliveryEvent(Base):
     __tablename__ = "delivery_events"
 
     id            = Column(String, primary_key=True)
+    tenant_id     = Column(String, ForeignKey("tenants.id", name="fk_delivery_events_tenant_id_tenants"), nullable=True)
     delivery_id   = Column(String, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False)
     event_type    = Column(String(80), nullable=False)
     description   = Column(Text, nullable=True)
@@ -138,12 +154,14 @@ class DeliveryEvent(Base):
     created_at    = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     delivery = relationship("Delivery", back_populates="events")
+    __table_args__ = (Index("uq_delivery_events_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class DeliveryEarning(Base):
     __tablename__ = "delivery_earnings"
 
     id                 = Column(String, primary_key=True)
+    tenant_id          = Column(String, ForeignKey("tenants.id", name="fk_delivery_earnings_tenant_id_tenants"), nullable=True)
     delivery_id        = Column(String, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False)
     delivery_person_id = Column(String, ForeignKey("delivery_persons.id", ondelete="CASCADE"), nullable=False)
     amount             = Column(Float, default=0.0, nullable=False)
@@ -156,6 +174,7 @@ class DeliveryEarning(Base):
 
     delivery        = relationship("Delivery")
     delivery_person = relationship("DeliveryPerson")
+    __table_args__ = (Index("uq_delivery_earnings_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class GeocodeCache(Base):
@@ -163,7 +182,9 @@ class GeocodeCache(Base):
     __tablename__ = "geocode_cache"
 
     id         = Column(String(32), primary_key=True)  # sha256[:32] of normalised address
+    tenant_id  = Column(String, ForeignKey("tenants.id", name="fk_geocode_cache_tenant"), nullable=True)
     query      = Column(Text, nullable=False)
     lat        = Column(Float, nullable=True)
     lng        = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    __table_args__ = (Index("uq_geocode_cache_tenant_id_id", "tenant_id", "id", unique=True),)

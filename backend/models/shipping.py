@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Boolean, Integer, Enum, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Float, Boolean, Integer, Enum, DateTime, ForeignKey, Index, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -16,12 +16,14 @@ class ShippingZone(Base):
     __tablename__ = "shipping_zones"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_shipping_zones_tenant_id_tenants"), nullable=True)
     name = Column(String(100), nullable=False)
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     areas = relationship("ShippingZoneArea", back_populates="zone", cascade="all, delete-orphan")
     rules = relationship("ShippingRule", back_populates="zone")
+    __table_args__ = (Index("uq_shipping_zones_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class AreaType(str, enum.Enum):
@@ -35,17 +37,20 @@ class ShippingZoneArea(Base):
     __tablename__ = "shipping_zone_areas"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_shipping_zone_areas_tenant_id_tenants"), nullable=True)
     zone_id = Column(String, ForeignKey("shipping_zones.id"), nullable=False)
     area_type = Column(Enum(AreaType), nullable=False)
     value = Column(String(100), nullable=False)      # e.g. "São Paulo", "Centro", "01310"
 
     zone = relationship("ShippingZone", back_populates="areas")
+    __table_args__ = (Index("uq_shipping_zone_areas_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class ShippingRule(Base):
     __tablename__ = "shipping_rules"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_shipping_rules_tenant_id_tenants"), nullable=True)
     zone_id = Column(String, ForeignKey("shipping_zones.id"), nullable=True)
     name = Column(String(100), nullable=False)
     rule_type = Column(Enum(ShippingRuleType), nullable=False)
@@ -71,3 +76,4 @@ class ShippingRule(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     zone = relationship("ShippingZone", back_populates="rules")
+    __table_args__ = (Index("uq_shipping_rules_tenant_id_id", "tenant_id", "id", unique=True),)

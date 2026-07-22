@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from backend.database import Base
@@ -6,8 +6,10 @@ from backend.database import Base
 
 class CustomerEvent(Base):
     __tablename__ = "customer_events"
+    __table_args__ = (Index("uq_customer_events_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_customer_events_tenant_id_tenants"), nullable=True)
     customer_id = Column(String, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
     session_id = Column(String(200), nullable=True)
     event_type = Column(String(80), nullable=False)

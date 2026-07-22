@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -14,7 +14,8 @@ class FiscalCompany(Base):
     __tablename__ = "fiscal_companies"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_fiscal_companies_tenant"), nullable=True)
+    __table_args__ = (Index("uq_fiscal_companies_tenant_id_id", "tenant_id", "id", unique=True),)
     legal_name = Column(String(220), nullable=False)
     trade_name = Column(String(220), nullable=True)
     document = Column(String(20), nullable=False, index=True)
@@ -41,7 +42,8 @@ class FiscalCertificate(Base):
     __tablename__ = "fiscal_certificates"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_fiscal_certificates_tenant"), nullable=True)
+    __table_args__ = (Index("uq_fiscal_certificates_tenant_id_id", "tenant_id", "id", unique=True),)
     certificate_type = Column(String(20), nullable=False, default="a1")
     subject_name = Column(String(220), nullable=True)
     serial_number = Column(String(120), nullable=True, index=True)
@@ -58,7 +60,7 @@ class FiscalSeries(Base):
     __tablename__ = "fiscal_series"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_fiscal_series_tenant"), nullable=True)
     document_model = Column(String(10), nullable=False, default="NFCe", index=True)
     series = Column(String(10), nullable=False, index=True)
     environment = Column(String(20), nullable=False, default="homologation", index=True)
@@ -67,13 +69,17 @@ class FiscalSeries(Base):
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    __table_args__ = (
+        Index("uq_fiscal_series_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_mt_fiscal_series_model_env_series", "tenant_id", "document_model", "environment", "series", unique=True),
+    )
 
 
 class FiscalProductProfile(Base):
     __tablename__ = "fiscal_product_profiles"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_fiscal_product_profiles_tenant"), nullable=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
     ncm = Column(String(10), nullable=False)
     cest = Column(String(10), nullable=True)
@@ -92,13 +98,17 @@ class FiscalProductProfile(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     product = relationship("Product")
+    __table_args__ = (
+        Index("uq_fiscal_product_profiles_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_mt_fiscal_product_profile_product", "tenant_id", "product_id", unique=True),
+    )
 
 
 class FiscalDocument(Base):
     __tablename__ = "fiscal_documents"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_fiscal_documents_tenant"), nullable=True)
     order_id = Column(String, ForeignKey("orders.id", ondelete="SET NULL"), nullable=True, index=True)
     company_id = Column(String, ForeignKey("fiscal_companies.id", ondelete="SET NULL"), nullable=True, index=True)
     series_id = Column(String, ForeignKey("fiscal_series.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -133,12 +143,14 @@ class FiscalDocument(Base):
     series_ref = relationship("FiscalSeries")
     items = relationship("FiscalDocumentItem", cascade="all, delete-orphan", back_populates="document")
     events = relationship("FiscalDocumentEvent", cascade="all, delete-orphan", back_populates="document")
+    __table_args__ = (Index("uq_fiscal_documents_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class FiscalDocumentItem(Base):
     __tablename__ = "fiscal_document_items"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_fiscal_document_items_tenant"), nullable=True)
     document_id = Column(String, ForeignKey("fiscal_documents.id", ondelete="CASCADE"), nullable=False, index=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
     description = Column(String(220), nullable=False)
@@ -160,13 +172,14 @@ class FiscalDocumentItem(Base):
 
     document = relationship("FiscalDocument", back_populates="items")
     product = relationship("Product")
+    __table_args__ = (Index("uq_fiscal_document_items_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class FiscalDocumentEvent(Base):
     __tablename__ = "fiscal_document_events"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_fiscal_document_events_tenant"), nullable=True)
     document_id = Column(String, ForeignKey("fiscal_documents.id", ondelete="CASCADE"), nullable=False, index=True)
     event_type = Column(String(40), nullable=False, index=True)
     status = Column(String(40), nullable=False, default="recorded", index=True)
@@ -177,3 +190,4 @@ class FiscalDocumentEvent(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     document = relationship("FiscalDocument", back_populates="events")
+    __table_args__ = (Index("uq_fiscal_document_events_tenant_id_id", "tenant_id", "id", unique=True),)

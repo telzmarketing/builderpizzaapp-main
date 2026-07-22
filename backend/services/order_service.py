@@ -22,6 +22,14 @@ from backend.core.exceptions import (
     DomainError,
 )
 from backend.core.state_machine import order_sm, payment_sm
+from backend.core.tenant_context import TenantContext
+from backend.core.tenant_ownership import (
+    assign_tenant_on_create,
+    customers_orders_enforcement_enabled,
+    identity_catalog_enforcement_enabled,
+    operations_enforcement_enabled,
+    scope_query_to_tenant,
+)
 from backend.core.events import (
     bus, OrderCreated, OrderStatusChanged, OrderCancelled as EvOrderCancelled, PaymentConfirmed,
 )
@@ -124,8 +132,32 @@ class OrderService:
         svc = OrderService(db)
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
+        self._tenant_context = tenant_context
+        self._orders_tenant_enabled = customers_orders_enforcement_enabled()
+        self._catalog_tenant_enabled = identity_catalog_enforcement_enabled()
+        self._operations_tenant_enabled = operations_enforcement_enabled()
+
+    def _tenant_query(self, model, *, catalog: bool = False):
+        return scope_query_to_tenant(
+            self._db.query(model), model, self._tenant_context,
+            enabled=self._catalog_tenant_enabled if catalog else self._orders_tenant_enabled,
+        )
+
+    def _own(self, resource, *, catalog: bool = False):
+        return assign_tenant_on_create(
+            resource, self._tenant_context,
+            enabled=self._catalog_tenant_enabled if catalog else self._orders_tenant_enabled,
+        )
+
+    def _operation_query(self, model):
+        return scope_query_to_tenant(
+            self._db.query(model),
+            model,
+            self._tenant_context,
+            enabled=self._operations_tenant_enabled,
+        )
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -134,14 +166,14 @@ class OrderService:
     def _generate_order_code(self) -> str:
         for _ in range(20):
             code = "".join(random.choices(self._ORDER_CODE_CHARS, k=4))
-            exists = self._db.query(Order).filter(Order.order_code == code).first()
+            exists = self._tenant_query(Order).filter(Order.order_code == code).first()
             if not exists:
                 return code
         return "".join(random.choices(self._ORDER_CODE_CHARS, k=6))
 
     def _get_order(self, order_id: str) -> Order:
         order = (
-            self._db.query(Order)
+            self._tenant_query(Order)
             .options(joinedload(Order.items).joinedload(OrderItem.flavors))
             .filter(Order.id == order_id)
             .first()
@@ -152,12 +184,13 @@ class OrderService:
 
     def _get_config(self) -> MultiFlavorsConfig:
         config = (
-            self._db.query(MultiFlavorsConfig)
+            self._tenant_query(MultiFlavorsConfig, catalog=True)
             .filter(MultiFlavorsConfig.id == "default")
             .first()
         )
         if not config:
             config = MultiFlavorsConfig(id="default")
+            self._own(config, catalog=True)
             self._db.add(config)
             self._db.flush()
         return config
@@ -237,7 +270,7 @@ class OrderService:
 
         # Fetch size price server-side (authoritative — client-submitted prices are ignored when size found)
         primary_product = (
-            self._db.query(Product)
+            self._tenant_query(Product, catalog=True)
             .filter(Product.id == item.product_id, Product.active == True)  # noqa: E712
             .first()
         )
@@ -256,7 +289,7 @@ class OrderService:
         selected_size_obj: ProductSize | None = None
         if item.selected_size_id:
             selected_size_obj = (
-                self._db.query(ProductSize)
+                self._tenant_query(ProductSize, catalog=True)
                 .filter(ProductSize.id == item.selected_size_id,
                         ProductSize.product_id == item.product_id,
                         ProductSize.active == True)  # noqa: E712
@@ -268,7 +301,7 @@ class OrderService:
 
         for f in item.flavors:
             product = (
-                self._db.query(Product)
+                self._tenant_query(Product, catalog=True)
                 .filter(Product.id == f.product_id, Product.active == True)  # noqa: E712
                 .first()
             )
@@ -312,7 +345,7 @@ class OrderService:
         selected_crust_obj: ProductCrustType | None = None
         if item.selected_crust_type_id:
             selected_crust_obj = (
-                self._db.query(ProductCrustType)
+                self._tenant_query(ProductCrustType, catalog=True)
                 .filter(ProductCrustType.id == item.selected_crust_type_id,
                         ProductCrustType.product_id == item.product_id,
                         ProductCrustType.active == True)  # noqa: E712
@@ -330,7 +363,7 @@ class OrderService:
         # Add drink variant price addition if provided
         if item.selected_drink_variant_id:
             variant = (
-                self._db.query(ProductDrinkVariant)
+                self._tenant_query(ProductDrinkVariant, catalog=True)
                 .filter(ProductDrinkVariant.id == item.selected_drink_variant_id,
                         ProductDrinkVariant.product_id == item.product_id,
                         ProductDrinkVariant.active == True)  # noqa: E712
@@ -368,7 +401,7 @@ class OrderService:
             if not pricing.promotion_applied or not pricing.gift_enabled or not pricing.gift_product_id:
                 continue
             product = (
-                self._db.query(Product)
+                self._tenant_query(Product, catalog=True)
                 .filter(Product.id == pricing.gift_product_id, Product.active == True)  # noqa: E712
                 .first()
             )
@@ -395,7 +428,7 @@ class OrderService:
             raise CartEmpty()
 
         if payload.customer_id:
-            if not self._db.query(CustomerModel).filter(CustomerModel.id == payload.customer_id).first():
+            if not self._tenant_query(CustomerModel).filter(CustomerModel.id == payload.customer_id).first():
                 raise DomainError(
                     "Conta nao encontrada. Faca login novamente para continuar.",
                     code="CustomerNotFound",
@@ -403,7 +436,7 @@ class OrderService:
 
         from backend.services.store_operation_service import StoreOperationService
 
-        StoreOperationService(self._db).validate_order_allowed(
+        StoreOperationService(self._db, self._tenant_context.tenant_id if self._tenant_context else "default").validate_order_allowed(
             is_scheduled=payload.delivery.is_scheduled if payload.delivery else False,
             scheduled_for=payload.delivery.scheduled_for if payload.delivery else None,
         )
@@ -449,7 +482,7 @@ class OrderService:
         from backend.services.shipping_service import ShippingService
         from backend.schemas.shipping_v2 import ShippingCalculateIn
 
-        shipping_result = ShippingService(self._db).calculate(
+        shipping_result = ShippingService(self._db, self._tenant_context).calculate(
             ShippingCalculateIn(
                 city=payload.delivery.city,
                 street=payload.delivery.street,
@@ -518,7 +551,7 @@ class OrderService:
             raise CartEmpty()
 
         if payload.customer_id:
-            if not self._db.query(CustomerModel).filter(CustomerModel.id == payload.customer_id).first():
+            if not self._tenant_query(CustomerModel).filter(CustomerModel.id == payload.customer_id).first():
                 raise DomainError(
                     "Conta não encontrada. Faça login novamente para continuar.",
                     code="CustomerNotFound",
@@ -526,7 +559,7 @@ class OrderService:
 
         from backend.services.store_operation_service import StoreOperationService
 
-        StoreOperationService(self._db).validate_order_allowed(
+        StoreOperationService(self._db, self._tenant_context.tenant_id if self._tenant_context else "default").validate_order_allowed(
             is_scheduled=payload.delivery.is_scheduled if payload.delivery else False,
             scheduled_for=payload.delivery.scheduled_for if payload.delivery else None,
         )
@@ -548,7 +581,7 @@ class OrderService:
         # 2. Shipping — delegated to ShippingService (lazy import avoids circular)
         from backend.services.shipping_service import ShippingService
         from backend.schemas.shipping_v2 import ShippingCalculateIn
-        shipping_result = ShippingService(self._db).calculate(
+        shipping_result = ShippingService(self._db, self._tenant_context).calculate(
             ShippingCalculateIn(
                 city=payload.delivery.city,
                 neighborhood=payload.delivery.neighborhood,
@@ -663,11 +696,12 @@ class OrderService:
             is_scheduled=payload.delivery.is_scheduled,
             scheduled_for=payload.delivery.scheduled_for,
         )
+        self._own(order)
         self._db.add(order)
         self._db.flush()
         self._save_first_delivery_address(payload)
 
-        self._db.add(Payment(
+        payment = Payment(
             id=str(uuid.uuid4()),
             order_id=order.id,
             method=payment_method,
@@ -681,7 +715,9 @@ class OrderService:
             delivery_payment_method=delivery_payment_method,
             cash_needs_change=cash_needs_change,
             cash_change_for=cash_change_for,
-        ))
+        )
+        self._own(payment)
+        self._db.add(payment)
         self._db.flush()
 
         # 5. Order items and flavor breakdown
@@ -714,18 +750,21 @@ class OrderService:
                 promotion_blocked=pricing.promotion_blocked,
                 promotion_block_reason=pricing.promotion_block_reason,
             )
+            self._own(oi)
             self._db.add(oi)
             self._db.flush()
             cmv_contexts.append(CmvOrderItemContext(order_item=oi, cart_item=item))
             for idx, (flavor_in, product) in enumerate(zip(item.flavors, flavor_products)):
-                self._db.add(OrderItemFlavor(
+                flavor = OrderItemFlavor(
                     id=str(uuid.uuid4()),
                     order_item_id=oi.id,
                     product_id=product.id,
                     flavor_name=product.name,
                     flavor_price=product.price,
                     position=idx,
-                ))
+                )
+                self._own(flavor)
+                self._db.add(flavor)
 
         if gift_result:
             gift_item = OrderItem(
@@ -748,6 +787,7 @@ class OrderService:
                 coupon_code=coupon_code,
                 notes=f"Brinde do cupom {coupon_code}" if coupon_code else "Brinde do cupom",
             )
+            self._own(gift_item)
             self._db.add(gift_item)
             self._db.flush()
             cmv_contexts.append(CmvOrderItemContext(order_item=gift_item))
@@ -773,6 +813,7 @@ class OrderService:
                 promotion_name=gift["promotion_name"],
                 notes=f"Brinde da promocao {gift['promotion_name']}",
             )
+            self._own(gift_item)
             self._db.add(gift_item)
             self._db.flush()
             cmv_contexts.append(CmvOrderItemContext(order_item=gift_item))
@@ -859,7 +900,7 @@ class OrderService:
         )
         if not session:
             raise DomainError("Comanda nao encontrada.", code="TableSessionNotFound")
-        if self._db.query(Order).filter(Order.table_session_id == table_session_id).first():
+        if self._tenant_query(Order).filter(Order.table_session_id == table_session_id).first():
             raise DomainError("Esta comanda ja gerou um pedido do salao.", code="TableSessionOrderAlreadyExists")
         if not session.items:
             raise DomainError("Adicione itens na comanda antes de gerar o pedido.", code="TableSessionEmpty")
@@ -900,6 +941,7 @@ class OrderService:
             preparation_started_at=now,
             target_delivery_minutes=0,
         )
+        self._own(order)
         self._db.add(order)
         self._db.flush()
 
@@ -929,11 +971,12 @@ class OrderService:
                 original_price=item.unit_price,
                 is_gift=False,
             )
+            self._own(order_item)
             self._db.add(order_item)
             self._db.flush()
             cmv_contexts.append(CmvOrderItemContext(order_item=order_item))
 
-        self._db.add(Payment(
+        payment = Payment(
             id=str(uuid.uuid4()),
             order_id=order.id,
             method=method,
@@ -944,7 +987,9 @@ class OrderService:
             external_reference=order.external_reference,
             currency="BRL",
             pay_on_delivery=False,
-        ))
+        )
+        self._own(payment)
+        self._db.add(payment)
 
         session.subtotal = subtotal
         session.total = total
@@ -971,7 +1016,7 @@ class OrderService:
         from backend.models.salao import TableSession
 
         order = (
-            self._db.query(Order)
+            self._tenant_query(Order)
             .options(joinedload(Order.payment), joinedload(Order.table_session))
             .filter(Order.table_session_id == table_session_id, Order.sales_channel == "dine_in")
             .first()
@@ -979,7 +1024,7 @@ class OrderService:
         if not order:
             order = self.create_from_table_session(table_session_id, payment_method=payment_method)
             order = (
-                self._db.query(Order)
+                self._tenant_query(Order)
                 .options(joinedload(Order.payment), joinedload(Order.table_session))
                 .filter(Order.id == order.id)
                 .first()
@@ -1000,6 +1045,7 @@ class OrderService:
             external_reference=order.external_reference or order.id,
             currency="BRL",
         )
+        self._own(payment)
         if payment.status not in {PaymentStatus.pending, PaymentStatus.approved, PaymentStatus.paid}:
             raise DomainError("Somente pagamentos pendentes podem ser confirmados.", code="PaymentNotPending")
 
@@ -1233,7 +1279,7 @@ class OrderService:
         sales_channel: str | None = None,
         limit: int = 50,
     ) -> list[Order]:
-        q = self._db.query(Order).options(joinedload(Order.items).joinedload(OrderItem.flavors))
+        q = self._tenant_query(Order).options(joinedload(Order.items).joinedload(OrderItem.flavors))
         if status:
             q = q.filter(Order.status == OrderStatus(status))
         if customer_id:

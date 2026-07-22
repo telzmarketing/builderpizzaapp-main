@@ -11,6 +11,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
+from backend.core.tenant_context import TenantContext
+from backend.core.tenant_ownership import assign_tenant_on_create, scope_query_to_tenant
+from backend.core.wave6_tenant_orm import wave6_tenant_orm_enabled
 from backend.models.whatsapp_gateway import (
     WhatsAppGatewayInstance,
     WhatsAppGatewayLog,
@@ -99,8 +102,13 @@ def _classify_update(current: str | None, available: str | None) -> tuple[str | 
 
 
 class WhatsAppGatewayService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
+        self._tenant_context = tenant_context
+        self._tenant_enabled = wave6_tenant_orm_enabled()
+
+    def _scope(self, query, model):
+        return scope_query_to_tenant(query, model, self._tenant_context, enabled=self._tenant_enabled)
 
     def overview(self) -> dict[str, Any]:
         scheduler = self.get_scheduler_settings()
@@ -108,12 +116,12 @@ class WhatsAppGatewayService:
         counts = {
             status: count
             for status, count in (
-                self._db.query(WhatsAppGatewayInstance.status, func.count(WhatsAppGatewayInstance.id))
+                self._scope(self._db.query(WhatsAppGatewayInstance.status, func.count(WhatsAppGatewayInstance.id)), WhatsAppGatewayInstance)
                 .group_by(WhatsAppGatewayInstance.status)
                 .all()
             )
         }
-        total = self._db.query(func.count(WhatsAppGatewayInstance.id)).scalar() or 0
+        total = self._scope(self._db.query(func.count(WhatsAppGatewayInstance.id)), WhatsAppGatewayInstance).scalar() or 0
         return {
             "total_instances": int(total),
             "connected_instances": int(counts.get("connected", 0)),
@@ -127,14 +135,14 @@ class WhatsAppGatewayService:
 
     def list_instances(self) -> list[WhatsAppGatewayInstance]:
         return (
-            self._db.query(WhatsAppGatewayInstance)
+            self._scope(self._db.query(WhatsAppGatewayInstance), WhatsAppGatewayInstance)
             .order_by(WhatsAppGatewayInstance.created_at.desc())
             .all()
         )
 
     def get_instance(self, instance_id: str) -> WhatsAppGatewayInstance | None:
         return (
-            self._db.query(WhatsAppGatewayInstance)
+            self._scope(self._db.query(WhatsAppGatewayInstance), WhatsAppGatewayInstance)
             .filter(WhatsAppGatewayInstance.id == instance_id)
             .first()
         )
@@ -147,7 +155,7 @@ class WhatsAppGatewayService:
         now = _now_utc()
         instance = WhatsAppGatewayInstance(
             id=str(uuid.uuid4()),
-            tenant_id=payload.tenant_id or "default",
+            tenant_id=(payload.tenant_id or "default") if not self._tenant_enabled else None,
             company_id=payload.company_id or "default",
             name=payload.name.strip(),
             phone_number=(payload.phone_number or "").strip() or None,
@@ -158,6 +166,7 @@ class WhatsAppGatewayService:
             created_at=now,
             updated_at=now,
         )
+        assign_tenant_on_create(instance, self._tenant_context, enabled=self._tenant_enabled)
         self._db.add(instance)
         self._db.flush()
 
@@ -176,7 +185,7 @@ class WhatsAppGatewayService:
         return instance
 
     def list_logs(self, *, instance_id: str | None = None, limit: int = 50) -> list[WhatsAppGatewayLog]:
-        q = self._db.query(WhatsAppGatewayLog)
+        q = self._scope(self._db.query(WhatsAppGatewayLog), WhatsAppGatewayLog)
         if instance_id:
             q = q.filter(WhatsAppGatewayLog.instance_id == instance_id)
         return q.order_by(WhatsAppGatewayLog.created_at.desc()).limit(limit).all()
@@ -229,7 +238,7 @@ class WhatsAppGatewayService:
         instance = self._require_instance(instance_id)
         provider = self._provider(instance.provider)
         result = provider.delete_instance(instance_id=instance.id)
-        self._db.query(WhatsAppGatewayLog).filter(
+        self._scope(self._db.query(WhatsAppGatewayLog), WhatsAppGatewayLog).filter(
             WhatsAppGatewayLog.instance_id == instance.id
         ).update({"instance_id": None}, synchronize_session=False)
         self._db.delete(instance)
@@ -422,6 +431,7 @@ class WhatsAppGatewayService:
             created_at=now,
             updated_at=now,
         )
+        assign_tenant_on_create(log, self._tenant_context, enabled=self._tenant_enabled)
         self._db.add(log)
         return log
 
@@ -485,6 +495,7 @@ class WhatsAppGatewayService:
             created_at=now,
             updated_at=now,
         )
+        assign_tenant_on_create(log, self._tenant_context, enabled=self._tenant_enabled)
         self._db.add(log)
         self._db.flush()
 
@@ -529,7 +540,7 @@ class WhatsAppGatewayService:
             raise ValueError("Confirmacao explicita obrigatoria para atualizar Baileys.")
 
         check = (
-            self._db.query(WhatsAppGatewayUpdateLog)
+            self._scope(self._db.query(WhatsAppGatewayUpdateLog), WhatsAppGatewayUpdateLog)
             .filter(
                 WhatsAppGatewayUpdateLog.id == check_id,
                 WhatsAppGatewayUpdateLog.action == "check",
@@ -564,6 +575,7 @@ class WhatsAppGatewayService:
             created_at=now,
             updated_at=now,
         )
+        assign_tenant_on_create(confirmation, self._tenant_context, enabled=self._tenant_enabled)
         self._db.add(confirmation)
         self.add_log(
             action="update_confirmed",
@@ -588,16 +600,16 @@ class WhatsAppGatewayService:
 
     def get_scheduler_settings(self) -> WhatsAppGatewaySchedulerSettings:
         settings = (
-            self._db.query(WhatsAppGatewaySchedulerSettings)
-            .filter(WhatsAppGatewaySchedulerSettings.id == "default")
+            self._scope(self._db.query(WhatsAppGatewaySchedulerSettings), WhatsAppGatewaySchedulerSettings)
+            .filter(WhatsAppGatewaySchedulerSettings.id == (self._tenant_context.tenant_id if self._tenant_enabled else "default"))
             .first()
         )
         if settings:
             return settings
         now = _now_utc()
         settings = WhatsAppGatewaySchedulerSettings(
-            id="default",
-            tenant_id="default",
+            id=self._tenant_context.tenant_id if self._tenant_enabled else "default",
+            tenant_id=None if self._tenant_enabled else "default",
             company_id="default",
             auto_health_check_enabled=True,
             morning_check_time="06:00",
@@ -609,6 +621,7 @@ class WhatsAppGatewayService:
             created_at=now,
             updated_at=now,
         )
+        assign_tenant_on_create(settings, self._tenant_context, enabled=self._tenant_enabled)
         self._db.add(settings)
         self._db.flush()
         return settings
@@ -641,7 +654,7 @@ class WhatsAppGatewayService:
 
     def _latest_update_log(self, *, action: str) -> WhatsAppGatewayUpdateLog | None:
         return (
-            self._db.query(WhatsAppGatewayUpdateLog)
+            self._scope(self._db.query(WhatsAppGatewayUpdateLog), WhatsAppGatewayUpdateLog)
             .filter(WhatsAppGatewayUpdateLog.package_name == BAILEYS_PACKAGE, WhatsAppGatewayUpdateLog.action == action)
             .order_by(WhatsAppGatewayUpdateLog.created_at.desc())
             .first()
@@ -741,7 +754,7 @@ class WhatsAppGatewayService:
             return None
 
         return (
-            self._db.query(WhatsAppGatewayInstance)
+            self._scope(self._db.query(WhatsAppGatewayInstance), WhatsAppGatewayInstance)
             .filter(
                 WhatsAppGatewayInstance.provider == "baileys",
                 WhatsAppGatewayInstance.status == "connected",

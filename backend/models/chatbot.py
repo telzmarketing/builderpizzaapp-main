@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 
 
 def _uid(prefix: str) -> str:
@@ -60,6 +61,7 @@ class AutomationTrigger(str, enum.Enum):
 class ChatbotSettings(Base):
     """Singleton — apenas uma linha com id='default'."""
     __tablename__ = "chatbot_settings"
+    tenant_id = wave6_tenant_column("chatbot_settings")
 
     id                      = Column(String, primary_key=True, default="default")
     ativo                   = Column(Boolean, default=True)
@@ -93,6 +95,7 @@ class ChatbotSettings(Base):
 
 class ChatbotFAQ(Base):
     __tablename__ = "chatbot_faq"
+    tenant_id = wave6_tenant_column("chatbot_faq")
 
     id                 = Column(String, primary_key=True, default=lambda: _uid("faq"))
     pergunta           = Column(Text, nullable=False)
@@ -118,6 +121,7 @@ class ChatbotFAQ(Base):
 
 class ChatbotConversation(Base):
     __tablename__ = "chatbot_conversations"
+    tenant_id = wave6_tenant_column("chatbot_conversations")
 
     id                   = Column(String, primary_key=True, default=lambda: _uid("conv"))
     session_id           = Column(String, unique=True, nullable=False, index=True)
@@ -155,6 +159,7 @@ class ChatbotConversation(Base):
 
 class ChatbotMessage(Base):
     __tablename__ = "chatbot_messages"
+    tenant_id = wave6_tenant_column("chatbot_messages")
 
     id                = Column(String, primary_key=True, default=lambda: _uid("msg"))
     conversation_id   = Column(
@@ -181,6 +186,7 @@ class ChatbotMessage(Base):
 
 class ChatbotAutomation(Base):
     __tablename__ = "chatbot_automations"
+    tenant_id = wave6_tenant_column("chatbot_automations")
 
     id         = Column(String, primary_key=True, default=lambda: _uid("auto"))
     nome       = Column(String(200), nullable=False)
@@ -199,6 +205,7 @@ class ChatbotAutomation(Base):
 
 class ChatbotHandoff(Base):
     __tablename__ = "chatbot_handoffs"
+    tenant_id = wave6_tenant_column("chatbot_handoffs")
 
     id              = Column(String, primary_key=True, default=lambda: _uid("hdff"))
     conversation_id = Column(
@@ -219,6 +226,7 @@ class ChatbotHandoff(Base):
 
 class ChatbotKnowledgeDoc(Base):
     __tablename__ = "chatbot_knowledge_docs"
+    tenant_id = wave6_tenant_column("chatbot_knowledge_docs")
 
     id          = Column(String, primary_key=True, default=lambda: _uid("kdoc"))
     titulo      = Column(String(300), nullable=False)

@@ -2961,6 +2961,20 @@ export interface ApiAdmin {
   name: string;
 }
 
+export interface ApiAdminTenantMembership {
+  tenant_id: string;
+  membership_id: string;
+  name: string;
+  slug: string;
+  role: string;
+  is_default: boolean;
+}
+
+export interface ApiAdminTenantSelection {
+  access_token: string;
+  token_type: string;
+}
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export const authApi = {
@@ -3016,6 +3030,11 @@ export const adminAuthApi = {
     ),
 
   me: () => get<ApiAdmin>("/admin/auth/me"),
+
+  listTenants: () => get<ApiAdminTenantMembership[]>("/admin/auth/tenants"),
+
+  selectTenant: (tenant_id: string) =>
+    post<ApiAdminTenantSelection>("/admin/auth/select-tenant", { tenant_id }),
 
   logout: () => post<null>("/admin/auth/logout", {}),
 

@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
+from backend.core.tenant_context import TenantContext
+from backend.core.tenant_ownership import assign_tenant_on_create, operations_enforcement_enabled, scope_query_to_tenant
 from backend.models.product import Product
 from backend.models.salao import Reservation, RestaurantTable, TableSession, TableSessionItem
 
@@ -28,28 +30,44 @@ class SalaoRuleError(DomainError):
         super().__init__(message, code=code)
 
 
-class RestaurantTableService:
-    def __init__(self, db: Session):
+class _SalaoTenantMixin:
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
+        self._tenant_context = tenant_context
+        self._tenant_enabled = operations_enforcement_enabled()
+
+    def _query(self, model):
+        return scope_query_to_tenant(
+            self._db.query(model),
+            model,
+            self._tenant_context,
+            enabled=self._tenant_enabled,
+        )
+
+    def _own(self, resource):
+        return assign_tenant_on_create(resource, self._tenant_context, enabled=self._tenant_enabled)
+
+
+class RestaurantTableService(_SalaoTenantMixin):
 
     def list(self, *, include_inactive: bool = False) -> list[RestaurantTable]:
-        query = self._db.query(RestaurantTable)
+        query = self._query(RestaurantTable)
         if not include_inactive:
             query = query.filter(RestaurantTable.active == True)  # noqa: E712
         return query.order_by(RestaurantTable.number.asc()).all()
 
     def get(self, table_id: str) -> RestaurantTable:
-        table = self._db.query(RestaurantTable).filter(RestaurantTable.id == table_id).first()
+        table = self._query(RestaurantTable).filter(RestaurantTable.id == table_id).first()
         if not table:
             raise SalaoNotFound("Mesa")
         return table
 
     def create(self, data: dict) -> RestaurantTable:
         self._validate_status(data.get("status", "available"))
-        existing = self._db.query(RestaurantTable).filter(RestaurantTable.number == data["number"]).first()
+        existing = self._query(RestaurantTable).filter(RestaurantTable.number == data["number"]).first()
         if existing:
             raise SalaoRuleError("Ja existe uma mesa com este numero.", code="RestaurantTableNumberExists")
-        table = RestaurantTable(id=f"tbl-{uuid.uuid4().hex[:10]}", **data)
+        table = self._own(RestaurantTable(id=f"tbl-{uuid.uuid4().hex[:10]}", **data))
         self._db.add(table)
         self._db.commit()
         self._db.refresh(table)
@@ -61,7 +79,7 @@ class RestaurantTableService:
             self._validate_status(data["status"])
         if "number" in data and data["number"]:
             existing = (
-                self._db.query(RestaurantTable)
+                self._query(RestaurantTable)
                 .filter(RestaurantTable.number == data["number"], RestaurantTable.id != table_id)
                 .first()
             )
@@ -82,19 +100,17 @@ class RestaurantTableService:
             raise SalaoRuleError("Status de mesa invalido.", code="InvalidRestaurantTableStatus")
 
 
-class ReservationService:
-    def __init__(self, db: Session):
-        self._db = db
+class ReservationService(_SalaoTenantMixin):
 
     def list(self, *, status: str | None = None) -> list[Reservation]:
-        query = self._db.query(Reservation)
+        query = self._query(Reservation)
         if status:
             self._validate_status(status)
             query = query.filter(Reservation.status == status)
         return query.order_by(Reservation.reservation_date.desc(), Reservation.reservation_time.desc()).all()
 
     def get(self, reservation_id: str) -> Reservation:
-        reservation = self._db.query(Reservation).filter(Reservation.id == reservation_id).first()
+        reservation = self._query(Reservation).filter(Reservation.id == reservation_id).first()
         if not reservation:
             raise SalaoNotFound("Reserva")
         return reservation
@@ -103,8 +119,8 @@ class ReservationService:
         self._validate_status(data.get("status", "pending"))
         table_id = data.get("table_id")
         if table_id:
-            RestaurantTableService(self._db).get(table_id)
-        reservation = Reservation(id=f"res-{uuid.uuid4().hex[:10]}", **data)
+            RestaurantTableService(self._db, self._tenant_context).get(table_id)
+        reservation = self._own(Reservation(id=f"res-{uuid.uuid4().hex[:10]}", **data))
         self._db.add(reservation)
         self._sync_table_from_reservation(reservation)
         self._db.commit()
@@ -116,7 +132,7 @@ class ReservationService:
         if "status" in data and data["status"] is not None:
             self._validate_status(data["status"])
         if data.get("table_id"):
-            RestaurantTableService(self._db).get(data["table_id"])
+            RestaurantTableService(self._db, self._tenant_context).get(data["table_id"])
         for key, value in data.items():
             setattr(reservation, key, value)
         self._sync_table_from_reservation(reservation)
@@ -134,43 +150,41 @@ class ReservationService:
     def _sync_table_from_reservation(self, reservation: Reservation) -> None:
         if not reservation.table_id:
             return
-        table = RestaurantTableService(self._db).get(reservation.table_id)
+        table = RestaurantTableService(self._db, self._tenant_context).get(reservation.table_id)
         if reservation.status in {"confirmed"} and table.status == "available":
             table.status = "reserved"
         if reservation.status == "seated":
             table.status = "occupied"
 
 
-class TableSessionService:
-    def __init__(self, db: Session):
-        self._db = db
+class TableSessionService(_SalaoTenantMixin):
 
     def list(self, *, status: str | None = None) -> list[TableSession]:
-        query = self._db.query(TableSession)
+        query = self._query(TableSession)
         if status:
             self._validate_status(status)
             query = query.filter(TableSession.status == status)
         return query.order_by(TableSession.opened_at.desc()).all()
 
     def get(self, session_id: str) -> TableSession:
-        session = self._db.query(TableSession).filter(TableSession.id == session_id).first()
+        session = self._query(TableSession).filter(TableSession.id == session_id).first()
         if not session:
             raise SalaoNotFound("Comanda")
         return session
 
     def open(self, data: dict) -> TableSession:
         self._validate_status(data.get("status", "open"))
-        table = RestaurantTableService(self._db).get(data["table_id"])
+        table = RestaurantTableService(self._db, self._tenant_context).get(data["table_id"])
         if not table.active or table.status == "inactive":
             raise SalaoRuleError("Mesa inativa nao pode abrir comanda.", code="InactiveRestaurantTable")
         existing = (
-            self._db.query(TableSession)
+            self._query(TableSession)
             .filter(TableSession.table_id == table.id, TableSession.status.in_(OPEN_SESSION_STATUSES))
             .first()
         )
         if existing:
             raise SalaoRuleError("Mesa ja possui comanda aberta.", code="TableSessionAlreadyOpen")
-        session = TableSession(id=f"cmd-{uuid.uuid4().hex[:10]}", **data)
+        session = self._own(TableSession(id=f"cmd-{uuid.uuid4().hex[:10]}", **data))
         table.status = "occupied"
         self._db.add(session)
         self._db.commit()
@@ -215,7 +229,7 @@ class TableSessionService:
         if unit_price is None:
             unit_price = product.dine_in_price if product.dine_in_price is not None else product.price
         unit_price = round(float(unit_price), 2)
-        item = TableSessionItem(
+        item = self._own(TableSessionItem(
             id=f"tsi-{uuid.uuid4().hex[:10]}",
             table_session_id=session.id,
             product_id=product.id,
@@ -224,7 +238,7 @@ class TableSessionService:
             unit_price=unit_price,
             total_price=round(unit_price * quantity, 2),
             notes=data.get("notes"),
-        )
+        ))
         self._db.add(item)
         self._db.flush()
         self._recalculate(session)
@@ -277,7 +291,7 @@ class TableSessionService:
 
     def _get_dine_in_product(self, product_id: str) -> Product:
         product = (
-            self._db.query(Product)
+            self._query(Product)
             .filter(Product.id == product_id, Product.active == True, Product.visible_dine_in == True)  # noqa: E712
             .first()
         )
@@ -287,7 +301,7 @@ class TableSessionService:
 
     def _get_item(self, session_id: str, item_id: str) -> TableSessionItem:
         item = (
-            self._db.query(TableSessionItem)
+            self._query(TableSessionItem)
             .filter(TableSessionItem.id == item_id, TableSessionItem.table_session_id == session_id)
             .first()
         )
@@ -297,7 +311,7 @@ class TableSessionService:
 
     def _recalculate(self, session: TableSession) -> None:
         self._db.flush()
-        items = self._db.query(TableSessionItem).filter(TableSessionItem.table_session_id == session.id).all()
+        items = self._query(TableSessionItem).filter(TableSessionItem.table_session_id == session.id).all()
         subtotal = round(sum((item.total_price or 0.0) for item in items), 2)
         session.subtotal = subtotal
         session.total = round(max(0.0, subtotal + (session.service_fee or 0.0) - (session.discount or 0.0)), 2)

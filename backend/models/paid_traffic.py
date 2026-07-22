@@ -5,6 +5,7 @@ from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Index
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 
 
 class TrafficPlatform(str, enum.Enum):
@@ -29,6 +30,7 @@ class AdIntegrationStatus(str, enum.Enum):
 
 class TrafficCampaign(Base):
     __tablename__ = "traffic_campaigns"
+    tenant_id = wave6_tenant_column("traffic_campaigns")
 
     id = Column(String, primary_key=True)
     name = Column(String(200), nullable=False)
@@ -65,6 +67,7 @@ class TrafficCampaign(Base):
 
 class CampaignCreative(Base):
     __tablename__ = "campaign_creatives"
+    tenant_id = wave6_tenant_column("campaign_creatives")
 
     id = Column(String, primary_key=True)
     campaign_id = Column(String, ForeignKey("traffic_campaigns.id", ondelete="CASCADE"), nullable=False)
@@ -82,6 +85,7 @@ class CampaignCreative(Base):
 
 class CampaignLink(Base):
     __tablename__ = "campaign_links"
+    tenant_id = wave6_tenant_column("campaign_links")
 
     id = Column(String, primary_key=True)
     campaign_id = Column(String, ForeignKey("traffic_campaigns.id", ondelete="CASCADE"), nullable=False)
@@ -106,6 +110,7 @@ class CampaignLink(Base):
 
 class TrackingSession(Base):
     __tablename__ = "tracking_sessions"
+    tenant_id = wave6_tenant_column("tracking_sessions")
 
     id = Column(String, primary_key=True)
     campaign_id = Column(String, ForeignKey("traffic_campaigns.id", ondelete="SET NULL"), nullable=True)
@@ -127,6 +132,7 @@ class TrackingSession(Base):
 
 class TrackingEvent(Base):
     __tablename__ = "tracking_events"
+    tenant_id = wave6_tenant_column("tracking_events")
 
     id = Column(String, primary_key=True)
     session_id = Column(String, ForeignKey("tracking_sessions.id", ondelete="SET NULL"), nullable=True)
@@ -151,6 +157,7 @@ class TrackingEvent(Base):
 
 class AdPlatformIntegration(Base):
     __tablename__ = "ad_platform_integrations"
+    tenant_id = wave6_tenant_column("ad_platform_integrations")
 
     id = Column(String, primary_key=True)
     platform = Column(String(30), nullable=False, unique=True)
@@ -167,6 +174,7 @@ class AdPlatformIntegration(Base):
 
 class AdAccount(Base):
     __tablename__ = "ad_accounts"
+    tenant_id = wave6_tenant_column("ad_accounts")
 
     id = Column(String, primary_key=True)
     integration_id = Column(String, ForeignKey("ad_platform_integrations.id", ondelete="CASCADE"), nullable=False)
@@ -180,6 +188,7 @@ class AdAccount(Base):
 
 class AdCampaignExternal(Base):
     __tablename__ = "ad_campaigns_external"
+    tenant_id = wave6_tenant_column("ad_campaigns_external")
 
     id = Column(String, primary_key=True)
     traffic_campaign_id = Column(String, ForeignKey("traffic_campaigns.id", ondelete="SET NULL"), nullable=True)
@@ -195,6 +204,7 @@ class AdCampaignExternal(Base):
 
 class AdDailyMetric(Base):
     __tablename__ = "ad_daily_metrics"
+    tenant_id = wave6_tenant_column("ad_daily_metrics")
 
     id = Column(String, primary_key=True)
     traffic_campaign_id = Column(String, ForeignKey("traffic_campaigns.id", ondelete="SET NULL"), nullable=True)
@@ -218,6 +228,7 @@ class AdDailyMetric(Base):
 
 class CampaignSettings(Base):
     __tablename__ = "campaign_settings"
+    tenant_id = wave6_tenant_column("campaign_settings")
 
     id = Column(String, primary_key=True, default="default")
     attribution_window_days = Column(Integer, default=7)
@@ -230,6 +241,7 @@ class CampaignSettings(Base):
 
 class AdSyncLog(Base):
     __tablename__ = "ad_sync_logs"
+    tenant_id = wave6_tenant_column("ad_sync_logs")
 
     id = Column(String, primary_key=True)
     platform = Column(String(30), nullable=False)

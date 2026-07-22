@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Boolean, Integer, Enum, DateTime, Text, ForeignKey
+from sqlalchemy import Column, String, Float, Boolean, Integer, Enum, DateTime, Text, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -30,8 +30,10 @@ class KitType(str, enum.Enum):
 
 class Campaign(Base):
     __tablename__ = "campaigns"
+    __table_args__ = (Index("uq_campaigns_tenant_id_id", "tenant_id", "id", unique=True), UniqueConstraint("tenant_id", "slug", name="uq_campaigns_tenant_slug"))
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_campaigns_tenant_id_tenants"), nullable=True)
     name = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
     status = Column(Enum(CampaignStatus), default=CampaignStatus.draft, nullable=False)
@@ -58,8 +60,10 @@ class Campaign(Base):
 
 class CampaignProduct(Base):
     __tablename__ = "campaign_products"
+    __table_args__ = (Index("uq_campaign_products_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_campaign_products_tenant_id_tenants"), nullable=True)
     campaign_id = Column(String, ForeignKey("campaigns.id"), nullable=False)
     product_id = Column(String, ForeignKey("products.id"), nullable=True)
     kit_id = Column(String, ForeignKey("promotional_kits.id"), nullable=True)
@@ -76,8 +80,10 @@ class CampaignProduct(Base):
 
 class PromotionalKit(Base):
     __tablename__ = "promotional_kits"
+    __table_args__ = (Index("uq_promotional_kits_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_promotional_kits_tenant_id_tenants"), nullable=True)
     name = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
     icon = Column(String(50), default="🎁")
@@ -97,8 +103,10 @@ class PromotionalKit(Base):
 
 class PromotionalKitItem(Base):
     __tablename__ = "promotional_kit_items"
+    __table_args__ = (Index("uq_promotional_kit_items_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_promotional_kit_items_tenant_id_tenants"), nullable=True)
     kit_id = Column(String, ForeignKey("promotional_kits.id"), nullable=False)
     product_id = Column(String, ForeignKey("products.id"), nullable=False)
     quantity = Column(Integer, default=1)

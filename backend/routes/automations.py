@@ -9,6 +9,7 @@ from sqlalchemy import Column, String, Boolean, Integer, Text, DateTime, Foreign
 from sqlalchemy.orm import Session
 
 from backend.database import get_db, Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 from backend.routes.admin_auth import get_current_admin
 from backend.core.response import ok, created
 
@@ -230,6 +231,7 @@ AUTOMATION_EVENT_CATALOG = [
 
 class MarketingAutomation(Base):
     __tablename__ = "marketing_automations"
+    tenant_id = wave6_tenant_column("marketing_automations")
     id = Column(String, primary_key=True)
     name = Column(String(200), nullable=False)
     trigger = Column(String(50), nullable=False)
@@ -248,6 +250,7 @@ class MarketingAutomation(Base):
 
 class AutomationLog(Base):
     __tablename__ = "automation_logs"
+    tenant_id = wave6_tenant_column("automation_logs")
     id = Column(String, primary_key=True)
     automation_id = Column(String, ForeignKey("marketing_automations.id", ondelete="CASCADE"),
                            nullable=False)
@@ -260,6 +263,7 @@ class AutomationLog(Base):
 
 class AutomationTemplate(Base):
     __tablename__ = "automation_templates"
+    tenant_id = wave6_tenant_column("automation_templates")
     id = Column(String, primary_key=True)
     name = Column(String(200), nullable=False)
     channel = Column(String(20), nullable=False, default="whatsapp")

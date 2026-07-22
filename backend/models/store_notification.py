@@ -4,10 +4,12 @@ from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, Str
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 
 
 class StoreNotificationSettings(Base):
     __tablename__ = "store_notification_settings"
+    tenant_id = wave6_tenant_column("store_notification_settings")
 
     id = Column(String, primary_key=True, default="default")
     enabled = Column(Boolean, default=True, nullable=False)
@@ -32,6 +34,7 @@ class StoreNotificationSettings(Base):
 
 class StoreNotification(Base):
     __tablename__ = "store_notifications"
+    tenant_id = wave6_tenant_column("store_notifications")
 
     id = Column(String, primary_key=True)
     type = Column(String(20), default="manual", nullable=False)
@@ -74,6 +77,7 @@ class StoreNotification(Base):
 
 class StoreNotificationDay(Base):
     __tablename__ = "store_notification_days"
+    tenant_id = wave6_tenant_column("store_notification_days")
 
     id = Column(String, primary_key=True)
     notification_id = Column(
@@ -89,6 +93,7 @@ class StoreNotificationDay(Base):
 
 class StoreNotificationImpression(Base):
     __tablename__ = "store_notification_impressions"
+    tenant_id = wave6_tenant_column("store_notification_impressions")
 
     id = Column(String, primary_key=True)
     notification_id = Column(
@@ -113,6 +118,7 @@ class StoreNotificationImpression(Base):
 
 class StoreNotificationCaptured(Base):
     __tablename__ = "store_notification_captured"
+    tenant_id = wave6_tenant_column("store_notification_captured")
 
     id = Column(String, primary_key=True)
     order_id = Column(

@@ -50,6 +50,34 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "troque-esta-chave-secreta-em-producao"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 480          # 8 horas
+    # Multi-tenant auth is additive and opt-in.  Keep disabled until the
+    # foundation migration and legacy memberships have been validated.
+    MULTI_TENANT_AUTH_ENABLED: bool = False
+    # Runtime ownership for the Wave 2 identity/catalog slice. This is a
+    # separate gate so schema expansion cannot accidentally imply isolation.
+    TENANT_IDENTITY_CATALOG_ENFORCEMENT_ENABLED: bool = False
+    # Runtime ownership for the Wave 3 customers/orders slice. Schema
+    # expansion and backfill do not authorize routes to claim isolation.
+    TENANT_CUSTOMERS_ORDERS_ENFORCEMENT_ENABLED: bool = False
+    # Metadata alignment for the Wave 6 slice is not query isolation and stays
+    # disabled until application ownership checks are implemented and tested.
+    MULTI_TENANT_WAVE6_ORM_ENABLED: bool = False
+    # Runtime ownership for operations, freight, delivery and dining room.
+    # ORM/schema alignment alone must never imply route-level isolation.
+    TENANT_OPERATIONS_ENFORCEMENT_ENABLED: bool = False
+    # Public tenant-domain resolution is a separate rollout gate.  Proxy
+    # headers remain untrusted unless both settings below are explicit.
+    TENANT_DOMAINS_ENABLED: bool = False
+    TENANT_DOMAINS_TRUST_PROXY_HEADERS: bool = False
+    TENANT_DOMAINS_TRUSTED_PROXY_IPS: str = ""
+    TENANT_DOMAINS_PLATFORM_HOSTNAMES: str = ""
+    TENANT_PAYMENT_WEBHOOKS_ENABLED: bool = False
+    TENANT_PAYMENT_WEBHOOK_ENDPOINTS: str = "{}"
+    TENANT_BACKGROUND_CONTEXT_ENABLED: bool = False
+    TENANT_UPLOAD_NAMESPACE_ENABLED: bool = False
+
+    TENANT_CREDENTIALS_ENABLED: bool = False
+    PLATFORM_RBAC_ENABLED: bool = False
 
     # Loyalty
     POINTS_PER_REAL: float = 1.0           # pontos por R$ gasto

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -12,10 +12,13 @@ FREE_SHIPPING_LABEL = "Frete Grátis na Promoção"
 class PromotionLandingPage(Base):
     __tablename__ = "promotion_landing_pages"
     __table_args__ = (
+        Index("uq_promotion_landing_pages_tenant_id_id", "tenant_id", "id", unique=True),
         UniqueConstraint("slug", name="uq_promotion_landing_pages_slug"),
+        UniqueConstraint("tenant_id", "slug", name="uq_promotion_landing_pages_tenant_slug"),
     )
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_promotion_landing_pages_tenant_id_tenants"), nullable=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
     promotion_id = Column(String, ForeignKey("product_promotions.id", ondelete="CASCADE"), nullable=False, index=True)
     title = Column(String(220), nullable=False)

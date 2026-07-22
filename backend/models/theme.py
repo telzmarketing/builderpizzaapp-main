@@ -1,14 +1,16 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String
 
 from backend.database import Base
 
 
 class ThemeSettings(Base):
     __tablename__ = "theme_settings"
+    __table_args__ = (Index("uq_theme_settings_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True, default="default")
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_theme_settings_tenant_id_tenants"), nullable=True)
 
     # Brand
     primary             = Column(String(20), nullable=False, default="#f97316")

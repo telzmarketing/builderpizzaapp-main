@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, String, Float, Integer, Enum, DateTime, ForeignKey, Text
+from sqlalchemy import Boolean, Column, String, Float, Integer, Enum, DateTime, ForeignKey, Index, Text, text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -23,8 +23,16 @@ class OrderStatus(str, enum.Enum):
 
 class Order(Base):
     __tablename__ = "orders"
+    __table_args__ = (
+        Index("uq_orders_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_orders_tenant_order_code", "tenant_id", "order_code", unique=True,
+              postgresql_where=text("order_code IS NOT NULL")),
+        Index("uq_orders_tenant_external_reference", "tenant_id", "external_reference", unique=True,
+              postgresql_where=text("external_reference IS NOT NULL")),
+    )
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_orders_tenant_id_tenants"), nullable=True)
     customer_id = Column(String, ForeignKey("customers.id"), nullable=True)
     address_id = Column(String, ForeignKey("addresses.id"), nullable=True)
 
@@ -96,8 +104,10 @@ class Order(Base):
 
 class OrderItem(Base):
     __tablename__ = "order_items"
+    __table_args__ = (Index("uq_order_items_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_order_items_tenant_id_tenants"), nullable=True)
     order_id = Column(String, ForeignKey("orders.id"), nullable=False)
     product_id = Column(String, ForeignKey("products.id"), nullable=False)
 
@@ -131,8 +141,10 @@ class OrderItem(Base):
 
 class OrderItemFlavor(Base):
     __tablename__ = "order_item_flavors"
+    __table_args__ = (Index("uq_order_item_flavors_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_order_item_flavors_tenant_id_tenants"), nullable=True)
     order_item_id = Column(String, ForeignKey("order_items.id"), nullable=False)
     product_id = Column(String, ForeignKey("products.id"), nullable=False)
     flavor_name = Column(String(200), nullable=False)

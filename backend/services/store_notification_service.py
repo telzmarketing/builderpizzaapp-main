@@ -13,6 +13,14 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from backend.core.tenant_context import TenantContext, TenantContextMissing
+from backend.core.tenant_ownership import (
+    assign_tenant_on_create,
+    assert_resource_ownership,
+    scope_query_to_tenant,
+)
+from backend.core.tenant_route_context import operation_tenant_id
+from backend.core.wave6_tenant_orm import wave6_tenant_orm_enabled
 from backend.models.customer import Address
 from backend.models.order import Order, OrderItem, OrderStatus
 from backend.models.payment import Payment, PaymentStatus
@@ -75,18 +83,53 @@ IMPORT_HEADER_ALIASES = {
 
 
 class StoreNotificationService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
+        self._tenant_context = tenant_context
+
+    def _operation_tenant_id(self) -> str:
+        return operation_tenant_id(self._tenant_context)
+
+    def _store_notification_tenant_id(self) -> str:
+        if not self._tenant_enforcement_enabled():
+            return "default"
+        if self._tenant_context is None:
+            raise TenantContextMissing("Contexto de tenant obrigatorio para prova social tenantizada.")
+        return self._tenant_context.tenant_id
+
+    def _tenant_enforcement_enabled(self) -> bool:
+        return wave6_tenant_orm_enabled()
+
+    def _scope(self, query, model):
+        return scope_query_to_tenant(
+            query,
+            model,
+            self._tenant_context,
+            enabled=self._tenant_enforcement_enabled(),
+        )
+
+    def _assign_tenant(self, resource):
+        return assign_tenant_on_create(
+            resource,
+            self._tenant_context,
+            enabled=self._tenant_enforcement_enabled(),
+        )
+
+    def _settings_id(self) -> str:
+        if not self._tenant_enforcement_enabled():
+            return "default"
+        return f"store-notification-settings-{self._store_notification_tenant_id()}"
 
     def get_settings(self) -> StoreNotificationSettings:
         settings = (
-            self._db.query(StoreNotificationSettings)
-            .filter(StoreNotificationSettings.id == "default")
+            self._scope(self._db.query(StoreNotificationSettings), StoreNotificationSettings)
+            .filter(StoreNotificationSettings.id == self._settings_id())
             .first()
         )
         if settings:
             return settings
-        settings = StoreNotificationSettings(id="default")
+        settings = StoreNotificationSettings(id=self._settings_id())
+        self._assign_tenant(settings)
         self._db.add(settings)
         self._db.commit()
         self._db.refresh(settings)
@@ -106,7 +149,7 @@ class StoreNotificationService:
 
     def list_notifications(self) -> list[dict]:
         notifications = (
-            self._db.query(StoreNotification)
+            self._scope(self._db.query(StoreNotification), StoreNotification)
             .options(selectinload(StoreNotification.days), joinedload(StoreNotification.product))
             .order_by(StoreNotification.created_at.desc())
             .all()
@@ -115,24 +158,27 @@ class StoreNotificationService:
 
     def summary(self) -> dict:
         active = (
-            self._db.query(func.count(StoreNotification.id))
+            self._scope(self._db.query(func.count(StoreNotification.id)), StoreNotification)
             .filter(StoreNotification.status == "active")
             .scalar()
             or 0
         )
         manual = (
-            self._db.query(func.count(StoreNotification.id))
+            self._scope(self._db.query(func.count(StoreNotification.id)), StoreNotification)
             .filter(StoreNotification.type.in_(["manual", "fomento"]))
             .scalar()
             or 0
         )
         real_impressions = (
-            self._db.query(func.count(StoreNotificationImpression.id))
+            self._scope(self._db.query(func.count(StoreNotificationImpression.id)), StoreNotificationImpression)
             .filter(StoreNotificationImpression.source_type == "real")
             .scalar()
             or 0
         )
-        total_impressions = self._db.query(func.count(StoreNotificationImpression.id)).scalar() or 0
+        total_impressions = (
+            self._scope(self._db.query(func.count(StoreNotificationImpression.id)), StoreNotificationImpression).scalar()
+            or 0
+        )
         return {
             "active_notifications": active,
             "manual_notifications": manual,
@@ -148,6 +194,7 @@ class StoreNotificationService:
             source_customer_id=source_customer_id,
             **values,
         )
+        self._assign_tenant(notification)
         self._db.add(notification)
         self._replace_days(notification, payload.weekdays)
         self._db.commit()
@@ -190,6 +237,7 @@ class StoreNotificationService:
             end_date=notification.end_date,
             source_customer_id=notification.source_customer_id,
         )
+        self._assign_tenant(copy)
         self._db.add(copy)
         self._replace_days(copy, [day.weekday for day in notification.days])
         self._db.commit()
@@ -308,7 +356,7 @@ class StoreNotificationService:
             raise ValueError("Informe o bairro do comprador.")
 
         purchase_minutes = self._parse_purchase_minutes(row.get("purchase_minutes_ago"))
-        product = self._db.query(Product).filter(Product.id == product_id).first()
+        product = self._scope(self._db.query(Product), Product).filter(Product.id == product_id).first()
         product_name = self._product_display_name(product, product.name if product else None) or "Produto"
         display_name = self._first_name(buyer_name)
 
@@ -343,7 +391,7 @@ class StoreNotificationService:
             return self._random_import_product_id()
 
         target = self._normalize_import_key(product_name.removeprefix("Pizza "))
-        products = self._db.query(Product).all()
+        products = self._scope(self._db.query(Product), Product).all()
         for product in products:
             names = [product.name, self._product_display_name(product, product.name)]
             for name in names:
@@ -355,14 +403,14 @@ class StoreNotificationService:
 
     def _random_import_product_id(self) -> str:
         products = (
-            self._db.query(Product)
+            self._scope(self._db.query(Product), Product)
             .filter(Product.active.is_(True), Product.visible_delivery.is_(True))
             .all()
         )
         if not products:
-            products = self._db.query(Product).filter(Product.active.is_(True)).all()
+            products = self._scope(self._db.query(Product), Product).filter(Product.active.is_(True)).all()
         if not products:
-            products = self._db.query(Product).all()
+            products = self._scope(self._db.query(Product), Product).all()
         if not products:
             raise ValueError("Cadastre ao menos um produto antes de importar compradores.")
         return random.choice(products).id
@@ -415,7 +463,7 @@ class StoreNotificationService:
 
         if settings.only_during_store_hours:
             try:
-                if not StoreOperationService(self._db).get_status()["is_open"]:
+                if not StoreOperationService(self._db, self._store_notification_tenant_id()).get_status()["is_open"]:
                     return empty
             except Exception:
                 return empty
@@ -468,6 +516,7 @@ class StoreNotificationService:
             notification_type=source_type,
             displayed_at=datetime.now(timezone.utc),
         )
+        self._assign_tenant(impression)
         self._db.add(impression)
         if notification.clear_after_view:
             notification.status = "paused"
@@ -481,7 +530,7 @@ class StoreNotificationService:
         if settings.real_orders_enabled:
             self._sync_captured_from_orders()
         items = (
-            self._db.query(StoreNotificationCaptured)
+            self._scope(self._db.query(StoreNotificationCaptured), StoreNotificationCaptured)
             .order_by(StoreNotificationCaptured.created_at.desc())
             .all()
         )
@@ -505,7 +554,7 @@ class StoreNotificationService:
     def _sync_captured_from_orders(self) -> None:
         cutoff = datetime.now(timezone.utc) - timedelta(days=CAPTURE_LOOKBACK_DAYS)
         orders = (
-            self._db.query(Order)
+            self._scope(self._db.query(Order), Order)
             .options(
                 joinedload(Order.customer),
                 joinedload(Order.address),
@@ -531,7 +580,7 @@ class StoreNotificationService:
 
         existing_order_ids = {
             row[0]
-            for row in self._db.query(StoreNotificationCaptured.order_id)
+            for row in self._scope(self._db.query(StoreNotificationCaptured.order_id), StoreNotificationCaptured)
             .filter(StoreNotificationCaptured.order_id.in_([o.id for o in orders]))
             .all()
         }
@@ -559,6 +608,7 @@ class StoreNotificationService:
                 buyer_name=buyer_name,
                 order_time=order.paid_at or order.created_at,
             )
+            self._assign_tenant(captured)
             self._db.add(captured)
         self._db.commit()
 
@@ -579,7 +629,7 @@ class StoreNotificationService:
 
     def _captured(self, captured_id: str) -> StoreNotificationCaptured:
         item = (
-            self._db.query(StoreNotificationCaptured)
+            self._scope(self._db.query(StoreNotificationCaptured), StoreNotificationCaptured)
             .filter(StoreNotificationCaptured.id == captured_id)
             .first()
         )
@@ -610,12 +660,12 @@ class StoreNotificationService:
 
     def serialize_notification(self, notification: StoreNotification) -> dict:
         last_displayed_at = (
-            self._db.query(func.max(StoreNotificationImpression.displayed_at))
+            self._scope(self._db.query(func.max(StoreNotificationImpression.displayed_at)), StoreNotificationImpression)
             .filter(StoreNotificationImpression.notification_id == notification.id)
             .scalar()
         )
         impressions_count = (
-            self._db.query(func.count(StoreNotificationImpression.id))
+            self._scope(self._db.query(func.count(StoreNotificationImpression.id)), StoreNotificationImpression)
             .filter(StoreNotificationImpression.notification_id == notification.id)
             .scalar()
             or 0
@@ -660,7 +710,7 @@ class StoreNotificationService:
         current = self._local_now()
         seen_set = set(seen_ids or [])
         notifications = (
-            self._db.query(StoreNotification)
+            self._scope(self._db.query(StoreNotification), StoreNotification)
             .options(selectinload(StoreNotification.days), joinedload(StoreNotification.product))
             .filter(StoreNotification.status == "active")
             .filter(StoreNotification.type.in_(["manual", "fomento"]))
@@ -733,6 +783,7 @@ class StoreNotificationService:
         query = self._db.query(StoreNotificationImpression.id).filter(
             StoreNotificationImpression.notification_id == notification_id
         )
+        query = self._scope(query, StoreNotificationImpression)
         identity_filters = []
         if customer_id:
             identity_filters.append(StoreNotificationImpression.customer_id == customer_id)
@@ -786,36 +837,45 @@ class StoreNotificationService:
 
     def _last_impression(self) -> StoreNotificationImpression | None:
         return (
-            self._db.query(StoreNotificationImpression)
+            self._scope(self._db.query(StoreNotificationImpression), StoreNotificationImpression)
             .order_by(StoreNotificationImpression.displayed_at.desc())
             .first()
         )
 
     def _replace_days(self, notification: StoreNotification, weekdays: list[int]) -> None:
         if notification.id:
-            self._db.query(StoreNotificationDay).filter(
+            self._scope(self._db.query(StoreNotificationDay), StoreNotificationDay).filter(
                 StoreNotificationDay.notification_id == notification.id
             ).delete(synchronize_session=False)
         for weekday in sorted(set(weekdays)):
-            self._db.add(StoreNotificationDay(
+            day = StoreNotificationDay(
                 id=f"snd-{uuid.uuid4().hex[:10]}",
                 notification_id=notification.id,
                 weekday=weekday,
-            ))
+            )
+            if getattr(notification, "tenant_id", None):
+                day.tenant_id = notification.tenant_id
+            self._assign_tenant(day)
+            self._db.add(day)
 
     def _notification(self, notification_id: str) -> StoreNotification:
         notification = (
-            self._db.query(StoreNotification)
+            self._scope(self._db.query(StoreNotification), StoreNotification)
             .options(selectinload(StoreNotification.days), joinedload(StoreNotification.product))
             .filter(StoreNotification.id == notification_id)
             .first()
         )
         if not notification:
             raise LookupError("Notificacao nao encontrada.")
+        assert_resource_ownership(
+            notification,
+            self._tenant_context,
+            enabled=self._tenant_enforcement_enabled(),
+        )
         return notification
 
     def _ensure_product(self, product_id: str) -> None:
-        exists = self._db.query(Product.id).filter(Product.id == product_id).first()
+        exists = self._scope(self._db.query(Product.id), Product).filter(Product.id == product_id).first()
         if not exists:
             raise LookupError("Produto vinculado nao encontrado.")
 
@@ -855,7 +915,7 @@ class StoreNotificationService:
                     product_ids.add(flavor.product_id)
         if not product_ids:
             return {}
-        products = self._db.query(Product).filter(Product.id.in_(product_ids)).all()
+        products = self._scope(self._db.query(Product), Product).filter(Product.id.in_(product_ids)).all()
         return {product.id: product for product in products}
 
     def _main_product(self, order: Order, product_lookup: dict[str, Product]) -> tuple[str | None, str | None, str | None]:
@@ -874,7 +934,7 @@ class StoreNotificationService:
             return self._safe_text(order.address.neighborhood)
         if order.customer_id:
             address = (
-                self._db.query(Address)
+                self._scope(self._db.query(Address), Address)
                 .filter(Address.customer_id == order.customer_id)
                 .order_by(Address.is_default.desc(), Address.created_at.desc())
                 .first()

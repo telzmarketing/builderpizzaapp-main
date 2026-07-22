@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -8,8 +8,10 @@ from backend.database import Base
 
 class Upsell(Base):
     __tablename__ = "upsells"
+    __table_args__ = (Index("uq_upsells_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_upsells_tenant_id_tenants"), nullable=True)
     internal_name = Column(String(200), nullable=False)
     product_id = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
     image_url = Column(Text, nullable=True)
@@ -44,8 +46,10 @@ class Upsell(Base):
 
 class UpsellMetric(Base):
     __tablename__ = "upsell_metrics"
+    __table_args__ = (Index("uq_upsell_metrics_tenant_id_id", "tenant_id", "id", unique=True), UniqueConstraint("tenant_id", "upsell_id", name="uq_upsell_metrics_tenant_upsell"))
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_upsell_metrics_tenant_id_tenants"), nullable=True)
     upsell_id = Column(String, ForeignKey("upsells.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     views = Column(Integer, default=0, nullable=False)
     accepts = Column(Integer, default=0, nullable=False)
@@ -62,8 +66,10 @@ class UpsellMetric(Base):
 
 class UpsellEvent(Base):
     __tablename__ = "upsell_events"
+    __table_args__ = (Index("uq_upsell_events_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_upsell_events_tenant_id_tenants"), nullable=True)
     upsell_id = Column(String, ForeignKey("upsells.id", ondelete="CASCADE"), nullable=False, index=True)
     order_id = Column(String, ForeignKey("orders.id", ondelete="SET NULL"), nullable=True, index=True)
     session_id = Column(String(200), nullable=True, index=True)
@@ -77,8 +83,10 @@ class UpsellEvent(Base):
 
 class OrderUpsell(Base):
     __tablename__ = "order_upsells"
+    __table_args__ = (Index("uq_order_upsells_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_order_upsells_tenant_id_tenants"), nullable=True)
     order_id = Column(String, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True)
     upsell_id = Column(String, ForeignKey("upsells.id", ondelete="CASCADE"), nullable=False, index=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)

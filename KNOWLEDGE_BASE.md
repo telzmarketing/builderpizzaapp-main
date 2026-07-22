@@ -1,6 +1,6 @@
 # Base de Conhecimento — PizzaApp
 > Documento técnico completo: telas, funcionalidades, banco de dados, endpoints e integrações.
-> Gerado em: 2026-04-13 | **Atualizado em: 2026-07-04** | Versao: 3.1.0
+> Gerado em: 2026-04-13 | **Atualizado em: 2026-07-21** | Versao: 3.2.0
 
 ---
 
@@ -44,6 +44,8 @@
 22. [Atualizacao 2026-07-04 - Checkout ASAAS Cartao](#22-atualizacao-2026-07-04---checkout-asaas-cartao)
 23. [Atualizacao 2026-07-04 - Admin ASAAS Cartao](#23-atualizacao-2026-07-04---admin-asaas-cartao)
 24. [Atualizacao 2026-07-04 - Alerta de Atendimento Humano no Agente WhatsApp](#24-atualizacao-2026-07-04---alerta-de-atendimento-humano-no-agente-whatsapp)
+25. [Atualizacao 2026-07-21 - Estado Atual Consolidado de Marketing e Notificacoes](#25-atualizacao-2026-07-21---estado-atual-consolidado-de-marketing-e-notificacoes)
+26. [Atualizacao 2026-07-21 - Preparacao Multiempresa em Codigo](#26-atualizacao-2026-07-21---preparacao-multiempresa-em-codigo)
 
 ---
 
@@ -2922,3 +2924,593 @@ Limitacao local:
 - O popup global usa polling do sino do admin, atualmente a cada 30 segundos.
 - O alerta de atendimento humano e operacional, nao promocional; nao deve ser misturado com notificacoes de prova social da loja.
 - A regra de negocio continua no backend/service; o frontend apenas exibe, abre e assume conversas via API oficial.
+
+## 25. Atualizacao 2026-07-21 - Estado Atual Consolidado de Marketing e Notificacoes
+
+### 25.1 Precedencia e escopo
+
+Esta secao registra o estado comprovado do repositorio apos a secao 24 e prevalece sobre inventarios anteriores quando houver divergencia. As secoes antigas permanecem como historico.
+
+Escopo confirmado: navegacao ausente da secao 17, listas padronizadas de contatos, vinculo com campanhas, validacao bloqueante de destinatarios, importacao de compradores para prova social e correcao da sincronizacao do Agente WhatsApp.
+
+Commits de referencia: `4cf9101`, `e8d39ec`, `be18815`, `08d8022`, `5b4409e` e `0c99d13`.
+
+### 25.2 Inventario atual de navegacao
+
+`client/App.tsx` seleciona a experiencia publica por `PublicHome`/`ExperienceRoute`, preservando a loja delivery e adicionando a experiencia do salao.
+
+Rotas publicas do salao confirmadas: `/menu`, `/blog`, `/sobre`, `/galeria`, `/pessoas`, `/certificados`, `/duvidas`, `/reservas`, `/contato`, `/login-cadastro` e `/minha-conta`.
+
+Rotas administrativas que complementam a secao 17.5: `/painel/bi-mobile`, `/painel/whatsapp-gateway`, `/painel/salao`, `/painel/salao/pagina`, `/painel/crm/agente-whatsapp`, `/painel/gestao/estoque`, `/painel/gestao/cmv`, `/painel/gestao/financeiro` e `/painel/gestao/fiscal`.
+
+A rota antiga `/painel/marketing/campanhas`, citada na secao 17.5, nao existe no roteador atual e nao deve ser usada como referencia operacional. As telas continuam lazy, protegidas por `AdminGuard`/`AdminLayout` e integradas por `client/lib/api.ts`.
+
+### 25.3 Listas padronizadas de contatos
+
+WhatsApp e Email possuem listas persistentes administradas pelos modulos de marketing.
+
+- WhatsApp: CRUD `/whatsapp/contact-lists` em `backend/routes/whatsapp_marketing.py`.
+- Email: CRUD `/email/contact-lists` em `backend/routes/email_marketing.py`.
+- Os routers tambem sao expostos sob o prefixo global `/api` por `backend/main.py`.
+- `client/components/admin/ContactListImportBox.tsx` importa o modelo `nome,whatsapp,email` por CSV/TXT, com virgula ou ponto e virgula.
+- `MarketingWhatsApp.tsx` e `MarketingEmail.tsx` permitem criar, selecionar e excluir listas.
+- Chamadas HTTP permanecem centralizadas em `client/lib/api.ts`.
+
+### 25.4 Campanhas e validacao obrigatoria antes do envio
+
+Campanhas WhatsApp e Email aceitam `contact_list_id`. O relacionamento e opcional; quando a lista e excluida, a FK usa `ON DELETE SET NULL`.
+
+No envio, o backend resolve e deduplica destinatarios de lista, grupo, clientes explicitos e entradas diretas.
+
+- WhatsApp normaliza o telefone, valida o formato internacional e consulta a existencia da conta pelo WhatsApp Gateway conectado.
+- Email normaliza e valida a sintaxe com `email-validator`, depois exige dominio entregavel por DNS `MX`, `A` ou `AAAA`.
+- Destinatarios invalidos recebem falha registrada e nao seguem para o provider.
+- A validacao esta no backend dos endpoints de disparo, nao apenas na interface.
+
+### 25.5 Persistencia e migrations das listas
+
+- `whatsapp_contact_lists` e `whatsapp_contact_list_items`: `20260508_whatsapp_contact_lists.py`.
+- `email_contact_lists` e `email_contact_list_items`: `20260704_email_contact_lists.py`.
+- `whatsapp_campaigns.contact_list_id` e `email_campaigns.contact_list_id`: `20260704_campaign_contact_lists.py`.
+
+A revisao Alembic mais recente desta trilha e `20260704_campaign_contact_lists`, dependente de `20260704_email_contact_lists`. Antes de aplicar em ambiente real, conferir `heads` e `current`; nao alterar o banco manualmente.
+
+### 25.6 Importacao de compradores para prova social
+
+O admin de notificacoes aceita `.csv` ou `.xlsx` em `POST /store-notifications/import`. `backend/routes/store_notifications.py` recebe `UploadFile` e delega a `StoreNotificationService.import_notifications_file()`.
+
+Regras comprovadas:
+
+- no maximo 1000 linhas;
+- CSV em UTF-8/Latin-1, separado por virgula ou ponto e virgula, e XLSX lido com `openpyxl`;
+- cada linha e validada individualmente; o retorno informa criados, ignorados, erros por linha e notificacoes criadas;
+- nome e bairro sao obrigatorios, e somente o primeiro nome e exibido;
+- produto pode ser localizado por ID ou nome; quando ausente, o service seleciona produto ativo e visivel, com fallbacks controlados;
+- minutos ausentes sao sorteados entre 8 e 45; quando informados, devem ficar entre 1 e 1440;
+- registros importados ficam manuais e ativos, todos os dias, das 18:00 as 23:30, com exibicao de 7 segundos.
+
+`client/lib/api.ts` envia `FormData` por `storeNotificationsApi.importFile`. `MarketingStoreNotifications.tsx` trata selecao, loading, resultado parcial e recarregamento. O modelo publico e `public/templates/compradores-notificacoes-modelo.csv`.
+
+A importacao reutiliza `StoreNotification` e `Product`; nao criou tabela ou migration. Ela difere da captura real: `list_captured()` sincroniza pedidos reativamente por `_sync_captured_from_orders()`, em janela atual de 30 dias, considerando pagos, ignorando cancelados/reembolsados e evitando duplicacao por `order_id`.
+
+### 25.7 Correcao da sincronizacao do disparador WhatsApp
+
+O commit `0c99d13` corrigiu o caminho idempotente de `AgenteWhatsAppService.add_message()` em `backend/services/agente_whatsapp_service.py`.
+
+Atualizacao de metadados, enfileiramento inbound e retorno antecipado agora ocorrem somente quando uma mensagem existente foi encontrada. Quando `provider_message_id` e novo, o fluxo continua para criar a mensagem e preservar os vinculos `campaign_id` e `campaign_delivery_id`.
+
+Essa correcao nao alterou contrato de API, schema de banco ou migration.
+
+### 25.8 Arquitetura e cuidados operacionais
+
+- O frontend continua sem `fetch` direto nestes fluxos; as integracoes passam por `client/lib/api.ts`.
+- A importacao preserva o dominio existente de notificacoes da loja.
+- As listas reutilizam os modulos atuais de WhatsApp/Email Marketing e campanhas; nao foi criado subsistema paralelo.
+- `whatsapp_marketing.py` e `email_marketing.py` ainda concentram models, schemas e regras legadas. Isso descreve o estado atual e nao autoriza ampliar esse padrao.
+- Mudancas locais em `.claude/*` e worktrees de agentes nao fazem parte desta atualizacao.
+
+### 25.9 Validacao desta atualizacao
+
+- conferir o diff exclusivamente de `KNOWLEDGE_BASE.md`;
+- executar `git diff --check -- KNOWLEDGE_BASE.md`;
+- conferir cabecalho, indice e hierarquia da secao 25;
+- executar `npm.cmd run typecheck`, `npm.cmd test` e `npm.cmd run build`;
+- validar Alembic somente em ambiente com Python instalado, registrando a revisao real antes de qualquer `upgrade`.
+
+## 26. Atualizacao 2026-07-21 - Preparacao Multiempresa em Codigo
+
+### 26.1 Precedencia e estado real
+
+Esta secao registra somente o estado comprovado no codigo e nos documentos `docs/SAAS_MULTI_TENANT*.md` desta execucao. Ela complementa e preserva a secao 25.
+
+O repositorio possui uma preparacao multiempresa aditiva e progressiva, mas ainda nao deve ser tratado como implantado ou integralmente isolado. As migrations foram criadas e o runtime possui slices protegidos por flags; nenhuma migration multiempresa foi aplicada neste ambiente e nao houve validacao com Python, Alembic, PostgreSQL ou VPS.
+
+O tenant de compatibilidade definido pelas migrations e `tenant-legacy-default`. O rotulo historico `default` nao e autoridade de isolamento e aparece apenas como dado legado a ser normalizado pelos backfills controlados.
+
+### 26.2 Fundacao, identidade e selecao de tenant
+
+A fundacao adicionada inclui:
+
+- `tenants` e `tenant_memberships`;
+- papeis, permissoes e vinculos explicitos da plataforma;
+- auditoria append-only da plataforma;
+- `TenantContext` imutavel e fail-closed;
+- `TenantService` para tenant ativo, membership, selecao autorizada e soft delete;
+- seed idempotente do tenant legado, memberships e papeis iniciais.
+
+Com `MULTI_TENANT_AUTH_ENABLED=false`, login e JWT preservam o caminho legado e nao dependem das novas tabelas. Com a flag ativa, o painel resolve o tenant pelo JWT e por membership ativa; a selecao usa `GET /admin/auth/tenants` e `POST /admin/auth/select-tenant`, sem aceitar `tenant_id` livre como autoridade. O frontend possui seletor integrado ao shell administrativo via `client/lib/api.ts`, exibido somente com `VITE_MULTI_TENANT_AUTH_ENABLED=true` e quando houver mais de uma membership.
+
+### 26.3 Dominios publicos e contexto confiavel
+
+O dominio principal permanece reservado ao login, painel e operacao master. Subdominios e dominios customizados representam somente a experiencia publica do tenant.
+
+`TENANT_DOMAINS_ENABLED=false` preserva o comportamento atual. Quando ativado, hostname desconhecido falha fechado e nao cai no tenant legado. `X-Forwarded-Host` somente pode ser considerado com `TENANT_DOMAINS_TRUST_PROXY_HEADERS=true` e origem contida em `TENANT_DOMAINS_TRUSTED_PROXY_IPS`; hostnames do painel ficam em `TENANT_DOMAINS_PLATFORM_HOSTNAMES`.
+
+O ciclo de dominio implementado e `pending -> verified -> active`, com prova persistida por hash. A resolucao publica exige dominio ativo e tenant ativo nao removido.
+
+### 26.4 Ondas de dados preparadas
+
+A cadeia multiempresa foi organizada por `expand/backfill/contract`:
+
+1. fundacao, seed legado e dominios;
+2. identidade/RBAC operacional e catalogo;
+3. clientes e pedidos;
+4. pagamentos de pedidos e webhooks;
+5. operacao, frete, entrega e salao;
+6. marketing, CRM, WhatsApp, trafego e BI;
+7. estoque, CMV, financeiro, fiscal, cache com dados e processamento assincrono;
+8. contracts separados por onda.
+
+Os expands adicionam ownership nullable e constraints tenant-scoped sem remover contratos globais legados. Os backfills exigem o tenant legado, fazem preflights de duplicidade/ownership e nao sobrescrevem ownership valido. Os contracts abortam diante de `tenant_id` nulo, `default`, orfao ou tenant removido; somente depois validam FKs preparadas, removem defaults e aplicam `NOT NULL`. Uniques globais legadas nao sao removidas automaticamente.
+
+O inventario estatico documentado encontrou 109 revisoes, sem IDs duplicados ou pais ausentes, e um unico head de arquivos: `20260810_tenant_backoffice_contract`. Isso nao comprova o estado de `alembic_version` de qualquer banco fisico.
+
+### 26.5 Runtime e flags de ativacao
+
+Todas as flags abaixo permanecem `false` por padrao:
+
+- `MULTI_TENANT_AUTH_ENABLED`;
+- `TENANT_IDENTITY_CATALOG_ENFORCEMENT_ENABLED`;
+- `TENANT_CUSTOMERS_ORDERS_ENFORCEMENT_ENABLED`;
+- `TENANT_OPERATIONS_ENFORCEMENT_ENABLED`;
+- `MULTI_TENANT_WAVE6_ORM_ENABLED`;
+- `MULTI_TENANT_WAVE7_ORM_ENABLED`;
+- `TENANT_DOMAINS_ENABLED`;
+- `TENANT_PAYMENT_WEBHOOKS_ENABLED`;
+- `TENANT_BACKGROUND_CONTEXT_ENABLED`;
+- `TENANT_UPLOAD_NAMESPACE_ENABLED`;
+- `TENANT_CREDENTIALS_ENABLED`.
+
+Ha enforcement runtime comprovado em slices centrais de catalogo, clientes e pedidos, sempre dependente de contexto confiavel e das flags correspondentes. Com as flags desligadas, o caminho global legado e preservado. Ativar enforcement sem migration, backfill, contexto resolvido e teste A/B e proibido, pois deve falhar fechado e pode interromper fluxos ainda nao migrados.
+
+Webhooks multiempresa de Mercado Pago e ASAAS usam chave opaca de endpoint mapeada no servidor por `TENANT_PAYMENT_WEBHOOK_ENDPOINTS`; host, header de proxy, body, query, `default` ou tentativa sequencial de credenciais nao sao autoridade. Com `TENANT_PAYMENT_WEBHOOKS_ENABLED=true`, os endpoints globais ficam indisponiveis e o processamento exige tenant/configuracao inequivocos. Stripe e PagSeguro continuam fora deste contrato tenantizado.
+
+### 26.6 Lacunas que ainda bloqueiam segundo tenant
+
+O schema preparado nao equivale a isolamento integral. Permanecem como gates:
+
+- migrar e comprovar todos os readers/writers, buscas por ID e relacoes parent/child dos slices ainda apenas preparados no ORM;
+- eliminar usos operacionais de `tenant_id="default"` e construtores com fallback legado antes da ativacao;
+- concluir propagacao de tenant em jobs, outbox, caches e qualquer processamento sem contexto HTTP;
+- separar, proteger e rotacionar credenciais por tenant;
+- concluir namespace e autorizacao de uploads; os arquivos atuais ainda exigem cuidado por historicamente usarem diretorio/URL globais;
+- manter billing SaaS separado dos pagamentos de pedidos;
+- executar preflights fisicos, testar rollback e confirmar ownership/constraints no PostgreSQL real;
+- realizar canario A/B com pelo menos dois tenants antes de remover uniques/FKs globais ou liberar operacao multiempresa.
+
+DDL de startup e Alembic continuam exigindo revisao operacional para que o instalador futuro tenha uma unica autoridade de schema e nao concorra em deploys paralelos.
+
+### 26.7 Validacao e operacao futura
+
+Foram comprovados nesta trilha: inventario estatico do codigo, reconciliacao documentada das ondas/models/constraints, revisao estatica da cadeia de revisions, testes unitarios adicionados para helpers de tenant e verificacoes locais de integridade de diff. As validacoes Node registradas durante a execucao passaram em `npm.cmd run typecheck`, `npm.cmd test` e `npm.cmd run build`.
+
+Nao foram executados neste ambiente:
+
+- import, compile ou testes Python;
+- `alembic heads/current/history` contra runtime Python;
+- upgrade, downgrade, backfill ou contract;
+- queries, contagens, locks, planos ou `VALIDATE CONSTRAINT` no PostgreSQL;
+- deploy, restart, smoke test ou rollback em VPS.
+
+O futuro metodo de instalacao para VPS deve registrar o estado real do banco antes de qualquer alteracao, aplicar cada onda na ordem, parar em qualquer preflight, preservar backup restauravel e ativar flags somente depois dos testes correspondentes. Nao usar `stamp`, nao editar migrations para contornar dados invalidos e nao aplicar `upgrade head` sem confirmar `heads`, `current`, historico e janela de rollback.
+
+### 26.8 Fase runtime operacoes - frete e salao
+
+A proxima fase executada apos a preparacao geral fechou uma fatia de runtime da onda de operacoes, ainda com flags desligadas por padrao.
+
+Arquivos principais alterados:
+
+- `backend/services/shipping_service.py`;
+- `backend/routes/shipping.py`;
+- `backend/services/salao_service.py`;
+- `backend/routes/salao.py`.
+
+O `ShippingService` passou a aceitar `TenantContext` opcional e a usar helpers centrais de ownership quando `TENANT_OPERATIONS_ENFORCEMENT_ENABLED=true`. Consultas, criacoes e lookups por ID de configuracao de frete, bairros, CEPs, regras por distancia, faixas por valor, promocoes, regras extras e endpoints legados de zonas/regras ficam tenant-scoped somente com a flag ativa. Com a flag desligada, o fluxo legado global e preservado.
+
+As rotas administrativas de frete resolvem tenant pelo painel, e `POST /shipping/calculate` resolve tenant publico pelo dominio quando `TENANT_DOMAINS_ENABLED=true`.
+
+O runtime do salao passou a aplicar o mesmo padrao em mesas, reservas, comandas e itens de comanda. As rotas administrativas de `/salao/*` passam contexto do painel para os services, a reserva publica resolve contexto por dominio e a criacao/confirmacao de pedido a partir da comanda repassa o tenant ao `OrderService`.
+
+Gates ainda abertos nesta fatia:
+
+- `freight_type_configs.freight_type` ainda possui unique global no model/schema legado; ativacao multiempresa de tipos de frete depende do contract validado no PostgreSQL real;
+- entrega/logistica, store operation, estoque, financeiro, fiscal, jobs/outbox/cache e notificacoes publicas ainda precisam de fechamento runtime equivalente;
+- Python, Alembic e PostgreSQL continuam sem validacao local.
+
+Validacao executada nesta fase:
+
+- `git diff --check -- backend/services/shipping_service.py backend/routes/shipping.py backend/services/salao_service.py backend/routes/salao.py`;
+- `npm.cmd run typecheck`;
+- `npm.cmd test`;
+- `npm.cmd run build`.
+
+### 26.9 Fase runtime sem contexto HTTP - Agente WhatsApp e prova social
+
+Esta fase fechou dois gaps pontuais que ainda usavam services operacionais sem contexto confiavel quando as flags multiempresa fossem ativadas.
+
+Arquivos principais alterados:
+
+- `backend/services/agente_whatsapp_tools.py`;
+- `backend/services/store_notification_service.py`;
+- `backend/routes/store_notifications.py`;
+- `backend/core/tenant_runtime.py`.
+
+No Agente WhatsApp, `AgenteWhatsAppToolService._resolve_context()` agora deriva `TenantContext` a partir de `AgenteWhatsAppSession.tenant_id` quando a ferramenta e executada com `session_id`. Esse contexto e usado em:
+
+- `calcular_frete`, via `ShippingService`;
+- `validar_item_pedido`, `simular_checkout` e `criar_pedido`, via `OrderService`;
+- consulta/criacao de pagamento, via `PaymentService(tenant_id=...)`;
+- auditoria de tool calls e eventos, preenchendo `tenant_id` quando disponivel.
+
+Sem `session_id` ou sem `tenant_id` na sessao, o fluxo preserva comportamento legado enquanto as flags estao desligadas. Com enforcement ativo, services tenantizados devem falhar fechado se o contexto obrigatorio nao existir.
+
+Na prova social da loja, `StoreNotificationService` passou a aceitar `TenantContext` opcional. O uso nesta fase e limitado a consultar `StoreOperationService` com o tenant correto quando `only_during_store_hours=true`. A rota publica `/store-notifications/next` usa a dependencia publica de operacoes e falha fechado quando `TENANT_OPERATIONS_ENFORCEMENT_ENABLED=true` sem tenant confiavel. As rotas administrativas resolvem tenant pelo painel.
+
+`resolve_public_tenant_context()` tambem passou a preencher `hostname` ao construir `TenantContext` publico, preservando o contrato fail-closed do contexto por dominio.
+
+Limitacao importante: as tabelas de prova social (`store_notification_settings`, `store_notifications`, `store_notification_days`, `store_notification_impressions`, `store_notification_captured`) ainda nao possuem `tenant_id` no model atual. Portanto esta fase corrige a dependencia operacional de horario por tenant, mas nao declara isolamento completo das notificacoes de prova social. A tenantizacao completa dessas tabelas permanece como fase de schema/runtime posterior.
+
+Validacao executada nesta fase:
+
+- `git diff --check -- backend/services/agente_whatsapp_tools.py backend/services/store_notification_service.py backend/routes/store_notifications.py backend/core/tenant_runtime.py KNOWLEDGE_BASE.md`;
+- `npm.cmd run typecheck`;
+- `npm.cmd test`;
+- `npm.cmd run build`.
+
+### 26.10 Fase schema/runtime - tenantizacao da prova social
+
+Esta fase completou a tenantizacao aditiva das tabelas de prova social/notificacoes da loja, sem ativar flags por padrao e sem contract fisico.
+
+Arquivos principais alterados:
+
+- `backend/models/store_notification.py`;
+- `backend/core/wave6_tenant_orm.py`;
+- `backend/routes/store_notifications.py`;
+- `backend/services/store_notification_service.py`;
+- `backend/migrations/versions/20260811_tenant_store_notifications_expand.py`;
+- `KNOWLEDGE_BASE.md`.
+
+As tabelas `store_notification_settings`, `store_notifications`, `store_notification_days`, `store_notification_impressions` e `store_notification_captured` agora possuem ownership `tenant_id` no ORM por meio do helper da onda 6. A migration `20260811_tenant_store_notifications_expand` adiciona a coluna nullable, FK para `tenants`, indices tenant-scoped e backfill para `tenant-legacy-default`.
+
+O `StoreNotificationService` passou a escopar leituras, contagens, candidatos publicos, impressões, capturas, duplicacao, importacao e lookups por produto/endereco quando `MULTI_TENANT_WAVE6_ORM_ENABLED=true`. Novos registros recebem `tenant_id` pelo `TenantContext` confiavel; com a flag desligada, o comportamento legado global permanece.
+
+Com a Wave 6 ativa, o ID singleton de settings e a consulta de horario de funcionamento usam o tenant do proprio `TenantContext`, evitando depender do flag de operacoes.
+
+Gates ainda abertos:
+
+- a migration ainda nao foi aplicada em PostgreSQL real;
+- nao houve `VALIDATE CONSTRAINT`, `NOT NULL` ou contract para estas cinco tabelas;
+- a ativacao real depende de `TENANT_DOMAINS_ENABLED=true` e contexto publico/admin confiavel;
+- a unique global legada de `store_notification_captured.order_id` permanece ate validacao fisica do banco.
+
+Validacao executada nesta fase:
+
+- `git diff --check -- backend/models/store_notification.py backend/services/store_notification_service.py backend/core/wave6_tenant_orm.py backend/routes/store_notifications.py backend/migrations/versions/20260811_tenant_store_notifications_expand.py KNOWLEDGE_BASE.md`;
+- `npm.cmd run typecheck`;
+- `npm.cmd test`;
+- `npm.cmd run build`;
+- Python, Alembic e PostgreSQL somente na futura fase VPS/staging.
+
+### 26.11 Metodo de instalacao Telz VPS por fases
+
+Esta fase validou o prompt mestre Telz contra o estado comprovado do projeto e criou um metodo operacional faseado para instalacao/validacao em VPS.
+
+Arquivo principal:
+
+- `docs/TELZ_VPS_INSTALL_PHASED_METHOD.md`.
+
+Conclusao da validacao: o prompt e coerente como direcao de transformacao SaaS multiempresa, mas nao deve ser executado como big-bang. O metodo aceito para este repositorio e instalar primeiro em modo legado compativel, com flags multiempresa desligadas, validar PostgreSQL/Alembic/Nginx/systemd/build/health check no sistema instalado e somente depois ativar isolamento por ondas.
+
+O metodo documentado define:
+
+- preflight e inventario da VPS antes de qualquer alteracao;
+- instalador interativo futuro via `installer/install.sh`, com perguntas por fase, validacao de entradas, confirmacao final, logs mascarados e retomada por `--resume`;
+- preparacao de sistema operacional, usuario, diretorios e codigo;
+- `.env` operacional Telz com flags multi-tenant desligadas por padrao;
+- validacao Alembic com `heads`, `current` e historico antes de `upgrade head`;
+- build e testes frontend/backend proporcionais ao ambiente;
+- modelos de `systemd` para `telz-api` e `telz-web`;
+- Nginx/SSL para dominio principal;
+- backup/restore antes das ondas multi-tenant;
+- idempotencia obrigatoria para usuario, diretorio, banco, `.env`, Nginx, systemd, cron, certificados, uploads e backups;
+- atualizacao futura por `scripts/update-telz.sh`, com lock, backup, typecheck, testes, build, migrations e rollback somente de codigo/build/Nginx/systemd;
+- CLI administrativa futura `telz-cli` apenas como wrapper seguro, sem execucao arbitraria de shell;
+- smoke test legado antes de qualquer ativacao;
+- validacao multi-tenant posterior em staging/VPS;
+- contract/hardening somente depois de telemetria e dados consistentes.
+
+Pontos de compatibilidade preservados:
+
+- `DEPLOY.md` legado nao foi substituido;
+- nenhuma migration foi executada localmente;
+- nenhum script destrutivo foi criado;
+- nenhum `.env` foi sobrescrito;
+- `curl -fsSL https://install.telz.com.br | sudo bash` permanece apenas como alvo futuro, nao como forma oficial atual;
+- a troca operacional para Telz ficou documentada como alvo de instalacao, nao como renomeacao ampla imediata de tabelas, classes ou migrations antigas.
+
+Gates ainda abertos:
+
+- decidir dominio principal, IP, usuario e path final da VPS;
+- criar scripts reais do instalador depois dessas decisoes;
+- aplicar e validar migrations em PostgreSQL real;
+- executar smoke tests no sistema instalado;
+- ativar flags multiempresa somente por ondas controladas.
+
+Validacao executada nesta fase:
+
+- revisao do prompt anexado;
+- comparacao com `DEPLOY.md`, `package.json`, `backend/.env.example`, scripts atuais, migrations e secoes recentes da base de conhecimento;
+- `git diff --check -- docs/TELZ_VPS_INSTALL_PHASED_METHOD.md KNOWLEDGE_BASE.md`.
+
+### 26.12 Especificacao do instalador interativo Telz
+
+O prompt complementar do instalador interativo foi incorporado em `docs/TELZ_VPS_INSTALL_PHASED_METHOD.md` como especificacao da futura fase de automacao. Ele melhora o metodo anterior por definir instalacao assistida, validacao de respostas, confirmacao final, modo nao interativo, retomada por fase, logs mascarados, idempotencia, scripts de update/backup/restore, CLI administrativa e regras explicitas de rollback.
+
+A incorporacao preserva os gates ja definidos:
+
+- primeiro validar o procedimento manual em VPS real ou ambiente descartavel;
+- nao publicar `curl | bash` antes de hospedagem segura e versionada;
+- nao expor segredos em logs;
+- nao sobrescrever `.env`, banco, uploads, certificados ou backups sem confirmacao explicita;
+- nao fazer downgrade Alembic automatico;
+- manter flags multi-tenant desligadas na instalacao inicial.
+
+Arquivos atualizados:
+
+- `docs/TELZ_VPS_INSTALL_PHASED_METHOD.md`;
+- `KNOWLEDGE_BASE.md`.
+
+Validacao executada nesta fase:
+
+- `git diff --check -- docs/TELZ_VPS_INSTALL_PHASED_METHOD.md KNOWLEDGE_BASE.md`.
+
+### 26.13 Instalador modular Telz - primeira versao executavel
+
+Foi criada a primeira versao executavel do instalador modular da Telz, sem executar instalacao local e sem acionar VPS. O instalador fica em `installer/install.sh`, carrega defaults de `installer/config/defaults.env`, usa modulos em `installer/lib/` e templates em `installer/templates/`.
+
+Arquivos principais criados:
+
+- `installer/install.sh`;
+- `installer/lib/colors.sh`;
+- `installer/lib/prompts.sh`;
+- `installer/lib/validation.sh`;
+- `installer/lib/system.sh`;
+- `installer/lib/git.sh`;
+- `installer/lib/database.sh`;
+- `installer/lib/backend.sh`;
+- `installer/lib/frontend.sh`;
+- `installer/lib/nginx.sh`;
+- `installer/lib/ssl.sh`;
+- `installer/lib/systemd.sh`;
+- `installer/lib/backup.sh`;
+- `installer/lib/firewall.sh`;
+- `installer/lib/summary.sh`;
+- `installer/templates/telz-api.service`;
+- `installer/templates/telz-web.service`;
+- `installer/templates/nginx-telz.conf`;
+- `installer/templates/env.production.example`;
+- `scripts/health-check.sh`;
+- `scripts/backup-telz.sh`;
+- `scripts/restore-telz.sh`;
+- `scripts/rollback-telz.sh`;
+- `scripts/update-telz.sh`;
+- `scripts/finish-ssl.sh`;
+- `docs/INSTALL_TELZ_VPS.md`;
+- `docs/UPDATE_TELZ_VPS.md`;
+- `docs/BACKUP_AND_RESTORE.md`;
+- `docs/INSTALLER_TROUBLESHOOTING.md`.
+
+Capacidades implementadas:
+
+- modo interativo e modo `--config ... --non-interactive`;
+- estado por fase em `/var/lib/telz-installer/state`;
+- log em `/var/log/telz-installer`;
+- validacao de slug, diretorio, identificadores, portas e dominio;
+- instalacao de pacotes base, Node/pnpm, Python, PostgreSQL, Nginx e UFW;
+- clone/update de repositorio;
+- virtualenv e requirements backend;
+- `.env` backend com flags multi-tenant desligadas por padrao;
+- Alembic gated com `heads/current/history` antes de `upgrade head`;
+- typecheck, testes e build frontend;
+- templates systemd para `telz-api` e `telz-web`;
+- template Nginx preservando `Host` e `X-Forwarded-Host`;
+- SSL opcional com Certbot;
+- backup, restore, update, rollback de codigo e health check.
+- WhatsApp Gateway instalado por padrao como `telz-whatsapp-gateway`, junto com `telz-api` e `telz-web`, porque faz parte do sistema atual.
+- Mercado Pago e ASAAS preparados no `backend/.env` como gateways de pagamento de pedidos, com credenciais opcionais na instalacao e configuracao posterior pelo painel `/painel/pagamentos`.
+
+Gates preservados:
+
+- o instalador nao foi executado neste Windows;
+- a sintaxe Bash foi validada com Git Bash, mas ainda nao houve teste em Ubuntu/VPS;
+- nao ha `curl | bash` para instalacao NodeSource;
+- nao ha downgrade Alembic automatico;
+- nao ha comandos destrutivos amplos;
+- `.env` existente e preservado por padrao, salvo se `TELZ_OVERWRITE_ENV=true`;
+- as flags multi-tenant continuam desligadas na instalacao inicial.
+- a opcao do WhatsApp Gateway nao e tratada como pendencia de escopo; ele entra na instalacao padrao, com health operacional dependente da sessao/QR Code.
+- Mercado Pago e ASAAS nao sao billing SaaS da Telz nesta fase; continuam pertencendo ao dominio de pagamento dos pedidos.
+
+Validacao executada nesta fase:
+
+- `git diff --check -- installer scripts/backup-telz.sh scripts/finish-ssl.sh scripts/health-check.sh scripts/restore-telz.sh scripts/rollback-telz.sh scripts/update-telz.sh docs/INSTALL_TELZ_VPS.md docs/UPDATE_TELZ_VPS.md docs/BACKUP_AND_RESTORE.md docs/INSTALLER_TROUBLESHOOTING.md`;
+- `bash -n` via Git Bash para `installer/install.sh`, `installer/lib/*.sh` e `scripts/*.sh`;
+- varredura estatica para evitar `rm -rf`, `dropdb`, downgrade Alembic, `git reset`, `chmod 777`, `eval` e flags multi-tenant ligadas.
+
+### 26.13 Instalador modular Telz - primeira versao executavel
+
+Esta fase materializou a primeira versao executavel do instalador modular Telz para VPS, preservando a decisao operacional de instalar primeiro em modo legado compativel e manter todas as flags multi-tenant desligadas por padrao.
+
+Arquivos principais criados:
+
+- `installer/install.sh`;
+- `installer/config/defaults.env`;
+- `installer/lib/colors.sh`;
+- `installer/lib/prompts.sh`;
+- `installer/lib/validation.sh`;
+- `installer/lib/system.sh`;
+- `installer/lib/git.sh`;
+- `installer/lib/database.sh`;
+- `installer/lib/backend.sh`;
+- `installer/lib/frontend.sh`;
+- `installer/lib/nginx.sh`;
+- `installer/lib/ssl.sh`;
+- `installer/lib/systemd.sh`;
+- `installer/lib/backup.sh`;
+- `installer/lib/firewall.sh`;
+- `installer/lib/summary.sh`;
+- `installer/templates/telz-api.service`;
+- `installer/templates/telz-web.service`;
+- `installer/templates/nginx-telz.conf`;
+- `installer/templates/env.production.example`;
+- `scripts/update-telz.sh`;
+- `scripts/rollback-telz.sh`;
+- `scripts/backup-telz.sh`;
+- `scripts/restore-telz.sh`;
+- `scripts/health-check.sh`;
+- `scripts/finish-ssl.sh`;
+- `docs/INSTALL_TELZ_VPS.md`;
+- `docs/UPDATE_TELZ_VPS.md`;
+- `docs/BACKUP_AND_RESTORE.md`;
+- `docs/INSTALLER_TROUBLESHOOTING.md`.
+
+Comportamento implementado:
+
+- instalacao interativa via `sudo bash installer/install.sh`;
+- modo nao interativo com `--config arquivo.env --non-interactive`;
+- retomada por fase com `--resume`;
+- logs em `/var/log/telz-installer`;
+- estado em `/var/lib/telz-installer/state`;
+- validacao de Ubuntu, path de instalacao, slug, banco, usuario e segredos basicos;
+- instalacao de pacotes, usuario de servico, diretorios, firewall, Node/pnpm, Python/venv, PostgreSQL local opcional, dependencias backend e frontend;
+- geracao de `backend/.env` com flags multi-tenant desligadas;
+- gate explicito antes de `alembic upgrade head`;
+- typecheck, testes e build antes de systemd;
+- services `telz-api` e `telz-web`;
+- Nginx para dominio principal preservando `Host` e headers de proxy;
+- SSL por Certbot quando DNS estiver pronto;
+- backup diario opcional;
+- scripts auxiliares de update, rollback de codigo/build, backup, restore, health check e finalizacao posterior de SSL.
+
+Restricoes preservadas:
+
+- nao ativa multi-tenant;
+- nao publica `curl | bash`;
+- nao remove banco, uploads, backups ou certificados;
+- nao faz downgrade automatico de banco;
+- nao declara instalador validado em producao sem teste em VPS limpa.
+
+Gate ainda aberto:
+
+- executar em VPS Ubuntu limpa ou staging descartavel;
+- validar cadeia real Alembic/PostgreSQL;
+- validar Nginx/systemd/SSL com dominio real;
+- ajustar comandos conforme logs reais antes de considerar o instalador pronto para uso operacional recorrente.
+
+### 26.14 Deploy Telz e estado real do instalador
+
+Esta atualizacao consolida o estado operacional do deploy apos a criacao do instalador modular e os ajustes de escopo feitos para instalar tudo que o sistema possui no momento da instalacao.
+
+Arquivos de deploy/documentacao relacionados:
+
+- `DEPLOY.md`;
+- `docs/INSTALL_TELZ_VPS.md`;
+- `docs/UPDATE_TELZ_VPS.md`;
+- `docs/BACKUP_AND_RESTORE.md`;
+- `docs/INSTALLER_TROUBLESHOOTING.md`;
+- `docs/TELZ_VPS_INSTALL_PHASED_METHOD.md`;
+- `installer/install.sh`;
+- `installer/config/defaults.env`;
+- `installer/lib/`;
+- `installer/templates/`;
+- `scripts/update-telz.sh`;
+- `scripts/rollback-telz.sh`;
+- `scripts/backup-telz.sh`;
+- `scripts/restore-telz.sh`;
+- `scripts/health-check.sh`;
+- `scripts/finish-ssl.sh`.
+
+Decisao operacional atual:
+
+- `DEPLOY.md` permanece como guia manual legado e referencia de diagnostico.
+- Novas VPS devem usar o instalador modular Telz como caminho recomendado.
+- O comando de entrada planejado para operador continua simples: `sudo bash installer/install.sh`.
+- O instalador foi criado e validado estaticamente, mas ainda nao deve ser chamado de 100% pronto para producao sem teste em Ubuntu/VPS limpa.
+
+Componentes que entram na instalacao padrao:
+
+- API FastAPI como `telz-api`;
+- Web como `telz-web`;
+- WhatsApp Gateway Baileys como `telz-whatsapp-gateway`;
+- PostgreSQL local opcional;
+- Nginx;
+- SSL via Certbot quando DNS estiver pronto;
+- backup, update, rollback e health check;
+- Mercado Pago e ASAAS preparados no `backend/.env` como gateways de pagamento dos pedidos.
+
+Regras preservadas:
+
+- WhatsApp Gateway faz parte do sistema atual e entra por padrao. O service pode subir antes da sessao estar conectada; a operacao real depende do QR Code no painel.
+- Mercado Pago e ASAAS pertencem ao dominio de pagamento dos pedidos das lojas. Nao representam billing SaaS da Telz nesta fase.
+- Credenciais de Mercado Pago e ASAAS podem ficar vazias na instalacao e ser configuradas depois no painel `/painel/pagamentos`.
+- Todas as flags multi-tenant ficam desligadas na instalacao inicial.
+- A ativacao multi-tenant nao deve ser feita por botao unico nem por edicao manual improvisada do `.env`.
+
+Direcao segura para flags:
+
+- criar `telz-cli flags status`;
+- criar `telz-cli flags enable`;
+- criar `telz-cli flags disable`;
+- exigir preflight antes de ativar qualquer flag;
+- exigir backup antes de alterar estado operacional;
+- ativar por ondas, nunca em big-bang;
+- criar painel/botao apenas depois que a logica segura existir no backend/CLI.
+
+Gates ainda abertos:
+
+- testar instalacao interativa em VPS Ubuntu limpa;
+- testar modo nao interativo com `--config ... --non-interactive`;
+- testar `--resume`;
+- validar Alembic real em PostgreSQL;
+- validar services `telz-api`, `telz-web` e `telz-whatsapp-gateway` no systemd;
+- validar Nginx, SSL e health check com dominio real;
+- validar backup, restore, update e rollback em ambiente descartavel;
+- implementar e validar `telz-cli flags` antes de qualquer ativacao multi-tenant assistida.
+
+### 26.15 Atualizacao do DEPLOY.md para Telz
+
+`DEPLOY.md` foi atualizado para deixar explicito que o fluxo antigo permanece como referencia manual/legada e que novas instalacoes Telz devem priorizar o instalador modular em `installer/install.sh`.
+
+O topo do documento agora registra:
+
+- status do instalador como primeira versao executavel, ainda pendente de teste em VPS Ubuntu limpa;
+- documentacao operacional atual em `docs/INSTALL_TELZ_VPS.md`, `docs/UPDATE_TELZ_VPS.md`, `docs/BACKUP_AND_RESTORE.md`, `docs/INSTALLER_TROUBLESHOOTING.md` e `docs/TELZ_VPS_INSTALL_PHASED_METHOD.md`;
+- componentes instalados: `telz-api`, `telz-web` e `telz-whatsapp-gateway`;
+- preparo de Mercado Pago e ASAAS para pagamentos de pedidos;
+- flags multi-tenant desligadas na instalacao inicial;
+- `telz-cli flags` ainda pendente;
+- comandos principais de health, backup, update e logs.
+
+Validacao executada nesta fase:
+
+- `git diff --check -- DEPLOY.md KNOWLEDGE_BASE.md`.

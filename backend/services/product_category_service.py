@@ -6,26 +6,32 @@ from sqlalchemy.orm import Session
 
 from backend.models.product import Product, ProductCategory
 from backend.schemas.product import ProductCategoryCreate, ProductCategoryUpdate
+from backend.core.tenant_context import TenantContext
+from backend.core.tenant_ownership import assign_tenant_on_create, identity_catalog_enforcement_enabled, scope_query_to_tenant
 
 
-def list_categories(db: Session, active_only: bool = False) -> list[ProductCategory]:
-    query = db.query(ProductCategory)
+def _query(db: Session, model, context: TenantContext | None):
+    return scope_query_to_tenant(db.query(model), model, context, enabled=identity_catalog_enforcement_enabled())
+
+
+def list_categories(db: Session, active_only: bool = False, tenant_context: TenantContext | None = None) -> list[ProductCategory]:
+    query = _query(db, ProductCategory, tenant_context)
     if active_only:
         query = query.filter(ProductCategory.active == True)  # noqa: E712
     return query.order_by(ProductCategory.sort_order, ProductCategory.name).all()
 
 
-def create_category(db: Session, body: ProductCategoryCreate) -> ProductCategory:
+def create_category(db: Session, body: ProductCategoryCreate, tenant_context: TenantContext | None = None) -> ProductCategory:
     name = body.name.strip()
     if not name:
         raise HTTPException(400, "Nome da categoria e obrigatorio.")
     if body.parent_id:
-        parent = db.query(ProductCategory).filter(ProductCategory.id == body.parent_id).first()
+        parent = _query(db, ProductCategory, tenant_context).filter(ProductCategory.id == body.parent_id).first()
         if not parent:
             raise HTTPException(404, "Categoria principal nao encontrada.")
         if parent.parent_id:
             raise HTTPException(400, "Subcategoria deve pertencer a uma categoria principal.")
-    existing = db.query(ProductCategory).filter(func.lower(ProductCategory.name) == name.lower()).first()
+    existing = _query(db, ProductCategory, tenant_context).filter(func.lower(ProductCategory.name) == name.lower()).first()
     if existing:
         raise HTTPException(409, "Categoria ja cadastrada.")
 
@@ -36,14 +42,15 @@ def create_category(db: Session, body: ProductCategoryCreate) -> ProductCategory
         active=body.active,
         sort_order=body.sort_order,
     )
+    assign_tenant_on_create(category, tenant_context, enabled=identity_catalog_enforcement_enabled())
     db.add(category)
     db.commit()
     db.refresh(category)
     return category
 
 
-def update_category(db: Session, category_id: str, body: ProductCategoryUpdate) -> ProductCategory:
-    category = db.query(ProductCategory).filter(ProductCategory.id == category_id).first()
+def update_category(db: Session, category_id: str, body: ProductCategoryUpdate, tenant_context: TenantContext | None = None) -> ProductCategory:
+    category = _query(db, ProductCategory, tenant_context).filter(ProductCategory.id == category_id).first()
     if not category:
         raise HTTPException(404, "Categoria nao encontrada.")
 
@@ -52,10 +59,10 @@ def update_category(db: Session, category_id: str, body: ProductCategoryUpdate) 
     if "parent_id" in changes and changes["parent_id"]:
         if changes["parent_id"] == category_id:
             raise HTTPException(400, "Categoria nao pode ser filha dela mesma.")
-        child = db.query(ProductCategory.id).filter(ProductCategory.parent_id == category_id).first()
+        child = _query(db, ProductCategory, tenant_context).filter(ProductCategory.parent_id == category_id).first()
         if child:
             raise HTTPException(400, "Categoria com subcategorias nao pode virar subcategoria.")
-        parent = db.query(ProductCategory).filter(ProductCategory.id == changes["parent_id"]).first()
+        parent = _query(db, ProductCategory, tenant_context).filter(ProductCategory.id == changes["parent_id"]).first()
         if not parent:
             raise HTTPException(404, "Categoria principal nao encontrada.")
         if parent.parent_id:
@@ -65,7 +72,7 @@ def update_category(db: Session, category_id: str, body: ProductCategoryUpdate) 
         if not name:
             raise HTTPException(400, "Nome da categoria e obrigatorio.")
         existing = (
-            db.query(ProductCategory)
+            _query(db, ProductCategory, tenant_context)
             .filter(func.lower(ProductCategory.name) == name.lower(), ProductCategory.id != category_id)
             .first()
         )
@@ -76,11 +83,11 @@ def update_category(db: Session, category_id: str, body: ProductCategoryUpdate) 
     for key, value in changes.items():
         setattr(category, key, value)
     if "name" in changes and changes["name"] != old_name:
-        db.query(Product).filter(Product.category == old_name).update(
+        _query(db, Product, tenant_context).filter(Product.category == old_name).update(
             {Product.category: changes["name"]},
             synchronize_session=False,
         )
-        db.query(Product).filter(Product.subcategory == old_name).update(
+        _query(db, Product, tenant_context).filter(Product.subcategory == old_name).update(
             {Product.subcategory: changes["name"]},
             synchronize_session=False,
         )
@@ -89,14 +96,14 @@ def update_category(db: Session, category_id: str, body: ProductCategoryUpdate) 
     return category
 
 
-def delete_category(db: Session, category_id: str) -> None:
-    category = db.query(ProductCategory).filter(ProductCategory.id == category_id).first()
+def delete_category(db: Session, category_id: str, tenant_context: TenantContext | None = None) -> None:
+    category = _query(db, ProductCategory, tenant_context).filter(ProductCategory.id == category_id).first()
     if not category:
         raise HTTPException(404, "Categoria nao encontrada.")
-    child = db.query(ProductCategory.id).filter(ProductCategory.parent_id == category_id).first()
+    child = _query(db, ProductCategory, tenant_context).filter(ProductCategory.parent_id == category_id).first()
     if child:
         raise HTTPException(400, "Categoria possui subcategorias. Remova as subcategorias antes de excluir.")
-    in_use = db.query(Product.id).filter(
+    in_use = _query(db, Product, tenant_context).filter(
         (Product.category == category.name) | (Product.subcategory == category.name)
     ).first()
     if in_use:

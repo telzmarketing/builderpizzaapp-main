@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, Date, ForeignKey, Text, Integer, Float
+from sqlalchemy import Column, String, Boolean, DateTime, Date, ForeignKey, Text, Integer, Float, Index, text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from backend.database import Base
@@ -6,8 +6,15 @@ from backend.database import Base
 
 class Customer(Base):
     __tablename__ = "customers"
+    __table_args__ = (
+        Index("uq_customers_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_customers_tenant_email", "tenant_id", "email", unique=True),
+        Index("uq_customers_tenant_google_id", "tenant_id", "google_id", unique=True,
+              postgresql_where=text("google_id IS NOT NULL")),
+    )
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_customers_tenant_id_tenants"), nullable=True)
     name = Column(String(200), nullable=False)
     email = Column(String(200), unique=True, nullable=False)
     phone = Column(String(30))
@@ -43,8 +50,10 @@ class Customer(Base):
 
 class Address(Base):
     __tablename__ = "addresses"
+    __table_args__ = (Index("uq_addresses_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_addresses_tenant_id_tenants"), nullable=True)
     customer_id = Column(String, ForeignKey("customers.id"), nullable=False)
     label = Column(String(100), nullable=True)
     street = Column(String(300), nullable=False)
@@ -63,8 +72,10 @@ class Address(Base):
 
 class LgpdPolicy(Base):
     __tablename__ = "lgpd_policies"
+    __table_args__ = (Index("uq_lgpd_policies_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_lgpd_policies_tenant_id_tenants"), nullable=True)
     version = Column(String(20), nullable=False)
     title = Column(String(300), nullable=False, default="Política de Privacidade e Proteção de Dados")
     intro_text = Column(Text, nullable=True)

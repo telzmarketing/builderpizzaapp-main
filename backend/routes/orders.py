@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
 from backend.core.response import ok, created, err, err_msg
+from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
 from backend.routes.customer_access import require_customer_id_or_admin
@@ -198,7 +199,7 @@ def _serialize_orders(db: Session, orders: list[Order]) -> list[dict]:
 
 
 @router.post("", status_code=201)
-def create_order(body: CheckoutIn, db: Session = Depends(get_db)):
+def create_order(body: CheckoutIn, request: Request, db: Session = Depends(get_db)):
     if not body.customer_id:
         return err_msg(
             "É necessário ter uma conta cadastrada para fazer um pedido.",
@@ -206,7 +207,7 @@ def create_order(body: CheckoutIn, db: Session = Depends(get_db)):
             status_code=401,
         )
     try:
-        svc = OrderService(db)
+        svc = OrderService(db, resolve_public_tenant_context(request, db))
         order = svc.create_from_checkout(body)
         order = svc.get(order.id)
         return created(_serialize_orders(db, [order])[0], "Pedido criado com sucesso.")
@@ -214,8 +215,8 @@ def create_order(body: CheckoutIn, db: Session = Depends(get_db)):
         return err(exc)
 
 @router.post("/checkout", status_code=201, include_in_schema=False)
-def checkout_alias(body: CheckoutIn, db: Session = Depends(get_db)):
-    return create_order(body, db)
+def checkout_alias(body: CheckoutIn, request: Request, db: Session = Depends(get_db)):
+    return create_order(body, request, db)
 
 
 @router.get("")
@@ -238,9 +239,11 @@ def list_orders(
                 request.headers.get("x-customer-phone"),
                 request.headers.get("x-customer-email"),
             )
+            tenant_context = resolve_public_tenant_context(request, db)
         else:
-            _require_admin(request, db)
-        orders = OrderService(db).list(
+            admin = _require_admin(request, db)
+            tenant_context = resolve_panel_tenant_context(request, db, admin)
+        orders = OrderService(db, tenant_context).list(
             status=status.value if status else None,
             customer_id=customer_id,
             date_from=date_from,
@@ -255,13 +258,15 @@ def list_orders(
 
 @router.get("/reports/operational")
 def operational_report(
+    request: Request,
     days: int = 7,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    tenant_context = resolve_panel_tenant_context(request, db, admin)
     delivered = (
-        db.query(Order)
+        OrderService(db, tenant_context)._tenant_query(Order)
         .filter(Order.status == OrderStatus.delivered, Order.delivered_at >= cutoff)
         .all()
     )
@@ -339,7 +344,8 @@ def update_new_order_whatsapp_notifications(
 @router.get("/{order_id}")
 def get_order(order_id: str, request: Request, db: Session = Depends(get_db)):
     try:
-        order = OrderService(db).get(order_id)
+        tenant_context = resolve_public_tenant_context(request, db)
+        order = OrderService(db, tenant_context).get(order_id)
         require_order_or_admin(
             order,
             db,
@@ -355,7 +361,8 @@ def get_order(order_id: str, request: Request, db: Session = Depends(get_db)):
 @router.get("/{order_id}/payment-status")
 def get_order_payment_status(order_id: str, request: Request, db: Session = Depends(get_db)):
     try:
-        order = OrderService(db).get(order_id)
+        tenant_context = resolve_public_tenant_context(request, db)
+        order = OrderService(db, tenant_context).get(order_id)
         require_order_or_admin(
             order,
             db,
@@ -372,11 +379,13 @@ def get_order_payment_status(order_id: str, request: Request, db: Session = Depe
 def update_order_status(
     order_id: str,
     body: OrderStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     try:
-        order = OrderService(db).change_status(
+        tenant_context = resolve_panel_tenant_context(request, db, admin)
+        order = OrderService(db, tenant_context).change_status(
             order_id,
             body.status.value,
             changed_by="admin",
@@ -390,20 +399,23 @@ def update_order_status(
 def patch_order_status(
     order_id: str,
     body: OrderStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
-    return update_order_status(order_id, body, db)
+    return update_order_status(order_id, body, request, db, admin)
 
 
 @router.post("/{order_id}/cancel")
 def cancel_order(
     order_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     try:
-        order = OrderService(db).cancel(
+        tenant_context = resolve_panel_tenant_context(request, db, admin)
+        order = OrderService(db, tenant_context).cancel(
             order_id,
             changed_by="admin",
             cancelled_by="admin",
@@ -417,12 +429,14 @@ def cancel_order(
 @router.delete("/{order_id}", status_code=204)
 def delete_order(
     order_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
     _require_order_delete_access(admin, db)
     try:
-        OrderService(db).delete(order_id)
+        tenant_context = resolve_panel_tenant_context(request, db, admin)
+        OrderService(db, tenant_context).delete(order_id)
     except DomainError as exc:
         return err(exc)
 
@@ -435,7 +449,9 @@ def customer_cancel_order(
 ):
     """Permite que o próprio cliente cancele um pedido não pago."""
     try:
-        order = OrderService(db).get(order_id)
+        tenant_context = resolve_public_tenant_context(request, db)
+        service = OrderService(db, tenant_context)
+        order = service.get(order_id)
         require_order_or_admin(
             order,
             db,
@@ -452,7 +468,7 @@ def customer_cancel_order(
                 code="OrderNotCancellable",
                 status_code=422,
             )
-        order = OrderService(db).cancel(
+        order = service.cancel(
             order_id,
             changed_by="customer",
             cancelled_by="customer",
@@ -465,10 +481,12 @@ def customer_cancel_order(
 
 @router.post("/auto-cancel-expired")
 def auto_cancel_expired(
+    request: Request,
     hours: int = Query(default=2, ge=1, le=48),
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """Trigger interno: cancela pedidos presos em pagamento_expirado há mais de N horas."""
-    cancelled = OrderService(db).auto_cancel_expired(hours=hours)
+    tenant_context = resolve_panel_tenant_context(request, db, admin)
+    cancelled = OrderService(db, tenant_context).auto_cancel_expired(hours=hours)
     return ok({"cancelled_count": len(cancelled), "cancelled_ids": cancelled})

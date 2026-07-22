@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from backend.core.tenant_context import TenantContext, TenantSource
 from backend.core.exceptions import DomainError
 from backend.models.agente_whatsapp import AgenteWhatsAppEvent, AgenteWhatsAppSession, AgenteWhatsAppToolCall
 from backend.models.customer import Address, Customer
@@ -300,6 +301,7 @@ class AgenteWhatsAppToolService:
         self._db.add(
             AgenteWhatsAppToolCall(
                 id=log_id,
+                tenant_id=context.get("tenant_id"),
                 session_id=context.get("session_id"),
                 customer_id=context.get("customer_id"),
                 tool_name=tool_name,
@@ -322,16 +324,28 @@ class AgenteWhatsAppToolService:
 
     def _resolve_context(self, *, session_id: str | None, customer_id: str | None) -> dict[str, Any]:
         session = None
+        tenant_context = None
         if session_id:
             session = self._db.query(AgenteWhatsAppSession).filter(AgenteWhatsAppSession.id == session_id).first()
             if not session:
                 raise ValueError("Sessao do AGENTE WHATSAPP nao encontrada.")
             customer_id = customer_id or session.customer_id
+            if session.tenant_id:
+                tenant_context = TenantContext(
+                    tenant_id=session.tenant_id,
+                    source=TenantSource.JOB,
+                    correlation_id=session.id,
+                )
         if customer_id:
             exists = self._db.query(Customer.id).filter(Customer.id == customer_id).first()
             if not exists:
                 raise ValueError("Cliente nao encontrado.")
-        return {"session_id": session.id if session else None, "customer_id": customer_id}
+        return {
+            "session_id": session.id if session else None,
+            "customer_id": customer_id,
+            "tenant_id": session.tenant_id if session else None,
+            "tenant_context": tenant_context,
+        }
 
     def _buscar_cliente_por_telefone(self, args: dict[str, Any], _context: dict[str, Any]) -> dict[str, Any]:
         phone = args.get("phone")
@@ -437,7 +451,7 @@ class AgenteWhatsAppToolService:
 
     def _calcular_frete(self, args: dict[str, Any], _context: dict[str, Any]) -> dict[str, Any]:
         payload = ShippingCalculateIn.model_validate(args)
-        result = ShippingService(self._db).calculate(payload)
+        result = ShippingService(self._db, _context.get("tenant_context")).calculate(payload)
         return result.model_dump()
 
     def _validar_cupom(self, args: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -457,7 +471,7 @@ class AgenteWhatsAppToolService:
         if not order_id:
             raise ValueError("Informe o ID do pedido.")
         self._ensure_order_matches_context(self._order_by_id(order_id), _context)
-        return PaymentService(self._db).payment_status(str(order_id))
+        return PaymentService(self._db, tenant_id=_context.get("tenant_id")).payment_status(str(order_id))
 
     def _buscar_enderecos(self, args: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         customer_id = args.get("customer_id") or context.get("customer_id")
@@ -566,9 +580,10 @@ class AgenteWhatsAppToolService:
             selected_drink_variant_name=drink_variant.name if drink_variant else None,
             notes=args.get("notes"),
         )
-        unit_price, flavor_products, pricing, size_obj, crust_obj = OrderService(self._db)._validate_item(
+        order_service = OrderService(self._db, _context.get("tenant_context"))
+        unit_price, flavor_products, pricing, size_obj, crust_obj = order_service._validate_item(
             cart_item,
-            OrderService(self._db)._get_config(),
+            order_service._get_config(),
         )
         payload = cart_item.model_dump()
         payload["final_price"] = unit_price
@@ -593,13 +608,13 @@ class AgenteWhatsAppToolService:
 
     def _simular_checkout(self, args: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         checkout = self._checkout_from_args(args, context)
-        quote = OrderService(self._db).quote_checkout(checkout)
+        quote = OrderService(self._db, context.get("tenant_context")).quote_checkout(checkout)
         return {"checkout": checkout.model_dump(), "quote": quote}
 
     def _criar_pedido(self, args: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         self._require_customer_confirmation(args, "criar pedido")
         checkout = self._checkout_from_args(args, context)
-        order = OrderService(self._db).create_from_checkout(checkout)
+        order = OrderService(self._db, context.get("tenant_context")).create_from_checkout(checkout)
         self._record_event(
             context,
             event_type="agente_whatsapp_order_created",
@@ -623,7 +638,8 @@ class AgenteWhatsAppToolService:
                 "payer": args.get("payer") if isinstance(args.get("payer"), dict) else {},
             },
         )
-        payment = PaymentService(self._db).create(payload)
+        payment_service = PaymentService(self._db, tenant_id=context.get("tenant_id"))
+        payment = payment_service.create(payload)
         self._record_event(
             context,
             event_type="agente_whatsapp_payment_created",
@@ -635,7 +651,7 @@ class AgenteWhatsAppToolService:
                 "confirmation_text": args.get("confirmation_text"),
             },
         )
-        return {"payment": payment.model_dump(), "payment_status": PaymentService(self._db).payment_status(order.id)}
+        return {"payment": payment.model_dump(), "payment_status": payment_service.payment_status(order.id)}
 
     def _checkout_from_args(self, args: dict[str, Any], context: dict[str, Any]) -> CheckoutIn:
         payload = dict(args.get("checkout") or args)
@@ -677,6 +693,7 @@ class AgenteWhatsAppToolService:
         self._db.add(
             AgenteWhatsAppEvent(
                 id=str(uuid.uuid4()),
+                tenant_id=context.get("tenant_id"),
                 session_id=context.get("session_id"),
                 customer_id=context.get("customer_id"),
                 order_id=order_id,

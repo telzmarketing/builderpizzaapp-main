@@ -34,6 +34,11 @@ from backend.models import (  # noqa: F401
     store_operation,
     store_notification,
     theme,
+    tenant,
+    tenant_domain,
+    membership,
+    platform_rbac,
+    platform_audit,
     whatsapp_gateway,
 )
 

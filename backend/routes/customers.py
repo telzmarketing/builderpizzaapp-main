@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -30,9 +30,25 @@ from backend.schemas.customer import (
     AddressCreate, AddressOut, CustomerIdentityOut, WhatsAppLeadCreate,
 )
 from backend.core.response import ok
+from backend.core.tenant_context import TenantContext
+from backend.core.tenant_ownership import assign_tenant_on_create, customers_orders_enforcement_enabled, scope_query_to_tenant
+from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 suggestions_router = APIRouter(prefix="/suggestions", tags=["customer-ai"])
+
+
+def _tenant_query(db: Session, model, context: TenantContext | None):
+    return scope_query_to_tenant(
+        db.query(model), model, context,
+        enabled=customers_orders_enforcement_enabled(),
+    )
+
+
+def _own(resource, context: TenantContext | None):
+    return assign_tenant_on_create(
+        resource, context, enabled=customers_orders_enforcement_enabled()
+    )
 
 
 def _profile_level(customer: Customer) -> str:
@@ -59,10 +75,12 @@ def _identity_payload(db: Session, customer: Customer, created: bool = False) ->
 
 @router.get("", response_model=list[CustomerOut])
 def list_customers(
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
-    return db.query(Customer).order_by(Customer.name).all()
+    context = resolve_panel_tenant_context(request, db, admin)
+    return _tenant_query(db, Customer, context).order_by(Customer.name).all()
 
 
 @router.get("/identity/by-phone")
@@ -105,21 +123,25 @@ def create_whatsapp_lead(
 @router.get("/{customer_id}", response_model=CustomerOut)
 def get_customer(
     customer_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    context = resolve_panel_tenant_context(request, db, admin)
+    customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
     return customer
 
 
 @router.post("", response_model=CustomerOut, status_code=201)
-def create_customer(body: CustomerCreate, db: Session = Depends(get_db)):
-    existing = db.query(Customer).filter(Customer.email == body.email).first()
+def create_customer(body: CustomerCreate, request: Request, db: Session = Depends(get_db)):
+    context = resolve_public_tenant_context(request, db)
+    existing = _tenant_query(db, Customer, context).filter(Customer.email == body.email).first()
     if existing:
         raise HTTPException(400, "E-mail já cadastrado.")
     customer = Customer(id=str(uuid.uuid4()), **body.model_dump())
+    _own(customer, context)
     db.add(customer)
     db.flush()
     CustomerIdentityService(db).sync_registered_customer(customer, auth_provider="manual")
@@ -132,12 +154,14 @@ def create_customer(body: CustomerCreate, db: Session = Depends(get_db)):
 def update_customer(
     customer_id: str,
     body: CustomerUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
     x_customer_phone: str | None = Header(default=None),
     x_customer_email: str | None = Header(default=None),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    context = resolve_public_tenant_context(request, db)
+    customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
     require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
@@ -153,34 +177,39 @@ def update_customer(
 @router.get("/{customer_id}/addresses", response_model=list[AddressOut])
 def list_addresses(
     customer_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
     x_customer_phone: str | None = Header(default=None),
     x_customer_email: str | None = Header(default=None),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    context = resolve_public_tenant_context(request, db)
+    customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
     require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
-    return db.query(Address).filter(Address.customer_id == customer_id).all()
+    return _tenant_query(db, Address, context).filter(Address.customer_id == customer_id).all()
 
 
 @router.post("/{customer_id}/addresses", response_model=AddressOut, status_code=201)
 def add_address(
     customer_id: str,
     body: AddressCreate,
+    request: Request,
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
     x_customer_phone: str | None = Header(default=None),
     x_customer_email: str | None = Header(default=None),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    context = resolve_public_tenant_context(request, db)
+    customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
     require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
     if body.is_default:
-        db.query(Address).filter(Address.customer_id == customer_id).update({"is_default": False})
+        _tenant_query(db, Address, context).filter(Address.customer_id == customer_id).update({"is_default": False})
     address = Address(id=str(uuid.uuid4()), customer_id=customer_id, **body.model_dump())
+    _own(address, context)
     db.add(address)
     db.commit()
     db.refresh(address)
@@ -191,16 +220,18 @@ def add_address(
 def delete_address(
     customer_id: str,
     address_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
     x_customer_phone: str | None = Header(default=None),
     x_customer_email: str | None = Header(default=None),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    context = resolve_public_tenant_context(request, db)
+    customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
     require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
-    address = db.query(Address).filter(
+    address = _tenant_query(db, Address, context).filter(
         Address.id == address_id, Address.customer_id == customer_id
     ).first()
     if not address:
@@ -214,19 +245,21 @@ def delete_address(
 @router.get("/{customer_id}/orders")
 def get_customer_orders(
     customer_id: str,
+    request: Request,
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
     x_customer_phone: str | None = Header(default=None),
     x_customer_email: str | None = Header(default=None),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    context = resolve_public_tenant_context(request, db)
+    customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
     require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
 
     orders = (
-        db.query(Order)
+        _tenant_query(db, Order, context)
         .filter(Order.customer_id == customer_id)
         .order_by(desc(Order.created_at))
         .limit(limit)

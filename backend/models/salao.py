@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, Time
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, Time
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -10,6 +10,7 @@ class RestaurantTable(Base):
     __tablename__ = "restaurant_tables"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_restaurant_tables_tenant_id_tenants"), nullable=True)
     number = Column(String(30), nullable=False, unique=True, index=True)
     name = Column(String(120), nullable=True)
     capacity = Column(Integer, nullable=False, default=2)
@@ -25,12 +26,17 @@ class RestaurantTable(Base):
 
     reservations = relationship("Reservation", back_populates="table")
     sessions = relationship("TableSession", back_populates="table")
+    __table_args__ = (
+        Index("uq_restaurant_tables_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_restaurant_tables_tenant_number", "tenant_id", "number", unique=True),
+    )
 
 
 class Reservation(Base):
     __tablename__ = "reservations"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_reservations_tenant_id_tenants"), nullable=True)
     customer_id = Column(String, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True)
     customer_name = Column(String(200), nullable=False)
     customer_phone = Column(String(40), nullable=False)
@@ -51,12 +57,14 @@ class Reservation(Base):
 
     customer = relationship("Customer")
     table = relationship("RestaurantTable", back_populates="reservations")
+    __table_args__ = (Index("uq_reservations_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class TableSession(Base):
     __tablename__ = "table_sessions"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_table_sessions_tenant_id_tenants"), nullable=True)
     table_id = Column(String, ForeignKey("restaurant_tables.id", ondelete="RESTRICT"), nullable=False, index=True)
     customer_id = Column(String, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True)
     opened_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
@@ -79,12 +87,14 @@ class TableSession(Base):
     customer = relationship("Customer")
     orders = relationship("Order", back_populates="table_session")
     items = relationship("TableSessionItem", back_populates="session", cascade="all, delete-orphan")
+    __table_args__ = (Index("uq_table_sessions_tenant_id_id", "tenant_id", "id", unique=True),)
 
 
 class TableSessionItem(Base):
     __tablename__ = "table_session_items"
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_table_session_items_tenant_id_tenants"), nullable=True)
     table_session_id = Column(String, ForeignKey("table_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="RESTRICT"), nullable=False, index=True)
     product_name = Column(String(200), nullable=False)
@@ -101,3 +111,4 @@ class TableSessionItem(Base):
 
     session = relationship("TableSession", back_populates="items")
     product = relationship("Product")
+    __table_args__ = (Index("uq_table_session_items_tenant_id_id", "tenant_id", "id", unique=True),)

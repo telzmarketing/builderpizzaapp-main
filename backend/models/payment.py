@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, String, Float, Enum, DateTime, ForeignKey, Text, Integer, UniqueConstraint
+from sqlalchemy import Boolean, Column, String, Float, Enum, DateTime, ForeignKey, Text, Integer, Index, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -25,8 +25,25 @@ class PaymentStatus(str, enum.Enum):
 
 class Payment(Base):
     __tablename__ = "payments"
+    __table_args__ = (
+        Index("uq_payments_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_payments_tenant_order_id", "tenant_id", "order_id", unique=True),
+        Index(
+            "uq_payments_tenant_provider_payment_id",
+            "tenant_id", "provider", "provider_payment_id",
+            unique=True,
+            postgresql_where=text("provider_payment_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_payments_tenant_mercado_pago_payment_id",
+            "tenant_id", "mercado_pago_payment_id",
+            unique=True,
+            postgresql_where=text("mercado_pago_payment_id IS NOT NULL"),
+        ),
+    )
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_payments_tenant_id_tenants"), nullable=True)
     order_id = Column(String, ForeignKey("orders.id"), nullable=False, unique=True)
 
     method = Column(Enum(PaymentMethod), nullable=False)
@@ -82,8 +99,18 @@ class Payment(Base):
 
 class PaymentEvent(Base):
     __tablename__ = "payment_events"
+    __table_args__ = (
+        Index("uq_payment_events_tenant_id_id", "tenant_id", "id", unique=True),
+        Index(
+            "uq_payment_events_tenant_provider_event_id",
+            "tenant_id", "provider", "provider_event_id",
+            unique=True,
+            postgresql_where=text("provider_event_id IS NOT NULL"),
+        ),
+    )
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_payment_events_tenant_id_tenants"), nullable=True)
     provider = Column(String(50), nullable=False, default="mercado_pago")
     event_type = Column(String(100), nullable=True)
     provider_event_id = Column(String(200), nullable=True)
@@ -105,9 +132,13 @@ class PaymentProviderCustomer(Base):
     __table_args__ = (
         UniqueConstraint("customer_id", "provider", name="uq_payment_provider_customer"),
         UniqueConstraint("provider", "provider_customer_id", name="uq_payment_provider_customer_external_id"),
+        Index("uq_payment_provider_customers_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_payment_provider_customers_tenant_customer_provider", "tenant_id", "customer_id", "provider", unique=True),
+        Index("uq_payment_provider_customers_tenant_provider_external", "tenant_id", "provider", "provider_customer_id", unique=True),
     )
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_payment_provider_customers_tenant_id_tenants"), nullable=True)
     customer_id = Column(String, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
     provider = Column(String(50), nullable=False)
     provider_customer_id = Column(String(160), nullable=False)

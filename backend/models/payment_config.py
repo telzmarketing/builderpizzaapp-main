@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, Integer, Text
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Index, Integer, Text
 from datetime import datetime, timezone
 from backend.database import Base
 
@@ -13,8 +13,13 @@ class PaymentGatewayConfig(Base):
     or encrypt the column with SQLAlchemy-Utils EncryptedType.
     """
     __tablename__ = "payment_gateway_config"
+    __table_args__ = (
+        Index("uq_payment_gateway_config_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_payment_gateway_config_tenant_singleton", "tenant_id", unique=True),
+    )
 
     id = Column(String, primary_key=True, default="default")
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_payment_gateway_config_tenant_id_tenants"), nullable=True)
 
     # Which gateway is active
     gateway = Column(String(50), default="mock")   # mock | mercadopago | stripe | pagseguro

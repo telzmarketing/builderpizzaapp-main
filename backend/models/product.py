@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Boolean, Integer, Enum, Text, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, String, Float, Boolean, Integer, Enum, Text, DateTime, ForeignKey, JSON, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -19,8 +19,10 @@ class ProductType(str, enum.Enum):
 
 class Product(Base):
     __tablename__ = "products"
+    __table_args__ = (Index("uq_products_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_products_tenant_id_tenants"), nullable=True)
     name = Column(String(200), nullable=False)
     description = Column(Text, nullable=False)
     price = Column(Float, nullable=False)
@@ -48,8 +50,10 @@ class Product(Base):
 
 class ProductCategory(Base):
     __tablename__ = "product_categories"
+    __table_args__ = (Index("uq_product_categories_tenant_id_id", "tenant_id", "id", unique=True), UniqueConstraint("tenant_id", "name", name="uq_product_categories_tenant_name"))
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_product_categories_tenant_id_tenants"), nullable=True)
     parent_id = Column(String, ForeignKey("product_categories.id", ondelete="CASCADE"), nullable=True)
     name = Column(String(100), nullable=False, unique=True)
     active = Column(Boolean, default=True)
@@ -61,8 +65,10 @@ class ProductCategory(Base):
 
 class ProductSize(Base):
     __tablename__ = "product_sizes"
+    __table_args__ = (Index("uq_product_sizes_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_product_sizes_tenant_id_tenants"), nullable=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
     label = Column(String(50), nullable=False)
     description = Column(String(200), nullable=True)
@@ -78,8 +84,10 @@ class ProductSize(Base):
 class ProductCrustType(Base):
     """Available crust types for a pizza product."""
     __tablename__ = "product_crust_types"
+    __table_args__ = (Index("uq_product_crust_types_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_product_crust_types_tenant_id_tenants"), nullable=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)
     price_addition = Column(Float, default=0.0)
@@ -93,8 +101,10 @@ class ProductCrustType(Base):
 class ProductDrinkVariant(Base):
     """Drink type variants (e.g., Normal, Zero) for a drink product."""
     __tablename__ = "product_drink_variants"
+    __table_args__ = (Index("uq_product_drink_variants_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_product_drink_variants_tenant_id_tenants"), nullable=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)
     price_addition = Column(Float, default=0.0)
@@ -108,8 +118,10 @@ class ProductDrinkVariant(Base):
 class BestSellerConfig(Base):
     """Singleton config for automatic best-seller badge calculation."""
     __tablename__ = "best_seller_config"
+    __table_args__ = (Index("uq_best_seller_config_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True, default="default")
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_best_seller_config_tenant_id_tenants"), nullable=True)
     period_days = Column(Integer, default=30)  # 0 = all time
     top_count = Column(Integer, default=5)
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
@@ -119,8 +131,10 @@ class BestSellerConfig(Base):
 class MultiFlavorsConfig(Base):
     """Singleton-style table — only one row active at a time (id='default')."""
     __tablename__ = "multi_flavors_config"
+    __table_args__ = (Index("uq_multi_flavors_config_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id = Column(String, primary_key=True, default="default")
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_multi_flavors_config_tenant_id_tenants"), nullable=True)
     max_flavors = Column(Integer, default=2)
     pricing_rule = Column(
         Enum(PricingRule), default=PricingRule.most_expensive

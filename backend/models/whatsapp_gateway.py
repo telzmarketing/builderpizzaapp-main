@@ -6,6 +6,7 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, T
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 
 
 def _now_utc() -> datetime:
@@ -16,7 +17,7 @@ class WhatsAppGatewayInstance(Base):
     __tablename__ = "whatsapp_gateway_instances"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = wave6_tenant_column("whatsapp_gateway_instances")
     company_id = Column(String(80), nullable=False, default="default", index=True)
     name = Column(String(180), nullable=False)
     phone_number = Column(String(40), nullable=True, index=True)
@@ -38,7 +39,7 @@ class WhatsAppGatewayLog(Base):
     __tablename__ = "whatsapp_gateway_logs"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = wave6_tenant_column("whatsapp_gateway_logs")
     company_id = Column(String(80), nullable=False, default="default", index=True)
     instance_id = Column(
         String,
@@ -60,7 +61,7 @@ class WhatsAppGatewayUpdateLog(Base):
     __tablename__ = "whatsapp_gateway_update_logs"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = wave6_tenant_column("whatsapp_gateway_update_logs")
     company_id = Column(String(80), nullable=False, default="default", index=True)
     package_name = Column(String(160), nullable=False, default="@whiskeysockets/baileys")
     current_version = Column(String(80), nullable=True)
@@ -82,7 +83,7 @@ class WhatsAppGatewaySchedulerSettings(Base):
     __tablename__ = "whatsapp_gateway_scheduler_settings"
 
     id = Column(String, primary_key=True, default="default")
-    tenant_id = Column(String(80), nullable=False, default="default", index=True)
+    tenant_id = wave6_tenant_column("whatsapp_gateway_scheduler_settings")
     company_id = Column(String(80), nullable=False, default="default", index=True)
     auto_health_check_enabled = Column(Boolean, nullable=False, default=True)
     morning_check_time = Column(String(5), nullable=False, default="06:00")

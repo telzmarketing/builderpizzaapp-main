@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.response import ok, created, err_msg
 from backend.database import get_db, Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 from backend.routes.admin_auth import get_current_admin
 
 DEFAULT_PIXEL_EVENTS = "PageView,ViewContent,AddToCart,InitiateCheckout,Purchase,Lead"
@@ -25,6 +26,7 @@ DEFAULT_PIXEL_EVENTS = "PageView,ViewContent,AddToCart,InitiateCheckout,Purchase
 
 class AdsOAuthState(Base):
     __tablename__ = "ads_oauth_states"
+    tenant_id = wave6_tenant_column("ads_oauth_states")
     id = Column(String, primary_key=True)           # estado aleatório CSRF
     platform = Column(String(30), nullable=False)
     redirect_uri = Column(Text)
@@ -33,6 +35,7 @@ class AdsOAuthState(Base):
 
 class AdsCampaign(Base):
     __tablename__ = "ads_campaigns"
+    tenant_id = wave6_tenant_column("ads_campaigns")
     id = Column(String, primary_key=True)            # {platform}_{external_id}
     platform = Column(String(30), nullable=False)    # meta | google | tiktok
     external_id = Column(String(200), nullable=False)
@@ -57,6 +60,7 @@ class AdsCampaign(Base):
 
 class AdsUtmLink(Base):
     __tablename__ = "ads_utm_links"
+    tenant_id = wave6_tenant_column("ads_utm_links")
     id = Column(String, primary_key=True)
     name = Column(String(300), nullable=False)
     url = Column(Text, nullable=False)
@@ -72,6 +76,7 @@ class AdsUtmLink(Base):
 
 class AdsPixel(Base):
     __tablename__ = "ads_pixels"
+    tenant_id = wave6_tenant_column("ads_pixels")
     id = Column(String, primary_key=True)
     platform = Column(String(30), nullable=False)
     pixel_id = Column(String(200), nullable=False)

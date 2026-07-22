@@ -4,6 +4,7 @@ from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integ
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 
 
 def _now_utc():
@@ -12,6 +13,7 @@ def _now_utc():
 
 class AgenteWhatsAppSession(Base):
     __tablename__ = "agente_whatsapp_sessions"
+    tenant_id = wave6_tenant_column("agente_whatsapp_sessions")
 
     id = Column(String, primary_key=True)
     customer_id = Column(String, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
@@ -38,6 +40,7 @@ class AgenteWhatsAppSession(Base):
 
 class AgenteWhatsAppAISettings(Base):
     __tablename__ = "agente_whatsapp_ai_settings"
+    tenant_id = wave6_tenant_column("agente_whatsapp_ai_settings")
 
     id = Column(String, primary_key=True, default="default")
     enabled = Column(Boolean, nullable=False, default=True)
@@ -59,6 +62,7 @@ class AgenteWhatsAppAISettings(Base):
 
 class AgenteWhatsAppChannelSettings(Base):
     __tablename__ = "agente_whatsapp_channel_settings"
+    tenant_id = wave6_tenant_column("agente_whatsapp_channel_settings")
 
     id = Column(String, primary_key=True, default="default")
     active_provider = Column(String(40), nullable=False, default="official")
@@ -72,6 +76,7 @@ class AgenteWhatsAppChannelSettings(Base):
 
 class AgenteWhatsAppMessage(Base):
     __tablename__ = "agente_whatsapp_messages"
+    tenant_id = wave6_tenant_column("agente_whatsapp_messages")
 
     id = Column(String, primary_key=True)
     session_id = Column(String, ForeignKey("agente_whatsapp_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -117,6 +122,7 @@ class AgenteWhatsAppMessage(Base):
 
 class AgenteWhatsAppAudioArtifact(Base):
     __tablename__ = "agente_whatsapp_audio_artifacts"
+    tenant_id = wave6_tenant_column("agente_whatsapp_audio_artifacts")
 
     id = Column(String, primary_key=True)
     message_id = Column(String, ForeignKey("agente_whatsapp_messages.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -139,6 +145,7 @@ class AgenteWhatsAppAudioArtifact(Base):
 
 class AgenteWhatsAppProcessingJob(Base):
     __tablename__ = "agente_whatsapp_processing_jobs"
+    tenant_id = wave6_tenant_column("agente_whatsapp_processing_jobs")
 
     id = Column(String, primary_key=True)
     message_id = Column(String, ForeignKey("agente_whatsapp_messages.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -165,6 +172,7 @@ class AgenteWhatsAppProcessingJob(Base):
 
 class AgenteWhatsAppOutbox(Base):
     __tablename__ = "agente_whatsapp_outbox"
+    tenant_id = wave6_tenant_column("agente_whatsapp_outbox")
 
     id = Column(String, primary_key=True)
     message_id = Column(String, ForeignKey("agente_whatsapp_messages.id", ondelete="CASCADE"), nullable=False, unique=True)
@@ -192,6 +200,7 @@ class AgenteWhatsAppOutbox(Base):
 
 class AgenteWhatsAppProviderState(Base):
     __tablename__ = "agente_whatsapp_provider_states"
+    tenant_id = wave6_tenant_column("agente_whatsapp_provider_states")
 
     id = Column(String, primary_key=True)
     provider = Column(String(40), nullable=False, unique=True, index=True)
@@ -209,6 +218,7 @@ class AgenteWhatsAppProviderState(Base):
 
 class AgenteWhatsAppInternalAlert(Base):
     __tablename__ = "agente_whatsapp_internal_alerts"
+    tenant_id = wave6_tenant_column("agente_whatsapp_internal_alerts")
 
     id = Column(String, primary_key=True)
     alert_type = Column(String(80), nullable=False, index=True)
@@ -228,6 +238,7 @@ class AgenteWhatsAppInternalAlert(Base):
 
 class AgenteWhatsAppEvent(Base):
     __tablename__ = "agente_whatsapp_events"
+    tenant_id = wave6_tenant_column("agente_whatsapp_events")
 
     id = Column(String, primary_key=True)
     session_id = Column(String, ForeignKey("agente_whatsapp_sessions.id", ondelete="CASCADE"), nullable=True, index=True)
@@ -245,6 +256,7 @@ class AgenteWhatsAppEvent(Base):
 
 class AgenteWhatsAppContext(Base):
     __tablename__ = "agente_whatsapp_context"
+    tenant_id = wave6_tenant_column("agente_whatsapp_context")
 
     id = Column(String, primary_key=True)
     session_id = Column(String, ForeignKey("agente_whatsapp_sessions.id", ondelete="CASCADE"), nullable=False, unique=True)
@@ -263,6 +275,7 @@ class AgenteWhatsAppContext(Base):
 
 class AgenteWhatsAppToolCall(Base):
     __tablename__ = "agente_whatsapp_tool_calls"
+    tenant_id = wave6_tenant_column("agente_whatsapp_tool_calls")
 
     id = Column(String, primary_key=True)
     session_id = Column(String, ForeignKey("agente_whatsapp_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -281,6 +294,7 @@ class AgenteWhatsAppToolCall(Base):
 
 class AgenteWhatsAppMetric(Base):
     __tablename__ = "agente_whatsapp_metrics"
+    tenant_id = wave6_tenant_column("agente_whatsapp_metrics")
 
     id = Column(String, primary_key=True)
     date = Column(Date, nullable=False, index=True)
@@ -299,6 +313,7 @@ class AgenteWhatsAppMetric(Base):
 
 class AgenteWhatsAppCampaign(Base):
     __tablename__ = "agente_whatsapp_campaigns"
+    tenant_id = wave6_tenant_column("agente_whatsapp_campaigns")
 
     id = Column(String, primary_key=True)
     name = Column(String(300), nullable=False)
@@ -322,6 +337,7 @@ class AgenteWhatsAppCampaign(Base):
 
 class AgenteWhatsAppStory(Base):
     __tablename__ = "agente_whatsapp_stories"
+    tenant_id = wave6_tenant_column("agente_whatsapp_stories")
 
     id = Column(String, primary_key=True)
     campaign_id = Column(String, ForeignKey("agente_whatsapp_campaigns.id", ondelete="SET NULL"), nullable=True)

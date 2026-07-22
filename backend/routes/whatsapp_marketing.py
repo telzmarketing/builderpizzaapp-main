@@ -15,6 +15,7 @@ from sqlalchemy import Column, String, Boolean, Text, DateTime, ForeignKey, Inte
 from sqlalchemy.orm import Session
 
 from backend.database import get_db, Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 from backend.routes.admin_auth import get_current_admin
 from backend.core.response import ok, created, err_msg
 from backend.services.whatsapp_gateway_service import WhatsAppGatewayService
@@ -28,6 +29,7 @@ WHATSAPP_NOT_FOUND_ERROR = "Whatsapp não existe"
 
 class WhatsAppTemplate(Base):
     __tablename__ = "whatsapp_templates"
+    tenant_id = wave6_tenant_column("whatsapp_templates")
     id = Column(String, primary_key=True)
     name = Column(String(200), nullable=False)
     body = Column(Text, nullable=False)
@@ -47,6 +49,7 @@ class WhatsAppTemplate(Base):
 
 class WhatsAppContactList(Base):
     __tablename__ = "whatsapp_contact_lists"
+    tenant_id = wave6_tenant_column("whatsapp_contact_lists")
     id = Column(String, primary_key=True)
     name = Column(String(200), nullable=False)
     active = Column(Boolean, default=True)
@@ -57,6 +60,7 @@ class WhatsAppContactList(Base):
 
 class WhatsAppContactListItem(Base):
     __tablename__ = "whatsapp_contact_list_items"
+    tenant_id = wave6_tenant_column("whatsapp_contact_list_items")
     id = Column(String, primary_key=True)
     list_id = Column(String, ForeignKey("whatsapp_contact_lists.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(200), nullable=False)
@@ -66,6 +70,7 @@ class WhatsAppContactListItem(Base):
 
 class WhatsAppMessage(Base):
     __tablename__ = "whatsapp_messages"
+    tenant_id = wave6_tenant_column("whatsapp_messages")
     id = Column(String, primary_key=True)
     template_id = Column(String, ForeignKey("whatsapp_templates.id", ondelete="SET NULL"), nullable=True)
     campaign_id = Column(String, ForeignKey("whatsapp_campaigns.id", ondelete="SET NULL"), nullable=True)
@@ -89,7 +94,7 @@ class WhatsAppCampaignDelivery(Base):
     __tablename__ = "whatsapp_campaign_deliveries"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(80), nullable=False, default="default")
+    tenant_id = wave6_tenant_column("whatsapp_campaign_deliveries")
     company_id = Column(String(80), nullable=False, default="default")
     whatsapp_message_id = Column(String, ForeignKey("whatsapp_messages.id", ondelete="SET NULL"), nullable=True)
     campaign_id = Column(String, ForeignKey("whatsapp_campaigns.id", ondelete="SET NULL"), nullable=True)
@@ -123,6 +128,7 @@ class WhatsAppCampaignDelivery(Base):
 
 class WhatsAppCampaign(Base):
     __tablename__ = "whatsapp_campaigns"
+    tenant_id = wave6_tenant_column("whatsapp_campaigns")
     id = Column(String, primary_key=True)
     name = Column(String(300), nullable=False)
     status = Column(String(30), default="draft")
@@ -141,6 +147,7 @@ class WhatsAppCampaign(Base):
 
 class WhatsAppConfig(Base):
     __tablename__ = "whatsapp_config"
+    tenant_id = wave6_tenant_column("whatsapp_config")
     id = Column(String, primary_key=True, default="default")
     connection_type = Column(String(30), default="official")
     status = Column(String(20), default="disconnected")

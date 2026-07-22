@@ -11,6 +11,7 @@ from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, 
 from sqlalchemy.orm import Session
 
 from backend.database import get_db, Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 from backend.models.crm import CustomerSegment, CustomerTag, CustomerTagAssignment
 from backend.routes.admin_auth import get_current_admin
 from backend.core.response import ok, created
@@ -27,6 +28,7 @@ router = APIRouter(prefix="/crm", tags=["crm"])
 
 class CrmPipeline(Base):
     __tablename__ = "crm_pipelines"
+    tenant_id = wave6_tenant_column("crm_pipelines")
     id = Column(String, primary_key=True)
     name = Column(String(200), nullable=False)
     description = Column(Text)
@@ -40,6 +42,7 @@ class CrmPipeline(Base):
 
 class CrmStage(Base):
     __tablename__ = "crm_stages"
+    tenant_id = wave6_tenant_column("crm_stages")
     id = Column(String, primary_key=True)
     pipeline_id = Column(String, ForeignKey("crm_pipelines.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(200), nullable=False)
@@ -52,6 +55,7 @@ class CrmStage(Base):
 
 class CrmCard(Base):
     __tablename__ = "crm_cards"
+    tenant_id = wave6_tenant_column("crm_cards")
     id = Column(String, primary_key=True)
     pipeline_id = Column(String, ForeignKey("crm_pipelines.id", ondelete="CASCADE"), nullable=False)
     stage_id = Column(String, ForeignKey("crm_stages.id", ondelete="CASCADE"), nullable=False)
@@ -73,6 +77,7 @@ class CrmCard(Base):
 
 class CrmTask(Base):
     __tablename__ = "crm_tasks"
+    tenant_id = wave6_tenant_column("crm_tasks")
     id = Column(String, primary_key=True)
     card_id = Column(String, ForeignKey("crm_cards.id", ondelete="SET NULL"), nullable=True)
     customer_id = Column(String, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
@@ -91,6 +96,7 @@ class CrmTask(Base):
 
 class CustomerGroup(Base):
     __tablename__ = "customer_groups"
+    tenant_id = wave6_tenant_column("customer_groups")
     id = Column(String, primary_key=True)
     name = Column(String(200), nullable=False)
     description = Column(Text)
@@ -105,6 +111,7 @@ class CustomerGroup(Base):
 
 class CustomerTimeline(Base):
     __tablename__ = "customer_timeline"
+    tenant_id = wave6_tenant_column("customer_timeline")
     id = Column(String, primary_key=True)
     customer_id = Column(String, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
     event_type = Column(String(80), nullable=False)
@@ -116,6 +123,7 @@ class CustomerTimeline(Base):
 
 class CrmCardNote(Base):
     __tablename__ = "crm_card_notes"
+    tenant_id = wave6_tenant_column("crm_card_notes")
     id = Column(String, primary_key=True)
     card_id = Column(String, ForeignKey("crm_cards.id", ondelete="CASCADE"), nullable=False)
     author = Column(String(200), default="Admin")
@@ -125,6 +133,7 @@ class CrmCardNote(Base):
 
 class CrmCardHistory(Base):
     __tablename__ = "crm_card_history"
+    tenant_id = wave6_tenant_column("crm_card_history")
     id = Column(String, primary_key=True)
     card_id = Column(String, ForeignKey("crm_cards.id", ondelete="CASCADE"), nullable=False)
     event_type = Column(String(80), nullable=False)

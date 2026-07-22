@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronDown, LogOut, Menu, Search, User, X } from "lucide-re
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import AdminTopActions from "@/components/admin/AdminTopActions";
+import AdminTenantSwitcher from "@/components/admin/AdminTenantSwitcher";
 import { useApp } from "@/context/AppContext";
 import { filterAdminNavigation, findAdminNavigationGroup } from "@/lib/adminAccess";
 import { preloadAdminRoute } from "@/lib/adminRoutePreload";
@@ -215,7 +216,11 @@ export default function TopNavigation({
           })}
         </nav>
 
-        <div ref={searchRef} className="relative ml-auto hidden lg:block">
+        <div className="ml-auto">
+          <AdminTenantSwitcher />
+        </div>
+
+        <div ref={searchRef} className="relative hidden lg:block">
           <form
             onSubmit={handleSearchSubmit}
             className="flex h-10 w-44 items-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-3 transition-colors focus-within:border-gold/50 xl:w-56 2xl:w-72"

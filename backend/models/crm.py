@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 
 from backend.database import Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 
 
 class CustomerTag(Base):
@@ -12,7 +13,7 @@ class CustomerTag(Base):
     )
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(100), nullable=False, default="default")
+    tenant_id = wave6_tenant_column("customer_tags")
     name = Column(String(120), nullable=False)
     slug = Column(String(140), nullable=False)
     description = Column(Text, nullable=True)
@@ -35,7 +36,7 @@ class CustomerTagAssignment(Base):
     )
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(100), nullable=False, default="default")
+    tenant_id = wave6_tenant_column("customer_tag_assignments")
     customer_id = Column(String, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
     tag_id = Column(String, ForeignKey("customer_tags.id", ondelete="CASCADE"), nullable=False)
     source = Column(String(40), nullable=False, default="manual")
@@ -50,7 +51,7 @@ class CustomerSegment(Base):
     )
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String(100), nullable=False, default="default")
+    tenant_id = wave6_tenant_column("customer_segments")
     name = Column(String(160), nullable=False)
     slug = Column(String(180), nullable=False)
     description = Column(Text, nullable=True)
@@ -74,6 +75,7 @@ class CustomerSegment(Base):
 
 class CustomerAIProfile(Base):
     __tablename__ = "customer_ai_profiles"
+    tenant_id = wave6_tenant_column("customer_ai_profiles")
 
     id = Column(String, primary_key=True)
     customer_id = Column(String, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, unique=True)
@@ -102,6 +104,7 @@ class CustomerAIProfile(Base):
 
 class CustomerAISuggestion(Base):
     __tablename__ = "customer_ai_suggestions"
+    tenant_id = wave6_tenant_column("customer_ai_suggestions")
     __table_args__ = (
         UniqueConstraint("customer_id", "suggestion_type", "slug", "status", name="uq_customer_ai_suggestion_status"),
     )
@@ -127,6 +130,7 @@ class CustomerAISuggestion(Base):
 
 class CustomerAIAnalysisJob(Base):
     __tablename__ = "customer_ai_analysis_jobs"
+    tenant_id = wave6_tenant_column("customer_ai_analysis_jobs")
 
     id = Column(String, primary_key=True)
     status = Column(String(20), nullable=False, default="pending")

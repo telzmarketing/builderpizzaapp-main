@@ -20,6 +20,7 @@ except Exception:  # pragma: no cover - dependency is declared, fallback keeps a
     dns = None
 
 from backend.database import get_db, Base
+from backend.core.wave6_tenant_orm import wave6_tenant_column
 from backend.routes.admin_auth import get_current_admin
 from backend.core.response import ok, created
 
@@ -32,6 +33,7 @@ EMAIL_NOT_FOUND_ERROR = "Email não existe"
 
 class EmailTemplate(Base):
     __tablename__ = "email_templates"
+    tenant_id = wave6_tenant_column("email_templates")
     id = Column(String, primary_key=True)
     name = Column(String(200), nullable=False)
     subject = Column(String(500), nullable=False)
@@ -45,6 +47,7 @@ class EmailTemplate(Base):
 
 class EmailContactList(Base):
     __tablename__ = "email_contact_lists"
+    tenant_id = wave6_tenant_column("email_contact_lists")
     id = Column(String, primary_key=True)
     name = Column(String(200), nullable=False)
     active = Column(Boolean, default=True)
@@ -55,6 +58,7 @@ class EmailContactList(Base):
 
 class EmailContactListItem(Base):
     __tablename__ = "email_contact_list_items"
+    tenant_id = wave6_tenant_column("email_contact_list_items")
     id = Column(String, primary_key=True)
     list_id = Column(String, ForeignKey("email_contact_lists.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(200), nullable=False)
@@ -64,6 +68,7 @@ class EmailContactListItem(Base):
 
 class EmailMessage(Base):
     __tablename__ = "email_messages"
+    tenant_id = wave6_tenant_column("email_messages")
     id = Column(String, primary_key=True)
     template_id = Column(String, ForeignKey("email_templates.id", ondelete="SET NULL"), nullable=True)
     campaign_id = Column(String, ForeignKey("email_campaigns.id", ondelete="SET NULL"), nullable=True)
@@ -78,6 +83,7 @@ class EmailMessage(Base):
 
 class EmailCampaign(Base):
     __tablename__ = "email_campaigns"
+    tenant_id = wave6_tenant_column("email_campaigns")
     id = Column(String, primary_key=True)
     name = Column(String(300), nullable=False)
     status = Column(String(30), nullable=False, default="draft")
@@ -98,6 +104,7 @@ class EmailCampaign(Base):
 
 class EmailConfig(Base):
     __tablename__ = "email_config"
+    tenant_id = wave6_tenant_column("email_config")
     id = Column(String, primary_key=True, default="default")
     provider = Column(String(30), default="smtp")
     smtp_host = Column(String(200), default="")

@@ -17,7 +17,7 @@ Token flow
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException
 from jose import JWTError
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,7 @@ from backend.core.security import verify_password, create_access_token, decode_a
 from backend.database import get_db
 from backend.models.admin import AdminUser
 from backend.schemas.admin import AdminLoginIn, AdminOut, TokenOut
+from backend.schemas.tenant import TenantSelectionIn
 
 router = APIRouter(prefix="/admin/auth", tags=["admin-auth"])
 
@@ -105,9 +106,25 @@ def admin_login(body: AdminLoginIn, db: Session = Depends(get_db)):
     admin.last_login_at = datetime.now(timezone.utc)
     db.commit()
 
+    extra_claims = {"email": admin.email, "name": admin.name, "role_id": admin.role_id}
+    from backend.config import get_settings
+    if get_settings().MULTI_TENANT_AUTH_ENABLED:
+        from backend.services.tenant_auth_service import TenantAuthService, TenantAuthUnavailable
+        try:
+            selection = TenantAuthService(db).login_selection(admin.id)
+        except TenantAuthUnavailable as exc:
+            # Once tenant auth is explicitly enabled, issuing a legacy/global
+            # token because the membership store is unavailable would turn an
+            # operational failure into an authorization bypass.
+            raise HTTPException(
+                status_code=503,
+                detail="Autenticacao multiempresa temporariamente indisponivel.",
+            ) from exc
+        if selection:
+            extra_claims.update(selection.claims())
     token = create_access_token(
         subject=admin.id,
-        extra={"email": admin.email, "name": admin.name, "role_id": admin.role_id},
+        extra=extra_claims,
     )
 
     result = TokenOut(
@@ -126,6 +143,39 @@ def admin_me(current_admin: AdminUser = Depends(get_current_admin)):
     Requires:  Authorization: Bearer <token>
     """
     return ok(AdminOut.model_validate(current_admin))
+
+
+def _require_tenant_auth_enabled() -> None:
+    from backend.config import get_settings
+    if not get_settings().MULTI_TENANT_AUTH_ENABLED:
+        raise HTTPException(status_code=404, detail="Recurso nao encontrado.")
+
+
+@router.get("/tenants", response_model=None)
+def admin_tenants(current_admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)):
+    from backend.services.tenant_auth_service import TenantAuthService, TenantAuthUnavailable
+    _require_tenant_auth_enabled()
+    try:
+        items = TenantAuthService(db).list_active(current_admin.id)
+    except TenantAuthUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return ok([{"tenant_id": x.tenant_id, "membership_id": x.membership_id, "name": x.tenant_name,
+                "slug": x.tenant_slug, "role": x.tenant_role, "is_default": x.is_default} for x in items])
+
+
+@router.post("/select-tenant", response_model=None)
+def select_admin_tenant(body: TenantSelectionIn, current_admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)):
+    from backend.services.tenant_auth_service import TenantAuthService, TenantAuthUnavailable, TenantMembershipDenied
+    _require_tenant_auth_enabled()
+    try:
+        item = TenantAuthService(db).require_selection(current_admin.id, body.tenant_id)
+    except TenantAuthUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except TenantMembershipDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    token = create_access_token(subject=current_admin.id, extra={"email": current_admin.email,
+        "name": current_admin.name, "role_id": current_admin.role_id, **item.claims()})
+    return ok({"access_token": token, "token_type": "bearer"})
 
 
 @router.post("/logout", response_model=None)

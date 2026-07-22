@@ -1,5 +1,58 @@
 # Guia de Instalação na VPS
 
+## Status atual - Telz SaaS
+
+Este arquivo permanece como referencia manual/legada de deploy. Para novas instalacoes Telz em VPS, use o instalador modular criado em:
+
+```bash
+sudo bash installer/install.sh
+```
+
+Documentacao operacional atual:
+
+- `docs/INSTALL_TELZ_VPS.md`
+- `docs/UPDATE_TELZ_VPS.md`
+- `docs/BACKUP_AND_RESTORE.md`
+- `docs/INSTALLER_TROUBLESHOOTING.md`
+- `docs/TELZ_VPS_INSTALL_PHASED_METHOD.md`
+
+Status do instalador:
+
+- primeira versao executavel criada;
+- validacao estatica local aprovada com `bash -n` e `git diff --check`;
+- ainda pendente de teste em VPS Ubuntu limpa antes de uso operacional recorrente;
+- instala `telz-api`, `telz-web` e `telz-whatsapp-gateway`;
+- prepara Mercado Pago e ASAAS no `backend/.env` para pagamentos dos pedidos;
+- mantem todas as flags multi-tenant desligadas na instalacao inicial;
+- nao executa downgrade Alembic automatico;
+- nao ativa contract migrations fora da cadeia validada;
+- `telz-cli flags` ainda nao foi implementado.
+
+Fluxo recomendado para novas VPS:
+
+1. clonar o repositorio;
+2. executar `sudo bash installer/install.sh`;
+3. validar services, Nginx, PostgreSQL, build, Alembic e health check;
+4. configurar credenciais de Mercado Pago/ASAAS no painel `/painel/pagamentos` ou via config segura;
+5. conectar WhatsApp Gateway pelo QR Code no painel;
+6. manter multi-tenant desligado ate concluir validacoes em VPS/staging;
+7. ativar flags futuramente por comando seguro ou painel assistido, nunca por botao unico sem checklist.
+
+Comandos principais apos instalacao:
+
+```bash
+sudo bash scripts/health-check.sh /opt/telz
+sudo bash scripts/backup-telz.sh /opt/telz
+sudo bash scripts/update-telz.sh
+sudo journalctl -u telz-api -n 120 --no-pager
+sudo journalctl -u telz-web -n 120 --no-pager
+sudo journalctl -u telz-whatsapp-gateway -n 120 --no-pager
+```
+
+> Importante: os comandos abaixo desta secao ainda descrevem o fluxo manual antigo baseado em `APP_NAME`, `deploy` e services por loja. Use apenas quando estiver mantendo uma instalacao legada. Para Telz, prefira o instalador modular.
+
+---
+
 ## Visão Geral da Arquitetura
 
 ```

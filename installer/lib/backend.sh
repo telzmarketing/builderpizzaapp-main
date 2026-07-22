@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+install_backend() {
+  info "Configurando backend Python"
+  sudo -u "$SERVICE_USER" bash -lc "cd '$INSTALL_DIR' && python3 -m venv .venv"
+  sudo -u "$SERVICE_USER" bash -lc "cd '$INSTALL_DIR' && source .venv/bin/activate && pip install --upgrade pip"
+  sudo -u "$SERVICE_USER" bash -lc "cd '$INSTALL_DIR' && source .venv/bin/activate && pip install -r backend/requirements.txt"
+}
+
+write_backend_env() {
+  local env_file="$INSTALL_DIR/backend/.env"
+  if [[ -f "$env_file" ]]; then
+    if [[ "${TELZ_OVERWRITE_ENV:-false}" != "true" ]]; then
+      warn "backend/.env existente preservado. Defina TELZ_OVERWRITE_ENV=true para sobrescrever com backup."
+      return 0
+    fi
+    local backup_file="$env_file.backup.$(date +%Y%m%d-%H%M%S)"
+    cp "$env_file" "$backup_file"
+    chmod 600 "$backup_file"
+    warn "backend/.env existente salvo em backup antes da sobrescrita: $backup_file"
+  fi
+  umask 077
+  cat > "$env_file" <<EOF
+DATABASE_URL=${DATABASE_URL}
+APP_NAME=${PLATFORM_NAME}
+APP_VERSION=1.0.0
+DEBUG=false
+JWT_SECRET_KEY=${JWT_SECRET_KEY}
+ALLOWED_ORIGINS=["https://${PLATFORM_DOMAIN}","http://${PLATFORM_DOMAIN}"]
+PUBLIC_STORE_URL=https://${PLATFORM_DOMAIN}
+VITE_PUBLIC_STORE_URL=https://${PLATFORM_DOMAIN}
+PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-mock}
+PAYMENT_GATEWAY=${PAYMENT_GATEWAY:-mock}
+MERCADO_PAGO_ACCESS_TOKEN=${MERCADO_PAGO_ACCESS_TOKEN:-}
+MERCADO_PAGO_PUBLIC_KEY=${MERCADO_PAGO_PUBLIC_KEY:-}
+MERCADO_PAGO_WEBHOOK_SECRET=${MERCADO_PAGO_WEBHOOK_SECRET:-}
+ASAAS_API_KEY=${ASAAS_API_KEY:-}
+ASAAS_WEBHOOK_TOKEN=${ASAAS_WEBHOOK_TOKEN:-}
+WHATSAPP_GATEWAY_RUNTIME_URL=http://127.0.0.1:${WHATSAPP_GATEWAY_PORT:-3020}
+WHATSAPP_GATEWAY_RUNTIME_TOKEN=${WHATSAPP_GATEWAY_RUNTIME_TOKEN:-${JWT_SECRET_KEY}}
+WHATSAPP_GATEWAY_RUNTIME_TIMEOUT_SECONDS=8
+WHATSAPP_GATEWAY_RUNTIME_DATA_DIR=${INSTALL_DIR}/.runtime/baileys
+WHATSAPP_GATEWAY_BACKEND_EVENT_URL=http://127.0.0.1:${API_PORT}/api/whatsapp-gateway/runtime/events
+WHATSAPP_GATEWAY_EVENT_TOKEN=${WHATSAPP_GATEWAY_EVENT_TOKEN:-${JWT_SECRET_KEY}}
+MULTI_TENANT_AUTH_ENABLED=false
+TENANT_DOMAINS_ENABLED=false
+TENANT_DOMAINS_TRUST_PROXY_HEADERS=false
+TENANT_IDENTITY_CATALOG_ENFORCEMENT_ENABLED=false
+TENANT_CUSTOMERS_ORDERS_ENFORCEMENT_ENABLED=false
+TENANT_OPERATIONS_ENFORCEMENT_ENABLED=false
+TENANT_PAYMENT_WEBHOOKS_ENABLED=false
+MULTI_TENANT_WAVE6_ORM_ENABLED=false
+MULTI_TENANT_WAVE7_ORM_ENABLED=false
+TENANT_BACKGROUND_CONTEXT_ENABLED=false
+TENANT_UPLOAD_NAMESPACE_ENABLED=false
+TENANT_CREDENTIALS_ENABLED=false
+PLATFORM_RBAC_ENABLED=false
+EOF
+  chown "$SERVICE_USER:$SERVICE_USER" "$env_file"
+  chmod 600 "$env_file"
+}
