@@ -656,11 +656,15 @@ def get_customer_ai_analysis_status(db: Session, limit: int = 100) -> dict[str, 
 
 
 def _accept_tag_suggestion(db: Session, suggestion: CustomerAISuggestion, admin_name: str | None) -> str:
-    tag = db.query(CustomerTag).filter(CustomerTag.tenant_id == "default", CustomerTag.slug == suggestion.slug).first()
+    customer = db.query(Customer).filter(Customer.id == suggestion.customer_id).first()
+    tenant_id = getattr(suggestion, "tenant_id", None) or (customer.tenant_id if customer else None)
+    if not customer or not tenant_id or customer.tenant_id != tenant_id:
+        raise ValueError("Cliente ou tenant invalido para sugestao de tag.")
+    tag = db.query(CustomerTag).filter(CustomerTag.tenant_id == tenant_id, CustomerTag.slug == suggestion.slug).first()
     if not tag:
         tag = CustomerTag(
             id=str(uuid.uuid4()),
-            tenant_id="default",
+            tenant_id=tenant_id,
             name=suggestion.name,
             slug=suggestion.slug,
             description=suggestion.reason,
@@ -673,20 +677,23 @@ def _accept_tag_suggestion(db: Session, suggestion: CustomerAISuggestion, admin_
         db.flush()
 
     existing = db.query(CustomerTagAssignment).filter(
+        CustomerTagAssignment.tenant_id == tenant_id,
         CustomerTagAssignment.customer_id == suggestion.customer_id,
         CustomerTagAssignment.tag_id == tag.id,
     ).first()
     if not existing:
-        db.add(
-            CustomerTagAssignment(
+        assignment = CustomerTagAssignment(
                 id=str(uuid.uuid4()),
-                tenant_id="default",
+                tenant_id=tenant_id,
                 customer_id=suggestion.customer_id,
                 tag_id=tag.id,
                 source="ai",
                 created_by=admin_name,
             )
-        )
+        db.add(assignment)
+        db.flush()
+        from backend.services.automation_event_producer import AutomationEventProducer
+        AutomationEventProducer(db, tenant_id).customer_tag_assigned(assignment)
         _timeline(
             db,
             suggestion.customer_id,

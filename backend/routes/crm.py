@@ -5,7 +5,7 @@ import re
 import unicodedata
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, Date, ForeignKey, func, text
 from sqlalchemy.orm import Session
@@ -14,6 +14,7 @@ from backend.database import get_db, Base
 from backend.core.wave6_tenant_orm import wave6_tenant_column
 from backend.models.crm import CustomerSegment, CustomerTag, CustomerTagAssignment
 from backend.routes.admin_auth import get_current_admin
+from backend.core.tenant_runtime import resolve_panel_tenant_context
 from backend.core.response import ok, created
 from backend.services.customer_ai_service import (
     create_customer_ai_analysis_job,
@@ -661,18 +662,19 @@ def list_customer_tags(customer_id: str, db: Session = Depends(get_db), _=Depend
 
 
 @router.post("/customers/{customer_id}/tags/{tag_id}")
-def assign_tag(customer_id: str, tag_id: str, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
-    tag = db.query(CustomerTag).filter(CustomerTag.id == tag_id, CustomerTag.status == "active").first()
+def assign_tag(customer_id: str, tag_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    tag = db.query(CustomerTag).filter(CustomerTag.id == tag_id, CustomerTag.tenant_id == context.tenant_id, CustomerTag.status == "active").first()
     if not tag:
         raise HTTPException(404, "Tag ativa não encontrada.")
 
-    customer_exists = db.execute(text("SELECT 1 FROM customers WHERE id = :id"), {"id": customer_id}).first()
+    customer_exists = db.execute(text("SELECT 1 FROM customers WHERE id = :id AND tenant_id = :tenant_id"), {"id": customer_id, "tenant_id": context.tenant_id}).first()
     if not customer_exists:
         raise HTTPException(404, "Cliente não encontrado.")
 
     assignment = CustomerTagAssignment(
         id=f"cta-{uuid.uuid4().hex[:12]}",
-        tenant_id=tag.tenant_id,
+        tenant_id=context.tenant_id,
         customer_id=customer_id,
         tag_id=tag.id,
         source="manual",
@@ -681,6 +683,8 @@ def assign_tag(customer_id: str, tag_id: str, db: Session = Depends(get_db), adm
     db.add(assignment)
     try:
         db.flush()
+        from backend.services.automation_event_producer import AutomationEventProducer
+        AutomationEventProducer(db, context.tenant_id).customer_tag_assigned(assignment)
         db.add(CustomerTimeline(
             id=str(uuid.uuid4()),
             customer_id=customer_id,

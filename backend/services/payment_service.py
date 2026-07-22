@@ -259,6 +259,10 @@ def _store_mp_payment_data(payment: Payment, response: dict[str, Any]) -> None:
 
 
 class PaymentService:
+    def _publish_order_status_changed(self, order: Order, old_status: str, new_status: str) -> None:
+        from backend.services.automation_event_producer import AutomationEventProducer
+        AutomationEventProducer(self._db, order.tenant_id).order_status_changed(order, old_status, new_status)
+
     def __init__(self, db: Session, tenant_id: str | None = None):
         self._db = db
         self._tenant_id = tenant_id
@@ -402,6 +406,7 @@ class PaymentService:
         if current_order_status == "pending":
             order_sm.transition(order.id, current_order_status, "aguardando_pagamento")
             order.status = OrderStatus.aguardando_pagamento
+            self._publish_order_status_changed(order, current_order_status, "aguardando_pagamento")
             self._db.flush()
 
         payment = self._pending_payment(order, payload, amount, method, provider)
@@ -480,6 +485,7 @@ class PaymentService:
         if current_order_status == "pending":
             order_sm.transition(order.id, current_order_status, "aguardando_pagamento")
             order.status = OrderStatus.aguardando_pagamento
+            self._publish_order_status_changed(order, current_order_status, "aguardando_pagamento")
             self._db.flush()
 
         payment = self._pending_payment(order, payload, amount, PaymentMethod.pix, PROVIDER_ASAAS)
@@ -555,6 +561,7 @@ class PaymentService:
         if current_order_status == "pending":
             order_sm.transition(order.id, current_order_status, "aguardando_pagamento")
             order.status = OrderStatus.aguardando_pagamento
+            self._publish_order_status_changed(order, current_order_status, "aguardando_pagamento")
             self._db.flush()
 
         payment = self._pending_payment(order, PaymentCreate(order_id=order.id, amount=amount), amount, PaymentMethod.credit_card, PROVIDER_ASAAS)
@@ -656,6 +663,7 @@ class PaymentService:
         if current_order_status != OrderStatus.paid.value:
             order_sm.transition(order.id, current_order_status, OrderStatus.paid.value)
             order.status = OrderStatus.paid
+            self._publish_order_status_changed(order, current_order_status, OrderStatus.paid.value)
         order.updated_at = datetime.now(timezone.utc)
         self._db.flush()
         from backend.services.inventory_service import InventoryService
@@ -702,6 +710,7 @@ class PaymentService:
             elif _allowed_order_transition(order, target_order_status):
                 order_sm.transition(order.id, current_order_status, target_order_status.value)
                 order.status = target_order_status
+                self._publish_order_status_changed(order, current_order_status, target_order_status.value)
                 order.updated_at = now
                 if status == PaymentStatus.approved:
                     order.paid_at = order.paid_at or now
@@ -710,6 +719,7 @@ class PaymentService:
                     if _allowed_order_transition(order, OrderStatus.cancelled):
                         order_sm.transition(order.id, target_order_status.value, "cancelled")
                         order.status = OrderStatus.cancelled
+                        self._publish_order_status_changed(order, target_order_status.value, "cancelled")
                         is_admin_cancel = source.startswith("admin_cancel")
                         order.cancelled_by = "admin" if is_admin_cancel else "system"
                         order.cancellation_reason = (
@@ -740,6 +750,12 @@ class PaymentService:
                     inventory_service = InventoryService(self._db)
                 inventory_service.reverse_order_sale(order.id)
             sync_customer_order_metrics(self._db, order.customer_id)
+
+        if status == PaymentStatus.approved and status_changed:
+            from backend.services.automation_event_producer import AutomationEventProducer
+            AutomationEventProducer(self._db, payment.tenant_id).payment_confirmed(
+                payment, order.customer_id if order else None
+            )
 
         self._db.commit()
 
@@ -1281,6 +1297,7 @@ class PaymentService:
         if current_order_status == "pending":
             order_sm.transition(order.id, current_order_status, "aguardando_pagamento")
             order.status = OrderStatus.aguardando_pagamento
+            self._publish_order_status_changed(order, current_order_status, "aguardando_pagamento")
 
         self._db.flush()
 

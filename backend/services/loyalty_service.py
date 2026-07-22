@@ -190,6 +190,13 @@ def _update_level(account: CustomerLoyalty, db: Session) -> None:
     account.level_id = new_level_id
 
     if new_level_id and new_level_id != prev_level_id and prev_level_id is not None:
+        from backend.models.customer import Customer
+        from backend.services.automation_event_producer import AutomationEventProducer
+        tenant_id = db.query(Customer.tenant_id).filter(Customer.id == account.customer_id).scalar()
+        AutomationEventProducer(db, tenant_id).loyalty_level_up(
+            account, prev_level_id, new_level_id,
+            getattr(account, "_automation_mutation_id", f"account:{account.id}:{prev_level_id}:{new_level_id}"),
+        )
         prev_name = next((l.name for l in levels if l.id == prev_level_id), "")
         new_name = next((l.name for l in levels if l.id == new_level_id), "")
         bus.publish(LoyaltyLevelUp(
@@ -228,8 +235,10 @@ def _add_points(account: CustomerLoyalty, points: int, tx_type: TransactionType,
     elif cycle and points < 0 and tx_type == TransactionType.redeemed:
         cycle.points_used += abs(points)
 
+    transaction_id = str(uuid.uuid4())
+    account._automation_mutation_id = transaction_id
     db.add(LoyaltyTransaction(
-        id=str(uuid.uuid4()),
+        id=transaction_id,
         customer_loyalty_id=account.id,
         order_id=order_id,
         points=points,

@@ -4116,6 +4116,9 @@ export interface ApiMarketingAutomationPayload {
   template_id?: string | null;
   message_body?: string | null;
   active?: boolean;
+  trigger_config?: Record<string, unknown>;
+  conditions?: Array<Record<string, unknown>>;
+  actions?: Array<{ key: string; config: Record<string, unknown> }>;
 }
 
 export interface ApiAutomationTemplate {
@@ -4189,6 +4192,65 @@ export interface ApiAutomationQueueWorkerResult {
   processed: ApiAutomationQueueProcessResult;
 }
 
+export interface ApiAutomationCatalogDefinition {
+  key: string;
+  label: string;
+  module: string;
+  description?: string | null;
+  version?: string | number | null;
+  kind?: "event" | "action" | "condition" | string;
+  type?: "event" | "action" | "condition" | string;
+  input_schema?: Record<string, unknown> | null;
+  output_schema?: Record<string, unknown> | null;
+  allowed_operators?: string[];
+  required_permission?: string | null;
+  safety?: string | Record<string, unknown> | null;
+  required_config?: string[];
+}
+
+export interface ApiAutomationCatalog {
+  version?: string | number;
+  definitions?: ApiAutomationCatalogDefinition[];
+  modules?: Array<{ key: string; label: string; description?: string | null }>;
+  events?: ApiAutomationCatalogDefinition[];
+  triggers?: ApiAutomationCatalogDefinition[];
+  actions?: ApiAutomationCatalogDefinition[];
+  conditions?: Array<{ key: string; label: string }>;
+}
+
+export interface ApiAutomationDefinitionPayload {
+  name?: string;
+  module?: string;
+  event_key?: string;
+  trigger: { key: string; config: Record<string, unknown> };
+  actions: Array<{ key: string; config: Record<string, unknown> }>;
+  conditions?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+}
+
+export interface ApiAutomationValidationResult {
+  valid: boolean;
+  errors: Array<{ path: string; code: string; message: string }>;
+  warnings: Array<string | { path?: string; code?: string; message: string }>;
+  normalized?: ApiAutomationDefinitionPayload | Record<string, unknown> | null;
+}
+
+export interface ApiAutomationSimulationResult {
+  matched: boolean;
+  would_execute: Array<{
+    action_key?: string;
+    key?: string;
+    config?: Record<string, unknown>;
+    allowed?: boolean;
+    reason?: string | null;
+    preview?: unknown;
+  }>;
+  condition_results?: Array<Record<string, unknown>>;
+  steps?: Array<Record<string, unknown>>;
+  errors?: Array<{ path: string; code: string; message: string }>;
+  warnings: Array<string | { path?: string; code?: string; message: string }>;
+}
+
 // ─── Marketing Automations ───────────────────────────────────────────────────
 
 export interface ApiMarketingContactListContact {
@@ -4237,6 +4299,16 @@ export const emailMarketingApi = {
 };
 
 export const marketingAutomationsApi = {
+  catalog: () => get<ApiAutomationCatalog | ApiAutomationCatalogDefinition[]>("/automations/catalog"),
+  validate: (definition: ApiAutomationDefinitionPayload) =>
+    post<ApiAutomationValidationResult>("/automations/validate", definition),
+  simulate: (data: {
+    trigger: ApiAutomationDefinitionPayload["trigger"];
+    actions: ApiAutomationDefinitionPayload["actions"];
+    conditions?: Array<Record<string, unknown>>;
+    sample_payload?: Record<string, unknown>;
+    sample_event_id?: string;
+  }) => post<ApiAutomationSimulationResult>("/automations/simulate", data),
   list: () => get<ApiMarketingAutomation[]>("/automations"),
   create: (data: ApiMarketingAutomationPayload) =>
     post<Partial<ApiMarketingAutomation>>("/automations", data),

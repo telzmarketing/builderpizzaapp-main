@@ -101,15 +101,21 @@ def get_customer_identity_by_phone(
 @router.post("/identity/whatsapp-lead", status_code=201)
 def create_whatsapp_lead(
     body: WhatsAppLeadCreate,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
+    context = resolve_panel_tenant_context(request, db, admin)
     try:
         customer, created = CustomerIdentityService(db).get_or_create_whatsapp_lead(
             phone=body.phone,
             name=body.name,
             source=body.source or "whatsapp",
+            tenant_id=context.tenant_id,
         )
+        if created:
+            from backend.services.automation_event_producer import AutomationEventProducer
+            AutomationEventProducer(db, context.tenant_id).customer_created(customer)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.commit()
@@ -145,6 +151,8 @@ def create_customer(body: CustomerCreate, request: Request, db: Session = Depend
     db.add(customer)
     db.flush()
     CustomerIdentityService(db).sync_registered_customer(customer, auth_provider="manual")
+    from backend.services.automation_event_producer import AutomationEventProducer
+    AutomationEventProducer(db, context.tenant_id).customer_created(customer)
     db.commit()
     db.refresh(customer)
     return customer

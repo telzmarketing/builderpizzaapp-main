@@ -5,13 +5,15 @@ import urllib.error
 import urllib.request
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.core.response import created, err_msg, ok
 from backend.core.security import hash_password, verify_password
 from backend.database import get_db
+from backend.core.tenant_ownership import assign_tenant_on_create
+from backend.core.tenant_runtime import resolve_public_tenant_context
 from backend.models.customer import Address, Customer
 from backend.schemas.customer import CustomerOut
 from backend.services.customer_identity_service import (
@@ -160,7 +162,7 @@ def login_email(body: EmailLoginIn, db: Session = Depends(get_db)):
 
 
 @router.post("/register")
-def register(body: RegisterIn, db: Session = Depends(get_db)):
+def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)):
     """Simple registration: name, email, password, phone and LGPD consent."""
     if not body.lgpd_consent:
         return err_msg(
@@ -169,12 +171,17 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
             status_code=422,
         )
 
+    context = resolve_public_tenant_context(request, db)
     email = body.email.strip().lower()
     phone = _normalize_phone(body.phone)
     identity = CustomerIdentityService(db)
 
-    existing_email = db.query(Customer).filter(Customer.email == email).first()
-    existing_phone = identity.find_by_phone(phone)
+    existing_email = db.query(Customer).filter(
+        Customer.tenant_id == context.tenant_id, Customer.email == email
+    ).first()
+    existing_phone = db.query(Customer).filter(
+        Customer.tenant_id == context.tenant_id, Customer.phone == phone
+    ).first() if phone else None
 
     if existing_email and (not existing_phone or existing_email.id != existing_phone.id):
         return err_msg(
@@ -239,6 +246,7 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
         marketing_whatsapp_consent=body.marketing_whatsapp_consent,
         source="site",
     )
+    assign_tenant_on_create(new_customer, context)
     db.add(new_customer)
     db.flush()
     identity.sync_registered_customer(
@@ -246,6 +254,8 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
         auth_provider="password",
         password_hash_value=password_hash_value,
     )
+    from backend.services.automation_event_producer import AutomationEventProducer
+    AutomationEventProducer(db, context.tenant_id).customer_created(new_customer)
 
     if body.street and body.city:
         new_address = Address(
@@ -272,11 +282,12 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
 
 
 @router.post("/google")
-def google_login(body: GoogleLoginIn, db: Session = Depends(get_db)):
+def google_login(body: GoogleLoginIn, request: Request, db: Session = Depends(get_db)):
     """
     Verify a Google ID token from the GSI client and return (or create) a customer.
     The token is verified by calling Google's tokeninfo endpoint.
     """
+    context = resolve_public_tenant_context(request, db)
     try:
         url = f"https://oauth2.googleapis.com/tokeninfo?id_token={body.credential}"
         with urllib.request.urlopen(url, timeout=10) as resp:
@@ -292,8 +303,8 @@ def google_login(body: GoogleLoginIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Token Google nao contem dados suficientes.")
 
     customer = (
-        db.query(Customer).filter(Customer.google_id == google_sub).first()
-        or db.query(Customer).filter(Customer.email == email).first()
+        db.query(Customer).filter(Customer.tenant_id == context.tenant_id, Customer.google_id == google_sub).first()
+        or db.query(Customer).filter(Customer.tenant_id == context.tenant_id, Customer.email == email).first()
     )
 
     if customer:
@@ -318,6 +329,7 @@ def google_login(body: GoogleLoginIn, db: Session = Depends(get_db)):
         google_id=google_sub,
         source="google",
     )
+    assign_tenant_on_create(new_customer, context)
     db.add(new_customer)
     db.flush()
     CustomerIdentityService(db).sync_registered_customer(
@@ -325,6 +337,8 @@ def google_login(body: GoogleLoginIn, db: Session = Depends(get_db)):
         auth_provider="google",
         provider_subject=google_sub,
     )
+    from backend.services.automation_event_producer import AutomationEventProducer
+    AutomationEventProducer(db, context.tenant_id).customer_created(new_customer)
     db.commit()
     db.refresh(new_customer)
 

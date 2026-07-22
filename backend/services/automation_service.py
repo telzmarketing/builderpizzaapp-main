@@ -64,7 +64,7 @@ def _first_name(name: str | None) -> str:
     return (name or "").strip().split(" ")[0] if (name or "").strip() else ""
 
 
-def load_automation(db: Session, automation_id: str) -> dict[str, Any]:
+def load_automation(db: Session, automation_id: str, tenant_id: str) -> dict[str, Any]:
     row = db.execute(
         text(
             """
@@ -81,10 +81,10 @@ def load_automation(db: Session, automation_id: str) -> dict[str, Any]:
                 COALESCE(priority, 100) AS priority,
                 coupon_id, product_id, group_id, segment_id
             FROM marketing_automations
-            WHERE id = :automation_id
+            WHERE id=:automation_id AND tenant_id=:tenant_id
             """
         ),
-        {"automation_id": automation_id},
+        {"automation_id": automation_id, "tenant_id": tenant_id},
     ).fetchone()
     if not row:
         raise HTTPException(404, "Automacao nao encontrada.")
@@ -95,6 +95,7 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
     trigger = automation["trigger"]
     trigger_value = automation.get("trigger_value")
     now = _now()
+    tenant_id = automation["tenant_id"]
     rows: list[Any]
 
     if trigger in {"reactivation", "inactive_customer", "days_after_last_order"}:
@@ -105,10 +106,10 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                 """
                 SELECT id, name, phone, email, marketing_whatsapp_consent, marketing_email_consent
                 FROM customers
-                WHERE last_order_at IS NOT NULL AND last_order_at <= :cutoff
+                WHERE tenant_id=:tenant_id AND last_order_at IS NOT NULL AND last_order_at <= :cutoff
                 """
             ),
-            {"cutoff": cutoff},
+            {"tenant_id": tenant_id, "cutoff": cutoff},
         ).fetchall()
 
     elif trigger in {"birthday", "birthday_week"}:
@@ -118,12 +119,12 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                     """
                     SELECT id, name, phone, email, marketing_whatsapp_consent, marketing_email_consent
                     FROM customers
-                    WHERE birth_date IS NOT NULL
+                    WHERE tenant_id=:tenant_id AND birth_date IS NOT NULL
                       AND EXTRACT(MONTH FROM birth_date) = :month
                       AND EXTRACT(DAY FROM birth_date) = :day
                     """
                 ),
-                {"month": now.month, "day": now.day},
+                {"tenant_id": tenant_id, "month": now.month, "day": now.day},
             ).fetchall()
         else:
             rows = db.execute(
@@ -131,12 +132,12 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                     """
                     SELECT id, name, phone, email, marketing_whatsapp_consent, marketing_email_consent
                     FROM customers
-                    WHERE birth_date IS NOT NULL
+                    WHERE tenant_id=:tenant_id AND birth_date IS NOT NULL
                       AND TO_CHAR(birth_date, 'MM-DD') BETWEEN :start_key AND :end_key
                     """
                 ),
                 {
-                    "start_key": now.strftime("%m-%d"),
+                    "tenant_id": tenant_id, "start_key": now.strftime("%m-%d"),
                     "end_key": (now + timedelta(days=7)).strftime("%m-%d"),
                 },
             ).fetchall()
@@ -147,9 +148,9 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                 """
                 SELECT id, name, phone, email, marketing_whatsapp_consent, marketing_email_consent
                 FROM customers
-                WHERE total_orders = 1
+                WHERE tenant_id=:tenant_id AND total_orders = 1
                 """
-            )
+            ), {"tenant_id": tenant_id}
         ).fetchall()
 
     elif trigger in {"new_customer", "registered_no_order"}:
@@ -162,11 +163,11 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                 f"""
                 SELECT id, name, phone, email, marketing_whatsapp_consent, marketing_email_consent
                 FROM customers
-                WHERE created_at {comparator} :since
+                WHERE tenant_id=:tenant_id AND created_at {comparator} :since
                 {total_filter}
                 """
             ),
-            {"since": since},
+            {"tenant_id": tenant_id, "since": since},
         ).fetchall()
 
     elif trigger == "abandoned_cart":
@@ -178,16 +179,16 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                 SELECT DISTINCT c.id, c.name, c.phone, c.email,
                        c.marketing_whatsapp_consent, c.marketing_email_consent
                 FROM customers c
-                JOIN customer_events ce ON ce.customer_id = c.id
-                WHERE ce.event_type IN ('cart_abandoned', 'add_to_cart')
+                JOIN customer_events ce ON ce.customer_id=c.id AND ce.tenant_id=c.tenant_id
+                WHERE c.tenant_id=:tenant_id AND ce.event_type IN ('cart_abandoned', 'add_to_cart')
                   AND ce.created_at >= :since
                   AND NOT EXISTS (
                       SELECT 1 FROM orders o
-                      WHERE o.customer_id = c.id AND o.created_at >= ce.created_at
+                      WHERE o.customer_id=c.id AND o.tenant_id=c.tenant_id AND o.created_at >= ce.created_at
                   )
                 """
             ),
-            {"since": since},
+            {"tenant_id": tenant_id, "since": since},
         ).fetchall()
 
     elif trigger == "high_value_order":
@@ -199,11 +200,11 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                 SELECT DISTINCT c.id, c.name, c.phone, c.email,
                        c.marketing_whatsapp_consent, c.marketing_email_consent
                 FROM customers c
-                JOIN orders o ON o.customer_id = c.id
-                WHERE o.total >= :min_val AND o.created_at >= :since
+                JOIN orders o ON o.customer_id=c.id AND o.tenant_id=c.tenant_id
+                WHERE c.tenant_id=:tenant_id AND o.total >= :min_val AND o.created_at >= :since
                 """
             ),
-            {"min_val": min_val, "since": since},
+            {"tenant_id": tenant_id, "min_val": min_val, "since": since},
         ).fetchall()
 
     elif trigger in {"order_completed", "repeat_order", "same_weekday_last_order", "preferred_purchase_time"}:
@@ -214,11 +215,11 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                 SELECT DISTINCT c.id, c.name, c.phone, c.email,
                        c.marketing_whatsapp_consent, c.marketing_email_consent
                 FROM customers c
-                JOIN orders o ON o.customer_id = c.id
-                WHERE o.status = 'delivered' AND o.created_at >= :since
+                JOIN orders o ON o.customer_id=c.id AND o.tenant_id=c.tenant_id
+                WHERE c.tenant_id=:tenant_id AND o.status = 'delivered' AND o.created_at >= :since
                 """
             ),
-            {"since": since},
+            {"tenant_id": tenant_id, "since": since},
         ).fetchall()
 
     elif trigger == "recurring_customer":
@@ -228,10 +229,10 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                 """
                 SELECT id, name, phone, email, marketing_whatsapp_consent, marketing_email_consent
                 FROM customers
-                WHERE COALESCE(total_orders, 0) >= :min_orders
+                WHERE tenant_id=:tenant_id AND COALESCE(total_orders, 0) >= :min_orders
                 """
             ),
-            {"min_orders": min_orders},
+            {"tenant_id": tenant_id, "min_orders": min_orders},
         ).fetchall()
 
     elif trigger in {"vip_customer", "vip_milestone"}:
@@ -241,10 +242,10 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                 """
                 SELECT id, name, phone, email, marketing_whatsapp_consent, marketing_email_consent
                 FROM customers
-                WHERE COALESCE(total_spent, 0) >= :min_spent
+                WHERE tenant_id=:tenant_id AND COALESCE(total_spent, 0) >= :min_spent
                 """
             ),
-            {"min_spent": min_spent},
+            {"tenant_id": tenant_id, "min_spent": min_spent},
         ).fetchall()
 
     elif trigger == "product_purchased":
@@ -254,14 +255,15 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                 SELECT DISTINCT c.id, c.name, c.phone, c.email,
                        c.marketing_whatsapp_consent, c.marketing_email_consent
                 FROM customers c
-                JOIN orders o ON o.customer_id = c.id
-                JOIN order_items oi ON oi.order_id = o.id
-                LEFT JOIN products p ON p.id = oi.product_id
-                WHERE (:product_id IS NOT NULL AND oi.product_id = :product_id)
+                JOIN orders o ON o.customer_id=c.id AND o.tenant_id=c.tenant_id
+                JOIN order_items oi ON oi.order_id=o.id AND oi.tenant_id=c.tenant_id
+                LEFT JOIN products p ON p.id=oi.product_id AND p.tenant_id=c.tenant_id
+                WHERE c.tenant_id=:tenant_id AND ((:product_id IS NOT NULL AND oi.product_id = :product_id)
                    OR (:trigger_value IS NOT NULL AND LOWER(COALESCE(p.name, '')) = LOWER(:trigger_value))
+                )
                 """
             ),
-            {"product_id": automation.get("product_id"), "trigger_value": trigger_value},
+            {"tenant_id": tenant_id, "product_id": automation.get("product_id"), "trigger_value": trigger_value},
         ).fetchall()
 
     elif trigger == "category_purchased":
@@ -271,13 +273,13 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                 SELECT DISTINCT c.id, c.name, c.phone, c.email,
                        c.marketing_whatsapp_consent, c.marketing_email_consent
                 FROM customers c
-                JOIN orders o ON o.customer_id = c.id
-                JOIN order_items oi ON oi.order_id = o.id
-                JOIN products p ON p.id = oi.product_id
-                WHERE LOWER(COALESCE(p.category, p.subcategory, '')) = LOWER(:category)
+                JOIN orders o ON o.customer_id=c.id AND o.tenant_id=c.tenant_id
+                JOIN order_items oi ON oi.order_id=o.id AND oi.tenant_id=c.tenant_id
+                JOIN products p ON p.id=oi.product_id AND p.tenant_id=c.tenant_id
+                WHERE c.tenant_id=:tenant_id AND LOWER(COALESCE(p.category, p.subcategory, '')) = LOWER(:category)
                 """
             ),
-            {"category": trigger_value or ""},
+            {"tenant_id": tenant_id, "category": trigger_value or ""},
         ).fetchall()
 
     elif trigger == "tag_match":
@@ -287,12 +289,12 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                 SELECT DISTINCT c.id, c.name, c.phone, c.email,
                        c.marketing_whatsapp_consent, c.marketing_email_consent
                 FROM customers c
-                JOIN customer_tag_assignments cta ON cta.customer_id = c.id
-                JOIN customer_tags ct ON ct.id = cta.tag_id
-                WHERE ct.id = :tag OR LOWER(ct.slug) = LOWER(:tag) OR LOWER(ct.name) = LOWER(:tag)
+                JOIN customer_tag_assignments cta ON cta.customer_id=c.id AND cta.tenant_id=c.tenant_id
+                JOIN customer_tags ct ON ct.id=cta.tag_id AND ct.tenant_id=c.tenant_id
+                WHERE c.tenant_id=:tenant_id AND (ct.id=:tag OR LOWER(ct.slug)=LOWER(:tag) OR LOWER(ct.name)=LOWER(:tag))
                 """
             ),
-            {"tag": trigger_value or ""},
+            {"tenant_id": tenant_id, "tag": trigger_value or ""},
         ).fetchall()
 
     elif trigger == "group_match":
@@ -302,11 +304,11 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                 SELECT DISTINCT c.id, c.name, c.phone, c.email,
                        c.marketing_whatsapp_consent, c.marketing_email_consent
                 FROM customers c
-                JOIN customer_group_members cgm ON cgm.customer_id = c.id
-                WHERE cgm.group_id = :group_id
+                JOIN customer_group_members cgm ON cgm.customer_id=c.id AND cgm.tenant_id=c.tenant_id
+                WHERE c.tenant_id=:tenant_id AND cgm.group_id = :group_id
                 """
             ),
-            {"group_id": automation.get("group_id") or trigger_value or ""},
+            {"tenant_id": tenant_id, "group_id": automation.get("group_id") or trigger_value or ""},
         ).fetchall()
 
     elif trigger == "segment_match":
@@ -316,11 +318,11 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
                 SELECT DISTINCT c.id, c.name, c.phone, c.email,
                        c.marketing_whatsapp_consent, c.marketing_email_consent
                 FROM customers c
-                JOIN customer_ai_profiles cap ON cap.customer_id = c.id
-                WHERE LOWER(cap.segment) = LOWER(:segment)
+                JOIN customer_ai_profiles cap ON cap.customer_id=c.id AND cap.tenant_id=c.tenant_id
+                WHERE c.tenant_id=:tenant_id AND LOWER(cap.segment) = LOWER(:segment)
                 """
             ),
-            {"segment": trigger_value or ""},
+            {"tenant_id": tenant_id, "segment": trigger_value or ""},
         ).fetchall()
 
     else:
@@ -329,8 +331,8 @@ def get_eligible_customers(db: Session, automation: dict[str, Any]) -> list[dict
     return [_row_dict(row) for row in rows]
 
 
-def customer_matches_automation_trigger(db: Session, automation_id: str, customer_id: str) -> bool:
-    automation = load_automation(db, automation_id)
+def customer_matches_automation_trigger(db: Session, automation_id: str, customer_id: str, tenant_id: str) -> bool:
+    automation = load_automation(db, automation_id, tenant_id)
     return any(customer.get("id") == customer_id for customer in get_eligible_customers(db, automation))
 
 
@@ -345,26 +347,26 @@ def resolve_message(db: Session, automation: dict[str, Any]) -> tuple[str | None
 
     if channel == "whatsapp":
         row = db.execute(
-            text("SELECT body FROM automation_templates WHERE id = :tid"),
-            {"tid": template_id},
+            text("SELECT body FROM automation_templates WHERE id=:tid AND tenant_id=:tenant_id"),
+            {"tid": template_id, "tenant_id": automation["tenant_id"]},
         ).fetchone()
         if row:
             return None, row[0]
         row = db.execute(
-            text("SELECT body FROM whatsapp_templates WHERE id = :tid AND active = TRUE"),
-            {"tid": template_id},
+            text("SELECT body FROM whatsapp_templates WHERE id=:tid AND tenant_id=:tenant_id AND active=TRUE"),
+            {"tid": template_id, "tenant_id": automation["tenant_id"]},
         ).fetchone()
         return (None, row[0]) if row else (None, body)
 
     row = db.execute(
-        text("SELECT body, subject FROM automation_templates WHERE id = :tid"),
-        {"tid": template_id},
+        text("SELECT body,subject FROM automation_templates WHERE id=:tid AND tenant_id=:tenant_id"),
+        {"tid": template_id, "tenant_id": automation["tenant_id"]},
     ).fetchone()
     if row:
         return row[1] or subject, row[0]
     row = db.execute(
-        text("SELECT subject, body_html FROM email_templates WHERE id = :tid AND active = TRUE"),
-        {"tid": template_id},
+        text("SELECT subject,body_html FROM email_templates WHERE id=:tid AND tenant_id=:tenant_id AND active=TRUE"),
+        {"tid": template_id, "tenant_id": automation["tenant_id"]},
     ).fetchone()
     return (row[0], row[1]) if row else (subject, body)
 
@@ -395,11 +397,11 @@ def daily_limit_reached(db: Session, automation: dict[str, Any]) -> bool:
         """
         SELECT COUNT(*)
         FROM automation_executions
-        WHERE automation_id = :automation_id
+        WHERE tenant_id=:tenant_id AND automation_id = :automation_id
           AND status = 'sent'
           AND created_at >= :since
         """,
-        {"automation_id": automation["id"], "since": today_start},
+        {"tenant_id": automation["tenant_id"], "automation_id": automation["id"], "since": today_start},
     ) or 0
     return int(sent_today) >= int(daily_limit)
 
@@ -413,11 +415,11 @@ def already_sent(db: Session, automation: dict[str, Any], customer_id: str) -> b
         """
         SELECT COUNT(*)
         FROM automation_executions
-        WHERE automation_id = :automation_id
+        WHERE tenant_id=:tenant_id AND automation_id = :automation_id
           AND customer_id = :customer_id
           AND status = 'sent'
         """,
-        {"automation_id": automation["id"], "customer_id": customer_id},
+        {"tenant_id": automation["tenant_id"], "automation_id": automation["id"], "customer_id": customer_id},
     ) or 0
     if int(sent_count) >= max_sends:
         return True
@@ -426,12 +428,12 @@ def already_sent(db: Session, automation: dict[str, Any], customer_id: str) -> b
         """
         SELECT COUNT(*)
         FROM automation_executions
-        WHERE automation_id = :automation_id
+        WHERE tenant_id=:tenant_id AND automation_id = :automation_id
           AND customer_id = :customer_id
           AND status = 'sent'
           AND sent_at >= :since
         """,
-        {"automation_id": automation["id"], "customer_id": customer_id, "since": since},
+        {"tenant_id": automation["tenant_id"], "automation_id": automation["id"], "customer_id": customer_id, "since": since},
     ) or 0
     if int(recent_sent) > 0:
         return True
@@ -440,18 +442,19 @@ def already_sent(db: Session, automation: dict[str, Any], customer_id: str) -> b
         """
         SELECT COUNT(*)
         FROM automation_logs
-        WHERE automation_id = :automation_id
+        WHERE tenant_id=:tenant_id AND automation_id = :automation_id
           AND customer_id = :customer_id
           AND status = 'sent'
           AND created_at >= :since
         """,
-        {"automation_id": automation["id"], "customer_id": customer_id, "since": since},
+        {"tenant_id": automation["tenant_id"], "automation_id": automation["id"], "customer_id": customer_id, "since": since},
     ) or 0
     return int(legacy_recent) > 0
 
 
 def build_customer_variables(db: Session, customer: dict[str, Any], automation: dict[str, Any]) -> dict[str, str]:
     customer_id = customer["id"]
+    tenant_id = automation["tenant_id"]
     full_customer = _row_dict(
         db.execute(
             text(
@@ -459,10 +462,10 @@ def build_customer_variables(db: Session, customer: dict[str, Any], automation: 
                 SELECT id, name, email, phone, total_orders, total_spent, avg_ticket,
                        last_order_at, birth_date
                 FROM customers
-                WHERE id = :customer_id
+                WHERE id=:customer_id AND tenant_id=:tenant_id
                 """
             ),
-            {"customer_id": customer_id},
+            {"tenant_id": tenant_id, "customer_id": customer_id},
         ).fetchone()
     )
     if not full_customer:
@@ -474,12 +477,12 @@ def build_customer_variables(db: Session, customer: dict[str, Any], automation: 
                 """
                 SELECT id, created_at, total, coupon_id
                 FROM orders
-                WHERE customer_id = :customer_id
+                WHERE customer_id=:customer_id AND tenant_id=:tenant_id
                 ORDER BY created_at DESC
                 LIMIT 1
                 """
             ),
-            {"customer_id": customer_id},
+            {"tenant_id": tenant_id, "customer_id": customer_id},
         ).fetchone()
     )
     favorite_product = _scalar(
@@ -487,56 +490,56 @@ def build_customer_variables(db: Session, customer: dict[str, Any], automation: 
         """
         SELECT COALESCE(p.name, oi.selected_drink_variant, 'Produto')
         FROM order_items oi
-        JOIN orders o ON o.id = oi.order_id
-        LEFT JOIN products p ON p.id = oi.product_id
-        WHERE o.customer_id = :customer_id
+        JOIN orders o ON o.id=oi.order_id AND o.tenant_id=oi.tenant_id
+        LEFT JOIN products p ON p.id=oi.product_id AND p.tenant_id=oi.tenant_id
+        WHERE o.tenant_id=:tenant_id AND o.customer_id = :customer_id
         GROUP BY COALESCE(p.name, oi.selected_drink_variant, 'Produto')
         ORDER BY COUNT(*) DESC
         LIMIT 1
         """,
-        {"customer_id": customer_id},
+        {"tenant_id": tenant_id, "customer_id": customer_id},
     ) or ""
     last_product = _scalar(
         db,
         """
         SELECT COALESCE(p.name, oi.selected_drink_variant, 'Produto')
         FROM order_items oi
-        JOIN orders o ON o.id = oi.order_id
-        LEFT JOIN products p ON p.id = oi.product_id
-        WHERE o.customer_id = :customer_id
+        JOIN orders o ON o.id=oi.order_id AND o.tenant_id=oi.tenant_id
+        LEFT JOIN products p ON p.id=oi.product_id AND p.tenant_id=oi.tenant_id
+        WHERE o.tenant_id=:tenant_id AND o.customer_id = :customer_id
         ORDER BY o.created_at DESC
         LIMIT 1
         """,
-        {"customer_id": customer_id},
+        {"tenant_id": tenant_id, "customer_id": customer_id},
     ) or favorite_product
     preferred_hour = _scalar(
         db,
         """
         SELECT TO_CHAR(created_at, 'HH24:00')
         FROM orders
-        WHERE customer_id = :customer_id
+        WHERE tenant_id=:tenant_id AND customer_id = :customer_id
         GROUP BY TO_CHAR(created_at, 'HH24:00')
         ORDER BY COUNT(*) DESC
         LIMIT 1
         """,
-        {"customer_id": customer_id},
+        {"tenant_id": tenant_id, "customer_id": customer_id},
     ) or ""
     neighborhood = _scalar(
         db,
         """
         SELECT neighborhood
         FROM addresses
-        WHERE customer_id = :customer_id
+        WHERE tenant_id=:tenant_id AND customer_id = :customer_id
         ORDER BY is_default DESC, created_at DESC
         LIMIT 1
         """,
-        {"customer_id": customer_id},
+        {"tenant_id": tenant_id, "customer_id": customer_id},
     ) or ""
     coupon_id = automation.get("coupon_id") or last_order.get("coupon_id")
     coupon = _row_dict(
         db.execute(
-            text("SELECT code, discount_value FROM coupons WHERE id = :coupon_id"),
-            {"coupon_id": coupon_id},
+            text("SELECT code,discount_value FROM coupons WHERE id=:coupon_id AND tenant_id=:tenant_id"),
+            {"coupon_id": coupon_id, "tenant_id": tenant_id},
         ).fetchone()
     ) if coupon_id else {}
 
@@ -637,8 +640,8 @@ def create_execution(
     execution_id = str(uuid.uuid4())
     dedupe_key = f"{automation['id']}:{customer['id']}:{automation['channel']}:{_now().date().isoformat()}"
     existing = db.execute(
-        text("SELECT id FROM automation_executions WHERE dedupe_key = :dedupe_key"),
-        {"dedupe_key": dedupe_key},
+        text("SELECT id FROM automation_executions WHERE tenant_id=:tenant_id AND dedupe_key=:dedupe_key"),
+        {"tenant_id": automation["tenant_id"], "dedupe_key": dedupe_key},
     ).fetchone()
     if existing:
         return None
@@ -646,17 +649,18 @@ def create_execution(
         text(
             """
             INSERT INTO automation_executions (
-                id, automation_id, customer_id, source_event_type, channel, status,
+                id, tenant_id, automation_id, customer_id, source_event_type, channel, status,
                 scheduled_at, dedupe_key, subject, message_body, metadata_json, created_at, updated_at
             )
             VALUES (
-                :id, :automation_id, :customer_id, :source_event_type, :channel, 'pending',
+                :id, :tenant_id, :automation_id, :customer_id, :source_event_type, :channel, 'pending',
                 :scheduled_at, :dedupe_key, :subject, :message_body, '{}', :now, :now
             )
             """
         ),
         {
             "id": execution_id,
+            "tenant_id": automation["tenant_id"],
             "automation_id": automation["id"],
             "customer_id": customer["id"],
             "source_event_type": automation["trigger"],
@@ -739,11 +743,12 @@ def log_execution_event(
         text(
             """
             INSERT INTO automation_execution_logs (
-                id, execution_id, automation_id, customer_id, status, event_type,
+                id, tenant_id, execution_id, automation_id, customer_id, status, event_type,
                 message, error, metadata_json, created_at
             )
             VALUES (
-                :id, :execution_id, :automation_id, :customer_id, :status, :event_type,
+                :id, (SELECT tenant_id FROM marketing_automations WHERE id=:automation_id),
+                :execution_id, :automation_id, :customer_id, :status, :event_type,
                 :message, :error, '{}', :created_at
             )
             """
@@ -929,24 +934,25 @@ def enqueue_automation(db: Session, automation: dict[str, Any]) -> dict[str, int
     return {"queued": queued_count, "failed": failed_count, "skipped": skipped_count}
 
 
-def enqueue_due_automations(db: Session, limit: int = 50) -> dict[str, int]:
+def enqueue_due_automations(db: Session, tenant_id: str, limit: int = 50) -> dict[str, int]:
     rows = db.execute(
         text(
             """
             SELECT id
             FROM marketing_automations
             WHERE active = TRUE
+              AND tenant_id = :tenant_id
               AND (next_run_at IS NULL OR next_run_at <= :now)
             ORDER BY priority ASC, COALESCE(next_run_at, created_at) ASC
             LIMIT :limit
             """
         ),
-        {"now": _now(), "limit": limit},
+        {"tenant_id": tenant_id, "now": _now(), "limit": limit},
     ).fetchall()
 
     totals = {"automations": 0, "queued": 0, "failed": 0, "skipped": 0}
     for row in rows:
-        automation = load_automation(db, row[0])
+        automation = load_automation(db, row[0], tenant_id)
         result = enqueue_automation(db, automation)
         totals["automations"] += 1
         totals["queued"] += result["queued"]
@@ -956,7 +962,7 @@ def enqueue_due_automations(db: Session, limit: int = 50) -> dict[str, int]:
     return totals
 
 
-def _load_pending_executions(db: Session, limit: int) -> list[dict[str, Any]]:
+def _load_pending_executions(db: Session, tenant_id: str, limit: int) -> list[dict[str, Any]]:
     rows = db.execute(
         text(
             """
@@ -969,6 +975,7 @@ def _load_pending_executions(db: Session, limit: int) -> list[dict[str, Any]]:
                 ae.message_body,
                 ae.attempts,
                 ae.max_attempts,
+                ae.tenant_id,
                 ma.template_id,
                 c.name,
                 c.phone,
@@ -976,27 +983,29 @@ def _load_pending_executions(db: Session, limit: int) -> list[dict[str, Any]]:
                 c.marketing_whatsapp_consent,
                 c.marketing_email_consent
             FROM automation_executions ae
-            JOIN marketing_automations ma ON ma.id = ae.automation_id
-            LEFT JOIN customers c ON c.id = ae.customer_id
-            WHERE ae.status = 'pending'
+            JOIN marketing_automations ma ON ma.id = ae.automation_id AND ma.tenant_id=ae.tenant_id
+            LEFT JOIN customers c ON c.id = ae.customer_id AND c.tenant_id=ae.tenant_id
+            WHERE ae.tenant_id=:tenant_id AND ae.status = 'pending'
               AND ae.scheduled_at <= :now
             ORDER BY ae.scheduled_at ASC, ae.created_at ASC
             LIMIT :limit
             """
         ),
-        {"now": _now(), "limit": limit},
+        {"tenant_id": tenant_id, "now": _now(), "limit": limit},
     ).fetchall()
     return [_row_dict(row) for row in rows]
 
 
-def process_pending_executions(db: Session, limit: int = 100) -> dict[str, int]:
+def process_pending_executions(db: Session, tenant_id: str, limit: int = 100) -> dict[str, int]:
     from backend.services.customer_contact_risk_service import CustomerContactRiskService
 
-    executions = _load_pending_executions(db, limit)
+    executions = _load_pending_executions(db, tenant_id, limit)
     totals = {"processed": 0, "sent": 0, "failed": 0, "retried": 0, "skipped": 0}
 
     for execution in executions:
-        automation = load_automation(db, execution["automation_id"])
+        automation = load_automation(db, execution["automation_id"], tenant_id)
+        if automation.get("tenant_id") != tenant_id:
+            raise RuntimeError("Execucao de automacao fora do tenant.")
         customer = {
             "id": execution["customer_id"],
             "name": execution.get("name"),
@@ -1095,14 +1104,14 @@ def process_pending_executions(db: Session, limit: int = 100) -> dict[str, int]:
     return totals
 
 
-def run_due_automation_worker(db: Session, automation_limit: int = 50, execution_limit: int = 100) -> dict[str, dict[str, int]]:
-    queued = enqueue_due_automations(db, limit=automation_limit)
-    processed = process_pending_executions(db, limit=execution_limit)
+def run_due_automation_worker(db: Session, tenant_id: str, automation_limit: int = 50, execution_limit: int = 100) -> dict[str, dict[str, int]]:
+    queued = enqueue_due_automations(db, tenant_id, limit=automation_limit)
+    processed = process_pending_executions(db, tenant_id, limit=execution_limit)
     return {"queued": queued, "processed": processed}
 
 
-def run_automation_now(db: Session, automation_id: str) -> dict[str, int]:
-    automation = load_automation(db, automation_id)
+def run_automation_now(db: Session, automation_id: str, tenant_id: str) -> dict[str, int]:
+    automation = load_automation(db, automation_id, tenant_id)
     customers = get_eligible_customers(db, automation)
     subject, raw_body = resolve_message(db, automation)
     sent_count = 0

@@ -45,6 +45,10 @@ class DeliveryService:
     def __init__(self, db: Session):
         self._db = db
 
+    def _publish_order_status_changed(self, order: Order, old_status: str, new_status: str) -> None:
+        from backend.services.automation_event_producer import AutomationEventProducer
+        AutomationEventProducer(self._db, order.tenant_id).order_status_changed(order, old_status, new_status)
+
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _get_delivery(self, delivery_id: str) -> Delivery:
@@ -262,8 +266,10 @@ class DeliveryService:
                 delivery.picked_up_at = now
             order = self._get_order(delivery.order_id)
             if order.status != OrderStatus.on_the_way:
-                order_sm.transition(delivery.order_id, order.status.value, "on_the_way")
+                old_order_status = order.status.value
+                order_sm.transition(delivery.order_id, old_order_status, "on_the_way")
                 order.status = OrderStatus.on_the_way
+                self._publish_order_status_changed(order, old_order_status, "on_the_way")
                 order.out_for_delivery_at = order.out_for_delivery_at or now
                 order.updated_at = now
 
@@ -273,11 +279,14 @@ class DeliveryService:
             order = self._get_order(delivery.order_id)
             if order:
                 if order.status != OrderStatus.on_the_way:
-                    order_sm.transition(delivery.order_id, order.status.value, "on_the_way")
+                    old_order_status = order.status.value
+                    order_sm.transition(delivery.order_id, old_order_status, "on_the_way")
                     order.status = OrderStatus.on_the_way
+                    self._publish_order_status_changed(order, old_order_status, "on_the_way")
                     order.out_for_delivery_at = order.out_for_delivery_at or now
                 order_sm.transition(delivery.order_id, order.status.value, "delivered")
                 order.status = OrderStatus.delivered
+                self._publish_order_status_changed(order, "on_the_way", "delivered")
                 order.delivered_at = order.delivered_at or now
                 order.updated_at = now
 
@@ -667,8 +676,10 @@ class DeliveryService:
         delivery.status = DeliveryStatus.on_the_way
         order = self._get_order(delivery.order_id)
         if order.status != OrderStatus.on_the_way:
-            order_sm.transition(delivery.order_id, order.status.value, "on_the_way")
+            old_order_status = order.status.value
+            order_sm.transition(delivery.order_id, old_order_status, "on_the_way")
             order.status = OrderStatus.on_the_way
+            self._publish_order_status_changed(order, old_order_status, "on_the_way")
             order.out_for_delivery_at = order.out_for_delivery_at or now
             order.updated_at = now
         if notes:
@@ -707,11 +718,14 @@ class DeliveryService:
 
         order = self._get_order(delivery.order_id)
         if order.status != OrderStatus.on_the_way:
-            order_sm.transition(delivery.order_id, order.status.value, "on_the_way")
+            old_order_status = order.status.value
+            order_sm.transition(delivery.order_id, old_order_status, "on_the_way")
             order.status = OrderStatus.on_the_way
+            self._publish_order_status_changed(order, old_order_status, "on_the_way")
             order.out_for_delivery_at = order.out_for_delivery_at or now
         order_sm.transition(delivery.order_id, order.status.value, "delivered")
         order.status = OrderStatus.delivered
+        self._publish_order_status_changed(order, "on_the_way", "delivered")
         order.delivered_at = order.delivered_at or now
         order.updated_at = now
         if order.out_for_delivery_at:

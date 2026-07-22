@@ -833,6 +833,8 @@ class OrderService:
             )
 
         sync_customer_order_metrics(self._db, order.customer_id)
+        from backend.services.automation_event_producer import AutomationEventProducer
+        AutomationEventProducer(self._db, order.tenant_id).order_created(order)
         self._db.commit()
         self._db.refresh(order)
 
@@ -997,6 +999,8 @@ class OrderService:
         session.updated_at = now
         OrderCmvSnapshotService(self._db).create_for_order(order, cmv_contexts)
         sync_customer_order_metrics(self._db, order.customer_id)
+        from backend.services.automation_event_producer import AutomationEventProducer
+        AutomationEventProducer(self._db, order.tenant_id).order_created(order)
         self._db.commit()
         self._db.refresh(order)
 
@@ -1074,6 +1078,10 @@ class OrderService:
         self._db.flush()
         self._consume_inventory_for_effective_sale(order.id)
         sync_customer_order_metrics(self._db, order.customer_id)
+        from backend.services.automation_event_producer import AutomationEventProducer
+        AutomationEventProducer(self._db, order.tenant_id).payment_confirmed(
+            payment, order.customer_id
+        )
         self._db.commit()
         self._db.refresh(order)
 
@@ -1131,6 +1139,10 @@ class OrderService:
         if new_status in {"cancelled", "refunded"}:
             self._reverse_inventory_for_cancelled_sale(order.id)
         sync_customer_order_metrics(self._db, order.customer_id)
+        from backend.services.automation_event_producer import AutomationEventProducer
+        AutomationEventProducer(self._db, order.tenant_id).order_status_changed(
+            order, old_status, new_status
+        )
         self._db.commit()
 
         bus.publish(OrderStatusChanged(

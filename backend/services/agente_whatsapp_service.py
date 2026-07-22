@@ -882,16 +882,24 @@ class AgenteWhatsAppService:
         if not normalized_phone:
             raise ValueError("Telefone invalido.")
 
+        tenant_id = str((metadata or {}).get("tenant_id") or "").strip()
         customer = None
         if customer_id:
-            customer = self._db.query(Customer).filter(Customer.id == customer_id).first()
+            customer_query = self._db.query(Customer).filter(Customer.id == customer_id)
+            if tenant_id:
+                customer_query = customer_query.filter(Customer.tenant_id == tenant_id)
+            customer = customer_query.first()
             if not customer:
                 raise ValueError("Cliente nao encontrado.")
         else:
-            customer, _created = CustomerIdentityService(self._db).get_or_create_whatsapp_lead(
+            customer, customer_created = CustomerIdentityService(self._db).get_or_create_whatsapp_lead(
                 phone=normalized_phone,
                 source="agente_whatsapp",
+                tenant_id=tenant_id or None,
             )
+            if customer_created and tenant_id:
+                from backend.services.automation_event_producer import AutomationEventProducer
+                AutomationEventProducer(self._db, tenant_id).customer_created(customer)
 
         existing = (
             self._db.query(AgenteWhatsAppSession)

@@ -659,11 +659,18 @@ class AgenteWhatsAppToolService:
         delivery = dict(payload.get("delivery") or {})
         phone = payload.get("phone") or args.get("phone") or delivery.get("phone")
         if not customer_id and phone:
-            customer, _created = CustomerIdentityService(self._db).get_or_create_whatsapp_lead(
+            customer, customer_created = CustomerIdentityService(self._db).get_or_create_whatsapp_lead(
                 phone=str(phone),
                 name=delivery.get("name"),
                 source="agente_whatsapp",
+                tenant_id=str(context.get("tenant_id") or "").strip() or None,
             )
+            if customer_created:
+                tenant_id = str(context.get("tenant_id") or "").strip()
+                if not tenant_id:
+                    raise ValueError("tenant_id obrigatorio para criar lead pelo Agente WhatsApp.")
+                from backend.services.automation_event_producer import AutomationEventProducer
+                AutomationEventProducer(self._db, tenant_id).customer_created(customer)
             customer_id = customer.id
         if customer_id:
             payload["customer_id"] = customer_id

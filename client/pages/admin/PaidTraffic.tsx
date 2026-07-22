@@ -30,6 +30,7 @@ import {
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import PromotionLandingsTab from "@/components/admin/PromotionLandingsTab";
+import SocialCreativePreview from "@/components/admin/SocialCreativePreview";
 import {
   couponsApi,
   paidTrafficApi,
@@ -315,6 +316,7 @@ export default function AdminPaidTraffic() {
   const [previewCreative, setPreviewCreative] = useState<CampaignCreative | null>(null);
 
   const campaignById = useMemo(() => new Map(campaigns.map((campaign) => [campaign.id, campaign])), [campaigns]);
+  const previewCampaign = previewCreative ? campaignById.get(previewCreative.campaign_id) : undefined;
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const couponById = useMemo(() => new Map(coupons.map((coupon) => [coupon.id, coupon])), [coupons]);
 
@@ -358,6 +360,15 @@ export default function AdminPaidTraffic() {
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    if (!previewCreative) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPreviewCreative(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [previewCreative]);
 
   const refreshDashboard = async () => {
     try {
@@ -1366,36 +1377,27 @@ export default function AdminPaidTraffic() {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
           onClick={() => setPreviewCreative(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Preview do criativo por rede social"
         >
           <div
-            className="relative max-w-4xl w-full max-h-[90vh] flex flex-col items-center"
+            className="relative max-w-5xl w-full max-h-[90vh] overflow-y-auto rounded-2xl border border-surface-03 bg-surface-01 p-4 pt-12 md:p-6 md:pt-12"
             onClick={(e) => e.stopPropagation()}
           >
             <button
               onClick={() => setPreviewCreative(null)}
-              className="absolute -top-10 right-0 text-white/70 hover:text-white text-sm font-semibold flex items-center gap-1"
+              autoFocus
+              aria-label="Fechar preview"
+              className="absolute right-4 top-4 z-10 flex items-center gap-1 text-sm font-semibold text-stone hover:text-white"
             >
               <XCircle size={20} /> Fechar
             </button>
-
-            {previewCreative.creative_type === "video" ? (
-              <video
-                src={resolveAssetUrl(previewCreative.media_url)}
-                controls
-                autoPlay
-                className="max-h-[80vh] w-full rounded-2xl bg-black"
-              />
-            ) : (
-              <img
-                src={resolveAssetUrl(previewCreative.media_url)}
-                alt={previewCreative.name ?? "criativo"}
-                className="max-h-[80vh] w-auto rounded-2xl object-contain"
-              />
-            )}
-
-            {previewCreative.name && (
-              <p className="mt-3 text-white/80 text-sm font-medium">{previewCreative.name}</p>
-            )}
+            <SocialCreativePreview
+              creative={previewCreative}
+              campaignName={previewCampaign?.name}
+              campaignPlatform={previewCampaign?.platform}
+            />
           </div>
         </div>
       )}

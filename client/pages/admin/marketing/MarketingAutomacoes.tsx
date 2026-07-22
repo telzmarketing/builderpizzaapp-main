@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
+import AutomationCatalogBuilder from "@/components/admin/AutomationCatalogBuilder";
 import {
   marketingAutomationsApi,
   type ApiAutomationEvent,
@@ -73,7 +74,7 @@ const TRIGGER_VALUE_LABEL: Record<string, string> = {
   segment_match: "Nome do segmento",
 };
 
-const CHANNEL_LABELS: Record<string, string> = { whatsapp: "WhatsApp", email: "E-mail" };
+const CHANNEL_LABELS: Record<string, string> = { whatsapp: "WhatsApp", email: "E-mail", workflow: "Fluxo interno" };
 
 const CUSTOMER_EVENT_LABELS: Record<string, string> = {
   site_opened: "Acessou o site",
@@ -401,6 +402,7 @@ export default function MarketingAutomacoes() {
         {/* ═══ AUTOMAÇÕES ═══ */}
         {tab === "automacoes" && (
           <>
+            <AutomationCatalogBuilder onCreated={fetchAutomations} />
             <div className="bg-surface-02 border border-surface-03 rounded-2xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-cream">Integração com AGENTE WHATSAPP</p>
@@ -445,8 +447,8 @@ export default function MarketingAutomacoes() {
                           <div className="min-w-0">
                             <h3 className="text-cream font-semibold text-sm truncate">{a.name}</h3>
                             <div className="flex items-center gap-2 mt-0.5">
-                              <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${a.channel === "whatsapp" ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>
-                                {a.channel === "whatsapp" ? "WhatsApp" : "Email"}
+                              <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${a.channel === "whatsapp" ? "bg-green-500/20 text-green-400" : a.channel === "email" ? "bg-blue-500/20 text-blue-400" : "bg-gold/15 text-gold"}`}>
+                                {CHANNEL_LABELS[a.channel] ?? a.channel}
                               </span>
                               <span className="text-xs text-stone">{TRIGGER_LABELS[a.trigger] ?? a.trigger}
                                 {a.trigger_value ? ` — ${a.trigger_value}` : ""}

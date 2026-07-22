@@ -40,23 +40,28 @@ class CustomerIdentityService:
     def __init__(self, db: Session):
         self._db = db
 
-    def find_by_phone(self, phone: str | None, *, channel: str | None = None) -> Customer | None:
+    def find_by_phone(self, phone: str | None, *, channel: str | None = None,
+                      tenant_id: str | None = None) -> Customer | None:
         normalized = normalize_phone(phone)
         if not normalized:
             return None
 
         q = self._db.query(CustomerChannel).filter(CustomerChannel.normalized_identifier == normalized)
+        if tenant_id:
+            q = q.filter(CustomerChannel.tenant_id == tenant_id)
         if channel:
             q = q.filter(CustomerChannel.channel == channel)
         channel_row = q.first()
         if channel_row:
-            return self._db.query(Customer).filter(Customer.id == channel_row.customer_id).first()
+            customer_q = self._db.query(Customer).filter(Customer.id == channel_row.customer_id)
+            if tenant_id:
+                customer_q = customer_q.filter(Customer.tenant_id == tenant_id)
+            return customer_q.first()
 
-        return (
-            self._db.query(Customer)
-            .filter(or_(Customer.phone == normalized, Customer.phone == phone))
-            .first()
-        )
+        customer_q = self._db.query(Customer).filter(or_(Customer.phone == normalized, Customer.phone == phone))
+        if tenant_id:
+            customer_q = customer_q.filter(Customer.tenant_id == tenant_id)
+        return customer_q.first()
 
     def ensure_channel(
         self,
@@ -75,6 +80,7 @@ class CustomerIdentityService:
         existing = (
             self._db.query(CustomerChannel)
             .filter(
+                CustomerChannel.tenant_id == customer.tenant_id,
                 CustomerChannel.channel == channel,
                 CustomerChannel.normalized_identifier == normalized,
             )
@@ -91,6 +97,7 @@ class CustomerIdentityService:
 
         row = CustomerChannel(
             id=str(uuid.uuid4()),
+            tenant_id=customer.tenant_id,
             customer_id=customer.id,
             channel=channel,
             identifier=identifier,
@@ -213,12 +220,13 @@ class CustomerIdentityService:
         phone: str,
         name: str | None = None,
         source: str = "whatsapp",
+        tenant_id: str | None = None,
     ) -> tuple[Customer, bool]:
         normalized = normalize_phone(phone)
         if not normalized:
             raise ValueError("Telefone invalido.")
 
-        existing = self.find_by_phone(normalized, channel="whatsapp") or self.find_by_phone(normalized)
+        existing = self.find_by_phone(normalized, channel="whatsapp", tenant_id=tenant_id) or self.find_by_phone(normalized, tenant_id=tenant_id)
         if existing:
             if not existing.phone:
                 existing.phone = normalized
@@ -239,6 +247,7 @@ class CustomerIdentityService:
         label = name.strip() if name and name.strip() else f"Cliente WhatsApp {normalized[-4:]}"
         customer = Customer(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             name=label,
             email=system_lead_email(normalized),
             phone=normalized,

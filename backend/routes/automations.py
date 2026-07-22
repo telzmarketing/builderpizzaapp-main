@@ -2,7 +2,8 @@
 from __future__ import annotations
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Any, Optional
+import json
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import Column, String, Boolean, Integer, Text, DateTime, ForeignKey, text
@@ -12,6 +13,11 @@ from backend.database import get_db, Base
 from backend.core.wave6_tenant_orm import wave6_tenant_column
 from backend.routes.admin_auth import get_current_admin
 from backend.core.response import ok, created
+from backend.core.tenant_context import TenantContext
+from backend.core.tenant_route_context import panel_operation_context, operation_tenant_id
+from backend.schemas.automation_core import AutomationDefinitionInput, AutomationProcessInput, AutomationSimulationInput
+from backend.services.automation_registry import TRIGGERS as CORE_TRIGGERS
+from backend.services.automation_registry import catalog as automation_core_catalog, validate_definition
 
 router = APIRouter(prefix="/automations", tags=["automations"])
 
@@ -25,7 +31,7 @@ VALID_TRIGGERS = {
     "inactive_customer", "recurring_customer", "vip_customer", "tag_match",
     "group_match", "segment_match",
 }
-VALID_CHANNELS = {"whatsapp", "email"}
+VALID_CHANNELS = {"whatsapp", "email", "workflow"}
 
 AUTOMATION_EVENT_CATALOG = [
     {
@@ -240,6 +246,9 @@ class MarketingAutomation(Base):
     channel = Column(String(20), nullable=False)
     template_id = Column(String)
     message_body = Column(Text)
+    trigger_config_json = Column(Text, default="{}")
+    conditions_json = Column(Text, default="[]")
+    actions_json = Column(Text, default="[]")
     active = Column(Boolean, default=True)
     runs_total = Column(Integer, default=0)
     last_run_at = Column(DateTime(timezone=True))
@@ -286,6 +295,9 @@ class AutomationCreate(BaseModel):
     channel: str
     template_id: Optional[str] = None
     message_body: Optional[str] = None
+    conditions: list[dict[str, Any]] = []
+    actions: list[dict[str, Any]] = []
+    trigger_config: dict[str, Any] = {}
 
 
 class AutomationUpdate(BaseModel):
@@ -297,6 +309,9 @@ class AutomationUpdate(BaseModel):
     template_id: Optional[str] = None
     message_body: Optional[str] = None
     active: Optional[bool] = None
+    conditions: Optional[list[dict[str, Any]]] = None
+    actions: Optional[list[dict[str, Any]]] = None
+    trigger_config: Optional[dict[str, Any]] = None
 
 
 class AutomationTemplateCreate(BaseModel):
@@ -403,10 +418,10 @@ def _get_eligible_customers(automation: MarketingAutomation, db: Session) -> lis
     return [{"id": r[0], "name": r[1], "phone": r[2], "email": r[3]} for r in rows]
 
 
-def _run_automation(automation_id: str, db: Session) -> dict:
+def _run_automation(automation_id: str, db: Session, tenant_id: str) -> dict:
     from backend.services.automation_service import run_automation_now
 
-    return run_automation_now(db, automation_id)
+    return run_automation_now(db, automation_id, tenant_id)
 
     automation = db.query(MarketingAutomation).filter(
         MarketingAutomation.id == automation_id
@@ -523,11 +538,40 @@ def _run_automation(automation_id: str, db: Session) -> dict:
     return {"sent": sent_count, "failed": failed_count, "skipped": skipped_count}
 
 
+# ── Routes — Transversal core (must come before /{automation_id}) ───────────
+
+@router.get("/catalog")
+def get_automation_catalog(_admin=Depends(get_current_admin), _ctx: TenantContext | None = Depends(panel_operation_context)):
+    return ok(automation_core_catalog())
+
+
+@router.post("/validate")
+def validate_automation_definition(body: AutomationDefinitionInput, _admin=Depends(get_current_admin), _ctx: TenantContext | None = Depends(panel_operation_context)):
+    return ok(validate_definition(body))
+
+
+@router.post("/simulate")
+def simulate_automation_definition(body: AutomationSimulationInput, db: Session = Depends(get_db), _admin=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
+    from backend.services.automation_event_service import AutomationEventService
+    return ok(AutomationEventService(db, operation_tenant_id(ctx)).simulate(body))
+
+
+@router.post("/events/process")
+def process_automation_events(body: AutomationProcessInput, db: Session = Depends(get_db), _admin=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
+    """Tenant-scoped operational claim. Event publishing remains internal."""
+    from backend.services.automation_event_service import AutomationEventService
+    result = AutomationEventService(db, operation_tenant_id(ctx)).process_pending(
+        limit=body.limit, worker_id=body.worker_id or "admin-worker")
+    from backend.services.automation_action_handlers import process_transversal_executions
+    actions = process_transversal_executions(db, operation_tenant_id(ctx), limit=body.limit)
+    return ok({"events": result, "actions": actions})
+
+
 # ── Routes — Templates (must come before /{automation_id}) ───────────────────
 
 @router.get("/templates")
-def list_templates(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    templates = db.query(AutomationTemplate).order_by(AutomationTemplate.created_at.desc()).all()
+def list_templates(db: Session = Depends(get_db), _=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
+    templates = db.query(AutomationTemplate).filter(AutomationTemplate.tenant_id == operation_tenant_id(ctx)).order_by(AutomationTemplate.created_at.desc()).all()
     return ok([{
         "id": t.id, "name": t.name, "channel": t.channel, "subject": t.subject,
         "body": t.body, "variables": t.variables, "category": t.category,
@@ -537,9 +581,9 @@ def list_templates(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 
 @router.post("/templates")
 def create_template(body: AutomationTemplateCreate, db: Session = Depends(get_db),
-                    _=Depends(get_current_admin)):
+                    _=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
     t = AutomationTemplate(
-        id=str(uuid.uuid4()), name=body.name, channel=body.channel,
+        id=str(uuid.uuid4()), tenant_id=operation_tenant_id(ctx), name=body.name, channel=body.channel,
         subject=body.subject, body=body.body,
         variables=body.variables, category=body.category,
     )
@@ -551,8 +595,8 @@ def create_template(body: AutomationTemplateCreate, db: Session = Depends(get_db
 
 @router.patch("/templates/{template_id}")
 def update_template(template_id: str, body: AutomationTemplateUpdate,
-                    db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    t = db.query(AutomationTemplate).filter(AutomationTemplate.id == template_id).first()
+                    db: Session = Depends(get_db), _=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
+    t = db.query(AutomationTemplate).filter(AutomationTemplate.id == template_id, AutomationTemplate.tenant_id == operation_tenant_id(ctx)).first()
     if not t:
         raise HTTPException(404, "Template não encontrado.")
     if body.name is not None:      t.name = body.name
@@ -568,8 +612,8 @@ def update_template(template_id: str, body: AutomationTemplateUpdate,
 
 @router.delete("/templates/{template_id}")
 def delete_template(template_id: str, db: Session = Depends(get_db),
-                    _=Depends(get_current_admin)):
-    t = db.query(AutomationTemplate).filter(AutomationTemplate.id == template_id).first()
+                    _=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
+    t = db.query(AutomationTemplate).filter(AutomationTemplate.id == template_id, AutomationTemplate.tenant_id == operation_tenant_id(ctx)).first()
     if not t:
         raise HTTPException(404, "Template não encontrado.")
     db.delete(t)
@@ -580,15 +624,16 @@ def delete_template(template_id: str, db: Session = Depends(get_db),
 # ── Routes — Global Logs ──────────────────────────────────────────────────────
 
 @router.get("/logs")
-def list_global_logs(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def list_global_logs(db: Session = Depends(get_db), _=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
     rows = db.execute(text("""
         SELECT al.id, ma.name AS automation_name, al.customer_id,
                al.channel, al.status, al.error, al.created_at
         FROM automation_logs al
-        JOIN marketing_automations ma ON ma.id = al.automation_id
+        JOIN marketing_automations ma ON ma.id = al.automation_id AND ma.tenant_id=al.tenant_id
+        WHERE al.tenant_id=:tenant_id
         ORDER BY al.created_at DESC
         LIMIT 200
-    """)).fetchall()
+    """), {"tenant_id": operation_tenant_id(ctx)}).fetchall()
     return ok([{
         "id": r[0], "automation_name": r[1], "customer_id": r[2],
         "channel": r[3], "status": r[4], "error": r[5],
@@ -599,32 +644,33 @@ def list_global_logs(db: Session = Depends(get_db), _=Depends(get_current_admin)
 # ── Routes — Events Stats ─────────────────────────────────────────────────────
 
 @router.get("/events")
-def list_events(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def list_events(db: Session = Depends(get_db), _=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
     log_rows = db.execute(text("""
         SELECT ma.trigger AS event_name,
                COUNT(al.id) AS count,
                COUNT(DISTINCT al.customer_id) AS unique_customers,
                MAX(al.created_at) AS last_triggered
         FROM automation_logs al
-        JOIN marketing_automations ma ON ma.id = al.automation_id
+        JOIN marketing_automations ma ON ma.id = al.automation_id AND ma.tenant_id=al.tenant_id
+        WHERE al.tenant_id=:tenant_id
         GROUP BY ma.trigger
-    """)).fetchall()
+    """), {"tenant_id": operation_tenant_id(ctx)}).fetchall()
     execution_rows = db.execute(text("""
         SELECT source_event_type AS event_name,
                COUNT(id) AS count,
                COUNT(DISTINCT customer_id) AS unique_customers,
                MAX(created_at) AS last_triggered
         FROM automation_executions
-        WHERE source_event_type IS NOT NULL
+        WHERE tenant_id=:tenant_id AND source_event_type IS NOT NULL
         GROUP BY source_event_type
-    """)).fetchall()
+    """), {"tenant_id": operation_tenant_id(ctx)}).fetchall()
     automation_rows = db.execute(text("""
         SELECT trigger AS event_name,
                COUNT(id) AS automations_total,
                COUNT(id) FILTER (WHERE active = TRUE) AS automations_active
-        FROM marketing_automations
+        FROM marketing_automations WHERE tenant_id=:tenant_id
         GROUP BY trigger
-    """)).fetchall()
+    """), {"tenant_id": operation_tenant_id(ctx)}).fetchall()
 
     stats: dict[str, dict] = {}
     for row in [*log_rows, *execution_rows]:
@@ -690,23 +736,27 @@ def list_events(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 # ── Routes — Automations CRUD ─────────────────────────────────────────────────
 
 @router.get("")
-def list_automations(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def list_automations(db: Session = Depends(get_db), _=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
     automations = (
         db.query(MarketingAutomation)
+        .filter(MarketingAutomation.tenant_id == operation_tenant_id(ctx))
         .order_by(MarketingAutomation.created_at.desc())
         .all()
     )
     result = []
     for a in automations:
         log_count = db.execute(text(
-            "SELECT COUNT(*) FROM automation_logs WHERE automation_id = :aid"
-        ), {"aid": a.id}).scalar() or 0
+            "SELECT COUNT(*) FROM automation_logs WHERE tenant_id=:tenant_id AND automation_id=:aid"
+        ), {"tenant_id": operation_tenant_id(ctx), "aid": a.id}).scalar() or 0
         result.append({
             "id": a.id, "name": a.name, "trigger": a.trigger,
             "trigger_value": a.trigger_value,
             "trigger_delay_hours": a.trigger_delay_hours or 0,
             "channel": a.channel, "template_id": a.template_id,
             "message_body": a.message_body,
+            "trigger_config": json.loads(a.trigger_config_json or "{}"),
+            "conditions": json.loads(a.conditions_json or "[]"),
+            "actions": json.loads(a.actions_json or "[]"),
             "active": a.active, "runs_total": a.runs_total or 0,
             "last_run_at": a.last_run_at.isoformat() if a.last_run_at else None,
             "total_logs": log_count,
@@ -720,10 +770,11 @@ def enqueue_due_automation_queue(
     limit: int = 50,
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
+    ctx: TenantContext | None = Depends(panel_operation_context),
 ):
     from backend.services.automation_service import enqueue_due_automations
 
-    return ok(enqueue_due_automations(db, limit=limit), "Fila de automacoes atualizada.")
+    return ok(enqueue_due_automations(db, operation_tenant_id(ctx), limit=limit), "Fila de automacoes atualizada.")
 
 
 @router.post("/queue/process")
@@ -731,10 +782,11 @@ def process_automation_queue(
     limit: int = 100,
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
+    ctx: TenantContext | None = Depends(panel_operation_context),
 ):
     from backend.services.automation_service import process_pending_executions
 
-    return ok(process_pending_executions(db, limit=limit), "Fila de automacoes processada.")
+    return ok(process_pending_executions(db, operation_tenant_id(ctx), limit=limit), "Fila de automacoes processada.")
 
 
 @router.post("/queue/run-due")
@@ -743,29 +795,38 @@ def run_due_automation_queue(
     execution_limit: int = 100,
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
+    ctx: TenantContext | None = Depends(panel_operation_context),
 ):
     from backend.services.automation_service import run_due_automation_worker
 
     return ok(
-        run_due_automation_worker(db, automation_limit=automation_limit, execution_limit=execution_limit),
+        run_due_automation_worker(db, operation_tenant_id(ctx), automation_limit=automation_limit, execution_limit=execution_limit),
         "Worker de automacoes executado.",
     )
 
 
 @router.post("")
 def create_automation(body: AutomationCreate, db: Session = Depends(get_db),
-                      _=Depends(get_current_admin)):
-    if body.trigger not in VALID_TRIGGERS:
+                      _=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
+    if body.trigger not in VALID_TRIGGERS and body.trigger not in CORE_TRIGGERS:
         raise HTTPException(400, f"Trigger inválido. Use: {', '.join(sorted(VALID_TRIGGERS))}.")
     if body.channel not in VALID_CHANNELS:
         raise HTTPException(400, f"Canal inválido. Use: {', '.join(VALID_CHANNELS)}.")
+    if body.trigger in CORE_TRIGGERS:
+        validation = validate_definition(AutomationDefinitionInput(
+            trigger={"key": body.trigger, "config": body.trigger_config}, conditions=body.conditions, actions=body.actions))
+        if not validation["valid"]:
+            raise HTTPException(422, detail={"code": "INVALID_AUTOMATION_DEFINITION", "errors": validation["errors"]})
 
     a = MarketingAutomation(
-        id=str(uuid.uuid4()), name=body.name,
+        id=str(uuid.uuid4()), tenant_id=operation_tenant_id(ctx), name=body.name,
         trigger=body.trigger, trigger_value=body.trigger_value,
         trigger_delay_hours=body.trigger_delay_hours,
         channel=body.channel, template_id=body.template_id,
         message_body=body.message_body,
+        trigger_config_json=json.dumps(body.trigger_config, ensure_ascii=False),
+        conditions_json=json.dumps(body.conditions, ensure_ascii=False),
+        actions_json=json.dumps(body.actions, ensure_ascii=False),
     )
     db.add(a)
     db.commit()
@@ -776,10 +837,21 @@ def create_automation(body: AutomationCreate, db: Session = Depends(get_db),
 
 @router.patch("/{automation_id}")
 def update_automation(automation_id: str, body: AutomationUpdate,
-                      db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    a = db.query(MarketingAutomation).filter(MarketingAutomation.id == automation_id).first()
+                      db: Session = Depends(get_db), _=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
+    a = db.query(MarketingAutomation).filter(
+        MarketingAutomation.id == automation_id,
+        MarketingAutomation.tenant_id == operation_tenant_id(ctx),
+    ).first()
     if not a:
         raise HTTPException(404, "Automação não encontrada.")
+    target_trigger = body.trigger if body.trigger is not None else a.trigger
+    if target_trigger in CORE_TRIGGERS:
+        validation = validate_definition(AutomationDefinitionInput(
+            trigger={"key": target_trigger, "config": body.trigger_config if body.trigger_config is not None else json.loads(a.trigger_config_json or "{}")},
+            conditions=body.conditions if body.conditions is not None else json.loads(a.conditions_json or "[]"),
+            actions=body.actions if body.actions is not None else json.loads(a.actions_json or "[]")))
+        if not validation["valid"]:
+            raise HTTPException(422, detail={"code": "INVALID_AUTOMATION_DEFINITION", "errors": validation["errors"]})
     if body.name is not None:                 a.name = body.name
     if body.trigger is not None:              a.trigger = body.trigger
     if body.trigger_value is not None:        a.trigger_value = body.trigger_value
@@ -788,6 +860,9 @@ def update_automation(automation_id: str, body: AutomationUpdate,
     if body.template_id is not None:          a.template_id = body.template_id or None
     if body.message_body is not None:         a.message_body = body.message_body
     if body.active is not None:               a.active = body.active
+    if body.conditions is not None:           a.conditions_json = json.dumps(body.conditions, ensure_ascii=False)
+    if body.actions is not None:              a.actions_json = json.dumps(body.actions, ensure_ascii=False)
+    if body.trigger_config is not None:       a.trigger_config_json = json.dumps(body.trigger_config, ensure_ascii=False)
     a.updated_at = _now()
     db.commit()
     return ok({"id": a.id, "name": a.name, "active": a.active})
@@ -795,8 +870,8 @@ def update_automation(automation_id: str, body: AutomationUpdate,
 
 @router.delete("/{automation_id}")
 def delete_automation(automation_id: str, db: Session = Depends(get_db),
-                      _=Depends(get_current_admin)):
-    a = db.query(MarketingAutomation).filter(MarketingAutomation.id == automation_id).first()
+                      _=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
+    a = db.query(MarketingAutomation).filter(MarketingAutomation.id == automation_id, MarketingAutomation.tenant_id == operation_tenant_id(ctx)).first()
     if not a:
         raise HTTPException(404, "Automação não encontrada.")
     db.delete(a)
@@ -806,8 +881,8 @@ def delete_automation(automation_id: str, db: Session = Depends(get_db),
 
 @router.post("/{automation_id}/toggle")
 def toggle_automation(automation_id: str, db: Session = Depends(get_db),
-                       _=Depends(get_current_admin)):
-    a = db.query(MarketingAutomation).filter(MarketingAutomation.id == automation_id).first()
+                       _=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
+    a = db.query(MarketingAutomation).filter(MarketingAutomation.id == automation_id, MarketingAutomation.tenant_id == operation_tenant_id(ctx)).first()
     if not a:
         raise HTTPException(404, "Automação não encontrada.")
     a.active = not a.active
@@ -818,26 +893,30 @@ def toggle_automation(automation_id: str, db: Session = Depends(get_db),
 
 @router.post("/{automation_id}/run")
 def run_automation(automation_id: str, db: Session = Depends(get_db),
-                   _=Depends(get_current_admin)):
-    result = _run_automation(automation_id, db)
+                   _=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
+    owned = db.query(MarketingAutomation.id).filter(MarketingAutomation.id == automation_id, MarketingAutomation.tenant_id == operation_tenant_id(ctx)).first()
+    if not owned:
+        raise HTTPException(404, "Automação não encontrada.")
+    result = _run_automation(automation_id, db, operation_tenant_id(ctx))
     return ok(result, "Automação executada.")
 
 
 @router.get("/{automation_id}/logs")
 def list_automation_logs(automation_id: str, db: Session = Depends(get_db),
-                          _=Depends(get_current_admin)):
-    a = db.query(MarketingAutomation).filter(MarketingAutomation.id == automation_id).first()
+                          _=Depends(get_current_admin), ctx: TenantContext | None = Depends(panel_operation_context)):
+    tenant_id = operation_tenant_id(ctx)
+    a = db.query(MarketingAutomation).filter(MarketingAutomation.id == automation_id, MarketingAutomation.tenant_id == tenant_id).first()
     if not a:
         raise HTTPException(404, "Automação não encontrada.")
     rows = db.execute(text("""
         SELECT al.id, al.customer_id, c.name AS customer_name,
                al.channel, al.status, al.error, al.created_at
         FROM automation_logs al
-        LEFT JOIN customers c ON c.id = al.customer_id
-        WHERE al.automation_id = :aid
+        LEFT JOIN customers c ON c.id = al.customer_id AND c.tenant_id=al.tenant_id
+        WHERE al.tenant_id=:tenant_id AND al.automation_id = :aid
         ORDER BY al.created_at DESC
         LIMIT 50
-    """), {"aid": automation_id}).fetchall()
+    """), {"tenant_id": tenant_id, "aid": automation_id}).fetchall()
     return ok([{
         "id": r[0], "customer_id": r[1], "customer_name": r[2],
         "channel": r[3], "status": r[4], "error": r[5],

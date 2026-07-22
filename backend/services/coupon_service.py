@@ -125,7 +125,7 @@ class CouponService:
                 message="Este cupom exige cliente identificado para validar o gatilho.",
             )
 
-        if customer_matches_automation_trigger(self._db, coupon.trigger_automation_id, customer_id):
+        if customer_matches_automation_trigger(self._db, coupon.trigger_automation_id, customer_id, coupon.tenant_id):
             return None
 
         return CouponApplyOut(
