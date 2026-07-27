@@ -1,6 +1,6 @@
 # Base de Conhecimento — PizzaApp
 > Documento técnico completo: telas, funcionalidades, banco de dados, endpoints e integrações.
-> Gerado em: 2026-04-13 | **Atualizado em: 2026-07-21** | Versao: 3.2.0
+> Gerado em: 2026-04-13 | **Atualizado em: 2026-07-22** | Versao: 3.3.0
 
 ---
 
@@ -46,6 +46,7 @@
 24. [Atualizacao 2026-07-04 - Alerta de Atendimento Humano no Agente WhatsApp](#24-atualizacao-2026-07-04---alerta-de-atendimento-humano-no-agente-whatsapp)
 25. [Atualizacao 2026-07-21 - Estado Atual Consolidado de Marketing e Notificacoes](#25-atualizacao-2026-07-21---estado-atual-consolidado-de-marketing-e-notificacoes)
 26. [Atualizacao 2026-07-21 - Preparacao Multiempresa em Codigo](#26-atualizacao-2026-07-21---preparacao-multiempresa-em-codigo)
+27. [Atualizacao 2026-07-22 - Rating WhatsApp, Previews e Automacoes Transversais](#27-atualizacao-2026-07-22---rating-whatsapp-previews-e-automacoes-transversais)
 
 ---
 
@@ -3514,3 +3515,123 @@ O topo do documento agora registra:
 Validacao executada nesta fase:
 
 - `git diff --check -- DEPLOY.md KNOWLEDGE_BASE.md`.
+
+---
+
+## 27. Atualizacao 2026-07-22 - Rating WhatsApp, Previews e Automacoes Transversais
+
+Esta atualizacao registra a entrega consolidada das fases 1 a 5 da evolucao de marketing e automacoes, publicada em `origin/main` no commit `6065939` (`feat: adicionar automacoes transversais e previews sociais`). A entrega estende os dominios existentes de CRM, WhatsApp Marketing, Trafego Pago, pedidos, pagamentos e fidelidade, sem criar um subsistema paralelo.
+
+### 27.1 Fase 1 - rating de risco de contato no WhatsApp
+
+O disparo de campanhas WhatsApp passou a avaliar risco individual antes do envio. O dominio persiste o estado atual em `customer_contact_risks` e o historico auditavel em `customer_contact_risk_events`, sempre com ownership por `tenant_id`.
+
+Sinais tratados pelo rating:
+
+- denuncia do contato;
+- reclamacao relacionada ao pedido;
+- bloqueio no WhatsApp;
+- mais de duas campanhas entregues ao mesmo cliente em uma janela de 15 dias;
+- override administrativo auditavel.
+
+O score fica entre 0 e 100 e e classificado em `low`, `attention`, `high` ou `blocked`. A avaliacao ocorre no backend antes do envio; portanto, o bloqueio nao depende apenas da interface. Eventos possuem chave de deduplicacao por tenant e o envio elegivel atualiza o contador da janela quinzenal.
+
+Arquivos e migration principais:
+
+- `backend/models/customer_contact_risk.py`;
+- `backend/services/customer_contact_risk_service.py`;
+- `backend/routes/customer_contact_risk.py`;
+- `backend/routes/whatsapp_marketing.py`;
+- `backend/migrations/versions/20260812_customer_contact_risk.py`.
+
+### 27.2 Fase 2 - preview de criativos por rede social
+
+O fluxo de Trafego Pago passou a renderizar o criativo conforme a plataforma e o posicionamento selecionados:
+
+- Facebook Feed: proporcao aproximada de 1.91:1;
+- Instagram Feed: 1:1;
+- Stories, Reels e TikTok: 9:16;
+- Google e configuracoes manuais: fallback generico.
+
+O componente informa dimensoes recomendadas, exibe alertas de incompatibilidade e demarca areas seguras nos formatos verticais. O preview nao inicia video automaticamente e pode ser fechado por backdrop ou pela tecla Escape.
+
+Arquivos principais:
+
+- `client/components/admin/SocialCreativePreview.tsx`;
+- `client/pages/admin/PaidTraffic.tsx`.
+
+### 27.3 Fase 3 - nucleo transversal de automacoes
+
+O motor existente foi ampliado com catalogo controlado, validacao estruturada, simulacao sem efeitos colaterais e processamento duravel. Nao existe suporte a SQL ou HTTP arbitrario em automacoes.
+
+Gatilhos liberados no catalogo:
+
+- `customer.created`;
+- `customer.tag_assigned`;
+- `order.created`;
+- `order.status_changed`;
+- `payment.confirmed`;
+- `loyalty.level_up`.
+
+Acoes liberadas:
+
+- `crm.assign_tag`;
+- `crm.create_task`;
+- `notification.send_whatsapp`;
+- `notification.send_email`.
+
+A tabela `automation_events` funciona como fila duravel e possui deduplicacao por `tenant_id + dedupe_key`, estados `pending`, `processing`, `processed`, `failed` e `dead`, numero maximo de tentativas, disponibilidade, lease e recuperacao de processamento interrompido. O consumo usa claim concorrente com `FOR UPDATE SKIP LOCKED`.
+
+As tabelas filhas do motor receberam `tenant_id`, backfill para `tenant-legacy-default` e filtros tenant-scoped. O handler de WhatsApp reutiliza consentimento, opt-out e o rating de risco da fase 1. O builder administrativo consome o catalogo pela API, valida campos obrigatorios, permite simulacao e salva a definicao usando o contrato oficial em `client/lib/api.ts`.
+
+Arquivos principais:
+
+- `backend/services/automation_registry.py`;
+- `backend/services/automation_event_service.py`;
+- `backend/services/automation_action_handlers.py`;
+- `backend/schemas/automation_core.py`;
+- `backend/routes/automations.py`;
+- `client/components/admin/AutomationCatalogBuilder.tsx`;
+- `client/pages/admin/marketing/MarketingAutomacoes.tsx`;
+- `backend/migrations/versions/20260813_automation_event_core.py`.
+
+### 27.4 Fase 4 - produtores reais dos eventos
+
+O servico `backend/services/automation_event_producer.py` padroniza payload, aggregate, customer, tenant e deduplicacao. Os produtores nao executam `commit`: o evento e a mutacao de negocio permanecem na mesma transacao SQLAlchemy, evitando evento orfao ou alteracao de dominio sem evento correspondente.
+
+Integracoes efetivas:
+
+- `customer.created`: cadastros publico, por senha, Google e leads quando ha tenant confiavel;
+- `customer.tag_assigned`: atribuicao manual, IA e acao de automacao, somente quando a associacao foi criada;
+- `order.created`: checkout e Salao;
+- `order.status_changed`: `OrderService` e caminhos operacionais de pagamentos e entrega;
+- `payment.confirmed`: gateway, confirmacao manual e Salao;
+- `loyalty.level_up`: somente quando uma transacao de fidelidade promove o cliente.
+
+Eventos inbound sem ownership confiavel permanecem sem publicacao, preservando isolamento em vez de assumir um tenant global.
+
+### 27.5 Migration e deploy
+
+A ordem obrigatoria de banco e:
+
+1. `20260812_customer_contact_risk`;
+2. `20260813_automation_event_core`.
+
+A revision `20260813_automation_event_core` depende diretamente de `20260812_customer_contact_risk`. Antes de atualizar a aplicacao na VPS, executar o preflight Alembic (`heads`, `current` e `history`) e confirmar que existe apenas uma cabeca compativel. Depois do backup, aplicar a revision exata `20260813_automation_event_core`, executar build, reiniciar os services e validar o fluxo evento -> execucao -> acao com um tenant de teste.
+
+O deploy ainda precisa comprovar em PostgreSQL real:
+
+- upgrade das duas migrations e integridade das FKs compostas;
+- isolamento entre dois tenants;
+- deduplicacao e lease/retry do worker;
+- bloqueio de WhatsApp por rating, consentimento e opt-out;
+- execucao controlada de tag, tarefa CRM, WhatsApp e e-mail;
+- renderizacao dos previews no build publicado.
+
+Validacao registrada antes da publicacao:
+
+- `git diff --check`;
+- `npm.cmd run typecheck`;
+- `npm.cmd test` com 33 testes aprovados;
+- `npm.cmd run build`;
+- sincronizacao `origin/main...HEAD = 0 0` apos o push do commit `6065939`.
