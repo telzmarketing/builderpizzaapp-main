@@ -1,7 +1,7 @@
 """payment brick tables and columns
 
 Revision ID: 20260423_payment_brick
-Revises: None
+Revises: 20260422_initial_schema
 Create Date: 2026-04-23
 """
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 from alembic import op
 
 revision = "20260423_payment_brick"
-down_revision = None
+down_revision = "20260422_initial_schema"
 branch_labels = None
 depends_on = None
 
