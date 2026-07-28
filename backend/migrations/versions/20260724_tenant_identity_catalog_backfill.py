@@ -13,7 +13,7 @@ TABLES = (
     'products', 'product_categories', 'product_sizes', 'product_crust_types',
     'product_drink_variants', 'best_seller_config', 'multi_flavors_config',
     'product_promotions', 'product_promotion_combinations', 'promotions',
-    'promotion_landing_pages', 'campaigns', 'campaign_products',
+    'promotion_landing_pages', 'campaigns', 'campaign_products', 'coupons',
     'promotional_kits', 'promotional_kit_items', 'upsells', 'upsell_metrics',
     'upsell_events', 'order_upsells', 'home_catalog_config', 'theme_settings',
 )
