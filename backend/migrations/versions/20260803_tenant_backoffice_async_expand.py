@@ -111,7 +111,9 @@ def upgrade() -> None:
     )
 
     for table in NEW_TENANT_COLUMNS:
-        op.add_column(table, sa.Column("tenant_id", sa.String(), nullable=True))
+        op.execute(sa.text(
+            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS tenant_id VARCHAR"
+        ))
 
     for table in EXISTING_TENANT_COLUMNS:
         op.alter_column(table, "tenant_id", existing_type=sa.String(), nullable=True, server_default=None)
