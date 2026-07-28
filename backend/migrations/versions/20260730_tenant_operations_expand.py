@@ -85,6 +85,10 @@ def upgrade() -> None:
         """
     )
     op.execute("INSERT INTO logistics_settings (id) VALUES ('default') ON CONFLICT DO NOTHING")
+    op.execute(
+        "ALTER TABLE delivery_persons "
+        "ADD COLUMN IF NOT EXISTS email VARCHAR(200)"
+    )
 
     for table in NEW_TENANT_COLUMNS:
         op.add_column(table, sa.Column("tenant_id", sa.String(), nullable=True))

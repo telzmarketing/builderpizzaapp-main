@@ -67,6 +67,14 @@ def _composite_fk(table: str, column: str, parent: str) -> str:
 
 
 def upgrade() -> None:
+    op.execute(
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_code VARCHAR(10)"
+    )
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_order_code "
+        "ON orders(order_code) WHERE order_code IS NOT NULL"
+    )
+
     for table in TABLES:
         op.add_column(table, sa.Column("tenant_id", sa.String(), nullable=True))
         op.execute(sa.text(
