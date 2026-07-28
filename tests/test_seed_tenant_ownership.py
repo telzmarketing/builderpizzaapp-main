@@ -48,3 +48,12 @@ def test_coupon_orm_maps_ancestral_tenant_column_and_pair_index():
     assert "tenant_id = Column(" in model
     assert '"fk_coupons_tenant_id_tenants"' in model
     assert '"uq_coupons_tenant_id_id"' in model
+
+
+def test_seeded_admin_receives_platform_owner_role():
+    seed = SEED.read_text(encoding="utf-8")
+
+    assert 'PlatformRole.key == "platform_owner"' in seed
+    assert "PlatformUserRole(" in seed
+    assert "user_id=admin.id" in seed
+    assert "role_id=platform_owner.id" in seed

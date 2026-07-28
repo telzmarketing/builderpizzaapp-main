@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { themeApi, applyTheme, DEFAULT_THEME, readCachedTheme } from "./lib/themeApi";
 import { captureTrackingFromUrl, firePixelEvent, trackEvent, getTrackingData, initCampaignPixel, initStorePixels, isInternalStaffPath, requestVisitorLocation } from "./lib/tracking";
-import { customerEventsApi, isAssetUrl, resolveAssetUrl } from "./lib/api";
+import { customerEventsApi, isAssetUrl, resolveAssetUrl, runtimeSurfaceApi } from "./lib/api";
 import { getPublicExperience, isSalaoExperience } from "./lib/experience";
 
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
@@ -416,6 +416,7 @@ const Checkout = lazy(() => import("./pages/Checkout"));
 const OrderTracking = lazy(() => import("./pages/OrderTracking"));
 const AdminLogin = lazy(() => import("./pages/admin/Login"));
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
+const AdminEmpresas = lazy(() => import("./pages/admin/Empresas"));
 const AdminProducts = lazy(() => import("./pages/admin/Products"));
 const AdminOrders = lazy(() => import("./pages/admin/Orders"));
 const AdminCozinha = lazy(() => import("./pages/admin/Cozinha"));
@@ -485,8 +486,26 @@ function ExperienceRoute({ salao, delivery }: { salao: JSX.Element; delivery: JS
   return getPublicExperience() === "salao" ? salao : delivery;
 }
 
-export default function App() {
+const DEFAULT_PLATFORM_HOSTNAME = "erp.telz.com.br";
+
+function platformHostnames() {
+  const configured = String(
+    import.meta.env.VITE_PLATFORM_HOSTNAMES
+      ?? import.meta.env.VITE_PLATFORM_HOSTNAME
+      ?? DEFAULT_PLATFORM_HOSTNAME,
+  );
+  const hosts = configured.split(",").map((value) => value.trim().toLowerCase()).filter(Boolean);
+  if (import.meta.env.DEV) hosts.push("localhost", "127.0.0.1");
+  return new Set(hosts);
+}
+
+function isPlatformHostname(hostname: string) {
+  return platformHostnames().has(hostname.toLowerCase().replace(/\.$/, ""));
+}
+
+function AppSurface() {
   const deferredWidgetsReady = useDeferredClientMount(3200);
+  const platformSurface = isPlatformHostname(window.location.hostname);
 
   return (
     <AppProvider>
@@ -496,11 +515,11 @@ export default function App() {
         <ThemeInjector />
           <Toaster />
           <BrowserRouter>
-            <MotoboyNativeEntry />
-            <RouteDataLoader />
-            <StoreWidget />
-            <TrackingInjector />
-            {!isSalaoExperience() && deferredWidgetsReady && (
+            {!platformSurface && <MotoboyNativeEntry />}
+            {!platformSurface && <RouteDataLoader />}
+            {!platformSurface && <StoreWidget />}
+            {!platformSurface && <TrackingInjector />}
+            {!platformSurface && !isSalaoExperience() && deferredWidgetsReady && (
               <Suspense fallback={null}>
                 <ExitPopup />
               </Suspense>
@@ -543,6 +562,7 @@ export default function App() {
               <Route element={<AdminGuard />}>
                 <Route path="/painel/bi-mobile" element={<AdminBIMobile />} />
                 <Route element={<AdminLayout />}>
+                <Route path="/painel/empresas" element={<AdminEmpresas />} />
                 <Route path="/painel" element={<AdminDashboard />} />
                 <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />
                 <Route path="/painel/products" element={<AdminProducts />} />
@@ -607,4 +627,51 @@ export default function App() {
       </AppErrorBoundary>
     </AppProvider>
   );
+}
+
+function HostResolutionScreen({ unknown = false }: { unknown?: boolean }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-white px-6 text-slate-900">
+      <div className="max-w-md text-center">
+        <h1 className="text-2xl font-black">{unknown ? "Loja nao encontrada" : "Carregando..."}</h1>
+        {unknown && <p className="mt-2 text-sm text-slate-600">Este dominio nao esta associado a uma loja ativa.</p>}
+      </div>
+    </div>
+  );
+}
+
+export default function HostSurfaceGate() {
+  const isPlatform = isPlatformHostname(window.location.hostname);
+  const [storeResolved, setStoreResolved] = useState(false);
+  const [unknownHost, setUnknownHost] = useState(false);
+
+  useEffect(() => {
+    if (isPlatform) {
+      if (!window.location.pathname.startsWith("/painel")) {
+        const target = localStorage.getItem("admin_token") ? "/painel/empresas" : "/painel/login";
+        window.location.replace(target);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    runtimeSurfaceApi.resolve()
+      .then((surface) => {
+        if (cancelled) return;
+        if (surface.surface === "store" && surface.tenant_id) setStoreResolved(true);
+        else setUnknownHost(true);
+      })
+      .catch(() => {
+        if (!cancelled) setUnknownHost(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isPlatform]);
+
+  if (isPlatform && !window.location.pathname.startsWith("/painel")) return <HostResolutionScreen />;
+  if (isPlatform) return <AppSurface />;
+  if (unknownHost) return <HostResolutionScreen unknown />;
+  if (!storeResolved) return <HostResolutionScreen />;
+  return <AppSurface />;
 }

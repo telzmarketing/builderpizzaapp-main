@@ -15,6 +15,7 @@ from backend.models.shipping import ShippingRule, ShippingRuleType
 from backend.models.admin import AdminUser
 from backend.models.chatbot import ChatbotSettings
 from backend.models.rbac import Role, RbacModule, RbacPermission, RolePermission
+from backend.models.platform_rbac import PlatformRole, PlatformUserRole
 
 LEGACY_TENANT_ID = "tenant-legacy-default"
 
@@ -48,11 +49,27 @@ def _seed_admin(db: Session) -> None:
             "Adicione ADMIN_PASSWORD=SuaSenhaForte no backend/.env antes de iniciar."
         )
 
-    db.add(AdminUser(
+    admin = AdminUser(
         id=str(uuid.uuid4()),
         email=email,
         name=name,
         password_hash=hash_password(password),
+    )
+    db.add(admin)
+    db.flush()
+
+    platform_owner = db.query(PlatformRole).filter(
+        PlatformRole.key == "platform_owner"
+    ).first()
+    if platform_owner is None:
+        raise RuntimeError(
+            "Role platform_owner ausente; execute as migrations antes do seed."
+        )
+    db.add(PlatformUserRole(
+        id=str(uuid.uuid4()),
+        user_id=admin.id,
+        role_id=platform_owner.id,
+        granted_by=None,
     ))
 
 

@@ -53,6 +53,7 @@ from backend.routes import inventory as inventory_routes
 from backend.routes import cmv as cmv_routes
 from backend.routes import finance as finance_routes
 from backend.routes import fiscal as fiscal_routes
+from backend.routes import platform_tenants as platform_tenants_routes
 
 settings = get_settings()
 
@@ -1352,6 +1353,8 @@ app.include_router(inventory_routes.router, prefix="/api")
 app.include_router(cmv_routes.router, prefix="/api")
 app.include_router(finance_routes.router, prefix="/api")
 app.include_router(fiscal_routes.router, prefix="/api")
+app.include_router(platform_tenants_routes.router, prefix="/api")
+app.include_router(platform_tenants_routes.host_router, prefix="/api")
 app.include_router(upload_optimized_routes.router)
 app.include_router(upload_optimized_routes.router, prefix="/api")
 

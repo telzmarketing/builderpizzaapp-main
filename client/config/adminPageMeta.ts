@@ -22,6 +22,7 @@ export type PageMeta = {
 };
 
 export const adminPageMeta: Record<string, PageMeta> = {
+  "/painel/empresas": { eyebrow: "Plataforma", title: "Empresas", subtitle: "Cadastro de empresas e dominios da plataforma" },
   "/painel": { eyebrow: "Visao geral", title: "Dashboard", subtitle: "Resumo operacional da loja em tempo real" },
   "/painel/bi": { eyebrow: "Business Intelligence", title: "BI", subtitle: "Motor de analise, recomendacao e acao do negocio" },
   "/painel/bi-mobile": { eyebrow: "Business Intelligence", title: "BI Mobile", subtitle: "Resumo operacional do dia" },

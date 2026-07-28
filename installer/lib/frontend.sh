@@ -23,5 +23,8 @@ build_frontend() {
   sudo -u "$SERVICE_USER" bash -lc "cd '$INSTALL_DIR' && pnpm install --frozen-lockfile"
   sudo -u "$SERVICE_USER" bash -lc "cd '$INSTALL_DIR' && pnpm run typecheck"
   sudo -u "$SERVICE_USER" bash -lc "cd '$INSTALL_DIR' && pnpm test"
-  sudo -u "$SERVICE_USER" bash -lc "cd '$INSTALL_DIR' && pnpm run build"
+  sudo -u "$SERVICE_USER" env \
+    VITE_PLATFORM_HOSTNAME="${PLATFORM_DOMAIN}" \
+    VITE_MULTI_TENANT_AUTH_ENABLED="${MULTI_TENANT_AUTH_ENABLED:-true}" \
+    bash -lc "cd '$INSTALL_DIR' && pnpm run build"
 }

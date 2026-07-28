@@ -22,6 +22,12 @@ const UPLOAD_ASSET_BASE = BASE.endsWith("/api")
   : (import.meta.env.PROD ? `${BASE}/api` : BASE);
 const IMAGE_FILE_RE = /\.(apng|avif|gif|jpe?g|jfif|pjpeg|pjp|png|svg|webp)$/i;
 
+export interface ApiRuntimeHostSurface {
+  surface: "store";
+  hostname: string;
+  tenant_id: string;
+}
+
 export function isAssetUrl(value?: string | null): boolean {
   const trimmed = value?.trim().replace(/\\/g, "/");
   return !!trimmed && (
@@ -192,6 +198,10 @@ export function apiRequest<T>(
 ): Promise<T> {
   return request<T>(method, path, body, extraHeaders);
 }
+
+export const runtimeSurfaceApi = {
+  resolve: () => get<ApiRuntimeHostSurface>("/runtime/host-surface"),
+};
 
 const get = <T>(path: string) => request<T>("GET", path);
 const post = <T>(path: string, body: unknown) => request<T>("POST", path, body);
@@ -3006,6 +3016,62 @@ export interface ApiAdminTenantSelection {
   access_token: string;
   token_type: string;
 }
+
+export type ApiPlatformTenantStatus = "active" | "suspended" | "pending" | string;
+export type ApiPlatformDomainStatus = "pending" | "verified" | "active" | "disabled" | string;
+
+export interface ApiPlatformTenantDomain {
+  id: string;
+  tenant_id: string;
+  hostname: string;
+  kind: "subdomain" | "custom" | string;
+  status: ApiPlatformDomainStatus;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ApiPlatformTenant {
+  id: string;
+  name: string;
+  slug: string;
+  status: ApiPlatformTenantStatus;
+  legal_name?: string | null;
+  timezone?: string;
+  locale?: string;
+  is_legacy?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  domains?: ApiPlatformTenantDomain[];
+}
+
+export interface ApiPlatformTenantCreate {
+  name: string;
+  slug: string;
+}
+
+export interface ApiPlatformDomainCreation {
+  domain: ApiPlatformTenantDomain;
+  verification: {
+    record_type: string;
+    record_name: string;
+    record_value: string;
+  };
+}
+
+export const platformTenantsApi = {
+  list: () => get<ApiPlatformTenant[]>("/admin/platform/tenants"),
+  create: (data: ApiPlatformTenantCreate) =>
+    post<ApiPlatformTenant>("/admin/platform/tenants", data),
+  updateStatus: (tenantId: string, status: ApiPlatformTenantStatus) =>
+    patch<ApiPlatformTenant>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/status`, { status }),
+  listDomains: (tenantId: string) =>
+    get<ApiPlatformTenantDomain[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/domains`),
+  createDomain: (tenantId: string, data: { hostname: string; kind: "subdomain" | "custom" }) =>
+    post<ApiPlatformDomainCreation>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/domains`,
+      data,
+    ),
+};
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 

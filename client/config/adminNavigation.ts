@@ -32,6 +32,7 @@ import {
   User,
   UserCheck,
   Users,
+  Building2,
   ClipboardList,
   Zap,
 } from "lucide-react";
@@ -43,6 +44,7 @@ export type AdminNavigationItem = {
   aliases?: string[];
   permissions?: string[];
   exact?: boolean;
+  masterOnly?: boolean;
 };
 
 export type AdminNavigationGroup = {
@@ -126,6 +128,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
   {
     label: "Configuracoes",
     children: [
+      { path: "/painel/empresas", icon: Building2, label: "Empresas", exact: true },
       { path: "/painel/conteudo", icon: FileText, label: "Pagina Delivery", permissions: ["loja_online"] },
       { path: "/painel/salao/pagina", icon: FileText, label: "Pagina Salao", permissions: ["loja_online"] },
       { path: "/painel/pagamentos", icon: CreditCard, label: "Pagamentos", permissions: ["formas_pagamento"] },
