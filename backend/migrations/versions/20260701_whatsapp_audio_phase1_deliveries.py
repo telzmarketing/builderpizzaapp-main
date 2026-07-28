@@ -16,6 +16,28 @@ depends_on = None
 def upgrade() -> None:
     op.execute(
         """
+        CREATE TABLE IF NOT EXISTS whatsapp_campaigns (
+            id VARCHAR PRIMARY KEY,
+            name VARCHAR(300) NOT NULL,
+            status VARCHAR(30) NOT NULL DEFAULT 'draft',
+            template_id VARCHAR REFERENCES whatsapp_templates(id) ON DELETE SET NULL,
+            group_id VARCHAR,
+            scheduled_at TIMESTAMPTZ,
+            sent_count INTEGER DEFAULT 0,
+            delivered_count INTEGER DEFAULT 0,
+            read_count INTEGER DEFAULT 0,
+            error_count INTEGER DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_whatsapp_campaigns_status "
+        "ON whatsapp_campaigns(status)"
+    )
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS whatsapp_campaign_deliveries (
             id VARCHAR PRIMARY KEY,
             tenant_id VARCHAR(80) NOT NULL DEFAULT 'default',
