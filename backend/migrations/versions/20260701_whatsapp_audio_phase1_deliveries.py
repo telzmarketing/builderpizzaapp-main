@@ -37,6 +37,12 @@ def upgrade() -> None:
         "ON whatsapp_campaigns(status)"
     )
     op.execute(
+        "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS campaign_id VARCHAR REFERENCES whatsapp_campaigns(id) ON DELETE SET NULL"
+    )
+    op.execute(
+        "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS recipient_name VARCHAR(200)"
+    )
+    op.execute(
         """
         CREATE TABLE IF NOT EXISTS whatsapp_campaign_deliveries (
             id VARCHAR PRIMARY KEY,

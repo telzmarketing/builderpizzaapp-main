@@ -14,6 +14,11 @@ def test_whatsapp_campaigns_precedes_audio_delivery_foreign_key():
     ) < migration.index(
         "CREATE TABLE IF NOT EXISTS whatsapp_campaign_deliveries"
     )
+    backfill_at = migration.index("INSERT INTO whatsapp_campaign_deliveries")
+    for column in ("campaign_id", "recipient_name"):
+        assert migration.index(
+            f"ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS {column}"
+        ) < backfill_at
 
 
 def test_whatsapp_audio_phase_chain_creates_tables_before_later_usage():

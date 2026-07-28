@@ -72,6 +72,20 @@ def _composite_fk(table: str, column: str, parent: str) -> str:
 
 
 def upgrade() -> None:
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS logistics_settings (
+            id VARCHAR PRIMARY KEY DEFAULT 'default',
+            auto_assign BOOLEAN DEFAULT FALSE,
+            max_concurrent_deliveries INTEGER DEFAULT 3,
+            default_estimated_minutes INTEGER DEFAULT 40,
+            confirmation_code_enabled BOOLEAN DEFAULT TRUE,
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """
+    )
+    op.execute("INSERT INTO logistics_settings (id) VALUES ('default') ON CONFLICT DO NOTHING")
+
     for table in NEW_TENANT_COLUMNS:
         op.add_column(table, sa.Column("tenant_id", sa.String(), nullable=True))
 

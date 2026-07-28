@@ -39,3 +39,20 @@ def test_whatsapp_template_precedes_message_foreign_key():
     assert migration.index("CREATE TABLE IF NOT EXISTS whatsapp_templates") < migration.index(
         "CREATE TABLE IF NOT EXISTS whatsapp_messages"
     )
+
+
+def test_late_legacy_bootstrap_precedes_tenant_expansion():
+    root = Path(__file__).parents[1] / "backend/migrations/versions"
+    cases = (
+        ("20260723_tenant_identity_catalog_expand.py", "upsells", "for table in TABLES:"),
+        ("20260723_tenant_identity_catalog_expand.py", "upsell_metrics", "for table in TABLES:"),
+        ("20260723_tenant_identity_catalog_expand.py", "upsell_events", "for table in TABLES:"),
+        ("20260723_tenant_identity_catalog_expand.py", "order_upsells", "for table in TABLES:"),
+        ("20260730_tenant_operations_expand.py", "logistics_settings", "for table in NEW_TENANT_COLUMNS:"),
+        ("20260803_tenant_backoffice_async_expand.py", "geocode_cache", "for table in NEW_TENANT_COLUMNS:"),
+    )
+    for filename, table, expansion_loop in cases:
+        migration = (root / filename).read_text(encoding="utf-8")
+        assert migration.index(f"CREATE TABLE IF NOT EXISTS {table}") < migration.index(
+            expansion_loop
+        )

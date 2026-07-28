@@ -98,6 +98,18 @@ def _name(prefix: str, *parts: str) -> str:
 
 
 def upgrade() -> None:
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS geocode_cache (
+            id VARCHAR(32) PRIMARY KEY,
+            query TEXT NOT NULL,
+            lat FLOAT,
+            lng FLOAT,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """
+    )
+
     for table in NEW_TENANT_COLUMNS:
         op.add_column(table, sa.Column("tenant_id", sa.String(), nullable=True))
 
