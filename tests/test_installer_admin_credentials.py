@@ -22,6 +22,8 @@ def test_installer_collects_validates_and_writes_admin_credentials():
         'ask_required ADMIN_PASSWORD "Senha do admin inicial" '
         '"${ADMIN_PASSWORD:-}" true'
     ) in prompts
+    assert 'read -r -s -p "$label: " answer' in prompts
+    assert 'read -r -s -p "$label${default:+ [$default]}: " answer' not in prompts
     assert "validate_required ADMIN_PASSWORD" in install
     assert 'validate_secret_for_env ADMIN_PASSWORD "$ADMIN_PASSWORD"' in install
     assert "ADMIN_EMAIL=${ADMIN_EMAIL}" in backend
