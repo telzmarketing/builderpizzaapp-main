@@ -21,7 +21,9 @@ ask() {
   fi
 
   if [[ "$secret" == "true" ]]; then
-    read -r -s -p "$label${default:+ [$default]}: " answer
+    # Never render a configured secret as a prompt default: installer output is
+    # persisted with tee and may also be visible in terminal recordings.
+    read -r -s -p "$label: " answer
     printf '\n'
   else
     read -r -p "$label${default:+ [$default]}: " answer
@@ -68,7 +70,9 @@ collect_answers() {
   ask_required PLATFORM_NAME "Nome da plataforma" "${PLATFORM_NAME:-Telz}"
   ask_required PLATFORM_SLUG "Slug dos servicos" "${PLATFORM_SLUG:-telz}"
   ask_required PLATFORM_DOMAIN "Dominio principal sem https" "${PLATFORM_DOMAIN:-}"
-  ask ADMIN_EMAIL "Email admin inicial" "${ADMIN_EMAIL:-}"
+  ask_required ADMIN_EMAIL "Email admin inicial" "${ADMIN_EMAIL:-}"
+  ask_required ADMIN_NAME "Nome do admin inicial" "${ADMIN_NAME:-Administrador}"
+  ask_required ADMIN_PASSWORD "Senha do admin inicial" "${ADMIN_PASSWORD:-}" true
   ask SSL_EMAIL "Email para SSL" "${SSL_EMAIL:-${ADMIN_EMAIL:-}}"
   ask_required INSTALL_DIR "Diretorio de instalacao" "${INSTALL_DIR:-/opt/telz}"
   ask_required SERVICE_USER "Usuario Linux do servico" "${SERVICE_USER:-telz}"
@@ -93,7 +97,7 @@ collect_answers() {
 
 confirm_plan() {
   section "Resumo antes de alterar a VPS"
-  for key in PLATFORM_NAME PLATFORM_SLUG PLATFORM_DOMAIN INSTALL_DIR SERVICE_USER GIT_REPOSITORY GIT_BRANCH DATABASE_MODE DATABASE_HOST DATABASE_NAME DATABASE_USER API_PORT WEB_PORT PAYMENT_PROVIDER PAYMENT_GATEWAY MERCADO_PAGO_PUBLIC_KEY MERCADO_PAGO_ACCESS_TOKEN MERCADO_PAGO_WEBHOOK_SECRET ASAAS_API_KEY ASAAS_WEBHOOK_TOKEN INSTALL_NGINX INSTALL_SSL INSTALL_BACKUP INSTALL_WHATSAPP_GATEWAY; do
+  for key in PLATFORM_NAME PLATFORM_SLUG PLATFORM_DOMAIN ADMIN_EMAIL ADMIN_NAME ADMIN_PASSWORD INSTALL_DIR SERVICE_USER GIT_REPOSITORY GIT_BRANCH DATABASE_MODE DATABASE_HOST DATABASE_NAME DATABASE_USER API_PORT WEB_PORT PAYMENT_PROVIDER PAYMENT_GATEWAY MERCADO_PAGO_PUBLIC_KEY MERCADO_PAGO_ACCESS_TOKEN MERCADO_PAGO_WEBHOOK_SECRET ASAAS_API_KEY ASAAS_WEBHOOK_TOKEN INSTALL_NGINX INSTALL_SSL INSTALL_BACKUP INSTALL_WHATSAPP_GATEWAY; do
     printf '%s=%s\n' "$key" "$(mask_value "$key" "${!key:-}")"
   done
   if [[ "${TELZ_NON_INTERACTIVE:-false}" == "true" || "${TELZ_ASSUME_YES:-false}" == "true" ]]; then

@@ -103,12 +103,16 @@ validate_required DATABASE_NAME
 validate_required DATABASE_USER
 validate_required DATABASE_PASSWORD
 validate_required JWT_SECRET_KEY
+validate_required ADMIN_EMAIL
+validate_required ADMIN_NAME
+validate_required ADMIN_PASSWORD
 validate_safe_slug "$PLATFORM_SLUG"
 validate_install_dir "$INSTALL_DIR"
 validate_identifier DATABASE_NAME "$DATABASE_NAME"
 validate_identifier DATABASE_USER "$DATABASE_USER"
 validate_secret_for_env DATABASE_PASSWORD "$DATABASE_PASSWORD"
 validate_secret_for_env JWT_SECRET_KEY "$JWT_SECRET_KEY"
+validate_secret_for_env ADMIN_PASSWORD "$ADMIN_PASSWORD"
 build_database_url
 confirm_plan
 

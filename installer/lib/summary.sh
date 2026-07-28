@@ -8,6 +8,8 @@ write_summary() {
     printf 'platform=%s\n' "$PLATFORM_NAME"
     printf 'domain=%s\n' "$PLATFORM_DOMAIN"
     printf 'install_dir=%s\n' "$INSTALL_DIR"
+    printf 'admin_email=%s\n' "$ADMIN_EMAIL"
+    printf 'admin_name=%s\n' "$ADMIN_NAME"
     printf 'api_service=%s-api\n' "$PLATFORM_SLUG"
     printf 'web_service=%s-web\n' "$PLATFORM_SLUG"
     printf 'multi_tenant_flags=disabled\n'
