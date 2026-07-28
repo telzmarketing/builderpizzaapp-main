@@ -30,6 +30,10 @@ def _statements() -> list[str]:
 
 def upgrade() -> None:
     bind = op.get_bind()
+    bind.exec_driver_sql(
+        "ALTER TABLE alembic_version "
+        "ALTER COLUMN version_num TYPE VARCHAR(255)"
+    )
     existing = bind.exec_driver_sql(
         "SELECT tablename FROM pg_tables WHERE schemaname = current_schema() "
         "AND tablename <> 'alembic_version' LIMIT 1"
