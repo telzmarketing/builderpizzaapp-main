@@ -10,6 +10,23 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ads_pixels (
+            id VARCHAR PRIMARY KEY,
+            platform VARCHAR(30) NOT NULL,
+            pixel_id VARCHAR(200) NOT NULL,
+            enabled BOOLEAN DEFAULT TRUE,
+            events_tracked VARCHAR(500) DEFAULT 'PageView,Purchase,Lead',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_ads_pixels_platform "
+        "ON ads_pixels(platform)"
+    )
     op.execute("ALTER TABLE ads_pixels ADD COLUMN IF NOT EXISTS conversion_access_token TEXT")
     op.execute("ALTER TABLE ads_pixels ADD COLUMN IF NOT EXISTS base_code TEXT")
 
