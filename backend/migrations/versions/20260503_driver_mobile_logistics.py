@@ -15,6 +15,43 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS delivery_events (
+            id VARCHAR PRIMARY KEY,
+            delivery_id VARCHAR NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,
+            event_type VARCHAR(80) NOT NULL,
+            description TEXT,
+            metadata_json TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_delivery_events_delivery_id "
+        "ON delivery_events(delivery_id)"
+    )
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS delivery_earnings (
+            id VARCHAR PRIMARY KEY,
+            delivery_id VARCHAR NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,
+            delivery_person_id VARCHAR NOT NULL REFERENCES delivery_persons(id) ON DELETE CASCADE,
+            amount FLOAT NOT NULL DEFAULT 0.0,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            period_date DATE NOT NULL,
+            paid_at TIMESTAMPTZ,
+            paid_by VARCHAR(200),
+            notes TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_delivery_earnings_delivery_person_id "
+        "ON delivery_earnings(delivery_person_id)"
+    )
+
     op.execute("ALTER TABLE IF EXISTS deliveries ADD COLUMN IF NOT EXISTS problem_report TEXT")
     op.execute("ALTER TABLE IF EXISTS deliveries ADD COLUMN IF NOT EXISTS problem_reported_at TIMESTAMPTZ")
     op.execute("ALTER TABLE IF EXISTS delivery_events ADD COLUMN IF NOT EXISTS actor_type VARCHAR(40)")
