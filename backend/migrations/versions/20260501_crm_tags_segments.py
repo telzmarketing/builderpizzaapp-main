@@ -15,6 +15,49 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # These tables were historically created by backend.main._run_migrations
+    # before this Alembic revision existed.  Fresh databases reach this
+    # revision without that runtime bootstrap, so preserve the historical
+    # schema here before applying the incremental CRM columns.
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS customer_groups (
+            id VARCHAR PRIMARY KEY,
+            name VARCHAR(200) NOT NULL,
+            description TEXT,
+            group_type VARCHAR(20) NOT NULL DEFAULT 'manual',
+            color VARCHAR(20) DEFAULT '#f97316',
+            icon VARCHAR(50),
+            active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """
+    )
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS customer_group_rules (
+            id VARCHAR PRIMARY KEY,
+            group_id VARCHAR NOT NULL REFERENCES customer_groups(id) ON DELETE CASCADE,
+            field VARCHAR(100) NOT NULL,
+            operator VARCHAR(30) NOT NULL,
+            value TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """
+    )
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS customer_group_members (
+            id VARCHAR PRIMARY KEY,
+            group_id VARCHAR NOT NULL REFERENCES customer_groups(id) ON DELETE CASCADE,
+            customer_id VARCHAR NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+            added_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT uq_group_member UNIQUE (group_id, customer_id)
+        )
+        """
+    )
+
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS customer_tags (

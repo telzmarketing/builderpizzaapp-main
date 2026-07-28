@@ -15,6 +15,27 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS marketing_automations (
+            id VARCHAR PRIMARY KEY,
+            name VARCHAR(200) NOT NULL,
+            trigger VARCHAR(50) NOT NULL,
+            trigger_value VARCHAR(100),
+            channel VARCHAR(20) NOT NULL,
+            template_id VARCHAR,
+            message_body TEXT,
+            active BOOLEAN DEFAULT TRUE,
+            runs_total INTEGER DEFAULT 0,
+            last_run_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """
+    )
+    op.execute("CREATE INDEX IF NOT EXISTS ix_marketing_automations_trigger ON marketing_automations(trigger)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_marketing_automations_active ON marketing_automations(active)")
+
     op.execute("ALTER TABLE marketing_automations ADD COLUMN IF NOT EXISTS description TEXT")
     op.execute("ALTER TABLE marketing_automations ADD COLUMN IF NOT EXISTS conditions_json TEXT NOT NULL DEFAULT '[]'")
     op.execute("ALTER TABLE marketing_automations ADD COLUMN IF NOT EXISTS actions_json TEXT NOT NULL DEFAULT '[]'")
