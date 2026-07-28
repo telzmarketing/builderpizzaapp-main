@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.config import get_settings
 from backend.core.tenant_context import TenantContext, TenantSource
-from backend.core.tenant_runtime import resolve_panel_tenant_context
+from backend.core.tenant_route_context import panel_operation_context
 from backend.core.wave6_tenant_orm import wave6_tenant_orm_enabled
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
@@ -36,22 +36,22 @@ def _tenant_service(db: Session, context: TenantContext | None) -> WhatsAppGatew
 
 
 @router.get("/overview", response_model=WhatsAppGatewayOverviewOut)
-def overview(db: Session = Depends(get_db), context=Depends(resolve_panel_tenant_context), _=Depends(get_current_admin)):
+def overview(db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
     return _tenant_service(db, context).overview()
 
 
 @router.get("/provider/status", response_model=WhatsAppGatewayProviderStatusOut)
-def provider_status(db: Session = Depends(get_db), context=Depends(resolve_panel_tenant_context), _=Depends(get_current_admin)):
+def provider_status(db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
     return _tenant_service(db, context).provider_status()
 
 
 @router.get("/updates/status", response_model=WhatsAppGatewayUpdateStatusOut)
-def update_status(db: Session = Depends(get_db), context=Depends(resolve_panel_tenant_context), _=Depends(get_current_admin)):
+def update_status(db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
     return _tenant_service(db, context).update_status()
 
 
 @router.post("/updates/check", response_model=WhatsAppGatewayUpdateStatusOut)
-def check_update(db: Session = Depends(get_db), context=Depends(resolve_panel_tenant_context), _=Depends(get_current_admin)):
+def check_update(db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
     service = _tenant_service(db, context)
     result = service.check_update()
     db.commit()
@@ -62,7 +62,7 @@ def check_update(db: Session = Depends(get_db), context=Depends(resolve_panel_te
 def confirm_update(
     body: WhatsAppGatewayUpdateConfirmIn,
     db: Session = Depends(get_db),
-    context=Depends(resolve_panel_tenant_context),
+    context=Depends(panel_operation_context),
     _=Depends(get_current_admin),
 ):
     service = _tenant_service(db, context)
@@ -79,7 +79,7 @@ def confirm_update(
 
 
 @router.get("/scheduler/settings", response_model=WhatsAppGatewaySchedulerSettingsOut)
-def scheduler_settings(db: Session = Depends(get_db), context=Depends(resolve_panel_tenant_context), _=Depends(get_current_admin)):
+def scheduler_settings(db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
     service = _tenant_service(db, context)
     settings = service.get_scheduler_settings()
     db.commit()
@@ -87,7 +87,7 @@ def scheduler_settings(db: Session = Depends(get_db), context=Depends(resolve_pa
 
 
 @router.get("/instances", response_model=list[WhatsAppGatewayInstanceOut])
-def list_instances(db: Session = Depends(get_db), context=Depends(resolve_panel_tenant_context), _=Depends(get_current_admin)):
+def list_instances(db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
     service = _tenant_service(db, context)
     return [service.serialize_instance(instance) for instance in service.list_instances()]
 
@@ -96,7 +96,7 @@ def list_instances(db: Session = Depends(get_db), context=Depends(resolve_panel_
 def create_instance(
     body: WhatsAppGatewayInstanceCreate,
     db: Session = Depends(get_db),
-    context=Depends(resolve_panel_tenant_context),
+    context=Depends(panel_operation_context),
     _=Depends(get_current_admin),
 ):
     service = _tenant_service(db, context)
@@ -110,7 +110,7 @@ def create_instance(
 
 
 @router.get("/instances/{instance_id}", response_model=WhatsAppGatewayInstanceOut)
-def get_instance(instance_id: str, db: Session = Depends(get_db), context=Depends(resolve_panel_tenant_context), _=Depends(get_current_admin)):
+def get_instance(instance_id: str, db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
     service = _tenant_service(db, context)
     instance = service.get_instance(instance_id)
     if not instance:
@@ -119,7 +119,7 @@ def get_instance(instance_id: str, db: Session = Depends(get_db), context=Depend
 
 
 @router.post("/instances/{instance_id}/connect", response_model=WhatsAppGatewayRuntimeCommandOut)
-def connect_instance(instance_id: str, db: Session = Depends(get_db), context=Depends(resolve_panel_tenant_context), _=Depends(get_current_admin)):
+def connect_instance(instance_id: str, db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
     service = _tenant_service(db, context)
     try:
         result = service.connect_instance(instance_id)
@@ -130,7 +130,7 @@ def connect_instance(instance_id: str, db: Session = Depends(get_db), context=De
 
 
 @router.get("/instances/{instance_id}/qrcode", response_model=WhatsAppGatewayRuntimeCommandOut)
-def get_qr_code(instance_id: str, db: Session = Depends(get_db), context=Depends(resolve_panel_tenant_context), _=Depends(get_current_admin)):
+def get_qr_code(instance_id: str, db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
     service = _tenant_service(db, context)
     try:
         result = service.get_qr_code(instance_id)
@@ -145,7 +145,7 @@ def request_pairing_code(
     instance_id: str,
     body: WhatsAppGatewayPairingCodeIn,
     db: Session = Depends(get_db),
-    context=Depends(resolve_panel_tenant_context),
+    context=Depends(panel_operation_context),
     _=Depends(get_current_admin),
 ):
     service = _tenant_service(db, context)
@@ -158,7 +158,7 @@ def request_pairing_code(
 
 
 @router.get("/instances/{instance_id}/status", response_model=WhatsAppGatewayRuntimeCommandOut)
-def get_instance_status(instance_id: str, db: Session = Depends(get_db), context=Depends(resolve_panel_tenant_context), _=Depends(get_current_admin)):
+def get_instance_status(instance_id: str, db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
     service = _tenant_service(db, context)
     try:
         result = service.get_instance_status(instance_id)
@@ -169,7 +169,7 @@ def get_instance_status(instance_id: str, db: Session = Depends(get_db), context
 
 
 @router.post("/instances/{instance_id}/disconnect", response_model=WhatsAppGatewayRuntimeCommandOut)
-def disconnect_instance(instance_id: str, db: Session = Depends(get_db), context=Depends(resolve_panel_tenant_context), _=Depends(get_current_admin)):
+def disconnect_instance(instance_id: str, db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
     service = _tenant_service(db, context)
     try:
         result = service.disconnect_instance(instance_id)
@@ -180,7 +180,7 @@ def disconnect_instance(instance_id: str, db: Session = Depends(get_db), context
 
 
 @router.delete("/instances/{instance_id}", response_model=WhatsAppGatewayDeleteOut)
-def delete_instance(instance_id: str, db: Session = Depends(get_db), context=Depends(resolve_panel_tenant_context), _=Depends(get_current_admin)):
+def delete_instance(instance_id: str, db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
     service = _tenant_service(db, context)
     try:
         result = service.delete_instance(instance_id)
@@ -191,7 +191,7 @@ def delete_instance(instance_id: str, db: Session = Depends(get_db), context=Dep
 
 
 @router.post("/instances/{instance_id}/restart", response_model=WhatsAppGatewayRuntimeCommandOut)
-def restart_instance(instance_id: str, db: Session = Depends(get_db), context=Depends(resolve_panel_tenant_context), _=Depends(get_current_admin)):
+def restart_instance(instance_id: str, db: Session = Depends(get_db), context=Depends(panel_operation_context), _=Depends(get_current_admin)):
     service = _tenant_service(db, context)
     try:
         result = service.restart_instance(instance_id)
@@ -232,7 +232,7 @@ def list_logs(
     instance_id: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
-    context=Depends(resolve_panel_tenant_context),
+    context=Depends(panel_operation_context),
     _=Depends(get_current_admin),
 ):
     service = _tenant_service(db, context)
