@@ -16,6 +16,8 @@ from backend.models.admin import AdminUser
 from backend.models.chatbot import ChatbotSettings
 from backend.models.rbac import Role, RbacModule, RbacPermission, RolePermission
 
+LEGACY_TENANT_ID = "tenant-legacy-default"
+
 
 def seed_all(db: Session) -> None:
     _seed_multi_flavor_config(db)
@@ -55,13 +57,22 @@ def _seed_admin(db: Session) -> None:
 
 
 def _seed_multi_flavor_config(db: Session) -> None:
-    if db.query(MultiFlavorsConfig).filter(MultiFlavorsConfig.id == "default").first():
+    if db.query(MultiFlavorsConfig).filter(
+        MultiFlavorsConfig.id == "default",
+        MultiFlavorsConfig.tenant_id == LEGACY_TENANT_ID,
+    ).first():
         return
-    db.add(MultiFlavorsConfig(id="default", max_flavors=2, pricing_rule=PricingRule.most_expensive, flavor_category_filters=[]))
+    db.add(MultiFlavorsConfig(
+        id="default",
+        tenant_id=LEGACY_TENANT_ID,
+        max_flavors=2,
+        pricing_rule=PricingRule.most_expensive,
+        flavor_category_filters=[],
+    ))
 
 
 def _seed_products(db: Session) -> None:
-    if db.query(Product).first():
+    if db.query(Product).filter(Product.tenant_id == LEGACY_TENANT_ID).first():
         return
     products = [
         ("Calabresa",    "Molho de tomate, mussarela, calabresa fatiada e orégano",  35.0, "🍕", 4.5),
@@ -76,15 +87,17 @@ def _seed_products(db: Session) -> None:
     for name, desc, price, icon, rating in products:
         db.add(Product(
             id=f"prod-{uuid.uuid4().hex[:8]}",
+            tenant_id=LEGACY_TENANT_ID,
             name=name, description=desc, price=price, icon=icon, rating=rating,
         ))
 
 
 def _seed_promotions(db: Session) -> None:
-    if db.query(Promotion).first():
+    if db.query(Promotion).filter(Promotion.tenant_id == LEGACY_TENANT_ID).first():
         return
     db.add(Promotion(
         id=str(uuid.uuid4()),
+        tenant_id=LEGACY_TENANT_ID,
         title="20% off",
         subtitle="Em qualquer pizza",
         icon="🍕",
@@ -163,10 +176,11 @@ def _seed_loyalty(db: Session) -> None:
 
 
 def _seed_coupons(db: Session) -> None:
-    if db.query(Coupon).first():
+    if db.query(Coupon).filter(Coupon.tenant_id == LEGACY_TENANT_ID).first():
         return
     db.add(Coupon(
         id=str(uuid.uuid4()),
+        tenant_id=LEGACY_TENANT_ID,
         code="BEMVINDO10",
         description="10% de desconto na primeira compra",
         icon="🎉",
@@ -176,6 +190,7 @@ def _seed_coupons(db: Session) -> None:
     ))
     db.add(Coupon(
         id=str(uuid.uuid4()),
+        tenant_id=LEGACY_TENANT_ID,
         code="FRETE0",
         description="Frete grátis em qualquer pedido",
         icon="🛵",
@@ -186,10 +201,14 @@ def _seed_coupons(db: Session) -> None:
 
 
 def _seed_chatbot_settings(db: Session) -> None:
-    if db.query(ChatbotSettings).filter(ChatbotSettings.id == "default").first():
+    if db.query(ChatbotSettings).filter(
+        ChatbotSettings.id == "default",
+        ChatbotSettings.tenant_id == LEGACY_TENANT_ID,
+    ).first():
         return
     db.add(ChatbotSettings(
         id="default",
+        tenant_id=LEGACY_TENANT_ID,
         prompt_base=(
             "Você é um assistente virtual de uma pizzaria. "
             "Responda em português, seja simpático e objetivo. "
@@ -199,11 +218,14 @@ def _seed_chatbot_settings(db: Session) -> None:
 
 
 def _seed_shipping(db: Session) -> None:
-    if db.query(ShippingRule).first():
+    if db.query(ShippingRule).filter(
+        ShippingRule.tenant_id == LEGACY_TENANT_ID
+    ).first():
         return
     # Global fixed rule (lowest priority — fallback)
     db.add(ShippingRule(
         id=str(uuid.uuid4()),
+        tenant_id=LEGACY_TENANT_ID,
         name="Taxa padrão",
         rule_type=ShippingRuleType.fixed,
         base_price=8.0,
@@ -212,6 +234,7 @@ def _seed_shipping(db: Session) -> None:
     # Free shipping above R$100
     db.add(ShippingRule(
         id=str(uuid.uuid4()),
+        tenant_id=LEGACY_TENANT_ID,
         name="Frete grátis acima de R$100",
         rule_type=ShippingRuleType.free_above,
         base_price=8.0,
@@ -379,13 +402,19 @@ _ROLE_PERMISSIONS: dict = {
 
 
 def _seed_rbac(db: Session) -> None:
-    if db.query(Role).first():
+    if db.query(Role).filter(Role.tenant_id == LEGACY_TENANT_ID).first():
         return  # already seeded
 
     # Roles
     role_map: dict[str, str] = {}  # name → id
     for name, description, is_system in _ROLES:
-        r = Role(id=str(uuid.uuid4()), name=name, description=description, is_system=is_system)
+        r = Role(
+            id=str(uuid.uuid4()),
+            tenant_id=LEGACY_TENANT_ID,
+            name=name,
+            description=description,
+            is_system=is_system,
+        )
         db.add(r)
         role_map[name] = r.id
     db.flush()
@@ -421,6 +450,7 @@ def _seed_rbac(db: Session) -> None:
                     continue
                 db.add(RolePermission(
                     id=str(uuid.uuid4()),
+                    tenant_id=LEGACY_TENANT_ID,
                     role_id=role_id,
                     module_id=mod_id,
                     permission_id=perm_id,

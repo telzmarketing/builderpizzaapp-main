@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Boolean, Integer, Enum, DateTime, Text, ForeignKey
+from sqlalchemy import Column, String, Float, Boolean, Integer, Enum, DateTime, Text, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -12,8 +12,16 @@ class CouponType(str, enum.Enum):
 
 class Coupon(Base):
     __tablename__ = "coupons"
+    __table_args__ = (
+        Index("uq_coupons_tenant_id_id", "tenant_id", "id", unique=True),
+    )
 
     id = Column(String, primary_key=True)
+    tenant_id = Column(
+        String,
+        ForeignKey("tenants.id", name="fk_coupons_tenant_id_tenants"),
+        nullable=True,
+    )
     code = Column(String(50), unique=True, nullable=False)
     description = Column(String(300))
     icon = Column(String(50), default="🎟️")
