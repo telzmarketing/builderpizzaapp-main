@@ -28,5 +28,5 @@ def test_whatsapp_audio_phase_chain_creates_tables_before_later_usage():
     ).read_text(encoding="utf-8")
 
     assert "CREATE TABLE IF NOT EXISTS agente_whatsapp_processing_jobs" in phase2
-    assert "CREATE TABLE IF NOT EXISTS agente_whatsapp_transcriptions" in phase3
+    assert "CREATE TABLE IF NOT EXISTS agente_whatsapp_audio_artifacts" in phase3
     assert 'down_revision = "20260701_whatsapp_audio_phase3_audio_stt"' in phase5
