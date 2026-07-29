@@ -5,6 +5,7 @@ Run once on startup.
 from __future__ import annotations
 
 import uuid
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.models.product import Product, MultiFlavorsConfig, PricingRule
@@ -18,9 +19,11 @@ from backend.models.rbac import Role, RbacModule, RbacPermission, RolePermission
 from backend.models.platform_rbac import PlatformRole, PlatformUserRole
 
 LEGACY_TENANT_ID = "tenant-legacy-default"
+_SEED_LOCK_KEY = "telz:seed_all:v1"
 
 
 def seed_all(db: Session) -> None:
+    _acquire_seed_lock(db)
     _seed_multi_flavor_config(db)
     _seed_products(db)
     _seed_promotions(db)
@@ -31,6 +34,23 @@ def seed_all(db: Session) -> None:
     _seed_chatbot_settings(db)
     _seed_rbac(db)
     db.commit()
+
+
+def _acquire_seed_lock(db: Session) -> None:
+    """Serialize startup seeds across Uvicorn workers on PostgreSQL.
+
+    The transaction-scoped advisory lock is released automatically on commit
+    or rollback. Other databases keep the existing single-process behavior,
+    which also keeps local/unit-test compatibility.
+    """
+
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+        {"lock_key": _SEED_LOCK_KEY},
+    )
 
 
 def _seed_admin(db: Session) -> None:
