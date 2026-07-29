@@ -5,10 +5,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
+from backend.core.tenant_context import TenantContext, TenantSource
 from backend.models.agente_whatsapp import (
     AgenteWhatsAppChannelSettings,
     AgenteWhatsAppInternalAlert,
@@ -23,6 +24,9 @@ from backend.routes.whatsapp_marketing import (
     _send_whatsapp_api,
 )
 from backend.services.whatsapp_gateway_service import WhatsAppGatewayService
+
+
+LEGACY_TENANT_ID = "tenant-legacy-default"
 
 
 def _now_utc() -> datetime:
@@ -58,21 +62,46 @@ def _is_due(value: datetime | None, now: datetime) -> bool:
 
 
 class AgenteWhatsAppOutboxService:
-    def __init__(self, db: Session):
+    def __init__(
+        self,
+        db: Session,
+        tenant_context: TenantContext | None = None,
+    ):
         self._db = db
         self._settings = get_settings()
+        # Background jobs have no request from which to resolve a tenant. The
+        # persisted legacy tenant is the trusted compatibility context for
+        # pre-multi-tenant callers; new tenant-aware callers can pass their
+        # already-authorized context without changing the public service API.
+        self._tenant_context = tenant_context or TenantContext(
+            tenant_id=LEGACY_TENANT_ID,
+            source=TenantSource.JOB,
+        )
+        self._tenant_id = self._tenant_context.tenant_id
+
+    def _scope(self, query, model):
+        return query.filter(model.tenant_id == self._tenant_id)
 
     def enqueue_queued_messages(self, *, limit: int = 100) -> dict[str, int]:
         rows = (
             self._db.query(AgenteWhatsAppMessage, AgenteWhatsAppSession)
             .join(AgenteWhatsAppSession, AgenteWhatsAppSession.id == AgenteWhatsAppMessage.session_id)
-            .outerjoin(AgenteWhatsAppOutbox, AgenteWhatsAppOutbox.message_id == AgenteWhatsAppMessage.id)
+            .outerjoin(
+                AgenteWhatsAppOutbox,
+                and_(
+                    AgenteWhatsAppOutbox.message_id == AgenteWhatsAppMessage.id,
+                    AgenteWhatsAppOutbox.tenant_id == self._tenant_id,
+                ),
+            )
             .filter(
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
+                AgenteWhatsAppSession.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.direction == "outbound",
                 AgenteWhatsAppMessage.provider_status == "queued",
                 AgenteWhatsAppOutbox.id.is_(None),
             )
             .order_by(AgenteWhatsAppMessage.created_at.asc())
+            .with_for_update(skip_locked=True, of=AgenteWhatsAppMessage)
             .limit(limit)
             .all()
         )
@@ -111,6 +140,7 @@ class AgenteWhatsAppOutboxService:
             self._db.add(
                 AgenteWhatsAppOutbox(
                     id=str(uuid.uuid4()),
+                    tenant_id=self._tenant_id,
                     message_id=message.id,
                     session_id=session.id,
                     customer_id=message.customer_id or session.customer_id,
@@ -135,7 +165,7 @@ class AgenteWhatsAppOutboxService:
         enqueue_result = self.enqueue_queued_messages(limit=max(limit * 2, 20))
         now = _now_utc()
         rows = (
-            self._db.query(AgenteWhatsAppOutbox)
+            self._scope(self._db.query(AgenteWhatsAppOutbox), AgenteWhatsAppOutbox)
             .filter(
                 AgenteWhatsAppOutbox.status.in_(["pending", "failed"]),
                 AgenteWhatsAppOutbox.attempts < AgenteWhatsAppOutbox.max_attempts,
@@ -165,7 +195,7 @@ class AgenteWhatsAppOutboxService:
         }
 
     def list_outbox(self, *, status: str | None = None, limit: int = 100) -> list[AgenteWhatsAppOutbox]:
-        q = self._db.query(AgenteWhatsAppOutbox)
+        q = self._scope(self._db.query(AgenteWhatsAppOutbox), AgenteWhatsAppOutbox)
         if status:
             q = q.filter(AgenteWhatsAppOutbox.status == status)
         return q.order_by(AgenteWhatsAppOutbox.created_at.desc()).limit(limit).all()
@@ -173,6 +203,7 @@ class AgenteWhatsAppOutboxService:
     def summary(self) -> dict[str, int]:
         rows = (
             self._db.query(AgenteWhatsAppOutbox.status, func.count(AgenteWhatsAppOutbox.id))
+            .filter(AgenteWhatsAppOutbox.tenant_id == self._tenant_id)
             .group_by(AgenteWhatsAppOutbox.status)
             .all()
         )
@@ -181,8 +212,15 @@ class AgenteWhatsAppOutboxService:
             counts[status or "pending"] = int(total or 0)
         counts["queued_messages"] = (
             self._db.query(func.count(AgenteWhatsAppMessage.id))
-            .outerjoin(AgenteWhatsAppOutbox, AgenteWhatsAppOutbox.message_id == AgenteWhatsAppMessage.id)
+            .outerjoin(
+                AgenteWhatsAppOutbox,
+                and_(
+                    AgenteWhatsAppOutbox.message_id == AgenteWhatsAppMessage.id,
+                    AgenteWhatsAppOutbox.tenant_id == self._tenant_id,
+                ),
+            )
             .filter(
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.direction == "outbound",
                 AgenteWhatsAppMessage.provider_status == "queued",
                 AgenteWhatsAppOutbox.id.is_(None),
@@ -195,7 +233,12 @@ class AgenteWhatsAppOutboxService:
     def provider_states(self) -> list[AgenteWhatsAppProviderState]:
         providers = {
             row[0]
-            for row in self._db.query(AgenteWhatsAppOutbox.provider).distinct().all()
+            for row in (
+                self._db.query(AgenteWhatsAppOutbox.provider)
+                .filter(AgenteWhatsAppOutbox.tenant_id == self._tenant_id)
+                .distinct()
+                .all()
+            )
             if row[0]
         }
         providers.update({"official", "baileys"})
@@ -236,25 +279,25 @@ class AgenteWhatsAppOutboxService:
     def metrics(self) -> dict[str, Any]:
         summary = self.summary()
         pending = (
-            self._db.query(AgenteWhatsAppOutbox)
+            self._scope(self._db.query(AgenteWhatsAppOutbox), AgenteWhatsAppOutbox)
             .filter(AgenteWhatsAppOutbox.status.in_(["pending", "failed"]))
             .order_by(AgenteWhatsAppOutbox.created_at.asc())
             .first()
         )
         last_sent = (
-            self._db.query(AgenteWhatsAppOutbox)
+            self._scope(self._db.query(AgenteWhatsAppOutbox), AgenteWhatsAppOutbox)
             .filter(AgenteWhatsAppOutbox.status == "sent")
             .order_by(AgenteWhatsAppOutbox.sent_at.desc().nullslast(), AgenteWhatsAppOutbox.updated_at.desc())
             .first()
         )
         last_error = (
-            self._db.query(AgenteWhatsAppOutbox)
+            self._scope(self._db.query(AgenteWhatsAppOutbox), AgenteWhatsAppOutbox)
             .filter(AgenteWhatsAppOutbox.status.in_(["failed", "dead"]))
             .order_by(AgenteWhatsAppOutbox.updated_at.desc())
             .first()
         )
         sent_rows = (
-            self._db.query(AgenteWhatsAppOutbox)
+            self._scope(self._db.query(AgenteWhatsAppOutbox), AgenteWhatsAppOutbox)
             .filter(AgenteWhatsAppOutbox.status == "sent", AgenteWhatsAppOutbox.sent_at.isnot(None))
             .order_by(AgenteWhatsAppOutbox.sent_at.desc())
             .limit(100)
@@ -304,6 +347,7 @@ class AgenteWhatsAppOutboxService:
             status: count
             for status, count in (
                 self._db.query(AgenteWhatsAppInternalAlert.status, func.count(AgenteWhatsAppInternalAlert.id))
+                .filter(AgenteWhatsAppInternalAlert.tenant_id == self._tenant_id)
                 .group_by(AgenteWhatsAppInternalAlert.status)
                 .all()
             )
@@ -335,6 +379,7 @@ class AgenteWhatsAppOutboxService:
                 AgenteWhatsAppOutbox.status,
                 func.count(AgenteWhatsAppOutbox.id),
             )
+            .filter(AgenteWhatsAppOutbox.tenant_id == self._tenant_id)
             .group_by(AgenteWhatsAppOutbox.provider, AgenteWhatsAppOutbox.status)
             .all()
         )
@@ -344,7 +389,7 @@ class AgenteWhatsAppOutboxService:
             counts.setdefault(key, {})[status] = int(count or 0)
 
         sent_rows = (
-            self._db.query(AgenteWhatsAppOutbox)
+            self._scope(self._db.query(AgenteWhatsAppOutbox), AgenteWhatsAppOutbox)
             .filter(AgenteWhatsAppOutbox.status == "sent", AgenteWhatsAppOutbox.sent_at.isnot(None))
             .order_by(AgenteWhatsAppOutbox.sent_at.desc())
             .limit(500)
@@ -382,7 +427,7 @@ class AgenteWhatsAppOutboxService:
 
     def recent_errors(self, limit: int = 10) -> list[dict[str, Any]]:
         rows = (
-            self._db.query(AgenteWhatsAppOutbox)
+            self._scope(self._db.query(AgenteWhatsAppOutbox), AgenteWhatsAppOutbox)
             .filter(AgenteWhatsAppOutbox.status.in_(["failed", "dead"]))
             .order_by(AgenteWhatsAppOutbox.updated_at.desc())
             .limit(limit)
@@ -402,7 +447,11 @@ class AgenteWhatsAppOutboxService:
         ]
 
     def retry(self, outbox_id: str) -> AgenteWhatsAppOutbox | None:
-        item = self._db.query(AgenteWhatsAppOutbox).filter(AgenteWhatsAppOutbox.id == outbox_id).first()
+        item = (
+            self._scope(self._db.query(AgenteWhatsAppOutbox), AgenteWhatsAppOutbox)
+            .filter(AgenteWhatsAppOutbox.id == outbox_id)
+            .first()
+        )
         if not item:
             return None
         now = _now_utc()
@@ -450,13 +499,23 @@ class AgenteWhatsAppOutboxService:
 
     def list_internal_alerts(self, *, status: str | None = "active", limit: int = 50) -> list[AgenteWhatsAppInternalAlert]:
         self.sync_internal_alerts()
-        q = self._db.query(AgenteWhatsAppInternalAlert)
+        q = self._scope(
+            self._db.query(AgenteWhatsAppInternalAlert),
+            AgenteWhatsAppInternalAlert,
+        )
         if status:
             q = q.filter(AgenteWhatsAppInternalAlert.status == status)
         return q.order_by(AgenteWhatsAppInternalAlert.last_seen_at.desc()).limit(limit).all()
 
     def acknowledge_internal_alert(self, alert_id: str) -> AgenteWhatsAppInternalAlert | None:
-        alert = self._db.query(AgenteWhatsAppInternalAlert).filter(AgenteWhatsAppInternalAlert.id == alert_id).first()
+        alert = (
+            self._scope(
+                self._db.query(AgenteWhatsAppInternalAlert),
+                AgenteWhatsAppInternalAlert,
+            )
+            .filter(AgenteWhatsAppInternalAlert.id == alert_id)
+            .first()
+        )
         if not alert:
             return None
         now = _now_utc()
@@ -480,7 +539,11 @@ class AgenteWhatsAppOutboxService:
         dead_since = now - timedelta(minutes=max(1, self._settings.AGENTE_WHATSAPP_DEAD_ALERT_AFTER_MINUTES))
         dead_count = (
             self._db.query(func.count(AgenteWhatsAppOutbox.id))
-            .filter(AgenteWhatsAppOutbox.status == "dead", AgenteWhatsAppOutbox.updated_at <= dead_since)
+            .filter(
+                AgenteWhatsAppOutbox.tenant_id == self._tenant_id,
+                AgenteWhatsAppOutbox.status == "dead",
+                AgenteWhatsAppOutbox.updated_at <= dead_since,
+            )
             .scalar()
             or 0
         )
@@ -514,7 +577,10 @@ class AgenteWhatsAppOutboxService:
             }
 
         waiting_human_sessions = (
-            self._db.query(AgenteWhatsAppSession)
+            self._scope(
+                self._db.query(AgenteWhatsAppSession),
+                AgenteWhatsAppSession,
+            )
             .filter(AgenteWhatsAppSession.status == "waiting_human")
             .order_by(AgenteWhatsAppSession.last_message_at.desc().nullslast())
             .limit(100)
@@ -524,6 +590,7 @@ class AgenteWhatsAppOutboxService:
             last_message = (
                 self._db.query(AgenteWhatsAppMessage)
                 .filter(
+                    AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                     AgenteWhatsAppMessage.session_id == session.id,
                     AgenteWhatsAppMessage.direction == "inbound",
                 )
@@ -555,7 +622,10 @@ class AgenteWhatsAppOutboxService:
         active_keys = set(desired)
         current_alerts = (
             self._db.query(AgenteWhatsAppInternalAlert)
-            .filter(AgenteWhatsAppInternalAlert.dedupe_key.like("agente_whatsapp:%"))
+            .filter(
+                AgenteWhatsAppInternalAlert.tenant_id == self._tenant_id,
+                AgenteWhatsAppInternalAlert.dedupe_key.like("agente_whatsapp:%"),
+            )
             .all()
         )
         by_key = {alert.dedupe_key: alert for alert in current_alerts}
@@ -565,6 +635,7 @@ class AgenteWhatsAppOutboxService:
             if not alert:
                 alert = AgenteWhatsAppInternalAlert(
                     id=str(uuid.uuid4()),
+                    tenant_id=self._tenant_id,
                     dedupe_key=key,
                     alert_type=data["alert_type"],
                     level=data["level"],
@@ -696,7 +767,10 @@ class AgenteWhatsAppOutboxService:
             if is_audio and not self._settings.WHATSAPP_GATEWAY_AUDIO_BAILEYS_ENABLED:
                 return self._defer_item(item, "Envio de audio via Gateway Baileys desativado por configuracao.")
 
-            gateway = WhatsAppGatewayService(self._db)
+            gateway = WhatsAppGatewayService(
+                self._db,
+                tenant_context=self._tenant_context,
+            )
             instance_id = self._channel_gateway_instance_id()
             if media_url:
                 result = gateway.send_media_message(
@@ -742,7 +816,10 @@ class AgenteWhatsAppOutboxService:
     def _channel_gateway_instance_id(self) -> str | None:
         settings = (
             self._db.query(AgenteWhatsAppChannelSettings)
-            .filter(AgenteWhatsAppChannelSettings.id == "default")
+            .filter(
+                AgenteWhatsAppChannelSettings.tenant_id == self._tenant_id,
+                AgenteWhatsAppChannelSettings.id == "default",
+            )
             .first()
         )
         return settings.whatsapp_gateway_instance_id if settings else None
@@ -751,7 +828,10 @@ class AgenteWhatsAppOutboxService:
         normalized = _normalize_provider(provider)
         state = (
             self._db.query(AgenteWhatsAppProviderState)
-            .filter(AgenteWhatsAppProviderState.provider == normalized)
+            .filter(
+                AgenteWhatsAppProviderState.tenant_id == self._tenant_id,
+                AgenteWhatsAppProviderState.provider == normalized,
+            )
             .first()
         )
         if state:
@@ -759,6 +839,7 @@ class AgenteWhatsAppOutboxService:
         now = _now_utc()
         state = AgenteWhatsAppProviderState(
             id=str(uuid.uuid4()),
+            tenant_id=self._tenant_id,
             provider=normalized,
             status="active",
             consecutive_failures=0,
