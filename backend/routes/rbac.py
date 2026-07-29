@@ -32,6 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from backend.core.response import ok, created
+from backend.core.tenant_runtime import resolve_panel_tenant_context
 from backend.database import get_db
 from backend.models.admin import AdminUser
 from backend.models.rbac import (
@@ -47,12 +48,18 @@ from backend.schemas.rbac import (
 router = APIRouter(prefix="/admin", tags=["rbac"])
 
 ALL_PERM_KEYS = {"view", "create", "edit", "delete", "approve", "export", "manage"}
+LEGACY_TENANT_ID = "tenant-legacy-default"
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _tenant_id(request: Request, db: Session, user: AdminUser) -> str:
+    context = resolve_panel_tenant_context(request, db, user)
+    return context.tenant_id if context is not None else LEGACY_TENANT_ID
 
 
 def _is_master(user: AdminUser, db: Session) -> bool:
@@ -118,7 +125,8 @@ def _require_master(user: AdminUser, db: Session) -> None:
 def _log(db: Session, user: AdminUser, action: str, module_key: str,
          entity_type: str, entity_id: str,
          old_val: Optional[str] = None, new_val: Optional[str] = None,
-         request: Optional[Request] = None) -> None:
+         request: Optional[Request] = None,
+         tenant_id: str = LEGACY_TENANT_ID) -> None:
     ip = None
     ua = None
     if request:
@@ -126,6 +134,7 @@ def _log(db: Session, user: AdminUser, action: str, module_key: str,
         ua = request.headers.get("user-agent")
     db.add(AdminAuditLog(
         id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
         user_id=user.id,
         user_name=user.name,
         action=action,
@@ -178,12 +187,22 @@ def create_role(
     current: AdminUser = Depends(get_current_admin),
 ):
     _require_master(current, db)
+    tenant_id = _tenant_id(request, db, current)
     if db.query(Role).filter(Role.name == body.name).first():
         raise HTTPException(400, "Já existe um perfil com esse nome.")
-    role = Role(id=str(uuid.uuid4()), name=body.name, description=body.description, is_system=False)
+    role = Role(
+        id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
+        name=body.name,
+        description=body.description,
+        is_system=False,
+    )
     db.add(role)
     db.flush()
-    _log(db, current, "create", "usuarios", "role", role.id, new_val=body.name, request=request)
+    _log(
+        db, current, "create", "usuarios", "role", role.id,
+        new_val=body.name, request=request, tenant_id=tenant_id,
+    )
     db.commit()
     db.refresh(role)
     return created(RoleOut.model_validate(role), "Perfil criado.")
@@ -198,6 +217,7 @@ def update_role(
     current: AdminUser = Depends(get_current_admin),
 ):
     _require_master(current, db)
+    tenant_id = _tenant_id(request, db, current)
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
         raise HTTPException(404, "Perfil não encontrado.")
@@ -210,7 +230,10 @@ def update_role(
         role.name = body.name
     if body.description is not None:
         role.description = body.description
-    _log(db, current, "update", "usuarios", "role", role_id, old_val=old, new_val=role.name, request=request)
+    _log(
+        db, current, "update", "usuarios", "role", role_id,
+        old_val=old, new_val=role.name, request=request, tenant_id=tenant_id,
+    )
     db.commit()
     db.refresh(role)
     return ok(RoleOut.model_validate(role), "Perfil atualizado.")
@@ -224,6 +247,7 @@ def delete_role(
     current: AdminUser = Depends(get_current_admin),
 ):
     _require_master(current, db)
+    tenant_id = _tenant_id(request, db, current)
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
         raise HTTPException(404, "Perfil não encontrado.")
@@ -232,7 +256,10 @@ def delete_role(
     users_with_role = db.query(AdminUser).filter(AdminUser.role_id == role_id).count()
     if users_with_role > 0:
         raise HTTPException(400, f"Não é possível excluir: {users_with_role} usuário(s) vinculado(s) a este perfil.")
-    _log(db, current, "delete", "usuarios", "role", role_id, old_val=role.name, request=request)
+    _log(
+        db, current, "delete", "usuarios", "role", role_id,
+        old_val=role.name, request=request, tenant_id=tenant_id,
+    )
     db.delete(role)
     db.commit()
     return ok(None, "Perfil excluído.")
@@ -246,6 +273,7 @@ def duplicate_role(
     current: AdminUser = Depends(get_current_admin),
 ):
     _require_master(current, db)
+    tenant_id = _tenant_id(request, db, current)
     source = db.query(Role).filter(Role.id == role_id).first()
     if not source:
         raise HTTPException(404, "Perfil não encontrado.")
@@ -254,7 +282,13 @@ def duplicate_role(
     while db.query(Role).filter(Role.name == new_name).first():
         counter += 1
         new_name = f"Cópia de {source.name} ({counter})"
-    new_role = Role(id=str(uuid.uuid4()), name=new_name, description=source.description, is_system=False)
+    new_role = Role(
+        id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
+        name=new_name,
+        description=source.description,
+        is_system=False,
+    )
     db.add(new_role)
     db.flush()
     # Copy permissions
@@ -262,12 +296,16 @@ def duplicate_role(
     for sp in src_perms:
         db.add(RolePermission(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             role_id=new_role.id,
             module_id=sp.module_id,
             permission_id=sp.permission_id,
             allowed=sp.allowed,
         ))
-    _log(db, current, "create", "usuarios", "role", new_role.id, new_val=new_name, request=request)
+    _log(
+        db, current, "create", "usuarios", "role", new_role.id,
+        new_val=new_name, request=request, tenant_id=tenant_id,
+    )
     db.commit()
     db.refresh(new_role)
     return created(RoleOut.model_validate(new_role), "Perfil duplicado.")
@@ -320,6 +358,7 @@ def update_role_permissions(
     current: AdminUser = Depends(get_current_admin),
 ):
     _require_master(current, db)
+    tenant_id = _tenant_id(request, db, current)
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
         raise HTTPException(404, "Perfil não encontrado.")
@@ -330,6 +369,7 @@ def update_role_permissions(
     for entry in body.permissions:
         db.add(RolePermission(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             role_id=role_id,
             module_id=entry.module_id,
             permission_id=entry.permission_id,
@@ -337,7 +377,7 @@ def update_role_permissions(
         ))
     new_repr = json.dumps([{"m": e.module_id, "p": e.permission_id, "a": e.allowed} for e in body.permissions], sort_keys=True)
     _log(db, current, "update_permissions", "usuarios", "role", role_id,
-         old_val=old_repr, new_val=new_repr, request=request)
+         old_val=old_repr, new_val=new_repr, request=request, tenant_id=tenant_id)
     db.commit()
     return ok(None, "Permissões do perfil atualizadas.")
 
@@ -368,6 +408,7 @@ def update_user_permissions(
     current: AdminUser = Depends(get_current_admin),
 ):
     _require_master(current, db)
+    tenant_id = _tenant_id(request, db, current)
     user = db.query(AdminUser).filter(AdminUser.id == user_id).first()
     if not user:
         raise HTTPException(404, "Usuário não encontrado.")
@@ -375,13 +416,17 @@ def update_user_permissions(
     for entry in body.permissions:
         db.add(UserPermission(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             user_id=user_id,
             module_id=entry.module_id,
             permission_id=entry.permission_id,
             allowed=entry.allowed,
             overrides_role=True,
         ))
-    _log(db, current, "update_permissions", "usuarios", "admin_user", user_id, request=request)
+    _log(
+        db, current, "update_permissions", "usuarios", "admin_user", user_id,
+        request=request, tenant_id=tenant_id,
+    )
     db.commit()
     return ok(None, "Permissões individuais atualizadas.")
 

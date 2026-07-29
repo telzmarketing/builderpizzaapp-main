@@ -54,29 +54,29 @@ def _acquire_seed_lock(db: Session) -> None:
 
 
 def _seed_admin(db: Session) -> None:
-    if db.query(AdminUser).first():
-        return
     import os
-    from backend.core.security import hash_password
 
     email = os.getenv("ADMIN_EMAIL", "admin@minhaloja.com.br")
-    password = os.getenv("ADMIN_PASSWORD", "")
     name = os.getenv("ADMIN_NAME", "Administrador")
+    admin = db.query(AdminUser).filter(AdminUser.email == email).first()
+    if admin is None:
+        from backend.core.security import hash_password
 
-    if not password:
-        raise RuntimeError(
-            "ADMIN_PASSWORD não definida no ambiente. "
-            "Adicione ADMIN_PASSWORD=SuaSenhaForte no backend/.env antes de iniciar."
+        password = os.getenv("ADMIN_PASSWORD", "")
+        if not password:
+            raise RuntimeError(
+                "ADMIN_PASSWORD não definida no ambiente. "
+                "Adicione ADMIN_PASSWORD=SuaSenhaForte no backend/.env antes de iniciar."
+            )
+
+        admin = AdminUser(
+            id=str(uuid.uuid4()),
+            email=email,
+            name=name,
+            password_hash=hash_password(password),
         )
-
-    admin = AdminUser(
-        id=str(uuid.uuid4()),
-        email=email,
-        name=name,
-        password_hash=hash_password(password),
-    )
-    db.add(admin)
-    db.flush()
+        db.add(admin)
+        db.flush()
 
     platform_owner = db.query(PlatformRole).filter(
         PlatformRole.key == "platform_owner"
@@ -85,12 +85,17 @@ def _seed_admin(db: Session) -> None:
         raise RuntimeError(
             "Role platform_owner ausente; execute as migrations antes do seed."
         )
-    db.add(PlatformUserRole(
-        id=str(uuid.uuid4()),
-        user_id=admin.id,
-        role_id=platform_owner.id,
-        granted_by=None,
-    ))
+    owner_link = db.query(PlatformUserRole).filter(
+        PlatformUserRole.user_id == admin.id,
+        PlatformUserRole.role_id == platform_owner.id,
+    ).first()
+    if owner_link is None:
+        db.add(PlatformUserRole(
+            id=str(uuid.uuid4()),
+            user_id=admin.id,
+            role_id=platform_owner.id,
+            granted_by=None,
+        ))
 
 
 def _seed_multi_flavor_config(db: Session) -> None:
@@ -439,38 +444,103 @@ _ROLE_PERMISSIONS: dict = {
 
 
 def _seed_rbac(db: Session) -> None:
-    if db.query(Role).filter(Role.tenant_id == LEGACY_TENANT_ID).first():
-        return  # already seeded
+    role_names = [name for name, _, _ in _ROLES]
+    roles_by_tenant_and_name = {
+        (role.tenant_id, role.name): role
+        for role in db.query(Role).filter(Role.name.in_(role_names)).all()
+    }
+    conflicting_roles = [
+        role
+        for (tenant_id, _), role in roles_by_tenant_and_name.items()
+        if tenant_id != LEGACY_TENANT_ID
+    ]
+    if conflicting_roles:
+        conflicts = ", ".join(
+            sorted(f"{role.name} (tenant={role.tenant_id!r})" for role in conflicting_roles)
+        )
+        raise RuntimeError(
+            "Nao foi possivel reconciliar as roles do tenant legado porque "
+            f"Role.name ainda e globalmente unico: {conflicts}."
+        )
 
     # Roles
     role_map: dict[str, str] = {}  # name → id
     for name, description, is_system in _ROLES:
-        r = Role(
-            id=str(uuid.uuid4()),
-            tenant_id=LEGACY_TENANT_ID,
-            name=name,
-            description=description,
-            is_system=is_system,
-        )
-        db.add(r)
-        role_map[name] = r.id
+        role = roles_by_tenant_and_name.get((LEGACY_TENANT_ID, name))
+        if role is None:
+            role = Role(
+                id=str(uuid.uuid4()),
+                tenant_id=LEGACY_TENANT_ID,
+                name=name,
+                description=description,
+                is_system=is_system,
+            )
+            db.add(role)
+        else:
+            role.description = description
+            role.is_system = is_system
+        role_map[name] = role.id
     db.flush()
 
     # Modules
+    module_keys = [key for key, _, _ in _MODULES]
+    modules_by_key = {
+        module.key: module
+        for module in db.query(RbacModule).filter(
+            RbacModule.key.in_(module_keys)
+        ).all()
+    }
     module_map: dict[str, str] = {}  # key → id
     for key, name, order in _MODULES:
-        m = RbacModule(id=str(uuid.uuid4()), key=key, name=name, order_index=order, is_active=True)
-        db.add(m)
-        module_map[key] = m.id
+        module = modules_by_key.get(key)
+        if module is None:
+            module = RbacModule(
+                id=str(uuid.uuid4()),
+                key=key,
+                name=name,
+                order_index=order,
+                is_active=True,
+            )
+            db.add(module)
+        else:
+            module.name = name
+            module.order_index = order
+            module.is_active = True
+        module_map[key] = module.id
     db.flush()
 
     # Permissions
+    permission_keys = [key for key, _ in _PERMISSIONS]
+    permissions_by_key = {
+        permission.key: permission
+        for permission in db.query(RbacPermission).filter(
+            RbacPermission.key.in_(permission_keys)
+        ).all()
+    }
     perm_map: dict[str, str] = {}  # key → id
     for key, name in _PERMISSIONS:
-        p = RbacPermission(id=str(uuid.uuid4()), key=key, name=name)
-        db.add(p)
-        perm_map[key] = p.id
+        permission = permissions_by_key.get(key)
+        if permission is None:
+            permission = RbacPermission(
+                id=str(uuid.uuid4()),
+                key=key,
+                name=name,
+            )
+            db.add(permission)
+        else:
+            permission.name = name
+        perm_map[key] = permission.id
     db.flush()
+
+    # The production constraint uses this exact natural key.
+    role_permissions = {
+        (row.role_id, row.module_id, row.permission_id): row
+        for row in db.query(RolePermission).filter(
+            RolePermission.role_id.in_(list(role_map.values())),
+            RolePermission.module_id.in_(list(module_map.values())),
+            RolePermission.permission_id.in_(list(perm_map.values())),
+        ).all()
+    }
 
     # Role permissions
     for role_name, modules in _ROLE_PERMISSIONS.items():
@@ -485,12 +555,19 @@ def _seed_rbac(db: Session) -> None:
                 perm_id = perm_map.get(perm_key)
                 if not perm_id:
                     continue
-                db.add(RolePermission(
-                    id=str(uuid.uuid4()),
-                    tenant_id=LEGACY_TENANT_ID,
-                    role_id=role_id,
-                    module_id=mod_id,
-                    permission_id=perm_id,
-                    allowed=True,
-                ))
+                relation_key = (role_id, mod_id, perm_id)
+                relation = role_permissions.get(relation_key)
+                if relation is None:
+                    relation = RolePermission(
+                        id=str(uuid.uuid4()),
+                        tenant_id=LEGACY_TENANT_ID,
+                        role_id=role_id,
+                        module_id=mod_id,
+                        permission_id=perm_id,
+                        allowed=True,
+                    )
+                    db.add(relation)
+                    role_permissions[relation_key] = relation
+                else:
+                    relation.tenant_id = LEGACY_TENANT_ID
     db.flush()
