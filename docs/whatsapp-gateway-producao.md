@@ -14,13 +14,13 @@ e o backend continua sendo o contrato oficial usado pelo painel e pelo agente de
 
 ## Variaveis de ambiente
 
-Configure em `/home/deploy/moschettieri/backend/.env`:
+Configure em `/opt/telz/backend/.env`:
 
 ```env
 WHATSAPP_GATEWAY_RUNTIME_URL=http://127.0.0.1:3020
 WHATSAPP_GATEWAY_RUNTIME_TOKEN=troque-por-um-token-forte
 WHATSAPP_GATEWAY_RUNTIME_TIMEOUT_SECONDS=8
-WHATSAPP_GATEWAY_RUNTIME_DATA_DIR=/home/deploy/.local/state/moschettieri/baileys
+WHATSAPP_GATEWAY_RUNTIME_DATA_DIR=/opt/telz/.runtime/baileys
 WHATSAPP_GATEWAY_BACKEND_EVENT_URL=http://127.0.0.1:8000/api/whatsapp-gateway/runtime/events
 WHATSAPP_GATEWAY_EVENT_TOKEN=troque-por-outro-token-forte
 ```
@@ -30,35 +30,35 @@ Nao exponha `3020` no Nginx.
 
 ## Servico systemd
 
-Crie o arquivo `/etc/systemd/system/moschettieri-whatsapp-gateway.service`:
+Crie o arquivo `/etc/systemd/system/telz-whatsapp-gateway.service`:
 
 ```bash
-mkdir -p /home/deploy/.local/state/moschettieri/baileys
-sudo chown -R deploy:deploy /home/deploy/.local/state/moschettieri
+sudo mkdir -p /opt/telz/.runtime/baileys
+sudo chown -R telz:telz /opt/telz/.runtime
 ```
 
 ```ini
 [Unit]
-Description=Moschettieri - WhatsApp Gateway Baileys Runtime
-After=network.target moschettieri-api.service
-Wants=moschettieri-api.service
+Description=Telz - WhatsApp Gateway Baileys Runtime
+After=network.target telz-api.service
+Wants=telz-api.service
 
 [Service]
 Type=simple
-User=deploy
-Group=deploy
-WorkingDirectory=/home/deploy/moschettieri
+User=telz
+Group=telz
+WorkingDirectory=/opt/telz
 Environment=NODE_ENV=production
 Environment=WHATSAPP_GATEWAY_RUNTIME_HOST=127.0.0.1
 Environment=WHATSAPP_GATEWAY_RUNTIME_PORT=3020
-Environment=WHATSAPP_GATEWAY_RUNTIME_DATA_DIR=/home/deploy/.local/state/moschettieri/baileys
-EnvironmentFile=/home/deploy/moschettieri/backend/.env
+Environment=WHATSAPP_GATEWAY_RUNTIME_DATA_DIR=/opt/telz/.runtime/baileys
+EnvironmentFile=/opt/telz/backend/.env
 ExecStart=/usr/bin/node server/whatsapp-gateway-runtime.mjs
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=moschettieri-whatsapp-gateway
+SyslogIdentifier=telz-whatsapp-gateway
 
 [Install]
 WantedBy=multi-user.target
@@ -68,8 +68,8 @@ Ative o servico:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable moschettieri-whatsapp-gateway
-sudo systemctl start moschettieri-whatsapp-gateway
+sudo systemctl enable telz-whatsapp-gateway
+sudo systemctl start telz-whatsapp-gateway
 ```
 
 ## Validacao operacional
@@ -77,8 +77,8 @@ sudo systemctl start moschettieri-whatsapp-gateway
 Depois do start:
 
 ```bash
-sudo systemctl status moschettieri-whatsapp-gateway --no-pager
-sudo journalctl -u moschettieri-whatsapp-gateway -n 80 --no-pager
+sudo systemctl status telz-whatsapp-gateway --no-pager
+sudo journalctl -u telz-whatsapp-gateway -n 80 --no-pager
 pnpm whatsapp-gateway:health
 ```
 
@@ -89,9 +89,9 @@ operacional ainda depende da leitura do QR Code no painel.
 ## Fluxo esperado em producao
 
 1. O deploy atualiza codigo e dependencias.
-2. `moschettieri-api` reinicia.
-3. `moschettieri-web` reinicia.
-4. `moschettieri-whatsapp-gateway` reinicia se o servico estiver instalado.
+2. `telz-api` reinicia.
+3. `telz-web` reinicia.
+4. `telz-whatsapp-gateway` reinicia se o servico estiver instalado.
 5. O backend passa no `/health`.
 6. O runtime passa em `pnpm whatsapp-gateway:health`.
 7. O painel confirma status, QR Code ou conexao ativa.
@@ -101,23 +101,23 @@ operacional ainda depende da leitura do QR Code no painel.
 Se o runtime nao subir:
 
 ```bash
-sudo journalctl -u moschettieri-whatsapp-gateway -n 120 --no-pager
+sudo journalctl -u telz-whatsapp-gateway -n 120 --no-pager
 ```
 
 Se o backend nao conseguir chamar o runtime:
 
 ```bash
-grep WHATSAPP_GATEWAY_RUNTIME_URL /home/deploy/moschettieri/backend/.env
+grep WHATSAPP_GATEWAY_RUNTIME_URL /opt/telz/backend/.env
 curl -sf http://127.0.0.1:3020/health
 ```
 
 Se os eventos do WhatsApp nao chegarem ao agente:
 
 ```bash
-grep WHATSAPP_GATEWAY_BACKEND_EVENT_URL /home/deploy/moschettieri/backend/.env
-grep WHATSAPP_GATEWAY_EVENT_TOKEN /home/deploy/moschettieri/backend/.env
-sudo journalctl -u moschettieri-api -n 120 --no-pager
-sudo journalctl -u moschettieri-whatsapp-gateway -n 120 --no-pager
+grep WHATSAPP_GATEWAY_BACKEND_EVENT_URL /opt/telz/backend/.env
+grep WHATSAPP_GATEWAY_EVENT_TOKEN /opt/telz/backend/.env
+sudo journalctl -u telz-api -n 120 --no-pager
+sudo journalctl -u telz-whatsapp-gateway -n 120 --no-pager
 ```
 
 ## Criterio de pronto

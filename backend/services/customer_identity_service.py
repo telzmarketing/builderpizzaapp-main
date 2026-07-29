@@ -7,11 +7,12 @@ from datetime import datetime, timezone
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from backend.config import get_settings
 from backend.core.security import hash_password
 from backend.models.customer import Customer
 from backend.models.customer_identity import CustomerAuth, CustomerChannel, CustomerPreference
 
-SYSTEM_LEAD_EMAIL_DOMAIN = "leads.moschettieri.com.br"
+SYSTEM_LEAD_EMAIL_DOMAIN = get_settings().SYSTEM_LEAD_EMAIL_DOMAIN
 LEGACY_SYSTEM_LEAD_EMAIL_DOMAINS = {"lead.whatsapp.local"}
 
 

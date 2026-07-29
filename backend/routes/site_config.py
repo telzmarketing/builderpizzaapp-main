@@ -106,14 +106,14 @@ def get_global_favicon(
 def get_global_manifest(db: Session = Depends(get_db)):
     content, updated_at = _get_content_with_updated_at(db)
     brand = _brand(content)
-    name = str(brand.get("pageTitle") or brand.get("name") or "Del Basito by Moschettieri").strip()
-    short_name = str(brand.get("name") or "Moschettieri").strip()
+    name = str(brand.get("pageTitle") or brand.get("name") or "Sua Loja").strip()
+    short_name = str(brand.get("name") or "Sua Loja").strip()
     version = _version(updated_at)
     return JSONResponse(
         {
             "name": name,
-            "short_name": short_name[:24] or "Moschettieri",
-            "description": "Delivery Moschettieri",
+            "short_name": short_name[:24] or "Sua Loja",
+            "description": "Loja online",
             "start_url": "/motoboy",
             "scope": "/motoboy",
             "display": "standalone",

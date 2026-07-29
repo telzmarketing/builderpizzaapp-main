@@ -183,7 +183,7 @@ class AgenteWhatsAppService:
                 "id": "promocao-dia",
                 "name": "Promocao do dia",
                 "title": "Promocao do dia",
-                "caption": "Hoje tem oferta especial no Del Basito. Chame aqui e faca seu pedido.",
+                "caption": "Hoje tem oferta especial. Chame aqui e faca seu pedido.",
                 "cta_text": "Pedir agora",
                 "cta_url": None,
             },

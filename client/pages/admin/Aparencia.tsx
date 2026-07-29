@@ -289,7 +289,7 @@ function LivePreview({ theme }: { theme: ThemeSettings }) {
     <div className="space-y-3 text-xs">
       {/* Navbar */}
       <div className="rounded-lg px-3 py-2 flex items-center gap-2" style={{ background: theme.navbar }}>
-        <span style={{ color: theme.text_primary }} className="font-bold">🍕 Moschettieri</span>
+        <span style={{ color: theme.text_primary }} className="font-bold">Sua Loja</span>
         <span style={{ color: theme.text_muted }} className="ml-auto">Menu</span>
       </div>
 

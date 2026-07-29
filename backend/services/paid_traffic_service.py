@@ -78,7 +78,7 @@ def _public_store_url() -> str:
         if normalized.startswith("http") and "localhost" not in normalized and "127.0.0.1" not in normalized:
             return normalized
 
-    return "https://delivery.moschettieri.com.br"
+    return "https://erp.telz.com.br"
 
 
 def _normalize_destination_url(url: str | None) -> str:

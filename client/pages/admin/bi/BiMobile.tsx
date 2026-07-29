@@ -22,7 +22,7 @@ import {
   Truck,
   Users,
 } from "lucide-react";
-import MoschettieriLogo from "@/components/MoschettieriLogo";
+import TelzLogo from "@/components/TelzLogo";
 import { biApi, type ApiBIMobile, type ApiBIMobileStatusKey } from "@/lib/api";
 
 type MetricCard = {
@@ -262,7 +262,7 @@ export default function BiMobile() {
       <div className="mx-auto flex w-full max-w-md flex-col gap-3 pb-4">
         <header className="rounded-lg border border-surface-03 bg-surface-02 p-3">
           <div className="flex items-center justify-between gap-3">
-            <MoschettieriLogo className="h-11 shrink-0 text-[32px] text-gold" />
+            <TelzLogo className="h-11 shrink-0 text-[32px] text-gold" />
             <div className="min-w-0 text-right">
               <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gold">
                 Business Intelligence

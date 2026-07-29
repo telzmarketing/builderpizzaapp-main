@@ -90,11 +90,11 @@ npm run build
 Depois do restart:
 
 ```bash
-systemctl restart moschettieri-api
-systemctl restart moschettieri-web
-systemctl restart moschettieri-whatsapp-gateway
-systemctl status moschettieri-api --no-pager
-systemctl status moschettieri-whatsapp-gateway --no-pager
+systemctl restart telz-api
+systemctl restart telz-web
+systemctl restart telz-whatsapp-gateway
+systemctl status telz-api --no-pager
+systemctl status telz-whatsapp-gateway --no-pager
 ```
 
 Validacoes administrativas:

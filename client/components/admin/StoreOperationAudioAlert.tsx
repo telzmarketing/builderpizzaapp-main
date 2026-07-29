@@ -3,8 +3,8 @@ import { Volume2, X } from "lucide-react";
 import { storeOperationApi, type StoreOperationStatus } from "@/lib/api";
 
 const POLL_INTERVAL_MS = 30000;
-const OPEN_MESSAGE = "Delivery Moschettieri Online";
-const CLOSED_MESSAGE = "Finalizando operação Delivery Moschettieri";
+const OPEN_MESSAGE = "Loja online";
+const CLOSED_MESSAGE = "Finalizando operação da loja";
 
 type AlertState = {
   message: string;

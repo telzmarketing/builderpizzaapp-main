@@ -5,7 +5,7 @@ import {
   ShoppingBag, BarChart3, Zap, Shield,
 } from "lucide-react";
 import { adminAuthApi } from "@/lib/api";
-import MoschettieriLogo from "@/components/MoschettieriLogo";
+import TelzLogo from "@/components/TelzLogo";
 
 const FEATURES = [
   { icon: ShoppingBag, label: "Pedidos em tempo real",    desc: "Acompanhe e atualize o status de cada pedido ao vivo" },
@@ -49,7 +49,7 @@ export default function AdminLogin() {
           {/* Logo */}
           <div>
             <div className="inline-flex items-center gap-2 bg-surface-03/60 rounded-xl px-4 py-3 border border-surface-03">
-              <MoschettieriLogo className="text-gold text-base" />
+              <TelzLogo className="text-gold text-2xl" />
             </div>
             <p className="text-stone text-xs mt-2 ml-1">Painel administrativo</p>
           </div>
@@ -61,7 +61,7 @@ export default function AdminLogin() {
               Tudo que sua loja precisa em um só lugar.
             </h1>
             <p className="text-stone text-sm mt-3 max-w-xs leading-relaxed">
-              Controle pedidos, cardápio, frete, pagamentos e a experiência do cliente com a identidade Moschettieri.
+              Controle pedidos, cardápio, frete, pagamentos e a experiência dos clientes de cada empresa.
             </p>
           </div>
 
@@ -81,7 +81,7 @@ export default function AdminLogin() {
           </div>
 
           {/* Footer tag */}
-          <p className="text-stone/40 text-xs mt-8">Moschettieri © 2026</p>
+          <p className="text-stone/40 text-xs mt-8">Telz © 2026</p>
         </aside>
 
         {/* ── Right — login form ───────────────────────────────────────── */}
@@ -90,7 +90,7 @@ export default function AdminLogin() {
 
             {/* Mobile logo */}
             <div className="lg:hidden mb-8 text-center">
-              <MoschettieriLogo className="text-gold text-xl inline-block" />
+              <TelzLogo className="text-gold text-3xl" />
               <p className="text-stone text-xs mt-1">Painel administrativo</p>
             </div>
 
@@ -148,7 +148,7 @@ export default function AdminLogin() {
             </form>
 
             <p className="text-stone/40 text-[10px] text-center mt-8">
-              Moschettieri © 2026 · Painel administrativo
+              Telz © 2026 · Plataforma de gestão
             </p>
           </div>
         </section>

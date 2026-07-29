@@ -12,7 +12,7 @@
     <link rel="icon" sizes="192x192" href="/api/site-config/favicon?size=192" />
     <link rel="icon" sizes="512x512" href="/api/site-config/favicon?size=512" />
     <link rel="apple-touch-icon" sizes="192x192" href="/api/site-config/favicon?size=192" />
-    <title>Pizza Delivery App</title>
+    <title>Telz</title>
   </head>
 
   <body>
@@ -20,6 +20,9 @@
 
     <script>
       (function () {
+        var hostname = window.location.hostname.toLowerCase().replace(/\.$/, "");
+        var platformHosts = ["erp.telz.com.br", "localhost", "127.0.0.1"];
+        if (platformHosts.indexOf(hostname) !== -1) return;
         var path = window.location.pathname;
         var shouldPreloadCatalog = path === "/" || path === "/cardapio" || path.indexOf("/product/") === 0;
         if (!shouldPreloadCatalog) return;

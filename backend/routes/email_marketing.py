@@ -111,7 +111,7 @@ class EmailConfig(Base):
     smtp_port = Column(Integer, default=587)
     smtp_user = Column(String(300), default="")
     smtp_password = Column(String(500), default="")
-    from_name = Column(String(200), default="Moschettieri")
+    from_name = Column(String(200), default="Sua Loja")
     from_email = Column(String(300), default="")
     reply_to = Column(String(300), default="")
     status = Column(String(20), default="disconnected")

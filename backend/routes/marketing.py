@@ -568,7 +568,7 @@ def _reverse_geocode(latitude: float, longitude: float) -> dict:
                 "zoom": 16,
                 "addressdetails": 1,
             },
-            headers={"User-Agent": "MoschettieriSaaS/1.0 visitor-analytics"},
+            headers={"User-Agent": "TelzSaaS/1.0 visitor-analytics"},
             timeout=3,
         )
         if resp.status_code != 200:

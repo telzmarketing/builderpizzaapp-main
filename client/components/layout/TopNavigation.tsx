@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, LogOut, Menu, Search, User, X } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import MoschettieriLogo from "@/components/MoschettieriLogo";
+import TelzLogo from "@/components/TelzLogo";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import AdminTenantSwitcher from "@/components/admin/AdminTenantSwitcher";
 import { useApp } from "@/context/AppContext";
@@ -186,7 +186,7 @@ export default function TopNavigation({
             ) : logo ? (
               <span className="truncate whitespace-nowrap text-xl leading-none sm:text-2xl">{logo}</span>
             ) : (
-              <MoschettieriLogo className="w-full text-[0.78rem] leading-none text-gold sm:text-[0.86rem] lg:text-[0.92rem] xl:text-[1rem]" />
+              <TelzLogo className="w-full text-[1.05rem] leading-none text-gold sm:text-[1.15rem] lg:text-[1.25rem]" />
             )}
           </span>
         </Link>

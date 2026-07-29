@@ -21,11 +21,11 @@ const STORAGE_KEY = "moschettieri_printer_settings";
 
 export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   paperWidth: "80mm",
-  storeName: "Moschettieri Pizzeria",
+  storeName: "Sua Loja",
   storePhone: "",
   storeAddress: "",
   storeCnpj: "",
-  storeWebsite: "delivery.moschettieri.com.br",
+  storeWebsite: "",
   defaultTemplate: "completo" as PrintTemplate,
   autoPrint: false,
   autoPrintConfirmedOrders: true,

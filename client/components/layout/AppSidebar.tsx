@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, LogOut, User } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import MoschettieriLogo from "@/components/MoschettieriLogo";
+import TelzLogo from "@/components/TelzLogo";
 import { useApp } from "@/context/AppContext";
 import { filterAdminNavigation } from "@/lib/adminAccess";
 import { preloadAdminRoute } from "@/lib/adminRoutePreload";
@@ -145,7 +145,7 @@ export default function AppSidebar() {
           ) : logo ? (
             <span className="mb-1 text-xl leading-none">{logo}</span>
           ) : (
-            <MoschettieriLogo className="text-gold text-[1.15rem] leading-tight" />
+            <TelzLogo className="text-gold text-[1.5rem] leading-tight" />
           )}
           <div className="mt-1 w-full">
             <p className="text-stone text-[10px] leading-none">Painel administrativo</p>

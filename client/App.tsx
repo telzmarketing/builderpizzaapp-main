@@ -355,10 +355,10 @@ function DocumentHead() {
 
   useEffect(() => {
     if (isSalao) {
-      document.title = "Moschettieri | Restaurante";
+      document.title = safePageTitle || safeName || "Restaurante";
       return;
     }
-    document.title = safePageTitle || safeName || "Pizza Delivery App";
+    document.title = safePageTitle || safeName || "Sua Loja";
   }, [isSalao, safePageTitle, safeName]);
 
   useEffect(() => {

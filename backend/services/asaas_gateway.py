@@ -384,7 +384,7 @@ class AsaasGateway:
             "email": customer.email,
             "externalReference": external_reference,
             "notificationDisabled": True,
-            "groupName": "Moschettieri Delivery",
+            "groupName": "Telz",
         }
         if phone:
             payload["mobilePhone"] = phone

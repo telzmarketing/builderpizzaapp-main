@@ -382,7 +382,7 @@ interface AppContextType {
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
 export const defaultSiteContent: SiteContent = {
-  brand: { name: "Del Basito By Moschettieri", tagline: "Pizzeria", logo: "", pageTitle: "Del Basito by Moschettieri", faviconUrl: "" },
+  brand: { name: "Sua Loja", tagline: "Delivery", logo: "", pageTitle: "Sua Loja", faviconUrl: "" },
   home: {
     sectionSubtitle: "O que você quer comer hoje?",
     sectionTitle: "Escolha sua Pizza Favorita",

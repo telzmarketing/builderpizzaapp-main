@@ -1350,7 +1350,7 @@ class DeliveryService:
             )
             req = urllib.request.Request(
                 url,
-                headers={"User-Agent": "MoschettieriDelivery/1.0"},
+                headers={"User-Agent": "TelzDelivery/1.0"},
             )
             with urllib.request.urlopen(req, timeout=6) as resp:
                 data = _json.loads(resp.read())

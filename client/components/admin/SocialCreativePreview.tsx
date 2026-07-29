@@ -150,7 +150,7 @@ function FeedPreview({ placement, campaignName, creativeName, children }: { plac
     <div className="bg-white text-neutral-900">
       <div className="flex items-center gap-3 p-3">
         <div className={`grid h-9 w-9 place-items-center rounded-full text-sm font-black text-white ${placement.network === "Facebook" ? "bg-blue-600" : "bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600"}`}>M</div>
-        <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">Moschettieri</p><p className="text-[11px] text-neutral-500">Patrocinado · Público</p></div>
+        <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">Sua Loja</p><p className="text-[11px] text-neutral-500">Patrocinado · Público</p></div>
         <span className="text-lg text-neutral-500">•••</span>
       </div>
       <p className="px-3 pb-3 text-sm">{creativeName || campaignName || "Conheça nossas novidades e faça seu pedido."}</p>
@@ -172,7 +172,7 @@ function VerticalPreview({ placement, children }: { placement: Placement; childr
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[20%] border-t border-dashed border-white/50 bg-gradient-to-t from-black/80 to-transparent" />
       <div className="pointer-events-none absolute left-3 right-3 top-5 flex items-center gap-2">
         <div className="grid h-8 w-8 place-items-center rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 text-xs font-black">M</div>
-        <span className="text-xs font-bold drop-shadow">moschettieri</span><span className="text-[10px]">Patrocinado</span>
+        <span className="text-xs font-bold drop-shadow">sua_loja</span><span className="text-[10px]">Patrocinado</span>
       </div>
       {!isStory && (
         <div className="pointer-events-none absolute bottom-[17%] right-3 flex flex-col items-center gap-4 drop-shadow">
@@ -180,7 +180,7 @@ function VerticalPreview({ placement, children }: { placement: Placement; childr
         </div>
       )}
       <div className="pointer-events-none absolute bottom-5 left-4 right-14 text-xs drop-shadow">
-        <p className="font-bold">@moschettieri</p><p className="mt-1 line-clamp-2">Descubra nossas novidades e faça seu pedido.</p>
+        <p className="font-bold">@sua_loja</p><p className="mt-1 line-clamp-2">Descubra nossas novidades e faça seu pedido.</p>
         {isStory && <div className="mt-3 rounded-full border border-white/70 bg-black/20 py-2 text-center font-bold">Saiba mais</div>}
       </div>
       <span className="pointer-events-none absolute right-2 top-[15%] rounded bg-black/45 px-1.5 py-0.5 text-[9px]">Área segura</span>

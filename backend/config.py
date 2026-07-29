@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     PUBLIC_STORE_URL: str = ""
     VITE_PUBLIC_STORE_URL: str = ""
+    SYSTEM_LEAD_EMAIL_DOMAIN: str = "leads.telz.com.br"
+    PLATFORM_BRAND_NAME: str = "Telz"
 
     @field_validator("DEBUG", mode="before")
     @classmethod
