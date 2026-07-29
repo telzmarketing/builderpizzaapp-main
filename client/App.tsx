@@ -6,6 +6,7 @@ import { themeApi, applyTheme, DEFAULT_THEME, readCachedTheme } from "./lib/them
 import { captureTrackingFromUrl, firePixelEvent, trackEvent, getTrackingData, initCampaignPixel, initStorePixels, isInternalStaffPath, requestVisitorLocation } from "./lib/tracking";
 import { customerEventsApi, isAssetUrl, resolveAssetUrl, runtimeSurfaceApi } from "./lib/api";
 import { getPublicExperience, isSalaoExperience } from "./lib/experience";
+import { isPlatformHostname } from "./lib/platformHost";
 
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
 const StoreSocialProofNotification = lazy(() => import("./components/StoreSocialProofNotification"));
@@ -409,6 +410,8 @@ function DocumentHead() {
 }
 const AdminGuard = lazy(() => import("./components/AdminGuard"));
 const AdminLayout = lazy(() => import("./components/layout/AdminLayout"));
+const PlatformAdminGuard = lazy(() => import("./components/PlatformAdminGuard"));
+const PlatformAdminLayout = lazy(() => import("./components/layout/PlatformAdminLayout"));
 const Index = lazy(() => import("./pages/Index"));
 const Product = lazy(() => import("./pages/Product"));
 const Cart = lazy(() => import("./pages/Cart"));
@@ -486,23 +489,6 @@ function ExperienceRoute({ salao, delivery }: { salao: JSX.Element; delivery: JS
   return getPublicExperience() === "salao" ? salao : delivery;
 }
 
-const DEFAULT_PLATFORM_HOSTNAME = "erp.telz.com.br";
-
-function platformHostnames() {
-  const configured = String(
-    import.meta.env.VITE_PLATFORM_HOSTNAMES
-      ?? import.meta.env.VITE_PLATFORM_HOSTNAME
-      ?? DEFAULT_PLATFORM_HOSTNAME,
-  );
-  const hosts = configured.split(",").map((value) => value.trim().toLowerCase()).filter(Boolean);
-  if (import.meta.env.DEV) hosts.push("localhost", "127.0.0.1");
-  return new Set(hosts);
-}
-
-function isPlatformHostname(hostname: string) {
-  return platformHostnames().has(hostname.toLowerCase().replace(/\.$/, ""));
-}
-
 function AppSurface() {
   const deferredWidgetsReady = useDeferredClientMount(3200);
   const platformSurface = isPlatformHostname(window.location.hostname);
@@ -558,11 +544,16 @@ function AppSurface() {
               <Route path="/painel/login" element={<AdminLogin />} />
               <Route path="/motoboy" element={<Motoboy />} />
 
+              <Route element={<PlatformAdminGuard />}>
+                <Route element={<PlatformAdminLayout />}>
+                  <Route path="/painel/empresas" element={<AdminEmpresas />} />
+                </Route>
+              </Route>
+
               {/* ── Admin routes (protected by JWT guard) ── */}
               <Route element={<AdminGuard />}>
                 <Route path="/painel/bi-mobile" element={<AdminBIMobile />} />
                 <Route element={<AdminLayout />}>
-                <Route path="/painel/empresas" element={<AdminEmpresas />} />
                 <Route path="/painel" element={<AdminDashboard />} />
                 <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />
                 <Route path="/painel/products" element={<AdminProducts />} />
@@ -642,12 +633,14 @@ function HostResolutionScreen({ unknown = false }: { unknown?: boolean }) {
 
 export default function HostSurfaceGate() {
   const isPlatform = isPlatformHostname(window.location.hostname);
+  const platformPathAllowed = window.location.pathname === "/painel/login"
+    || window.location.pathname.startsWith("/painel/empresas");
   const [storeResolved, setStoreResolved] = useState(false);
   const [unknownHost, setUnknownHost] = useState(false);
 
   useEffect(() => {
     if (isPlatform) {
-      if (!window.location.pathname.startsWith("/painel")) {
+      if (!platformPathAllowed) {
         const target = localStorage.getItem("admin_token") ? "/painel/empresas" : "/painel/login";
         window.location.replace(target);
       }
@@ -667,9 +660,9 @@ export default function HostSurfaceGate() {
     return () => {
       cancelled = true;
     };
-  }, [isPlatform]);
+  }, [isPlatform, platformPathAllowed]);
 
-  if (isPlatform && !window.location.pathname.startsWith("/painel")) return <HostResolutionScreen />;
+  if (isPlatform && !platformPathAllowed) return <HostResolutionScreen />;
   if (isPlatform) return <AppSurface />;
   if (unknownHost) return <HostResolutionScreen unknown />;
   if (!storeResolved) return <HostResolutionScreen />;

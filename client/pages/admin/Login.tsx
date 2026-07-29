@@ -5,6 +5,7 @@ import {
   ShoppingBag, BarChart3, Zap, Shield,
 } from "lucide-react";
 import { adminAuthApi } from "@/lib/api";
+import { adminLandingPath } from "@/lib/platformHost";
 import TelzLogo from "@/components/TelzLogo";
 
 const FEATURES = [
@@ -30,7 +31,7 @@ export default function AdminLogin() {
       const { access_token, admin } = await adminAuthApi.login(email.trim(), password);
       localStorage.setItem("admin_token", access_token);
       localStorage.setItem("admin_user", JSON.stringify(admin));
-      navigate("/painel");
+      navigate(adminLandingPath(window.location.hostname), { replace: true });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "E-mail ou senha incorretos.");
     } finally {

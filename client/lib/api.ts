@@ -1,3 +1,5 @@
+import { shouldInvalidateAdminSession } from "./adminSession";
+
 /**
  * API client — todas as chamadas para o backend FastAPI (porta 8000 em dev).
  *
@@ -118,7 +120,7 @@ async function requestForm<T>(method: string, path: string, body: FormData): Pro
   });
 
   if (!res.ok) {
-    if (res.status === 401) {
+    if (shouldInvalidateAdminSession(res.status, path)) {
       localStorage.removeItem("admin_token");
       localStorage.removeItem("admin_user");
       window.location.replace("/painel/login");
@@ -161,7 +163,7 @@ async function request<T>(
   });
 
   if (!res.ok) {
-    if (res.status === 401) {
+    if (shouldInvalidateAdminSession(res.status, path)) {
       localStorage.removeItem("admin_token");
       localStorage.removeItem("admin_user");
       window.location.replace("/painel/login");
