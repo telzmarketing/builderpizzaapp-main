@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
-from backend.core.tenant_context import TenantContext
+from backend.core.tenant_context import TenantContext, TenantSource
 from backend.core.tenant_ownership import operations_enforcement_enabled, require_context_when_enabled
 from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
 from backend.database import get_db
@@ -23,6 +23,8 @@ def public_operation_context(request: Request, db: Session = Depends(get_db)) ->
 
 
 def operation_tenant_id(context: TenantContext | None) -> str:
+    if context is not None and context.source == TenantSource.SUPPORT:
+        return context.tenant_id
     if not operations_enforcement_enabled():
         return "default"
     trusted = require_context_when_enabled(context, enabled=True)

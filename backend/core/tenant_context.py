@@ -27,6 +27,7 @@ class TenantContextMismatch(TenantContextError):
 
 class TenantSource(str, Enum):
     PANEL = "panel"
+    SUPPORT = "support"
     PUBLIC_HOST = "public_host"
     WEBHOOK = "webhook"
     JOB = "job"
@@ -38,6 +39,7 @@ class TenantContext:
     source: TenantSource
     actor_id: str | None = None
     membership_id: str | None = None
+    support_session_id: str | None = None
     hostname: str | None = None
     correlation_id: str | None = None
 
@@ -50,6 +52,10 @@ class TenantContext:
         object.__setattr__(self, "tenant_id", tenant_id)
         if self.source == TenantSource.PANEL and (not self.actor_id or not self.membership_id):
             raise TenantContextMissing("Contexto do painel exige ator e membership validos.")
+        if self.source == TenantSource.SUPPORT and (
+            not self.actor_id or not self.support_session_id
+        ):
+            raise TenantContextMissing("Contexto de suporte exige ator e sessao validos.")
         if self.source == TenantSource.PUBLIC_HOST and not self.hostname:
             raise TenantContextMissing("Contexto publico exige hostname validado.")
 
@@ -79,7 +85,7 @@ def normalize_hostname(hostname: str | None) -> str:
         host, port = value.rsplit(":", 1)
         if not port.isdigit() or int(port) not in range(1, 65536):
             raise TenantContextMissing("Porta do hostname invalida.")
-        value = host
+        value = host.rstrip(".")
     elif ":" in value:
         raise TenantContextMissing("Hostname publico invalido.")
     if len(value) not in range(1, 254) or not re.fullmatch(r"[a-z0-9.-]+", value):

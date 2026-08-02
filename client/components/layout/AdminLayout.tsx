@@ -8,6 +8,7 @@ import ContextSidebar from "@/components/layout/ContextSidebar";
 import PageContainer from "@/components/layout/PageContainer";
 import TopNavigation from "@/components/layout/TopNavigation";
 import StoreOperationAudioAlert from "@/components/admin/StoreOperationAudioAlert";
+import PlatformSupportBanner from "@/components/platform/PlatformSupportBanner";
 
 function AdminRouteFallback() {
   return (
@@ -28,6 +29,7 @@ export default function AdminLayout() {
       <div className="admin-shell">
         <StoreOperationAudioAlert />
         <div className="app-layout flex h-screen min-h-screen flex-col overflow-hidden bg-surface-00">
+          <PlatformSupportBanner />
           <TopNavigation mobileMenuOpen={mobileMenuOpen} onMobileMenuChange={setMobileMenuOpen} />
           <div className="flex min-h-0 flex-1 overflow-hidden">
             <ContextSidebar />

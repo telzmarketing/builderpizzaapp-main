@@ -5,6 +5,7 @@ import {
   ShoppingBag, BarChart3, Zap, Shield,
 } from "lucide-react";
 import { adminAuthApi } from "@/lib/api";
+import { consumeAdminPasswordChanged } from "@/lib/adminSession";
 import { adminLandingPath } from "@/lib/platformHost";
 import TelzLogo from "@/components/TelzLogo";
 
@@ -21,6 +22,10 @@ export default function AdminLogin() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice] = useState(() => {
+    const passwordChanged = consumeAdminPasswordChanged();
+    return passwordChanged ? "Senha alterada com sucesso. Entre novamente com a nova senha." : "";
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,10 +33,15 @@ export default function AdminLogin() {
     setLoading(true);
     setError("");
     try {
-      const { access_token, admin } = await adminAuthApi.login(email.trim(), password);
+      const { access_token, admin, password_change_required } = await adminAuthApi.login(email.trim(), password);
       localStorage.setItem("admin_token", access_token);
       localStorage.setItem("admin_user", JSON.stringify(admin));
-      navigate(adminLandingPath(window.location.hostname), { replace: true });
+      navigate(
+        password_change_required || admin.force_password_change
+          ? "/painel/trocar-senha"
+          : adminLandingPath(window.location.hostname),
+        { replace: true },
+      );
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "E-mail ou senha incorretos.");
     } finally {
@@ -102,6 +112,11 @@ export default function AdminLogin() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {notice && (
+                <p className="rounded-xl border border-green-500/30 bg-green-500/10 px-3 py-2.5 text-center text-sm text-green-300">
+                  {notice}
+                </p>
+              )}
               <div>
                 <label className="text-parchment text-xs mb-1.5 block font-semibold">E-mail</label>
                 <div className="flex items-center gap-3 bg-surface-02 border border-surface-03 rounded-xl px-4 py-3 focus-within:border-gold/60 transition-colors">

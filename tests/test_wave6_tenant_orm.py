@@ -7,8 +7,8 @@ from backend.core.wave6_tenant_orm import (
 
 
 def test_wave6_inventory_and_scoped_uniques_are_complete():
-    assert len(WAVE6_TABLES) == 83
-    assert len(SCOPED_UNIQUES) == 22
+    assert len(WAVE6_TABLES) == 88
+    assert len(SCOPED_UNIQUES) == 24
     assert set(SCOPED_UNIQUES).issubset(WAVE6_TABLES)
 
 
@@ -29,7 +29,7 @@ def test_wave6_column_is_nullable_without_legacy_default():
     assert column.nullable is True
     assert column.default is None
     assert column.server_default is None
-    assert next(iter(column.foreign_keys)).constraint.name == "fk_crm_cards_tenant"
+    assert next(iter(column.foreign_keys)).name == "fk_crm_cards_tenant"
 
 
 def test_wave6_model_metadata_uses_migration_constraint_names():

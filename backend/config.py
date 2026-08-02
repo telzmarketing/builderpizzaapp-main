@@ -80,6 +80,7 @@ class Settings(BaseSettings):
 
     TENANT_CREDENTIALS_ENABLED: bool = False
     PLATFORM_RBAC_ENABLED: bool = False
+    TENANT_ENTITLEMENT_ENFORCEMENT_ENABLED: bool = False
 
     # Loyalty
     POINTS_PER_REAL: float = 1.0           # pontos por R$ gasto

@@ -17,7 +17,9 @@ Token flow
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from jose import JWTError
 from sqlalchemy.orm import Session
 
@@ -25,17 +27,36 @@ from backend.core.response import ok, err_msg
 from backend.core.security import verify_password, create_access_token, decode_access_token
 from backend.database import get_db
 from backend.models.admin import AdminUser
+from backend.models.platform_saas import SupportSession
 from backend.schemas.admin import AdminLoginIn, AdminOut, TokenOut
 from backend.schemas.tenant import TenantSelectionIn
 
 router = APIRouter(prefix="/admin/auth", tags=["admin-auth"])
 
+SUPPORT_TENANT_PATH_PREFIXES = (
+    "/gestao/finance",
+    "/store-operation",
+)
+
+
+def _support_path_allowed(path: str) -> bool:
+    normalized = path.removeprefix("/api")
+    if normalized == "/admin/auth/me":
+        return True
+    return any(
+        normalized == prefix or normalized.startswith(f"{prefix}/")
+        for prefix in SUPPORT_TENANT_PATH_PREFIXES
+    )
+
 
 # ── Dependency: resolve current admin from Bearer token ──────────────────────
 
-def get_current_admin(
+def _authenticated_admin(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
+    *,
+    allow_forced_password_change: bool = False,
+    request_path: str = "",
 ) -> AdminUser:
     """
     FastAPI dependency — extracts and validates the JWT in the Authorization header.
@@ -59,7 +80,93 @@ def get_current_admin(
     if not admin:
         raise _unauthorized("Usuário administrador não encontrado ou inativo.")
 
+    stored_auth_version = int(getattr(admin, "auth_version", 0) or 0)
+    raw_token_auth_version = payload.get("auth_version")
+    try:
+        token_auth_version = (
+            int(raw_token_auth_version)
+            if raw_token_auth_version is not None
+            else None
+        )
+    except (TypeError, ValueError) as exc:
+        raise _unauthorized("Token invalido.") from exc
+    if (
+        (token_auth_version is None and stored_auth_version > 0)
+        or (
+            token_auth_version is not None
+            and token_auth_version != stored_auth_version
+        )
+    ):
+        raise _unauthorized("Sessao revogada. Entre novamente.")
+
+    if payload.get("token_kind") == "support":
+        if not _support_path_allowed(request_path):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "SupportTokenScopeDenied",
+                    "message": "Token de suporte fora do escopo operacional permitido.",
+                },
+            )
+        session = db.query(SupportSession).filter(
+            SupportSession.id == payload.get("support_session_id"),
+            SupportSession.actor_user_id == admin.id,
+            SupportSession.tenant_id == payload.get("tenant_id"),
+            SupportSession.status == "active",
+            SupportSession.expires_at > datetime.now(timezone.utc),
+        ).first()
+        if session is None:
+            raise _unauthorized("Sessao de suporte encerrada, revogada ou expirada.")
+        session.last_seen_at = datetime.now(timezone.utc)
+        db.commit()
+
+    if admin.force_password_change and not allow_forced_password_change:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "PasswordChangeRequired",
+                "message": "Troca de senha obrigatoria antes de continuar.",
+            },
+        )
+
     return admin
+
+
+def get_current_admin(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> AdminUser:
+    return _authenticated_admin(
+        authorization=authorization,
+        db=db,
+        request_path=request.url.path,
+    )
+
+
+def get_current_admin_during_password_change(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> AdminUser:
+    return _authenticated_admin(
+        authorization=authorization,
+        db=db,
+        allow_forced_password_change=True,
+        request_path=request.url.path,
+    )
+
+
+def authenticate_admin_token(
+    authorization: str | None,
+    db: Session,
+) -> AdminUser:
+    """Authenticate request-less helpers while rejecting support tokens."""
+    return _authenticated_admin(
+        authorization=authorization,
+        db=db,
+        request_path="",
+    )
 
 
 def _unauthorized(message: str):
@@ -102,11 +209,16 @@ def admin_login(body: AdminLoginIn, db: Session = Depends(get_db)):
         )
 
     # Track last login
-    from datetime import datetime, timezone
     admin.last_login_at = datetime.now(timezone.utc)
     db.commit()
 
-    extra_claims = {"email": admin.email, "name": admin.name, "role_id": admin.role_id}
+    extra_claims = {
+        "email": admin.email,
+        "name": admin.name,
+        "role_id": admin.role_id,
+        "auth_version": int(getattr(admin, "auth_version", 0) or 0),
+        "force_password_change": bool(admin.force_password_change),
+    }
     from backend.config import get_settings
     if get_settings().MULTI_TENANT_AUTH_ENABLED:
         from backend.services.tenant_auth_service import TenantAuthService, TenantAuthUnavailable
@@ -131,12 +243,13 @@ def admin_login(body: AdminLoginIn, db: Session = Depends(get_db)):
         access_token=token,
         token_type="bearer",
         admin=AdminOut.model_validate(admin),
+        password_change_required=bool(admin.force_password_change),
     )
     return ok(result, f"Bem-vindo, {admin.name}!")
 
 
 @router.get("/me", response_model=None)
-def admin_me(current_admin: AdminUser = Depends(get_current_admin)):
+def admin_me(current_admin: AdminUser = Depends(get_current_admin_during_password_change)):
     """
     Return the profile of the currently authenticated admin.
 
@@ -174,7 +287,9 @@ def select_admin_tenant(body: TenantSelectionIn, current_admin: AdminUser = Depe
     except TenantMembershipDenied as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     token = create_access_token(subject=current_admin.id, extra={"email": current_admin.email,
-        "name": current_admin.name, "role_id": current_admin.role_id, **item.claims()})
+        "name": current_admin.name, "role_id": current_admin.role_id,
+        "auth_version": int(getattr(current_admin, "auth_version", 0) or 0),
+        **item.claims()})
     return ok({"access_token": token, "token_type": "bearer"})
 
 
@@ -193,7 +308,7 @@ def admin_logout():
 @router.put("/change-password", response_model=None)
 def change_password(
     body: "ChangePasswordIn",
-    current_admin: AdminUser = Depends(get_current_admin),
+    current_admin: AdminUser = Depends(get_current_admin_during_password_change),
     db: Session = Depends(get_db),
 ):
     """
@@ -204,18 +319,33 @@ def change_password(
     """
     if not verify_password(body.current_password, current_admin.password_hash):
         return err_msg("Senha atual incorreta.", code="WrongPassword", status_code=400)
+    if verify_password(body.new_password, current_admin.password_hash):
+        return err_msg(
+            "A nova senha deve ser diferente da senha atual.",
+            code="PasswordReuseDenied",
+            status_code=400,
+        )
 
     from backend.core.security import hash_password
     current_admin.password_hash = hash_password(body.new_password)
+    current_admin.force_password_change = False
+    current_admin.auth_version = int(getattr(current_admin, "auth_version", 0) or 0) + 1
     db.commit()
-    return ok(None, "Senha alterada com sucesso.")
+    return ok({"password_change_required": False}, "Senha alterada com sucesso.")
 
 
 # ── Inline schema for change-password ────────────────────────────────────────
 
-from pydantic import BaseModel, Field  # noqa: E402
+from pydantic import BaseModel, Field, field_validator  # noqa: E402
 
 
 class ChangePasswordIn(BaseModel):
-    current_password: str = Field(..., min_length=1)
-    new_password: str = Field(..., min_length=8)
+    current_password: str = Field(..., min_length=1, max_length=72)
+    new_password: str = Field(..., min_length=8, max_length=72)
+
+    @field_validator("current_password", "new_password")
+    @classmethod
+    def bcrypt_safe_password(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Senha excede o limite seguro de 72 bytes.")
+        return value

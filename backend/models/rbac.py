@@ -10,11 +10,14 @@ from backend.database import Base
 
 class Role(Base):
     __tablename__ = "roles"
-    __table_args__ = (Index("uq_roles_tenant_id_id", "tenant_id", "id", unique=True), UniqueConstraint("tenant_id", "name", name="uq_roles_tenant_name"))
+    __table_args__ = (
+        Index("uq_roles_tenant_id_id", "tenant_id", "id", unique=True),
+        UniqueConstraint("tenant_id", "name", name="uq_roles_tenant_name"),
+    )
 
     id          = Column(String, primary_key=True)
-    tenant_id   = Column(String, ForeignKey("tenants.id", name="fk_roles_tenant_id_tenants"), nullable=True)
-    name        = Column(String(100), unique=True, nullable=False)
+    tenant_id   = Column(String, ForeignKey("tenants.id", name="fk_roles_tenant_id_tenants"), nullable=False)
+    name        = Column(String(100), nullable=False)
     description = Column(Text)
     is_system   = Column(Boolean, default=False)
     created_at  = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -49,7 +52,7 @@ class RolePermission(Base):
     __table_args__ = (Index("uq_role_permissions_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id            = Column(String, primary_key=True)
-    tenant_id     = Column(String, ForeignKey("tenants.id", name="fk_role_permissions_tenant_id_tenants"), nullable=True)
+    tenant_id     = Column(String, ForeignKey("tenants.id", name="fk_role_permissions_tenant_id_tenants"), nullable=False)
     role_id       = Column(String, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
     module_id     = Column(String, ForeignKey("rbac_modules.id", ondelete="CASCADE"), nullable=False)
     permission_id = Column(String, ForeignKey("rbac_permissions.id", ondelete="CASCADE"), nullable=False)
@@ -61,7 +64,7 @@ class UserPermission(Base):
     __table_args__ = (Index("uq_user_permissions_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id             = Column(String, primary_key=True)
-    tenant_id      = Column(String, ForeignKey("tenants.id", name="fk_user_permissions_tenant_id_tenants"), nullable=True)
+    tenant_id      = Column(String, ForeignKey("tenants.id", name="fk_user_permissions_tenant_id_tenants"), nullable=False)
     user_id        = Column(String, ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False)
     module_id      = Column(String, ForeignKey("rbac_modules.id", ondelete="CASCADE"), nullable=False)
     permission_id  = Column(String, ForeignKey("rbac_permissions.id", ondelete="CASCADE"), nullable=False)
@@ -74,7 +77,7 @@ class AdminAuditLog(Base):
     __table_args__ = (Index("uq_admin_audit_logs_tenant_id_id", "tenant_id", "id", unique=True),)
 
     id          = Column(String, primary_key=True)
-    tenant_id   = Column(String, ForeignKey("tenants.id", name="fk_admin_audit_logs_tenant_id_tenants"), nullable=True)
+    tenant_id   = Column(String, ForeignKey("tenants.id", name="fk_admin_audit_logs_tenant_id_tenants"), nullable=False)
     user_id     = Column(String, ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True)
     user_name   = Column(String(200))
     action      = Column(String(50), nullable=False)

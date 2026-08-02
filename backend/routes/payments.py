@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
 from backend.core.response import created, err, err_msg, ok
+from backend.core.tenant_entitlements import require_operational_entitlement
 from backend.database import get_db
 from backend.models.admin import AdminUser
 from backend.models.order import Order
@@ -181,6 +182,7 @@ def approve_payment(
     order_id: str,
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(get_current_admin),
+    _entitlement=Depends(require_operational_entitlement("payments.write", write=True)),
 ):
     try:
         payment = PaymentService(db).approve_manual(order_id)
@@ -208,6 +210,7 @@ def cancel_payment(
     body: PaymentOperationRequest = PaymentOperationRequest(),
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(get_current_admin),
+    _entitlement=Depends(require_operational_entitlement("payments.write", write=True)),
 ):
     try:
         payment = PaymentService(db).cancel_payment(order_id, reason=body.reason)
@@ -222,6 +225,7 @@ def refund_payment(
     body: PaymentOperationRequest = PaymentOperationRequest(),
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(get_current_admin),
+    _entitlement=Depends(require_operational_entitlement("payments.write", write=True)),
 ):
     try:
         payment = PaymentService(db).refund_payment(order_id, reason=body.reason, value=body.value)

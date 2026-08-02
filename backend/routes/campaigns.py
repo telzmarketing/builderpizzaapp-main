@@ -18,6 +18,7 @@ router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
 def _require_admin(request: Request, db: Session) -> AdminUser:
     return get_current_admin(
+        request=request,
         authorization=request.headers.get("authorization"),
         db=db,
     )

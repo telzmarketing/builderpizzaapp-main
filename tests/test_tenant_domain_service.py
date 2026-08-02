@@ -3,7 +3,7 @@ import pytest
 from backend.models.tenant_domain import TenantDomain
 from backend.services.tenant_domain_service import (
     TenantDomainService, parse_hostname_set, remote_is_trusted,
-    trusted_request_hostname, verification_token_hash,
+    TenantDomainValidationError, trusted_request_hostname, verification_token_hash,
 )
 
 
@@ -28,7 +28,7 @@ def test_verification_then_activation_is_required() -> None:
     domain = TenantDomain(id="domain-1", tenant_id="tenant-1", hostname="store.example.com",
         kind="custom", status="pending", verification_token_hash=verification_token_hash(token),
         created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc))
-    with pytest.raises(ValueError, match="verificado"):
+    with pytest.raises(TenantDomainValidationError, match="verificado"):
         service.activate(domain)
     service.confirm_verification(domain, token)
     service.activate(domain)
@@ -39,6 +39,6 @@ def test_verification_then_activation_is_required() -> None:
 def test_wrong_verification_proof_does_not_publish() -> None:
     service = TenantDomainService(db=None)
     domain = TenantDomain(status="pending", verification_token_hash=verification_token_hash("correct"))
-    with pytest.raises(ValueError, match="invalida"):
+    with pytest.raises(TenantDomainValidationError, match="invalida"):
         service.confirm_verification(domain, "wrong")
     assert domain.status == "pending"

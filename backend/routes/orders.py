@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
 from backend.core.response import ok, created, err, err_msg
+from backend.core.tenant_entitlements import require_operational_entitlement
 from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
@@ -32,6 +33,7 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 
 def _require_admin(request: Request, db: Session) -> AdminUser:
     return get_current_admin(
+        request=request,
         authorization=request.headers.get("authorization"),
         db=db,
     )
@@ -382,6 +384,7 @@ def update_order_status(
     request: Request,
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
+    _entitlement=Depends(require_operational_entitlement("orders.write", write=True)),
 ):
     try:
         tenant_context = resolve_panel_tenant_context(request, db, admin)
@@ -402,8 +405,9 @@ def patch_order_status(
     request: Request,
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
+    _entitlement=Depends(require_operational_entitlement("orders.write", write=True)),
 ):
-    return update_order_status(order_id, body, request, db, admin)
+    return update_order_status(order_id, body, request, db, admin, _entitlement)
 
 
 @router.post("/{order_id}/cancel")
@@ -412,6 +416,7 @@ def cancel_order(
     request: Request,
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
+    _entitlement=Depends(require_operational_entitlement("orders.write", write=True)),
 ):
     try:
         tenant_context = resolve_panel_tenant_context(request, db, admin)
@@ -432,6 +437,7 @@ def delete_order(
     request: Request,
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
+    _entitlement=Depends(require_operational_entitlement("orders.write", write=True)),
 ):
     _require_order_delete_access(admin, db)
     try:

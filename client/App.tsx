@@ -7,6 +7,10 @@ import { captureTrackingFromUrl, firePixelEvent, trackEvent, getTrackingData, in
 import { customerEventsApi, isAssetUrl, resolveAssetUrl, runtimeSurfaceApi } from "./lib/api";
 import { getPublicExperience, isSalaoExperience } from "./lib/experience";
 import { isPlatformHostname } from "./lib/platformHost";
+import {
+  isPlatformSupportPanelPathAllowed,
+  readPlatformSupportSession,
+} from "./lib/platformSupportSession";
 
 const ChatbotWidget = lazy(() => import("./components/ChatbotWidget"));
 const StoreSocialProofNotification = lazy(() => import("./components/StoreSocialProofNotification"));
@@ -412,12 +416,22 @@ const AdminGuard = lazy(() => import("./components/AdminGuard"));
 const AdminLayout = lazy(() => import("./components/layout/AdminLayout"));
 const PlatformAdminGuard = lazy(() => import("./components/PlatformAdminGuard"));
 const PlatformAdminLayout = lazy(() => import("./components/layout/PlatformAdminLayout"));
+const PlatformDashboard = lazy(() => import("./pages/platform/PlatformDashboard"));
+const PlatformTenantDetail = lazy(() => import("./pages/platform/PlatformTenantDetail"));
+const PlatformPlans = lazy(() => import("./pages/platform/PlatformPlans"));
+const PlatformModules = lazy(() => import("./pages/platform/PlatformModules"));
+const PlatformBillingOverview = lazy(() => import("./pages/platform/PlatformBillingOverview"));
+const PlatformDomains = lazy(() => import("./pages/platform/PlatformDomains"));
+const PlatformAudit = lazy(() => import("./pages/platform/PlatformAudit"));
+const PlatformSupport = lazy(() => import("./pages/platform/PlatformSupport"));
 const Index = lazy(() => import("./pages/Index"));
 const Product = lazy(() => import("./pages/Product"));
 const Cart = lazy(() => import("./pages/Cart"));
 const Checkout = lazy(() => import("./pages/Checkout"));
 const OrderTracking = lazy(() => import("./pages/OrderTracking"));
 const AdminLogin = lazy(() => import("./pages/admin/Login"));
+const AdminChangePassword = lazy(() => import("./pages/admin/ChangePassword"));
+const AcceptPlatformInvitation = lazy(() => import("./pages/admin/AcceptPlatformInvitation"));
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
 const AdminEmpresas = lazy(() => import("./pages/admin/Empresas"));
 const AdminProducts = lazy(() => import("./pages/admin/Products"));
@@ -542,11 +556,21 @@ function AppSurface() {
 
               {/* ── Admin login (public) ── */}
               <Route path="/painel/login" element={<AdminLogin />} />
+              <Route path="/painel/trocar-senha" element={<AdminChangePassword />} />
+              <Route path="/painel/convite/:token" element={<AcceptPlatformInvitation />} />
               <Route path="/motoboy" element={<Motoboy />} />
 
               <Route element={<PlatformAdminGuard />}>
                 <Route element={<PlatformAdminLayout />}>
+                  <Route path="/painel/plataforma" element={<PlatformDashboard />} />
                   <Route path="/painel/empresas" element={<AdminEmpresas />} />
+                  <Route path="/painel/empresas/:tenantId" element={<PlatformTenantDetail />} />
+                  <Route path="/painel/planos" element={<PlatformPlans />} />
+                  <Route path="/painel/modulos" element={<PlatformModules />} />
+                  <Route path="/painel/cobrancas" element={<PlatformBillingOverview />} />
+                  <Route path="/painel/dominios" element={<PlatformDomains />} />
+                  <Route path="/painel/auditoria" element={<PlatformAudit />} />
+                  <Route path="/painel/suporte" element={<PlatformSupport />} />
                 </Route>
               </Route>
 
@@ -633,15 +657,38 @@ function HostResolutionScreen({ unknown = false }: { unknown?: boolean }) {
 
 export default function HostSurfaceGate() {
   const isPlatform = isPlatformHostname(window.location.hostname);
-  const platformPathAllowed = window.location.pathname === "/painel/login"
-    || window.location.pathname.startsWith("/painel/empresas");
+  const supportSession = readPlatformSupportSession();
+  const supportSessionId = supportSession?.session_id;
+  const supportPathAllowed = !!supportSession
+    && isPlatformSupportPanelPathAllowed(window.location.pathname);
+  const platformPathAllowed = supportSession ? supportPathAllowed : (
+    window.location.pathname === "/painel/login"
+    || window.location.pathname === "/painel/trocar-senha"
+    || window.location.pathname.startsWith("/painel/convite/")
+    || window.location.pathname === "/painel"
+    || [
+      "/painel/plataforma",
+      "/painel/empresas",
+      "/painel/planos",
+      "/painel/modulos",
+      "/painel/cobrancas",
+      "/painel/dominios",
+      "/painel/auditoria",
+      "/painel/suporte",
+    ].some((path) => window.location.pathname === path || window.location.pathname.startsWith(`${path}/`))
+  );
   const [storeResolved, setStoreResolved] = useState(false);
   const [unknownHost, setUnknownHost] = useState(false);
 
   useEffect(() => {
     if (isPlatform) {
-      if (!platformPathAllowed) {
-        const target = localStorage.getItem("admin_token") ? "/painel/empresas" : "/painel/login";
+      if (supportSession && !supportPathAllowed) {
+        window.location.replace("/painel/gestao/financeiro");
+      } else if (!platformPathAllowed) {
+        const target = localStorage.getItem("admin_token") ? "/painel/plataforma" : "/painel/login";
+        window.location.replace(target);
+      } else if (window.location.pathname === "/painel" && !supportSession) {
+        const target = localStorage.getItem("admin_token") ? "/painel/plataforma" : "/painel/login";
         window.location.replace(target);
       }
       return;
@@ -660,9 +707,9 @@ export default function HostSurfaceGate() {
     return () => {
       cancelled = true;
     };
-  }, [isPlatform, platformPathAllowed]);
+  }, [isPlatform, platformPathAllowed, supportPathAllowed, supportSessionId]);
 
-  if (isPlatform && !platformPathAllowed) return <HostResolutionScreen />;
+  if (isPlatform && (!platformPathAllowed || window.location.pathname === "/painel" && !supportSession)) return <HostResolutionScreen />;
   if (isPlatform) return <AppSurface />;
   if (unknownHost) return <HostResolutionScreen unknown />;
   if (!storeResolved) return <HostResolutionScreen />;

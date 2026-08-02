@@ -21,5 +21,5 @@ export function isPlatformHostname(
 }
 
 export function adminLandingPath(hostname: string): string {
-  return isPlatformHostname(hostname) ? "/painel/empresas" : "/painel";
+  return isPlatformHostname(hostname) ? "/painel/plataforma" : "/painel";
 }

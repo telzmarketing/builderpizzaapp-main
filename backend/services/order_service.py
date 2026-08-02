@@ -22,7 +22,7 @@ from backend.core.exceptions import (
     DomainError,
 )
 from backend.core.state_machine import order_sm, payment_sm
-from backend.core.tenant_context import TenantContext
+from backend.core.tenant_context import TenantContext, TenantSource
 from backend.core.tenant_ownership import (
     assign_tenant_on_create,
     customers_orders_enforcement_enabled,
@@ -135,9 +135,13 @@ class OrderService:
     def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
         self._tenant_context = tenant_context
-        self._orders_tenant_enabled = customers_orders_enforcement_enabled()
-        self._catalog_tenant_enabled = identity_catalog_enforcement_enabled()
-        self._operations_tenant_enabled = operations_enforcement_enabled()
+        support_scoped = (
+            tenant_context is not None
+            and tenant_context.source == TenantSource.SUPPORT
+        )
+        self._orders_tenant_enabled = customers_orders_enforcement_enabled() or support_scoped
+        self._catalog_tenant_enabled = identity_catalog_enforcement_enabled() or support_scoped
+        self._operations_tenant_enabled = operations_enforcement_enabled() or support_scoped
 
     def _tenant_query(self, model, *, catalog: bool = False):
         return scope_query_to_tenant(

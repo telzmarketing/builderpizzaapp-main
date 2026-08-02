@@ -1,4 +1,10 @@
-import { shouldInvalidateAdminSession } from "./adminSession";
+import { clearAdminSession, shouldInvalidateAdminSession } from "./adminSession";
+import { buildPlatformTenantListQuery } from "./platformMaster";
+import {
+  platformRequestAccessToken,
+  readPlatformSupportSession,
+  restorePlatformMasterSession,
+} from "./platformSupportSession";
 
 /**
  * API client — todas as chamadas para o backend FastAPI (porta 8000 em dev).
@@ -23,6 +29,20 @@ const UPLOAD_ASSET_BASE = BASE.endsWith("/api")
   ? BASE
   : (import.meta.env.PROD ? `${BASE}/api` : BASE);
 const IMAGE_FILE_RE = /\.(apng|avif|gif|jpe?g|jfif|pjpeg|pjp|png|svg|webp)$/i;
+
+export class ApiRequestError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+  }
+}
+
+export function isApiRequestErrorStatus(error: unknown, status: number): boolean {
+  return error instanceof ApiRequestError && error.status === status;
+}
 
 export interface ApiRuntimeHostSurface {
   surface: "store";
@@ -82,8 +102,20 @@ export function resolveOptimizedAssetUrl(value?: string | null, width = 640): st
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 function authHeaders(): HeadersInit {
-  const token = localStorage.getItem("admin_token");
+  const token = platformRequestAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function recoverUnauthorizedAdminSession(status: number, path: string): string | null {
+  if (!shouldInvalidateAdminSession(status, path)) return null;
+  if (readPlatformSupportSession()) {
+    restorePlatformMasterSession();
+    window.location.replace("/painel/plataforma");
+    return "Sessao de suporte expirada. Restaurando o acesso Master...";
+  }
+  clearAdminSession();
+  window.location.replace("/painel/login");
+  return "Sessao expirada. Redirecionando para o login...";
 }
 
 async function fetchApi(path: string, init: RequestInit): Promise<Response> {
@@ -120,12 +152,8 @@ async function requestForm<T>(method: string, path: string, body: FormData): Pro
   });
 
   if (!res.ok) {
-    if (shouldInvalidateAdminSession(res.status, path)) {
-      localStorage.removeItem("admin_token");
-      localStorage.removeItem("admin_user");
-      window.location.replace("/painel/login");
-      throw new Error("Sessao expirada. Redirecionando para o login...");
-    }
+    const recoveryMessage = recoverUnauthorizedAdminSession(res.status, path);
+    if (recoveryMessage) throw new Error(recoveryMessage);
     let message = `HTTP ${res.status}`;
     try {
       const data = await res.json();
@@ -138,7 +166,7 @@ async function requestForm<T>(method: string, path: string, body: FormData): Pro
     } catch {
       /* ignore parse errors */
     }
-    throw new Error(message);
+    throw new ApiRequestError(message, res.status);
   }
 
   if (res.status === 204) return undefined as unknown as T;
@@ -163,12 +191,8 @@ async function request<T>(
   });
 
   if (!res.ok) {
-    if (shouldInvalidateAdminSession(res.status, path)) {
-      localStorage.removeItem("admin_token");
-      localStorage.removeItem("admin_user");
-      window.location.replace("/painel/login");
-      throw new Error("Sessão expirada. Redirecionando para o login…");
-    }
+    const recoveryMessage = recoverUnauthorizedAdminSession(res.status, path);
+    if (recoveryMessage) throw new Error(recoveryMessage);
     let message = `HTTP ${res.status}`;
     try {
       const data = await res.json();
@@ -181,7 +205,7 @@ async function request<T>(
     } catch {
       /* ignore parse errors */
     }
-    throw new Error(message);
+    throw new ApiRequestError(message, res.status);
   }
 
   // 204 No Content
@@ -3000,9 +3024,17 @@ export interface ApiPaymentGatewayConfigUpdate {
 }
 
 export interface ApiAdmin {
-  id: number;
+  id: string;
   email: string;
   name: string;
+  active: boolean;
+  phone?: string | null;
+  role_id?: string | null;
+  store_id?: string | null;
+  last_login_at?: string | null;
+  force_password_change: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface ApiAdminTenantMembership {
@@ -3019,17 +3051,58 @@ export interface ApiAdminTenantSelection {
   token_type: string;
 }
 
-export type ApiPlatformTenantStatus = "active" | "suspended" | "pending" | string;
-export type ApiPlatformDomainStatus = "pending" | "verified" | "active" | "disabled" | string;
+export type ApiPlatformTenantStatus =
+  | "active"
+  | "suspended"
+  | "disabled";
+export type ApiPlatformDomainStatus =
+  | "pending"
+  | "awaiting_dns"
+  | "verifying"
+  | "verified"
+  | "active"
+  | "suspended"
+  | "dns_error"
+  | "ssl_error"
+  | "removed";
+export type ApiPlatformLicenseStatus =
+  | "trial"
+  | "active"
+  | "grace_period"
+  | "expired"
+  | "suspended"
+  | "blocked"
+  | "cancelled";
+export type ApiPlatformBillingStatus = "current" | "pending" | "overdue" | "courtesy" | "not_configured";
+
+export interface ApiPlatformPage<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
 
 export interface ApiPlatformTenantDomain {
   id: string;
   tenant_id: string;
   hostname: string;
-  kind: "subdomain" | "custom" | string;
+  kind: "subdomain" | "custom";
   status: ApiPlatformDomainStatus;
-  created_at?: string;
-  updated_at?: string;
+  is_primary?: boolean;
+  expected_txt_record?: string | null;
+  expected_cname?: string | null;
+  verified_at?: string | null;
+  activated_at?: string | null;
+  suspended_at?: string | null;
+  removed_at?: string | null;
+  ssl_status?: "pending" | "active" | "error" | null;
+  ssl_issued_at?: string | null;
+  ssl_expires_at?: string | null;
+  last_checked_at?: string | null;
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ApiPlatformTenant {
@@ -3038,17 +3111,433 @@ export interface ApiPlatformTenant {
   slug: string;
   status: ApiPlatformTenantStatus;
   legal_name?: string | null;
-  timezone?: string;
-  locale?: string;
-  is_legacy?: boolean;
-  created_at?: string;
-  updated_at?: string;
+  timezone: string;
+  locale: string;
+  is_legacy: boolean;
+  plan?: ApiPlatformPlan | null;
+  license?: ApiPlatformLicense | null;
+  trade_name?: string | null;
+  document?: string | null;
+  responsible?: string | null;
+  last_access?: string | null;
+  days_remaining?: number | null;
+  domain_status?: ApiPlatformDomainStatus | null;
+  user_count?: number;
+  users_count?: number;
+  primary_domain?: ApiPlatformTenantDomain | null;
+  billing_status?: "ok" | "pending" | "overdue" | null;
+  created_at: string;
+  updated_at: string;
   domains?: ApiPlatformTenantDomain[];
+}
+
+export interface ApiPlatformTenantProfile {
+  trade_name?: string | null;
+  tax_id?: string | null;
+  state_registration?: string | null;
+  municipal_registration?: string | null;
+  segment?: string | null;
+  website?: string | null;
+  whatsapp?: string | null;
+  billing_email?: string | null;
+  internal_code?: string | null;
+  logo_url?: string | null;
+  legal_representative_name?: string | null;
+  legal_representative_document?: string | null;
+  legal_representative_email?: string | null;
+  legal_representative_phone?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address_line?: string | null;
+  address_number?: string | null;
+  address_extra?: string | null;
+  neighborhood?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postal_code?: string | null;
+  configuration_status?: string;
+  metadata_json?: string;
 }
 
 export interface ApiPlatformTenantCreate {
   name: string;
   slug: string;
+  legal_name?: string | null;
+  timezone?: string;
+  locale?: string;
+}
+
+export interface ApiPlatformTenantUpdate {
+  name?: string;
+  legal_name?: string | null;
+  timezone?: string;
+  locale?: string;
+  profile?: ApiPlatformTenantProfile | null;
+}
+
+export interface ApiPlatformCompanyWizard {
+  tenant: ApiPlatformTenantCreate;
+  owner: {
+    name: string;
+    email: string;
+    phone?: string | null;
+    job_title?: string | null;
+    password: string;
+    force_password_change?: boolean;
+    status?: "active" | "invited";
+  };
+  profile?: ApiPlatformTenantProfile | null;
+  plan_id?: string | null;
+  module_ids?: string[];
+  trial_days?: number | null;
+  billing_cycle?: "monthly" | "quarterly" | "semiannual" | "annual" | "custom";
+  currency?: string;
+  grace_period_days?: number;
+  auto_renew?: boolean;
+  initial_status?: ApiPlatformTenantStatus;
+  license_starts_at?: string | null;
+  license_expires_at?: string | null;
+  contract_value?: number | null;
+  first_due_at?: string | null;
+  domain?: {
+    hostname: string;
+    kind: "subdomain" | "custom";
+  } | null;
+}
+
+export interface ApiPlatformPlan {
+  id: string;
+  name: string;
+  key: string;
+  description?: string | null;
+  plan_type?: "public" | "custom";
+  status: "active" | "inactive" | "archived";
+  billing_cycle?: "monthly" | "quarterly" | "semiannual" | "annual" | "custom" | null;
+  currency?: string;
+  grace_period_days?: number;
+  auto_renew_default?: boolean;
+  price?: number | null;
+  monthly_price?: number | null;
+  quarterly_price?: number | null;
+  semiannual_price?: number | null;
+  annual_price?: number | null;
+  trial_days?: number;
+  max_users?: number | null;
+  max_stores?: number | null;
+  max_storage_mb?: number | null;
+  max_orders?: number | null;
+  max_whatsapp_instances?: number | null;
+  support_level?: string | null;
+  display_order?: number;
+  module_ids?: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ApiPlatformModule {
+  id: string;
+  key: string;
+  name: string;
+  description?: string | null;
+  module_group: "operation" | "delivery" | "management" | "marketing" | "crm" | "integrations";
+  active: boolean;
+  display_order?: number;
+  dependencies_json?: string;
+  default_config_json?: string | null;
+  config_configured?: boolean;
+  entitlement?: {
+    id: string;
+    enabled: boolean;
+    origin: "plan" | "addon" | "courtesy" | "trial";
+    starts_at?: string | null;
+    ends_at?: string | null;
+    limit_value?: number | null;
+    additional_price?: number;
+    block_reason?: string | null;
+    config_json?: string | null;
+    config_configured?: boolean;
+  } | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ApiPlatformModuleWrite {
+  key: string;
+  name: string;
+  description?: string | null;
+  module_group: ApiPlatformModule["module_group"];
+  active?: boolean;
+  display_order?: number;
+  dependencies?: string[];
+  default_config?: Record<string, unknown>;
+}
+
+export interface ApiPlatformLicense {
+  id: string;
+  tenant_id: string;
+  plan_id?: string | null;
+  status: ApiPlatformLicenseStatus;
+  starts_at?: string | null;
+  expires_at?: string | null;
+  trial_ends_at?: string | null;
+  grace_period_ends_at?: string | null;
+  billing_cycle?: string;
+  currency?: string;
+  grace_period_days?: number;
+  auto_renew?: boolean;
+  contract_value?: number | null;
+  next_due_at?: string | null;
+  days_remaining?: number | null;
+  days_used?: number;
+  suspended_at?: string | null;
+  suspension_reason?: string | null;
+  blocked_at?: string | null;
+  block_reason?: string | null;
+  cancelled_at?: string | null;
+  cancellation_reason?: string | null;
+  ends_at?: string | null;
+  grace_ends_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ApiPlatformTenantUser {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  active: boolean;
+  role_id: string;
+  last_login_at?: string | null;
+  force_password_change: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  membership: {
+    id: string;
+    tenant_id: string;
+    role: ApiPlatformTenantMembershipRole;
+    status: ApiPlatformTenantMembershipStatus;
+    joined_at?: string | null;
+  };
+}
+
+export type ApiPlatformTenantMembershipRole =
+  | "owner"
+  | "admin"
+  | "manager"
+  | "operator"
+  | "viewer";
+
+export type ApiPlatformTenantMembershipStatus =
+  | "active"
+  | "invited"
+  | "suspended"
+  | "revoked";
+
+export interface ApiPlatformTenantUserCreate {
+  name: string;
+  email: string;
+  phone?: string | null;
+  password: string;
+  force_password_change: boolean;
+  membership_role: Exclude<ApiPlatformTenantMembershipRole, "owner">;
+  role_id?: string | null;
+  reason: string;
+}
+
+export interface ApiPlatformInvitation {
+  id: string;
+  tenant_id: string;
+  email: string;
+  name: string;
+  phone?: string | null;
+  job_title?: string | null;
+  membership_role: Exclude<ApiPlatformTenantMembershipRole, "owner">;
+  role_id?: string | null;
+  status: "pending" | "accepted" | "expired" | "revoked";
+  reason: string;
+  invited_by?: string | null;
+  accepted_by?: string | null;
+  expires_at: string;
+  sent_at: string;
+  accepted_at?: string | null;
+  revoked_at?: string | null;
+  resend_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiPlatformAdminPublic {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  active: boolean;
+  role_id?: string | null;
+  last_login_at?: string | null;
+  force_password_change: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ApiPlatformInvoice {
+  id: string;
+  tenant_id: string;
+  plan_id?: string | null;
+  status: "draft" | "pending" | "paid" | "overdue" | "cancelled" | "refunded" | "negotiated" | "courtesy";
+  period_start: string;
+  period_end: string;
+  base_amount: number;
+  additions_amount: number;
+  discount_amount: number;
+  total_amount: number;
+  due_at?: string | null;
+  paid_at?: string | null;
+  notes?: string | null;
+  created_at: string;
+}
+
+export interface ApiPlatformBillingHistory {
+  id: string;
+  action: string;
+  actor_label?: string | null;
+  reason?: string | null;
+  before_data?: string | null;
+  after_data?: string | null;
+  created_at: string;
+}
+
+export interface ApiPlatformUsageMetric {
+  id: string;
+  tenant_id: string;
+  metric_key: string;
+  period_key: string;
+  value: number;
+  updated_at: string;
+}
+
+export interface ApiPlatformSupportSession {
+  id: string;
+  tenant_id: string;
+  actor_user_id?: string | null;
+  target_user_id?: string | null;
+  reason: string;
+  status: "active" | "ended" | "expired" | "revoked";
+  starts_at: string;
+  expires_at: string;
+  exchanged_at?: string | null;
+  last_seen_at?: string | null;
+  ended_at?: string | null;
+  ip_address?: string | null;
+  user_agent?: string | null;
+  created_at: string;
+}
+
+export interface ApiPlatformTenantSecurity {
+  active_users: number;
+  invited_users: number;
+  blocked_users: number;
+  active_support_sessions: number;
+  support_sessions: ApiPlatformSupportSession[];
+  session_revocation_available: boolean;
+  two_factor_available: boolean;
+}
+
+export interface ApiPlatformTenantNote {
+  id: string;
+  tenant_id: string;
+  author_user_id?: string | null;
+  note: string;
+  created_at: string;
+  author?: { id: string; name: string; email: string } | null;
+}
+
+export interface ApiPlatformAuditLog {
+  id: string;
+  tenant_id?: string | null;
+  actor_user_id?: string | null;
+  actor_label: string;
+  actor_role?: string | null;
+  action: string;
+  resource_type?: string | null;
+  resource_id?: string | null;
+  reason?: string | null;
+  before_data?: string | null;
+  after_data?: string | null;
+  metadata_json?: string | null;
+  ip_address?: string | null;
+  correlation_id?: string | null;
+  created_at: string;
+}
+
+export interface ApiPlatformTenantDetail extends ApiPlatformTenant {
+  profile?: ApiPlatformTenantProfile | null;
+  modules?: ApiPlatformModule[];
+  domains?: ApiPlatformTenantDomain[];
+}
+
+export interface ApiPlatformDashboard {
+  tenants: {
+    total: number;
+    active: number;
+    suspended: number;
+    disabled: number;
+  };
+  licenses: {
+    trial: number;
+    active: number;
+    grace_period: number;
+    expired: number;
+    suspended: number;
+    blocked: number;
+    cancelled: number;
+    expiring_7d: number;
+  };
+  billing: {
+    pending_total: string;
+    overdue_count: number;
+  };
+  domains: {
+    active: number;
+    pending: number;
+    error: number;
+  };
+  generated_at: string;
+  metrics: {
+    total_tenants: number;
+    active_tenants: number;
+    created_month: number;
+    total_users: number;
+    trial_licenses: number;
+    active_licenses: number;
+    mrr: number;
+    overdue_invoices: number;
+    active_domains: number;
+    expired_licenses: number;
+    pending_invoices: number;
+    domain_errors: number;
+    user_limits_reached: number;
+  };
+  alerts: Array<{
+    key: string;
+    severity: "info" | "warning" | "critical";
+    title: string;
+    count: number;
+    description: string;
+    tenant_ids: string[];
+  }>;
+}
+
+export interface ApiPlatformProvisionResult {
+  tenant: ApiPlatformTenantDetail;
+  owner: ApiPlatformAdminPublic;
+  license: ApiPlatformLicense;
+  domain?: ApiPlatformTenantDomain | null;
+  verification?: {
+    record_type: "TXT";
+    record_name: string;
+    record_value: string;
+  } | null;
 }
 
 export interface ApiPlatformDomainCreation {
@@ -3061,11 +3550,174 @@ export interface ApiPlatformDomainCreation {
 }
 
 export const platformTenantsApi = {
-  list: () => get<ApiPlatformTenant[]>("/admin/platform/tenants"),
-  create: (data: ApiPlatformTenantCreate) =>
+  dashboard: () => get<ApiPlatformDashboard>("/admin/platform/dashboard"),
+  list: (params: {
+    page?: number;
+    page_size?: number;
+    q?: string;
+    status?: string;
+    sort_by?: string;
+    sort_dir?: "asc" | "desc";
+    tenant_id?: string;
+    email?: string;
+    plan_id?: string;
+    domain?: string;
+    billing_status?: string;
+    module?: string;
+    expiring_days?: number;
+  } = {}) => {
+    return get<ApiPlatformPage<ApiPlatformTenant>>(
+      `/admin/platform/tenants?${buildPlatformTenantListQuery(params)}`,
+    );
+  },
+  createLegacy: (data: ApiPlatformTenantCreate) =>
     post<ApiPlatformTenant>("/admin/platform/tenants", data),
+  create: (data: ApiPlatformCompanyWizard) =>
+    post<ApiPlatformProvisionResult>("/admin/platform/tenants", data),
+  get: (tenantId: string) =>
+    get<ApiPlatformTenantDetail>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}`),
+  update: (tenantId: string, data: ApiPlatformTenantUpdate) =>
+    patch<ApiPlatformTenantDetail>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}`, data),
   updateStatus: (tenantId: string, status: ApiPlatformTenantStatus) =>
     patch<ApiPlatformTenant>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/status`, { status }),
+  action: (
+    tenantId: string,
+    action: "suspend" | "reactivate" | "archive",
+    reason: string,
+  ) => post<ApiPlatformTenantDetail>(
+    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/${action}`,
+    { reason },
+  ),
+  users: (tenantId: string) =>
+    get<ApiPlatformTenantUser[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/users`),
+  invitations: (tenantId: string) =>
+    get<ApiPlatformInvitation[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/invitations`),
+  inviteUser: (
+    tenantId: string,
+    data: {
+      email: string;
+      name: string;
+      phone?: string | null;
+      job_title?: string | null;
+      membership_role: Exclude<ApiPlatformTenantMembershipRole, "owner">;
+      role_id?: string | null;
+      expires_in_hours?: number;
+      reason: string;
+    },
+  ) => post<{ invitation: ApiPlatformInvitation; invitation_token: string }>(
+    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/invitations`,
+    data,
+  ),
+  resendInvitation: (
+    tenantId: string,
+    invitationId: string,
+    data: { expires_in_hours?: number; reason: string },
+  ) => post<{ invitation: ApiPlatformInvitation; invitation_token: string }>(
+    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/invitations/${encodeURIComponent(invitationId)}/resend`,
+    data,
+  ),
+  createUser: (tenantId: string, data: ApiPlatformTenantUserCreate) =>
+    post<ApiPlatformTenantUser>(
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users`,
+      data,
+    ),
+  updateUserRole: (
+    tenantId: string,
+    userId: string,
+    data: {
+      membership_role: Exclude<ApiPlatformTenantMembershipRole, "owner">;
+      role_id?: string | null;
+      reason: string;
+    },
+  ) => patch<ApiPlatformTenantUser>(
+    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/role`,
+    data,
+  ),
+  updateUserStatus: (
+    tenantId: string,
+    userId: string,
+    data: { status: ApiPlatformTenantMembershipStatus; reason: string },
+  ) => patch<ApiPlatformTenantUser>(
+    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/status`,
+    data,
+  ),
+  userAccessAction: (
+    tenantId: string,
+    userId: string,
+    action: "block" | "reactivate",
+    reason: string,
+  ) => post<ApiPlatformTenantUser>(
+    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/${action}`,
+    { reason },
+  ),
+  resetUserPassword: (
+    tenantId: string,
+    userId: string,
+    data: { password: string; force_password_change: boolean; reason: string },
+  ) => post<{ user_id: string; force_password_change: boolean }>(
+    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/reset-password`,
+    data,
+  ),
+  revokeUserSessions: (
+    tenantId: string,
+    userId: string,
+    reason: string,
+  ) => post<ApiPlatformTenantUser>(
+    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/revoke-sessions`,
+    { reason },
+  ),
+  transferOwnership: (
+    tenantId: string,
+    new_owner_user_id: string,
+    reason: string,
+  ) => post<{ previous_owner_user_id: string; new_owner_user_id: string }>(
+    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/transfer-ownership`,
+    { new_owner_user_id, reason },
+  ),
+  security: (tenantId: string) =>
+    get<ApiPlatformTenantSecurity>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/security`),
+  usage: (tenantId: string) =>
+    get<ApiPlatformUsageMetric[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/usage`),
+  notes: (tenantId: string) =>
+    get<ApiPlatformTenantNote[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/notes`),
+  addNote: (tenantId: string, note: string) =>
+    post<ApiPlatformTenantNote>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/notes`, { note }),
+  modules: (tenantId: string) =>
+    get<ApiPlatformModule[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/modules`),
+  updateModules: (
+    tenantId: string,
+    modules: Array<{
+      module_id: string;
+      enabled: boolean;
+      origin: "plan" | "addon" | "courtesy" | "trial";
+      starts_at?: string | null;
+      ends_at?: string | null;
+      limit_value?: number | null;
+      additional_price?: number;
+      reason?: string;
+      config?: object;
+    }>,
+    reason: string,
+  ) =>
+    put<ApiPlatformModule[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/modules`, {
+      modules,
+      reason,
+    }),
+  license: (tenantId: string) =>
+    get<ApiPlatformLicense>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/license`),
+  changePlan: (tenantId: string, plan_id: string, reason: string) =>
+    put<ApiPlatformTenantDetail>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/plan`, {
+      plan_id,
+      reason,
+    }),
+  licenseAction: (
+    tenantId: string,
+    action: "renew" | "extend" | "start_trial" | "convert" | "courtesy" | "grace" | "expire" | "cancel" | "suspend" | "block" | "reactivate",
+    data: { days?: number; reason: string },
+  ) => post<ApiPlatformLicense>(
+    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/license/${action}`,
+    data,
+  ),
   listDomains: (tenantId: string) =>
     get<ApiPlatformTenantDomain[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/domains`),
   createDomain: (tenantId: string, data: { hostname: string; kind: "subdomain" | "custom" }) =>
@@ -3073,6 +3725,157 @@ export const platformTenantsApi = {
       `/admin/platform/tenants/${encodeURIComponent(tenantId)}/domains`,
       data,
     ),
+  invoices: (tenantId: string) =>
+    get<ApiPlatformInvoice[]>(`/admin/platform/tenants/${encodeURIComponent(tenantId)}/invoices`),
+  createInvoice: (
+    tenantId: string,
+    data: {
+      plan_id?: string | null;
+      period_start: string;
+      period_end: string;
+      due_at: string;
+      additions_amount?: number;
+      discount_amount?: number;
+      status?: "draft" | "pending" | "courtesy";
+      notes?: string;
+      items?: Array<{ description: string; quantity: number; unit_amount: number }>;
+    },
+  ) => post<ApiPlatformInvoice>(
+    `/admin/platform/tenants/${encodeURIComponent(tenantId)}/invoices`,
+    data,
+  ),
+};
+
+export const platformPlansApi = {
+  list: () => get<ApiPlatformPlan[]>("/admin/platform/plans"),
+  create: (data: Omit<ApiPlatformPlan, "id" | "created_at" | "updated_at">) =>
+    post<ApiPlatformPlan>("/admin/platform/plans", data),
+  update: (id: string, data: Partial<ApiPlatformPlan> & { reason?: string }) =>
+    patch<ApiPlatformPlan>(`/admin/platform/plans/${encodeURIComponent(id)}`, data),
+};
+
+export const platformModulesApi = {
+  list: () => get<ApiPlatformModule[]>("/admin/platform/modules"),
+  create: (data: ApiPlatformModuleWrite) =>
+    post<ApiPlatformModule>("/admin/platform/modules", data),
+  update: (
+    id: string,
+    data: Partial<Omit<ApiPlatformModuleWrite, "key">> & { reason: string },
+  ) => patch<ApiPlatformModule>(`/admin/platform/modules/${encodeURIComponent(id)}`, data),
+};
+
+export const platformDomainsApi = {
+  list: (params: { page?: number; page_size?: number; q?: string; status?: string } = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") qs.set(key, String(value));
+    });
+    return get<ApiPlatformPage<ApiPlatformTenantDomain>>(`/admin/platform/domains?${qs.toString()}`);
+  },
+  action: (
+    domainId: string,
+    action: "verify" | "activate" | "primary" | "suspend",
+    reason?: string,
+  ) => post<ApiPlatformTenantDomain>(
+    `/admin/platform/domains/${encodeURIComponent(domainId)}/${action}`,
+    action === "suspend" ? { reason: reason || "Suspensao administrativa" } : {},
+  ),
+  remove: (domainId: string, reason: string) =>
+    request<ApiPlatformTenantDomain>("DELETE", `/admin/platform/domains/${encodeURIComponent(domainId)}`, { reason }),
+};
+
+export const platformAuditApi = {
+  list: (params: {
+    page?: number;
+    page_size?: number;
+    tenant_id?: string;
+    action?: string;
+    actor_user_id?: number;
+  } = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") qs.set(key, String(value));
+    });
+    return get<ApiPlatformPage<ApiPlatformAuditLog>>(`/admin/platform/audit-logs?${qs.toString()}`);
+  },
+};
+
+export const platformBillingApi = {
+  recordPayment: (
+    invoiceId: string,
+    data: { amount: number; paid_at: string; payment_method: string; reference?: string; notes?: string },
+  ) => post<{
+    payment: { id: string; amount: number; paid_at: string; reference?: string | null };
+    invoice: ApiPlatformInvoice;
+    idempotent_replay?: boolean;
+  }>(
+    `/admin/platform/invoices/${encodeURIComponent(invoiceId)}/payments`,
+    data,
+  ),
+  applyDiscount: (invoiceId: string, amount: number, reason: string) =>
+    post<ApiPlatformInvoice>(
+      `/admin/platform/invoices/${encodeURIComponent(invoiceId)}/discount`,
+      { amount, reason },
+    ),
+  grantCourtesy: (invoiceId: string, reason: string) =>
+    post<ApiPlatformInvoice>(
+      `/admin/platform/invoices/${encodeURIComponent(invoiceId)}/courtesy`,
+      { reason },
+    ),
+  extendDueDate: (invoiceId: string, due_at: string, reason: string) =>
+    post<ApiPlatformInvoice>(
+      `/admin/platform/invoices/${encodeURIComponent(invoiceId)}/extend`,
+      { due_at, reason },
+    ),
+  cancelInvoice: (invoiceId: string, reason: string) =>
+    post<ApiPlatformInvoice>(
+      `/admin/platform/invoices/${encodeURIComponent(invoiceId)}/cancel`,
+      { reason },
+    ),
+  history: (invoiceId: string) =>
+    get<ApiPlatformBillingHistory[]>(
+      `/admin/platform/invoices/${encodeURIComponent(invoiceId)}/history`,
+    ),
+};
+
+export const platformSupportApi = {
+  start: (data: {
+    tenant_id: string;
+    target_user_id?: string | null;
+    reason: string;
+    duration_minutes: number;
+  }) =>
+    post<{ session: ApiPlatformSupportSession; support_token: string }>(
+      "/admin/platform/support-sessions",
+      data,
+    ),
+  exchange: (support_token: string) =>
+    post<{
+      access_token: string;
+      token_type: "bearer";
+      expires_at: string;
+      tenant_id: string;
+      support_session_id: string;
+    }>("/admin/platform/support-sessions/exchange", { support_token }),
+  end: (sessionId: string, masterToken?: string) =>
+    request<ApiPlatformSupportSession>(
+      "POST",
+      `/admin/platform/support-sessions/${encodeURIComponent(sessionId)}/end`,
+      {},
+      masterToken ? { Authorization: `Bearer ${masterToken}` } : undefined,
+    ),
+};
+
+export const platformInvitationApi = {
+  accept: (token: string, password?: string) =>
+    post<{
+      user: ApiPlatformAdminPublic;
+      membership: ApiPlatformTenantUser["membership"];
+      tenant_id: string;
+    }>("/admin/platform/invitations/accept", {
+      token,
+      ...(password ? { password } : {}),
+    }),
 };
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -3124,7 +3927,12 @@ export const lgpdApi = {
 
 export const adminAuthApi = {
   login: (email: string, password: string) =>
-    post<{ access_token: string; token_type: string; admin: ApiAdmin }>(
+    post<{
+      access_token: string;
+      token_type: string;
+      admin: ApiAdmin;
+      password_change_required: boolean;
+    }>(
       "/admin/auth/login",
       { email, password }
     ),
@@ -3139,7 +3947,7 @@ export const adminAuthApi = {
   logout: () => post<null>("/admin/auth/logout", {}),
 
   changePassword: (current_password: string, new_password: string) =>
-    put<{ message: string }>("/admin/auth/change-password", {
+    put<null>("/admin/auth/change-password", {
       current_password,
       new_password,
     }),

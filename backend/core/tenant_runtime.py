@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from fastapi import HTTPException, Request
+from jose import JWTError
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
+from backend.core.security import decode_access_token
 from backend.core.tenant_auth import get_current_tenant_context
 from backend.core.tenant_context import TenantContext, TenantSource
 from backend.models.admin import AdminUser
@@ -21,8 +23,23 @@ def resolve_panel_tenant_context(
     """Resolve a membership-backed context only when panel tenancy is enabled."""
     if not get_settings().MULTI_TENANT_AUTH_ENABLED:
         return None
+    authorization = request.headers.get("authorization")
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            payload = decode_access_token(
+                authorization.removeprefix("Bearer ").strip()
+            )
+        except JWTError:
+            payload = {}
+        if payload.get("token_kind") == "support":
+            return get_current_tenant_context(
+                authorization=authorization,
+                requested_tenant_id=request.headers.get("x-tenant-id"),
+                admin=admin,
+                db=db,
+            )
     return get_current_tenant_context(
-        authorization=request.headers.get("authorization"),
+        authorization=authorization,
         requested_tenant_id=request.headers.get("x-tenant-id"),
         admin=admin,
         db=db,

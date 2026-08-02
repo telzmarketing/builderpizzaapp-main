@@ -6,10 +6,20 @@ import ipaddress
 import secrets
 import uuid
 from datetime import datetime, timezone
+from typing import Callable
 from sqlalchemy.orm import Session
+from backend.core.exceptions import DomainError
 from backend.core.tenant_context import TenantContextMissing, normalize_hostname
 from backend.models.tenant import Tenant
 from backend.models.tenant_domain import TenantDomain
+
+
+class TenantDomainValidationError(DomainError):
+    http_status = 422
+
+
+class TenantDomainConflict(DomainError):
+    http_status = 409
 
 
 def parse_hostname_set(raw: str) -> frozenset[str]:
@@ -56,39 +66,115 @@ class TenantDomainService:
                        platform_hostnames: frozenset[str]) -> tuple[TenantDomain, str]:
         normalized = normalize_hostname(hostname)
         if normalized in platform_hostnames:
-            raise ValueError("Dominio principal da plataforma nao pode ser vinculado a tenant.")
+            raise TenantDomainConflict("Dominio principal da plataforma nao pode ser vinculado a tenant.")
         if kind not in {"subdomain", "custom"}:
-            raise ValueError("Tipo de dominio invalido.")
+            raise TenantDomainValidationError("Tipo de dominio invalido.")
         tenant = self._db.query(Tenant).filter(
             Tenant.id == tenant_id, Tenant.status == "active", Tenant.deleted_at.is_(None)
         ).first()
         if tenant is None:
             raise TenantContextMissing("Tenant inexistente ou inativo.")
         if self._db.query(TenantDomain).filter(TenantDomain.hostname.ilike(normalized)).first() is not None:
-            raise ValueError("Hostname ja cadastrado.")
+            raise TenantDomainConflict("Hostname ja cadastrado.")
         token = secrets.token_urlsafe(32)
-        domain = TenantDomain(id=str(uuid.uuid4()), tenant_id=tenant_id, hostname=normalized,
-                              kind=kind, status="pending",
-                              verification_token_hash=verification_token_hash(token))
+        domain = TenantDomain(
+            id=str(uuid.uuid4()), tenant_id=tenant_id, hostname=normalized,
+            kind=kind, status="awaiting_dns",
+            verification_token_hash=verification_token_hash(token),
+            expected_txt_record=f"_telz-verification.{normalized}",
+        )
         self._db.add(domain)
         return domain, token
 
+    @staticmethod
+    def verification_challenge(domain: TenantDomain, token: str) -> dict:
+        return {
+            "hostname": domain.hostname,
+            "record_type": "TXT",
+            "record_name": domain.expected_txt_record or f"_telz-verification.{domain.hostname}",
+            "record_value": token,
+        }
+
     def confirm_verification(self, domain: TenantDomain, observed_token: str) -> TenantDomain:
-        if domain.status != "pending":
-            raise ValueError("Somente dominio pendente pode ser verificado.")
+        if domain.status not in {"pending", "awaiting_dns", "verifying", "dns_error"}:
+            raise TenantDomainValidationError("Somente dominio pendente pode ser verificado.")
         if not hmac.compare_digest(domain.verification_token_hash, verification_token_hash(observed_token)):
-            raise ValueError("Prova de dominio invalida.")
+            raise TenantDomainValidationError("Prova de dominio invalida.")
         domain.status = "verified"
         domain.verified_at = datetime.now(timezone.utc)
         domain.updated_at = domain.verified_at
         return domain
 
+    def verify_dns(
+        self,
+        domain: TenantDomain,
+        *,
+        resolver: Callable[[str], list[str]] | None = None,
+    ) -> TenantDomain:
+        """Resolve the TXT challenge server-side and never trust a frontend boolean."""
+        domain.status = "verifying"
+        domain.last_checked_at = datetime.now(timezone.utc)
+        try:
+            if resolver is None:
+                import dns.resolver
+
+                def resolver(record_name: str) -> list[str]:
+                    return [str(item).strip('"') for item in dns.resolver.resolve(record_name, "TXT")]
+            observed = resolver(domain.expected_txt_record or f"_telz-verification.{domain.hostname}")
+            candidate = next(
+                (
+                    value.removeprefix("telz-verification=")
+                    for value in observed
+                    if hmac.compare_digest(
+                        domain.verification_token_hash,
+                        verification_token_hash(value.removeprefix("telz-verification=")),
+                    )
+                ),
+                None,
+            )
+            if candidate is None:
+                raise TenantDomainValidationError("Registro TXT de verificacao nao encontrado.")
+            self.confirm_verification(domain, candidate)
+            domain.error_message = None
+        except Exception as exc:
+            domain.status = "dns_error"
+            domain.error_message = str(exc)[:1000]
+        domain.updated_at = datetime.now(timezone.utc)
+        return domain
+
     def activate(self, domain: TenantDomain) -> TenantDomain:
         if domain.status != "verified" or domain.verified_at is None:
-            raise ValueError("Dominio precisa estar verificado antes da publicacao.")
+            raise TenantDomainValidationError("Dominio precisa estar verificado antes da publicacao.")
         domain.status = "active"
         domain.activated_at = datetime.now(timezone.utc)
         domain.updated_at = domain.activated_at
+        return domain
+
+    def set_primary(self, domain: TenantDomain) -> TenantDomain:
+        if domain.status != "active":
+            raise TenantDomainValidationError("Somente dominio ativo pode ser principal.")
+        self._db.query(TenantDomain).filter(
+            TenantDomain.tenant_id == domain.tenant_id,
+            TenantDomain.id != domain.id,
+        ).update({TenantDomain.is_primary: False}, synchronize_session=False)
+        domain.is_primary = True
+        domain.updated_at = datetime.now(timezone.utc)
+        return domain
+
+    def suspend(self, domain: TenantDomain, reason: str | None = None) -> TenantDomain:
+        domain.status = "suspended"
+        domain.suspended_at = datetime.now(timezone.utc)
+        domain.error_message = reason
+        domain.is_primary = False
+        domain.updated_at = domain.suspended_at
+        return domain
+
+    def remove(self, domain: TenantDomain, reason: str | None = None) -> TenantDomain:
+        domain.status = "removed"
+        domain.removed_at = datetime.now(timezone.utc)
+        domain.error_message = reason
+        domain.is_primary = False
+        domain.updated_at = domain.removed_at
         return domain
 
     def resolve_active_tenant_id(self, hostname: str, *, platform_hostnames: frozenset[str]) -> str | None:

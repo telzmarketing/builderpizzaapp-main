@@ -15,7 +15,7 @@ describe("platform host routing", () => {
   });
 
   it("lands platform sessions in company administration", () => {
-    expect(adminLandingPath("erp.telz.com.br")).toBe("/painel/empresas");
+    expect(adminLandingPath("erp.telz.com.br")).toBe("/painel/plataforma");
     expect(adminLandingPath("loja.exemplo.com.br")).toBe("/painel");
   });
 });

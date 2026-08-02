@@ -7,7 +7,8 @@ import AdminTenantSwitcher from "@/components/admin/AdminTenantSwitcher";
 import { useApp } from "@/context/AppContext";
 import { filterAdminNavigation, findAdminNavigationGroup } from "@/lib/adminAccess";
 import { preloadAdminRoute } from "@/lib/adminRoutePreload";
-import { isAssetUrl, resolveAssetUrl, type ApiEffectivePermissions } from "@/lib/api";
+import { isAssetUrl, platformSupportApi, resolveAssetUrl, type ApiEffectivePermissions } from "@/lib/api";
+import { readPlatformSupportSession, restorePlatformMasterSession } from "@/lib/platformSupportSession";
 import type { AdminNavigationGroup, AdminNavigationItem } from "@/config/adminNavigation";
 
 const LAST_MODULE_PATH_PREFIX = "admin:last-module-path:";
@@ -76,6 +77,7 @@ export default function TopNavigation({
   const searchRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   const permissions = readJson<ApiEffectivePermissions>("admin_permissions");
+  const supportSession = readPlatformSupportSession();
   const adminUser = readJson<{ name?: string; email?: string; role_name?: string }>("admin_user");
   const navigationGroups = useMemo(() => filterAdminNavigation(permissions), [JSON.stringify(permissions)]);
   const activeGroup = findAdminNavigationGroup(pathname, navigationGroups);
@@ -126,7 +128,17 @@ export default function TopNavigation({
 
   const mobileGroup = navigationGroups.find((group) => group.label === mobileModuleLabel) ?? activeGroup ?? navigationGroups[0];
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (supportSession) {
+      try {
+        await platformSupportApi.end(supportSession.session_id, supportSession.master_token);
+        restorePlatformMasterSession();
+        window.location.replace("/painel/plataforma");
+      } catch {
+        // O banner preserva a sessao e oferece nova tentativa sem perder o backup Master.
+      }
+      return;
+    }
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_user");
     localStorage.removeItem("admin_permissions");
@@ -217,7 +229,7 @@ export default function TopNavigation({
         </nav>
 
         <div className="ml-auto">
-          <AdminTenantSwitcher />
+          {!supportSession && <AdminTenantSwitcher />}
         </div>
 
         <div ref={searchRef} className="relative hidden lg:block">
@@ -299,21 +311,23 @@ export default function TopNavigation({
                   {adminRole}
                 </span>
               </div>
-              <Link
-                to="/"
-                onClick={() => setProfileOpen(false)}
-                className="flex items-center gap-3 px-4 py-3 text-sm text-stone transition-colors hover:bg-surface-03 hover:text-cream"
-              >
-                <ArrowLeft size={15} />
-                Voltar ao App
-              </Link>
+              {!supportSession && (
+                <Link
+                  to="/"
+                  onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-3 px-4 py-3 text-sm text-stone transition-colors hover:bg-surface-03 hover:text-cream"
+                >
+                  <ArrowLeft size={15} />
+                  Voltar ao App
+                </Link>
+              )}
               <button
                 type="button"
-                onClick={handleLogout}
+                onClick={() => void handleLogout()}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-red-300 transition-colors hover:bg-red-500/10"
               >
                 <LogOut size={15} />
-                Sair
+                {supportSession ? "Encerrar suporte" : "Sair"}
               </button>
             </div>
           )}
@@ -425,13 +439,13 @@ export default function TopNavigation({
             )}
           </div>
           <div className="grid grid-cols-2 gap-2 border-t border-surface-03 bg-surface-02 p-4">
-            <Link to="/" className="flex items-center justify-center gap-2 rounded-xl border border-surface-03 px-3 py-3 text-sm font-bold text-stone">
+            {!supportSession && <Link to="/" className="flex items-center justify-center gap-2 rounded-xl border border-surface-03 px-3 py-3 text-sm font-bold text-stone">
               <ArrowLeft size={15} />
               Voltar ao App
-            </Link>
-            <button type="button" onClick={handleLogout} className="flex items-center justify-center gap-2 rounded-xl bg-red-500/10 px-3 py-3 text-sm font-bold text-red-300">
+            </Link>}
+            <button type="button" onClick={() => void handleLogout()} className="flex items-center justify-center gap-2 rounded-xl bg-red-500/10 px-3 py-3 text-sm font-bold text-red-300">
               <LogOut size={15} />
-              Sair
+              {supportSession ? "Encerrar suporte" : "Sair"}
             </button>
           </div>
         </div>

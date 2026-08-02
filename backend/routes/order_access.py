@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from backend.models.order import Order
-from backend.routes.admin_auth import get_current_admin
+from backend.routes.admin_auth import authenticate_admin_token
 from backend.routes.customer_access import require_customer_id_or_admin
 
 
@@ -23,7 +23,7 @@ def require_order_or_admin(
 ) -> None:
     if authorization and authorization.startswith("Bearer "):
         try:
-            get_current_admin(authorization=authorization, db=db)
+            authenticate_admin_token(authorization=authorization, db=db)
             return
         except HTTPException:
             pass

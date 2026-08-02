@@ -21,9 +21,22 @@ class TenantDomainOut(BaseModel):
     tenant_id: str
     hostname: str
     kind: Literal["subdomain", "custom"]
-    status: Literal["pending", "verified", "active"]
+    status: Literal[
+        "pending", "awaiting_dns", "verifying", "verified", "active",
+        "dns_error", "ssl_error", "suspended", "removed",
+    ]
+    is_primary: bool = False
+    expected_txt_record: str | None = None
+    expected_cname: str | None = None
     verified_at: datetime | None = None
     activated_at: datetime | None = None
+    suspended_at: datetime | None = None
+    removed_at: datetime | None = None
+    last_checked_at: datetime | None = None
+    ssl_status: str = "pending"
+    ssl_issued_at: datetime | None = None
+    ssl_expires_at: datetime | None = None
+    error_message: str | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -33,3 +33,13 @@ def test_platform_dependency_hidden_when_off(monkeypatch):
     monkeypatch.setattr("backend.core.platform_authorization.get_settings", lambda: SimpleNamespace(PLATFORM_RBAC_ENABLED=False))
     with pytest.raises(HTTPException) as exc: require_platform_permission("tenants.manage")(SimpleNamespace(id="u"), object())
     assert exc.value.status_code == 404
+
+def test_platform_dependency_rejects_support_token(monkeypatch):
+    monkeypatch.setattr("backend.core.platform_authorization.get_settings", lambda: SimpleNamespace(PLATFORM_RBAC_ENABLED=True))
+    monkeypatch.setattr("backend.core.platform_authorization.decode_access_token", lambda _token: {"token_kind": "support"})
+    monkeypatch.setattr("backend.core.platform_authorization.has_platform_permission", lambda *_args: True)
+    with pytest.raises(HTTPException) as exc:
+        require_platform_permission("tenants.view")(
+            SimpleNamespace(id="u"), object(), "Bearer support-token"
+        )
+    assert exc.value.status_code == 403

@@ -33,14 +33,21 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 # ── JWT ───────────────────────────────────────────────────────────────────────
 
-def create_access_token(subject: str, extra: dict | None = None) -> str:
+def create_access_token(
+    subject: str,
+    extra: dict | None = None,
+    *,
+    expires_at: datetime | None = None,
+) -> str:
     """
     Create a signed JWT.
 
     :param subject: typically the admin's id (str).
     :param extra:   any additional claims to embed (e.g. {"email": "..."}).
     """
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
+    expire = expires_at or (
+        datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
+    )
     payload = {"sub": subject, "exp": expire, **(extra or {})}
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 

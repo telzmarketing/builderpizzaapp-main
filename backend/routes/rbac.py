@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -35,6 +36,7 @@ from backend.core.response import ok, created
 from backend.core.tenant_runtime import resolve_panel_tenant_context
 from backend.database import get_db
 from backend.models.admin import AdminUser
+from backend.models.membership import TenantMembership
 from backend.models.rbac import (
     AdminAuditLog, RbacModule, RbacPermission, Role,
     RolePermission, UserPermission,
@@ -57,22 +59,91 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _tenant_id(request: Request, db: Session, user: AdminUser) -> str:
+@dataclass(frozen=True, slots=True)
+class _TenantScope:
+    tenant_id: str
+    enforced: bool
+
+
+def _tenant_scope(request: Request, db: Session, user: AdminUser) -> _TenantScope:
     context = resolve_panel_tenant_context(request, db, user)
-    return context.tenant_id if context is not None else LEGACY_TENANT_ID
+    if context is None:
+        return _TenantScope(tenant_id=LEGACY_TENANT_ID, enforced=False)
+    return _TenantScope(tenant_id=context.tenant_id, enforced=True)
 
 
-def _is_master(user: AdminUser, db: Session) -> bool:
-    """User is master if: no role assigned (legacy), or role_id = 'master'."""
+def _scoped_query(query, model, scope: _TenantScope):
+    if scope.enforced:
+        return query.filter(model.tenant_id == scope.tenant_id)
+    return query
+
+
+def _role_query(db: Session, scope: _TenantScope):
+    return _scoped_query(db.query(Role), Role, scope)
+
+
+def _tenant_user_query(db: Session, scope: _TenantScope):
+    query = db.query(AdminUser)
+    if scope.enforced:
+        query = query.join(
+            TenantMembership,
+            TenantMembership.user_id == AdminUser.id,
+        ).filter(
+            TenantMembership.tenant_id == scope.tenant_id,
+            TenantMembership.status != "revoked",
+        )
+    return query
+
+
+def _role_user_count(
+    db: Session,
+    role_id: str,
+    scope: _TenantScope,
+    *,
+    active_only: bool = True,
+) -> int:
+    query = db.query(AdminUser).filter(AdminUser.role_id == role_id)
+    if active_only:
+        query = query.filter(AdminUser.active == True)  # noqa: E712
+    if scope.enforced:
+        query = query.join(
+            TenantMembership,
+            TenantMembership.user_id == AdminUser.id,
+        ).filter(
+            TenantMembership.tenant_id == scope.tenant_id,
+        )
+        if active_only:
+            query = query.filter(TenantMembership.status == "active")
+        else:
+            query = query.filter(TenantMembership.status != "revoked")
+    return query.count()
+
+
+def _is_master(user: AdminUser, db: Session, scope: _TenantScope) -> bool:
+    """Resolve tenant management independently from platform authorization."""
+    if scope.enforced:
+        membership = db.query(TenantMembership).filter(
+            TenantMembership.user_id == user.id,
+            TenantMembership.tenant_id == scope.tenant_id,
+            TenantMembership.status == "active",
+        ).first()
+        if membership is None:
+            return False
+        if membership.role == "owner":
+            return True
     if not user.role_id:
-        return True
-    role = db.query(Role).filter(Role.id == user.role_id).first()
+        return not scope.enforced
+    role = _role_query(db, scope).filter(Role.id == user.role_id).first()
     return role is not None and role.name.lower() == "master"
 
 
-def _effective_permissions(user: AdminUser, db: Session) -> EffectivePermissions:
+def _effective_permissions(
+    user: AdminUser,
+    db: Session,
+    scope: _TenantScope,
+) -> EffectivePermissions:
     """Compute effective permission map for the given user."""
-    if _is_master(user, db):
+    if _is_master(user, db, scope):
         modules = db.query(RbacModule).filter(RbacModule.is_active == True).all()  # noqa: E712
         perms   = db.query(RbacPermission).all()
         return EffectivePermissions(
@@ -86,8 +157,15 @@ def _effective_permissions(user: AdminUser, db: Session) -> EffectivePermissions
     perm_map: dict[str, dict[str, bool]] = {}
 
     if user.role_id:
+        role_permissions = db.query(
+            RolePermission, RbacModule, RbacPermission
+        )
+        if scope.enforced:
+            role_permissions = role_permissions.filter(
+                RolePermission.tenant_id == scope.tenant_id
+            )
         rows = (
-            db.query(RolePermission, RbacModule, RbacPermission)
+            role_permissions
             .join(RbacModule, RolePermission.module_id == RbacModule.id)
             .join(RbacPermission, RolePermission.permission_id == RbacPermission.id)
             .filter(RolePermission.role_id == user.role_id)
@@ -97,8 +175,15 @@ def _effective_permissions(user: AdminUser, db: Session) -> EffectivePermissions
             perm_map.setdefault(mod.key, {})[perm.key] = rp.allowed
 
     # Apply user-level overrides
+    user_permissions = db.query(
+        UserPermission, RbacModule, RbacPermission
+    )
+    if scope.enforced:
+        user_permissions = user_permissions.filter(
+            UserPermission.tenant_id == scope.tenant_id
+        )
     overrides = (
-        db.query(UserPermission, RbacModule, RbacPermission)
+        user_permissions
         .join(RbacModule, UserPermission.module_id == RbacModule.id)
         .join(RbacPermission, UserPermission.permission_id == RbacPermission.id)
         .filter(UserPermission.user_id == user.id, UserPermission.overrides_role == True)  # noqa: E712
@@ -107,7 +192,11 @@ def _effective_permissions(user: AdminUser, db: Session) -> EffectivePermissions
     for up, mod, perm in overrides:
         perm_map.setdefault(mod.key, {})[perm.key] = up.allowed
 
-    role = db.query(Role).filter(Role.id == user.role_id).first() if user.role_id else None
+    role = (
+        _role_query(db, scope).filter(Role.id == user.role_id).first()
+        if user.role_id
+        else None
+    )
 
     return EffectivePermissions(
         is_master=False,
@@ -117,8 +206,8 @@ def _effective_permissions(user: AdminUser, db: Session) -> EffectivePermissions
     )
 
 
-def _require_master(user: AdminUser, db: Session) -> None:
-    if not _is_master(user, db):
+def _require_master(user: AdminUser, db: Session, scope: _TenantScope) -> None:
+    if not _is_master(user, db, scope):
         raise HTTPException(403, "Acesso restrito a usuários master.")
 
 
@@ -153,28 +242,30 @@ def _log(db: Session, user: AdminUser, action: str, module_key: str,
 
 @router.get("/auth/me/permissions")
 def me_permissions(
+    request: Request,
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
-    return ok(_effective_permissions(current, db).model_dump())
+    scope = _tenant_scope(request, db, current)
+    return ok(_effective_permissions(current, db, scope).model_dump())
 
 
 # ── Roles ─────────────────────────────────────────────────────────────────────
 
 @router.get("/roles")
 def list_roles(
+    request: Request,
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
-    _require_master(current, db)
-    roles = db.query(Role).order_by(Role.created_at).all()
+    scope = _tenant_scope(request, db, current)
+    _require_master(current, db, scope)
+    roles = _role_query(db, scope).order_by(Role.created_at).all()
     # Enrich with user count
     result = []
     for r in roles:
         rd = RoleOut.model_validate(r).model_dump()
-        rd["user_count"] = db.query(AdminUser).filter(
-            AdminUser.role_id == r.id, AdminUser.active == True  # noqa: E712
-        ).count()
+        rd["user_count"] = _role_user_count(db, r.id, scope)
         result.append(rd)
     return ok(result)
 
@@ -186,9 +277,10 @@ def create_role(
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
-    _require_master(current, db)
-    tenant_id = _tenant_id(request, db, current)
-    if db.query(Role).filter(Role.name == body.name).first():
+    scope = _tenant_scope(request, db, current)
+    _require_master(current, db, scope)
+    tenant_id = scope.tenant_id
+    if _role_query(db, scope).filter(Role.name == body.name).first():
         raise HTTPException(400, "Já existe um perfil com esse nome.")
     role = Role(
         id=str(uuid.uuid4()),
@@ -216,16 +308,19 @@ def update_role(
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
-    _require_master(current, db)
-    tenant_id = _tenant_id(request, db, current)
-    role = db.query(Role).filter(Role.id == role_id).first()
+    scope = _tenant_scope(request, db, current)
+    _require_master(current, db, scope)
+    tenant_id = scope.tenant_id
+    role = _role_query(db, scope).filter(Role.id == role_id).first()
     if not role:
         raise HTTPException(404, "Perfil não encontrado.")
     if role.is_system and body.name and body.name != role.name:
         raise HTTPException(400, "Não é possível renomear perfis do sistema.")
     old = role.name
     if body.name is not None:
-        if db.query(Role).filter(Role.name == body.name, Role.id != role_id).first():
+        if _role_query(db, scope).filter(
+            Role.name == body.name, Role.id != role_id
+        ).first():
             raise HTTPException(400, "Nome já em uso por outro perfil.")
         role.name = body.name
     if body.description is not None:
@@ -246,14 +341,17 @@ def delete_role(
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
-    _require_master(current, db)
-    tenant_id = _tenant_id(request, db, current)
-    role = db.query(Role).filter(Role.id == role_id).first()
+    scope = _tenant_scope(request, db, current)
+    _require_master(current, db, scope)
+    tenant_id = scope.tenant_id
+    role = _role_query(db, scope).filter(Role.id == role_id).first()
     if not role:
         raise HTTPException(404, "Perfil não encontrado.")
     if role.is_system:
         raise HTTPException(400, "Perfis do sistema não podem ser excluídos.")
-    users_with_role = db.query(AdminUser).filter(AdminUser.role_id == role_id).count()
+    users_with_role = _role_user_count(
+        db, role_id, scope, active_only=False
+    )
     if users_with_role > 0:
         raise HTTPException(400, f"Não é possível excluir: {users_with_role} usuário(s) vinculado(s) a este perfil.")
     _log(
@@ -272,14 +370,15 @@ def duplicate_role(
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
-    _require_master(current, db)
-    tenant_id = _tenant_id(request, db, current)
-    source = db.query(Role).filter(Role.id == role_id).first()
+    scope = _tenant_scope(request, db, current)
+    _require_master(current, db, scope)
+    tenant_id = scope.tenant_id
+    source = _role_query(db, scope).filter(Role.id == role_id).first()
     if not source:
         raise HTTPException(404, "Perfil não encontrado.")
     new_name = f"Cópia de {source.name}"
     counter = 1
-    while db.query(Role).filter(Role.name == new_name).first():
+    while _role_query(db, scope).filter(Role.name == new_name).first():
         counter += 1
         new_name = f"Cópia de {source.name} ({counter})"
     new_role = Role(
@@ -292,7 +391,9 @@ def duplicate_role(
     db.add(new_role)
     db.flush()
     # Copy permissions
-    src_perms = db.query(RolePermission).filter(RolePermission.role_id == role_id).all()
+    src_perms = _scoped_query(
+        db.query(RolePermission), RolePermission, scope
+    ).filter(RolePermission.role_id == role_id).all()
     for sp in src_perms:
         db.add(RolePermission(
             id=str(uuid.uuid4()),
@@ -315,20 +416,24 @@ def duplicate_role(
 
 @router.get("/modules")
 def list_modules(
+    request: Request,
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
-    _require_master(current, db)
+    scope = _tenant_scope(request, db, current)
+    _require_master(current, db, scope)
     mods = db.query(RbacModule).order_by(RbacModule.order_index).all()
     return ok([ModuleOut.model_validate(m) for m in mods])
 
 
 @router.get("/permissions")
 def list_permissions(
+    request: Request,
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
-    _require_master(current, db)
+    scope = _tenant_scope(request, db, current)
+    _require_master(current, db, scope)
     perms = db.query(RbacPermission).all()
     return ok([PermissionOut.model_validate(p) for p in perms])
 
@@ -338,14 +443,18 @@ def list_permissions(
 @router.get("/roles/{role_id}/permissions")
 def get_role_permissions(
     role_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
-    _require_master(current, db)
-    role = db.query(Role).filter(Role.id == role_id).first()
+    scope = _tenant_scope(request, db, current)
+    _require_master(current, db, scope)
+    role = _role_query(db, scope).filter(Role.id == role_id).first()
     if not role:
         raise HTTPException(404, "Perfil não encontrado.")
-    rows = db.query(RolePermission).filter(RolePermission.role_id == role_id).all()
+    rows = _scoped_query(
+        db.query(RolePermission), RolePermission, scope
+    ).filter(RolePermission.role_id == role_id).all()
     return ok([{"module_id": r.module_id, "permission_id": r.permission_id, "allowed": r.allowed} for r in rows])
 
 
@@ -357,15 +466,21 @@ def update_role_permissions(
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
-    _require_master(current, db)
-    tenant_id = _tenant_id(request, db, current)
-    role = db.query(Role).filter(Role.id == role_id).first()
+    scope = _tenant_scope(request, db, current)
+    _require_master(current, db, scope)
+    tenant_id = scope.tenant_id
+    role = _role_query(db, scope).filter(Role.id == role_id).first()
     if not role:
         raise HTTPException(404, "Perfil não encontrado.")
-    old_rows = db.query(RolePermission).filter(RolePermission.role_id == role_id).all()
+    role_permissions = _scoped_query(
+        db.query(RolePermission), RolePermission, scope
+    )
+    old_rows = role_permissions.filter(RolePermission.role_id == role_id).all()
     old_repr = json.dumps([{"m": r.module_id, "p": r.permission_id, "a": r.allowed} for r in old_rows], sort_keys=True)
     # Replace all permissions for this role
-    db.query(RolePermission).filter(RolePermission.role_id == role_id).delete()
+    role_permissions.filter(RolePermission.role_id == role_id).delete(
+        synchronize_session=False
+    )
     for entry in body.permissions:
         db.add(RolePermission(
             id=str(uuid.uuid4()),
@@ -387,14 +502,18 @@ def update_role_permissions(
 @router.get("/users/{user_id}/permissions")
 def get_user_permissions(
     user_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
-    _require_master(current, db)
-    user = db.query(AdminUser).filter(AdminUser.id == user_id).first()
+    scope = _tenant_scope(request, db, current)
+    _require_master(current, db, scope)
+    user = _tenant_user_query(db, scope).filter(AdminUser.id == user_id).first()
     if not user:
         raise HTTPException(404, "Usuário não encontrado.")
-    rows = db.query(UserPermission).filter(UserPermission.user_id == user_id).all()
+    rows = _scoped_query(
+        db.query(UserPermission), UserPermission, scope
+    ).filter(UserPermission.user_id == user_id).all()
     return ok([{"module_id": r.module_id, "permission_id": r.permission_id,
                 "allowed": r.allowed, "overrides_role": r.overrides_role} for r in rows])
 
@@ -407,12 +526,15 @@ def update_user_permissions(
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
-    _require_master(current, db)
-    tenant_id = _tenant_id(request, db, current)
-    user = db.query(AdminUser).filter(AdminUser.id == user_id).first()
+    scope = _tenant_scope(request, db, current)
+    _require_master(current, db, scope)
+    tenant_id = scope.tenant_id
+    user = _tenant_user_query(db, scope).filter(AdminUser.id == user_id).first()
     if not user:
         raise HTTPException(404, "Usuário não encontrado.")
-    db.query(UserPermission).filter(UserPermission.user_id == user_id).delete()
+    _scoped_query(db.query(UserPermission), UserPermission, scope).filter(
+        UserPermission.user_id == user_id
+    ).delete(synchronize_session=False)
     for entry in body.permissions:
         db.add(UserPermission(
             id=str(uuid.uuid4()),
@@ -435,6 +557,7 @@ def update_user_permissions(
 
 @router.get("/audit-logs")
 def list_audit_logs(
+    request: Request,
     user_id: Optional[str] = Query(None),
     module_key: Optional[str] = Query(None),
     action: Optional[str] = Query(None),
@@ -443,8 +566,9 @@ def list_audit_logs(
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):
-    _require_master(current, db)
-    q = db.query(AdminAuditLog)
+    scope = _tenant_scope(request, db, current)
+    _require_master(current, db, scope)
+    q = _scoped_query(db.query(AdminAuditLog), AdminAuditLog, scope)
     if user_id:
         q = q.filter(AdminAuditLog.user_id == user_id)
     if module_key:

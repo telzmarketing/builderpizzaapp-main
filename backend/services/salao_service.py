@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
-from backend.core.tenant_context import TenantContext
+from backend.core.tenant_context import TenantContext, TenantSource
 from backend.core.tenant_ownership import assign_tenant_on_create, operations_enforcement_enabled, scope_query_to_tenant
 from backend.models.product import Product
 from backend.models.salao import Reservation, RestaurantTable, TableSession, TableSessionItem
@@ -34,7 +34,10 @@ class _SalaoTenantMixin:
     def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
         self._tenant_context = tenant_context
-        self._tenant_enabled = operations_enforcement_enabled()
+        self._tenant_enabled = operations_enforcement_enabled() or (
+            tenant_context is not None
+            and tenant_context.source == TenantSource.SUPPORT
+        )
 
     def _query(self, model):
         return scope_query_to_tenant(

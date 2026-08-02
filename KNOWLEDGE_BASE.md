@@ -1,6 +1,6 @@
-# Base de Conhecimento — PizzaApp
-> Documento técnico completo: telas, funcionalidades, banco de dados, endpoints e integrações.
-> Gerado em: 2026-04-13 | **Atualizado em: 2026-07-22** | Versao: 3.3.0
+# Base de Conhecimento — Telz
+> Documento técnico consolidado da plataforma SaaS multiempresa, portal ERP, lojas, APIs, banco de dados, integrações e operação.
+> Gerado em: 2026-04-13 | **Atualizado em: 2026-07-29** | Versao: 3.4.0
 
 ---
 
@@ -47,6 +47,7 @@
 25. [Atualizacao 2026-07-21 - Estado Atual Consolidado de Marketing e Notificacoes](#25-atualizacao-2026-07-21---estado-atual-consolidado-de-marketing-e-notificacoes)
 26. [Atualizacao 2026-07-21 - Preparacao Multiempresa em Codigo](#26-atualizacao-2026-07-21---preparacao-multiempresa-em-codigo)
 27. [Atualizacao 2026-07-22 - Rating WhatsApp, Previews e Automacoes Transversais](#27-atualizacao-2026-07-22---rating-whatsapp-previews-e-automacoes-transversais)
+28. [Atualizacao 2026-07-29 - Instalacao VPS, Portal ERP e Autenticacao da Plataforma](#28-atualizacao-2026-07-29---instalacao-vps-portal-erp-e-autenticacao-da-plataforma)
 
 ---
 
@@ -3358,76 +3359,6 @@ Validacao executada nesta fase:
 - `bash -n` via Git Bash para `installer/install.sh`, `installer/lib/*.sh` e `scripts/*.sh`;
 - varredura estatica para evitar `rm -rf`, `dropdb`, downgrade Alembic, `git reset`, `chmod 777`, `eval` e flags multi-tenant ligadas.
 
-### 26.13 Instalador modular Telz - primeira versao executavel
-
-Esta fase materializou a primeira versao executavel do instalador modular Telz para VPS, preservando a decisao operacional de instalar primeiro em modo legado compativel e manter todas as flags multi-tenant desligadas por padrao.
-
-Arquivos principais criados:
-
-- `installer/install.sh`;
-- `installer/config/defaults.env`;
-- `installer/lib/colors.sh`;
-- `installer/lib/prompts.sh`;
-- `installer/lib/validation.sh`;
-- `installer/lib/system.sh`;
-- `installer/lib/git.sh`;
-- `installer/lib/database.sh`;
-- `installer/lib/backend.sh`;
-- `installer/lib/frontend.sh`;
-- `installer/lib/nginx.sh`;
-- `installer/lib/ssl.sh`;
-- `installer/lib/systemd.sh`;
-- `installer/lib/backup.sh`;
-- `installer/lib/firewall.sh`;
-- `installer/lib/summary.sh`;
-- `installer/templates/telz-api.service`;
-- `installer/templates/telz-web.service`;
-- `installer/templates/nginx-telz.conf`;
-- `installer/templates/env.production.example`;
-- `scripts/update-telz.sh`;
-- `scripts/rollback-telz.sh`;
-- `scripts/backup-telz.sh`;
-- `scripts/restore-telz.sh`;
-- `scripts/health-check.sh`;
-- `scripts/finish-ssl.sh`;
-- `docs/INSTALL_TELZ_VPS.md`;
-- `docs/UPDATE_TELZ_VPS.md`;
-- `docs/BACKUP_AND_RESTORE.md`;
-- `docs/INSTALLER_TROUBLESHOOTING.md`.
-
-Comportamento implementado:
-
-- instalacao interativa via `sudo bash installer/install.sh`;
-- modo nao interativo com `--config arquivo.env --non-interactive`;
-- retomada por fase com `--resume`;
-- logs em `/var/log/telz-installer`;
-- estado em `/var/lib/telz-installer/state`;
-- validacao de Ubuntu, path de instalacao, slug, banco, usuario e segredos basicos;
-- instalacao de pacotes, usuario de servico, diretorios, firewall, Node/pnpm, Python/venv, PostgreSQL local opcional, dependencias backend e frontend;
-- geracao de `backend/.env` com flags multi-tenant desligadas;
-- gate explicito antes de `alembic upgrade head`;
-- typecheck, testes e build antes de systemd;
-- services `telz-api` e `telz-web`;
-- Nginx para dominio principal preservando `Host` e headers de proxy;
-- SSL por Certbot quando DNS estiver pronto;
-- backup diario opcional;
-- scripts auxiliares de update, rollback de codigo/build, backup, restore, health check e finalizacao posterior de SSL.
-
-Restricoes preservadas:
-
-- nao ativa multi-tenant;
-- nao publica `curl | bash`;
-- nao remove banco, uploads, backups ou certificados;
-- nao faz downgrade automatico de banco;
-- nao declara instalador validado em producao sem teste em VPS limpa.
-
-Gate ainda aberto:
-
-- executar em VPS Ubuntu limpa ou staging descartavel;
-- validar cadeia real Alembic/PostgreSQL;
-- validar Nginx/systemd/SSL com dominio real;
-- ajustar comandos conforme logs reais antes de considerar o instalador pronto para uso operacional recorrente.
-
 ### 26.14 Deploy Telz e estado real do instalador
 
 Esta atualizacao consolida o estado operacional do deploy apos a criacao do instalador modular e os ajustes de escopo feitos para instalar tudo que o sistema possui no momento da instalacao.
@@ -3635,3 +3566,558 @@ Validacao registrada antes da publicacao:
 - `npm.cmd test` com 33 testes aprovados;
 - `npm.cmd run build`;
 - sincronizacao `origin/main...HEAD = 0 0` apos o push do commit `6065939`.
+
+---
+
+## 28. Atualizacao 2026-07-29 - Instalacao VPS, Portal ERP e Autenticacao da Plataforma
+
+Esta atualizacao consolida a primeira instalacao real da Telz em VPS, as correcoes necessarias para um PostgreSQL vazio, a separacao entre o portal ERP multiempresa e as lojas, a identidade da plataforma e o fluxo de autenticacao administrativa.
+
+Esta secao tem precedencia operacional sobre as secoes 26.11 a 26.15 nos pontos em que elas ainda classificam o instalador como nao testado em VPS ou afirmam que autenticacao multiempresa, dominios e RBAC da plataforma permanecem desligados por padrao. As flags de enforcement das ondas de dados continuam desligadas ate validacao especifica.
+
+### 28.1 Ambiente real e estado comprovado
+
+A instalacao foi executada em:
+
+- Ubuntu 24.04.4 LTS;
+- arquitetura x86_64;
+- codigo em `/opt/telz`;
+- usuario Linux de servico `telz`;
+- PostgreSQL local;
+- API FastAPI no service `telz-api`;
+- frontend no service `telz-web`;
+- Nginx como proxy reverso;
+- dominio de plataforma `erp.telz.com.br`.
+
+O instalador foi configurado para provisionar o WhatsApp Gateway como `telz-whatsapp-gateway`, mas a instalacao, a sessao e o health desse service ainda nao foram comprovados neste ambiente.
+
+Estado comprovado da API em 2026-07-29:
+
+- `telz-api` ativo com dois workers Uvicorn;
+- startup concluido nos dois workers;
+- `GET http://127.0.0.1:8000/health` retornando HTTP 200;
+- resposta `{"success":true,"data":{"status":"ok","version":"1.0.0"}}`;
+- journal sem erros de prioridade `err` no intervalo verificado depois da estabilizacao.
+
+O acesso HTTP ao frontend foi comprovado. SSL/HTTPS ainda precisa de confirmacao operacional independente antes de ser considerado concluido.
+
+A execucao desta instalacao revelou e corrigiu falhas reais do bootstrap, mas ainda nao equivale a uma certificacao generica do instalador em toda VPS Ubuntu limpa. Os gates remanescentes estao registrados em 28.11.
+
+### 28.2 Instalacao inicial e acesso ao GitHub
+
+A credencial SSH do GitHub pertence ao usuario Linux que executa o Git. Uma chave configurada apenas para `root` nao autentica automaticamente comandos executados como `telz`.
+
+O fluxo validado foi:
+
+1. criar o usuario `telz`;
+2. preparar `/home/telz/.ssh` com ownership e permissoes corretos;
+3. gerar ou instalar uma chave SSH do usuario `telz`;
+4. cadastrar a chave publica no GitHub;
+5. validar a identidade com `ssh -T git@github.com`;
+6. clonar o repositorio como `telz` em `/opt/telz`.
+
+Quando necessario, a identidade pode ser diagnosticada explicitamente com `ssh -o IdentitiesOnly=yes -i /home/telz/.ssh/id_ed25519 -T git@github.com`.
+
+O instalador exige a confirmacao literal `SIM`. Respostas como `sim` cancelam a instalacao por seguranca.
+
+Para `DATABASE_MODE=local`, o instalador instala e configura PostgreSQL, cria o banco e o usuario informados e monta `DATABASE_URL`. A senha do banco, `JWT_SECRET_KEY` e a senha administrativa devem ser segredos independentes e nunca devem ser gravados nesta base de conhecimento.
+
+`installer/install.sh --resume` serve somente para retomar uma instalacao inicial interrompida, usando o estado registrado em `/var/lib/telz-installer/state`. Ele nao deve ser usado como rotina normal de atualizacao.
+
+### 28.3 PostgreSQL e cadeia Alembic para banco vazio
+
+A ausencia inicial da tabela `alembic_version` significava que nenhuma migration havia sido aplicada naquele banco. Ela nao deveria ser criada, preenchida ou marcada manualmente.
+
+A primeira instalacao revelou lacunas historicas na cadeia Alembic. A cadeia foi completada e tornada mais idempotente pelos commits:
+
+- `dc3408a` - baseline para instalacao limpa;
+- `0ec30e1` - migrations ausentes de CRM, automacoes, WhatsApp e visitantes;
+- `d371b88` - identificador de revision Alembic ampliado;
+- `5045f9e` - tabelas historicas de logistica;
+- `60c3e2f` - tabela historica de pixels;
+- `214d1b7` - integracoes historicas;
+- `788782b` e `ccf8b24` - campanhas e audio do WhatsApp;
+- `350b4ae` - bootstrap historico consolidado;
+- `76ec86d` - colunas historicas multiempresa;
+- `84379d1` e `c93dc2b` - expansoes tenant idempotentes e cupons.
+
+Toda verificacao futura de banco deve comparar:
+
+```bash
+cd /opt/telz
+
+sudo -u telz -H /opt/telz/.venv/bin/alembic \
+  -c /opt/telz/backend/alembic.ini heads
+
+sudo -u telz -H /opt/telz/.venv/bin/alembic \
+  -c /opt/telz/backend/alembic.ini current
+```
+
+Nao se deve executar alteracao manual de schema, `stamp`, downgrade ou `upgrade head` generico sem conferir a cadeia e a revision pretendida. O valor exato de `alembic current` da VPS ainda deve ser registrado em uma validacao operacional futura.
+
+### 28.4 Correcoes de startup e processos de fundo
+
+Os incidentes encontrados durante o primeiro startup produziram as seguintes correcoes:
+
+- `24de5cd`: fixa `bcrypt==4.0.1`, compativel com `passlib==1.7.4`;
+- `13effa7`: serializa o seed entre workers por advisory lock transacional no PostgreSQL;
+- `4eea1c3`: reconcilia catalogo, permissoes e vinculos RBAC quando o seed anterior ficou parcial;
+- `41c2569`: aplica contexto de tenant ao worker de outbox do Agente WhatsApp.
+
+O erro de bcrypt com limite de 72 bytes observado no startup estava relacionado a incompatibilidade entre as versoes do backend bcrypt e do Passlib. Ele nao deve ser tratado truncando silenciosamente a senha administrativa. O deploy de `24de5cd` exige reinstalar as dependencias Python antes do restart da API.
+
+O comando isolado que importava apenas `SessionLocal` e `seed_all` nao carregava o mesmo grafo completo de models inicializado por `backend.main`. Para o runtime real, a evidencia confiavel e o startup completo da API acompanhado de health check e logs.
+
+### 28.5 Separacao entre portal ERP e lojas
+
+O dominio `erp.telz.com.br` e reservado ao portal administrativo da plataforma. Ele nao deve renderizar loja, produtos, widgets, pixels ou identidade de uma empresa.
+
+Comportamento atual:
+
+- visitante sem sessao no host da plataforma e direcionado para `/painel/login`;
+- administrador autenticado no host da plataforma e direcionado para `/painel/empresas`;
+- o cadastro de empresas cria um `tenant` e vincula o administrador como `owner`;
+- cada empresa cadastra seu proprio subdominio ou dominio;
+- hosts desconhecidos falham fechados com “Loja nao encontrada”;
+- um host de loja somente pode resolver um tenant com dominio ativo;
+- o Nginx preserva `Host` e `X-Forwarded-Host` para a resolucao segura;
+- o SSL automatico inicial cobre somente o dominio principal da plataforma.
+
+Flags habilitadas para esta superficie:
+
+```env
+MULTI_TENANT_AUTH_ENABLED=true
+TENANT_DOMAINS_ENABLED=true
+PLATFORM_RBAC_ENABLED=true
+TENANT_DOMAINS_PLATFORM_HOSTNAMES=erp.telz.com.br
+```
+
+Variaveis obrigatorias no build do frontend:
+
+```env
+VITE_PLATFORM_HOSTNAME=erp.telz.com.br
+VITE_MULTI_TENANT_AUTH_ENABLED=true
+```
+
+As flags de enforcement das ondas de catalogo, clientes, pedidos, operacoes, pagamentos, marketing, processos de fundo, uploads e credenciais continuam desligadas ate validacao especifica.
+
+A tela `/painel/empresas` permite cadastrar a empresa e solicitar um dominio. O dominio nasce em estado `pending` e apresenta o registro TXT esperado. A verificacao DNS e a ativacao administrativa completa ainda precisam ser expostas por contrato de API e interface antes que o cadastro de dominio possa ser considerado um fluxo operacional concluido.
+
+Entrega principal: commit `aa9c5e4` (`feat(platform): separar portal ERP e lojas por dominio`).
+
+### 28.6 Identidade da plataforma
+
+O portal administrativo, o login e os fallbacks operacionais passaram a usar a identidade Telz. Defaults de loja foram neutralizados para nomes como “Sua Loja” e “Delivery”.
+
+Configuracoes especificas de uma loja devem vir do tenant correspondente. A marca Telz nao deve ser aplicada automaticamente como identidade comercial de todas as lojas.
+
+O commit `f3794a2` (`fix(platform): remover identidade Moschettieri`) removeu a marca antiga dos caminhos centrais desta entrega, mas ainda existem referencias legadas ou configuraveis em partes internas e telas especificas. A remocao global completa exige uma auditoria separada e nao deve ser declarada concluida com base apenas nesse commit.
+
+### 28.7 Login administrativo da plataforma
+
+O portal da plataforma possui guard e layout separados do painel de uma loja:
+
+- `PlatformAdminGuard` valida a sessao por `/admin/auth/me`;
+- o acesso a `/painel/empresas` nao depende de membership previa em uma empresa;
+- a autorizacao das operacoes de empresas continua protegida no backend por permissoes de plataforma, incluindo `platform_owner`;
+- o login realizado em `erp.telz.com.br` usa `/painel/empresas` como destino;
+- `/painel` continua sendo a entrada do painel administrativo de uma loja;
+- favoritos antigos ou deep links tenant no host ERP sao redirecionados para a superficie da plataforma;
+- uma falha operacional 5xx ou de rede nao apaga automaticamente a sessao da plataforma;
+- HTTP 401 no proprio POST de login nao provoca recarregamento ou loop;
+- credenciais incorretas permanecem na tela com a mensagem “E-mail ou senha invalidos”.
+
+Arquivos centrais:
+
+- `client/components/PlatformAdminGuard.tsx`;
+- `client/components/layout/PlatformAdminLayout.tsx`;
+- `client/lib/platformHost.ts`;
+- `client/lib/adminSession.ts`;
+- `client/pages/admin/Login.tsx`;
+- `client/App.tsx`;
+- `client/lib/api.ts`.
+
+Entrega principal: commit `05b45bb` (`fix(auth): interromper loop de login da plataforma`).
+
+### 28.8 Credencial administrativa e recuperacao segura
+
+O instalador coleta `ADMIN_EMAIL`, `ADMIN_NAME` e `ADMIN_PASSWORD`, grava os valores em `backend/.env` e mascara os segredos no resumo. O service `telz-api` carrega esse arquivo por `EnvironmentFile`.
+
+`ADMIN_PASSWORD` e uma credencial de bootstrap. `_seed_admin()` somente usa esse valor para gerar o hash quando o administrador configurado ainda nao existe. Se o registro ja existe, o seed preserva nome, status e `password_hash` e apenas reconcilia o vinculo `platform_owner`.
+
+Consequencias operacionais:
+
+- alterar `ADMIN_PASSWORD` em `backend/.env` nao redefine a senha persistida;
+- reiniciar a API nao redefine a senha;
+- executar novamente o instalador ou `--resume` nao redefine a senha;
+- o login normaliza o e-mail digitado para minusculas, enquanto o seed historicamente consultava o valor configurado de forma exata;
+- diferenca de caixa no e-mail persistido tambem pode causar `InvalidCredentials`.
+
+Se o backend responder `InvalidCredentials`, a recuperacao correta e:
+
+1. localizar o administrador pelo e-mail normalizado;
+2. exigir exatamente um registro;
+3. confirmar que a conta esta ativa;
+4. solicitar a nova senha duas vezes sem eco no terminal;
+5. limitar a senha ao intervalo seguro aceito pelo bcrypt;
+6. gerar o hash usando `backend.core.security.hash_password` dentro da `.venv` da aplicacao;
+7. validar o novo hash com `verify_password`;
+8. persistir somente o e-mail normalizado e `password_hash`;
+9. validar imediatamente por `POST /api/admin/auth/login`;
+10. exigir HTTP 200 e um `access_token` sem imprimir senha, hash ou token.
+
+Nao se deve usar `psql crypt()`, gravar hash manual, editar diretamente o schema, executar migration, reinstalar o sistema ou reiniciar a API apenas para redefinir essa senha.
+
+Na data desta atualizacao, o procedimento de recuperacao foi definido, mas a execucao ainda precisa ser confirmada pelo resultado final `LOGIN_OK`. Ate essa evidencia, o acesso administrativo nao deve ser declarado restabelecido.
+
+### 28.9 Instalacao inicial versus atualizacao
+
+Nao existe atualmente um comando instalado chamado `telz update`.
+
+Para atualizacoes normais:
+
+- preservar `/opt/telz/backend/.env`;
+- preservar PostgreSQL;
+- preservar uploads;
+- preservar certificados;
+- preservar backups;
+- preservar `.runtime/baileys`;
+- sincronizar codigo com `git pull --ff-only`;
+- instalar somente as dependencias alteradas;
+- aplicar migration somente quando a entrega exigir e depois de conferir `current` e `heads`;
+- gerar novo build quando o frontend mudar;
+- reiniciar somente os services afetados;
+- validar health e logs.
+
+Para alteracao exclusivamente frontend, o fluxo recomendado e que foi aplicado nesta entrega e:
+
+1. `git pull --ff-only origin main`;
+2. build com `VITE_PLATFORM_HOSTNAME=erp.telz.com.br` e `VITE_MULTI_TENANT_AUTH_ENABLED=true`;
+3. restart somente de `telz-web`;
+4. validacao HTTP local e hard refresh do navegador.
+
+Nao ha necessidade de migration ou restart da API nesse caso.
+
+`scripts/update-telz.sh` ainda nao deve ser tratado como atualizador operacional definitivo. A versao atual:
+
+- depende do diretorio corrente do repositorio e nao recebe `/opt/telz` como argumento;
+- nao instala dependencias Python quando `backend/requirements.txt` muda;
+- executa `alembic upgrade head` sem exigir a revision explicita;
+- reinicia todos os services mesmo quando a entrega afeta apenas um;
+- nao inclui `.runtime/baileys` na cobertura comprovada de backup;
+- reverte codigo, mas nao desfaz migration de banco.
+
+Esses pontos precisam ser corrigidos e auditados antes do uso recorrente em producao.
+
+### 28.10 Validacao e publicacao
+
+Validacoes registradas para a separacao e o login da plataforma:
+
+- `git diff --check`;
+- `npm.cmd run typecheck`;
+- `npm.cmd test` com 37 testes aprovados;
+- `npm.cmd run build`;
+- sincronizacao `origin/main...HEAD = 0 0` depois do push;
+- API local da VPS respondendo HTTP 200 em `/health`;
+- `telz-api` ativo com os dois workers inicializados;
+- journal sem erros depois da correcao final do runtime.
+
+Commits operacionais principais:
+
+- `51d2346` - credencial administrativa inicial no instalador;
+- `6d46c2b` - teste contra exibicao de segredo padrao;
+- `aa9c5e4` - separacao entre portal ERP e lojas;
+- `f3794a2` - identidade Telz nos caminhos centrais;
+- `24de5cd` - compatibilidade bcrypt/Passlib;
+- `13effa7` - serializacao do seed;
+- `4eea1c3` - reconciliacao RBAC;
+- `41c2569` - tenant no outbox WhatsApp;
+- `05b45bb` - correcao do loop de login.
+
+Os commits `aa9c5e4`, `f3794a2`, `24de5cd`, `13effa7`, `4eea1c3`, `41c2569` e `05b45bb` nao adicionam migration Alembic. Cada deploy deve executar apenas os passos exigidos pelo tipo de alteracao: dependencias Python, build frontend e/ou restart do service correspondente.
+
+### 28.11 Gates ainda abertos
+
+- executar e comprovar a recuperacao da senha com `LOGIN_OK`;
+- confirmar HTTPS valido em `erp.telz.com.br`;
+- registrar `alembic current`, confirmar que existe apenas um `head` e comparar os dois estados;
+- concluir verificacao e ativacao de dominios de lojas pela API e interface;
+- validar uma empresa real em dominio proprio, sem fallback para o tenant legado;
+- validar backup e restore em ambiente descartavel;
+- confirmar sessao e health do WhatsApp Gateway;
+- corrigir e auditar `scripts/update-telz.sh`;
+- alinhar `docs/INSTALL_TELZ_VPS.md` e `docs/UPDATE_TELZ_VPS.md` com o estado real do instalador.
+
+## 29. Atualizacao 2026-07-29 - Central Master da Plataforma SaaS
+
+Esta secao e cronologica e aditiva. Ela nao substitui as secoes anteriores sobre a fundacao multiempresa, separacao de hosts, login da plataforma ou operacao da VPS.
+
+Documento operacional detalhado:
+
+- `docs/PLATFORM_MASTER_CENTRAL.md`.
+
+### 29.1 Escopo implementado
+
+A Central Master foi implementada localmente sobre as entidades existentes `Tenant`, `AdminUser`, `TenantMembership`, RBAC de plataforma, RBAC operacional, `TenantDomain` e `PlatformAuditLog`.
+
+Foram adicionados:
+
+- perfil cadastral 1:1 do tenant;
+- planos SaaS;
+- catalogo comercial de modulos;
+- relacionamento plano-modulo;
+- assinatura comercial por tenant;
+- licenca e eventos historicos;
+- entitlement de modulo por tenant;
+- billing SaaS manual separado de pagamentos de pedidos;
+- sessoes temporarias de suporte;
+- metricas de uso;
+- notas internas;
+- ampliacao de dominio e auditoria.
+
+O wizard cria tenant, owner empresarial separado do ator de plataforma, membership, papel operacional tenant-scoped, perfil, assinatura, licenca, modulos e dominio opcional na mesma transacao.
+
+O owner empresarial:
+
+- nao recebe `role_id=None`;
+- nao e interpretado como master global;
+- nao recebe autoridade de plataforma;
+- recebe papel e permissoes operacionais limitadas ao tenant.
+
+### 29.2 Services e seguranca
+
+Services centrais:
+
+- `PlatformMasterService`;
+- `TenantEntitlementService`;
+- `PlatformAuditService`;
+- `TenantDomainService`.
+
+Regras implementadas:
+
+- licenca e modulo sao validados no backend;
+- dependencias e limites de modulo possuem policy reutilizavel;
+- dominio e verificado por TXT no backend;
+- apenas dominio `active` ligado a tenant `active` resolve loja;
+- pagamentos SaaS nao reutilizam `payments` de pedidos;
+- faturas sao calculadas server-side com `Decimal`/`Numeric(18,2)`;
+- auditoria mascara senhas, hashes, tokens, cookies, Authorization, secrets e chaves;
+- respostas nao expõem `password_hash`, `verification_token_hash` ou `token_hash`.
+
+### 29.3 API e compatibilidade
+
+A API da Central Master fica sob `/api/admin/platform`.
+
+Ela possui dashboard, empresas, planos, modulos, licencas, dominios, auditoria, invoices, pagamentos manuais e suporte.
+
+Compatibilidade preservada:
+
+- `GET /api/admin/platform/tenants` sem pagina mantem o array anterior;
+- o mesmo endpoint com pagina entrega paginacao server-side;
+- `POST /api/admin/platform/tenants` aceita o payload simples anterior ou o wizard completo;
+- status e dominios por tenant mantem os paths anteriores.
+
+### 29.4 Revisions
+
+Foram criadas, mas nao aplicadas:
+
+- `20260814_merge_all_heads`;
+- `20260815_master_central_core`.
+
+A primeira une os cinco heads historicos detectados estaticamente. A segunda cria o schema da Central Master e amplia dominio/auditoria.
+
+O grafo estatico passou a possuir um unico head, `20260815_master_central_core`. Isso nao comprova o estado do banco da VPS.
+
+Antes de aplicar qualquer revision e obrigatorio registrar:
+
+- `alembic heads`;
+- `alembic current`;
+- `alembic history`;
+- backup necessario;
+- comando exato;
+- plano de rollback.
+
+Nao executar `alembic upgrade head` cegamente.
+
+### 29.5 Flags e enforcement
+
+A superficie Master depende de `PLATFORM_RBAC_ENABLED`.
+
+Autenticacao multiempresa e dominios utilizam as flags existentes:
+
+- `MULTI_TENANT_AUTH_ENABLED`;
+- `TENANT_DOMAINS_ENABLED`;
+- `TENANT_DOMAINS_PLATFORM_HOSTNAMES`;
+- configuracoes de proxy confiavel.
+
+As flags de enforcement de catalogo, clientes/pedidos, operacoes, pagamentos, marketing, jobs, uploads e credenciais continuam graduais. Nao habilitar todas simultaneamente.
+
+### 29.6 Validacao registrada
+
+Validacoes concluidas:
+
+- `git diff --check`;
+- topologia Alembic estatica com um head e sem parent ausente;
+- verificacao estatica de permissoes por rota;
+- busca por serializacao de hashes;
+- busca por dinheiro modelado como `Float`.
+
+Testes adicionados:
+
+- isolamento de entitlement Tenant A versus Tenant B;
+- bloqueio de escrita para licenca expirada;
+- serializers sem hashes;
+- redaction de auditoria;
+- permissoes explicitas das rotas.
+
+Python, pytest, Alembic CLI, PostgreSQL real e DNS real nao foram executados neste checkout porque nao existe runtime Python instalado.
+
+### 29.7 Pendencias reais
+
+- executar compile/import e pytest com Python 3.12;
+- validar `heads/current/history` no banco real;
+- testar as revisions em PostgreSQL descartavel;
+- emitir e renovar SSL automaticamente;
+- aplicar enforcement de entitlement rota por rota nos modulos legados;
+- completar o consumo da sessao de suporte pelas rotas operacionais e o banner global;
+- implementar revogacao persistente de JWT e 2FA;
+- implementar convite/reenvio com token persistido;
+- validar dois tenants ponta a ponta;
+- persistir ou remover da interface campos opcionais sem coluna canonica.
+
+Campos como setor, porte, cargo livre do owner e aliases `document`, `institutional_email`, `street` e `district` nao devem ser declarados persistidos. O perfil usa os nomes canonicos `tax_id`, `email`, `address_line` e `neighborhood`.
+
+### 29.8 Deploy e rollback
+
+O deploy exige backup, verificacao dos cinco heads historicos e aplicacao explicita das revisions:
+
+```bash
+alembic -c backend/alembic.ini upgrade 20260814_merge_all_heads
+alembic -c backend/alembic.ini upgrade 20260815_master_central_core
+```
+
+Esses comandos ainda nao foram executados.
+
+Depois de existirem dados reais da Central Master, o downgrade da revision de schema e destrutivo e nao deve ser usado como rollback operacional. A estrategia preferida e hotfix forward-only, preservacao das tabelas e restauracao de backup somente com janela aprovada.
+
+### 29.9 Addendum da segunda rodada - 2026-07-29
+
+A segunda rodada consolidou a Central Master sem alterar a arquitetura de
+tenancy existente.
+
+Dashboard e consulta de empresas:
+
+- metricas reais para tenants, criacoes no mes, usuarios, licencas, MRR,
+  inadimplencia e dominios ativos;
+- alertas tipados para ausencia de owner, plano ou dominio, licencas proximas do
+  vencimento e faturas vencidas;
+- filtros por tenant, owner, plano, dominio, billing, modulo e vencimento, com
+  ordenacao por whitelist.
+
+Usuarios do tenant:
+
+- criacao sujeita ao limite do plano;
+- alteracao de papel e status;
+- bloqueio, reativacao e redefinicao de senha;
+- transferencia transacional que preserva exatamente um owner;
+- papeis permanecem tenant-scoped e sem privilegio de plataforma.
+
+Billing:
+
+- lock pessimista da fatura;
+- protecao de estados finais e excesso de pagamento;
+- referencia idempotente com unicidade por tenant;
+- auditoria de registro e replay;
+- replay por referencia processado antes do gate de estado final, permitindo
+  retry da mesma referencia, fatura e valor mesmo quando a fatura ja esta paga;
+- conflito para reutilizacao da referencia com fatura ou valor diferente.
+
+Enforcement operacional:
+
+- a flag `TENANT_ENTITLEMENT_ENFORCEMENT_ENABLED` foi criada com default
+  `false`;
+- quando ativada, valida tenant, licenca e modulo;
+- a integracao atual cobre somente escritas selecionadas de pedidos e
+  pagamentos;
+- a ativacao em producao depende da classificacao e cobertura gradual das
+  demais rotas.
+
+Novos testes cobrem isolamento Tenant A/Tenant B, flag ligada/desligada,
+billing com lock/idempotencia/estado final/auditoria, ordem do replay,
+limite de usuarios, transferencia de owner, dashboard tipado, permissoes de
+rotas e erros de dominio. Os principais arquivos sao
+`tests/test_platform_master_security.py` e
+`tests/test_platform_master_contracts.py`.
+
+Pendencias que nao podem ser declaradas concluidas:
+
+- a flag de enforcement permanece desligada e a cobertura e parcial;
+- `force_password_change` e persistido, mas login e guards nao obrigam a troca;
+- os schemas Pydantic de saida e `response_model` ainda sao parciais;
+- suporte possui modelo e administracao, mas nao e consumido nas rotas
+  operacionais e permanece indisponivel como fluxo completo;
+- Python, pytest, Alembic CLI e PostgreSQL real seguem sem validacao neste
+  checkout.
+
+### 29.10 Fechamento local da Central Master - 2026-08-01
+
+Este registro prevalece sobre os estados intermediarios descritos em 29.4 e
+29.6 a 29.9 quando houver divergencia.
+
+A cadeia Alembic atual e linear:
+
+```text
+20260813_automation_event_core
+  -> 20260814_merge_all_heads
+  -> 20260815_master_central_core
+  -> 20260816_master_completion (head)
+```
+
+Apesar do nome legado, `20260814_merge_all_heads` e uma bridge sem DDL e possui
+apenas `20260813_automation_event_core` como parent. `20260816` completa
+convites, licencas, metadados comerciais, `force_password_change`,
+`auth_version`, contratos Pydantic/`response_model` e RBAC estritamente
+tenant-scoped. O startup exclui as tabelas Master do `create_all`; as migrations
+devem anteceder o restart da API.
+
+Configuracoes de integracoes sao write-only: `config_json` e
+`default_config_json` nao retornam pela API, que expoe apenas
+`config_configured`; o frontend nao reenvia o segredo e a auditoria redige o
+objeto inteiro. Sessoes de suporte usam token opaco one-time, JWT temporario,
+validacao persistida e allowlist backend restrita a `/gestao/finance` e
+`/store-operation`.
+
+Validacoes locais registradas:
+
+- suite Python completa: `140 passed`, com um warning Pydantic preexistente;
+- conjunto Master direcionado: `57 passed`;
+- frontend: 16 arquivos e `66 passed`;
+- TypeScript typecheck e builds client/PWA/SSR/Capacitor aprovados;
+- import completo da FastAPI aprovado com 1447 rotas;
+- `alembic heads` e `history` aprovados com head unico `20260816`;
+- SQL offline das revisions `20260814` a `20260816` gerado com sucesso;
+- `git diff --check` aprovado.
+
+O `alembic current` local nao executou porque nao existe PostgreSQL ouvindo em
+`localhost:5432`. Continuam pendentes e nao podem ser declarados concluidos:
+
+- ensaio de upgrade e rollback em PostgreSQL 15 descartavel;
+- `current`, backup e aplicacao explicita das revisions no banco de destino;
+- DNS e SSL reais;
+- E2E em navegador com dois tenants e sessao de suporte;
+- deploy e validacao dos servicos na VPS;
+- expansao gradual do enforcement de entitlement, que permanece `false` por
+  padrao e cobre apenas escritas selecionadas de pedidos e pagamentos;
+- 2FA, caso permaneça no escopo de produto.
+
+O deploy nao deve usar `upgrade head` cegamente. Depois de backup, `heads`,
+`current` e `history`, aplicar explicitamente:
+
+```bash
+alembic -c backend/alembic.ini upgrade 20260814_merge_all_heads
+alembic -c backend/alembic.ini upgrade 20260815_master_central_core
+alembic -c backend/alembic.ini upgrade 20260816_master_completion
+```
+
+Depois de dados reais, nao usar downgrade destrutivo como rollback operacional;
+preferir hotfix forward-only ou restauracao controlada do backup.

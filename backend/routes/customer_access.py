@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from backend.models.customer import Customer
-from backend.routes.admin_auth import get_current_admin
+from backend.routes.admin_auth import authenticate_admin_token
 
 
 def _normalize_contact(value: str | None) -> str:
@@ -32,7 +32,7 @@ def require_customer_or_admin(
 ) -> None:
     if authorization and authorization.startswith("Bearer "):
         try:
-            get_current_admin(authorization=authorization, db=db)
+            authenticate_admin_token(authorization=authorization, db=db)
             return
         except HTTPException:
             pass

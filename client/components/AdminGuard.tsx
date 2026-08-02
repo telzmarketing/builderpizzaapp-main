@@ -6,30 +6,63 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { findAdminNavigationItem, firstAllowedAdminPath, canAccessAdminItem } from "@/lib/adminAccess";
-import { rbacApi, type ApiEffectivePermissions } from "@/lib/api";
+import { adminAuthApi, rbacApi, type ApiEffectivePermissions } from "@/lib/api";
+import { clearAdminSession } from "@/lib/adminSession";
+import {
+  PLATFORM_SUPPORT_PERMISSIONS,
+  isPlatformSupportPanelPathAllowed,
+  isPlatformSupportSessionActive,
+  readPlatformSupportSession,
+  restorePlatformMasterSession,
+  shouldLoadRegularAdminPermissions,
+} from "@/lib/platformSupportSession";
 
 export default function AdminGuard() {
   const { pathname } = useLocation();
   const token = localStorage.getItem("admin_token");
+  const supportSession = readPlatformSupportSession();
+  const supportSessionId = supportSession?.session_id;
   const [permissions, setPermissions] = useState<ApiEffectivePermissions | null>(null);
   const [loading, setLoading] = useState(!!token);
+  const [passwordRequired, setPasswordRequired] = useState(false);
 
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
     setLoading(true);
-    rbacApi
-      .myPermissions()
-      .then((data) => {
+    if (supportSession && !isPlatformSupportSessionActive(supportSession)) {
+      restorePlatformMasterSession();
+      window.location.replace("/painel/plataforma");
+      return;
+    }
+    adminAuthApi.me()
+      .then(async (admin) => {
+        if (cancelled) return;
+        localStorage.setItem("admin_user", JSON.stringify(admin));
+        if (admin.force_password_change) {
+          setPasswordRequired(true);
+          setPermissions(null);
+          return;
+        }
+        setPasswordRequired(false);
+        if (!shouldLoadRegularAdminPermissions(supportSession)) {
+          setPermissions(PLATFORM_SUPPORT_PERMISSIONS);
+          localStorage.setItem("admin_permissions", JSON.stringify(PLATFORM_SUPPORT_PERMISSIONS));
+          return;
+        }
+        const data = await rbacApi.myPermissions();
         if (cancelled) return;
         setPermissions(data);
         localStorage.setItem("admin_permissions", JSON.stringify(data));
       })
       .catch(() => {
         if (cancelled) return;
-        localStorage.removeItem("admin_token");
-        localStorage.removeItem("admin_user");
-        localStorage.removeItem("admin_permissions");
+        if (supportSession) {
+          restorePlatformMasterSession();
+          window.location.replace("/painel/plataforma");
+          return;
+        }
+        clearAdminSession();
         setPermissions(null);
       })
       .finally(() => {
@@ -38,9 +71,12 @@ export default function AdminGuard() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [supportSessionId, token]);
 
   if (!token) return <Navigate to="/painel/login" replace />;
+  if (supportSession && !isPlatformSupportPanelPathAllowed(pathname)) {
+    return <Navigate to="/painel/gestao/financeiro" replace />;
+  }
   if (loading) {
     return (
       <div className="min-h-screen bg-surface-00 flex items-center justify-center">
@@ -49,6 +85,7 @@ export default function AdminGuard() {
     );
   }
 
+  if (passwordRequired) return <Navigate to="/painel/trocar-senha" replace />;
   if (!permissions) return <Navigate to="/painel/login" replace />;
 
   const item = findAdminNavigationItem(pathname);
