@@ -4242,3 +4242,56 @@ Ainda nao estavam comprovados no momento deste registro:
 - HTTPS publico;
 - restore controlado;
 - E2E em navegador com dois tenants.
+
+## 31. Atualizacao 2026-08-15 - Commit da onda operacional e correcao de testes
+
+A onda descrita na secao 30 ficou parada sem commit por seis dias. Foi
+commitada nesta rodada (`53d2ab6`) excluindo apenas artefatos locais do
+Claude Code (`.claude/settings*.json`, worktrees de agentes). Sem push,
+sem deploy.
+
+### 31.1 Suite pytest completa reexecutada
+
+Nao ha Docker, servico PostgreSQL local nem distro WSL confirmada nesta
+maquina de desenvolvimento; a validacao em PostgreSQL 15 descartavel
+listada na secao 30.6 continua pendente. Nenhum teste do repositorio abre
+conexao real de banco (todos usam objetos/mocks), entao isso nao bloqueou
+a suite.
+
+Resultado real da suite completa (`pytest tests/`, 221 testes): 5 falhas
+reais, ja presentes no codigo commitado em `53d2ab6` (nao introduzidas
+nesta rodada):
+
+- `test_gateway_token_is_never_forwarded_in_a_command_argument_or_logged`:
+  falso positivo. O teste cortava o arquivo inteiro a partir da primeira
+  mencao ao token e proibia qualquer `sys.argv` depois disso, mas
+  `health-check.sh`/`collect-telz-monitoring.sh` reaproveitam `sys.argv`
+  mais adiante em heredocs Python independentes, sem relacao com o token.
+  Corrigido para limitar a checagem ao heredoc que de fato manuseia o
+  token.
+- 4 falhas em `test_immutable_release_delivery.py`: o teste foi escrito
+  contra um rascunho anterior do pipeline de release imutavel
+  (`STAGE_RELEASE_DIR`/`STAGE_APP_DIR` via `mktemp`, build inline com
+  `as_service pnpm`, `Environment=` no systemd, SHA antigo do
+  `actions/checkout`, `flock` em caminho fixo). O codigo real ja
+  implementa uma versao mais robusta: release enderecada por commit em
+  `$RELEASES_DIR/$commit/app` protegida por marcador `.building`
+  root-owned; build isolado via `scripts/build-telz-release.sh` sob
+  `systemd-run`; `TELZ_PROJECT_ROOT` injetado via `ExecStart=/usr/bin/env`
+  nas units; lock por file descriptor com validacao previa de dono e
+  permissao do arquivo de lock. O SHA do `actions/checkout` pinado no
+  workflow (`11d5960a326750d5838078e36cf38b85af677262`) foi confirmado
+  valido via API do GitHub antes de qualquer ajuste. Os testes foram
+  corrigidos para refletir o comportamento real; nenhum script de
+  deploy/systemd/CI foi alterado.
+
+Commit dos testes corrigidos: `e1c4434`. Suite completa apos a correcao:
+`221 passed`.
+
+### 31.2 Ainda pendente
+
+- upgrade/downgrade em PostgreSQL 15 descartavel (sem Docker/Postgres/WSL
+  disponivel nesta maquina);
+- CI e push dos commits `53d2ab6` e `e1c4434`;
+- deploy e migrations na VPS;
+- HTTPS publico, restore controlado, E2E com dois tenants.
