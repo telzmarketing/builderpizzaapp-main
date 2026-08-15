@@ -9,9 +9,11 @@ Or directly:
 """
 import asyncio
 import os
+import re
+import uuid
 from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -54,8 +56,33 @@ from backend.routes import cmv as cmv_routes
 from backend.routes import finance as finance_routes
 from backend.routes import fiscal as fiscal_routes
 from backend.routes import platform_tenants as platform_tenants_routes
+from backend.routes import platform_users as platform_users_routes
+from backend.routes import platform_settings as platform_settings_routes
+from backend.routes import platform_session as platform_session_routes
+from backend.routes import platform_health as platform_health_routes
+from backend.routes import platform_integrations as platform_integrations_routes
+from backend.routes import platform_jobs as platform_jobs_routes
+from backend.routes import platform_gateway as platform_gateway_routes
+from backend.routes import platform_errors as platform_errors_routes
+from backend.routes import platform_storage as platform_storage_routes
+from backend.routes import platform_backups as platform_backups_routes
 
 settings = get_settings()
+
+REQUEST_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,99}$")
+
+
+def _trusted_request_identifier(value: str | None) -> str | None:
+    """Accept only bounded, log-safe identifiers supplied by a client/proxy."""
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized if REQUEST_IDENTIFIER_RE.fullmatch(normalized) else None
+
+
+def _request_state_identifier(request: Request, name: str) -> str | None:
+    state = getattr(request, "state", None)
+    return _trusted_request_identifier(getattr(state, name, None))
 
 
 class CachedStaticFiles(StaticFiles):
@@ -1247,6 +1274,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    """Provide bounded request/correlation identifiers to every application layer."""
+    request_id = _trusted_request_identifier(request.headers.get("x-request-id"))
+    if request_id is None:
+        request_id = str(uuid.uuid4())
+    correlation_id = _trusted_request_identifier(request.headers.get("x-correlation-id"))
+    if correlation_id is None:
+        correlation_id = request_id
+
+    request.state.request_id = request_id
+    request.state.correlation_id = correlation_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Correlation-ID"] = correlation_id
+    return response
+
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(products.router)
 app.include_router(orders.router)
@@ -1356,6 +1401,16 @@ app.include_router(fiscal_routes.router, prefix="/api")
 app.include_router(platform_tenants_routes.router, prefix="/api")
 app.include_router(platform_tenants_routes.master_router, prefix="/api")
 app.include_router(platform_tenants_routes.host_router, prefix="/api")
+app.include_router(platform_users_routes.router, prefix="/api")
+app.include_router(platform_settings_routes.router, prefix="/api")
+app.include_router(platform_session_routes.router, prefix="/api")
+app.include_router(platform_health_routes.router, prefix="/api")
+app.include_router(platform_integrations_routes.router, prefix="/api")
+app.include_router(platform_jobs_routes.router, prefix="/api")
+app.include_router(platform_gateway_routes.router, prefix="/api")
+app.include_router(platform_errors_routes.router, prefix="/api")
+app.include_router(platform_storage_routes.router, prefix="/api")
+app.include_router(platform_backups_routes.router, prefix="/api")
 app.include_router(upload_optimized_routes.router)
 app.include_router(upload_optimized_routes.router, prefix="/api")
 
@@ -1392,8 +1447,51 @@ async def domain_error_handler(request, exc: DomainError):
 async def unhandled_exception_handler(request, exc: Exception):
     """Catch-all for unexpected errors — never expose internals in production."""
     import logging
-    logging.getLogger("uvicorn.error").exception("Unhandled error", exc_info=exc)
-    return JSONResponse(
+    from backend.services.platform_operations_common import safe_identifier
+
+    error_logger = logging.getLogger("uvicorn.error")
+    request_id = _request_state_identifier(request, "request_id")
+    correlation_id = _request_state_identifier(request, "correlation_id")
+    exception_type = safe_identifier(
+        type(exc).__name__, default="exception", max_length=80
+    )
+    error_logger.error(
+        "Unhandled error type=%s request_id=%s correlation_id=%s",
+        exception_type,
+        request_id or "unknown",
+        correlation_id or "unknown",
+    )
+    try:
+        # Persist with a separate session so a failed request transaction cannot
+        # poison error capture. Capture failures are suppressed by both layers.
+        with SessionLocal() as error_db:
+            from backend.services.platform_errors_service import PlatformErrorService
+
+            PlatformErrorService(error_db).capture_exception(
+                exc,
+                source="api",
+                severity="error",
+                error_code="InternalServerError",
+                method=request.method,
+                path=request.url.path,
+                request_id=request_id,
+                correlation_id=correlation_id,
+                context={"component": "fastapi", "operation": "request"},
+            )
+    except Exception as capture_exc:
+        # Never recurse into this handler or replace the sanitized original 500.
+        capture_error_type = safe_identifier(
+            type(capture_exc).__name__, default="exception", max_length=80
+        )
+        error_logger.warning(
+            "Unable to persist redacted operational error type=%s "
+            "request_id=%s correlation_id=%s",
+            capture_error_type,
+            request_id or "unknown",
+            correlation_id or "unknown",
+        )
+
+    response = JSONResponse(
         status_code=500,
         content={
             "success": False,
@@ -1403,6 +1501,11 @@ async def unhandled_exception_handler(request, exc: Exception):
             },
         },
     )
+    if request_id:
+        response.headers["X-Request-ID"] = request_id
+    if correlation_id:
+        response.headers["X-Correlation-ID"] = correlation_id
+    return response
 
 
 if __name__ == "__main__":

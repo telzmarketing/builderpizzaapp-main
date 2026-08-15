@@ -19,7 +19,7 @@ class Base(DeclarativeBase):
 
 
 # These tables are owned exclusively by Alembic revisions
-# 20260815_master_central_core and 20260816_master_completion. They must not be
+# 20260815_master_central_core and later platform revisions. They must not be
 # materialized by the legacy startup create_all path before migrations run.
 MASTER_CENTRAL_MIGRATION_TABLES = frozenset({
     "tenant_profiles",
@@ -38,6 +38,8 @@ MASTER_CENTRAL_MIGRATION_TABLES = frozenset({
     "tenant_invitations",
     "tenant_usage_metrics",
     "tenant_internal_notes",
+    "platform_error_events",
+    "platform_worker_heartbeats",
 })
 
 
@@ -58,7 +60,7 @@ def create_all_tables():
         customer_event, customer_identity, agente_whatsapp, rbac, crm, business_intelligence, store_notification,
         promotion_landing_page, salao, salao_page, whatsapp_gateway, marketing_intelligence, gestao, inventory, cmv, finance,
         tenant, tenant_domain, membership, platform_rbac, platform_audit,
-        platform_saas,
+        platform_saas, platform_operations,
     )
     from backend.routes import whatsapp_marketing as whatsapp_marketing_routes  # noqa: F401
     from backend.routes import automations as automations_routes  # noqa: F401

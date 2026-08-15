@@ -4121,3 +4121,124 @@ alembic -c backend/alembic.ini upgrade 20260816_master_completion
 
 Depois de dados reais, nao usar downgrade destrutivo como rollback operacional;
 preferir hotfix forward-only ou restauracao controlada do backup.
+
+## 30. Atualizacao 2026-08-09 - Central Operacional e Deploy Seguro
+
+Esta secao prevalece sobre estados intermediarios da secao 29 quando houver
+divergencia. O checkout atual completa localmente Usuarios, Configuracoes e os
+sete modulos antes marcados como indisponiveis na Central Master, sem substituir
+os dominios existentes nem criar uma segunda raiz administrativa.
+
+### 30.1 Cadeia de dados
+
+A cadeia estatica e linear e possui um unico head:
+
+```text
+20260816_master_completion
+  -> 20260817_platform_wave0
+  -> 20260818_platform_operations (head)
+```
+
+`20260817` semeia as permissoes de menor privilegio. `20260818` cria
+`platform_error_events` e `platform_worker_heartbeats`. Os models operacionais
+sao registrados no metadata Alembic e continuam excluidos do `create_all`
+legado. O downgrade declara os indices antes de remover as tabelas.
+
+A evidencia historica da VPS termina em `20260816_master_completion`. Nao ha
+evidencia nesta rodada de que `20260817` ou `20260818` tenham sido aplicadas em
+PostgreSQL real.
+
+### 30.2 Superficies operacionais
+
+Foram implementadas as superficies de plataforma:
+
+- Saude dos servicos;
+- Integracoes;
+- Filas e jobs;
+- WhatsApp Gateway;
+- Erros;
+- Armazenamento;
+- Backups.
+
+Usuarios e Configuracoes permanecem read-only. Health, Integracoes, Jobs,
+Gateway, Storage e Backups tambem nao publicam mutacao. Somente Erros permite
+reconhecer e resolver um evento; essas duas acoes exigem `errors.manage`, alem
+da leitura protegida por `errors.view`.
+
+O endpoint `/api/admin/platform/session` entrega roles e permissoes allowlisted
+para a navegacao. A autorizacao decisiva continua no backend. Tokens de suporte
+nao podem usar a Central Master.
+
+### 30.3 Privacidade e observabilidade
+
+O observador root-owned produz arquivos sanitizados no diretorio configurado
+por:
+
+```env
+PLATFORM_MONITORING_SNAPSHOT_DIR=/var/lib/telz/monitoring
+```
+
+Snapshots ausentes, invalidos ou antigos retornam estado `unknown`/`stale`.
+Rotas da Central nao executam shell, `sudo` ou `systemctl`. Integracoes nao
+selecionam credenciais; o Gateway calcula no banco somente o sufixo de quatro
+digitos do telefone e retorna mascara; Backups expoe metadados sanitizados, nao
+dump, `.env`, archive ou caminho privado.
+
+### 30.4 Backup, restore e atualizacao
+
+Cada backup e um conjunto privado root-owned com dump custom, ambiente,
+uploads/Baileys quando presentes, checksums e manifest. O dump, os archives e
+a copia de ambiente sao validados antes da publicacao atomica do conjunto.
+
+Restore exige o conjunto completo, confirmacao textual e safety backup. Ele
+valida checksums, dump, manifest, commit, destino de banco e path traversal
+antes de parar servicos. Continua destrutivo e ainda precisa de ensaio fora de
+producao.
+
+O atualizador rejeita worktree sujo, executa Git como `telz`, cria backup,
+instala dependencias, testa, faz build, exige um unico head e aplica somente:
+
+```text
+20260818_platform_operations
+```
+
+Ele pode voltar codigo/build ao commit anterior, mas nunca faz downgrade
+automatico do banco. Depois de dados reais, a estrategia preferida e hotfix
+forward-only ou restore controlado.
+
+### 30.5 HTTPS
+
+O helper de SSL deve ser instalado como utilitario root-owned pelo fluxo de
+instalacao/atualizacao. A chamada operacional aprovada e:
+
+```bash
+sudo /usr/local/sbin/telz-finish-ssl DOMINIO EMAIL
+```
+
+Nao execute diretamente a copia mutavel do helper dentro do checkout. Emissao,
+redirect HTTP para HTTPS e renovacao ainda precisam de evidencia na VPS.
+
+### 30.6 Validacao registrada nesta rodada
+
+Concluido localmente em 2026-08-09:
+
+- `git diff --check` sem erro estrutural;
+- `alembic heads` com um unico `20260818_platform_operations`;
+- testes focais de Master, Onda 0, sessao e operacoes: `41 passed`;
+- suite backend completa: `176 passed`, com um warning Pydantic preexistente;
+- TypeScript typecheck aprovado;
+- Vitest: `20` arquivos e `99` testes aprovados;
+- build completo aprovado;
+- `bash -n`: `22` scripts de instalacao e operacao aprovados;
+- verificacao estatica de metadata, simetria de indices, contrato de backup e
+  minimizacao do telefone.
+
+Ainda nao estavam comprovados no momento deste registro:
+
+- upgrade/downgrade em PostgreSQL 15 descartavel;
+- CI e push do commit;
+- deploy e migrations na VPS;
+- timer/collector em systemd;
+- HTTPS publico;
+- restore controlado;
+- E2E em navegador com dois tenants.

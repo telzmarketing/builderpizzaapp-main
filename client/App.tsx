@@ -422,6 +422,16 @@ const PlatformPlans = lazy(() => import("./pages/platform/PlatformPlans"));
 const PlatformModules = lazy(() => import("./pages/platform/PlatformModules"));
 const PlatformBillingOverview = lazy(() => import("./pages/platform/PlatformBillingOverview"));
 const PlatformDomains = lazy(() => import("./pages/platform/PlatformDomains"));
+const PlatformUsers = lazy(() => import("./pages/platform/PlatformUsers"));
+const PlatformSettings = lazy(() => import("./pages/platform/PlatformSettings"));
+const PlatformCapabilityGuard = lazy(() => import("./components/PlatformCapabilityGuard"));
+const PlatformHealth = lazy(() => import("./pages/platform/PlatformOperationalPages").then((module) => ({ default: module.PlatformHealth })));
+const PlatformIntegrations = lazy(() => import("./pages/platform/PlatformOperationalPages").then((module) => ({ default: module.PlatformIntegrations })));
+const PlatformJobs = lazy(() => import("./pages/platform/PlatformOperationalPages").then((module) => ({ default: module.PlatformJobs })));
+const PlatformGateway = lazy(() => import("./pages/platform/PlatformOperationalPages").then((module) => ({ default: module.PlatformGateway })));
+const PlatformErrors = lazy(() => import("./pages/platform/PlatformOperationalPages").then((module) => ({ default: module.PlatformErrors })));
+const PlatformStorage = lazy(() => import("./pages/platform/PlatformOperationalPages").then((module) => ({ default: module.PlatformStorage })));
+const PlatformBackups = lazy(() => import("./pages/platform/PlatformOperationalPages").then((module) => ({ default: module.PlatformBackups })));
 const PlatformAudit = lazy(() => import("./pages/platform/PlatformAudit"));
 const PlatformSupport = lazy(() => import("./pages/platform/PlatformSupport"));
 const Index = lazy(() => import("./pages/Index"));
@@ -562,15 +572,48 @@ function AppSurface() {
 
               <Route element={<PlatformAdminGuard />}>
                 <Route element={<PlatformAdminLayout />}>
-                  <Route path="/painel/plataforma" element={<PlatformDashboard />} />
-                  <Route path="/painel/empresas" element={<AdminEmpresas />} />
-                  <Route path="/painel/empresas/:tenantId" element={<PlatformTenantDetail />} />
-                  <Route path="/painel/planos" element={<PlatformPlans />} />
-                  <Route path="/painel/modulos" element={<PlatformModules />} />
-                  <Route path="/painel/cobrancas" element={<PlatformBillingOverview />} />
-                  <Route path="/painel/dominios" element={<PlatformDomains />} />
-                  <Route path="/painel/auditoria" element={<PlatformAudit />} />
-                  <Route path="/painel/suporte" element={<PlatformSupport />} />
+                  <Route element={<PlatformCapabilityGuard capability="tenants.view" />}>
+                    <Route path="/painel/plataforma" element={<PlatformDashboard />} />
+                    <Route path="/painel/empresas" element={<AdminEmpresas />} />
+                    <Route path="/painel/empresas/:tenantId" element={<PlatformTenantDetail />} />
+                    <Route path="/painel/planos" element={<PlatformPlans />} />
+                    <Route path="/painel/modulos" element={<PlatformModules />} />
+                    <Route path="/painel/cobrancas" element={<PlatformBillingOverview />} />
+                    <Route path="/painel/dominios" element={<PlatformDomains />} />
+                  </Route>
+                  <Route element={<PlatformCapabilityGuard capability="platform_users.view" />}>
+                    <Route path="/painel/usuarios-plataforma" element={<PlatformUsers />} />
+                  </Route>
+                  <Route element={<PlatformCapabilityGuard capability="platform_settings.view" />}>
+                    <Route path="/painel/configuracoes-plataforma" element={<PlatformSettings />} />
+                  </Route>
+                  <Route element={<PlatformCapabilityGuard capability="audit.view" />}>
+                    <Route path="/painel/auditoria" element={<PlatformAudit />} />
+                  </Route>
+                  <Route element={<PlatformCapabilityGuard capability="support.impersonate" />}>
+                    <Route path="/painel/suporte" element={<PlatformSupport />} />
+                  </Route>
+                  <Route element={<PlatformCapabilityGuard capability="monitoring.view" />}>
+                    <Route path="/painel/saude-servicos" element={<PlatformHealth />} />
+                  </Route>
+                  <Route element={<PlatformCapabilityGuard capability="integrations.view" />}>
+                    <Route path="/painel/integracoes-plataforma" element={<PlatformIntegrations />} />
+                  </Route>
+                  <Route element={<PlatformCapabilityGuard capability="jobs.view" />}>
+                    <Route path="/painel/filas-jobs" element={<PlatformJobs />} />
+                  </Route>
+                  <Route element={<PlatformCapabilityGuard capability="gateway.view" />}>
+                    <Route path="/painel/whatsapp-gateway-plataforma" element={<PlatformGateway />} />
+                  </Route>
+                  <Route element={<PlatformCapabilityGuard capability="errors.view" />}>
+                    <Route path="/painel/erros-plataforma" element={<PlatformErrors />} />
+                  </Route>
+                  <Route element={<PlatformCapabilityGuard capability="storage.view" />}>
+                    <Route path="/painel/armazenamento-plataforma" element={<PlatformStorage />} />
+                  </Route>
+                  <Route element={<PlatformCapabilityGuard capability="backups.view" />}>
+                    <Route path="/painel/backups-plataforma" element={<PlatformBackups />} />
+                  </Route>
                 </Route>
               </Route>
 
@@ -673,8 +716,17 @@ export default function HostSurfaceGate() {
       "/painel/modulos",
       "/painel/cobrancas",
       "/painel/dominios",
+      "/painel/usuarios-plataforma",
+      "/painel/configuracoes-plataforma",
       "/painel/auditoria",
       "/painel/suporte",
+      "/painel/saude-servicos",
+      "/painel/integracoes-plataforma",
+      "/painel/filas-jobs",
+      "/painel/whatsapp-gateway-plataforma",
+      "/painel/erros-plataforma",
+      "/painel/armazenamento-plataforma",
+      "/painel/backups-plataforma",
     ].some((path) => window.location.pathname === path || window.location.pathname.startsWith(`${path}/`))
   );
   const [storeResolved, setStoreResolved] = useState(false);

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from collections.abc import Mapping
 from datetime import date, datetime
@@ -20,6 +21,7 @@ SENSITIVE_KEYS = frozenset({
 # These JSON blobs can contain provider credentials under arbitrary keys.
 # Audit keeps only the fact that the field changed, never its contents.
 OPAQUE_SECRET_FIELDS = frozenset({"config_json", "default_config_json"})
+REQUEST_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,99}$")
 
 
 def _sensitive(key: str) -> bool:
@@ -54,6 +56,21 @@ def _json(value: Any) -> str | None:
     return json.dumps(_safe(value), ensure_ascii=False, sort_keys=True, default=str)
 
 
+def _request_identifier(request, state_name: str, header_name: str) -> str | None:
+    if request is None:
+        return None
+    state = getattr(request, "state", None)
+    state_value = getattr(state, state_name, None)
+    if isinstance(state_value, str) and REQUEST_IDENTIFIER_RE.fullmatch(state_value):
+        return state_value
+    headers = getattr(request, "headers", None)
+    header_value = headers.get(header_name) if headers is not None else None
+    if not isinstance(header_value, str):
+        return None
+    normalized = header_value.strip()
+    return normalized if REQUEST_IDENTIFIER_RE.fullmatch(normalized) else None
+
+
 class PlatformAuditService:
     def __init__(self, db):
         self.db = db
@@ -82,8 +99,8 @@ class PlatformAuditService:
             action=action,
             resource_type=resource_type,
             resource_id=resource_id,
-            request_id=request.headers.get("x-request-id") if request is not None else None,
-            correlation_id=request.headers.get("x-correlation-id") if request is not None else None,
+            request_id=_request_identifier(request, "request_id", "x-request-id"),
+            correlation_id=_request_identifier(request, "correlation_id", "x-correlation-id"),
             ip_address=request.client.host if request is not None and request.client else None,
             user_agent=request.headers.get("user-agent") if request is not None else None,
             before_data=_json(before),

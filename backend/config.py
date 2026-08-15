@@ -7,7 +7,10 @@ from pydantic_settings import BaseSettings
 
 
 BACKEND_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = BACKEND_DIR.parent
+SOURCE_PROJECT_ROOT = BACKEND_DIR.parent
+PROJECT_ROOT = Path(os.environ.get("TELZ_PROJECT_ROOT", SOURCE_PROJECT_ROOT)).resolve()
+PERSISTENT_BACKEND_DIR = PROJECT_ROOT / "backend"
+DEFAULT_JWT_SECRET_KEY = "troque-esta-chave-secreta-em-producao"
 
 
 class Settings(BaseSettings):
@@ -49,7 +52,7 @@ class Settings(BaseSettings):
     ASAAS_WEBHOOK_TOKEN: str = ""
 
     # Admin JWT
-    JWT_SECRET_KEY: str = "troque-esta-chave-secreta-em-producao"
+    JWT_SECRET_KEY: str = DEFAULT_JWT_SECRET_KEY
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 480          # 8 horas
     # Multi-tenant auth is additive and opt-in.  Keep disabled until the
@@ -81,6 +84,9 @@ class Settings(BaseSettings):
     TENANT_CREDENTIALS_ENABLED: bool = False
     PLATFORM_RBAC_ENABLED: bool = False
     TENANT_ENTITLEMENT_ENFORCEMENT_ENABLED: bool = False
+    # Root-owned, collector-generated operational projections. The API has
+    # read-only access and never executes host commands from HTTP requests.
+    PLATFORM_MONITORING_SNAPSHOT_DIR: str = "/var/lib/telz/monitoring"
 
     # Loyalty
     POINTS_PER_REAL: float = 1.0           # pontos por R$ gasto
@@ -138,7 +144,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = (
             PROJECT_ROOT / ".env",
-            BACKEND_DIR / ".env",
+            PERSISTENT_BACKEND_DIR / ".env",
         )
         env_file_encoding = "utf-8"
         extra = "ignore"    # ignore Node/Vite env vars present in the root .env
@@ -190,7 +196,7 @@ def save_ai_api_keys(*, openai_api_key: str | None = None, anthropic_api_key: st
         if "\n" in value or "\r" in value:
             raise ValueError(f"{key} não pode conter quebra de linha.")
 
-    env_path = BACKEND_DIR / ".env"
+    env_path = PERSISTENT_BACKEND_DIR / ".env"
     existing_lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
     seen: set[str] = set()
     next_lines: list[str] = []
@@ -220,7 +226,7 @@ def save_ai_api_keys(*, openai_api_key: str | None = None, anthropic_api_key: st
 
 
 def _read_backend_env_value(name: str) -> str:
-    env_path = BACKEND_DIR / ".env"
+    env_path = PERSISTENT_BACKEND_DIR / ".env"
     if not env_path.exists():
         return ""
 

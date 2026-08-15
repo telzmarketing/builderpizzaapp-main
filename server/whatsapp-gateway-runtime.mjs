@@ -15,7 +15,9 @@ import makeWASocket, {
 import QRCode from "qrcode";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, "..");
+const projectRoot = process.env.TELZ_PROJECT_ROOT
+  ? path.resolve(process.env.TELZ_PROJECT_ROOT)
+  : path.resolve(__dirname, "..");
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 2) {

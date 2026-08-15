@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { Loader2, RefreshCw, ShieldX } from "lucide-react";
 import { Navigate, Outlet } from "react-router-dom";
-import { adminAuthApi, isApiRequestErrorStatus, platformTenantsApi } from "@/lib/api";
+import { adminAuthApi, isApiRequestErrorStatus, platformSessionApi } from "@/lib/api";
 import { isPlatformHostname } from "@/lib/platformHost";
+import { clearPlatformPermissions, storePlatformPermissions } from "@/lib/platformCapabilities";
+import { readPlatformSupportSession } from "@/lib/platformSupportSession";
 
 type SessionState = "checking" | "authenticated" | "password_required" | "denied" | "unavailable";
 
 export default function PlatformAdminGuard() {
   const isPlatform = isPlatformHostname(window.location.hostname);
   const token = localStorage.getItem("admin_token");
+  const supportSession = readPlatformSupportSession();
   const [sessionState, setSessionState] = useState<SessionState>(
     token ? "checking" : "unavailable",
   );
@@ -17,6 +20,7 @@ export default function PlatformAdminGuard() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
+    clearPlatformPermissions();
     setSessionState("checking");
     adminAuthApi.me()
       .then(async (admin) => {
@@ -26,10 +30,12 @@ export default function PlatformAdminGuard() {
           setSessionState("password_required");
           return;
         }
-        await platformTenantsApi.dashboard();
+        const session = await platformSessionApi.get();
+        if (!cancelled) storePlatformPermissions(session.permissions);
         if (!cancelled) setSessionState("authenticated");
       })
       .catch((error) => {
+        clearPlatformPermissions();
         if (!cancelled && localStorage.getItem("admin_token")) {
           if (isApiRequestErrorStatus(error, 403)) {
             setSessionState("denied");
@@ -46,6 +52,7 @@ export default function PlatformAdminGuard() {
   }, [token, retryKey]);
 
   if (!isPlatform) return <Navigate to="/painel" replace />;
+  if (supportSession) return <Navigate to="/painel/gestao/financeiro" replace />;
   if (!token) return <Navigate to="/painel/login" replace />;
   if (sessionState === "password_required") return <Navigate to="/painel/trocar-senha" replace />;
 

@@ -3083,6 +3083,377 @@ export interface ApiPlatformPage<T> {
   pages: number;
 }
 
+export type ApiPlatformUserStatus = "active" | "inactive";
+
+export interface ApiPlatformUserRole {
+  id: string;
+  key: string;
+  name: string;
+  description?: string | null;
+  is_system: boolean;
+}
+
+export interface ApiPlatformUser {
+  id: string;
+  email: string;
+  name: string;
+  active: boolean;
+  status: ApiPlatformUserStatus;
+  phone?: string | null;
+  job_title?: string | null;
+  last_login_at?: string | null;
+  force_password_change: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  platform_roles: ApiPlatformUserRole[];
+  membership_count: number;
+}
+
+export interface ApiPlatformUsersListParams {
+  page?: number;
+  page_size?: number;
+  q?: string;
+  status?: ApiPlatformUserStatus;
+  role?: string;
+}
+
+export type ApiPlatformSettingsStatus = "ok" | "attention" | "critical";
+export type ApiPlatformSettingsAlertSeverity = "info" | "warning" | "critical";
+export type ApiPlatformJwtSecretState = "configured" | "default" | "missing";
+export type ApiPlatformRolloutCategory = "isolation" | "runtime" | "security" | "access";
+
+export interface ApiPlatformApplicationSettings {
+  app_name: string;
+  app_version: string;
+  platform_brand_name: string;
+  debug: boolean;
+}
+
+export interface ApiPlatformSecuritySettings {
+  jwt_secret_state: ApiPlatformJwtSecretState;
+  platform_rbac_enabled: boolean;
+  multi_tenant_auth_enabled: boolean;
+}
+
+export interface ApiPlatformDomainSettings {
+  enabled: boolean;
+  trust_proxy_headers: boolean;
+  platform_hostnames: string[];
+  platform_hostname_count: number;
+  invalid_platform_hostname_count: number;
+  trusted_proxy_count: number;
+  invalid_trusted_proxy_count: number;
+}
+
+export interface ApiPlatformRolloutFlag {
+  key: string;
+  label: string;
+  enabled: boolean;
+  category: ApiPlatformRolloutCategory;
+}
+
+export interface ApiPlatformSettingsAlert {
+  key: string;
+  severity: ApiPlatformSettingsAlertSeverity;
+  title: string;
+  description: string;
+}
+
+export interface ApiPlatformSettings {
+  source: "environment";
+  read_only: true;
+  restart_required: true;
+  status: ApiPlatformSettingsStatus;
+  application: ApiPlatformApplicationSettings;
+  security: ApiPlatformSecuritySettings;
+  domains: ApiPlatformDomainSettings;
+  rollout_flags: ApiPlatformRolloutFlag[];
+  alerts: ApiPlatformSettingsAlert[];
+}
+
+export type ApiPlatformOperationalStatus = "healthy" | "degraded" | "critical" | "unknown";
+export type ApiPlatformConnectionStatus = "healthy" | "degraded" | "failed" | "unknown";
+
+export interface ApiPlatformSessionRole {
+  key: string;
+  name: string;
+}
+
+export interface ApiPlatformSession {
+  user_id: string;
+  roles: ApiPlatformSessionRole[];
+  permissions: string[];
+}
+
+export interface ApiPlatformTenantReference {
+  id: string;
+  name: string;
+}
+
+export interface ApiPlatformOperationalPage<T> {
+  items: T[];
+  page: number;
+  page_size: number;
+  total: number;
+}
+
+export interface ApiPlatformHealthComponent {
+  key: string;
+  label: string;
+  status: ApiPlatformOperationalStatus;
+  checked_at?: string | null;
+  latency_ms?: number | null;
+  message?: string | null;
+}
+
+export interface ApiPlatformHealth {
+  status: ApiPlatformOperationalStatus;
+  generated_at: string;
+  stale: boolean;
+  components: ApiPlatformHealthComponent[];
+  alerts: string[];
+}
+
+export interface ApiPlatformIntegrationCategory {
+  key: string;
+  label: string;
+  total: number;
+  healthy: number;
+  degraded: number;
+  failed: number;
+  unknown: number;
+}
+
+export interface ApiPlatformIntegrationsOverview {
+  total: number;
+  configured: number;
+  healthy: number;
+  degraded: number;
+  failed: number;
+  unknown: number;
+  by_category: ApiPlatformIntegrationCategory[];
+  generated_at: string;
+}
+
+export interface ApiPlatformIntegrationConnection {
+  id: string;
+  tenant: ApiPlatformTenantReference;
+  category: string;
+  provider: string;
+  status: ApiPlatformConnectionStatus;
+  configured: boolean;
+  last_sync_at?: string | null;
+  updated_at?: string | null;
+  error_present: boolean;
+}
+
+export type ApiPlatformJobStatus =
+  | "queued"
+  | "running"
+  | "retrying"
+  | "succeeded"
+  | "failed"
+  | "dead"
+  | "cancelled"
+  | "unknown";
+
+export interface ApiPlatformJobWorker {
+  key: string;
+  instance_key: string;
+  status: ApiPlatformOperationalStatus;
+  last_heartbeat_at?: string | null;
+  stale: boolean;
+}
+
+export interface ApiPlatformJobsOverview {
+  total: number;
+  queued: number;
+  running: number;
+  retrying: number;
+  succeeded: number;
+  failed: number;
+  dead: number;
+  oldest_pending_at?: string | null;
+  workers: ApiPlatformJobWorker[];
+  generated_at: string;
+}
+
+export interface ApiPlatformJobQueue {
+  key: string;
+  label: string;
+  total: number;
+  queued: number;
+  running: number;
+  retrying: number;
+  succeeded: number;
+  failed: number;
+  dead: number;
+  oldest_pending_at?: string | null;
+}
+
+export interface ApiPlatformJobQueues {
+  items: ApiPlatformJobQueue[];
+  generated_at: string;
+}
+
+export interface ApiPlatformJobItem {
+  id: string;
+  tenant: ApiPlatformTenantReference;
+  queue: string;
+  job_type: string;
+  status: ApiPlatformJobStatus;
+  source_status: string;
+  attempts: number;
+  max_attempts: number;
+  created_at?: string | null;
+  scheduled_at?: string | null;
+  next_attempt_at?: string | null;
+  locked_at?: string | null;
+  updated_at?: string | null;
+  finished_at?: string | null;
+  age_seconds: number;
+  error_present: boolean;
+}
+
+export interface ApiPlatformGatewayOverview {
+  runtime: {
+    status: ApiPlatformOperationalStatus;
+    version?: string | null;
+    checked_at?: string | null;
+    stale: boolean;
+  };
+  total_instances: number;
+  connected: number;
+  disconnected: number;
+  degraded: number;
+  unknown: number;
+  last_activity_at?: string | null;
+}
+
+export interface ApiPlatformGatewayInstance {
+  id: string;
+  tenant: ApiPlatformTenantReference;
+  name: string;
+  provider: string;
+  status: string;
+  phone_masked?: string | null;
+  last_seen_at?: string | null;
+  connected_at?: string | null;
+  disconnected_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ApiPlatformGatewayLog {
+  id: string;
+  action: string;
+  status: string;
+  message?: string | null;
+  created_at?: string | null;
+}
+
+export interface ApiPlatformGatewayLogs {
+  items: ApiPlatformGatewayLog[];
+  total: number;
+}
+
+export interface ApiPlatformErrorsOverview {
+  total_open: number;
+  critical_open: number;
+  acknowledged: number;
+  resolved: number;
+  last_seen_at?: string | null;
+  by_source: Array<{ source: string; total_open: number }>;
+  generated_at: string;
+}
+
+export interface ApiPlatformErrorItem {
+  id: string;
+  tenant?: ApiPlatformTenantReference | null;
+  fingerprint: string;
+  source: string;
+  severity: "info" | "warning" | "error" | "critical";
+  status: "open" | "acknowledged" | "resolved";
+  error_code?: string | null;
+  exception_type?: string | null;
+  message: string;
+  method?: string | null;
+  path?: string | null;
+  request_id?: string | null;
+  occurrence_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  acknowledged_at?: string | null;
+  resolved_at?: string | null;
+}
+
+export interface ApiPlatformErrorDetail extends ApiPlatformErrorItem {
+  acknowledgement_note?: string | null;
+  resolution_note?: string | null;
+}
+
+export interface ApiPlatformStorageOverview {
+  generated_at: string;
+  stale: boolean;
+  status: ApiPlatformOperationalStatus;
+  disk: { total_bytes: number; used_bytes: number; free_bytes: number; usage_percent: number };
+  uploads: { bytes: number; files: number };
+  optimized: { bytes: number; files: number };
+  baileys: { bytes: number; files: number };
+  legacy_unattributed: { bytes: number; files: number };
+}
+
+export interface ApiPlatformTenantStorage {
+  tenant: ApiPlatformTenantReference;
+  bytes: number;
+  files: number;
+  limit_bytes?: number | null;
+  usage_percent?: number | null;
+  usage_state: "normal" | "warning" | "critical" | "unknown";
+}
+
+export interface ApiPlatformBackupComponent {
+  key: string;
+  status: ApiPlatformOperationalStatus;
+  size_bytes?: number | null;
+  validated: boolean;
+}
+
+export interface ApiPlatformBackupsOverview {
+  generated_at: string;
+  stale: boolean;
+  last_attempt_at?: string | null;
+  last_success_at?: string | null;
+  status: ApiPlatformOperationalStatus;
+  age_seconds?: number | null;
+  schedule?: string | null;
+  components: ApiPlatformBackupComponent[];
+  restore_drill: { status: ApiPlatformOperationalStatus; last_tested_at?: string | null };
+}
+
+export interface ApiPlatformBackupRun {
+  run_id: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  status: ApiPlatformOperationalStatus;
+  components: ApiPlatformBackupComponent[];
+  failure_phase?: string | null;
+  failure_code?: string | null;
+}
+
+export interface ApiPlatformBackupRuns {
+  items: ApiPlatformBackupRun[];
+}
+
+export function buildPlatformUsersQuery(params: ApiPlatformUsersListParams = {}): string {
+  const query = new URLSearchParams();
+  if (params.page !== undefined) query.set("page", String(params.page));
+  if (params.page_size !== undefined) query.set("page_size", String(params.page_size));
+  if (params.q?.trim()) query.set("q", params.q.trim());
+  if (params.status) query.set("status", params.status);
+  if (params.role?.trim()) query.set("role", params.role.trim());
+  return query.toString();
+}
+
 export interface ApiPlatformTenantDomain {
   id: string;
   tenant_id: string;
@@ -3548,6 +3919,118 @@ export interface ApiPlatformDomainCreation {
     record_value: string;
   };
 }
+
+export const platformUsersApi = {
+  list: (params: ApiPlatformUsersListParams = {}) => {
+    const query = buildPlatformUsersQuery(params);
+    return get<ApiPlatformPage<ApiPlatformUser>>(
+      `/admin/platform/users${query ? `?${query}` : ""}`,
+    );
+  },
+};
+
+export const platformSettingsApi = {
+  get: () => get<ApiPlatformSettings>("/admin/platform/settings"),
+};
+
+export const platformSessionApi = {
+  get: () => get<ApiPlatformSession>("/admin/platform/session"),
+};
+
+export const platformHealthApi = {
+  get: () => get<ApiPlatformHealth>("/admin/platform/health"),
+};
+
+export const platformIntegrationsApi = {
+  overview: () => get<ApiPlatformIntegrationsOverview>("/admin/platform/integrations/overview"),
+  connections: (params: { page?: number; page_size?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.page !== undefined) query.set("page", String(params.page));
+    if (params.page_size !== undefined) query.set("page_size", String(params.page_size));
+    const suffix = query.toString();
+    return get<ApiPlatformOperationalPage<ApiPlatformIntegrationConnection>>(
+      `/admin/platform/integrations/connections${suffix ? `?${suffix}` : ""}`,
+    );
+  },
+};
+
+export const platformJobsApi = {
+  overview: () => get<ApiPlatformJobsOverview>("/admin/platform/jobs/overview"),
+  queues: () => get<ApiPlatformJobQueues>("/admin/platform/jobs/queues"),
+  items: (params: { page?: number; page_size?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.page !== undefined) query.set("page", String(params.page));
+    if (params.page_size !== undefined) query.set("page_size", String(params.page_size));
+    const suffix = query.toString();
+    return get<ApiPlatformOperationalPage<ApiPlatformJobItem>>(
+      `/admin/platform/jobs/items${suffix ? `?${suffix}` : ""}`,
+    );
+  },
+};
+
+export const platformGatewayApi = {
+  overview: () => get<ApiPlatformGatewayOverview>("/admin/platform/gateway/overview"),
+  instances: (params: { page?: number; page_size?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.page !== undefined) query.set("page", String(params.page));
+    if (params.page_size !== undefined) query.set("page_size", String(params.page_size));
+    const suffix = query.toString();
+    return get<ApiPlatformOperationalPage<ApiPlatformGatewayInstance>>(
+      `/admin/platform/gateway/instances${suffix ? `?${suffix}` : ""}`,
+    );
+  },
+  logs: (instanceId: string, params: { tenant_id: string; limit?: number }) => {
+    const query = new URLSearchParams({ tenant_id: params.tenant_id });
+    if (params.limit !== undefined) query.set("limit", String(params.limit));
+    return get<ApiPlatformGatewayLogs>(
+      `/admin/platform/gateway/instances/${encodeURIComponent(instanceId)}/logs?${query.toString()}`,
+    );
+  },
+};
+
+export const platformErrorsApi = {
+  overview: () => get<ApiPlatformErrorsOverview>("/admin/platform/errors/overview"),
+  list: (params: { page?: number; page_size?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.page !== undefined) query.set("page", String(params.page));
+    if (params.page_size !== undefined) query.set("page_size", String(params.page_size));
+    const suffix = query.toString();
+    return get<ApiPlatformOperationalPage<ApiPlatformErrorItem>>(
+      `/admin/platform/errors${suffix ? `?${suffix}` : ""}`,
+    );
+  },
+  detail: (errorId: string) => get<ApiPlatformErrorDetail>(
+    `/admin/platform/errors/${encodeURIComponent(errorId)}`,
+  ),
+  acknowledge: (errorId: string, note: string) => post<ApiPlatformErrorDetail>(
+    `/admin/platform/errors/${encodeURIComponent(errorId)}/acknowledge`,
+    { note },
+  ),
+  resolve: (errorId: string, note: string) => post<ApiPlatformErrorDetail>(
+    `/admin/platform/errors/${encodeURIComponent(errorId)}/resolve`,
+    { note },
+  ),
+};
+
+export const platformStorageApi = {
+  overview: () => get<ApiPlatformStorageOverview>("/admin/platform/storage/overview"),
+  tenants: (params: { page?: number; page_size?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.page !== undefined) query.set("page", String(params.page));
+    if (params.page_size !== undefined) query.set("page_size", String(params.page_size));
+    const suffix = query.toString();
+    return get<ApiPlatformOperationalPage<ApiPlatformTenantStorage>>(
+      `/admin/platform/storage/tenants${suffix ? `?${suffix}` : ""}`,
+    );
+  },
+};
+
+export const platformBackupsApi = {
+  overview: () => get<ApiPlatformBackupsOverview>("/admin/platform/backups/overview"),
+  runs: (limit = 20) => get<ApiPlatformBackupRuns>(
+    `/admin/platform/backups/runs?limit=${encodeURIComponent(String(limit))}`,
+  ),
+};
 
 export const platformTenantsApi = {
   dashboard: () => get<ApiPlatformDashboard>("/admin/platform/dashboard"),

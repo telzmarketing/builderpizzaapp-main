@@ -65,6 +65,22 @@ const platformPageMeta: Array<{
     },
   },
   {
+    match: (pathname) => pathname === "/painel/usuarios-plataforma",
+    meta: {
+      eyebrow: "Plataforma",
+      title: "Usuarios da plataforma",
+      subtitle: "Consulta dos operadores com acesso administrativo a Central Master.",
+    },
+  },
+  {
+    match: (pathname) => pathname === "/painel/configuracoes-plataforma",
+    meta: {
+      eyebrow: "Plataforma",
+      title: "Configuracoes",
+      subtitle: "Postura operacional, seguranca e rollout do ambiente da plataforma.",
+    },
+  },
+  {
     match: (pathname) => pathname === "/painel/suporte",
     meta: {
       eyebrow: "Plataforma",
@@ -78,6 +94,62 @@ const platformPageMeta: Array<{
       eyebrow: "Plataforma",
       title: "Auditoria",
       subtitle: "Registro imutavel das acoes administrativas da plataforma.",
+    },
+  },
+  {
+    match: (pathname) => pathname === "/painel/saude-servicos",
+    meta: {
+      eyebrow: "Monitoramento",
+      title: "Saude dos servicos",
+      subtitle: "Disponibilidade, latencia e alertas dos componentes centrais.",
+    },
+  },
+  {
+    match: (pathname) => pathname === "/painel/integracoes-plataforma",
+    meta: {
+      eyebrow: "Monitoramento",
+      title: "Integracoes",
+      subtitle: "Conectividade redigida dos provedores usados pelas empresas.",
+    },
+  },
+  {
+    match: (pathname) => pathname === "/painel/filas-jobs",
+    meta: {
+      eyebrow: "Monitoramento",
+      title: "Filas e jobs",
+      subtitle: "Execucao assincrona, filas pendentes e saude dos workers.",
+    },
+  },
+  {
+    match: (pathname) => pathname === "/painel/whatsapp-gateway-plataforma",
+    meta: {
+      eyebrow: "Monitoramento",
+      title: "WhatsApp Gateway",
+      subtitle: "Runtime e instancias do gateway sem expor credenciais ou numeros completos.",
+    },
+  },
+  {
+    match: (pathname) => pathname === "/painel/erros-plataforma",
+    meta: {
+      eyebrow: "Monitoramento",
+      title: "Erros",
+      subtitle: "Ocorrencias operacionais redigidas, agrupadas e rastreaveis.",
+    },
+  },
+  {
+    match: (pathname) => pathname === "/painel/armazenamento-plataforma",
+    meta: {
+      eyebrow: "Monitoramento",
+      title: "Armazenamento",
+      subtitle: "Uso de disco e consumo atribuido por empresa.",
+    },
+  },
+  {
+    match: (pathname) => pathname === "/painel/backups-plataforma",
+    meta: {
+      eyebrow: "Monitoramento",
+      title: "Backups",
+      subtitle: "Execucoes, validacao dos componentes e prontidao de restauracao.",
     },
   },
 ];

@@ -33,12 +33,14 @@ describe("admin session policy", () => {
       admin_token: "token",
       admin_user: "{}",
       admin_permissions: "{}",
+      platform_permissions: "[]",
     });
     const supportStorage = memoryStorage({ platform_support_session: "{}" });
     clearAdminSession(storage, supportStorage);
     expect(storage.has("admin_token")).toBe(false);
     expect(storage.has("admin_user")).toBe(false);
     expect(storage.has("admin_permissions")).toBe(false);
+    expect(storage.has("platform_permissions")).toBe(false);
     expect(supportStorage.has("platform_support_session")).toBe(false);
   });
 

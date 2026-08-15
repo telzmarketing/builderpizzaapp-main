@@ -1,0 +1,22 @@
+[Unit]
+Description=Telz - coleta sanitizada de saude operacional
+After=network-online.target telz-api.service telz-web.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+TimeoutStartSec=15min
+User=root
+Group=root
+UMask=0027
+Environment=TELZ_MONITOR_API_PORT=__API_PORT__
+Environment=TELZ_MONITOR_WEB_PORT=__WEB_PORT__
+RuntimeDirectory=telz-monitoring
+RuntimeDirectoryMode=0750
+ExecStart=/usr/local/sbin/telz-monitoring-collector __INSTALL_DIR__ __SERVICE_USER__
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=__INSTALL_DIR__ -/var/backups/telz
+ReadWritePaths=/var/lib/telz/monitoring

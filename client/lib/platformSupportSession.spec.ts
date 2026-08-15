@@ -24,6 +24,7 @@ describe("platform support session", () => {
       admin_token: "master-token",
       admin_user: "{\"name\":\"Master\"}",
       admin_permissions: "{\"is_master\":true}",
+      platform_permissions: "[\"monitoring.view\"]",
     });
     const session = memoryStorage();
 
@@ -37,11 +38,13 @@ describe("platform support session", () => {
 
     expect(local.getItem("admin_token")).toBe("master-token");
     expect(local.getItem("admin_permissions")).toBeNull();
+    expect(local.getItem("platform_permissions")).toBeNull();
     expect(readPlatformSupportSession(session)?.master_token).toBe("master-token");
     expect(readPlatformSupportSession(session)?.scoped_token).toBe("scoped-token");
     expect(platformRequestAccessToken(local, session)).toBe("scoped-token");
     expect(restorePlatformMasterSession(local, session)).toBe(true);
     expect(local.getItem("admin_token")).toBe("master-token");
+    expect(local.getItem("platform_permissions")).toBe("[\"monitoring.view\"]");
     expect(platformRequestAccessToken(local, session)).toBe("master-token");
     expect(session.getItem("platform_support_session")).toBeNull();
   });
@@ -56,6 +59,7 @@ describe("platform support session", () => {
       master_token: "master-token",
       master_user: null,
       master_permissions: null,
+      master_platform_permissions: null,
     };
     expect(isPlatformSupportSessionActive(state, Date.parse("2029-01-01T00:00:00Z"))).toBe(true);
     expect(isPlatformSupportSessionActive(state, Date.parse("2031-01-01T00:00:00Z"))).toBe(false);
@@ -86,6 +90,7 @@ describe("platform support session", () => {
       master_token: "master-token",
       master_user: null,
       master_permissions: null,
+      master_platform_permissions: null,
     })).toBe(false);
   });
 });

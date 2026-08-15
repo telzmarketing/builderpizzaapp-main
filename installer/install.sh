@@ -75,12 +75,28 @@ export TELZ_NON_INTERACTIVE
 
 LOG_DIR=/var/log/telz-installer
 STATE_DIR=/var/lib/telz-installer/state
-mkdir -p "$LOG_DIR" "$STATE_DIR"
+install -d -m 0750 -o root -g root "$LOG_DIR"
+install -d -m 0700 -o root -g root "$STATE_DIR"
+[[ ! -L "$LOG_DIR" && ! -L "$STATE_DIR" ]] || {
+  fail "Diretorios de estado/log do instalador nao podem ser symlinks"
+  exit 1
+}
 LOG_FILE="$LOG_DIR/install-$(date +%Y%m%d-%H%M%S).log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-phase_done() { [[ -f "$STATE_DIR/$1.done" ]]; }
-mark_phase() { touch "$STATE_DIR/$1.done"; }
+phase_done() {
+  local marker="$STATE_DIR/$1.done"
+  [[ -f "$marker" && ! -L "$marker" && "$(stat -c '%U:%G %a' "$marker")" == "root:root 400" ]]
+}
+mark_phase() {
+  local marker="$STATE_DIR/$1.done"
+  local temporary
+  temporary="$(mktemp "$STATE_DIR/.phase.XXXXXX")"
+  printf 'completed\n' > "$temporary"
+  chown root:root "$temporary"
+  chmod 0400 "$temporary"
+  mv -f -- "$temporary" "$marker"
+}
 run_phase() {
   local name="$1"
   shift
@@ -108,11 +124,30 @@ validate_required ADMIN_NAME
 validate_required ADMIN_PASSWORD
 validate_safe_slug "$PLATFORM_SLUG"
 validate_install_dir "$INSTALL_DIR"
+validate_service_user "$SERVICE_USER"
+validate_domain "$PLATFORM_DOMAIN" || {
+  fail "PLATFORM_DOMAIN invalido; informe apenas um hostname DNS completo"
+  exit 1
+}
 validate_identifier DATABASE_NAME "$DATABASE_NAME"
 validate_identifier DATABASE_USER "$DATABASE_USER"
 validate_secret_for_env DATABASE_PASSWORD "$DATABASE_PASSWORD"
 validate_secret_for_env JWT_SECRET_KEY "$JWT_SECRET_KEY"
 validate_secret_for_env ADMIN_PASSWORD "$ADMIN_PASSWORD"
+for port_name in DATABASE_PORT API_PORT WEB_PORT WHATSAPP_GATEWAY_PORT; do
+  validate_port "${!port_name:-}" || {
+    fail "$port_name deve estar entre 1 e 65535"
+    exit 1
+  }
+done
+if [[ "$API_PORT" == "$WEB_PORT" || "$API_PORT" == "$WHATSAPP_GATEWAY_PORT" || "$WEB_PORT" == "$WHATSAPP_GATEWAY_PORT" ]]; then
+  fail "API_PORT, WEB_PORT e WHATSAPP_GATEWAY_PORT devem ser distintos"
+  exit 1
+fi
+validate_worker_count "${API_WORKERS:-2}" || {
+  fail "API_WORKERS deve estar entre 1 e 64"
+  exit 1
+}
 build_database_url
 confirm_plan
 
@@ -123,6 +158,8 @@ run_phase 04_directories prepare_directories
 run_phase 05_firewall configure_firewall
 run_phase 06_node install_node_runtime
 run_phase 07_code checkout_code
+run_phase 07_trusted_assets stage_trusted_installer_assets
+load_trusted_installer_assets
 run_phase 08_backend install_backend
 run_phase 09_env write_backend_env
 run_phase 10_database configure_postgresql_local
@@ -134,5 +171,12 @@ run_phase 15_ssl install_ssl_if_requested
 run_phase 16_backup install_backup_cron
 
 info "Executando health check final"
-bash scripts/health-check.sh "$INSTALL_DIR" || warn "Health check falhou. Verifique logs dos services."
+REQUIRE_PUBLIC_HTTPS=false
+if is_true "$INSTALL_SSL"; then
+  REQUIRE_PUBLIC_HTTPS=true
+fi
+TELZ_ALEMBIC_TARGET="$ALEMBIC_TARGET" \
+  TELZ_REQUIRE_PUBLIC_HTTPS="$REQUIRE_PUBLIC_HTTPS" \
+  /usr/local/sbin/telz-health-check "$INSTALL_DIR"
+write_summary
 ok "Instalacao concluida. Log: $LOG_FILE"

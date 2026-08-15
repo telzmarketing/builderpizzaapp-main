@@ -30,6 +30,7 @@ export interface PlatformSupportSessionState {
   master_token: string;
   master_user: string | null;
   master_permissions: string | null;
+  master_platform_permissions: string | null;
 }
 
 type SessionStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -71,7 +72,7 @@ export function platformRequestAccessToken(
 }
 
 export function activatePlatformSupportSession(
-  data: Omit<PlatformSupportSessionState, "scoped_token" | "master_token" | "master_user" | "master_permissions"> & {
+  data: Omit<PlatformSupportSessionState, "scoped_token" | "master_token" | "master_user" | "master_permissions" | "master_platform_permissions"> & {
     access_token: string;
   },
   local: SessionStorage = localStorage,
@@ -88,9 +89,11 @@ export function activatePlatformSupportSession(
     master_token: masterToken,
     master_user: local.getItem("admin_user"),
     master_permissions: local.getItem("admin_permissions"),
+    master_platform_permissions: local.getItem("platform_permissions"),
   };
   session.setItem(PLATFORM_SUPPORT_SESSION_KEY, JSON.stringify(state));
   local.removeItem("admin_permissions");
+  local.removeItem("platform_permissions");
   return state;
 }
 
@@ -105,6 +108,8 @@ export function restorePlatformMasterSession(
   else local.removeItem("admin_user");
   if (state.master_permissions) local.setItem("admin_permissions", state.master_permissions);
   else local.removeItem("admin_permissions");
+  if (state.master_platform_permissions) local.setItem("platform_permissions", state.master_platform_permissions);
+  else local.removeItem("platform_permissions");
   session.removeItem(PLATFORM_SUPPORT_SESSION_KEY);
   return true;
 }

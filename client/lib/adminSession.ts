@@ -46,5 +46,6 @@ export function clearAdminSession(
   storage.removeItem("admin_token");
   storage.removeItem("admin_user");
   storage.removeItem("admin_permissions");
+  storage.removeItem("platform_permissions");
   supportStorage.removeItem("platform_support_session");
 }

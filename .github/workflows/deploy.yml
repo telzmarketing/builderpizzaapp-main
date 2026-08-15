@@ -1,63 +1,794 @@
-name: Deploy — Produção
+name: Deploy - Producao
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:   # permite acionar manualmente pelo GitHub UI
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Operacao segura a executar
+        required: true
+        default: prepare_ssl
+        type: choice
+        options:
+          - prepare_ssl
+          - deploy
+
+concurrency:
+  group: telz-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
-  deploy:
-    name: Deploy para VPS
+  validate:
+    name: Testes e migration descartavel
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15@sha256:0dda651c259bfe50e2bcc28ca23d1fcca772fa90b0210803aa7b97379ccf4e85
+        env:
+          POSTGRES_DB: telz_ci
+          POSTGRES_USER: telz_ci
+          POSTGRES_PASSWORD: telz_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U telz_ci -d telz_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci
+      JWT_SECRET_KEY: ci-only-not-for-production
+      TELZ_ALEMBIC_TARGET: 20260818_platform_operations
 
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt
+          python -m pip install pytest
+          pnpm install --frozen-lockfile
+
+      - name: Validar scripts Bash
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(find scripts installer -type f -name '*.sh' -print0)
+
+      - name: Validar Alembic no PostgreSQL descartavel
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          alembic -c backend/alembic.ini current --verbose
+          mapfile -t heads < <(alembic -c backend/alembic.ini heads | awk 'NF {print $1}')
+          test "${#heads[@]}" -eq 1
+          test "${heads[0]}" = "$TELZ_ALEMBIC_TARGET"
+          alembic -c backend/alembic.ini upgrade "$TELZ_ALEMBIC_TARGET"
+          mapfile -t current < <(alembic -c backend/alembic.ini current | awk 'NF {print $1}')
+          test "${#current[@]}" -eq 1
+          test "${current[0]}" = "$TELZ_ALEMBIC_TARGET"
+
+      - name: Testar backend
+        run: python -m pytest -q
+
+      - name: Validar frontend
+        run: |
+          pnpm run typecheck
+          pnpm test
+          pnpm run build
+
+  inspect_vps:
+    name: Identificar release ativa em runner isolado
+    needs: validate
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    outputs:
+      previous_commit: ${{ steps.inspect.outputs.previous_commit }}
+    steps:
+      - name: Consultar commit ativo por SSH verificado
+        if: inputs.operation == 'deploy'
+        id: inspect
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT || 22 }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          test "$VPS_USER" = "root"
+          [[ "$VPS_PORT" =~ ^[0-9]{1,5}$ ]]
+          test -n "$VPS_SSH_KEY"; test -n "$VPS_KNOWN_HOSTS"
+          key="$RUNNER_TEMP/telz-vps-key-inspect"
+          known_hosts="$RUNNER_TEMP/telz-known-hosts-inspect"
+          trap 'rm -f -- "$key" "$known_hosts"' EXIT
+          printf '%s\n' "$VPS_SSH_KEY" > "$key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$known_hosts"
+          chmod 0600 "$key"; chmod 0644 "$known_hosts"
+          previous_commit="$(ssh -p "$VPS_PORT" -i "$key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts" "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          if test -L /var/lib/telz/current; then
+            active_app="$(readlink -f /var/lib/telz/current)"
+            /usr/bin/python3 - "$active_app/.telz-release.json" <<'PY'
+          import json, re, sys
+          from pathlib import Path
+          commit = str(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")).get("git_commit") or "")
+          if not re.fullmatch(r"[0-9a-f]{40}", commit): raise SystemExit("manifest ativo invalido")
+          print(commit)
+          PY
+          else
+            sudo -u telz -H git -C /opt/telz rev-parse HEAD
+          fi
+          REMOTE
+          )"
+          [[ "$previous_commit" =~ ^[0-9a-f]{40}$ ]]
+          echo "previous_commit=$previous_commit" >> "$GITHUB_OUTPUT"
+
+  package_release:
+    name: Promover artefatos sem segredos de producao
+    needs: inspect_vps
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    services:
+      postgres:
+        image: postgres:15@sha256:0dda651c259bfe50e2bcc28ca23d1fcca772fa90b0210803aa7b97379ccf4e85
+        env:
+          POSTGRES_DB: telz_ci
+          POSTGRES_USER: telz_ci
+          POSTGRES_PASSWORD: telz_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U telz_ci -d telz_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Checkout exato
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        if: inputs.operation == 'deploy'
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        if: inputs.operation == 'deploy'
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: inputs.operation == 'deploy'
+        with:
+          node-version: "22"
+
+      - name: Empacotar bundle operacional allowlisted
+        id: operation_bundle
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          files=(
+            scripts/update-telz.sh
+            scripts/backup-telz.sh
+            scripts/health-check.sh
+            scripts/collect-telz-monitoring.sh
+            scripts/restore-telz.sh
+            scripts/rollback-telz.sh
+            scripts/finish-ssl.sh
+            scripts/build-telz-release.sh
+            installer/templates/telz-api.service
+            installer/templates/telz-web.service
+            installer/templates/telz-whatsapp-gateway.service
+            installer/templates/telz-monitoring.service
+            installer/templates/telz-monitoring.timer
+          )
+          for file in "${files[@]}"; do
+            test -f "$file"
+            test ! -L "$file"
+          done
+          archive="$RUNNER_TEMP/telz-operation-bundle.tar.gz"
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -czf "$archive" -- "${files[@]}"
+          echo "sha256=$(sha256sum "$archive" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "base64=$(base64 -w0 "$archive")" >> "$GITHUB_OUTPUT"
+          echo "path=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Empacotar fontes Git antes de qualquer lifecycle
+        if: inputs.operation == 'deploy'
+        id: source_archives
+        shell: bash
+        env:
+          PREVIOUS_COMMIT: ${{ needs.inspect_vps.outputs.previous_commit }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PREVIOUS_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "$GITHUB_SHA^{commit}"
+          git cat-file -e "$PREVIOUS_COMMIT^{commit}"
+          git merge-base --is-ancestor "$PREVIOUS_COMMIT" "$GITHUB_SHA"
+          work="$RUNNER_TEMP/telz-release-artifacts"
+          target_source="$work/target"
+          previous_source="$work/previous"
+          mkdir -p "$target_source" "$previous_source"
+          git archive "$GITHUB_SHA" | tar -xf - -C "$target_source"
+          git archive "$PREVIOUS_COMMIT" | tar -xf - -C "$previous_source"
+          target_archive="$RUNNER_TEMP/telz-target.tar.gz"
+          previous_archive="$RUNNER_TEMP/telz-previous.tar.gz"
+          git archive --format=tar --add-virtual-file=".telz-source-commit:$GITHUB_SHA" "$GITHUB_SHA" | gzip -n > "$target_archive"
+          git archive --format=tar --add-virtual-file=".telz-source-commit:$PREVIOUS_COMMIT" "$PREVIOUS_COMMIT" | gzip -n > "$previous_archive"
+          echo "work=$work" >> "$GITHUB_OUTPUT"
+          echo "target_source=$target_source" >> "$GITHUB_OUTPUT"
+          echo "previous_source=$previous_source" >> "$GITHUB_OUTPUT"
+          echo "target_path=$target_archive" >> "$GITHUB_OUTPUT"
+          echo "previous_path=$previous_archive" >> "$GITHUB_OUTPUT"
+
+      - name: Montar pacote imutavel de operacao e fontes
+        id: source_delivery
+        shell: bash
+        env:
+          OPERATION_PATH: ${{ steps.operation_bundle.outputs.path }}
+          TARGET_PATH: ${{ steps.source_archives.outputs.target_path }}
+          PREVIOUS_PATH: ${{ steps.source_archives.outputs.previous_path }}
+        run: |
+          set -Eeuo pipefail
+          delivery="$RUNNER_TEMP/telz-source-delivery"
+          mkdir -p "$delivery"
+          cp -- "$OPERATION_PATH" "$delivery/operation-bundle.tar.gz"
+          if [[ "${{ inputs.operation }}" == "deploy" ]]; then
+            cp -- "$TARGET_PATH" "$delivery/target-source.tar.gz"
+            cp -- "$PREVIOUS_PATH" "$delivery/previous-source.tar.gz"
+          fi
+          echo "path=$delivery" >> "$GITHUB_OUTPUT"
+
+      - name: Selar operacao e fontes no GitHub
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: telz-source-${{ github.sha }}
+          path: ${{ steps.source_delivery.outputs.path }}
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Resolver e empacotar dependencias sem lifecycle
+        if: inputs.operation == 'deploy'
+        id: release_artifacts
+        shell: bash
+        env:
+          PREVIOUS_COMMIT: ${{ needs.inspect_vps.outputs.previous_commit }}
+          WORK_DIR: ${{ steps.source_archives.outputs.work }}
+          TARGET_SOURCE: ${{ steps.source_archives.outputs.target_source }}
+          PREVIOUS_SOURCE: ${{ steps.source_archives.outputs.previous_source }}
+        run: |
+          set -Eeuo pipefail
+          work="$WORK_DIR"
+          target_source="$TARGET_SOURCE"
+          previous_source="$PREVIOUS_SOURCE"
+          dependencies="$work/dependencies"
+          mkdir -p "$dependencies/wheelhouse" "$dependencies/pnpm-store"
+          python -m pip install --dry-run --ignore-installed --only-binary=:all: \
+            --report "$work/target-report.json" -r "$target_source/backend/requirements.txt"
+          python -m pip install --dry-run --ignore-installed --only-binary=:all: \
+            --report "$work/previous-report.json" -r "$previous_source/backend/requirements.txt"
+          /usr/bin/python3 - "$work/target-report.json" "$work/target-freeze.txt" \
+            "$work/previous-report.json" "$work/previous-freeze.txt" <<'PY'
+          import json, sys
+          from pathlib import Path
+          for report_name, output_name in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[4])):
+              report = json.loads(Path(report_name).read_text(encoding="utf-8"))
+              lines = sorted(
+                  {f"{item['metadata']['name']}=={item['metadata']['version']}" for item in report.get("install", [])},
+                  key=str.casefold,
+              )
+              if not lines:
+                  raise SystemExit("resolver Python nao produziu dependencias")
+              Path(output_name).write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+          python -m pip download --only-binary=:all: --dest "$dependencies/wheelhouse" \
+            pip==25.1.1 pytest==8.3.5 -r "$work/target-freeze.txt" -r "$work/previous-freeze.txt"
+
+          test "$(pnpm --version)" = "10.14.0"
+          [[ "$(node --version)" == v22.* ]]
+          pnpm --dir "$target_source" fetch --frozen-lockfile --store-dir "$dependencies/pnpm-store"
+          pnpm --dir "$previous_source" fetch --frozen-lockfile --store-dir "$dependencies/pnpm-store"
+
+          /usr/bin/python3 - "$dependencies" "$GITHUB_SHA" "$PREVIOUS_COMMIT" \
+            "$target_source" "$previous_source" "$work/target-freeze.txt" "$work/previous-freeze.txt" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          public = {
+              "VITE_API_URL": "",
+              "VITE_MULTI_TENANT_AUTH_ENABLED": "true",
+              "VITE_PLATFORM_HOSTNAME": "erp.telz.com.br",
+              "VITE_PLATFORM_HOSTNAMES": "erp.telz.com.br",
+          }
+          public_path = root / ".telz-public-build.json"
+          public_path.write_text(json.dumps(public, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+          def digest(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+          commits = {}
+          for commit, source, freeze in ((sys.argv[2], sys.argv[4], sys.argv[6]), (sys.argv[3], sys.argv[5], sys.argv[7])):
+              source_path = Path(source)
+              commits[commit] = {
+                  "python_freeze_sha256": digest(freeze),
+                  "requirements_sha256": digest(source_path / "backend" / "requirements.txt"),
+                  "pnpm_lock_sha256": digest(source_path / "pnpm-lock.yaml"),
+              }
+          metadata = {
+              "schema_version": 1,
+              "target_commit": sys.argv[2],
+              "previous_commit": sys.argv[3],
+              "python": "3.12",
+              "pip": "25.1.1",
+              "node": "22",
+              "pnpm": "10.14.0",
+              "public_build_config_sha256": digest(public_path),
+              "commits": commits,
+          }
+          (root / ".telz-dependencies.json").write_text(
+              json.dumps(metadata, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
+          )
+          PY
+
+          dependency_archive="$RUNNER_TEMP/dependency-bundle.tar.gz"
+          tar --dereference --hard-dereference --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+            -C "$dependencies" -czf "$dependency_archive" -- wheelhouse pnpm-store .telz-dependencies.json .telz-public-build.json
+          echo "dependencies_path=$dependency_archive" >> "$GITHUB_OUTPUT"
+          echo "dependencies_sha256=$(sha256sum "$dependency_archive" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Selar dependencias resolvidas no GitHub
+        if: inputs.operation == 'deploy'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: telz-dependencies-${{ github.sha }}
+          path: ${{ steps.release_artifacts.outputs.dependencies_path }}
+          if-no-files-found: error
+          retention-days: 1
+
+  verify_release:
+    name: Verificar exatamente os artefatos selados
+    needs: [inspect_vps, package_release]
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:15@sha256:0dda651c259bfe50e2bcc28ca23d1fcca772fa90b0210803aa7b97379ccf4e85
+        env:
+          POSTGRES_DB: telz_ci
+          POSTGRES_USER: telz_ci
+          POSTGRES_PASSWORD: telz_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U telz_ci -d telz_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Baixar operacao e fontes seladas
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: telz-source-${{ github.sha }}
+          path: ${{ runner.temp }}/promoted-source
+      - name: Baixar dependencias seladas
+        if: inputs.operation == 'deploy'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: telz-dependencies-${{ github.sha }}
+          path: ${{ runner.temp }}/promoted-dependencies
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        if: inputs.operation == 'deploy'
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        if: inputs.operation == 'deploy'
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: inputs.operation == 'deploy'
+        with:
+          node-version: "22"
+
+      - name: Validar e testar artefatos promovidos sem rede
+        if: inputs.operation == 'deploy'
+        shell: bash
+        env:
+          PREVIOUS_COMMIT: ${{ needs.inspect_vps.outputs.previous_commit }}
+          ALEMBIC_TARGET: 20260818_platform_operations
+        run: |
+          set -Eeuo pipefail
+          source_delivery="$RUNNER_TEMP/promoted-source"
+          dependency_archive="$RUNNER_TEMP/promoted-dependencies/dependency-bundle.tar.gz"
+          target_archive="$source_delivery/target-source.tar.gz"
+          previous_archive="$source_delivery/previous-source.tar.gz"
+          work="$RUNNER_TEMP/verified-release"
+          mkdir -p "$work/target" "$work/previous" "$work/dependencies"
+          /usr/bin/python3 - "$target_archive" "$GITHUB_SHA" "$previous_archive" "$PREVIOUS_COMMIT" "$dependency_archive" <<'PY'
+          import json, sys, tarfile
+          from pathlib import PurePosixPath
+          def validate_source(path, commit):
+              marker = None
+              with tarfile.open(path, "r:gz") as archive:
+                  for member in archive.getmembers():
+                      name = PurePosixPath(member.name)
+                      if name.is_absolute() or ".." in name.parts or not (member.isdir() or member.isreg()):
+                          raise SystemExit("archive fonte inseguro")
+                      if member.name == ".telz-source-commit":
+                          marker = archive.extractfile(member).read().decode("ascii").strip()
+              if marker != commit:
+                  raise SystemExit("marcador do archive fonte divergiu")
+          validate_source(sys.argv[1], sys.argv[2])
+          validate_source(sys.argv[3], sys.argv[4])
+          with tarfile.open(sys.argv[5], "r:gz") as archive:
+              names = set()
+              for member in archive.getmembers():
+                  path = PurePosixPath(member.name)
+                  if path.is_absolute() or ".." in path.parts or not (member.isdir() or member.isreg()):
+                      raise SystemExit("archive de dependencias inseguro")
+                  if member.name in names:
+                      raise SystemExit("archive de dependencias duplicado")
+                  names.add(member.name)
+                  if member.name not in {".telz-dependencies.json", ".telz-public-build.json"} and path.parts[0] not in {"wheelhouse", "pnpm-store"}:
+                      raise SystemExit("caminho de dependencia inesperado")
+              if not {".telz-dependencies.json", ".telz-public-build.json"}.issubset(names):
+                  raise SystemExit("archive de dependencias incompleto")
+          PY
+          tar -xzf "$target_archive" -C "$work/target"
+          tar -xzf "$previous_archive" -C "$work/previous"
+          tar -xzf "$dependency_archive" -C "$work/dependencies"
+          metadata="$work/dependencies/.telz-dependencies.json"
+
+          verify_python() {
+            local source_dir="$1" venv_dir="$2" commit="$3" freeze_file="$4"
+            python -m venv "$venv_dir"
+            "$venv_dir/bin/python" -m pip install --no-index --find-links "$work/dependencies/wheelhouse" pip==25.1.1
+            "$venv_dir/bin/python" -m pip install --no-index --find-links "$work/dependencies/wheelhouse" -r "$source_dir/backend/requirements.txt"
+            "$venv_dir/bin/python" -m pip check
+            "$venv_dir/bin/python" - "$freeze_file" <<'PY'
+          import importlib.metadata, sys
+          excluded = {"pip", "setuptools", "wheel", "distribute"}
+          rows = sorted(
+              {f"{dist.metadata['Name']}=={dist.version}" for dist in importlib.metadata.distributions()
+               if dist.metadata.get("Name", "").lower().replace("_", "-") not in excluded},
+              key=str.casefold,
+          )
+          open(sys.argv[1], "w", encoding="utf-8").write("\n".join(rows) + "\n")
+          PY
+            /usr/bin/python3 - "$metadata" "$commit" "$freeze_file" "$source_dir" <<'PY'
+          import hashlib, json, sys
+          from pathlib import Path
+          data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["commits"][sys.argv[2]]
+          digest = lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest()
+          actual = {
+              "python_freeze_sha256": digest(sys.argv[3]),
+              "requirements_sha256": digest(Path(sys.argv[4]) / "backend" / "requirements.txt"),
+              "pnpm_lock_sha256": digest(Path(sys.argv[4]) / "pnpm-lock.yaml"),
+          }
+          if actual != data: raise SystemExit("dependencias verificadas divergem da promocao")
+          PY
+          }
+          verify_python "$work/target" "$work/target-venv" "$GITHUB_SHA" "$work/target-freeze.txt"
+          verify_python "$work/previous" "$work/previous-venv" "$PREVIOUS_COMMIT" "$work/previous-freeze.txt"
+          "$work/target-venv/bin/python" -m pip install --no-index --find-links "$work/dependencies/wheelhouse" pytest==8.3.5
+          (
+            cd "$work/target"
+            DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci JWT_SECRET_KEY=ci-only-not-for-production \
+              "$work/target-venv/bin/alembic" -c backend/alembic.ini upgrade "$ALEMBIC_TARGET"
+            DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci JWT_SECRET_KEY=ci-only-not-for-production \
+              "$work/target-venv/bin/python" -m pytest -q
+          )
+          (
+            cd "$work/previous"
+            DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci \
+              "$work/previous-venv/bin/python" -c 'from sqlalchemy import text; from backend.database import engine; c=engine.connect(); assert c.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "20260818_platform_operations"; c.close(); engine.dispose()'
+          )
+          verify_node() {
+            local source_dir="$1"
+            pnpm --dir "$source_dir" install --offline --frozen-lockfile --package-import-method=copy --store-dir "$work/dependencies/pnpm-store"
+            pnpm --dir "$source_dir" run typecheck
+            VITE_API_URL='' VITE_PLATFORM_HOSTNAME=erp.telz.com.br VITE_PLATFORM_HOSTNAMES=erp.telz.com.br \
+              VITE_MULTI_TENANT_AUTH_ENABLED=true pnpm --dir "$source_dir" run build
+          }
+          verify_node "$work/target"
+          pnpm --dir "$work/target" test
+          verify_node "$work/previous"
+
+  operate_vps:
+    name: Operar VPS em runner limpo sem lifecycle local
+    needs: [inspect_vps, package_release, verify_release]
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    steps:
+      - name: Baixar operacao e fontes aprovadas
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: telz-source-${{ github.sha }}
+          path: ${{ runner.temp }}/delivery-source
+      - name: Baixar dependencias aprovadas
+        if: inputs.operation == 'deploy'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: telz-dependencies-${{ github.sha }}
+          path: ${{ runner.temp }}/delivery-dependencies
+      - name: Validar fingerprint e preparar hashes
+        id: delivery
+        shell: bash
+        env:
+          VPS_HOST_FINGERPRINT: ${{ secrets.VPS_HOST_FINGERPRINT }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$VPS_HOST_FINGERPRINT" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]
+          operation="$RUNNER_TEMP/delivery-source/operation-bundle.tar.gz"
+          test -f "$operation"; test ! -L "$operation"
+          echo "operation_sha256=$(sha256sum "$operation" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "operation_base64=$(base64 -w0 "$operation")" >> "$GITHUB_OUTPUT"
+          if [[ "${{ inputs.operation }}" == "deploy" ]]; then
+            target="$RUNNER_TEMP/delivery-source/target-source.tar.gz"
+            previous="$RUNNER_TEMP/delivery-source/previous-source.tar.gz"
+            dependencies="$RUNNER_TEMP/delivery-dependencies/dependency-bundle.tar.gz"
+            for file in "$target" "$previous" "$dependencies"; do test -f "$file"; test ! -L "$file"; done
+            echo "target_path=$target" >> "$GITHUB_OUTPUT"
+            echo "previous_path=$previous" >> "$GITHUB_OUTPUT"
+            echo "dependencies_path=$dependencies" >> "$GITHUB_OUTPUT"
+            echo "target_sha256=$(sha256sum "$target" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+            echo "previous_sha256=$(sha256sum "$previous" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+            echo "dependencies_sha256=$(sha256sum "$dependencies" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enviar artefatos via SCP com known_hosts obrigatorio
+        if: inputs.operation == 'deploy'
+        id: artifact_upload
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT || 22 }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          TARGET_PATH: ${{ steps.delivery.outputs.target_path }}
+          PREVIOUS_PATH: ${{ steps.delivery.outputs.previous_path }}
+          DEPENDENCIES_PATH: ${{ steps.delivery.outputs.dependencies_path }}
+        run: |
+          set -Eeuo pipefail
+          key="$RUNNER_TEMP/telz-vps-key-upload"
+          known_hosts="$RUNNER_TEMP/telz-known-hosts-upload"
+          trap 'rm -f -- "$key" "$known_hosts"' EXIT
+          printf '%s\n' "$VPS_SSH_KEY" > "$key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$known_hosts"
+          chmod 0600 "$key"
+          chmod 0644 "$known_hosts"
+          test "$VPS_USER" = "root"
+          remote_stage="$(ssh -p "$VPS_PORT" -i "$key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts" "$VPS_USER@$VPS_HOST" \
+            'umask 077; mktemp -d /tmp/telz-upload.XXXXXX')"
+          [[ "$remote_stage" =~ ^/tmp/telz-upload\.[A-Za-z0-9]{6}$ ]]
+          upload_complete=false
+          cleanup_upload() {
+            if [[ "$upload_complete" != "true" && "$remote_stage" =~ ^/tmp/telz-upload\.[A-Za-z0-9]{6}$ ]]; then
+              ssh -p "$VPS_PORT" -i "$key" -o BatchMode=yes -o IdentitiesOnly=yes \
+                -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts" "$VPS_USER@$VPS_HOST" \
+                "rm -rf -- '$remote_stage'" || true
+            fi
+            rm -f -- "$key" "$known_hosts"
+          }
+          trap cleanup_upload EXIT
+          scp -P "$VPS_PORT" -i "$key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts" \
+            "$TARGET_PATH" "$PREVIOUS_PATH" "$DEPENDENCIES_PATH" "$VPS_USER@$VPS_HOST:$remote_stage/"
+          echo "stage=$remote_stage" >> "$GITHUB_OUTPUT"
+          echo "target_remote=$remote_stage/$(basename "$TARGET_PATH")" >> "$GITHUB_OUTPUT"
+          echo "previous_remote=$remote_stage/$(basename "$PREVIOUS_PATH")" >> "$GITHUB_OUTPUT"
+          echo "dependencies_remote=$remote_stage/$(basename "$DEPENDENCIES_PATH")" >> "$GITHUB_OUTPUT"
+          upload_complete=true
+
+      - name: Preparar SSL ou executar deploy transacional
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        env:
+          OPERATION: ${{ inputs.operation }}
+          TELZ_ALEMBIC_TARGET: 20260818_platform_operations
+          EXPECTED_COMMIT: ${{ github.sha }}
+          PREVIOUS_COMMIT: ${{ needs.inspect_vps.outputs.previous_commit }}
+          PUBLIC_HEALTH_URL: https://erp.telz.com.br/health
+          OPERATION_BUNDLE_SHA256: ${{ steps.delivery.outputs.operation_sha256 }}
+          OPERATION_BUNDLE_BASE64: ${{ steps.delivery.outputs.operation_base64 }}
+          TARGET_SOURCE_REMOTE: ${{ steps.artifact_upload.outputs.target_remote }}
+          PREVIOUS_SOURCE_REMOTE: ${{ steps.artifact_upload.outputs.previous_remote }}
+          DEPENDENCY_REMOTE: ${{ steps.artifact_upload.outputs.dependencies_remote }}
+          UPLOAD_STAGE: ${{ steps.artifact_upload.outputs.stage }}
+          TARGET_SOURCE_SHA256: ${{ steps.delivery.outputs.target_sha256 }}
+          PREVIOUS_SOURCE_SHA256: ${{ steps.delivery.outputs.previous_sha256 }}
+          DEPENDENCY_SHA256: ${{ steps.delivery.outputs.dependencies_sha256 }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
+          fingerprint: ${{ secrets.VPS_HOST_FINGERPRINT }}
+          envs: OPERATION,TELZ_ALEMBIC_TARGET,EXPECTED_COMMIT,PREVIOUS_COMMIT,PUBLIC_HEALTH_URL,OPERATION_BUNDLE_SHA256,OPERATION_BUNDLE_BASE64,TARGET_SOURCE_REMOTE,PREVIOUS_SOURCE_REMOTE,DEPENDENCY_REMOTE,UPLOAD_STAGE,TARGET_SOURCE_SHA256,PREVIOUS_SOURCE_SHA256,DEPENDENCY_SHA256
+          command_timeout: 55m
           script: |
-            set -e
-            cd /opt/telz
+            set -Eeuo pipefail
+            INSTALL_DIR=/opt/telz
+            SERVICE_USER=telz
+            [[ "$OPERATION" == "prepare_ssl" || "$OPERATION" == "deploy" ]]
+            [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$OPERATION_BUNDLE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+            test "$PUBLIC_HEALTH_URL" = "https://erp.telz.com.br/health"
 
-            echo "━━━ [1/5] Puxando código ━━━"
-            git pull origin main
+            sudo install -d -m 0755 -o root -g root /var/lib/telz
+            BUNDLE_STAGE="$(sudo mktemp -d /var/lib/telz/operation-bundle.XXXXXX)"
+            BUNDLE_ARCHIVE="$(sudo mktemp /var/lib/telz/operation-bundle.XXXXXX.tar.gz)"
+            INCOMING_FILES=()
+            cleanup_deploy() {
+              sudo rm -f -- "${INCOMING_FILES[@]:-}" || true
+              if [[ "${UPLOAD_STAGE:-}" =~ ^/tmp/telz-upload\.[A-Za-z0-9]{6}$ ]]; then sudo rm -rf -- "$UPLOAD_STAGE"; fi
+              [[ "${BUNDLE_ARCHIVE:-}" == /var/lib/telz/operation-bundle.*.tar.gz ]] && sudo rm -f -- "$BUNDLE_ARCHIVE"
+              [[ "${BUNDLE_STAGE:-}" == /var/lib/telz/operation-bundle.* ]] && sudo rm -rf -- "$BUNDLE_STAGE"
+            }
+            trap cleanup_deploy EXIT
+            printf '%s' "$OPERATION_BUNDLE_BASE64" | base64 --decode | sudo tee "$BUNDLE_ARCHIVE" >/dev/null
+            test "$(sudo sha256sum "$BUNDLE_ARCHIVE" | awk '{print $1}')" = "$OPERATION_BUNDLE_SHA256"
+            sudo /usr/bin/python3 - "$BUNDLE_ARCHIVE" <<'PY'
+            import sys, tarfile
+            from pathlib import PurePosixPath
+            expected = {
+                "scripts/update-telz.sh", "scripts/backup-telz.sh", "scripts/health-check.sh",
+                "scripts/collect-telz-monitoring.sh", "scripts/restore-telz.sh", "scripts/rollback-telz.sh",
+                "scripts/finish-ssl.sh", "scripts/build-telz-release.sh",
+                "installer/templates/telz-api.service", "installer/templates/telz-web.service",
+                "installer/templates/telz-whatsapp-gateway.service", "installer/templates/telz-monitoring.service",
+                "installer/templates/telz-monitoring.timer",
+            }
+            seen = set()
+            with tarfile.open(sys.argv[1], "r:gz") as archive:
+                for member in archive.getmembers():
+                    path = PurePosixPath(member.name)
+                    if path.is_absolute() or ".." in path.parts:
+                        raise SystemExit("bundle contem caminho inseguro")
+                    if member.isdir():
+                        continue
+                    if not member.isreg() or member.name not in expected:
+                        raise SystemExit("bundle contem entrada nao permitida")
+                    seen.add(member.name)
+            if seen != expected:
+                raise SystemExit("bundle incompleto")
+            PY
+            sudo tar -xzf "$BUNDLE_ARCHIVE" -C "$BUNDLE_STAGE" --no-same-owner --no-same-permissions
+            sudo chown -R root:root "$BUNDLE_STAGE"
+            sudo find "$BUNDLE_STAGE" -type d -exec chmod 0555 {} +
+            sudo find "$BUNDLE_STAGE/scripts" -type f -exec chmod 0555 {} +
+            sudo find "$BUNDLE_STAGE/installer" -type f -exec chmod 0444 {} +
 
-            echo "━━━ [2/5] Dependências Python ━━━"
-            source .venv/bin/activate
-            pip install -r backend/requirements.txt --quiet
-
-            echo "=== [3/6] Preflight e migracoes Alembic ==="
-            alembic -c backend/alembic.ini current --verbose
-            alembic -c backend/alembic.ini heads --verbose
-            alembic -c backend/alembic.ini history --verbose
-            alembic -c backend/alembic.ini upgrade 20260813_automation_event_core
-            alembic -c backend/alembic.ini current --verbose
-
-            echo "━━━ [3/5] Build do frontend ━━━"
-            pnpm install --frozen-lockfile --silent
-            pnpm build
-
-            echo "━━━ [4/5] Reiniciando serviços ━━━"
-            sudo systemctl restart telz-api
-            sudo systemctl restart telz-web
-            if systemctl list-unit-files | grep -q '^telz-whatsapp-gateway.service'; then
-              sudo systemctl restart telz-whatsapp-gateway
+            if [[ "$OPERATION" == "prepare_ssl" ]]; then
+              sudo /bin/bash -s -- "$BUNDLE_STAGE/scripts/finish-ssl.sh" <<'ROOT'
+            set -Eeuo pipefail
+            umask 077
+            source_script="$1"
+            lock_dir=/run/lock/telz
+            lock_file="$lock_dir/maintenance.lock"
+            test ! -L "$lock_dir"
+            if [[ ! -e "$lock_dir" ]]; then mkdir -m 0700 "$lock_dir"; chown root:root "$lock_dir"; fi
+            test "$(stat -c '%U:%G %a' "$lock_dir")" = "root:root 700"
+            if [[ ! -e "$lock_file" ]]; then (set -o noclobber; : > "$lock_file"); chown root:root "$lock_file"; chmod 0600 "$lock_file"; fi
+            test -f "$lock_file"; test ! -L "$lock_file"; test "$(stat -c '%U:%G %a %h' "$lock_file")" = "root:root 600 1"
+            exec 9<>"$lock_file"
+            test "$(stat -Lc '%d:%i' /proc/$$/fd/9)" = "$(stat -Lc '%d:%i' "$lock_file")"
+            flock -n 9
+            install -m 0755 -o root -g root "$source_script" /usr/local/sbin/telz-finish-ssl
+            ROOT
+              echo "[prepare_ssl] helper instalado. Execute: sudo /usr/local/sbin/telz-finish-ssl erp.telz.com.br <email>"
+              exit 0
             fi
 
-            echo "━━━ [5/5] Health check ━━━"
-            sleep 4
-            curl -sf http://localhost:8000/health \
-              && echo "✅ Backend OK" \
-              || (echo "❌ Backend falhou" && sudo journalctl -u telz-api -n 20 --no-pager && exit 1)
+            [[ "$PREVIOUS_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+            for value in "$TARGET_SOURCE_SHA256" "$PREVIOUS_SOURCE_SHA256" "$DEPENDENCY_SHA256"; do [[ "$value" =~ ^[0-9a-f]{64}$ ]]; done
+            sudo install -d -m 0700 -o root -g root /var/lib/telz/incoming
+            promote_artifact() {
+              local source="$1" sha="$2" basename target
+              [[ "$UPLOAD_STAGE" =~ ^/tmp/telz-upload\.[A-Za-z0-9]{6}$ ]]
+              test "$(realpath -e "$UPLOAD_STAGE")" = "$UPLOAD_STAGE"
+              test "$(stat -c '%U:%G %a' "$UPLOAD_STAGE")" = "root:root 700"
+              test "$(dirname "$source")" = "$UPLOAD_STAGE"
+              [[ "$(basename "$source")" =~ ^(target-source|previous-source|dependency-bundle)\.tar\.gz$ ]]
+              test -f "$source"; test ! -L "$source"
+              test "$(stat -c '%U:%G:%h' "$source")" = "root:root:1"
+              test -z "$(find "$source" -maxdepth 0 -perm /022 -print -quit)"
+              basename="$(basename "$source")"
+              target="/var/lib/telz/incoming/$basename"
+              sudo install -m 0400 -o root -g root "$source" "$target"
+              INCOMING_FILES+=("$target")
+              rm -f -- "$source"
+              test "$(sudo sha256sum "$target" | awk '{print $1}')" = "$sha"
+              PROMOTED_ARTIFACT="$target"
+            }
+            promote_artifact "$TARGET_SOURCE_REMOTE" "$TARGET_SOURCE_SHA256"
+            TARGET_SOURCE="$PROMOTED_ARTIFACT"
+            promote_artifact "$PREVIOUS_SOURCE_REMOTE" "$PREVIOUS_SOURCE_SHA256"
+            PREVIOUS_SOURCE="$PROMOTED_ARTIFACT"
+            promote_artifact "$DEPENDENCY_REMOTE" "$DEPENDENCY_SHA256"
+            DEPENDENCY_ARCHIVE="$PROMOTED_ARTIFACT"
 
-            if systemctl list-unit-files | grep -q '^telz-whatsapp-gateway.service'; then
-              pnpm whatsapp-gateway:health \
-                && echo "WhatsApp Gateway OK" \
-                || (echo "WhatsApp Gateway falhou" && sudo journalctl -u telz-whatsapp-gateway -n 20 --no-pager && exit 1)
-            fi
+            sudo env \
+              TELZ_SERVICE_USER="$SERVICE_USER" \
+              TELZ_EXPECTED_COMMIT="$EXPECTED_COMMIT" \
+              TELZ_PREVIOUS_COMMIT="$PREVIOUS_COMMIT" \
+              TELZ_ALEMBIC_TARGET="$TELZ_ALEMBIC_TARGET" \
+              TELZ_OPERATION_BUNDLE_DIR="$BUNDLE_STAGE" \
+              TELZ_SOURCE_ARCHIVE="$TARGET_SOURCE" \
+              TELZ_SOURCE_ARCHIVE_SHA256="$TARGET_SOURCE_SHA256" \
+              TELZ_PREVIOUS_SOURCE_ARCHIVE="$PREVIOUS_SOURCE" \
+              TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256="$PREVIOUS_SOURCE_SHA256" \
+              TELZ_DEPENDENCY_ARCHIVE="$DEPENDENCY_ARCHIVE" \
+              TELZ_DEPENDENCY_ARCHIVE_SHA256="$DEPENDENCY_SHA256" \
+              TELZ_REQUIRE_PUBLIC_HTTPS=true \
+              TELZ_PUBLIC_HEALTH_URL="$PUBLIC_HEALTH_URL" \
+              RUN_TESTS=false \
+              "$BUNDLE_STAGE/scripts/update-telz.sh" "$INSTALL_DIR"
 
-            echo "🚀 Deploy concluído com sucesso!"
+            ACTIVE_APP="$(sudo readlink -f /var/lib/telz/current)"
+            test "$ACTIVE_APP" = "/var/lib/telz/releases/$EXPECTED_COMMIT/app"
+            sudo /usr/bin/python3 - "$ACTIVE_APP/.telz-release.json" "$EXPECTED_COMMIT" "$TELZ_ALEMBIC_TARGET" "$DEPENDENCY_SHA256" <<'PY'
+            import json, sys
+            from pathlib import Path
+            data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+            assert data["schema_version"] == 2 and data["status"] == "validated"
+            assert data["git_commit"] == sys.argv[2] and data["alembic_revision"] == sys.argv[3]
+            assert data["dependency_artifact_sha256"] == sys.argv[4]
+            PY
+            echo "[deploy] concluido release=$EXPECTED_COMMIT revision=$TELZ_ALEMBIC_TARGET"
+
+      - name: Limpar staging remoto de upload
+        if: always() && inputs.operation == 'deploy' && steps.artifact_upload.outputs.stage != ''
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT || 22 }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          UPLOAD_STAGE: ${{ steps.artifact_upload.outputs.stage }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$UPLOAD_STAGE" =~ ^/tmp/telz-upload\.[A-Za-z0-9]{6}$ ]]
+          key="$RUNNER_TEMP/telz-vps-key-cleanup"
+          known_hosts="$RUNNER_TEMP/telz-known-hosts-cleanup"
+          trap 'rm -f -- "$key" "$known_hosts"' EXIT
+          printf '%s\n' "$VPS_SSH_KEY" > "$key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$known_hosts"
+          chmod 0600 "$key"
+          chmod 0644 "$known_hosts"
+          ssh -p "$VPS_PORT" -i "$key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts" "$VPS_USER@$VPS_HOST" \
+            "if [[ ! -e '$UPLOAD_STAGE' ]]; then exit 0; fi; test ! -L '$UPLOAD_STAGE'; test \"\$(stat -c '%U:%G %a' '$UPLOAD_STAGE')\" = 'root:root 700'; rm -rf -- '$UPLOAD_STAGE'"

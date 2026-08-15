@@ -52,6 +52,7 @@ from backend.models import (  # noqa: F401
     membership,
     platform_rbac,
     platform_audit,
+    platform_operations,
     platform_saas,
     whatsapp_gateway,
 )

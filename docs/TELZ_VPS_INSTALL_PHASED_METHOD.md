@@ -898,7 +898,8 @@ Reexecutar o instalador nao pode apagar banco, uploads, backups, `.env`, certifi
 Script alvo:
 
 ```bash
-sudo bash scripts/update-telz.sh
+sudo install -m 0755 -o root -g root scripts/update-telz.sh /usr/local/sbin/update-telz
+sudo /usr/local/sbin/update-telz /opt/telz
 ```
 
 Regras:

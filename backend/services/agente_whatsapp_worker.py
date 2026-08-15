@@ -2,16 +2,44 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import socket
 from typing import Callable
 
 from sqlalchemy.orm import Session
 
 from backend.services.agente_whatsapp_outbox_service import AgenteWhatsAppOutboxService
+from backend.services.platform_jobs_service import PlatformJobsService
 from backend.services.agente_whatsapp_processing_service import AgenteWhatsAppProcessingService
 from backend.services.agente_whatsapp_retention_service import AgenteWhatsAppRetentionService
 from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 
 logger = logging.getLogger("agente_whatsapp.worker")
+WORKER_KEY = "agente_whatsapp_outbox"
+QUEUE_KEY = "whatsapp_outbox"
+
+
+def _worker_instance_key() -> str:
+    return f"{socket.gethostname() or 'unknown'}:{os.getpid()}"
+
+
+def _record_worker_heartbeat(
+    session_factory: Callable[[], Session],
+    *,
+    instance_key: str,
+    status: str,
+) -> None:
+    """Record liveness in an isolated transaction without affecting queue work."""
+    try:
+        with session_factory() as heartbeat_db:
+            PlatformJobsService(heartbeat_db).record_heartbeat(
+                worker_key=WORKER_KEY,
+                instance_key=instance_key,
+                queue_key=QUEUE_KEY,
+                status=status,
+            )
+    except Exception:
+        logger.warning("AGENTE WHATSAPP worker heartbeat failed status=%s", status, exc_info=True)
 
 
 async def run_agente_whatsapp_outbox_worker(
@@ -29,6 +57,7 @@ async def run_agente_whatsapp_outbox_worker(
 
     interval = max(2, int(interval_seconds or 10))
     limit = max(1, min(int(batch_size or 20), 100))
+    instance_key = _worker_instance_key()
     logger.info("AGENTE WHATSAPP outbox worker started interval=%ss batch=%s", interval, limit)
 
     try:
@@ -53,7 +82,7 @@ async def run_agente_whatsapp_outbox_worker(
                     result = service.process_pending(limit=limit)
                     service.sync_internal_alerts()
                     db.commit()
-                    if (
+                    did_work = bool((
                         result.get("processed")
                         or result.get("enqueued")
                         or scheduled.get("processed")
@@ -63,7 +92,8 @@ async def run_agente_whatsapp_outbox_worker(
                         or agent_responses.get("processed")
                         or tts_generations.get("processed")
                         or retention_cleanup.get("deleted_files")
-                    ):
+                    ))
+                    if did_work:
                         logger.info(
                             "AGENTE WHATSAPP outbox worker cycle result=%s scheduled=%s stories=%s automations=%s audio=%s responses=%s tts=%s retention=%s",
                             result,
@@ -75,11 +105,26 @@ async def run_agente_whatsapp_outbox_worker(
                             tts_generations,
                             retention_cleanup,
                         )
+                _record_worker_heartbeat(
+                    session_factory,
+                    instance_key=instance_key,
+                    status="running" if did_work else "idle",
+                )
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception("AGENTE WHATSAPP outbox worker cycle failed")
+                _record_worker_heartbeat(
+                    session_factory,
+                    instance_key=instance_key,
+                    status="degraded",
+                )
 
             await asyncio.sleep(interval)
     finally:
+        _record_worker_heartbeat(
+            session_factory,
+            instance_key=instance_key,
+            status="stopped",
+        )
         logger.info("AGENTE WHATSAPP outbox worker stopped")

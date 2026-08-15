@@ -1,12 +1,16 @@
 # Instalacao Telz em VPS
 
-Este documento descreve o uso do instalador modular criado para Ubuntu 22.04/24.04.
+Este documento descreve o uso do instalador modular para Ubuntu 22.04/24.04 com Python 3.12.
 
 Status: primeira versao executavel, ainda pendente de teste em VPS limpa.
 
 ## Premissas
 
 - Executar em VPS Ubuntu.
+- No Ubuntu 24.04, o instalador usa os pacotes oficiais do Python 3.12. No Ubuntu 22.04,
+  `python3.12`, `python3.12-venv` e os headers de desenvolvimento devem estar
+  previamente provisionados por uma fonte aprovada; o instalador falha antes de
+  alterar a aplicacao se esse pre-requisito nao estiver presente.
 - Rodar como `root` ou via `sudo`.
 - Ter DNS do dominio principal apontando para a VPS se SSL for ativado.
 - Manter flags multi-tenant desligadas na primeira instalacao.
@@ -20,6 +24,9 @@ sudo bash installer/install.sh
 ```
 
 O instalador pergunta dados da plataforma, Git, banco, usuario Linux, dominio e segredos.
+Quando uma sobrescrita explicita do `backend/.env` e solicitada, a copia anterior
+e arquivada fora do repositorio em `/var/backups/telz-manual-env/<timestamp>/`
+com acesso exclusivo de `root`.
 
 ## Instalacao nao interativa
 
@@ -101,7 +108,7 @@ Ele nao executa:
 ## Validacao depois da instalacao
 
 ```bash
-sudo bash scripts/health-check.sh /opt/telz
+sudo /usr/local/sbin/telz-health-check /opt/telz
 sudo systemctl status telz-api --no-pager
 sudo systemctl status telz-web --no-pager
 sudo systemctl status telz-whatsapp-gateway --no-pager
@@ -135,7 +142,7 @@ Nao confundir estes gateways com billing SaaS da Telz. Mercado Pago e ASAAS aqui
 ## Backup manual
 
 ```bash
-sudo bash scripts/backup-telz.sh /opt/telz
+sudo /usr/local/bin/backup-telz /opt/telz
 ```
 
 ## SSL posterior
@@ -143,5 +150,5 @@ sudo bash scripts/backup-telz.sh /opt/telz
 Se o DNS nao estava pronto durante a instalacao:
 
 ```bash
-sudo bash scripts/finish-ssl.sh app.seudominio.com.br admin@seudominio.com.br
+sudo /usr/local/sbin/telz-finish-ssl app.seudominio.com.br admin@seudominio.com.br
 ```

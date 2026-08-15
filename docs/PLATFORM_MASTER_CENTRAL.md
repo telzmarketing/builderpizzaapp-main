@@ -1,8 +1,14 @@
 # Central Master da Plataforma Telz
 
-Atualizado em: 2026-08-01
+Atualizado em: 2026-08-09
 
-Status desta documentacao: implementacao local concluida, sem migration aplicada e sem deploy.
+Status desta documentacao: a Central ate `20260816_master_completion` possui
+evidencia historica de aplicacao na VPS. O checkout atual acrescenta
+`20260817_platform_wave0`, `20260818_platform_operations`, Usuarios,
+Configuracoes e os sete modulos operacionais da plataforma. Esse novo conjunto
+esta implementado e validado apenas nos gates locais registrados abaixo; ainda
+nao ha evidencia de aplicacao na VPS. HTTPS publico, restore ensaiado,
+PostgreSQL 15 descartavel e E2E real com dois tenants permanecem gates abertos.
 
 ## 1. Objetivo
 
@@ -46,8 +52,9 @@ O desenho preserva a raiz multiempresa existente:
 
 ### Pendente
 
-- executar `alembic current` e aplicar as revisions contra PostgreSQL descartavel antes do banco real;
-- aplicar as revisions em ambiente descartavel antes da VPS;
+- validar `20260818_platform_operations` contra PostgreSQL 15 descartavel antes da VPS;
+- aplicar `20260817` e `20260818` de forma explicita somente depois desse ensaio;
+- ensaiar restauracao dos backups em ambiente descartavel;
 - emissao e renovacao automatica de SSL;
 - aplicar enforcement de licenca/modulo, rota por rota, nos modulos operacionais legados;
 - validar o fluxo visual de suporte ponta a ponta em todas as telas operacionais permitidas;
@@ -392,7 +399,8 @@ nao e mais uma merge revision.
 
 Cria as tabelas SaaS e amplia dominio/auditoria.
 
-O grafo estatico do checkout passou a apresentar um unico head:
+Antes da fundacao da Onda 0, o grafo estatico do checkout apresentava um unico
+head:
 
 ```text
 20260816_master_completion
@@ -409,6 +417,40 @@ mantem a unicidade por tenant. O startup legado continua criando tabelas
 historicas com `create_all`, mas exclui
 explicitamente todas as tabelas pertencentes a `20260815`/`20260816`; por isso,
 as migrations da Central devem ser aplicadas antes do restart da API.
+
+### `20260817_platform_wave0`
+
+Filha direta de `20260816_master_completion`. Semeia somente o catalogo de
+permissoes futuras da Central e os grants de menor privilegio para
+`platform_owner`, `platform_admin` e `platform_support`. A migration nao publica
+endpoints nem executa acoes operacionais; as superficies HTTP sao entregues
+pelo codigo da aplicacao nas etapas seguintes.
+
+Antes da fundacao operacional persistida, o head estatico era:
+
+```text
+20260817_platform_wave0
+```
+
+### `20260818_platform_operations`
+
+Filha direta de `20260817_platform_wave0`. Cria apenas dados operacionais
+redigidos da Central:
+
+- `platform_error_events`, com agregacao por fingerprint, estados auditaveis e
+  sem traceback, corpo de request ou credenciais;
+- `platform_worker_heartbeats`, com liveness duravel por worker/instancia.
+
+O upgrade e o downgrade declaram simetricamente os indices. Os models pertencem
+exclusivamente ao Alembic e ficam fora do `create_all` legado. O head unico do
+checkout atual e:
+
+```text
+20260818_platform_operations
+```
+
+O banco da VPS permanece comprovado somente em `20260816_master_completion`
+ate as duas novas revisions passarem pelos gates e serem aplicadas.
 
 ## 9. Validacao registrada
 
@@ -442,6 +484,21 @@ Nao executado localmente:
 O runtime Python 3.12 embarcado, combinado com as dependencias locais da
 aplicacao, permitiu executar import, pytest e Alembic CLI. Isso nao substitui o
 ensaio em PostgreSQL 15 nem comprova o estado do banco da VPS.
+
+Validado na VPS em 2026-08-02 para o commit `2f10068` e a revision
+`20260816_master_completion`:
+
+- backup PostgreSQL validado com `pg_restore --list`;
+- backup do runtime Baileys validado com leitura silenciosa do arquivo tar;
+- migrations `20260814`, `20260815` e `20260816` aplicadas explicitamente;
+- `alembic current` e `alembic heads` convergentes em `20260816_master_completion`;
+- dependencias Python consistentes com `pip check`;
+- typecheck, 13 arquivos/51 testes frontend e build aprovados;
+- `telz-api`, `telz-web` e `telz-whatsapp-gateway` ativos;
+- Nginx valido e health check interno aprovado.
+
+Essa verificacao nao comprova HTTPS publico, restore, fluxo visual E2E, DNS
+real de tenant nem isolamento ponta a ponta entre dois tenants.
 
 ## 10. Campos nao persistidos ou nao completos
 
@@ -480,7 +537,7 @@ alembic -c backend/alembic.ini current
 alembic -c backend/alembic.ini history
 ```
 
-6. Confirmar a cadeia linear `20260813 -> 20260814 -> 20260815 -> 20260816` no ambiente.
+6. Confirmar a cadeia linear `20260813 -> 20260814 -> 20260815 -> 20260816 -> 20260817_platform_wave0 -> 20260818_platform_operations` no ambiente.
 7. Se `current` nao pertencer a essa cadeia, interromper o deploy e reconciliar a topologia. Nao marcar revisions manualmente sem auditoria.
 8. Instalar dependencias Python alteradas.
 9. Rodar pytest e teste de migration em banco descartavel.
@@ -493,6 +550,8 @@ Somente depois do preflight:
 alembic -c backend/alembic.ini upgrade 20260814_merge_all_heads
 alembic -c backend/alembic.ini upgrade 20260815_master_central_core
 alembic -c backend/alembic.ini upgrade 20260816_master_completion
+alembic -c backend/alembic.ini upgrade 20260817_platform_wave0
+alembic -c backend/alembic.ini upgrade 20260818_platform_operations
 ```
 
 Depois:
@@ -538,7 +597,7 @@ retorna o ponteiro para `20260813_automation_event_core`.
 ## 13. Checklist de liberacao
 
 - [ ] backup criado e restauracao ensaiada;
-- [ ] cadeia linear `20260813 -> 20260816` confirmada no ambiente real;
+- [ ] cadeia linear `20260813 -> 20260818_platform_operations` confirmada no ambiente real;
 - [ ] `current` e `history` registrados;
 - [ ] Python imports e pytest aprovados;
 - [ ] migration testada em PostgreSQL descartavel;
@@ -670,5 +729,196 @@ preexistente.
 - enforcement cobre apenas parte das escritas de pedidos e pagamentos;
 - suporte, revogacao e contratos Pydantic estao implementados no backend, mas o
   fluxo E2E ainda precisa ser exercitado em runtime real;
-- `alembic current`, a aplicacao das migrations e o fluxo ponta a ponta ainda
-  precisam de validacao em PostgreSQL real antes de publicar em producao.
+- `alembic current` e a aplicacao ate `20260816` foram confirmados na VPS;
+  `20260817_platform_wave0`, `20260818_platform_operations`, restore e fluxo
+  ponta a ponta ainda precisam dos gates descritos antes da proxima publicacao.
+
+## 15. Onda 0 - fundacao operacional
+
+Esta onda prepara autorizacao, backup e observabilidade e entrega localmente
+Usuarios, Configuracoes e os modulos operacionais descritos na secao 17.
+
+### 15.1 Permissoes futuras
+
+Catalogo semeado por `20260817_platform_wave0`:
+
+- `platform_users.view` / `platform_users.manage`;
+- `platform_settings.view` / `platform_settings.manage`;
+- `monitoring.view`;
+- `integrations.view` / `integrations.manage`;
+- `jobs.view` / `jobs.manage`;
+- `gateway.view` / `gateway.manage`;
+- `errors.view` / `errors.manage`;
+- `storage.view`;
+- `backups.view`.
+
+Matriz inicial de menor privilegio:
+
+| Role | Grants da Onda 0 |
+|---|---|
+| `platform_owner` | Todas as permissoes acima |
+| `platform_admin` | Todas, exceto `platform_users.manage` e `platform_settings.manage` |
+| `platform_support` | Somente `monitoring.view`, `integrations.view`, `jobs.view`, `gateway.view` e `errors.view` |
+
+Nao existem `storage.manage` nem `backups.manage` nesta onda. Operacoes
+destrutivas continuam fora da aplicacao.
+
+`platform_users.view` ja protege o novo endpoint paginado
+`GET /api/admin/platform/users` e a pagina `/painel/usuarios-plataforma`. O
+recorte permite busca e filtro por role, usa respostas allowlisted e nao publica
+POST, PATCH, PUT ou DELETE. `platform_users.manage` fica reservado para uma
+onda posterior e nao concede mutacao nesta entrega.
+
+### 15.2 Backup fortalecido
+
+`scripts/backup-telz.sh` passa a:
+
+- usar `umask 077`;
+- validar o dump PostgreSQL com `pg_restore --list`;
+- validar silenciosamente os arquivos tar de uploads e do runtime
+  `.runtime/baileys`, quando esses diretorios existem;
+- comparar silenciosamente a copia protegida de `backend/.env`;
+- nao listar conteudo de arquivos nem valores de segredo no output.
+
+O backup incluir o runtime Baileys nao comprova restauracao. O restore continua
+manual, destrutivo e condicionado a janela operacional aprovada.
+
+### 15.3 Gates antes de aplicar o checkout operacional
+
+- [x] testes direcionados de migrations, contratos e superficies operacionais aprovados localmente;
+- [x] `alembic heads` retorna somente `20260818_platform_operations` no checkout;
+- [ ] upgrade ensaiado em PostgreSQL 15 descartavel;
+- [ ] backup novo criado e todos os artefatos validados na VPS;
+- [ ] restore ensaiado fora de producao;
+- [ ] HTTPS publico validado;
+- [ ] E2E da Central e isolamento Tenant A/Tenant B validados.
+
+## 16. Configuracoes da plataforma - recorte read-only
+
+O segundo recorte funcional remove a indisponibilidade de Configuracoes da
+plataforma sem transformar a Central em editor de ambiente. A superficie usa:
+
+- endpoint `GET /api/admin/platform/settings`;
+- pagina `/painel/configuracoes-plataforma`, separada de
+  `/painel/configuracoes`, que pertence ao painel operacional do tenant;
+- permissao `platform_settings.view`, sem reutilizar permissoes tenant-scoped;
+- resposta `PlatformSettingsOut` dentro do envelope padrao da API.
+
+A permissao depende de `20260817_platform_wave0`. `platform_owner` e
+`platform_admin` possuem leitura; `platform_support` nao recebe essa permissao.
+`platform_settings.manage` permanece reservado e nao publica qualquer operacao
+de escrita nesta entrega.
+
+### 16.1 Allowlist de resposta
+
+O endpoint nao serializa `Settings`, arquivos `.env` nem configuracoes da loja.
+A resposta e montada por allowlist e possui somente os grupos:
+
+- `source`: identificacao estatica da origem de configuracao, sem caminho de
+  arquivo;
+- `read_only`: sempre `true` neste recorte;
+- `restart_required`: informa que uma futura alteracao operacional somente
+  produziria efeito por procedimento de deploy/restart, sem executar esse
+  procedimento;
+- `status`: resumo derivado do backend;
+- `application`: identidade e versao publicas da aplicacao e estado de debug;
+- `security`: estado do segredo JWT como `configured`, `default` ou `missing` e
+  apenas os booleanos allowlisted de autenticacao e RBAC;
+- `domains`: hostnames de plataforma normalizados, contagens de entradas
+  validas/invalidas e somente a quantidade de proxies confiaveis;
+- `rollout_flags`: somente flags booleanas explicitamente declaradas no service
+  e validadas pelo schema;
+- `alerts`: lista tipada de alertas seguros.
+
+Essa allowlist nunca inclui `DATABASE_URL`, segredo JWT, senhas, tokens, chaves
+de API, cookies, headers de autorizacao, conteudo integral de `.env`, IPs ou
+valores da lista de proxies confiaveis. Tambem nao reutiliza `site_config`, que
+continua pertencendo a configuracao da loja e nao representa estado global da
+plataforma.
+
+### 16.2 Alertas seguros
+
+Cada alerta retorna somente `key`, `severity`, `title` e `description`. O backend
+deriva alertas para estados operacionais inseguros ou incompletos sem interpolar
+o valor que causou o alerta. Assim, a pagina pode sinalizar segredo JWT padrao
+ou ausente, debug ativo e inconsistencias de dominio/proxy sem revelar
+credenciais, enderecos privados ou configuracao bruta. Se o RBAC estiver
+desabilitado, a dependencia de autorizacao encerra a requisicao com `404` antes
+da resposta; o alerta correspondente permanece uma defesa do service, nao um
+estado visivel pela pagina nessa condicao fail-closed.
+
+Os alertas sao informativos. Nao existe acao de corrigir, salvar, reiniciar,
+recarregar processo ou editar variavel de ambiente na API ou na interface.
+
+### 16.3 Limites e gates operacionais
+
+Este recorte:
+
+- publica somente `GET`; nao adiciona `POST`, `PUT`, `PATCH` ou `DELETE`;
+- nao cria tabela nem migration adicional;
+- nao grava em `.env`, `site_config`, banco ou filesystem;
+- nao reinicia API, frontend, gateway, worker ou Nginx;
+- nao afirma que uma flag exibida ja foi validada ponta a ponta.
+
+A publicacao continua condicionada aos gates da secao 15.3. Em especial,
+`20260818_platform_operations` ainda precisa ser ensaiada em PostgreSQL 15
+descartavel e aplicada explicitamente na VPS; HTTPS publico, restore fora de
+producao e E2E real com dois tenants continuam pendentes e nao sao comprovados
+pela tela de Configuracoes.
+
+## 17. Modulos operacionais da plataforma
+
+O checkout atual remove o estado `INDISPONIVEL` dos sete modulos restantes da
+Central e preserva menor privilegio. Toda resposta usa schema Pydantic e
+envelope da API; as rotas nao executam `sudo`, `systemctl` ou subprocessos.
+
+### 17.1 Superficies entregues
+
+| Modulo | API base | Permissao | Mutacao |
+|---|---|---|---|
+| Saude dos servicos | `/api/admin/platform/health` | `monitoring.view` | nenhuma |
+| Integracoes | `/api/admin/platform/integrations` | `integrations.view` | nenhuma |
+| Filas e jobs | `/api/admin/platform/jobs` | `jobs.view` | nenhuma |
+| WhatsApp Gateway | `/api/admin/platform/gateway` | `gateway.view` | nenhuma |
+| Erros | `/api/admin/platform/errors` | `errors.view` | reconhecer/resolver exige `errors.manage` |
+| Armazenamento | `/api/admin/platform/storage` | `storage.view` | nenhuma |
+| Backups | `/api/admin/platform/backups` | `backups.view` | nenhuma |
+
+`GET /api/admin/platform/session` retorna somente roles e permissoes da sessao
+para o frontend filtrar navegacao e bloquear acesso sem capacidade. O backend
+continua sendo a autoridade; esconder um item de menu nao concede nem revoga
+permissao.
+
+### 17.2 Observabilidade segura
+
+O coletor root-owned grava snapshots sanitizados em
+`PLATFORM_MONITORING_SNAPSHOT_DIR`, cujo default e
+`/var/lib/telz/monitoring`. A API aceita somente arquivos regulares, dentro do
+diretorio permitido, com tamanho limitado e freshness explicita. Snapshot
+ausente, invalido ou antigo produz `unknown`/`stale`; nunca um falso estado
+saudavel.
+
+Health, storage, Gateway e backup consomem somente snapshots sanitizados.
+Integracoes consultam estado allowlisted sem selecionar credenciais. A frota do
+Gateway projeta no SQL apenas os quatro ultimos digitos do telefone e retorna o
+valor mascarado. Backups expoem metadados de execucao e componentes, nunca
+`environment.env`, dump, archive, checksum bruto ou caminho privado.
+
+### 17.3 Validacao local e limites
+
+Em 2026-08-09, os testes focais de Master, Onda 0, sessao e operacoes
+concluiram com `41 passed`, e a suite backend completa concluiu com
+`176 passed`. Typecheck, Vitest (`20` arquivos, `99` testes), build completo e
+`bash -n` nos `22` scripts do instalador/operacao
+tambem passaram. `git diff --check` passou e `alembic heads` retornou um unico
+`20260818_platform_operations`. Permaneceu um warning Pydantic preexistente.
+
+Esses resultados nao comprovam:
+
+- upgrade/downgrade em PostgreSQL 15 real;
+- workflow CI publicado;
+- aplicacao na VPS;
+- snapshots gerados pelo timer sob systemd;
+- HTTPS publico;
+- restore em ambiente descartavel;
+- E2E de navegador e isolamento real entre dois tenants.

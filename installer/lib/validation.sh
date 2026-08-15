@@ -43,15 +43,36 @@ validate_safe_slug() {
 
 validate_install_dir() {
   local value="$1"
-  case "$value" in
-    /opt/*|/home/*) ;;
-    *)
-      fail "INSTALL_DIR deve ficar em /opt/... ou /home/..."
+  local canonical parent
+  canonical="$(realpath -m -- "$value")" || {
+    fail "INSTALL_DIR nao pode ser normalizado: $value"
+    exit 1
+  }
+  if [[ "$value" != "$canonical" || ! "$canonical" =~ ^/opt/[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]; then
+    fail "INSTALL_DIR deve ser um caminho canonico direto sob /opt (ex.: /opt/telz)"
+    exit 1
+  fi
+  parent="$(dirname -- "$canonical")"
+  if [[ ! -d "$parent" || -L "$parent" || "$(stat -c '%U' "$parent")" != "root" || -n "$(find "$parent" -maxdepth 0 -perm /022 -print -quit)" ]]; then
+    fail "Diretorio pai de INSTALL_DIR deve ser real, root-owned e nao gravavel por grupo/outros: $parent"
+    exit 1
+  fi
+  if [[ -e "$canonical" || -L "$canonical" ]]; then
+    if [[ ! -d "$canonical" || -L "$canonical" || "$(realpath -e -- "$canonical")" != "$canonical" ]]; then
+      fail "INSTALL_DIR existente deve ser um diretorio real, sem symlink: $canonical"
       exit 1
-      ;;
-  esac
-  if [[ "$value" == "/" || "$value" == "/home" || "$value" == "/opt" ]]; then
-    fail "INSTALL_DIR amplo demais: $value"
+    fi
+  fi
+}
+
+validate_service_user() {
+  local value="$1"
+  if [[ ! "$value" =~ ^[a-z_][a-z0-9_-]{0,31}$ || "$value" == "root" ]]; then
+    fail "SERVICE_USER invalido ou privilegiado"
+    exit 1
+  fi
+  if id "$value" >/dev/null 2>&1 && [[ "$(id -u "$value")" -eq 0 ]]; then
+    fail "SERVICE_USER nao pode possuir UID 0"
     exit 1
   fi
 }
@@ -76,15 +97,24 @@ validate_secret_for_env() {
 
 validate_domain() {
   local domain="$1"
-  [[ -z "$domain" ]] && return 0
-  [[ "$domain" != http*://* ]] || return 1
-  [[ "$domain" != *"/"* ]] || return 1
-  [[ "$domain" != *":"* ]] || return 1
-  [[ "$domain" =~ ^[A-Za-z0-9.-]+$ ]]
+  local label
+  [[ -n "$domain" && ${#domain} -le 253 ]] || return 1
+  [[ "$domain" != http*://* && "$domain" != *"/"* && "$domain" != *":"* ]] || return 1
+  [[ "$domain" == *.* && "$domain" =~ ^[A-Za-z0-9.-]+$ ]] || return 1
+  [[ "$domain" != .* && "$domain" != *. && "$domain" != *..* ]] || return 1
+  IFS='.' read -r -a labels <<< "$domain"
+  for label in "${labels[@]}"; do
+    [[ -n "$label" && ${#label} -le 63 ]] || return 1
+    [[ "$label" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$ ]] || return 1
+  done
 }
 
 validate_port() {
   [[ "$1" =~ ^[0-9]+$ ]] && [[ "$1" -ge 1 ]] && [[ "$1" -le 65535 ]]
+}
+
+validate_worker_count() {
+  [[ "$1" =~ ^[0-9]+$ ]] && [[ "$1" -ge 1 ]] && [[ "$1" -le 64 ]]
 }
 
 mask_value() {

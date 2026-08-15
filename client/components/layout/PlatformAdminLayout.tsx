@@ -5,9 +5,11 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import TelzLogo from "@/components/TelzLogo";
 import {
   platformItemMatchesPath,
+  platformItemAllowed,
   platformNavigationGroups,
 } from "@/config/platformNavigation";
 import { getPlatformPageMeta } from "@/config/platformPageMeta";
+import { readPlatformPermissions } from "@/lib/platformCapabilities";
 
 function readAdminUser(): { name?: string; email?: string } {
   try {
@@ -23,6 +25,7 @@ export default function PlatformAdminLayout() {
   const admin = readAdminUser();
   const meta = getPlatformPageMeta(pathname);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const permissions = readPlatformPermissions();
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -41,6 +44,7 @@ export default function PlatformAdminLayout() {
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_user");
     localStorage.removeItem("admin_permissions");
+    localStorage.removeItem("platform_permissions");
     navigate("/painel/login", { replace: true });
   };
 
@@ -85,6 +89,7 @@ export default function PlatformAdminLayout() {
                 <div className="space-y-1">
                   {group.items.map((item) => {
                     const Icon = item.icon;
+                    if (!platformItemAllowed(item, permissions)) return null;
                     if (!item.available || !item.path) {
                       return (
                         <div
