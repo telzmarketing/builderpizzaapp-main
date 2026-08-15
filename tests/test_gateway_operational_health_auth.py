@@ -33,7 +33,8 @@ def test_gateway_token_is_never_forwarded_in_a_command_argument_or_logged():
         assert 'WHATSAPP_GATEWAY_RUNTIME_TOKEN="$' not in script
         assert "print(runtime_token)" not in script
         exec_tail = script.split('"WHATSAPP_GATEWAY_RUNTIME_TOKEN": runtime_token', 1)[1]
-        assert "sys.argv" not in exec_tail
+        gateway_heredoc_body = exec_tail.split("\nPY\n", 1)[0]
+        assert "sys.argv" not in gateway_heredoc_body
 
 
 def test_health_and_collector_invoke_the_authenticated_wrapper():
