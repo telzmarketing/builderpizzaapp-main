@@ -12,8 +12,10 @@ Status: primeira versao executavel, ainda pendente de teste em VPS limpa.
   previamente provisionados por uma fonte aprovada; o instalador falha antes de
   alterar a aplicacao se esse pre-requisito nao estiver presente.
 - Rodar como `root` ou via `sudo`.
+- Usar Node.js 22 e pnpm 10.14.0; o instalador valida e fixa essas versoes.
 - Ter DNS do dominio principal apontando para a VPS se SSL for ativado.
-- Manter flags multi-tenant desligadas na primeira instalacao.
+- Manter as ondas de enforcement multi-tenant desligadas na primeira instalacao;
+  autenticacao e resolucao de dominios ficam habilitadas conforme os defaults atuais.
 
 ## Instalacao interativa
 
@@ -50,17 +52,34 @@ chmod 600 /root/telz-install.env
 
 ## Retomada
 
-Se uma fase falhar depois de ter sido concluida, corrija o problema e execute:
+Se uma fase falhar depois de ter sido concluida, corrija o problema e retome
+exclusivamente pelo runner root-private persistido:
 
 ```bash
-sudo bash installer/install.sh --resume
+sudo /usr/local/sbin/telz-installer-resume --resume
 ```
+
+Nao execute a retomada a partir de `installer/install.sh` no repositorio depois
+que `/opt/telz` tiver sido entregue ao usuario de servico. Esse caminho e recusado
+quando o runner confiavel nao estiver disponivel.
+
+Repita `--config /root/telz-install.env --non-interactive` quando esses argumentos
+tiverem sido usados na primeira execucao. A retomada falha fechada se dominio,
+diretorios, usuario, portas, workers ou opcoes efetivas divergirem da execucao
+interrompida.
 
 O estado fica em:
 
 ```text
 /var/lib/telz-installer/state
 ```
+
+Antes de criar o usuario/diretorios da aplicacao ou executar qualquer processo como
+`telz`, o instalador copia o runner completo e uma allowlist de scripts/templates para um
+staging `root:root` em `/var/lib/telz-installer/trusted-assets/`. O manifesto e
+revalidado na retomada e em cada fase privilegiada; nenhuma biblioteca do repositorio
+gravavel pelo usuario de servico e carregada como root. Em falhas, o staging e preservado para uma
+retomada segura; ele e removido apenas depois do health check e resumo finais.
 
 Os logs ficam em:
 
@@ -75,11 +94,12 @@ Os logs ficam em:
 - cria usuario de servico;
 - prepara diretorios;
 - configura firewall;
-- instala Node/pnpm;
+- instala/valida Node.js 22 e pnpm 10.14.0;
 - clona ou atualiza o repositorio;
 - cria venv Python;
 - instala dependencias backend;
-- cria `backend/.env` com flags multi-tenant desligadas;
+- cria `backend/.env` com autenticacao/resolucao multi-tenant habilitadas e ondas de
+  enforcement desligadas;
 - prepara as variaveis de Mercado Pago e ASAAS no `backend/.env`;
 - configura PostgreSQL local quando selecionado;
 - revisa Alembic antes de `upgrade head`;

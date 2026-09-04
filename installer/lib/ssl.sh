@@ -2,7 +2,9 @@
 
 install_ssl_if_requested() {
   local ssl_helper="/usr/local/sbin/telz-finish-ssl"
-  install -m 0755 -o root -g root scripts/finish-ssl.sh "$ssl_helper"
+  local ssl_source
+  ssl_source="$(trusted_installer_asset scripts/finish-ssl.sh)"
+  install -m 0755 -o root -g root "$ssl_source" "$ssl_helper"
   if ! is_true "$INSTALL_SSL"; then
     info "SSL desabilitado na configuracao. Helper seguro instalado em $ssl_helper."
     return 0

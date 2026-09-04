@@ -3,6 +3,22 @@
 TRUSTED_INSTALLER_ASSET_ROOT="${TRUSTED_INSTALLER_ASSET_ROOT:-/var/lib/telz-installer/trusted-assets}"
 TRUSTED_INSTALLER_ASSET_POINTER="$TRUSTED_INSTALLER_ASSET_ROOT/current"
 TRUSTED_INSTALLER_ASSET_PATHS=(
+  installer/install.sh
+  installer/config/defaults.env
+  installer/lib/backup.sh
+  installer/lib/backend.sh
+  installer/lib/colors.sh
+  installer/lib/database.sh
+  installer/lib/firewall.sh
+  installer/lib/frontend.sh
+  installer/lib/git.sh
+  installer/lib/nginx.sh
+  installer/lib/prompts.sh
+  installer/lib/ssl.sh
+  installer/lib/summary.sh
+  installer/lib/system.sh
+  installer/lib/systemd.sh
+  installer/lib/validation.sh
   scripts/backup-telz.sh
   scripts/collect-telz-monitoring.sh
   scripts/finish-ssl.sh
@@ -44,7 +60,7 @@ validate_trusted_installer_asset_dir() {
     candidate="$stage/$asset"
     [[ -f "$candidate" && ! -L "$candidate" && "$(stat -c '%U:%G' "$candidate")" == "root:root" ]] || return 1
     mode="$(stat -c '%a' "$candidate")"
-    if [[ "$asset" == scripts/* ]]; then
+    if [[ "$asset" == scripts/* || "$asset" == "installer/install.sh" ]]; then
       [[ "$mode" == "500" ]] || return 1
     else
       [[ "$mode" == "400" ]] || return 1
@@ -59,78 +75,124 @@ write_trusted_installer_asset_pointer() {
   local commit="$1"
   local temporary
   temporary="$(mktemp "$TRUSTED_INSTALLER_ASSET_ROOT/.current.XXXXXX")"
-  printf 'commit=%s\ninstall_dir=%s\n' "$commit" "$INSTALL_DIR" > "$temporary"
+  printf 'commit=%s\ninstall_dir=%s\nsource_root=%s\n' "$commit" "$INSTALL_DIR" "$REPO_ROOT" > "$temporary"
   chown root:root "$temporary"
   chmod 0400 "$temporary"
   mv -f -- "$temporary" "$TRUSTED_INSTALLER_ASSET_POINTER"
 }
 
+install_trusted_resume_launcher() {
+  local temporary
+  temporary="$(mktemp /usr/local/sbin/.telz-installer-resume.XXXXXX)"
+  cat > "$temporary" <<'RUNNER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+root=/var/lib/telz-installer/trusted-assets
+pointer="$root/current"
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || { echo "execute como root" >&2; exit 1; }
+[[ -f "$pointer" && ! -L "$pointer" && "$(stat -c '%U:%G %a' "$pointer")" == "root:root 400" ]] || exit 1
+mapfile -t values < "$pointer"
+[[ "${#values[@]}" -eq 3 && "${values[0]}" =~ ^commit=(source\.[A-Za-z0-9]+)$ ]] || exit 1
+stage="$root/${values[0]#commit=}"
+install_dir="${values[1]#install_dir=}"
+source_root="${values[2]#source_root=}"
+[[ "${values[1]}" == install_dir=* && "$install_dir" =~ ^/opt/[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || exit 1
+[[ "${values[2]}" == source_root=/* && -d "$source_root" && ! -L "$source_root" ]] || exit 1
+[[ -d "$stage" && ! -L "$stage" && "$(stat -c '%U:%G %a' "$stage")" == "root:root 700" ]] || exit 1
+[[ -f "$stage/.manifest.sha256" && ! -L "$stage/.manifest.sha256" && "$(stat -c '%U:%G %a' "$stage/.manifest.sha256")" == "root:root 400" ]] || exit 1
+test -z "$(find "$stage" -mindepth 1 -type l -print -quit)"
+test -z "$(find "$stage" -mindepth 1 ! -type d ! -type f -print -quit)"
+(cd "$stage" && sha256sum --check --strict .manifest.sha256 >/dev/null)
+[[ -x "$stage/installer/install.sh" && ! -L "$stage/installer/install.sh" && "$(stat -c '%U:%G %a' "$stage/installer/install.sh")" == "root:root 500" ]] || exit 1
+exec env TELZ_TRUSTED_INSTALLER_RUNNER=true TELZ_INSTALLER_SOURCE_ROOT="$source_root" \
+  "$stage/installer/install.sh" "$@"
+RUNNER
+  chown root:root "$temporary"
+  chmod 0500 "$temporary"
+  mv -f -- "$temporary" /usr/local/sbin/telz-installer-resume
+}
+
 stage_trusted_installer_assets() {
-  local commit stage target asset destination metadata mode type object listed_path
-  local -a tree_entry
+  local stage
   install -d -m 0700 -o root -g root "$TRUSTED_INSTALLER_ASSET_ROOT"
   [[ ! -L "$TRUSTED_INSTALLER_ASSET_ROOT" && "$(stat -c '%U:%G %a' "$TRUSTED_INSTALLER_ASSET_ROOT")" == "root:root 700" ]] || {
     fail "Raiz de ativos confiaveis do instalador e insegura"
     return 1
   }
-  commit="$(sudo -u "$SERVICE_USER" -H git -C "$INSTALL_DIR" rev-parse --verify 'HEAD^{commit}')"
-  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || {
-    fail "Commit do checkout invalido para staging confiavel"
-    return 1
-  }
-  target="$TRUSTED_INSTALLER_ASSET_ROOT/$commit"
-  if [[ -e "$target" || -L "$target" ]]; then
-    validate_trusted_installer_asset_dir "$target" || {
-      fail "Staging confiavel existente possui integridade invalida: $target"
-      return 1
-    }
-    write_trusted_installer_asset_pointer "$commit"
-    TRUSTED_INSTALLER_ASSETS_DIR="$target"
-    export TRUSTED_INSTALLER_ASSETS_DIR
-    return 0
-  fi
-  stage="$(mktemp -d "$TRUSTED_INSTALLER_ASSET_ROOT/.stage.${commit}.XXXXXX")"
+  stage="$(mktemp -d "$TRUSTED_INSTALLER_ASSET_ROOT/source.XXXXXX")"
   chown root:root "$stage"
   chmod 0700 "$stage"
-  : > "$stage/.manifest.sha256"
-  for asset in "${TRUSTED_INSTALLER_ASSET_PATHS[@]}"; do
-    mapfile -t tree_entry < <(sudo -u "$SERVICE_USER" -H git -C "$INSTALL_DIR" ls-tree "$commit" -- "$asset")
-    [[ "${#tree_entry[@]}" -eq 1 ]] || {
-      fail "Ativo obrigatorio ausente do commit $commit: $asset"
-      return 1
-    }
-    metadata="${tree_entry[0]}"
-    IFS=$' \t' read -r mode type object listed_path <<< "$metadata"
-    [[ "$type" == "blob" && "$mode" =~ ^100(644|755)$ && "$object" =~ ^[0-9a-f]{40,64}$ && "$listed_path" == "$asset" ]] || {
-      fail "Tipo Git invalido para ativo confiavel: $asset"
-      return 1
-    }
-    destination="$stage/$asset"
-    install -d -m 0700 -o root -g root "$(dirname -- "$destination")"
-    sudo -u "$SERVICE_USER" -H git -C "$INSTALL_DIR" cat-file blob "$object" > "$destination"
-    [[ "$(git hash-object --no-filters "$destination")" == "$object" ]] || {
-      fail "Conteudo do ativo divergiu do objeto Git: $asset"
-      return 1
-    }
-    chown root:root "$destination"
-    if [[ "$asset" == scripts/* ]]; then
-      chmod 0500 "$destination"
-    else
-      chmod 0400 "$destination"
-    fi
-    printf '%s  %s\n' "$(sha256sum -- "$destination" | awk '{print $1}')" "$asset" >> "$stage/.manifest.sha256"
-  done
+  /usr/bin/python3 - "$REPO_ROOT" "$stage" "${TRUSTED_INSTALLER_ASSET_PATHS[@]}" <<'PY'
+import hashlib, os, stat, sys
+
+source_root, destination_root, *assets = sys.argv[1:]
+source_root_fd = os.open(source_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+destination_root_fd = os.open(destination_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+manifest = []
+try:
+    for asset in assets:
+        parts = asset.split("/")
+        if not parts or any(part in ("", ".", "..") for part in parts):
+            raise SystemExit(f"caminho de ativo invalido: {asset}")
+        source_dir_fd = os.dup(source_root_fd)
+        destination_dir_fd = os.dup(destination_root_fd)
+        try:
+            for component in parts[:-1]:
+                next_source_fd = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=source_dir_fd)
+                os.close(source_dir_fd)
+                source_dir_fd = next_source_fd
+                try:
+                    os.mkdir(component, 0o700, dir_fd=destination_dir_fd)
+                except FileExistsError:
+                    pass
+                next_destination_fd = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=destination_dir_fd)
+                os.close(destination_dir_fd)
+                destination_dir_fd = next_destination_fd
+            source_fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=source_dir_fd)
+            if not stat.S_ISREG(os.fstat(source_fd).st_mode):
+                raise SystemExit(f"ativo nao e arquivo regular: {asset}")
+            file_mode = 0o500 if asset.startswith("scripts/") or asset == "installer/install.sh" else 0o400
+            destination_fd = os.open(parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, file_mode, dir_fd=destination_dir_fd)
+            digest = hashlib.sha256()
+            try:
+                while chunk := os.read(source_fd, 1024 * 1024):
+                    digest.update(chunk)
+                    os.write(destination_fd, chunk)
+                os.fchmod(destination_fd, file_mode)
+                os.fchown(destination_fd, 0, 0)
+                os.fsync(destination_fd)
+            finally:
+                os.close(source_fd)
+                os.close(destination_fd)
+            manifest.append(f"{digest.hexdigest()}  {asset}\n")
+        finally:
+            os.close(source_dir_fd)
+            os.close(destination_dir_fd)
+    manifest_fd = os.open(".manifest.sha256", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o400, dir_fd=destination_root_fd)
+    try:
+        os.write(manifest_fd, "".join(manifest).encode("utf-8"))
+        os.fchmod(manifest_fd, 0o400)
+        os.fchown(manifest_fd, 0, 0)
+        os.fsync(manifest_fd)
+    finally:
+        os.close(manifest_fd)
+    os.fsync(destination_root_fd)
+finally:
+    os.close(source_root_fd)
+    os.close(destination_root_fd)
+PY
   chown root:root "$stage/.manifest.sha256"
   chmod 0400 "$stage/.manifest.sha256"
   validate_trusted_installer_asset_dir "$stage" || {
     fail "Staging confiavel falhou na validacao final"
     return 1
   }
-  mv -- "$stage" "$target"
-  write_trusted_installer_asset_pointer "$commit"
-  TRUSTED_INSTALLER_ASSETS_DIR="$target"
+  write_trusted_installer_asset_pointer "$(basename -- "$stage")"
+  install_trusted_resume_launcher
+  TRUSTED_INSTALLER_ASSETS_DIR="$stage"
   export TRUSTED_INSTALLER_ASSETS_DIR
-  ok "Ativos operacionais selados a partir do commit $commit"
+  ok "Ativos operacionais selados antes das fases executadas pelo usuario de servico"
 }
 
 load_trusted_installer_assets() {
@@ -145,7 +207,7 @@ load_trusted_installer_assets() {
     return 1
   }
   mapfile -t pointer_lines < "$TRUSTED_INSTALLER_ASSET_POINTER"
-  [[ "${#pointer_lines[@]}" -eq 2 && "${pointer_lines[0]}" =~ ^commit=([0-9a-f]{40})$ ]] || {
+  [[ "${#pointer_lines[@]}" -eq 3 && "${pointer_lines[0]}" =~ ^commit=(source\.[A-Za-z0-9]+)$ ]] || {
     fail "Ponteiro de ativos confiaveis invalido"
     return 1
   }
@@ -155,6 +217,10 @@ load_trusted_installer_assets() {
     fail "Staging confiavel pertence a outro INSTALL_DIR"
     return 1
   }
+  [[ "${pointer_lines[2]}" == "source_root=$REPO_ROOT" ]] || {
+    fail "Staging confiavel pertence a outra origem"
+    return 1
+  }
   target="$TRUSTED_INSTALLER_ASSET_ROOT/$commit"
   validate_trusted_installer_asset_dir "$target" || {
     fail "Ativos confiaveis nao passaram na verificacao de integridade"
@@ -162,6 +228,23 @@ load_trusted_installer_assets() {
   }
   TRUSTED_INSTALLER_ASSETS_DIR="$target"
   export TRUSTED_INSTALLER_ASSETS_DIR
+}
+
+cleanup_trusted_installer_assets() {
+  local trusted_dir="${TRUSTED_INSTALLER_ASSETS_DIR:-}"
+  [[ -n "$trusted_dir" && "$trusted_dir" == "$TRUSTED_INSTALLER_ASSET_ROOT"/source.* ]] || {
+    fail "Recusa de limpeza: staging confiavel nao identificado"
+    return 1
+  }
+  validate_trusted_installer_asset_dir "$trusted_dir" || {
+    fail "Recusa de limpeza: staging confiavel nao passou na verificacao final"
+    return 1
+  }
+  rm -rf -- "$trusted_dir"
+  rm -f -- "$TRUSTED_INSTALLER_ASSET_POINTER" "$STATE_DIR/00_trusted_assets.done" \
+    /usr/local/sbin/telz-installer-resume
+  unset TRUSTED_INSTALLER_ASSETS_DIR
+  ok "Staging privilegiado removido apos conclusao bem-sucedida"
 }
 
 trusted_installer_asset() {

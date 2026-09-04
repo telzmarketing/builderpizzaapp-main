@@ -8,6 +8,12 @@ def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
+def workflow_job(workflow: str, name: str, following: str | None) -> str:
+    start = workflow.index(f"  {name}:\n")
+    end = workflow.index(f"  {following}:\n", start) if following else len(workflow)
+    return workflow[start:end]
+
+
 def test_runtime_units_separate_immutable_code_from_persistent_state():
     api = read("installer/templates/telz-api.service")
     web = read("installer/templates/telz-web.service")
@@ -103,3 +109,37 @@ def test_deploy_materializes_verified_root_owned_bundle_from_pinned_checkout():
     assert 'ACTIVE_APP="$(sudo readlink -f /var/lib/telz/current)"' in workflow
     assert 'git show "$TARGET_COMMIT:scripts/update-telz.sh"' not in workflow
     assert 'as_telz_git checkout' not in workflow
+
+
+def test_release_pipeline_isolates_secrets_and_verifies_sealed_artifacts():
+    workflow = read(".github/workflows/deploy.yml")
+    job_names = ["validate", "inspect_vps", "package_release", "verify_release", "operate_vps"]
+    assert all(f"  {name}:\n" in workflow for name in job_names)
+
+    validate = workflow_job(workflow, "validate", "inspect_vps")
+    inspect = workflow_job(workflow, "inspect_vps", "package_release")
+    package = workflow_job(workflow, "package_release", "verify_release")
+    verify = workflow_job(workflow, "verify_release", "operate_vps")
+    operate = workflow_job(workflow, "operate_vps", None)
+
+    assert "secrets." not in validate
+    assert "secrets." in inspect
+    assert "actions/checkout@" not in inspect
+    assert "secrets." not in package
+    assert "secrets." not in verify
+    assert "secrets." in operate
+    assert "actions/checkout@" not in operate
+    assert "pip install" not in operate
+    assert "pnpm install" not in operate
+    assert "pnpm test" not in operate
+
+    source_seal = package.index("Selar operacao e fontes no GitHub")
+    assert source_seal < package.index("actions/setup-python@")
+    assert source_seal < package.index("pnpm/action-setup@")
+    assert source_seal < package.index("actions/setup-node@")
+    assert "Selar dependencias resolvidas no GitHub" in package
+    assert "needs: [inspect_vps, package_release]" in verify
+    assert "Validar bundle operacional promovido" in verify
+    assert 'member.name in seen' in verify
+    assert 'bash -n "$script"' in verify
+    assert "needs: [inspect_vps, package_release, verify_release]" in operate

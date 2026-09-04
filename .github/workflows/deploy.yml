@@ -153,37 +153,12 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 50
-    services:
-      postgres:
-        image: postgres:15@sha256:0dda651c259bfe50e2bcc28ca23d1fcca772fa90b0210803aa7b97379ccf4e85
-        env:
-          POSTGRES_DB: telz_ci
-          POSTGRES_USER: telz_ci
-          POSTGRES_PASSWORD: telz_ci
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U telz_ci -d telz_ci"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
 
     steps:
       - name: Checkout exato
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        if: inputs.operation == 'deploy'
-        with:
-          python-version: "3.12"
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-        if: inputs.operation == 'deploy'
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        if: inputs.operation == 'deploy'
-        with:
-          node-version: "22"
 
       - name: Empacotar bundle operacional allowlisted
         id: operation_bundle
@@ -212,8 +187,6 @@ jobs:
           done
           archive="$RUNNER_TEMP/telz-operation-bundle.tar.gz"
           tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -czf "$archive" -- "${files[@]}"
-          echo "sha256=$(sha256sum "$archive" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "base64=$(base64 -w0 "$archive")" >> "$GITHUB_OUTPUT"
           echo "path=$archive" >> "$GITHUB_OUTPUT"
 
       - name: Empacotar fontes Git antes de qualquer lifecycle
@@ -270,6 +243,19 @@ jobs:
           path: ${{ steps.source_delivery.outputs.path }}
           if-no-files-found: error
           retention-days: 1
+
+      # Toolchains are intentionally installed only after the source and
+      # operational inputs have been sealed into an immutable run artifact.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        if: inputs.operation == 'deploy'
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        if: inputs.operation == 'deploy'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: inputs.operation == 'deploy'
+        with:
+          node-version: "22"
 
       - name: Resolver e empacotar dependencias sem lifecycle
         if: inputs.operation == 'deploy'
@@ -412,6 +398,43 @@ jobs:
         if: inputs.operation == 'deploy'
         with:
           node-version: "22"
+
+      - name: Validar bundle operacional promovido
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          operation_archive="$RUNNER_TEMP/promoted-source/operation-bundle.tar.gz"
+          operation_dir="$RUNNER_TEMP/verified-operation"
+          mkdir -p "$operation_dir"
+          /usr/bin/python3 - "$operation_archive" <<'PY'
+          import sys, tarfile
+          from pathlib import PurePosixPath
+          expected = {
+              "scripts/update-telz.sh", "scripts/backup-telz.sh", "scripts/health-check.sh",
+              "scripts/collect-telz-monitoring.sh", "scripts/restore-telz.sh", "scripts/rollback-telz.sh",
+              "scripts/finish-ssl.sh", "scripts/build-telz-release.sh",
+              "installer/templates/telz-api.service", "installer/templates/telz-web.service",
+              "installer/templates/telz-whatsapp-gateway.service", "installer/templates/telz-monitoring.service",
+              "installer/templates/telz-monitoring.timer",
+          }
+          seen = set()
+          with tarfile.open(sys.argv[1], "r:gz") as archive:
+              for member in archive.getmembers():
+                  path = PurePosixPath(member.name)
+                  if path.is_absolute() or ".." in path.parts:
+                      raise SystemExit("bundle operacional contem caminho inseguro")
+                  if member.isdir():
+                      continue
+                  if not member.isreg() or member.name not in expected or member.name in seen:
+                      raise SystemExit("bundle operacional contem entrada invalida ou duplicada")
+                  seen.add(member.name)
+          if seen != expected:
+              raise SystemExit("bundle operacional incompleto")
+          PY
+          tar -xzf "$operation_archive" -C "$operation_dir"
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(find "$operation_dir/scripts" -type f -name '*.sh' -print0)
 
       - name: Validar e testar artefatos promovidos sem rede
         if: inputs.operation == 'deploy'
@@ -673,8 +696,8 @@ jobs:
                         raise SystemExit("bundle contem caminho inseguro")
                     if member.isdir():
                         continue
-                    if not member.isreg() or member.name not in expected:
-                        raise SystemExit("bundle contem entrada nao permitida")
+                    if not member.isreg() or member.name not in expected or member.name in seen:
+                        raise SystemExit("bundle contem entrada nao permitida ou duplicada")
                     seen.add(member.name)
             if seen != expected:
                 raise SystemExit("bundle incompleto")

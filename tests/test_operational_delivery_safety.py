@@ -119,7 +119,8 @@ def test_ssl_followup_is_installed_and_documented_as_root_owned_helper():
     installer_ssl = read("installer/lib/ssl.sh")
     install_doc = read("docs/INSTALL_TELZ_VPS.md")
 
-    assert 'install -m 0755 -o root -g root scripts/finish-ssl.sh "$ssl_helper"' in installer_ssl
+    assert 'ssl_source="$(trusted_installer_asset scripts/finish-ssl.sh)"' in installer_ssl
+    assert 'install -m 0755 -o root -g root "$ssl_source" "$ssl_helper"' in installer_ssl
     assert '"$ssl_helper" "$PLATFORM_DOMAIN" "$SSL_EMAIL"' in installer_ssl
     assert "sudo bash scripts/finish-ssl.sh" not in install_doc
     assert "sudo /usr/local/sbin/telz-finish-ssl" in install_doc
