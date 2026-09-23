@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import {
   Loader2, Plus, X, CheckCircle2, XCircle, Clock, AlertCircle,
@@ -106,7 +107,7 @@ export default function MarketingWorkflow() {
   const fetchItems = () => {
     setLoading(true);
     setError("");
-    fetch(`${BASE}/marketing/workflows`, { headers })
+    apiFetch(`/marketing/workflows`, { headers })
       .then((r) => { if (!r.ok) throw new Error("Falha ao carregar solicitações."); return r.json(); })
       .then(unwrap)
       .then((data) => setItems(Array.isArray(data) ? data : []))
@@ -125,7 +126,7 @@ export default function MarketingWorkflow() {
     if (!form.name.trim()) { alert("Nome obrigatório."); return; }
     setSaving(true);
     try {
-      const res = await fetch(`${BASE}/marketing/workflows`, {
+      const res = await apiFetch(`/marketing/workflows`, {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -153,7 +154,7 @@ export default function MarketingWorkflow() {
   ) => {
     setActionLoading(`${id}-${action}`);
     try {
-      const res = await fetch(`${BASE}/marketing/workflows/${id}/${action}`, {
+      const res = await apiFetch(`/marketing/workflows/${id}/${action}`, {
         method: "POST",
         headers,
         body: comment ? JSON.stringify({ comment }) : undefined,
@@ -173,7 +174,7 @@ export default function MarketingWorkflow() {
     if (!body) return;
     setActionLoading(`${id}-comment`);
     try {
-      const res = await fetch(`${BASE}/marketing/workflows/${id}/comments`, {
+      const res = await apiFetch(`/marketing/workflows/${id}/comments`, {
         method: "POST",
         headers,
         body: JSON.stringify({ body }),

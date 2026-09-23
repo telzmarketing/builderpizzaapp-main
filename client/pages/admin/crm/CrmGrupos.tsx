@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import {
   FolderOpen,
@@ -230,7 +231,7 @@ export default function CrmGrupos() {
   const fetchGroups = () => {
     setGroupsLoading(true);
     setGroupsError("");
-    fetch(`${BASE}/crm/groups`, { headers })
+    apiFetch(`/crm/groups`, { headers })
       .then((response) => {
         if (!response.ok) throw new Error("Falha ao carregar grupos.");
         return response.json();
@@ -287,12 +288,12 @@ export default function CrmGrupos() {
     setSaving(true);
     try {
       const response = editingGroupId
-        ? await fetch(`${BASE}/crm/groups/${editingGroupId}`, {
+        ? await apiFetch(`/crm/groups/${editingGroupId}`, {
             method: "PATCH",
             headers,
             body: JSON.stringify(groupForm),
           })
-        : await fetch(`${BASE}/crm/groups`, {
+        : await apiFetch(`/crm/groups`, {
             method: "POST",
             headers,
             body: JSON.stringify(groupForm),
@@ -312,7 +313,7 @@ export default function CrmGrupos() {
   };
 
   const evaluateGroup = async (id: string) => {
-    const response = await fetch(`${BASE}/crm/groups/${id}/evaluate`, { method: "POST", headers });
+    const response = await apiFetch(`/crm/groups/${id}/evaluate`, { method: "POST", headers });
     const payload = await response.json().catch(() => ({}));
     alert(payload?.data?.message ?? (response.ok ? "Avaliacao concluida." : "Erro ao avaliar."));
     fetchGroups();
@@ -320,7 +321,7 @@ export default function CrmGrupos() {
 
   const deleteGroup = async (id: string) => {
     if (!confirm("Inativar grupo?")) return;
-    await fetch(`${BASE}/crm/groups/${id}`, { method: "DELETE", headers });
+    await apiFetch(`/crm/groups/${id}`, { method: "DELETE", headers });
     fetchGroups();
   };
 

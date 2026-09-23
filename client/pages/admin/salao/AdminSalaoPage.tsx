@@ -8,7 +8,7 @@ import {
   type AdminPageTab,
 } from "@/components/admin/AdminPageChrome";
 import ImageUpload from "@/components/admin/ImageUpload";
-import { resolveAssetUrl, salaoPageApi, type ApiSalaoBlogPost, type ApiSalaoPageSettings } from "@/lib/api";
+import { externalFetch, resolveAssetUrl, salaoPageApi, type ApiSalaoBlogPost, type ApiSalaoPageSettings } from "@/lib/api";
 import {
   applySalaoSiteOverrides,
   buildSalaoSiteBlocks,
@@ -55,7 +55,7 @@ export default function AdminSalaoPage() {
   useEffect(() => {
     Promise.all([
       salaoPageApi.get(),
-      fetch(SALAO_SITE_URL).then((response) => response.text()),
+      externalFetch(SALAO_SITE_URL).then((response) => response.text()),
     ])
       .then(([settings, html]) => {
         setDraft(normalizeSettings(settings));
@@ -925,7 +925,7 @@ function useImageAssetInfo(url: string) {
     };
     image.src = url;
 
-    fetch(url, { method: "HEAD", signal: controller.signal })
+    externalFetch(url, { method: "HEAD", signal: controller.signal })
       .then((response) => {
         const length = response.headers.get("content-length");
         if (active) setInfo((prev) => ({ ...prev, fileSize: length ? formatBytes(Number(length)) : "Nao informado" }));

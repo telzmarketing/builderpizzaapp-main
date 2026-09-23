@@ -10,9 +10,11 @@ from sqlalchemy.orm import Session
 from backend.core.exceptions import DomainError
 from backend.core.response import created, err, err_msg, ok
 from backend.core.tenant_entitlements import require_operational_entitlement
+from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
 from backend.database import get_db
 from backend.models.admin import AdminUser
 from backend.models.order import Order
+from backend.models.payment import Payment
 from backend.routes.admin_auth import get_current_admin
 from backend.routes.order_access import require_order_or_admin
 from backend.schemas.payment import (
@@ -23,9 +25,21 @@ from backend.schemas.payment import (
     WebhookPayload,
 )
 from backend.services.payment_service import PaymentService
+from backend.services.idempotency_service import IdempotencyService
 from backend.config import get_settings
 
 router = APIRouter(prefix="/payments", tags=["payments"])
+LEGACY_TENANT_ID = "tenant-legacy-default"
+
+
+def _public_tenant_id(request: Request, db: Session) -> str:
+    context = resolve_public_tenant_context(request, db)
+    return context.tenant_id if context else LEGACY_TENANT_ID
+
+
+def _panel_tenant_id(request: Request, db: Session, admin: AdminUser) -> str:
+    context = resolve_panel_tenant_context(request, db, admin)
+    return context.tenant_id if context else LEGACY_TENANT_ID
 
 
 def _payload_from_query(query_params: dict[str, str]) -> dict:
@@ -52,9 +66,15 @@ def _client_ip(request: Request) -> str | None:
 
 
 @router.post("/create", status_code=201)
-def create_payment(body: PaymentCreate, request: Request, db: Session = Depends(get_db)):
+def create_payment(
+    body: PaymentCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
     try:
-        order = db.query(Order).filter(Order.id == body.order_id).first()
+        tenant_id = _public_tenant_id(request, db)
+        order = db.query(Order).filter(Order.id == body.order_id, Order.tenant_id == tenant_id).first()
         if order:
             require_order_or_admin(
                 order,
@@ -63,25 +83,35 @@ def create_payment(body: PaymentCreate, request: Request, db: Session = Depends(
                 request.headers.get("x-customer-phone"),
                 request.headers.get("x-customer-email"),
             )
-        payment = PaymentService(db).create(body)
+        idempotency = IdempotencyService(db, tenant_id)
+        claim = idempotency.claim(idempotency_key, "payment.create", body.model_dump(mode="json"))
+        if claim.replay_resource_id:
+            payment = db.query(Payment).filter(
+                Payment.id == claim.replay_resource_id,
+                Payment.tenant_id == tenant_id,
+            ).first()
+            if payment:
+                return created(payment, "Pagamento ja processado para esta chave.")
+        payment = PaymentService(db, tenant_id=tenant_id).create(body)
+        idempotency.complete(claim.record, payment.id)
         return created(payment, "Pagamento iniciado. Aguardando confirmacao.")
     except DomainError as exc:
         return err(exc)
 
 
 @router.get("/public-key")
-def get_public_key(db: Session = Depends(get_db)):
-    return ok(PaymentService(db).public_key())
+def get_public_key(request: Request, db: Session = Depends(get_db)):
+    return ok(PaymentService(db, tenant_id=_public_tenant_id(request, db)).public_key())
 
 
 @router.get("/methods")
-def get_payment_methods(db: Session = Depends(get_db)):
-    return ok(PaymentService(db).accepted_methods())
+def get_payment_methods(request: Request, db: Session = Depends(get_db)):
+    return ok(PaymentService(db, tenant_id=_public_tenant_id(request, db)).accepted_methods())
 
 
 @router.get("/config/public")
-def get_public_payment_config(db: Session = Depends(get_db)):
-    return ok(PaymentService(db).public_config())
+def get_public_payment_config(request: Request, db: Session = Depends(get_db)):
+    return ok(PaymentService(db, tenant_id=_public_tenant_id(request, db)).public_config())
 
 
 @router.post("/asaas/credit-card", status_code=201)
@@ -89,9 +119,11 @@ def create_asaas_credit_card_payment(
     body: AsaasCreditCardPaymentCreate,
     request: Request,
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     try:
-        order = db.query(Order).filter(Order.id == body.order_id).first()
+        tenant_id = _public_tenant_id(request, db)
+        order = db.query(Order).filter(Order.id == body.order_id, Order.tenant_id == tenant_id).first()
         if order:
             require_order_or_admin(
                 order,
@@ -100,7 +132,17 @@ def create_asaas_credit_card_payment(
                 request.headers.get("x-customer-phone"),
                 request.headers.get("x-customer-email"),
             )
-        payment = PaymentService(db).create_asaas_credit_card(body, client_ip=_client_ip(request))
+        idempotency = IdempotencyService(db, tenant_id)
+        claim = idempotency.claim(idempotency_key, "payment.asaas.credit_card", body.model_dump(mode="json"))
+        if claim.replay_resource_id:
+            payment = db.query(Payment).filter(
+                Payment.id == claim.replay_resource_id,
+                Payment.tenant_id == tenant_id,
+            ).first()
+            if payment:
+                return created(payment, "Pagamento ja processado para esta chave.")
+        payment = PaymentService(db, tenant_id=tenant_id).create_asaas_credit_card(body, client_ip=_client_ip(request))
+        idempotency.complete(claim.record, payment.id)
         return created(payment, "Pagamento ASAAS cartao iniciado. Aguardando confirmacao.")
     except DomainError as exc:
         return err(exc)
@@ -109,7 +151,8 @@ def create_asaas_credit_card_payment(
 @router.get("/{order_id}")
 def get_payment(order_id: str, request: Request, db: Session = Depends(get_db)):
     try:
-        order = db.query(Order).filter(Order.id == order_id).first()
+        tenant_id = _public_tenant_id(request, db)
+        order = db.query(Order).filter(Order.id == order_id, Order.tenant_id == tenant_id).first()
         if order:
             require_order_or_admin(
                 order,
@@ -118,7 +161,7 @@ def get_payment(order_id: str, request: Request, db: Session = Depends(get_db)):
                 request.headers.get("x-customer-phone"),
                 request.headers.get("x-customer-email"),
             )
-        return ok(PaymentService(db).get_by_order(order_id))
+        return ok(PaymentService(db, tenant_id=tenant_id).get_by_order(order_id))
     except DomainError as exc:
         return err(exc)
 
@@ -126,7 +169,8 @@ def get_payment(order_id: str, request: Request, db: Session = Depends(get_db)):
 @router.post("/preference/{order_id}", status_code=201)
 def create_preference(order_id: str, request: Request, db: Session = Depends(get_db)):
     try:
-        order = db.query(Order).filter(Order.id == order_id).first()
+        tenant_id = _public_tenant_id(request, db)
+        order = db.query(Order).filter(Order.id == order_id, Order.tenant_id == tenant_id).first()
         if order:
             require_order_or_admin(
                 order,
@@ -135,7 +179,7 @@ def create_preference(order_id: str, request: Request, db: Session = Depends(get
                 request.headers.get("x-customer-phone"),
                 request.headers.get("x-customer-email"),
             )
-        result = PaymentService(db).create_preference(order_id)
+        result = PaymentService(db, tenant_id=tenant_id).create_preference(order_id)
         return created(result, "Preferencia de pagamento criada.")
     except DomainError as exc:
         return err(exc)
@@ -144,7 +188,8 @@ def create_preference(order_id: str, request: Request, db: Session = Depends(get
 @router.post("/pay-on-delivery/{order_id}")
 def switch_to_pay_on_delivery(order_id: str, body: PayOnDeliverySwitch, request: Request, db: Session = Depends(get_db)):
     try:
-        order = db.query(Order).filter(Order.id == order_id).first()
+        tenant_id = _public_tenant_id(request, db)
+        order = db.query(Order).filter(Order.id == order_id, Order.tenant_id == tenant_id).first()
         if order:
             require_order_or_admin(
                 order,
@@ -153,7 +198,7 @@ def switch_to_pay_on_delivery(order_id: str, body: PayOnDeliverySwitch, request:
                 request.headers.get("x-customer-phone"),
                 request.headers.get("x-customer-email"),
             )
-        payment = PaymentService(db).switch_to_pay_on_delivery(order_id, body)
+        payment = PaymentService(db, tenant_id=tenant_id).switch_to_pay_on_delivery(order_id, body)
         return ok(payment, "Pedido alterado para pagamento na entrega.")
     except DomainError as exc:
         return err(exc)
@@ -167,11 +212,12 @@ def open_card_checkout(order_id: str):
 @router.post("/cash/{order_id}")
 def confirm_cash(
     order_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     try:
-        payment = PaymentService(db).confirm_cash(order_id)
+        payment = PaymentService(db, tenant_id=_panel_tenant_id(request, db, admin)).confirm_cash(order_id)
         return ok(payment, "Pagamento em dinheiro confirmado.")
     except DomainError as exc:
         return err(exc)
@@ -180,12 +226,13 @@ def confirm_cash(
 @router.post("/approve/{order_id}")
 def approve_payment(
     order_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
     _entitlement=Depends(require_operational_entitlement("payments.write", write=True)),
 ):
     try:
-        payment = PaymentService(db).approve_manual(order_id)
+        payment = PaymentService(db, tenant_id=_panel_tenant_id(request, db, admin)).approve_manual(order_id)
         return ok(payment, "Pagamento aprovado manualmente.")
     except DomainError as exc:
         return err(exc)
@@ -194,11 +241,12 @@ def approve_payment(
 @router.post("/reconcile/{order_id}")
 def reconcile_payment(
     order_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     try:
-        payment = PaymentService(db).reconcile(order_id)
+        payment = PaymentService(db, tenant_id=_panel_tenant_id(request, db, admin)).reconcile(order_id)
         return ok(payment, "Pagamento conciliado pelo provider historico.")
     except DomainError as exc:
         return err(exc)
@@ -207,13 +255,14 @@ def reconcile_payment(
 @router.post("/cancel/{order_id}")
 def cancel_payment(
     order_id: str,
+    request: Request,
     body: PaymentOperationRequest = PaymentOperationRequest(),
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
     _entitlement=Depends(require_operational_entitlement("payments.write", write=True)),
 ):
     try:
-        payment = PaymentService(db).cancel_payment(order_id, reason=body.reason)
+        payment = PaymentService(db, tenant_id=_panel_tenant_id(request, db, admin)).cancel_payment(order_id, reason=body.reason)
         return ok(payment, "Cobranca cancelada pelo provider historico.")
     except DomainError as exc:
         return err(exc)
@@ -222,13 +271,14 @@ def cancel_payment(
 @router.post("/refund/{order_id}")
 def refund_payment(
     order_id: str,
+    request: Request,
     body: PaymentOperationRequest = PaymentOperationRequest(),
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
     _entitlement=Depends(require_operational_entitlement("payments.write", write=True)),
 ):
     try:
-        payment = PaymentService(db).refund_payment(order_id, reason=body.reason, value=body.value)
+        payment = PaymentService(db, tenant_id=_panel_tenant_id(request, db, admin)).refund_payment(order_id, reason=body.reason, value=body.value)
         return ok(payment, "Pagamento estornado pelo provider historico.")
     except DomainError as exc:
         return err(exc)

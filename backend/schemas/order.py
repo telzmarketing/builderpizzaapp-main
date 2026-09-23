@@ -139,6 +139,7 @@ class OrderOut(BaseModel):
     landing_page: Optional[str] = None
     referrer: Optional[str] = None
     sales_channel: str = "delivery"
+    fulfillment_type: str = "delivery"
     table_id: Optional[str] = None
     table_session_id: Optional[str] = None
     items: list[OrderItemOut] = []

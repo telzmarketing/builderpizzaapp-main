@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { useEffect, useState, useRef } from "react";
 import {
   Loader2, Plus, Pencil, Trash2, X, Mail, Send, CheckCircle,
@@ -171,29 +172,29 @@ export default function MarketingEmail() {
 
   // fetch helpers
   const fetchDash = () => {
-    fetch(`${BASE}/email/dashboard`, { headers })
+    apiFetch(`/email/dashboard`, { headers })
       .then(r => r.json()).then(d => setDash({ ...EMPTY_DASH, ...unwrap(d) })).catch(() => {});
   };
   const fetchTemplates = () => {
     setTplLoading(true);
-    fetch(`${BASE}/email/templates`, { headers })
+    apiFetch(`/email/templates`, { headers })
       .then(r => r.json()).then(d => setTemplates(unwrap(d) ?? [])).catch(() => setTemplates([]))
       .finally(() => setTplLoading(false));
   };
   const fetchCampaigns = () => {
     setCampLoading(true);
-    fetch(`${BASE}/email/campaigns`, { headers })
+    apiFetch(`/email/campaigns`, { headers })
       .then(r => r.json()).then(d => setCampaigns(unwrap(d) ?? [])).catch(() => setCampaigns([]))
       .finally(() => setCampLoading(false));
   };
   const fetchMessages = () => {
     setMsgLoading(true);
-    fetch(`${BASE}/email/messages`, { headers })
+    apiFetch(`/email/messages`, { headers })
       .then(r => r.json()).then(d => setMessages(unwrap(d) ?? [])).catch(() => setMessages([]))
       .finally(() => setMsgLoading(false));
   };
   const fetchConfig = () => {
-    fetch(`${BASE}/email/config`, { headers })
+    apiFetch(`/email/config`, { headers })
       .then(r => r.json()).then(d => setCfg({ ...EMPTY_CFG, ...unwrap(d) })).catch(() => {});
   };
   const fetchContactLists = () => {
@@ -227,15 +228,15 @@ export default function MarketingEmail() {
     }
     setSaving(true);
     try {
-      const url = editingTplId ? `${BASE}/email/templates/${editingTplId}` : `${BASE}/email/templates`;
-      await fetch(url, { method: editingTplId ? "PATCH" : "POST", headers, body: JSON.stringify(tplForm) });
+      const url = editingTplId ? `/email/templates/${editingTplId}` : "/email/templates";
+      await apiFetch(url, { method: editingTplId ? "PATCH" : "POST", headers, body: JSON.stringify(tplForm) });
       setShowTplModal(false);
       fetchTemplates();
     } catch { alert("Erro ao salvar."); } finally { setSaving(false); }
   };
   const deleteTpl = async (id: string) => {
     if (!confirm("Excluir template?")) return;
-    await fetch(`${BASE}/email/templates/${id}`, { method: "DELETE", headers });
+    await apiFetch(`/email/templates/${id}`, { method: "DELETE", headers });
     fetchTemplates();
   };
 
@@ -245,7 +246,7 @@ export default function MarketingEmail() {
     if (!campForm.name.trim()) { alert("Nome obrigatório."); return; }
     setSaving(true);
     try {
-      await fetch(`${BASE}/email/campaigns`, { method: "POST", headers, body: JSON.stringify(campForm) });
+      await apiFetch(`/email/campaigns`, { method: "POST", headers, body: JSON.stringify(campForm) });
       setShowCampModal(false);
       setCampForm({ name: "", template_id: "", group_id: "", contact_list_id: "", scheduled_at: "" });
       fetchCampaigns();
@@ -253,12 +254,12 @@ export default function MarketingEmail() {
   };
   const toggleCamp = async (id: string, status: string) => {
     const newStatus = status === "running" ? "paused" : "running";
-    await fetch(`${BASE}/email/campaigns/${id}`, { method: "PATCH", headers, body: JSON.stringify({ status: newStatus }) });
+    await apiFetch(`/email/campaigns/${id}`, { method: "PATCH", headers, body: JSON.stringify({ status: newStatus }) });
     fetchCampaigns();
   };
   const deleteCamp = async (id: string) => {
     if (!confirm("Excluir campanha?")) return;
-    await fetch(`${BASE}/email/campaigns/${id}`, { method: "DELETE", headers });
+    await apiFetch(`/email/campaigns/${id}`, { method: "DELETE", headers });
     fetchCampaigns();
   };
 
@@ -326,7 +327,7 @@ export default function MarketingEmail() {
   const testConnection = async () => {
     setCfgTesting(true);
     try {
-      const r = await fetch(`${BASE}/email/test-connection`, { method: "POST", headers, body: JSON.stringify(cfg) });
+      const r = await apiFetch(`/email/test-connection`, { method: "POST", headers, body: JSON.stringify(cfg) });
       const d = unwrap(await r.json());
       alert(d.success ? "Conexão bem-sucedida!" : `Falha: ${d.error ?? "Erro desconhecido"}`);
     } catch { alert("Erro ao testar conexão."); } finally { setCfgTesting(false); }
@@ -337,7 +338,7 @@ export default function MarketingEmail() {
     e.preventDefault();
     setCfgSaving(true);
     try {
-      await fetch(`${BASE}/email/config`, { method: "PATCH", headers, body: JSON.stringify(cfg) });
+      await apiFetch(`/email/config`, { method: "PATCH", headers, body: JSON.stringify(cfg) });
       alert("Configurações salvas.");
     } catch { alert("Erro ao salvar."); } finally { setCfgSaving(false); }
   };
@@ -898,7 +899,12 @@ export default function MarketingEmail() {
                 ) : (
                   <div className="bg-white rounded-xl p-4 min-h-[200px] max-h-[400px] overflow-y-auto">
                     {tplForm.body_html ? (
-                      <div className="text-black text-sm" dangerouslySetInnerHTML={{ __html: tplForm.body_html }} />
+                      <iframe
+                        title="Preview seguro do e-mail"
+                        sandbox=""
+                        className="w-full min-h-[320px] border-0 bg-white"
+                        srcDoc={`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"></head><body>${tplForm.body_html}</body></html>`}
+                      />
                     ) : (
                       <p className="text-gray-400 text-sm text-center py-8">Nenhum conteúdo para exibir.</p>
                     )}

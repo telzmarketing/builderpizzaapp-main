@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { findAdminNavigationGroup, findAdminNavigationItem } from "./adminAccess";
+import { filterAdminNavigation, findAdminNavigationGroup, findAdminNavigationItem, firstAllowedAdminPath } from "./adminAccess";
+import type { ApiEffectivePermissions } from "./api";
 
 describe("admin navigation route matching", () => {
   it("uses the most specific route when module paths overlap", () => {
@@ -10,5 +11,18 @@ describe("admin navigation route matching", () => {
   it("resolves navigation aliases to their canonical module", () => {
     expect(findAdminNavigationGroup("/painel/cupons")?.label).toBe("Marketing");
     expect(findAdminNavigationItem("/painel/marketing/ads")?.label).toBe("Trafego Pago");
+  });
+
+  it.each([
+    ["cozinha", "/painel/cozinha", "Cozinha"],
+    ["expedicao", "/painel/expedicao", "Expedição"],
+  ])("keeps the %s KDS profile on its only allowed screen", (moduleKey, path, label) => {
+    const permissions: ApiEffectivePermissions = {
+      is_master: false,
+      modules: { [moduleKey]: { view: true, edit: true } },
+    };
+    expect(firstAllowedAdminPath(permissions)).toBe(path);
+    expect(filterAdminNavigation(permissions).flatMap((group) => group.children.map((item) => item.label)))
+      .toEqual([label]);
   });
 });

@@ -175,6 +175,7 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
         "scheduled_for": order.scheduled_for,
         "coupon_id": order.coupon_id,
         "sales_channel": order.sales_channel or "delivery",
+        "fulfillment_type": order.fulfillment_type or "delivery",
         "table_id": order.table_id,
         "table_session_id": order.table_session_id,
         "items": items,
@@ -208,6 +209,13 @@ def create_order(body: CheckoutIn, request: Request, db: Session = Depends(get_d
             code="CustomerRequired",
             status_code=401,
         )
+    require_customer_id_or_admin(
+        body.customer_id,
+        db,
+        request.headers.get("authorization"),
+        request.headers.get("x-customer-phone"),
+        request.headers.get("x-customer-email"),
+    )
     try:
         svc = OrderService(db, resolve_public_tenant_context(request, db))
         order = svc.create_from_checkout(body)
@@ -372,7 +380,7 @@ def get_order_payment_status(order_id: str, request: Request, db: Session = Depe
             request.headers.get("x-customer-phone"),
             request.headers.get("x-customer-email"),
         )
-        return ok(PaymentService(db).payment_status(order_id))
+        return ok(PaymentService(db, tenant_id=order.tenant_id).payment_status(order_id))
     except DomainError as exc:
         return err(exc)
 

@@ -78,6 +78,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     children: [
       { path: "/painel/orders", icon: ShoppingBag, label: "Pedidos", permissions: ["pedidos"] },
       { path: "/painel/cozinha", icon: ChefHat, label: "Cozinha", permissions: ["cozinha"] },
+      { path: "/painel/expedicao", icon: Truck, label: "Expedição", permissions: ["expedicao"] },
       { path: "/painel/salao", icon: ClipboardList, label: "Salao & Reservas", permissions: ["pedidos"] },
       { path: "/painel/logistica", icon: Route, label: "Logistica", permissions: ["entregas", "motoboys"] },
     ],

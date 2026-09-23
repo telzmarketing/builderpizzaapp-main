@@ -20,6 +20,7 @@ def test_postgresql_seed_acquires_transaction_lock_before_writes():
         "_seed_admin",
         "_seed_chatbot_settings",
         "_seed_rbac",
+        "_seed_tenant_kds_roles",
     )
     with patch.multiple(seed, **{name: Mock() for name in seed_steps}):
         seed.seed_all(db)

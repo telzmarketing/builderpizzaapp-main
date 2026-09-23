@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "PizzaApp API"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
+    STARTUP_SCHEMA_BOOTSTRAP_ENABLED: bool = False
     PUBLIC_STORE_URL: str = ""
     VITE_PUBLIC_STORE_URL: str = ""
     SYSTEM_LEAD_EMAIL_DOMAIN: str = "leads.telz.com.br"
@@ -55,6 +56,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = DEFAULT_JWT_SECRET_KEY
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 480          # 8 horas
+    CUSTOMER_JWT_EXPIRE_MINUTES: int = 60
     # Multi-tenant auth is additive and opt-in.  Keep disabled until the
     # foundation migration and legacy memberships have been validated.
     MULTI_TENANT_AUTH_ENABLED: bool = False
@@ -81,7 +83,7 @@ class Settings(BaseSettings):
     TENANT_BACKGROUND_CONTEXT_ENABLED: bool = False
     TENANT_UPLOAD_NAMESPACE_ENABLED: bool = False
 
-    TENANT_CREDENTIALS_ENABLED: bool = False
+    TENANT_CREDENTIALS_ENABLED: bool = True
     PLATFORM_RBAC_ENABLED: bool = False
     TENANT_ENTITLEMENT_ENFORCEMENT_ENABLED: bool = False
     # Root-owned, collector-generated operational projections. The API has

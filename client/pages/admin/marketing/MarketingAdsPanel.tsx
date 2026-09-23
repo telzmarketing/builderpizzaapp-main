@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { useEffect, useState, useCallback } from "react";
 import {
   Loader2, RefreshCw, TrendingUp, MousePointerClick,
@@ -115,8 +116,8 @@ export default function MarketingAdsPanel() {
   const fetchCampaigns = useCallback(() => {
     setLoading(true); setError("");
     Promise.all([
-      fetch(`${BASE}/ads/campaigns`, { headers }).then(r => r.json()).then(unwrap),
-      fetch(`${BASE}/ads/insights`, { headers }).then(r => r.json()).then(unwrap),
+      apiFetch(`/ads/campaigns`, { headers }).then(r => r.json()).then(unwrap),
+      apiFetch(`/ads/insights`, { headers }).then(r => r.json()).then(unwrap),
     ]).then(([cmp, ins]) => { setCampaigns(cmp ?? []); setInsights(ins); })
       .catch(() => setError("Falha ao carregar dados de anúncios."))
       .finally(() => setLoading(false));
@@ -124,22 +125,22 @@ export default function MarketingAdsPanel() {
 
   const fetchUtms = () => {
     setUtmLoading(true);
-    fetch(`${BASE}/ads/utms`, { headers }).then(r => r.json()).then(d => setUtms(unwrap(d) ?? [])).catch(() => setUtms([]))
+    apiFetch(`/ads/utms`, { headers }).then(r => r.json()).then(d => setUtms(unwrap(d) ?? [])).catch(() => setUtms([]))
       .finally(() => setUtmLoading(false));
   };
   const fetchLeads = () => {
     setLeadsLoading(true);
-    fetch(`${BASE}/ads/leads`, { headers }).then(r => r.json()).then(d => setLeads(unwrap(d) ?? [])).catch(() => setLeads([]))
+    apiFetch(`/ads/leads`, { headers }).then(r => r.json()).then(d => setLeads(unwrap(d) ?? [])).catch(() => setLeads([]))
       .finally(() => setLeadsLoading(false));
   };
   const fetchPixels = () => {
     setPixelsLoading(true);
-    fetch(`${BASE}/ads/pixels`, { headers }).then(r => r.json()).then(d => setPixels(unwrap(d) ?? [])).catch(() => setPixels([]))
+    apiFetch(`/ads/pixels`, { headers }).then(r => r.json()).then(d => setPixels(unwrap(d) ?? [])).catch(() => setPixels([]))
       .finally(() => setPixelsLoading(false));
   };
   const fetchRoi = (period: string) => {
     setRoiLoading(true);
-    fetch(`${BASE}/ads/roi?period=${period}`, { headers }).then(r => r.json()).then(d => setRoiData(unwrap(d) ?? [])).catch(() => setRoiData([]))
+    apiFetch(`/ads/roi?period=${period}`, { headers }).then(r => r.json()).then(d => setRoiData(unwrap(d) ?? [])).catch(() => setRoiData([]))
       .finally(() => setRoiLoading(false));
   };
 
@@ -153,8 +154,8 @@ export default function MarketingAdsPanel() {
 
   const syncPlatform = async (platform: Platform | "all") => {
     setSyncing(platform);
-    const url = platform === "all" ? `${BASE}/ads/sync-all` : `${BASE}/ads/${platform}/sync`;
-    try { await fetch(url, { method: "POST", headers }); fetchCampaigns(); }
+    const url = platform === "all" ? "/ads/sync-all" : `/ads/${platform}/sync`;
+    try { await apiFetch(url, { method: "POST", headers }); fetchCampaigns(); }
     catch { alert("Erro ao sincronizar."); } finally { setSyncing(null); }
   };
 
@@ -164,7 +165,7 @@ export default function MarketingAdsPanel() {
     if (!utmForm.name.trim() || !utmForm.url.trim()) { alert("Nome e URL obrigatórios."); return; }
     setUtmSaving(true);
     try {
-      await fetch(`${BASE}/ads/utms`, { method: "POST", headers, body: JSON.stringify(utmForm) });
+      await apiFetch(`/ads/utms`, { method: "POST", headers, body: JSON.stringify(utmForm) });
       setShowUtmModal(false);
       setUtmForm({ name: "", url: "", utm_source: "", utm_medium: "", utm_campaign: "", utm_term: "", utm_content: "" });
       fetchUtms();
@@ -172,7 +173,7 @@ export default function MarketingAdsPanel() {
   };
   const deleteUtm = async (id: string) => {
     if (!confirm("Excluir link UTM?")) return;
-    await fetch(`${BASE}/ads/utms/${id}`, { method: "DELETE", headers });
+    await apiFetch(`/ads/utms/${id}`, { method: "DELETE", headers });
     fetchUtms();
   };
   const buildUtmUrl = () => {
@@ -192,19 +193,19 @@ export default function MarketingAdsPanel() {
     if (!pixelForm.pixel_id.trim()) { alert("Pixel ID obrigatório."); return; }
     setPixelSaving(true);
     try {
-      await fetch(`${BASE}/ads/pixels`, { method: "POST", headers, body: JSON.stringify(pixelForm) });
+      await apiFetch(`/ads/pixels`, { method: "POST", headers, body: JSON.stringify(pixelForm) });
       setShowPixelModal(false);
       setPixelForm({ platform: "meta", pixel_id: "", events_tracked: "PageView,Purchase,Lead" });
       fetchPixels();
     } catch { alert("Erro ao salvar pixel."); } finally { setPixelSaving(false); }
   };
   const togglePixel = async (id: string, enabled: boolean) => {
-    await fetch(`${BASE}/ads/pixels/${id}`, { method: "PATCH", headers, body: JSON.stringify({ enabled: !enabled }) });
+    await apiFetch(`/ads/pixels/${id}`, { method: "PATCH", headers, body: JSON.stringify({ enabled: !enabled }) });
     fetchPixels();
   };
   const deletePixel = async (id: string) => {
     if (!confirm("Remover pixel?")) return;
-    await fetch(`${BASE}/ads/pixels/${id}`, { method: "DELETE", headers });
+    await apiFetch(`/ads/pixels/${id}`, { method: "DELETE", headers });
     fetchPixels();
   };
 

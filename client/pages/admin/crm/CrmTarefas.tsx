@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import {
   Loader2, Plus, CheckCircle2, Circle, X, ClipboardList,
@@ -96,7 +97,7 @@ export default function CrmTarefas() {
   const fetchTasks = () => {
     setLoading(true);
     setError("");
-    fetch(`${BASE}/crm/tasks`, { headers })
+    apiFetch(`/crm/tasks`, { headers })
       .then(r => { if (!r.ok) throw new Error("Falha ao carregar."); return r.json(); })
       .then(unwrap).then(setTasks)
       .catch(e => setError(e.message))
@@ -127,9 +128,9 @@ export default function CrmTarefas() {
     setSaving(true);
     try {
       if (editingId) {
-        await fetch(`${BASE}/crm/tasks/${editingId}`, { method: "PATCH", headers, body: JSON.stringify(form) });
+        await apiFetch(`/crm/tasks/${editingId}`, { method: "PATCH", headers, body: JSON.stringify(form) });
       } else {
-        await fetch(`${BASE}/crm/tasks`, { method: "POST", headers, body: JSON.stringify({ ...form, status: "pending" }) });
+        await apiFetch(`/crm/tasks`, { method: "POST", headers, body: JSON.stringify({ ...form, status: "pending" }) });
       }
       setShowModal(false);
       fetchTasks();
@@ -140,7 +141,7 @@ export default function CrmTarefas() {
     setTransitioning(task.id);
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
     try {
-      await fetch(`${BASE}/crm/tasks/${task.id}`, { method: "PATCH", headers, body: JSON.stringify({ status: newStatus }) });
+      await apiFetch(`/crm/tasks/${task.id}`, { method: "PATCH", headers, body: JSON.stringify({ status: newStatus }) });
     } catch {
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: task.status } : t));
     } finally { setTransitioning(null); }
@@ -148,7 +149,7 @@ export default function CrmTarefas() {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir tarefa?")) return;
-    await fetch(`${BASE}/crm/tasks/${id}`, { method: "DELETE", headers });
+    await apiFetch(`/crm/tasks/${id}`, { method: "DELETE", headers });
     setTasks(prev => prev.filter(t => t.id !== id));
   };
 

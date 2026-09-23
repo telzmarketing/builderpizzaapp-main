@@ -1,17 +1,9 @@
-import re
-
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from backend.models.order import Order
 from backend.routes.admin_auth import authenticate_admin_token
 from backend.routes.customer_access import require_customer_id_or_admin
-
-
-def _normalize_contact(value: str | None) -> str:
-    if not value:
-        return ""
-    return re.sub(r"[^\d+]", "", value).lower()
 
 
 def require_order_or_admin(
@@ -41,7 +33,4 @@ def require_order_or_admin(
         except HTTPException:
             pass
 
-    if order.delivery_phone and _normalize_contact(x_customer_phone) == _normalize_contact(order.delivery_phone):
-        return
-
-    raise HTTPException(403, "Acesso ao pedido nao autorizado.")
+    raise HTTPException(401, "Sessao autenticada de cliente obrigatoria.")

@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { useEffect, useState, useRef } from "react";
 import {
   Loader2, Plus, Pencil, Trash2, X, MessageCircle, Send, CheckCircle,
@@ -135,18 +136,18 @@ export default function MarketingWhatsApp() {
 
   // fetch helpers
   const fetchDash = () => {
-    fetch(`${BASE}/whatsapp/dashboard`, { headers })
+    apiFetch(`/whatsapp/dashboard`, { headers })
       .then(r => r.json()).then(d => setDash({ ...EMPTY_DASH, ...unwrap(d) })).catch(() => {});
   };
   const fetchTemplates = () => {
     setTplLoading(true);
-    fetch(`${BASE}/whatsapp/templates`, { headers })
+    apiFetch(`/whatsapp/templates`, { headers })
       .then(r => r.json()).then(d => setTemplates(unwrap(d) ?? [])).catch(() => setTemplates([]))
       .finally(() => setTplLoading(false));
   };
   const fetchCampaigns = () => {
     setCampLoading(true);
-    fetch(`${BASE}/whatsapp/campaigns`, { headers })
+    apiFetch(`/whatsapp/campaigns`, { headers })
       .then(r => r.json()).then(d => setCampaigns(unwrap(d) ?? [])).catch(() => setCampaigns([]))
       .finally(() => setCampLoading(false));
   };
@@ -159,12 +160,12 @@ export default function MarketingWhatsApp() {
   };
   const fetchMessages = () => {
     setMsgLoading(true);
-    fetch(`${BASE}/whatsapp/messages`, { headers })
+    apiFetch(`/whatsapp/messages`, { headers })
       .then(r => r.json()).then(d => setMessages(unwrap(d) ?? [])).catch(() => setMessages([]))
       .finally(() => setMsgLoading(false));
   };
   const fetchConfig = () => {
-    fetch(`${BASE}/whatsapp/config`, { headers })
+    apiFetch(`/whatsapp/config`, { headers })
       .then(r => r.json()).then(d => setCfg({ ...EMPTY_CFG, ...unwrap(d) })).catch(() => {});
   };
   const fetchGatewayInstances = () => {
@@ -197,15 +198,15 @@ export default function MarketingWhatsApp() {
     if (!tplForm.name.trim() || !tplForm.body.trim()) { alert("Nome e body obrigatórios."); return; }
     setSaving(true);
     try {
-      const url = editingTplId ? `${BASE}/whatsapp/templates/${editingTplId}` : `${BASE}/whatsapp/templates`;
-      await fetch(url, { method: editingTplId ? "PATCH" : "POST", headers, body: JSON.stringify(tplForm) });
+      const url = editingTplId ? `/whatsapp/templates/${editingTplId}` : "/whatsapp/templates";
+      await apiFetch(url, { method: editingTplId ? "PATCH" : "POST", headers, body: JSON.stringify(tplForm) });
       setShowTplModal(false);
       fetchTemplates();
     } catch { alert("Erro ao salvar."); } finally { setSaving(false); }
   };
   const deleteTpl = async (id: string) => {
     if (!confirm("Excluir template?")) return;
-    await fetch(`${BASE}/whatsapp/templates/${id}`, { method: "DELETE", headers });
+    await apiFetch(`/whatsapp/templates/${id}`, { method: "DELETE", headers });
     fetchTemplates();
   };
 
@@ -215,7 +216,7 @@ export default function MarketingWhatsApp() {
     if (!campForm.name.trim()) { alert("Nome obrigatório."); return; }
     setSaving(true);
     try {
-      await fetch(`${BASE}/whatsapp/campaigns`, { method: "POST", headers, body: JSON.stringify(campForm) });
+      await apiFetch(`/whatsapp/campaigns`, { method: "POST", headers, body: JSON.stringify(campForm) });
       setShowCampModal(false);
       setCampForm({ name: "", template_id: "", group_id: "", contact_list_id: "", scheduled_at: "" });
       fetchCampaigns();
@@ -223,12 +224,12 @@ export default function MarketingWhatsApp() {
   };
   const toggleCamp = async (id: string, status: string) => {
     const newStatus = status === "running" ? "paused" : "running";
-    await fetch(`${BASE}/whatsapp/campaigns/${id}`, { method: "PATCH", headers, body: JSON.stringify({ status: newStatus }) });
+    await apiFetch(`/whatsapp/campaigns/${id}`, { method: "PATCH", headers, body: JSON.stringify({ status: newStatus }) });
     fetchCampaigns();
   };
   const deleteCamp = async (id: string) => {
     if (!confirm("Excluir campanha?")) return;
-    await fetch(`${BASE}/whatsapp/campaigns/${id}`, { method: "DELETE", headers });
+    await apiFetch(`/whatsapp/campaigns/${id}`, { method: "DELETE", headers });
     fetchCampaigns();
   };
 
@@ -309,7 +310,7 @@ export default function MarketingWhatsApp() {
     try {
       const legacyProviders = ["qr", "evolution", "uazapi"];
       const nextCfg = { ...cfg, connection_type: legacyProviders.includes(cfg.connection_type) ? "official" : cfg.connection_type };
-      const response = await fetch(`${BASE}/whatsapp/config`, { method: "PATCH", headers, body: JSON.stringify(nextCfg) });
+      const response = await apiFetch(`/whatsapp/config`, { method: "PATCH", headers, body: JSON.stringify(nextCfg) });
       const json = await response.json();
       if (!response.ok || json?.success === false) {
         throw new Error(json?.error?.message ?? "Erro ao salvar.");

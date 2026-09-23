@@ -153,6 +153,15 @@ def _effective_permissions(
             modules={m.key: {p.key: True for p in perms} for m in modules},
         )
 
+    role = (
+        _role_query(db, scope).filter(Role.id == user.role_id).first()
+        if user.role_id
+        else None
+    )
+    station_module = {
+        "cozinha": "cozinha", "expedicao": "expedicao",
+    }.get(role.name.strip().lower() if role else "")
+
     # Collect role permissions
     perm_map: dict[str, dict[str, bool]] = {}
 
@@ -172,6 +181,8 @@ def _effective_permissions(
             .all()
         )
         for rp, mod, perm in rows:
+            if station_module is not None and mod.key != station_module:
+                continue
             perm_map.setdefault(mod.key, {})[perm.key] = rp.allowed
 
     # Apply user-level overrides
@@ -190,13 +201,9 @@ def _effective_permissions(
         .all()
     )
     for up, mod, perm in overrides:
+        if station_module is not None and (mod.key != station_module or up.allowed):
+            continue
         perm_map.setdefault(mod.key, {})[perm.key] = up.allowed
-
-    role = (
-        _role_query(db, scope).filter(Role.id == user.role_id).first()
-        if user.role_id
-        else None
-    )
 
     return EffectivePermissions(
         is_master=False,

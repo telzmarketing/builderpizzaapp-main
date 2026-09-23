@@ -27,6 +27,7 @@ from backend.core.response import ok, err_msg
 from backend.core.security import verify_password, create_access_token, decode_access_token
 from backend.database import get_db
 from backend.models.admin import AdminUser
+from backend.models.rbac import Role
 from backend.models.platform_saas import SupportSession
 from backend.schemas.admin import AdminLoginIn, AdminOut, TokenOut
 from backend.schemas.tenant import TenantSelectionIn
@@ -68,6 +69,8 @@ def _authenticated_admin(
     token = authorization.removeprefix("Bearer ").strip()
     try:
         payload = decode_access_token(token)
+        if payload.get("token_kind") == "customer":
+            raise _unauthorized("Credencial de cliente nao autoriza o painel administrativo.")
         admin_id: str = payload.get("sub", "")
     except JWTError:
         raise _unauthorized("Token inválido ou expirado.")
@@ -128,6 +131,19 @@ def _authenticated_admin(
                 "message": "Troca de senha obrigatoria antes de continuar.",
             },
         )
+
+    if admin.role_id:
+        role = db.query(Role).filter(Role.id == admin.role_id).first()
+        if role is not None:
+            from backend.core.kds_station_access import station_path_allowed
+            if not station_path_allowed(role.name, request_path):
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": "KdsStationScopeDenied",
+                        "message": "Esta conta KDS so pode acessar sua estacao operacional.",
+                    },
+                )
 
     return admin
 

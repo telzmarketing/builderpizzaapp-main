@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import {
   Loader2, TrendingUp, DollarSign, MousePointerClick, ShoppingBag,
@@ -99,7 +100,7 @@ export default function MarketingDashboard() {
     const token = localStorage.getItem("admin_token");
     setLoading(true);
     setError("");
-    fetch(`${BASE}/marketing/dashboard?period=${p}`, {
+    apiFetch(`/marketing/dashboard?period=${p}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => {

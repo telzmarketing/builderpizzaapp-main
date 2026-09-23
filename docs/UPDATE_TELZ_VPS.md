@@ -27,7 +27,7 @@ contornar o gate.
 O target canonico deste checkout e:
 
 ```text
-20260818_platform_operations
+20260924_kds_kitchen_dispatch
 ```
 
 Execute:
@@ -36,7 +36,7 @@ Execute:
 sudo install -m 0755 -o root -g root \
   /opt/telz/scripts/update-telz.sh \
   /usr/local/sbin/update-telz
-sudo env TELZ_ALEMBIC_TARGET=20260818_platform_operations \
+sudo env TELZ_ALEMBIC_TARGET=20260924_kds_kitchen_dispatch \
   /usr/local/sbin/update-telz /opt/telz
 ```
 
@@ -76,7 +76,7 @@ Na VPS, o workflow:
 - confirma ownership `telz:telz` e worktree limpo;
 - faz fast-forward para o SHA exato do workflow;
 - instala uma copia root-owned do atualizador;
-- executa o mesmo target `20260818_platform_operations`;
+- executa o mesmo target `20260924_kds_kitchen_dispatch`;
 - confirma o commit final.
 
 ## 4. Falha e rollback

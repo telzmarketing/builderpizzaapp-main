@@ -48,6 +48,19 @@ class PaymentGatewayConfigOut(BaseModel):
     asaas_last_health_check_status: str = "not_tested"
     asaas_last_health_check_message: Optional[str] = None
 
+    # Pagar.me
+    pagarme_enabled: bool = False
+    pagarme_environment: str = "sandbox"
+    pagarme_public_key: Optional[str] = None
+    pagarme_secret_key_masked: Optional[str] = None
+    pagarme_webhook_secret_masked: Optional[str] = None
+    pagarme_pix_enabled: bool = False
+    pagarme_credit_card_enabled: bool = False
+    pagarme_max_installments: int = 1
+    pagarme_last_health_check_at: Optional[datetime] = None
+    pagarme_last_health_check_status: str = "not_tested"
+    pagarme_last_health_check_message: Optional[str] = None
+
     # Legacy/unused gateway fields kept for response compatibility.
     stripe_publishable_key: Optional[str] = None
     stripe_secret_key_masked: Optional[str] = None
@@ -111,6 +124,18 @@ class PaymentGatewayConfigUpdate(BaseModel):
     asaas_last_health_check_status: Optional[str] = None
     asaas_last_health_check_message: Optional[str] = None
 
+    # Pagar.me.
+    pagarme_enabled: Optional[bool] = None
+    pagarme_environment: Optional[str] = None
+    pagarme_public_key: Optional[str] = None
+    pagarme_secret_key: Optional[str] = None
+    pagarme_webhook_secret: Optional[str] = None
+    pagarme_pix_enabled: Optional[bool] = None
+    pagarme_credit_card_enabled: Optional[bool] = None
+    pagarme_max_installments: Optional[int] = None
+    pagarme_last_health_check_status: Optional[str] = None
+    pagarme_last_health_check_message: Optional[str] = None
+
     # Legacy gateway fields.
     stripe_publishable_key: Optional[str] = None
     stripe_secret_key: Optional[str] = None
@@ -137,6 +162,7 @@ class PaymentProviderConfigUpdate(BaseModel):
     webhook_token: Optional[str] = None
     public_key: Optional[str] = None
     access_token: Optional[str] = None
+    secret_key: Optional[str] = None
     webhook_secret: Optional[str] = None
     pix_enabled: Optional[bool] = None
     credit_card_enabled: Optional[bool] = None

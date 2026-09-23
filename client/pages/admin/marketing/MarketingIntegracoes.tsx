@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import { Loader2, ChevronDown, ChevronUp, CheckCircle2, XCircle, RefreshCw, ExternalLink } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
@@ -150,7 +151,7 @@ export default function MarketingIntegracoes() {
   const fetchIntegrations = () => {
     setLoading(true);
     setError("");
-    fetch(`${BASE}/marketing/integrations`, { headers })
+    apiFetch(`/marketing/integrations`, { headers })
       .then((r) => { if (!r.ok) throw new Error("Falha ao carregar integrações."); return r.json(); })
       .then(unwrap)
       .then((data: Integration[]) => {
@@ -171,7 +172,7 @@ export default function MarketingIntegracoes() {
   const handleSave = async (type: string) => {
     setSaving(type);
     try {
-      const res = await fetch(`${BASE}/marketing/integrations/${type}`, {
+      const res = await apiFetch(`/marketing/integrations/${type}`, {
         method: "PATCH",
         headers,
         body: JSON.stringify({
@@ -196,7 +197,7 @@ export default function MarketingIntegracoes() {
     setTesting(type);
     setTestResult((prev) => ({ ...prev, [type]: { ok: false, message: "Testando..." } }));
     try {
-      const res = await fetch(`${BASE}/marketing/integrations/${type}/test`, {
+      const res = await apiFetch(`/marketing/integrations/${type}/test`, {
         method: "POST",
         headers,
       });
@@ -226,8 +227,8 @@ export default function MarketingIntegracoes() {
     if (!platform) return;
     try {
       const redirectUri = `${window.location.origin}/painel/marketing/integracoes`;
-      const res = await fetch(
-        `${BASE}/ads/${platform}/connect-url?redirect_uri=${encodeURIComponent(redirectUri)}`,
+      const res = await apiFetch(
+        `/ads/${platform}/connect-url?redirect_uri=${encodeURIComponent(redirectUri)}`,
         { headers },
       );
       const data = await res.json();

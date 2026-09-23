@@ -66,6 +66,7 @@ from backend.routes import platform_gateway as platform_gateway_routes
 from backend.routes import platform_errors as platform_errors_routes
 from backend.routes import platform_storage as platform_storage_routes
 from backend.routes import platform_backups as platform_backups_routes
+from backend.routes import kds as kds_routes
 
 settings = get_settings()
 
@@ -95,10 +96,11 @@ class CachedStaticFiles(StaticFiles):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ───────────────────────────────────────────────────────────────
-    create_all_tables()
-
-    # Run incremental column migrations (safe to run on every start)
-    _run_migrations()
+    # Production schema changes belong to Alembic. The legacy bootstrap remains
+    # opt-in for disposable development databases only.
+    if settings.STARTUP_SCHEMA_BOOTSTRAP_ENABLED:
+        create_all_tables()
+        _run_migrations()
 
     # Seed initial data
     from backend.core.seed import seed_all
@@ -1383,6 +1385,7 @@ app.include_router(ads_oauth_routes.router, prefix="/api")
 app.include_router(marketing_workflow_routes.router, prefix="/api")
 app.include_router(marketing_intelligence_routes.router, prefix="/api")
 app.include_router(rbac_routes.router, prefix="/api")
+app.include_router(kds_routes.router, prefix="/api")
 app.include_router(customer_events_routes.router, prefix="/api")
 app.include_router(lgpd_routes.router, prefix="/api")
 app.include_router(lgpd_routes.admin_router, prefix="/api")
@@ -1425,6 +1428,20 @@ app.mount("/api/uploads", CachedStaticFiles(directory="uploads", html=False), na
 def health():
     from backend.core.response import ok
     return ok({"status": "ok", "version": settings.APP_VERSION})
+
+
+@app.get("/ready", tags=["system"])
+def readiness():
+    """Readiness probe: the process is ready only when PostgreSQL responds."""
+    from sqlalchemy import text
+    from backend.core.response import err_msg, ok
+
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception:
+        return err_msg("Banco de dados indisponivel.", code="DatabaseUnavailable", status_code=503)
+    return ok({"status": "ready", "version": settings.APP_VERSION})
 
 
 # ── Global exception handlers ─────────────────────────────────────────────────

@@ -10,8 +10,10 @@ class Query:
     def limit(self, _value): return self
     def all(self): return self.rows
 class DB:
-    def __init__(self, rows): self.rows = rows
+    def __init__(self, rows): self.rows = rows; self.added = []; self.flushed = False
     def query(self, _model): return Query(self.rows)
+    def add(self, value): self.added.append(value)
+    def flush(self): self.flushed = True
 
 def test_tenant_credentials_disabled_by_default(monkeypatch):
     monkeypatch.setattr("backend.services.tenant_credential_service.get_settings", lambda: SimpleNamespace(TENANT_CREDENTIALS_ENABLED=False))
@@ -22,6 +24,20 @@ def test_tenant_credentials_require_one_row(monkeypatch):
     with pytest.raises(TenantCredentialConfigurationError): TenantCredentialService(DB([])).payment_gateway("tenant-a")
     expected = object()
     assert TenantCredentialService(DB([expected])).payment_gateway("tenant-a") is expected
+
+def test_new_tenant_payment_config_is_inert_and_has_no_inherited_secrets():
+    db = DB([])
+    config = TenantCredentialService(db).create_inert_payment_gateway("tenant-a")
+    assert config.tenant_id == "tenant-a"
+    assert config.mp_enabled is False
+    assert config.asaas_enabled is False
+    assert config.accept_pix is False
+    assert config.accept_credit_card is False
+    assert config.accept_cash is True
+    assert config.mp_access_token is None
+    assert config.asaas_api_key is None
+    assert db.added == [config]
+    assert db.flushed is True
 
 def test_platform_dependency_does_not_infer_master(monkeypatch):
     monkeypatch.setattr("backend.core.platform_authorization.get_settings", lambda: SimpleNamespace(PLATFORM_RBAC_ENABLED=True))

@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import {
   Loader2, Plus, Copy, Check, Trash2, X, Link2, ExternalLink,
@@ -51,7 +52,7 @@ export default function MarketingLinks() {
   const fetchLinks = () => {
     setLoading(true);
     setError("");
-    fetch(`${BASE}/marketing/tracking-links`, { headers })
+    apiFetch(`/marketing/tracking-links`, { headers })
       .then((r) => { if (!r.ok) throw new Error("Falha ao carregar links."); return r.json(); })
       .then(unwrap)
       .then(setLinks)
@@ -77,7 +78,7 @@ export default function MarketingLinks() {
     if (!kebab.test(form.slug)) { alert("Slug deve estar em kebab-case (letras minúsculas e hífens)."); return; }
     setSaving(true);
     try {
-      const res = await fetch(`${BASE}/marketing/tracking-links`, {
+      const res = await apiFetch(`/marketing/tracking-links`, {
         method: "POST",
         headers,
         body: JSON.stringify(form),
@@ -98,7 +99,7 @@ export default function MarketingLinks() {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir link rastreável?")) return;
-    await fetch(`${BASE}/marketing/tracking-links/${id}`, { method: "DELETE", headers });
+    await apiFetch(`/marketing/tracking-links/${id}`, { method: "DELETE", headers });
     fetchLinks();
   };
 

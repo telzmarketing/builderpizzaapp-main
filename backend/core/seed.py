@@ -17,6 +17,8 @@ from backend.models.admin import AdminUser
 from backend.models.chatbot import ChatbotSettings
 from backend.models.rbac import Role, RbacModule, RbacPermission, RolePermission
 from backend.models.platform_rbac import PlatformRole, PlatformUserRole
+from backend.models.tenant import Tenant
+from backend.services.tenant_kds_rbac_service import ensure_tenant_kds_roles
 
 LEGACY_TENANT_ID = "tenant-legacy-default"
 _SEED_LOCK_KEY = "telz:seed_all:v1"
@@ -33,7 +35,13 @@ def seed_all(db: Session) -> None:
     _seed_admin(db)
     _seed_chatbot_settings(db)
     _seed_rbac(db)
+    _seed_tenant_kds_roles(db)
     db.commit()
+
+
+def _seed_tenant_kds_roles(db: Session) -> None:
+    for tenant_id, in db.query(Tenant.id).filter(Tenant.deleted_at.is_(None)).all():
+        ensure_tenant_kds_roles(db, tenant_id)
 
 
 def _acquire_seed_lock(db: Session) -> None:
@@ -293,6 +301,7 @@ _ROLES = [
     ("gerente",        "Gerente — acesso operacional e relatórios",                   True),
     ("atendente",      "Atendente — pedidos, clientes e atendimento",                 True),
     ("cozinha",        "Cozinha — visualização e produção de pedidos",                True),
+    ("expedicao",      "Expedição — conferência e atribuição de motoboy",              True),
     ("entregador",     "Entregador/Motoboy — acesso apenas às entregas atribuídas",   True),
     ("financeiro",     "Financeiro — caixa, pagamentos e relatórios financeiros",     True),
     ("marketing",      "Marketing — campanhas, cupons, CRM e métricas",               True),
@@ -327,10 +336,11 @@ _MODULES = [
     ("usuarios",        "Usuários e Permissões",  25),
     ("auditoria",       "Auditoria / Logs",       26),
     ("cozinha",         "Cozinha (KDS)",          27),
-    ("inventory",       "Estoque",                28),
-    ("cmv",             "CMV",                    29),
-    ("finance",         "Financeiro ERP",         30),
-    ("fiscal",          "Fiscal SEFAZ",           31),
+    ("expedicao",       "Expedição (KDS)",        28),
+    ("inventory",       "Estoque",                29),
+    ("cmv",             "CMV",                    30),
+    ("finance",         "Financeiro ERP",         31),
+    ("fiscal",          "Fiscal SEFAZ",           32),
 ]
 
 _PERMISSIONS = [
@@ -377,6 +387,7 @@ _ROLE_PERMISSIONS: dict = {
         "usuarios":         ["view", "create", "edit"],
         "auditoria":        ["view"],
         "cozinha":          ["view", "edit"],
+        "expedicao":        ["view", "edit"],
         "inventory":        ["view", "create", "edit", "export", "manage"],
         "cmv":              ["view", "export", "manage"],
         "finance":          ["view", "create", "edit", "approve", "export", "manage"],
@@ -399,6 +410,7 @@ _ROLE_PERMISSIONS: dict = {
         "funcionamento": ["view", "edit"],
         "frete":         ["view"],
         "cozinha":       ["view", "edit"],
+        "expedicao":     ["view", "edit"],
         "inventory":     ["view", "create", "edit", "export"],
         "cmv":           ["view", "export"],
         "finance":       ["view", "export"],
@@ -410,10 +422,13 @@ _ROLE_PERMISSIONS: dict = {
         "clientes":   ["view", "create", "edit"],
         "entregas":   ["view"],
         "cozinha":    ["view"],
+        "expedicao":  ["view", "edit"],
     },
     "cozinha": {
-        "pedidos": ["view", "edit"],
         "cozinha": ["view", "edit"],
+    },
+    "expedicao": {
+        "expedicao": ["view", "edit"],
     },
     "entregador": {
         "entregas": ["view", "edit"],
@@ -570,4 +585,22 @@ def _seed_rbac(db: Session) -> None:
                     role_permissions[relation_key] = relation
                 else:
                     relation.tenant_id = LEGACY_TENANT_ID
+
+    # These station roles must remain restricted to their own KDS surface.
+    for role_name in ("cozinha", "expedicao"):
+        role_id = role_map.get(role_name)
+        allowed_modules = set(_ROLE_PERMISSIONS[role_name])
+        if role_id:
+            stale = (
+                db.query(RolePermission)
+                .join(RbacModule, RolePermission.module_id == RbacModule.id)
+                .filter(
+                    RolePermission.tenant_id == LEGACY_TENANT_ID,
+                    RolePermission.role_id == role_id,
+                    ~RbacModule.key.in_(allowed_modules),
+                )
+                .all()
+            )
+            for row in stale:
+                db.delete(row)
     db.flush()

@@ -447,6 +447,7 @@ const AdminEmpresas = lazy(() => import("./pages/admin/Empresas"));
 const AdminProducts = lazy(() => import("./pages/admin/Products"));
 const AdminOrders = lazy(() => import("./pages/admin/Orders"));
 const AdminCozinha = lazy(() => import("./pages/admin/Cozinha"));
+const AdminExpedicao = lazy(() => import("./pages/admin/Expedicao"));
 const AdminFidelidade = lazy(() => import("./pages/admin/AdminFidelidade"));
 const AdminConteudo = lazy(() => import("./pages/admin/Conteudo"));
 const AdminPagamentos = lazy(() => import("./pages/admin/AdminPagamentos"));
@@ -620,13 +621,14 @@ function AppSurface() {
               {/* ── Admin routes (protected by JWT guard) ── */}
               <Route element={<AdminGuard />}>
                 <Route path="/painel/bi-mobile" element={<AdminBIMobile />} />
+                <Route path="/painel/cozinha" element={<AdminCozinha />} />
+                <Route path="/painel/expedicao" element={<AdminExpedicao />} />
                 <Route element={<AdminLayout />}>
                 <Route path="/painel" element={<AdminDashboard />} />
                 <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />
                 <Route path="/painel/products" element={<AdminProducts />} />
                 <Route path="/painel/products/landing/:productId/:promotionId" element={<PromotionalLandingEditor />} />
                 <Route path="/painel/orders" element={<AdminOrders />} />
-                <Route path="/painel/cozinha" element={<AdminCozinha />} />
                 <Route path="/painel/salao" element={<AdminSalao />} />
                 <Route path="/painel/fidelidade" element={<AdminFidelidade />} />
                 <Route path="/painel/conteudo" element={<AdminConteudo />} />

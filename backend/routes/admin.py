@@ -3,7 +3,7 @@ Admin-specific endpoints: dashboard stats and payment gateway config.
 """
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -14,7 +14,9 @@ from backend.models.product import Product
 from backend.models.customer import Customer
 from backend.models.payment import Payment, PaymentStatus
 from backend.models.payment_config import PaymentGatewayConfig
+from backend.models.admin import AdminUser
 from backend.config import get_settings
+from backend.core.tenant_runtime import resolve_panel_tenant_context
 from backend.routes.admin_auth import get_current_admin
 from backend.schemas.payment_config import (
     PaymentGatewayConfigOut,
@@ -24,8 +26,10 @@ from backend.schemas.payment_config import (
     _mask,
 )
 from backend.services.payment_gateway_resolver import asaas_credit_card_runtime_available
+from backend.services.tenant_credential_service import TenantCredentialService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+LEGACY_TENANT_ID = "tenant-legacy-default"
 
 
 CONFIRMED_STATUSES = [
@@ -136,7 +140,7 @@ def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin))
 
 # ── Payment gateway config ────────────────────────────────────────────────────
 
-SUPPORTED_PAYMENT_PROVIDERS = {"mercado_pago", "asaas"}
+SUPPORTED_PAYMENT_PROVIDERS = {"mercado_pago", "asaas", "pagarme"}
 
 
 def _normalize_provider(value: str | None) -> str:
@@ -183,6 +187,13 @@ def _provider_ready_for_method(config: PaymentGatewayConfig, provider: str, meth
                 and config.asaas_api_key
                 and asaas_credit_card_runtime_available()
             )
+    if provider == "pagarme":
+        if not config.pagarme_enabled or not config.pagarme_secret_key:
+            return False
+        if method == "pix":
+            return bool(config.pagarme_pix_enabled)
+        if method == "credit_card":
+            return bool(config.pagarme_credit_card_enabled and config.pagarme_public_key)
     return False
 
 
@@ -222,6 +233,22 @@ def _provider_health(config: PaymentGatewayConfig, provider: str) -> dict:
             "last_health_check_status": config.asaas_last_health_check_status,
             "last_health_check_message": config.asaas_last_health_check_message,
         }
+    if provider == "pagarme":
+        missing = []
+        if not config.pagarme_public_key:
+            missing.append("pagarme_public_key")
+        if not config.pagarme_secret_key:
+            missing.append("pagarme_secret_key")
+        if not config.pagarme_webhook_secret:
+            missing.append("pagarme_webhook_secret")
+        return {
+            "provider": "pagarme", "enabled": bool(config.pagarme_enabled),
+            "environment": config.pagarme_environment,
+            "configured": not missing, "missing": missing,
+            "last_health_check_at": config.pagarme_last_health_check_at,
+            "last_health_check_status": config.pagarme_last_health_check_status,
+            "last_health_check_message": config.pagarme_last_health_check_message,
+        }
     raise HTTPException(status_code=404, detail="Gateway de pagamento nao encontrado.")
 
 
@@ -258,34 +285,14 @@ def _enforce_asaas_card_safety(config: PaymentGatewayConfig) -> None:
         config.credit_card_provider = "mercado_pago"
 
 
-def _get_or_create_config(db: Session) -> PaymentGatewayConfig:
-    config = db.query(PaymentGatewayConfig).filter(PaymentGatewayConfig.id == "default").first()
-    if not config:
-        config = PaymentGatewayConfig(id="default")
-        db.add(config)
-        db.flush()
+def _panel_tenant_id(request: Request, db: Session, admin: AdminUser) -> str:
+    context = resolve_panel_tenant_context(request, db, admin)
+    return context.tenant_id if context else LEGACY_TENANT_ID
 
-    # Sync env-var credentials into DB so admin page shows configured status.
-    s = get_settings()
+
+def _get_or_create_config(db: Session, tenant_id: str) -> PaymentGatewayConfig:
+    config = TenantCredentialService(db).create_inert_payment_gateway(tenant_id)
     dirty = False
-    if s.MERCADO_PAGO_ACCESS_TOKEN and not config.mp_access_token:
-        config.mp_access_token = s.MERCADO_PAGO_ACCESS_TOKEN
-        dirty = True
-    if s.MERCADO_PAGO_PUBLIC_KEY and not config.mp_public_key:
-        config.mp_public_key = s.MERCADO_PAGO_PUBLIC_KEY
-        dirty = True
-    if s.MERCADO_PAGO_WEBHOOK_SECRET and not config.mp_webhook_secret:
-        config.mp_webhook_secret = s.MERCADO_PAGO_WEBHOOK_SECRET
-        dirty = True
-    if getattr(s, "ASAAS_API_KEY", "") and not config.asaas_api_key:
-        config.asaas_api_key = s.ASAAS_API_KEY
-        dirty = True
-    if getattr(s, "ASAAS_WEBHOOK_TOKEN", "") and not config.asaas_webhook_token:
-        config.asaas_webhook_token = s.ASAAS_WEBHOOK_TOKEN
-        dirty = True
-    if not config.gateway or config.gateway in {"mock", "mercado_pago"}:
-        config.gateway = "mercadopago"
-        dirty = True
     asaas_card_state = (
         config.asaas_credit_card_enabled,
         config.asaas_tokenization_status,
@@ -338,6 +345,17 @@ def _to_out(config: PaymentGatewayConfig) -> PaymentGatewayConfigOut:
         asaas_last_health_check_at=config.asaas_last_health_check_at,
         asaas_last_health_check_status=config.asaas_last_health_check_status or "not_tested",
         asaas_last_health_check_message=config.asaas_last_health_check_message,
+        pagarme_enabled=bool(config.pagarme_enabled),
+        pagarme_environment=config.pagarme_environment or "sandbox",
+        pagarme_public_key=config.pagarme_public_key,
+        pagarme_secret_key_masked=_mask(config.pagarme_secret_key),
+        pagarme_webhook_secret_masked=_mask(config.pagarme_webhook_secret),
+        pagarme_pix_enabled=bool(config.pagarme_pix_enabled),
+        pagarme_credit_card_enabled=bool(config.pagarme_credit_card_enabled),
+        pagarme_max_installments=config.pagarme_max_installments or 1,
+        pagarme_last_health_check_at=config.pagarme_last_health_check_at,
+        pagarme_last_health_check_status=config.pagarme_last_health_check_status or "not_tested",
+        pagarme_last_health_check_message=config.pagarme_last_health_check_message,
         stripe_publishable_key=config.stripe_publishable_key,
         stripe_secret_key_masked=_mask(config.stripe_secret_key),
         pagseguro_email=config.pagseguro_email,
@@ -354,36 +372,37 @@ def _apply_update(config: PaymentGatewayConfig, data: dict) -> None:
     for key, value in data.items():
         if key in {"pix_provider", "credit_card_provider"} and value is not None:
             value = _normalize_provider(value)
-        if key in {"mp_environment", "asaas_environment"} and value is not None:
+        if key in {"mp_environment", "asaas_environment", "pagarme_environment"} and value is not None:
             value = _normalize_environment(value)
         setattr(config, key, value if value != "" else None)
 
 
 @router.get("/payment-gateway", response_model=PaymentGatewayConfigOut)
-def get_payment_gateway_config(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def get_payment_gateway_config(request: Request, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
     """Returns current gateway config (secret keys are masked)."""
-    return _to_out(_get_or_create_config(db))
+    return _to_out(_get_or_create_config(db, _panel_tenant_id(request, db, admin)))
 
 
 @router.put("/payment-gateway", response_model=PaymentGatewayConfigOut)
 def update_payment_gateway_config(
     body: PaymentGatewayConfigUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """
     Updates gateway config. Only non-null fields are written.
     To clear a key, send an empty string "".
     """
-    config = _get_or_create_config(db)
+    config = _get_or_create_config(db, _panel_tenant_id(request, db, admin))
     data = body.model_dump(exclude_none=True)
     _apply_update(config, data)
     config.gateway = "mercadopago"
     _enforce_asaas_card_safety(config)
     changed_methods = {
-        "pix" for key in data if key == "pix_provider"
+        "pix" for key in data if key in {"pix_provider", "accept_pix"}
     } | {
-        "credit_card" for key in data if key == "credit_card_provider"
+        "credit_card" for key in data if key in {"credit_card_provider", "accept_credit_card"}
     }
     if changed_methods:
         _validate_routing(config, methods=changed_methods)
@@ -393,8 +412,8 @@ def update_payment_gateway_config(
 
 
 @router.get("/payment-gateways")
-def get_payment_gateways(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    config = _get_or_create_config(db)
+def get_payment_gateways(request: Request, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+    config = _get_or_create_config(db, _panel_tenant_id(request, db, admin))
     return {
         "routing": {
             "pix_provider": config.pix_provider or "mercado_pago",
@@ -403,6 +422,7 @@ def get_payment_gateways(db: Session = Depends(get_db), _=Depends(get_current_ad
         "providers": {
             "mercado_pago": _provider_health(config, "mercado_pago"),
             "asaas": _provider_health(config, "asaas"),
+            "pagarme": _provider_health(config, "pagarme"),
         },
         "config": _to_out(config),
     }
@@ -411,10 +431,11 @@ def get_payment_gateways(db: Session = Depends(get_db), _=Depends(get_current_ad
 @router.put("/payment-gateways/routing", response_model=PaymentGatewayConfigOut)
 def update_payment_gateway_routing(
     body: PaymentGatewayRoutingUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
-    config = _get_or_create_config(db)
+    config = _get_or_create_config(db, _panel_tenant_id(request, db, admin))
     data = body.model_dump(exclude_none=True)
     _apply_update(config, data)
     changed_methods = set()
@@ -434,10 +455,11 @@ def update_payment_gateway_routing(
 def update_payment_gateway_provider(
     provider: str,
     body: PaymentProviderConfigUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
-    config = _get_or_create_config(db)
+    config = _get_or_create_config(db, _panel_tenant_id(request, db, admin))
     provider = _normalize_provider(provider)
     data = body.model_dump(exclude_none=True)
     if provider == "mercado_pago":
@@ -451,7 +473,7 @@ def update_payment_gateway_provider(
             "credit_card_enabled": "mp_credit_card_enabled",
             "max_installments": "mp_max_installments",
         }
-    else:
+    elif provider == "asaas":
         mapping = {
             "enabled": "asaas_enabled",
             "environment": "asaas_environment",
@@ -462,8 +484,31 @@ def update_payment_gateway_provider(
             "max_installments": "asaas_max_installments",
             "tokenization_status": "asaas_tokenization_status",
         }
+    else:
+        mapping = {
+            "enabled": "pagarme_enabled", "environment": "pagarme_environment",
+            "public_key": "pagarme_public_key", "secret_key": "pagarme_secret_key",
+            "webhook_secret": "pagarme_webhook_secret",
+            "pix_enabled": "pagarme_pix_enabled",
+            "credit_card_enabled": "pagarme_credit_card_enabled",
+            "max_installments": "pagarme_max_installments",
+        }
     _apply_update(config, {mapping[key]: value for key, value in data.items() if key in mapping})
     _enforce_asaas_card_safety(config)
+    if data.get("enabled") is True:
+        health = _provider_health(config, provider)
+        if not health["configured"]:
+            raise HTTPException(
+                status_code=422,
+                detail="Credenciais obrigatorias ausentes; valide a configuracao antes de ativar.",
+            )
+        selected_methods = set()
+        if config.accept_pix and _normalize_provider(config.pix_provider) == provider:
+            selected_methods.add("pix")
+        if config.accept_credit_card and _normalize_provider(config.credit_card_provider) == provider:
+            selected_methods.add("credit_card")
+        if selected_methods:
+            _validate_routing(config, methods=selected_methods)
     db.commit()
     db.refresh(config)
     return _to_out(config)
@@ -472,10 +517,11 @@ def update_payment_gateway_provider(
 @router.post("/payment-gateways/{provider}/test")
 def test_payment_gateway_provider(
     provider: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
-    config = _get_or_create_config(db)
+    config = _get_or_create_config(db, _panel_tenant_id(request, db, admin))
     provider = _normalize_provider(provider)
     health = _provider_health(config, provider)
     status = "connected" if health["configured"] and health["enabled"] else "misconfigured"
@@ -485,18 +531,23 @@ def test_payment_gateway_provider(
         config.mp_last_health_check_at = now
         config.mp_last_health_check_status = status
         config.mp_last_health_check_message = message
-    else:
+    elif provider == "asaas":
         config.asaas_last_health_check_at = now
         config.asaas_last_health_check_status = status
         config.asaas_last_health_check_message = message
+    else:
+        config.pagarme_last_health_check_at = now
+        config.pagarme_last_health_check_status = status
+        config.pagarme_last_health_check_message = message
     db.commit()
     return {"provider": provider, "status": status, "message": message}
 
 
 @router.get("/payment-gateways/health")
-def get_payment_gateways_health(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    config = _get_or_create_config(db)
+def get_payment_gateways_health(request: Request, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+    config = _get_or_create_config(db, _panel_tenant_id(request, db, admin))
     return {
         "mercado_pago": _provider_health(config, "mercado_pago"),
         "asaas": _provider_health(config, "asaas"),
+        "pagarme": _provider_health(config, "pagarme"),
     }

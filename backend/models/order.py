@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, String, Float, Integer, Enum, DateTime, ForeignKey, Index, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Column, String, Float, Integer, Enum, DateTime, ForeignKey, Index, Text, text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -29,6 +29,10 @@ class Order(Base):
               postgresql_where=text("order_code IS NOT NULL")),
         Index("uq_orders_tenant_external_reference", "tenant_id", "external_reference", unique=True,
               postgresql_where=text("external_reference IS NOT NULL")),
+        CheckConstraint(
+            "fulfillment_type IN ('delivery','pickup','dine_in')",
+            name="ck_orders_fulfillment_type",
+        ),
     )
 
     id = Column(String, primary_key=True)
@@ -57,6 +61,9 @@ class Order(Base):
     landing_page = Column(Text, nullable=True)
     referrer = Column(Text, nullable=True)
     sales_channel = Column(String(30), nullable=False, default="delivery")
+    # Delivery vs. customer pickup is independent from the sales channel and
+    # cannot be inferred from a zero shipping fee.
+    fulfillment_type = Column(String(20), nullable=False, default="delivery")
     table_id = Column(String, ForeignKey("restaurant_tables.id", ondelete="SET NULL"), nullable=True)
     table_session_id = Column(String, ForeignKey("table_sessions.id", ondelete="SET NULL"), nullable=True)
 

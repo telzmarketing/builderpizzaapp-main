@@ -1,26 +1,9 @@
-import re
-
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from backend.models.customer import Customer
 from backend.routes.admin_auth import authenticate_admin_token
-
-
-def _normalize_contact(value: str | None) -> str:
-    if not value:
-        return ""
-    return re.sub(r"[^\d+]", "", value).lower()
-
-
-def _matches_customer_contact(
-    customer: Customer,
-    phone: str | None,
-    email: str | None,
-) -> bool:
-    phone_match = bool(customer.phone) and _normalize_contact(phone) == _normalize_contact(customer.phone)
-    email_match = bool(customer.email) and (email or "").strip().lower() == customer.email.strip().lower()
-    return phone_match or email_match
+from backend.core.customer_auth import authenticate_customer_token
 
 
 def require_customer_or_admin(
@@ -35,12 +18,18 @@ def require_customer_or_admin(
             authenticate_admin_token(authorization=authorization, db=db)
             return
         except HTTPException:
-            pass
+            authenticated = authenticate_customer_token(
+                authorization,
+                db,
+                expected_tenant_id=customer.tenant_id,
+            )
+            if authenticated.id == customer.id:
+                return
+            raise HTTPException(403, "Acesso ao cliente nao autorizado.")
 
-    if _matches_customer_contact(customer, x_customer_phone, x_customer_email):
-        return
-
-    raise HTTPException(403, "Acesso ao cliente nao autorizado.")
+    # Phone and e-mail remain accepted as HTTP parameters for wire
+    # compatibility, but are deliberately not credentials anymore.
+    raise HTTPException(401, "Sessao autenticada de cliente obrigatoria.")
 
 
 def require_customer_id_or_admin(

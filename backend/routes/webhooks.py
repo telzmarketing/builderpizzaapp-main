@@ -126,3 +126,26 @@ async def tenant_asaas_webhook(endpoint_key: str, request: Request, db: Session 
         return ok(service.process_asaas_webhook(body, raw_body, asaas_access_token))
     except DomainError as exc:
         return err(exc)
+
+
+@router.post("/pagarme/{endpoint_key}")
+async def tenant_pagarme_webhook(
+    endpoint_key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    x_hub_signature: str | None = Header(default=None),
+):
+    if not get_settings().TENANT_PAYMENT_WEBHOOKS_ENABLED:
+        return err_msg("Endpoint multiempresa desabilitado.", code="TenantWebhookDisabled", status_code=404)
+    raw_body = await request.body()
+    try:
+        body = await request.json() if raw_body else {}
+    except Exception:
+        return err_msg("Payload de webhook invalido ou malformado.", code="WebhookParseError")
+    if not isinstance(body, dict):
+        return err_msg("Payload de webhook invalido ou malformado.", code="WebhookParseError")
+    try:
+        service = _tenant_payment_service(db, endpoint_key, "pagarme")
+        return ok(service.process_pagarme_webhook(body, raw_body, x_hub_signature))
+    except DomainError as exc:
+        return err(exc)

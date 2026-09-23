@@ -144,6 +144,7 @@ export default function Checkout() {
   const [cashChangeFor, setCashChangeFor] = useState("");
   const [paymentMethods, setPaymentMethods] = useState<ApiPaymentMethods | null>(null);
   const [paymentPublicConfig, setPaymentPublicConfig] = useState<ApiPaymentPublicConfig | null>(null);
+  const [paymentConfigLoading, setPaymentConfigLoading] = useState(true);
   const [payment, setPayment] = useState<ApiPayment | null>(null);
   const [paymentState, setPaymentState] = useState<PaymentState>("idle");
   const [paymentMessage, setPaymentMessage] = useState("");
@@ -157,37 +158,56 @@ export default function Checkout() {
   const [cardCpf, setCardCpf] = useState("");
   const [pixCpfCnpj, setPixCpfCnpj] = useState("");
   const [cardFunction, setCardFunction] = useState<"credit" | "debit">("credit");
+  const [cardInstallments, setCardInstallments] = useState(1);
   const [cardSubmitting, setCardSubmitting] = useState(false);
   const [cardError, setCardError] = useState("");
   const [pixExpiresAt, setPixExpiresAt] = useState<number | null>(null);
   const [pixSecondsLeft, setPixSecondsLeft] = useState<number | null>(null);
   const paymentMethodsRef = useRef<ApiPaymentMethods | null>(null);
   const pixProvider = paymentPublicConfig?.methods.pix.provider || paymentMethods?.pix_provider || payment?.provider || "";
+  const pixConfig = paymentPublicConfig?.methods.pix;
+  const pixAvailable = paymentPublicConfig
+    ? pixConfig?.enabled === true && pixConfig.implementation_status === "available"
+    : paymentMethods?.pix_provider === "pagarme"
+      ? false
+      : paymentMethods?.accept_pix !== false;
   const isAsaasPix = pixProvider === "asaas";
-  const pixGatewayName = pixProvider === "asaas" ? "ASAAS" : "Mercado Pago";
+  const isPagarmePix = pixProvider === "pagarme";
+  const pixNeedsDocument = isAsaasPix || isPagarmePix;
+  const pixGatewayName = isAsaasPix ? "ASAAS" : isPagarmePix ? "Pagar.me" : "Mercado Pago";
   const pixDocument = documentDigits(pixCpfCnpj || cardCpf);
   const displayPixQrCode = payment?.qr_code || payment?.pix_qr_code || "";
   const displayPixPayload = payment?.qr_code_text || payment?.pix_payload || "";
   const creditCardConfig = paymentPublicConfig?.methods.credit_card;
+  const maxCardInstallments = Math.max(1, Number(creditCardConfig?.max_installments || 1));
   const debitCardConfig = paymentPublicConfig?.methods.debit_card;
   const creditCardMercadoPagoAvailable = paymentPublicConfig
     ? creditCardConfig?.enabled === true && creditCardConfig.provider === "mercado_pago" && creditCardConfig.implementation_status === "available"
-    : paymentMethods?.accept_credit_card !== false;
+    : paymentMethods?.credit_card_provider !== "asaas"
+      && paymentMethods?.credit_card_provider !== "pagarme"
+      && paymentMethods?.accept_credit_card !== false;
   const creditCardAsaasAvailable = paymentPublicConfig
     ? creditCardConfig?.enabled === true && creditCardConfig.provider === "asaas" && creditCardConfig.implementation_status === "available"
     : false;
-  const creditCardAvailable = creditCardMercadoPagoAvailable || creditCardAsaasAvailable;
+  const creditCardPagarmeAvailable = paymentPublicConfig
+    ? creditCardConfig?.enabled === true
+      && creditCardConfig.provider === "pagarme"
+      && creditCardConfig.implementation_status === "available"
+      && Boolean(creditCardConfig.public_key)
+    : false;
+  const creditCardAvailable = creditCardMercadoPagoAvailable || creditCardAsaasAvailable || creditCardPagarmeAvailable;
   const debitCardMercadoPagoAvailable = paymentPublicConfig
     ? debitCardConfig?.enabled === true && debitCardConfig.provider === "mercado_pago" && debitCardConfig.implementation_status === "available"
     : paymentMethods?.accept_debit_card !== false;
   const onlineCardAvailable = creditCardAvailable || debitCardMercadoPagoAvailable;
   const selectedCardAvailable = cardFunction === "debit" ? debitCardMercadoPagoAvailable : creditCardAvailable;
   const isAsaasCard = cardFunction === "credit" && creditCardAsaasAvailable;
-  const cardGatewayName = isAsaasCard ? "ASAAS" : "Mercado Pago";
+  const isPagarmeCard = cardFunction === "credit" && creditCardPagarmeAvailable;
+  const cardGatewayName = isAsaasCard ? "ASAAS" : isPagarmeCard ? "Pagar.me" : "Mercado Pago";
   const cardUnavailableReason =
     creditCardConfig?.reason ||
     debitCardConfig?.reason ||
-    "Cartao online disponivel apenas via Mercado Pago neste checkout.";
+    "Cartao online indisponivel neste checkout.";
 
   // Guard: if a payment was already initiated for a previous session, redirect to order tracking immediately.
   useEffect(() => {
@@ -231,6 +251,10 @@ export default function Checkout() {
     creditCardAvailable,
     debitCardMercadoPagoAvailable,
   ]);
+
+  useEffect(() => {
+    if (cardInstallments > maxCardInstallments) setCardInstallments(1);
+  }, [cardInstallments, maxCardInstallments]);
 
   const savedAddresses = checkoutAddresses ?? customer?.addresses ?? [];
   const savedAddressSignature = savedAddresses
@@ -322,8 +346,8 @@ export default function Checkout() {
 
   useEffect(() => {
     storeOperationApi.status().then(setStoreStatus).catch(() => setStoreStatus(null));
-    paymentsApi.publicConfig().then(setPaymentPublicConfig).catch(() => setPaymentPublicConfig(null));
-    paymentsApi.methods().then((methods) => {
+    const publicConfigRequest = paymentsApi.publicConfig().then(setPaymentPublicConfig).catch(() => setPaymentPublicConfig(null));
+    const methodsRequest = paymentsApi.methods().then((methods) => {
       setPaymentMethods(methods);
       paymentMethodsRef.current = methods;
       if (!methods.accept_pix && (methods.accept_credit_card || methods.accept_debit_card)) {
@@ -332,6 +356,7 @@ export default function Checkout() {
         setSelectedPaymentMethod("delivery");
       }
     }).catch(() => setPaymentMethods(null));
+    Promise.allSettled([publicConfigRequest, methodsRequest]).finally(() => setPaymentConfigLoading(false));
   }, []);
 
   useEffect(() => {
@@ -566,6 +591,10 @@ export default function Checkout() {
   };
 
   const handleConfirm = async () => {
+    if (paymentConfigLoading) {
+      setApiError("Aguarde enquanto carregamos as formas de pagamento.");
+      return;
+    }
     const mustSchedule = !!storeStatus && !storeStatus.is_open && storeStatus.allow_scheduled_orders;
     if (storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders) {
       setApiError(storeStatus.message || "Loja fechada no momento.");
@@ -580,7 +609,7 @@ export default function Checkout() {
       return;
     }
     if (paymentMethods) {
-      const pixDisabled = selectedPaymentMethod === "pix" && !paymentMethods.accept_pix;
+      const pixDisabled = selectedPaymentMethod === "pix" && !pixAvailable;
       const cardDisabled = selectedPaymentMethod === "card" && !onlineCardAvailable;
       const deliveryDisabled = selectedPaymentMethod === "delivery" && !paymentMethods.accept_cash;
       if (pixDisabled || cardDisabled || deliveryDisabled) {
@@ -588,7 +617,7 @@ export default function Checkout() {
         return;
       }
     }
-    if (selectedPaymentMethod === "pix" && isAsaasPix && !validCpfCnpjDigits(pixCpfCnpj)) {
+    if (selectedPaymentMethod === "pix" && pixNeedsDocument && !validCpfCnpjDigits(pixCpfCnpj)) {
       setApiError("Informe CPF ou CNPJ valido para gerar o Pix.");
       return;
     }
@@ -649,7 +678,7 @@ export default function Checkout() {
       payment_method: selectedPaymentMethod === "pix"
         ? "pix"
         : selectedPaymentMethod === "card"
-          ? "credit_card"
+          ? (cardFunction === "debit" ? "debit_card" : "credit_card")
           : "pay_on_delivery",
       ...(selectedPaymentMethod === "delivery" ? {
         delivery_payment_method: deliveryPaymentMethod,
@@ -678,7 +707,7 @@ export default function Checkout() {
         sessionStorage.setItem(LOCKED_ORDER_KEY, order.id);
         setPaymentState("loading");
         setPaymentMessage("Gerando PIX seguro...");
-        const pixPayment = await paymentsApi.createPix(order.id, order.total, isAsaasPix ? pixDocument : undefined);
+        const pixPayment = await paymentsApi.createPix(order.id, order.total, pixNeedsDocument ? pixDocument : undefined);
         setPayment(pixPayment);
         setPixExpiresAt(paymentExpiryMs(pixPayment));
         setPaymentState("pending");
@@ -757,7 +786,7 @@ export default function Checkout() {
 
         const createdPayment = await paymentsApi.createAsaasCreditCard(createdOrder.id, {
           amount: createdOrder.total,
-          installments: 1,
+          installments: cardInstallments,
           creditCard: {
             holderName: cardName.trim(),
             number: cardDigits,
@@ -776,6 +805,30 @@ export default function Checkout() {
         } else {
           setPaymentState("pending");
           setPaymentMessage("Pagamento enviado ao ASAAS. Aguardando confirmacao do banco.");
+        }
+        return;
+      }
+
+      if (isPagarmeCard) {
+        const publicKey = creditCardConfig?.public_key?.trim();
+        if (!publicKey) throw new Error("Chave publica Pagar.me nao configurada.");
+        submittedSensitiveCardData = true;
+        const token = await paymentsApi.tokenizePagarmeCard(publicKey, {
+          number: cardDigits,
+          holder_name: cardName.trim(),
+          exp_month: expMonth,
+          exp_year: expYear,
+          cvv: cardCvv,
+        });
+        const createdPayment = await paymentsApi.createPagarmeCreditCard(createdOrder.id, token.id, cardInstallments);
+        setPayment(createdPayment);
+        if (createdPayment.status === "rejected" || createdPayment.status === "cancelled") {
+          setPaymentState("rejected");
+          sessionStorage.removeItem(LOCKED_ORDER_KEY);
+          setPaymentMessage("O Pagar.me recusou o cartao. Revise os dados ou escolha outra forma de pagamento.");
+        } else {
+          setPaymentState("pending");
+          setPaymentMessage("Pagamento enviado ao Pagar.me. Aguardando confirmacao do banco.");
         }
         return;
       }
@@ -826,7 +879,7 @@ export default function Checkout() {
         token: token.id,
         ...(paymentMethodId ? { payment_method_id: paymentMethodId } : {}),
         payment_type_id: paymentTypeId,
-        installments: 1,
+        installments: cardFunction === "credit" ? cardInstallments : 1,
         transaction_amount: createdOrder.total,
         payer: {
           email: `cliente.${createdOrder.id.slice(0, 8)}@delivery.moschettieri.com.br`,
@@ -860,7 +913,7 @@ export default function Checkout() {
 
   const handleSwitchToPix = async () => {
     if (!createdOrder) return;
-    if (isAsaasPix && !validCpfCnpjDigits(pixCpfCnpj || cardCpf)) {
+    if (pixNeedsDocument && !validCpfCnpjDigits(pixCpfCnpj || cardCpf)) {
       setPaymentState("error");
       setPaymentMessage("Informe CPF ou CNPJ valido para gerar o Pix.");
       return;
@@ -871,7 +924,7 @@ export default function Checkout() {
     setPaymentMessage("Gerando PIX seguro...");
     setCardError("");
     try {
-      const pixPayment = await paymentsApi.createPix(createdOrder.id, createdOrder.total, isAsaasPix ? pixDocument : undefined);
+      const pixPayment = await paymentsApi.createPix(createdOrder.id, createdOrder.total, pixNeedsDocument ? pixDocument : undefined);
       setPayment(pixPayment);
       setPixExpiresAt(paymentExpiryMs(pixPayment));
       setPaymentState("pending");
@@ -1116,11 +1169,11 @@ export default function Checkout() {
               Forma de pagamento
             </h2>
             <p className="mb-3 rounded-xl border border-surface-03 bg-surface-02 px-3 py-2 text-xs leading-relaxed text-parchment">
-              {selectedPaymentMethod === "pix" && isAsaasPix
-                ? "Pagamento Pix seguro via ASAAS. Seus dados sao protegidos durante toda a transacao."
-                : selectedPaymentMethod === "card" && creditCardAsaasAvailable
-                  ? "Pagamento com cartao seguro via ASAAS. Nao armazenamos os dados do seu cartao."
-                : "Pagamento 100% seguro via Mercado Pago. Seus dados sao protegidos durante toda a transacao."}
+              {selectedPaymentMethod === "pix"
+                ? `Pagamento Pix seguro via ${pixGatewayName}. Seus dados sao protegidos durante toda a transacao.`
+                : selectedPaymentMethod === "card"
+                  ? `Pagamento com cartao seguro via ${cardGatewayName}. Nao armazenamos os dados do seu cartao.`
+                  : "Pagamento realizado na entrega do pedido."}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {([
@@ -1128,11 +1181,11 @@ export default function Checkout() {
                 { value: "card", label: "Cartao", icon: CreditCard, helper: "Credito ou debito" },
                 { value: "delivery", label: "Na entrega", icon: Banknote, helper: "Cartao ou dinheiro" },
               ] as { value: SelectedPaymentMethod; label: string; icon: LucideIcon; helper: string }[]).map(({ value, label, icon: Icon, helper }) => {
-                const disabled = value === "pix"
-                  ? paymentMethods?.accept_pix === false
+                const disabled = paymentConfigLoading || (value === "pix"
+                  ? !pixAvailable
                   : value === "card"
                     ? paymentMethods ? !onlineCardAvailable : false
-                    : paymentMethods?.accept_cash === false;
+                    : paymentMethods?.accept_cash === false);
                 return (
                   <button
                     key={value}
@@ -1148,13 +1201,13 @@ export default function Checkout() {
                     <Icon size={20} className="flex-shrink-0" />
                     <span className="min-w-0">
                       <span className="block text-sm font-bold">{label}</span>
-                      <span className="block text-xs opacity-80">{disabled ? "Indisponivel" : helper}</span>
+                      <span className="block text-xs opacity-80">{paymentConfigLoading ? "Carregando..." : disabled ? "Indisponivel" : helper}</span>
                     </span>
                   </button>
                 );
               })}
             </div>
-            {selectedPaymentMethod === "pix" && isAsaasPix && (
+            {selectedPaymentMethod === "pix" && pixNeedsDocument && (
               <div className="mt-3">
                 <Field
                   icon={Hash}
@@ -1382,12 +1435,12 @@ export default function Checkout() {
                     <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-4 space-y-3">
                       <p className="text-red-400 text-sm font-semibold flex items-center gap-2">
                         <AlertCircle size={16} />
-                        Mercado Pago recusou o cartao de credito.
+                        {cardGatewayName} recusou o cartao.
                       </p>
                       <p className="text-stone text-xs">
                         Este pedido continua aberto. Escolha PIX ou pagamento na entrega para continuar.
                       </p>
-                      {isAsaasPix && (
+                      {pixNeedsDocument && (
                         <Field
                           icon={Hash}
                           placeholder="CPF/CNPJ para gerar o Pix"
@@ -1538,8 +1591,22 @@ export default function Checkout() {
                           maxLength={isAsaasCard ? 18 : 14}
                           className="w-full bg-surface-03 border border-surface-03 rounded-xl px-4 py-3 text-cream placeholder-stone/60 outline-none focus:border-gold text-sm"
                         />
+                        {cardFunction === "credit" && maxCardInstallments > 1 && (
+                          <select
+                            value={cardInstallments}
+                            onChange={(e) => setCardInstallments(Number(e.target.value))}
+                            className="w-full rounded-xl border border-surface-03 bg-surface-03 px-4 py-3 text-sm text-cream outline-none focus:border-gold"
+                            aria-label="Parcelas"
+                          >
+                            {Array.from({ length: maxCardInstallments }, (_, index) => index + 1).map((installment) => (
+                              <option key={installment} value={installment}>
+                                {installment === 1 ? "1x a vista" : `${installment}x no cartao`}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
-                      {isAsaasCard && (
+                      {(isAsaasCard || isPagarmeCard) && (
                         <p className="rounded-xl border border-surface-03 bg-surface-02 px-3 py-2 text-xs leading-relaxed text-stone">
                           Nao armazenamos os dados do seu cartao. Eles sao usados apenas para processar esta compra com seguranca.
                         </p>

@@ -40,7 +40,9 @@ from backend.models.tenant import Tenant
 from backend.models.tenant_domain import TenantDomain
 from backend.services.platform_audit_service import PlatformAuditService
 from backend.services.tenant_domain_service import TenantDomainService, parse_hostname_set
+from backend.services.tenant_credential_service import TenantCredentialService
 from backend.services.tenant_service import normalize_tenant_slug
+from backend.services.tenant_kds_rbac_service import ensure_tenant_kds_roles
 
 
 PLATFORM_MODULE_CATALOG = (
@@ -852,6 +854,7 @@ class PlatformMasterService:
         )
         self.db.add_all([tenant, owner_role, owner])
         self.db.flush()
+        TenantCredentialService(self.db).create_inert_payment_gateway(tenant.id)
         for module_id, permission_id in self.db.query(RbacModule.id, RbacPermission.id).filter(
             RbacModule.is_active.is_(True)
         ).all():
@@ -859,6 +862,7 @@ class PlatformMasterService:
                 id=_id(), tenant_id=tenant.id, role_id=owner_role.id,
                 module_id=module_id, permission_id=permission_id, allowed=True,
             ))
+        ensure_tenant_kds_roles(self.db, tenant.id)
         self.db.add_all([membership, profile, subscription, license_row])
         selected_modules = list(modules)
         if body.plan_id:
@@ -918,6 +922,7 @@ class PlatformMasterService:
         ).first() is not None
         self.db.add(tenant)
         self.db.flush()
+        TenantCredentialService(self.db).create_inert_payment_gateway(tenant.id)
         self.db.add(TenantMembership(id=_id(), tenant_id=tenant.id, user_id=actor.id,
             role="owner", status="active", is_default=not has_membership,
             invited_by=actor.id, joined_at=utcnow()))

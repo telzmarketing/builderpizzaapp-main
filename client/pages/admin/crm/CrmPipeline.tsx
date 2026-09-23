@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { useEffect, useState, useRef } from "react";
 import {
   Loader2, Plus, X, ChevronRight, Pencil, Trash2, Settings,
@@ -85,7 +86,7 @@ export default function CrmPipeline() {
   const fetchPipelines = async () => {
     setLoading(true); setError("");
     try {
-      const pips: Pipeline[] = unwrap(await (await fetch(`${BASE}/crm/pipelines`, { headers })).json());
+      const pips: Pipeline[] = unwrap(await (await apiFetch(`/crm/pipelines`, { headers })).json());
       setPipelines(pips ?? []);
       const first = (pips ?? [])[0];
       if (first) {
@@ -98,7 +99,7 @@ export default function CrmPipeline() {
 
   const fetchCards = async (pipelineId: string) => {
     try {
-      const cs: CrmCard[] = unwrap(await (await fetch(`${BASE}/crm/pipelines/${pipelineId}/cards`, { headers })).json());
+      const cs: CrmCard[] = unwrap(await (await apiFetch(`/crm/pipelines/${pipelineId}/cards`, { headers })).json());
       setCards(cs ?? []);
     } catch { setCards([]); }
   };
@@ -106,8 +107,8 @@ export default function CrmPipeline() {
   const fetchCardDetail = async (cardId: string) => {
     try {
       const [notes, hist] = await Promise.all([
-        fetch(`${BASE}/crm/cards/${cardId}/notes`, { headers }).then(r => r.json()).then(unwrap),
-        fetch(`${BASE}/crm/cards/${cardId}/history`, { headers }).then(r => r.json()).then(unwrap),
+        apiFetch(`/crm/cards/${cardId}/notes`, { headers }).then(r => r.json()).then(unwrap),
+        apiFetch(`/crm/cards/${cardId}/history`, { headers }).then(r => r.json()).then(unwrap),
       ]);
       setCardNotes(notes ?? []);
       setCardHistory(hist ?? []);
@@ -133,7 +134,7 @@ export default function CrmPipeline() {
     if (!card || card.stage_id === stageId) return;
     setCards(prev => prev.map(c => c.id === cardId ? { ...c, stage_id: stageId } : c));
     try {
-      await fetch(`${BASE}/crm/cards/${cardId}/move`, { method: "PATCH", headers, body: JSON.stringify({ stage_id: stageId }) });
+      await apiFetch(`/crm/cards/${cardId}/move`, { method: "PATCH", headers, body: JSON.stringify({ stage_id: stageId }) });
     } catch {
       setCards(prev => prev.map(c => c.id === cardId ? { ...c, stage_id: card.stage_id } : c));
     }
@@ -146,7 +147,7 @@ export default function CrmPipeline() {
     const nextId = stages[idx + 1].id;
     setCards(prev => prev.map(c => c.id === card.id ? { ...c, stage_id: nextId } : c));
     try {
-      await fetch(`${BASE}/crm/cards/${card.id}/move`, { method: "PATCH", headers, body: JSON.stringify({ stage_id: nextId }) });
+      await apiFetch(`/crm/cards/${card.id}/move`, { method: "PATCH", headers, body: JSON.stringify({ stage_id: nextId }) });
     } catch { setCards(prev => prev.map(c => c.id === card.id ? { ...c, stage_id: card.stage_id } : c)); }
   };
 
@@ -157,10 +158,10 @@ export default function CrmPipeline() {
     setSaving(true);
     try {
       if (editingPipelineId) {
-        const updated = unwrap(await (await fetch(`${BASE}/crm/pipelines/${editingPipelineId}`, { method: "PATCH", headers, body: JSON.stringify(pipelineForm) })).json());
+        const updated = unwrap(await (await apiFetch(`/crm/pipelines/${editingPipelineId}`, { method: "PATCH", headers, body: JSON.stringify(pipelineForm) })).json());
         setPipelines(prev => prev.map(p => p.id === editingPipelineId ? { ...p, ...updated } : p));
       } else {
-        const created: Pipeline = unwrap(await (await fetch(`${BASE}/crm/pipelines`, { method: "POST", headers, body: JSON.stringify(pipelineForm) })).json());
+        const created: Pipeline = unwrap(await (await apiFetch(`/crm/pipelines`, { method: "POST", headers, body: JSON.stringify(pipelineForm) })).json());
         setPipelines(prev => [...prev, created]);
         setActivePipelineId(created.id);
         setCards([]);
@@ -171,7 +172,7 @@ export default function CrmPipeline() {
 
   const deletePipeline = async (id: string) => {
     if (!confirm("Excluir pipeline e todos os cards?")) return;
-    await fetch(`${BASE}/crm/pipelines/${id}`, { method: "DELETE", headers });
+    await apiFetch(`/crm/pipelines/${id}`, { method: "DELETE", headers });
     const remaining = pipelines.filter(p => p.id !== id);
     setPipelines(remaining);
     if (activePipelineId === id) {
@@ -188,9 +189,9 @@ export default function CrmPipeline() {
     setSaving(true);
     try {
       if (editingStageId) {
-        await fetch(`${BASE}/crm/stages/${editingStageId}`, { method: "PATCH", headers, body: JSON.stringify(stageForm) });
+        await apiFetch(`/crm/stages/${editingStageId}`, { method: "PATCH", headers, body: JSON.stringify(stageForm) });
       } else {
-        await fetch(`${BASE}/crm/pipelines/${activePipelineId}/stages`, { method: "POST", headers, body: JSON.stringify(stageForm) });
+        await apiFetch(`/crm/pipelines/${activePipelineId}/stages`, { method: "POST", headers, body: JSON.stringify(stageForm) });
       }
       setEditingStageId(null);
       setStageForm({ name: "", color: "#3b82f6" });
@@ -200,14 +201,14 @@ export default function CrmPipeline() {
 
   const deleteStage = async (id: string) => {
     if (!confirm("Excluir etapa? Os cards serão removidos.")) return;
-    await fetch(`${BASE}/crm/stages/${id}`, { method: "DELETE", headers });
+    await apiFetch(`/crm/stages/${id}`, { method: "DELETE", headers });
     await fetchPipelines();
     if (activePipelineId) fetchCards(activePipelineId);
   };
 
   const moveStage = async (stage: Stage, dir: -1 | 1) => {
     const newOrder = stage.order + dir;
-    await fetch(`${BASE}/crm/stages/${stage.id}`, { method: "PATCH", headers, body: JSON.stringify({ order: newOrder }) });
+    await apiFetch(`/crm/stages/${stage.id}`, { method: "PATCH", headers, body: JSON.stringify({ order: newOrder }) });
     await fetchPipelines();
   };
 
@@ -217,7 +218,7 @@ export default function CrmPipeline() {
     if (!cardForm.title?.trim()) { alert("Título obrigatório."); return; }
     setSaving(true);
     try {
-      const newCard: CrmCard = unwrap(await (await fetch(`${BASE}/crm/cards`, { method: "POST", headers, body: JSON.stringify({ ...cardForm, stage_id: modalStageId, pipeline_id: activePipelineId }) })).json());
+      const newCard: CrmCard = unwrap(await (await apiFetch(`/crm/cards`, { method: "POST", headers, body: JSON.stringify({ ...cardForm, stage_id: modalStageId, pipeline_id: activePipelineId }) })).json());
       setCards(prev => [...prev, newCard]);
       setModal(null);
     } catch { alert("Erro ao criar card."); } finally { setSaving(false); }
@@ -225,7 +226,7 @@ export default function CrmPipeline() {
 
   const deleteCard = async (id: string) => {
     if (!confirm("Excluir card?")) return;
-    await fetch(`${BASE}/crm/cards/${id}`, { method: "DELETE", headers });
+    await apiFetch(`/crm/cards/${id}`, { method: "DELETE", headers });
     setCards(prev => prev.filter(c => c.id !== id));
     if (selectedCard?.id === id) { setModal(null); setSelectedCard(null); }
   };
@@ -248,7 +249,7 @@ export default function CrmPipeline() {
   const addNote = async () => {
     if (!newNote.trim() || !selectedCard) return;
     try {
-      const n: CardNote = unwrap(await (await fetch(`${BASE}/crm/cards/${selectedCard.id}/notes`, { method: "POST", headers, body: JSON.stringify({ body: newNote, author: "Admin" }) })).json());
+      const n: CardNote = unwrap(await (await apiFetch(`/crm/cards/${selectedCard.id}/notes`, { method: "POST", headers, body: JSON.stringify({ body: newNote, author: "Admin" }) })).json());
       setCardNotes(prev => [...prev, n]);
       setNewNote("");
     } catch { alert("Erro ao adicionar nota."); }
@@ -257,7 +258,7 @@ export default function CrmPipeline() {
   const addTask = async () => {
     if (!newTask.title.trim() || !selectedCard) return;
     try {
-      await fetch(`${BASE}/crm/tasks`, { method: "POST", headers, body: JSON.stringify({ title: newTask.title, due_date: newTask.due_date, pipeline_card_id: selectedCard.id, task_type: "followup", status: "pending", priority: "medium" }) });
+      await apiFetch(`/crm/tasks`, { method: "POST", headers, body: JSON.stringify({ title: newTask.title, due_date: newTask.due_date, pipeline_card_id: selectedCard.id, task_type: "followup", status: "pending", priority: "medium" }) });
       setNewTask({ title: "", due_date: "" });
       alert("Tarefa criada.");
     } catch { alert("Erro ao criar tarefa."); }
@@ -268,7 +269,7 @@ export default function CrmPipeline() {
     setCards(prev => prev.map(c => c.id === selectedCard.id ? { ...c, stage_id: stageId } : c));
     setSelectedCard(prev => prev ? { ...prev, stage_id: stageId } : prev);
     try {
-      await fetch(`${BASE}/crm/cards/${selectedCard.id}/move`, { method: "PATCH", headers, body: JSON.stringify({ stage_id: stageId }) });
+      await apiFetch(`/crm/cards/${selectedCard.id}/move`, { method: "PATCH", headers, body: JSON.stringify({ stage_id: stageId }) });
     } catch { alert("Erro ao mover card."); }
   };
 

@@ -43,7 +43,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci
       JWT_SECRET_KEY: ci-only-not-for-production
-      TELZ_ALEMBIC_TARGET: 20260818_platform_operations
+      TELZ_ALEMBIC_TARGET: 20260924_kds_kitchen_dispatch
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -441,7 +441,7 @@ jobs:
         shell: bash
         env:
           PREVIOUS_COMMIT: ${{ needs.inspect_vps.outputs.previous_commit }}
-          ALEMBIC_TARGET: 20260818_platform_operations
+          ALEMBIC_TARGET: 20260924_kds_kitchen_dispatch
         run: |
           set -Eeuo pipefail
           source_delivery="$RUNNER_TEMP/promoted-source"
@@ -527,7 +527,7 @@ jobs:
           (
             cd "$work/previous"
             DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci \
-              "$work/previous-venv/bin/python" -c 'from sqlalchemy import text; from backend.database import engine; c=engine.connect(); assert c.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "20260818_platform_operations"; c.close(); engine.dispose()'
+              "$work/previous-venv/bin/python" -c 'import sys; from sqlalchemy import text; from backend.database import engine; c=engine.connect(); assert c.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == sys.argv[1]; c.close(); engine.dispose()' "$ALEMBIC_TARGET"
           )
           verify_node() {
             local source_dir="$1"
@@ -634,7 +634,7 @@ jobs:
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         env:
           OPERATION: ${{ inputs.operation }}
-          TELZ_ALEMBIC_TARGET: 20260818_platform_operations
+          TELZ_ALEMBIC_TARGET: 20260924_kds_kitchen_dispatch
           EXPECTED_COMMIT: ${{ github.sha }}
           PREVIOUS_COMMIT: ${{ needs.inspect_vps.outputs.previous_commit }}
           PUBLIC_HEALTH_URL: https://erp.telz.com.br/health

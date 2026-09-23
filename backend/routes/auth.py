@@ -5,14 +5,14 @@ import urllib.error
 import urllib.request
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.core.response import created, err_msg, ok
 from backend.core.security import hash_password, verify_password
+from backend.core.customer_auth import authenticate_customer_token, create_customer_access_token
 from backend.database import get_db
-from backend.core.tenant_ownership import assign_tenant_on_create
 from backend.core.tenant_runtime import resolve_public_tenant_context
 from backend.models.customer import Address, Customer
 from backend.schemas.customer import CustomerOut
@@ -23,15 +23,21 @@ from backend.services.customer_identity_service import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+LEGACY_TENANT_ID = "tenant-legacy-default"
+
+
+def _public_tenant_id(request: Request, db: Session) -> str:
+    context = resolve_public_tenant_context(request, db)
+    return context.tenant_id if context else LEGACY_TENANT_ID
 
 
 def _normalize_phone(phone: str) -> str:
     return normalize_phone(phone)
 
 
-def _find_by_phone(phone: str, db: Session) -> Customer | None:
+def _find_by_phone(phone: str, db: Session, *, tenant_id: str | None = None) -> Customer | None:
     normalized = _normalize_phone(phone)
-    return CustomerIdentityService(db).find_by_phone(normalized)
+    return CustomerIdentityService(db).find_by_phone(normalized, tenant_id=tenant_id)
 
 
 def _verify_or_activate_password(customer: Customer, password: str, db: Session) -> tuple[bool, bool]:
@@ -75,6 +81,19 @@ class LoginIn(BaseModel):
 class LoginOut(BaseModel):
     customer: CustomerOut
     is_new: bool = False
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+def _login_out(customer: Customer, *, is_new: bool) -> LoginOut:
+    token, expires_in = create_customer_access_token(customer)
+    return LoginOut(
+        customer=CustomerOut.model_validate(customer),
+        is_new=is_new,
+        access_token=token,
+        expires_in=expires_in,
+    )
 
 
 class GoogleLoginIn(BaseModel):
@@ -106,17 +125,18 @@ class RegisterIn(BaseModel):
 
 
 @router.post("/check-phone")
-def check_phone(body: CheckPhoneIn, db: Session = Depends(get_db)):
-    customer = _find_by_phone(body.phone, db)
+def check_phone(body: CheckPhoneIn, request: Request, db: Session = Depends(get_db)):
+    customer = _find_by_phone(body.phone, db, tenant_id=_public_tenant_id(request, db))
     if customer:
         return ok(CheckPhoneOut(exists=True, customer_id=customer.id, name=customer.name))
     return ok(CheckPhoneOut(exists=False))
 
 
 @router.post("/login")
-def login(body: LoginIn, db: Session = Depends(get_db)):
+def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     """Authenticate a customer account by phone number + password."""
-    customer = _find_by_phone(body.phone, db)
+    tenant_id = _public_tenant_id(request, db)
+    customer = _find_by_phone(body.phone, db, tenant_id=tenant_id)
     if not customer:
         return err_msg(
             "Telefone nao encontrado. Crie sua conta primeiro.",
@@ -129,15 +149,19 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
         return err_msg("Telefone ou senha invalidos.", code="InvalidCredentials", status_code=401)
 
     message = "Senha cadastrada com sucesso. Bem-vindo!" if created_password else f"Bem-vindo de volta, {customer.name}!"
-    return ok(LoginOut(customer=CustomerOut.model_validate(customer), is_new=False), message)
+    return ok(_login_out(customer, is_new=False), message)
 
 
 @router.post("/login-email")
-def login_email(body: EmailLoginIn, db: Session = Depends(get_db)):
+def login_email(body: EmailLoginIn, request: Request, db: Session = Depends(get_db)):
     """Login by email or phone + password for registered customers."""
+    tenant_id = _public_tenant_id(request, db)
     identifier = body.email.strip()
     if "@" in identifier:
-        customer = db.query(Customer).filter(Customer.email == identifier.lower()).first()
+        customer = db.query(Customer).filter(
+            Customer.tenant_id == tenant_id,
+            Customer.email == identifier.lower(),
+        ).first()
         if not customer:
             return err_msg(
                 "E-mail nao encontrado. Crie sua conta primeiro.",
@@ -145,7 +169,7 @@ def login_email(body: EmailLoginIn, db: Session = Depends(get_db)):
                 status_code=404,
             )
     else:
-        customer = _find_by_phone(identifier, db)
+        customer = _find_by_phone(identifier, db, tenant_id=tenant_id)
         if not customer:
             return err_msg(
                 "Telefone nao encontrado. Crie sua conta primeiro.",
@@ -158,7 +182,7 @@ def login_email(body: EmailLoginIn, db: Session = Depends(get_db)):
         return err_msg("E-mail/telefone ou senha invalidos.", code="InvalidCredentials", status_code=401)
 
     message = "Senha cadastrada com sucesso. Bem-vindo!" if created_password else f"Bem-vindo de volta, {customer.name}!"
-    return ok(LoginOut(customer=CustomerOut.model_validate(customer), is_new=False), message)
+    return ok(_login_out(customer, is_new=False), message)
 
 
 @router.post("/register")
@@ -171,16 +195,16 @@ def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)):
             status_code=422,
         )
 
-    context = resolve_public_tenant_context(request, db)
+    tenant_id = _public_tenant_id(request, db)
     email = body.email.strip().lower()
     phone = _normalize_phone(body.phone)
     identity = CustomerIdentityService(db)
 
     existing_email = db.query(Customer).filter(
-        Customer.tenant_id == context.tenant_id, Customer.email == email
+        Customer.tenant_id == tenant_id, Customer.email == email
     ).first()
     existing_phone = db.query(Customer).filter(
-        Customer.tenant_id == context.tenant_id, Customer.phone == phone
+        Customer.tenant_id == tenant_id, Customer.phone == phone
     ).first() if phone else None
 
     if existing_email and (not existing_phone or existing_email.id != existing_phone.id):
@@ -213,6 +237,7 @@ def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)):
         if body.street and body.city:
             new_address = Address(
                 id=str(uuid.uuid4()),
+                tenant_id=tenant_id,
                 customer_id=new_customer.id,
                 label=body.label,
                 street=body.street.strip(),
@@ -228,7 +253,7 @@ def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(new_customer)
         return created(
-            LoginOut(customer=CustomerOut.model_validate(new_customer), is_new=True),
+            _login_out(new_customer, is_new=True),
             f"Cadastro concluido! Bem-vindo, {new_customer.name}!",
         )
 
@@ -246,7 +271,7 @@ def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)):
         marketing_whatsapp_consent=body.marketing_whatsapp_consent,
         source="site",
     )
-    assign_tenant_on_create(new_customer, context)
+    new_customer.tenant_id = tenant_id
     db.add(new_customer)
     db.flush()
     identity.sync_registered_customer(
@@ -255,11 +280,12 @@ def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)):
         password_hash_value=password_hash_value,
     )
     from backend.services.automation_event_producer import AutomationEventProducer
-    AutomationEventProducer(db, context.tenant_id).customer_created(new_customer)
+    AutomationEventProducer(db, tenant_id).customer_created(new_customer)
 
     if body.street and body.city:
         new_address = Address(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             customer_id=new_customer.id,
             label=body.label,
             street=body.street.strip(),
@@ -276,7 +302,7 @@ def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)):
     db.refresh(new_customer)
 
     return created(
-        LoginOut(customer=CustomerOut.model_validate(new_customer), is_new=True),
+        _login_out(new_customer, is_new=True),
         f"Conta criada! Bem-vindo, {new_customer.name}!",
     )
 
@@ -287,7 +313,7 @@ def google_login(body: GoogleLoginIn, request: Request, db: Session = Depends(ge
     Verify a Google ID token from the GSI client and return (or create) a customer.
     The token is verified by calling Google's tokeninfo endpoint.
     """
-    context = resolve_public_tenant_context(request, db)
+    tenant_id = _public_tenant_id(request, db)
     try:
         url = f"https://oauth2.googleapis.com/tokeninfo?id_token={body.credential}"
         with urllib.request.urlopen(url, timeout=10) as resp:
@@ -303,8 +329,8 @@ def google_login(body: GoogleLoginIn, request: Request, db: Session = Depends(ge
         raise HTTPException(status_code=401, detail="Token Google nao contem dados suficientes.")
 
     customer = (
-        db.query(Customer).filter(Customer.tenant_id == context.tenant_id, Customer.google_id == google_sub).first()
-        or db.query(Customer).filter(Customer.tenant_id == context.tenant_id, Customer.email == email).first()
+        db.query(Customer).filter(Customer.tenant_id == tenant_id, Customer.google_id == google_sub).first()
+        or db.query(Customer).filter(Customer.tenant_id == tenant_id, Customer.email == email).first()
     )
 
     if customer:
@@ -318,7 +344,7 @@ def google_login(body: GoogleLoginIn, request: Request, db: Session = Depends(ge
             db.commit()
             db.refresh(customer)
         return ok(
-            LoginOut(customer=CustomerOut.model_validate(customer), is_new=False),
+            _login_out(customer, is_new=False),
             f"Bem-vindo de volta, {customer.name}!",
         )
 
@@ -329,7 +355,7 @@ def google_login(body: GoogleLoginIn, request: Request, db: Session = Depends(ge
         google_id=google_sub,
         source="google",
     )
-    assign_tenant_on_create(new_customer, context)
+    new_customer.tenant_id = tenant_id
     db.add(new_customer)
     db.flush()
     CustomerIdentityService(db).sync_registered_customer(
@@ -338,11 +364,41 @@ def google_login(body: GoogleLoginIn, request: Request, db: Session = Depends(ge
         provider_subject=google_sub,
     )
     from backend.services.automation_event_producer import AutomationEventProducer
-    AutomationEventProducer(db, context.tenant_id).customer_created(new_customer)
+    AutomationEventProducer(db, tenant_id).customer_created(new_customer)
     db.commit()
     db.refresh(new_customer)
 
     return created(
-        LoginOut(customer=CustomerOut.model_validate(new_customer), is_new=True),
+        _login_out(new_customer, is_new=True),
         f"Bem-vindo, {new_customer.name}!",
     )
+
+
+@router.get("/me")
+def customer_me(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    customer = authenticate_customer_token(
+        authorization,
+        db,
+        expected_tenant_id=_public_tenant_id(request, db),
+    )
+    return ok({"customer": CustomerOut.model_validate(customer)})
+
+
+@router.post("/logout")
+def customer_logout(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    customer = authenticate_customer_token(
+        authorization,
+        db,
+        expected_tenant_id=_public_tenant_id(request, db),
+    )
+    customer.auth_version = int(getattr(customer, "auth_version", 0) or 0) + 1
+    db.commit()
+    return ok(None, "Sessao encerrada.")

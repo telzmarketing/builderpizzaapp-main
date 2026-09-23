@@ -1,481 +1,173 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Bell, BellOff, CalendarDays, ChefHat, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2,
-  Maximize2, Minimize2, RefreshCw, Route, UtensilsCrossed,
-} from "lucide-react";
-import AdminSidebar from "@/components/AdminSidebar";
-import AdminTopActions from "@/components/admin/AdminTopActions";
-import { ordersApi, type ApiOrder, type ApiOrderItem, type OrderStatus } from "@/lib/api";
-import OrderTimer from "@/components/OrderTimer";
-import { playOrderAlert, loadSoundType } from "@/lib/orderSound";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Bell, BellOff, CheckCircle2, ChefHat, Clock3, Loader2, Maximize2, Minimize2, RefreshCw, UtensilsCrossed, WifiOff } from "lucide-react";
+import KdsSessionActions from "@/components/kds/KdsSessionActions";
+import { useToast } from "@/hooks/use-toast";
+import { kdsApi, type KdsKitchenOrder, type KdsOrderItem } from "@/lib/api";
+import { loadSoundType, playOrderAlert } from "@/lib/orderSound";
+import { activeKitchenOrders } from "@/lib/kds";
 
-function playNewOrderAlert() {
-  playOrderAlert(loadSoundType());
+const POLL_INTERVAL_MS = 15_000;
+
+function elapsed(date: string) {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(date).getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}min`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}min`;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-function elapsed(dateStr: string): string {
-  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (diff < 60) return `${diff}s`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}min`;
-  return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}min`;
+function itemDescription(item: KdsOrderItem) {
+  const parts: string[] = [];
+  parts.push(item.flavors?.length ? item.flavors.map((flavor) => flavor.name).join(" / ") : item.product_name);
+  if (item.selected_size) parts.push(`(${item.selected_size})`);
+  if (item.selected_crust_type) parts.push(`· ${item.selected_crust_type}`);
+  if (item.selected_drink_variant) parts.push(`· ${item.selected_drink_variant}`);
+  return parts.join(" ");
 }
 
-function elapsedMinutes(dateStr: string): number {
-  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Não foi possível atualizar a cozinha.";
 }
-
-const toDateInputValue = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const todayInputValue = () => toDateInputValue(new Date());
-
-const inputDateToLocalDate = (value: string) => {
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(year, month - 1, day);
-};
-
-const dayRangeIso = (value: string) => {
-  const start = inputDateToLocalDate(value);
-  const end = inputDateToLocalDate(value);
-  end.setHours(23, 59, 59, 999);
-  return {
-    date_from: start.toISOString(),
-    date_to: end.toISOString(),
-  };
-};
-
-const shiftDateInput = (value: string, days: number) => {
-  const date = inputDateToLocalDate(value);
-  date.setDate(date.getDate() + days);
-  return toDateInputValue(date);
-};
-
-const formatDayLabel = (value: string) =>
-  inputDateToLocalDate(value).toLocaleDateString("pt-BR", {
-    weekday: "long",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-
-function itemDescription(item: ApiOrderItem): string {
-  const nameParts: string[] = [];
-  if (item.is_gift) nameParts.push("[BRINDE]");
-  if (item.flavors && item.flavors.length > 0) {
-    nameParts.push(item.flavors.map((f) => f.name).join(" / "));
-  } else {
-    nameParts.push(item.product_name);
-  }
-  if (item.selected_size) nameParts.push(`(${item.selected_size})`);
-  if (item.selected_crust_type) nameParts.push(`· ${item.selected_crust_type}`);
-  if (item.selected_drink_variant) nameParts.push(`· ${item.selected_drink_variant}`);
-  return nameParts.join(" ");
-}
-
-// ── Column config ──────────────────────────────────────────────────────────────
-
-const KITCHEN_STATUSES: OrderStatus[] = ["paid", "pago", "preparing", "ready_for_pickup", "on_the_way", "delivered"];
-
-type KitchenColumn = {
-  id: string;
-  label: string;
-  statuses: OrderStatus[];
-  accent: string;
-  headerBorder: string;
-  badge: string;
-  actionLabel: string | null;
-  actionStatus: OrderStatus | null;
-  actionClass: string;
-  showDeliveryBadge?: boolean;
-};
-
-const COLUMNS: KitchenColumn[] = [
-  {
-    id: "fila",
-    label: "Fila — Aguardando Preparo",
-    statuses: ["paid", "pago"],
-    accent: "text-amber-400",
-    headerBorder: "border-amber-500/30",
-    badge: "bg-amber-500/20 text-amber-300",
-    actionLabel: "Iniciar Preparo",
-    actionStatus: "preparing",
-    actionClass: "bg-orange-500 hover:bg-orange-400 text-white",
-  },
-  {
-    id: "preparing",
-    label: "Em Preparo",
-    statuses: ["preparing"],
-    accent: "text-orange-400",
-    headerBorder: "border-orange-500/30",
-    badge: "bg-orange-500/20 text-orange-300",
-    actionLabel: "Marcar como Pronto",
-    actionStatus: "ready_for_pickup",
-    actionClass: "bg-green-600 hover:bg-green-500 text-white",
-  },
-  {
-    id: "ready",
-    label: "Pronto",
-    statuses: ["ready_for_pickup", "on_the_way", "delivered"],
-    accent: "text-green-400",
-    headerBorder: "border-green-500/30",
-    badge: "bg-green-500/20 text-green-300",
-    actionLabel: null,
-    actionStatus: null,
-    actionClass: "",
-    showDeliveryBadge: true,
-  },
-];
-
-function urgencyBorder(minutes: number): string {
-  if (minutes >= 40) return "border-red-500/60 shadow-red-500/10 shadow-lg";
-  if (minutes >= 25) return "border-amber-500/50";
-  return "border-surface-03";
-}
-
-function DeliveryStatusBadge({ status }: { status: OrderStatus }) {
-  if (status === "ready_for_pickup") return (
-    <div className="flex items-center gap-2 text-xs font-semibold text-amber-400 bg-amber-500/10 rounded-lg px-3 py-2">
-      <Clock3 size={12} />
-      Aguardando entrega
-    </div>
-  );
-  if (status === "on_the_way") return (
-    <div className="flex items-center gap-2 text-xs font-semibold text-blue-400 bg-blue-500/10 rounded-lg px-3 py-2">
-      <Route size={12} />
-      A caminho
-    </div>
-  );
-  if (status === "delivered") return (
-    <div className="flex items-center gap-2 text-xs font-semibold text-green-400 bg-green-500/10 rounded-lg px-3 py-2">
-      <CheckCircle2 size={12} />
-      Entregue
-    </div>
-  );
-  return null;
-}
-
-// ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function AdminCozinha() {
-  const [orders, setOrders]       = useState<ApiOrder[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [updating, setUpdating]   = useState<string | null>(null);
-  const [lastRefresh, setLastRefresh] = useState(new Date());
-  const [soundOn, setSoundOn]     = useState(true);
+  const { toast } = useToast();
+  const [orders, setOrders] = useState<KdsKitchenOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [updating, setUpdating] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [soundOn, setSoundOn] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(() => todayInputValue());
-  const [, setTick]               = useState(0);
+  const [, setTick] = useState(0);
+  const knownWaitingIds = useRef<Set<string>>(new Set());
+  const initialLoad = useRef(true);
+  const actionLock = useRef(false);
 
-  // paidIds fires sound only once per order when it first enters paid status
-  const paidIds  = useRef<Set<string>>(new Set());
-  const soundRef = useRef(soundOn);
-  soundRef.current = soundOn;
-
-  const fetchOrders = useCallback(async (initial = false) => {
+  const loadOrders = useCallback(async (manual = false) => {
+    if (manual) setRefreshing(true);
     try {
-      const all = await ordersApi.list({ ...dayRangeIso(selectedDate), limit: 500 });
-      const kitchen = all.filter((o) => KITCHEN_STATUSES.includes(o.status));
-
-      if (!initial && selectedDate === todayInputValue()) {
-        const newlyPaid = kitchen.filter(
-          (o) => (o.status === "paid" || o.status === "pago") && !paidIds.current.has(o.id),
-        );
-        if (newlyPaid.length > 0 && soundRef.current) playNewOrderAlert();
-      }
-
-      // Mark paid orders so subsequent polls don't re-alert
-      kitchen
-        .filter((o) => o.status === "paid" || o.status === "pago")
-        .forEach((o) => paidIds.current.add(o.id));
-      setOrders(kitchen);
+      const data = await kdsApi.listKitchenOrders();
+      const active = activeKitchenOrders(data);
+      const waiting = active.filter((order) => order.status === "paid" || order.status === "pago");
+      const hasNewOrder = waiting.some((order) => !knownWaitingIds.current.has(order.id));
+      if (!initialLoad.current && soundOn && hasNewOrder) playOrderAlert(loadSoundType());
+      knownWaitingIds.current = new Set(waiting.map((order) => order.id));
+      initialLoad.current = false;
+      setOrders(active);
+      setError(null);
       setLastRefresh(new Date());
-    } catch {
-      // mantém dados existentes em caso de erro
+    } catch (caught) {
+      setError(errorMessage(caught));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [selectedDate]);
-
-  const selectedDateLabel = useMemo(() => formatDayLabel(selectedDate), [selectedDate]);
-  const isToday = selectedDate === todayInputValue();
+  }, [soundOn]);
 
   useEffect(() => {
-    setLoading(true);
-    fetchOrders(true);
-  }, [fetchOrders]);
+    void loadOrders();
+    const poll = window.setInterval(() => void loadOrders(), POLL_INTERVAL_MS);
+    return () => window.clearInterval(poll);
+  }, [loadOrders]);
 
-  // auto-refresh 30s
   useEffect(() => {
-    const id = setInterval(() => fetchOrders(), 30_000);
-    return () => clearInterval(id);
-  }, [fetchOrders]);
-
-  // timer tick para atualizar elapsed a cada 10s
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 10_000);
-    return () => clearInterval(id);
+    const timer = window.setInterval(() => setTick((value) => value + 1), 10_000);
+    return () => window.clearInterval(timer);
   }, []);
 
-  // fullscreen API
   useEffect(() => {
-    if (fullscreen) {
-      document.documentElement.requestFullscreen?.().catch(() => {});
-    } else if (document.fullscreenElement) {
-      document.exitFullscreen?.().catch(() => {});
-    }
-  }, [fullscreen]);
-
-  useEffect(() => {
-    const handler = () => setFullscreen(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", handler);
-    return () => document.removeEventListener("fullscreenchange", handler);
+    const onFullscreenChange = () => setFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
 
-  const moveOrder = async (orderId: string, status: OrderStatus) => {
-    setUpdating(orderId);
+  const toggleFullscreen = async () => {
     try {
-      await ordersApi.updateStatus(orderId, status);
-      await fetchOrders();
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    } catch {
+      toast({ title: "Tela cheia indisponível", description: "O navegador bloqueou o modo KDS." });
+    }
+  };
+
+  const advanceOrder = async (order: KdsKitchenOrder) => {
+    if (actionLock.current) return;
+    actionLock.current = true;
+    setUpdating(order.id);
+    try {
+      if (order.status === "ready_for_pickup") {
+        await kdsApi.completeKitchenPickup(order.id);
+        setOrders((current) => current.filter((item) => item.id !== order.id));
+      } else if (order.status === "preparing") {
+        const updated = await kdsApi.markKitchenOrderReady(order.id);
+        setOrders((current) => order.fulfillment_type === "pickup"
+          ? current.map((item) => item.id === order.id ? updated : item)
+          : current.filter((item) => item.id !== order.id));
+      } else {
+        const updated = await kdsApi.startKitchenOrder(order.id);
+        setOrders((current) => current.map((item) => item.id === order.id ? updated : item));
+      }
+      toast({
+        title: order.status === "ready_for_pickup"
+          ? "Retirada concluída"
+          : order.status === "preparing"
+            ? (order.fulfillment_type === "pickup" ? "Pedido pronto para retirada" : "Pedido enviado para expedição")
+            : "Preparo iniciado",
+        description: `Pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()}`,
+      });
+      setError(null);
+      setLastRefresh(new Date());
+    } catch (caught) {
+      const message = errorMessage(caught);
+      setError(message);
+      toast({ title: "Ação não concluída", description: message, variant: "destructive" });
     } finally {
+      actionLock.current = false;
       setUpdating(null);
     }
   };
 
+  const columns = [
+    { key: "waiting", label: "Aguardando preparo", statuses: ["paid", "pago"], accent: "text-amber-300", action: "Iniciar preparo", button: "bg-orange-500 active:bg-orange-700" },
+    { key: "preparing", label: "Em preparo", statuses: ["preparing"], accent: "text-orange-300", action: "Finalizar preparo", button: "bg-emerald-600 active:bg-emerald-800" },
+    { key: "pickup", label: "Aguardando retirada", statuses: ["ready_for_pickup"], accent: "text-sky-300", action: "Concluir retirada", button: "bg-sky-600 active:bg-sky-800" },
+  ];
+
   return (
-    <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-surface-00 overflow-hidden">
-      <AdminSidebar />
-
-      <div className="flex-1 flex flex-col overflow-hidden">
-
-        {/* Header */}
-        <div className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 py-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-gold/25 bg-gold/10 text-gold">
-              <ChefHat size={20} />
-            </div>
-            <div>
-              <p className="text-gold text-[11px] font-bold uppercase tracking-[0.22em] mb-1">
-                Operacao
-              </p>
-              <h2 className="text-xl md:text-2xl font-black leading-tight text-cream">Cozinha</h2>
-              <p className="text-stone text-xs md:text-sm mt-1 leading-snug">
-                Atualizado às{" "}
-                {lastRefresh.toLocaleTimeString("pt-BR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
-                })} - {selectedDateLabel}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <div className="flex h-10 shrink-0 items-center overflow-hidden rounded-lg border border-surface-03 bg-surface-01">
-              <button
-                onClick={() => setSelectedDate((value) => shiftDateInput(value, -1))}
-                title="Dia anterior"
-                className="flex h-full w-9 items-center justify-center text-stone transition-colors hover:text-cream"
-              >
-                <ChevronLeft size={15} />
-              </button>
-              <label className="flex h-full items-center gap-2 border-x border-surface-03 px-3 text-sm font-semibold text-parchment">
-                <CalendarDays size={15} className="text-gold" />
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(event) => setSelectedDate(event.target.value || todayInputValue())}
-                  className="w-[8.5rem] bg-transparent text-sm font-semibold text-parchment outline-none [color-scheme:dark]"
-                />
-              </label>
-              <button
-                onClick={() => setSelectedDate((value) => shiftDateInput(value, 1))}
-                title="Proximo dia"
-                className="flex h-full w-9 items-center justify-center text-stone transition-colors hover:text-cream"
-              >
-                <ChevronRight size={15} />
-              </button>
-            </div>
-
-            <button
-              onClick={() => setSelectedDate(todayInputValue())}
-              disabled={isToday}
-              className="h-10 rounded-lg border border-surface-03 px-3 text-sm font-semibold text-stone transition-colors hover:text-cream disabled:opacity-50"
-            >
-              Hoje
-            </button>
-
-            <button
-              onClick={() => setSoundOn((s) => !s)}
-              title={soundOn ? "Silenciar alertas" : "Ativar alertas sonoros"}
-              className={`p-2 rounded-lg border transition-colors ${
-                soundOn
-                  ? "border-gold/40 text-gold bg-gold/10"
-                  : "border-surface-03 text-stone hover:text-cream"
-              }`}
-            >
-              {soundOn ? <Bell size={16} /> : <BellOff size={16} />}
-            </button>
-
-            <button
-              onClick={() => fetchOrders()}
-              title="Atualizar agora"
-              className="p-2 rounded-lg border border-surface-03 text-stone hover:text-cream transition-colors"
-            >
-              <RefreshCw size={16} />
-            </button>
-
-            <button
-              onClick={() => setFullscreen((f) => !f)}
-              title={fullscreen ? "Sair da tela cheia" : "Modo KDS — tela cheia"}
-              className="p-2 rounded-lg border border-surface-03 text-stone hover:text-cream transition-colors"
-            >
-              {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </button>
-            <AdminTopActions />
-          </div>
+    <section className={`${fullscreen ? "fixed inset-0 z-[100]" : "min-h-screen"} flex flex-col overflow-hidden bg-surface-00 text-cream`}>
+      <header className="flex flex-col gap-4 border-b border-surface-03 bg-surface-02 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-gold/15 text-gold"><ChefHat size={28} /></span>
+          <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-gold">KDS touch</p><h1 className="text-2xl font-black">Cozinha</h1><p className="text-sm text-stone">{lastRefresh ? `Atualizado às ${lastRefresh.toLocaleTimeString("pt-BR")}` : "Sincronizando"}</p></div>
         </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" aria-label={soundOn ? "Silenciar alertas" : "Ativar alertas"} onClick={() => setSoundOn((value) => !value)} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl border border-surface-03 bg-surface-01 text-gold active:scale-95">{soundOn ? <Bell /> : <BellOff />}</button>
+          <button type="button" aria-label="Atualizar pedidos" onClick={() => void loadOrders(true)} disabled={refreshing} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl border border-surface-03 bg-surface-01 active:scale-95 disabled:opacity-50"><RefreshCw className={refreshing ? "animate-spin" : ""} /></button>
+          <button type="button" aria-label={fullscreen ? "Sair da tela cheia" : "Entrar em tela cheia"} onClick={() => void toggleFullscreen()} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl border border-surface-03 bg-surface-01 active:scale-95">{fullscreen ? <Minimize2 /> : <Maximize2 />}</button>
+          <KdsSessionActions />
+        </div>
+      </header>
 
-        {/* Board */}
-        {loading ? (
-          <div className="flex-1 flex items-center justify-center text-stone gap-2">
-            <Loader2 size={24} className="animate-spin" />
-            Carregando pedidos...
-          </div>
-        ) : (
-          <div className="flex-1 overflow-hidden flex">
-            {COLUMNS.map((col) => {
-              const colOrders = orders
-                .filter((o) => col.statuses.includes(o.status))
-                .sort(
-                  (a, b) =>
-                    new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-                );
+      {error && <div role="alert" className="m-3 flex items-center justify-between gap-3 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-red-200"><span className="flex items-center gap-2"><WifiOff /> {error}</span><button type="button" onClick={() => void loadOrders(true)} className="min-h-12 rounded-lg bg-red-500 px-5 font-bold text-white active:bg-red-700">Tentar novamente</button></div>}
 
-              return (
-                <div
-                  key={col.id}
-                  className="flex-1 flex flex-col border-r border-surface-03 last:border-r-0 overflow-hidden"
-                >
-                  {/* Column header */}
-                  <div
-                    className={`px-4 py-3 border-b ${col.headerBorder} bg-surface-02/60 flex-shrink-0 flex items-center justify-between`}
-                  >
-                    <span className={`font-bold text-sm ${col.accent}`}>{col.label}</span>
-                    <span
-                      className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${col.badge}`}
-                    >
-                      {colOrders.length}
-                    </span>
-                  </div>
-
-                  {/* Cards */}
-                  <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                    {colOrders.length === 0 && (
-                      <div className="flex flex-col items-center justify-center h-36 text-stone/40 text-sm gap-2 select-none">
-                        <UtensilsCrossed size={28} />
-                        <span>Nenhum pedido neste dia</span>
-                      </div>
-                    )}
-
-                    {colOrders.map((order) => {
-                      const mins       = elapsedMinutes(order.created_at);
-                      const isUpdating = updating === order.id;
-                      const showUrgency = order.status !== "on_the_way" && order.status !== "delivered";
-
-                      return (
-                        <div
-                          key={order.id}
-                          className={`bg-surface-02 rounded-xl border p-4 space-y-3 transition-all ${showUrgency ? urgencyBorder(mins) : "border-surface-03"}`}
-                        >
-                          {/* Card header */}
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <p className="text-cream font-bold text-lg leading-tight tracking-wide">
-                                #{order.id.slice(0, 8).toUpperCase()}
-                              </p>
-                              <p className="text-stone text-sm">{order.delivery_name}</p>
-                            </div>
-                            <div
-                              className={`flex items-center gap-1 text-xs flex-shrink-0 font-semibold ${
-                                showUrgency && mins >= 40
-                                  ? "text-red-400"
-                                  : showUrgency && mins >= 25
-                                  ? "text-amber-400"
-                                  : "text-stone"
-                              }`}
-                            >
-                              <Clock3 size={12} />
-                              {elapsed(order.created_at)}
-                            </div>
-                          </div>
-
-                          {/* Items */}
-                          <div className="space-y-2 border-t border-surface-03 pt-3">
-                            {order.items.map((item) => (
-                              <div key={item.id}>
-                                <div className="flex items-baseline gap-2">
-                                  <span className="text-gold font-extrabold text-lg min-w-[2rem] text-center leading-none">
-                                    {item.quantity}×
-                                  </span>
-                                  <span className={`font-semibold text-sm leading-snug ${item.is_gift ? "text-green-300" : "text-cream"}`}>
-                                    {itemDescription(item)}
-                                  </span>
-                                </div>
-                                {item.notes && (
-                                  <p className="ml-9 text-amber-300 text-xs mt-1 flex items-start gap-1">
-                                    <span className="flex-shrink-0">⚠</span>
-                                    {item.notes}
-                                  </p>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* Operational timer — só aparece após pagamento confirmado */}
-                          {order.paid_at && (
-                            <OrderTimer
-                              paidAt={order.paid_at}
-                              deliveredAt={order.delivered_at}
-                              targetMinutes={order.target_delivery_minutes ?? 45}
-                              status={order.status}
-                            />
-                          )}
-
-                          {/* Action button OR delivery status badge */}
-                          {col.showDeliveryBadge ? (
-                            <div className="border-t border-surface-03 pt-3">
-                              <DeliveryStatusBadge status={order.status} />
-                            </div>
-                          ) : col.actionLabel && col.actionStatus ? (
-                            <button
-                              onClick={() => moveOrder(order.id, col.actionStatus!)}
-                              disabled={isUpdating}
-                              className={`w-full py-2.5 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2 ${col.actionClass} disabled:opacity-50`}
-                            >
-                              {isUpdating ? (
-                                <Loader2 size={14} className="animate-spin" />
-                              ) : (
-                                <CheckCircle2 size={14} />
-                              )}
-                              {col.actionLabel}
-                            </button>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
+      {loading ? <div className="flex flex-1 items-center justify-center gap-3 text-lg text-stone"><Loader2 className="animate-spin text-gold" /> Carregando pedidos...</div> : (
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-3 lg:overflow-hidden">
+          {columns.map((column) => {
+            const items = orders.filter((order) => column.statuses.includes(order.status)).sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+            return <div key={column.key} className="flex min-h-[20rem] flex-col overflow-hidden rounded-2xl border border-surface-03 bg-surface-01">
+              <div className="flex items-center justify-between border-b border-surface-03 px-5 py-4"><h2 className={`text-lg font-black ${column.accent}`}>{column.label}</h2><span className="rounded-full bg-surface-03 px-3 py-1 font-black">{items.length}</span></div>
+              <div className="grid flex-1 auto-rows-max gap-4 overflow-y-auto p-4 xl:grid-cols-2">
+                {items.length === 0 && <div className="col-span-full flex min-h-52 flex-col items-center justify-center gap-3 text-center text-stone"><UtensilsCrossed size={42} /><strong>Nenhum pedido nesta etapa</strong></div>}
+                {items.map((order) => <article key={order.id} className="flex flex-col gap-4 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft">
+                  <div className="flex items-start justify-between gap-3"><div><strong className="text-xl">#{(order.order_code || order.id.slice(0, 8)).toUpperCase()}</strong><p className="text-sm text-stone">{order.fulfillment_type === "pickup" ? "Retirada no balcão" : "Entrega"}</p></div><span className="flex items-center gap-1 rounded-lg bg-surface-01 px-2 py-1 text-sm font-bold text-amber-300"><Clock3 size={16} />{elapsed(order.created_at)}</span></div>
+                  <div className="space-y-3 border-y border-surface-03 py-4">{order.items.map((item) => <div key={item.id}><p className="font-bold"><span className="mr-2 text-lg text-gold">{item.quantity}x</span>{itemDescription(item)}</p>{item.notes && <p className="mt-1 rounded-lg bg-amber-500/10 p-2 text-sm font-semibold text-amber-200">Obs.: {item.notes}</p>}</div>)}</div>
+                  <button type="button" disabled={Boolean(updating)} onClick={() => void advanceOrder(order)} className={`mt-auto flex min-h-16 w-full items-center justify-center gap-2 rounded-xl px-4 text-lg font-black text-white transition-transform active:scale-[0.98] disabled:opacity-50 ${column.button}`}>{updating === order.id ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}{updating === order.id ? "Processando..." : order.status === "preparing" && order.fulfillment_type === "pickup" ? "Pronto para retirada" : column.action}</button>
+                </article>)}
+              </div>
+            </div>;
+          })}
+        </div>
+      )}
+    </section>
   );
 }

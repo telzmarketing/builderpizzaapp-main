@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { salaoPageApi } from "@/lib/api";
+import { externalFetch, salaoPageApi } from "@/lib/api";
 import { applySalaoSiteOverrides, type SalaoRenderPageKey } from "@/lib/salaoSiteCms";
 
 const SALAO_SITE_URL = "/salao-site/index.html";
@@ -37,7 +37,7 @@ export default function SalaoHome() {
     setUnavailable(false);
 
     Promise.all([
-      fetch(SALAO_SITE_URL).then((response) => response.text()),
+      externalFetch(SALAO_SITE_URL).then((response) => response.text()),
       salaoPageApi.get().catch(() => null),
     ])
       .then(([html, settings]) => {

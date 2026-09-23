@@ -24,7 +24,7 @@ import {
   type ApiPaymentGatewayConfigUpdate,
 } from "@/lib/api";
 
-type Provider = "mercado_pago" | "asaas";
+type Provider = "mercado_pago" | "asaas" | "pagarme";
 
 type FormState = Record<string, string | boolean | number>;
 
@@ -34,10 +34,13 @@ const inputClass =
 const providerLabels: Record<Provider, string> = {
   mercado_pago: "Mercado Pago",
   asaas: "ASAAS",
+  pagarme: "Pagar.me",
 };
 
 const asaasCardSafetyReason =
   "Ative ASAAS, Cartao ASAAS e uma API Key para rotear cartao pelo ASAAS.";
+const pagarmeCardSafetyReason =
+  "Ative Pagar.me, Cartao Pagar.me e configure as chaves publica, secreta e de webhook para selecionar este gateway.";
 
 function bool(value: unknown) {
   return value === true;
@@ -75,8 +78,16 @@ export default function AdminPagamentos() {
   const asaasApiConfigured = Boolean(config?.asaas_api_key_masked || text(form.asaas_api_key));
   const asaasCardSelectable =
     bool(form.asaas_enabled) && bool(form.asaas_credit_card_enabled) && asaasApiConfigured;
+  const pagarmePublicKeyConfigured = Boolean(config?.pagarme_public_key || text(form.pagarme_public_key));
+  const pagarmeSecretKeyConfigured = Boolean(config?.pagarme_secret_key_masked || text(form.pagarme_secret_key));
+  const pagarmeWebhookSecretConfigured = Boolean(config?.pagarme_webhook_secret_masked || text(form.pagarme_webhook_secret));
+  const pagarmeCardSelectable =
+    bool(form.pagarme_enabled) && bool(form.pagarme_credit_card_enabled)
+    && pagarmePublicKeyConfigured && pagarmeSecretKeyConfigured && pagarmeWebhookSecretConfigured;
+  const pagarmeSupported = typeof config?.pagarme_enabled === "boolean";
   const mpWebhookUrl = `${window.location.origin}/api/webhooks/mercadopago`;
   const asaasWebhookUrl = `${window.location.origin}/api/webhooks/asaas`;
+  const pagarmeWebhookUrl = `${window.location.origin}/api/webhooks/pagarme/{endpoint_key}`;
 
   const loadConfig = async () => {
     setLoading(true);
@@ -107,6 +118,14 @@ export default function AdminPagamentos() {
         asaas_credit_card_enabled: data.asaas_credit_card_enabled,
         asaas_max_installments: data.asaas_max_installments || 1,
         asaas_tokenization_status: data.asaas_tokenization_status || "not_validated",
+        pagarme_enabled: data.pagarme_enabled,
+        pagarme_environment: data.pagarme_environment || "sandbox",
+        pagarme_public_key: data.pagarme_public_key || "",
+        pagarme_secret_key: "",
+        pagarme_webhook_secret: "",
+        pagarme_pix_enabled: data.pagarme_pix_enabled,
+        pagarme_credit_card_enabled: data.pagarme_credit_card_enabled,
+        pagarme_max_installments: data.pagarme_max_installments || 1,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nao foi possivel carregar a configuracao.");
@@ -137,7 +156,12 @@ export default function AdminPagamentos() {
     setError(null);
     setSaved(false);
     try {
-      const creditCardProvider = asaasCardSelectable ? text(form.credit_card_provider) : "mercado_pago";
+      const selectedCardProvider = text(form.credit_card_provider);
+      const creditCardProvider = selectedCardProvider === "asaas"
+        ? (asaasCardSelectable ? "asaas" : "mercado_pago")
+        : selectedCardProvider === "pagarme"
+          ? (pagarmeCardSelectable ? "pagarme" : "mercado_pago")
+          : "mercado_pago";
       const payload: ApiPaymentGatewayConfigUpdate = {
         gateway: "mercadopago",
         sandbox: text(form.mp_environment) !== "production",
@@ -159,11 +183,19 @@ export default function AdminPagamentos() {
         asaas_credit_card_enabled: bool(form.asaas_credit_card_enabled),
         asaas_max_installments: numberValue(form.asaas_max_installments, 1),
         asaas_tokenization_status: text(form.asaas_tokenization_status) || "not_validated",
+        pagarme_enabled: bool(form.pagarme_enabled),
+        pagarme_environment: text(form.pagarme_environment) || "sandbox",
+        pagarme_public_key: text(form.pagarme_public_key) || null,
+        pagarme_pix_enabled: bool(form.pagarme_pix_enabled),
+        pagarme_credit_card_enabled: bool(form.pagarme_credit_card_enabled),
+        pagarme_max_installments: numberValue(form.pagarme_max_installments, 1),
       };
       if (text(form.mp_access_token)) payload.mp_access_token = text(form.mp_access_token);
       if (text(form.mp_webhook_secret)) payload.mp_webhook_secret = text(form.mp_webhook_secret);
       if (text(form.asaas_api_key)) payload.asaas_api_key = text(form.asaas_api_key);
       if (text(form.asaas_webhook_token)) payload.asaas_webhook_token = text(form.asaas_webhook_token);
+      if (text(form.pagarme_secret_key)) payload.pagarme_secret_key = text(form.pagarme_secret_key);
+      if (text(form.pagarme_webhook_secret)) payload.pagarme_webhook_secret = text(form.pagarme_webhook_secret);
 
       const updated = await adminApi.updatePaymentGateway(payload);
       setConfig(updated);
@@ -173,8 +205,11 @@ export default function AdminPagamentos() {
         mp_webhook_secret: "",
         asaas_api_key: "",
         asaas_webhook_token: "",
+        pagarme_secret_key: "",
+        pagarme_webhook_secret: "",
         credit_card_provider: updated.credit_card_provider || "mercado_pago",
         asaas_credit_card_enabled: updated.asaas_credit_card_enabled,
+        pagarme_credit_card_enabled: updated.pagarme_credit_card_enabled,
       }));
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -255,6 +290,7 @@ export default function AdminPagamentos() {
                       options={[
                         { provider: "mercado_pago", enabled: true },
                         { provider: "asaas", enabled: true },
+                        { provider: "pagarme", enabled: pagarmeSupported, reason: "Backend Pagar.me ainda indisponivel." },
                       ]}
                     />
                     <RoutingControl
@@ -267,6 +303,11 @@ export default function AdminPagamentos() {
                           provider: "asaas",
                           enabled: asaasCardSelectable,
                           reason: asaasCardSafetyReason,
+                        },
+                        {
+                          provider: "pagarme",
+                          enabled: pagarmeSupported && pagarmeCardSelectable,
+                          reason: pagarmeCardSafetyReason,
                         },
                       ]}
                     />
@@ -411,6 +452,72 @@ export default function AdminPagamentos() {
                     </div>
                   )}
                 </ProviderSection>
+
+                {pagarmeSupported ? <ProviderSection
+                  provider="pagarme"
+                  title="Pagar.me"
+                  enabled={bool(form.pagarme_enabled)}
+                  onEnabledChange={(value) => set("pagarme_enabled", value)}
+                  environment={text(form.pagarme_environment)}
+                  onEnvironmentChange={(value) => set("pagarme_environment", value)}
+                  healthStatus={config?.pagarme_last_health_check_status}
+                  healthMessage={config?.pagarme_last_health_check_message}
+                  lastCheck={config?.pagarme_last_health_check_at}
+                  testing={testingProvider === "pagarme"}
+                  onTest={() => testProvider("pagarme")}
+                  webhookUrl={pagarmeWebhookUrl}
+                >
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <Field label="Public Key">
+                      <input
+                        className={inputClass}
+                        value={text(form.pagarme_public_key)}
+                        onChange={(e) => set("pagarme_public_key", e.target.value)}
+                        placeholder="pk_..."
+                        autoComplete="off"
+                      />
+                    </Field>
+                    <SecretField
+                      label="Secret Key"
+                      fieldKey="pagarme_secret_key"
+                      value={text(form.pagarme_secret_key)}
+                      placeholder={masked(config?.pagarme_secret_key_masked)}
+                      show={!!showSecrets.pagarme_secret_key}
+                      onToggle={() => toggleSecret("pagarme_secret_key")}
+                      onChange={(value) => set("pagarme_secret_key", value)}
+                    />
+                    <SecretField
+                      label="Webhook Secret"
+                      fieldKey="pagarme_webhook_secret"
+                      value={text(form.pagarme_webhook_secret)}
+                      placeholder={masked(config?.pagarme_webhook_secret_masked)}
+                      show={!!showSecrets.pagarme_webhook_secret}
+                      onToggle={() => toggleSecret("pagarme_webhook_secret")}
+                      onChange={(value) => set("pagarme_webhook_secret", value)}
+                    />
+                    <Field label="Maximo de parcelas">
+                      <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        className={inputClass}
+                        value={numberValue(form.pagarme_max_installments, 1)}
+                        onChange={(e) => set("pagarme_max_installments", Number(e.target.value))}
+                      />
+                    </Field>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <InlineToggle label="Pix Pagar.me" checked={bool(form.pagarme_pix_enabled)} onChange={() => set("pagarme_pix_enabled", !bool(form.pagarme_pix_enabled))} />
+                    <InlineToggle label="Cartao Pagar.me" checked={bool(form.pagarme_credit_card_enabled)} onChange={() => set("pagarme_credit_card_enabled", !bool(form.pagarme_credit_card_enabled))} />
+                  </div>
+                  <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-100">
+                    O checkout usa somente a Public Key para tokenizar o cartao diretamente no Pagar.me. A Secret Key nunca e enviada ao navegador.
+                  </div>
+                </ProviderSection> : (
+                  <section className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-6 py-5 text-sm text-amber-100">
+                    Pagar.me ainda nao esta disponivel neste backend. A opcao sera liberada automaticamente quando o contrato estiver ativo.
+                  </section>
+                )}
               </>
             )}
           </main>
@@ -660,6 +767,7 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
 }
 
 function WebhookBox({ url }: { url: string }) {
+  const requiresEndpointKey = url.includes("{endpoint_key}");
   return (
     <div>
       <p className="mb-2 text-sm font-medium text-parchment">URL do webhook</p>
@@ -668,12 +776,18 @@ function WebhookBox({ url }: { url: string }) {
         <button
           type="button"
           onClick={() => navigator.clipboard?.writeText(url)}
+          disabled={requiresEndpointKey}
           className="flex items-center gap-1 rounded border border-surface-03 px-2 py-1 text-xs text-parchment transition-colors hover:border-gold"
         >
           <Copy size={13} />
-          Copiar
+          {requiresEndpointKey ? "Chave no servidor" : "Copiar"}
         </button>
       </div>
+      {requiresEndpointKey && (
+        <p className="mt-2 text-xs text-stone">
+          Substitua endpoint_key pela chave opaca vinculada a esta empresa no servidor antes de cadastrar o webhook.
+        </p>
+      )}
     </div>
   );
 }

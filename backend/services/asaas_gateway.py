@@ -27,9 +27,15 @@ def _digits(value: str | None) -> str:
 class AsaasGateway:
     provider = "asaas"
 
-    def __init__(self, db: Session, client: AsaasClient | None = None):
+    def __init__(
+        self,
+        db: Session,
+        client: AsaasClient | None = None,
+        config: PaymentGatewayConfig | None = None,
+    ):
         self._db = db
         self._client = client
+        self._payment_config = config
 
     def create_pix_payment(
         self,
@@ -144,6 +150,7 @@ class AsaasGateway:
         existing = (
             self._db.query(PaymentProviderCustomer)
             .filter(
+                PaymentProviderCustomer.tenant_id == customer.tenant_id,
                 PaymentProviderCustomer.customer_id == customer.id,
                 PaymentProviderCustomer.provider == self.provider,
             )
@@ -175,6 +182,7 @@ class AsaasGateway:
 
         record = existing or PaymentProviderCustomer(
             id=f"ppc-{uuid.uuid4().hex[:12]}",
+            tenant_id=customer.tenant_id,
             customer_id=customer.id,
             provider=self.provider,
         )
@@ -195,6 +203,8 @@ class AsaasGateway:
         )
 
     def _config(self) -> PaymentGatewayConfig:
+        if self._payment_config is not None:
+            return self._payment_config
         config = self._db.query(PaymentGatewayConfig).filter(PaymentGatewayConfig.id == "default").first()
         if not config:
             config = PaymentGatewayConfig(id="default")

@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import {
   Loader2, Users, KanbanSquare, ClipboardList, FolderOpen, RefreshCw,
@@ -106,7 +107,7 @@ export default function CrmDashboard() {
     const token = localStorage.getItem("admin_token");
     setLoading(true);
     setError("");
-    fetch(`${BASE}/crm/dashboard?period=${p}`, {
+    apiFetch(`/crm/dashboard?period=${p}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => { if (!r.ok) throw new Error("Falha ao carregar dashboard CRM."); return r.json(); })

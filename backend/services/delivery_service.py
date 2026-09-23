@@ -795,7 +795,7 @@ class DeliveryService:
         if payment_received:
             from backend.services.payment_service import PaymentService
 
-            PaymentService(self._db).confirm_pay_on_delivery(
+            PaymentService(self._db, tenant_id=delivery.tenant_id).confirm_pay_on_delivery(
                 delivery.order_id,
                 source="driver_delivery",
             )

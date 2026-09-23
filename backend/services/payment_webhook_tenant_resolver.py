@@ -12,7 +12,7 @@ from backend.models.payment_config import PaymentGatewayConfig
 from backend.models.tenant import Tenant
 
 _KEY_RE = re.compile(r"^[A-Za-z0-9_-]{24,160}$")
-_PROVIDERS = frozenset({"mercado_pago", "asaas"})
+_PROVIDERS = frozenset({"mercado_pago", "asaas", "pagarme"})
 
 class PaymentWebhookTenantResolutionError(DomainError):
     http_status = 404

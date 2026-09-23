@@ -305,7 +305,7 @@ interface AppContextType {
   googleLogin: (credential: string) => Promise<void>;
   emailLogin: (email: string, password: string) => Promise<void>;
   registerCustomer: (data: { name: string; email: string; password: string; phone: string; street?: string; number?: string; complement?: string; neighborhood?: string; city?: string; state?: string; zip_code?: string; label?: string; lgpd_consent: boolean; lgpd_policy_version?: string; marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean }) => Promise<void>;
-  customerLogout: () => void;
+  customerLogout: () => Promise<void>;
   updateCustomer: (data: { name?: string; phone?: string }) => Promise<void>;
   addCustomerAddress: (data: { label?: string; street: string; number?: string; complement?: string; neighborhood?: string; city: string; state?: string; zip_code?: string }) => Promise<void>;
 
@@ -552,12 +552,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [customer, setCustomer] = useState<ApiCustomer | null>(() => {
     try {
+      if (!sessionStorage.getItem("customer_access_token")) return null;
       const stored = localStorage.getItem("customer");
       return stored ? JSON.parse(stored) : null;
     } catch {
       return null;
     }
   });
+
+  useEffect(() => {
+    if (!sessionStorage.getItem("customer_access_token")) return;
+    authApi.me()
+      .then(({ customer: current }) => {
+        setCustomer(current);
+        localStorage.setItem("customer", JSON.stringify(current));
+      })
+      .catch(() => {
+        sessionStorage.removeItem("customer_access_token");
+        localStorage.removeItem("customer");
+        setCustomer(null);
+      });
+  }, []);
 
   const [initialProducts] = useState(getInitialProductsState);
   const [products, setProducts] = useState<Pizza[]>(initialProducts.products);
@@ -753,37 +768,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const customerLogin = async (phone: string, password: string) => {
-    const { customer: c } = await authApi.login(phone, password);
+    const { customer: c, access_token } = await authApi.login(phone, password);
+    sessionStorage.setItem("customer_access_token", access_token);
     setCustomer(c);
     localStorage.setItem("customer", JSON.stringify(c));
     _linkSession(c.id);
   };
 
   const googleLogin = async (credential: string) => {
-    const { customer: c } = await authApi.googleLogin(credential);
+    const { customer: c, access_token } = await authApi.googleLogin(credential);
+    sessionStorage.setItem("customer_access_token", access_token);
     setCustomer(c);
     localStorage.setItem("customer", JSON.stringify(c));
     _linkSession(c.id);
   };
 
   const emailLogin = async (email: string, password: string) => {
-    const { customer: c } = await authApi.emailLogin(email, password);
+    const { customer: c, access_token } = await authApi.emailLogin(email, password);
+    sessionStorage.setItem("customer_access_token", access_token);
     setCustomer(c);
     localStorage.setItem("customer", JSON.stringify(c));
     _linkSession(c.id);
   };
 
   const registerCustomer = async (data: { name: string; email: string; password: string; phone: string; street?: string; number?: string; complement?: string; neighborhood?: string; city?: string; state?: string; zip_code?: string; label?: string; lgpd_consent: boolean; lgpd_policy_version?: string; marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean }) => {
-    const { customer: c } = await authApi.register(data);
+    const { customer: c, access_token } = await authApi.register(data);
+    sessionStorage.setItem("customer_access_token", access_token);
     setCustomer(c);
     localStorage.setItem("customer", JSON.stringify(c));
     _linkSession(c.id);
     firePixelEvent("Lead", { content_name: "Cadastro de cliente" });
   };
 
-  const customerLogout = () => {
-    setCustomer(null);
-    localStorage.removeItem("customer");
+  const customerLogout = async () => {
+    try {
+      await authApi.logout();
+    } finally {
+      setCustomer(null);
+      sessionStorage.removeItem("customer_access_token");
+      localStorage.removeItem("customer");
+    }
   };
 
   const updateCustomer = async (data: { name?: string; phone?: string }) => {

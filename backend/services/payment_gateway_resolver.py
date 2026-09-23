@@ -9,8 +9,9 @@ from backend.models.payment_config import PaymentGatewayConfig
 
 PROVIDER_MERCADO_PAGO = "mercado_pago"
 PROVIDER_ASAAS = "asaas"
+PROVIDER_PAGARME = "pagarme"
 PROVIDER_ON_DELIVERY = "on_delivery"
-SUPPORTED_PAYMENT_PROVIDERS = {PROVIDER_MERCADO_PAGO, PROVIDER_ASAAS}
+SUPPORTED_PAYMENT_PROVIDERS = {PROVIDER_MERCADO_PAGO, PROVIDER_ASAAS, PROVIDER_PAGARME}
 ASAAS_CARD_SAFETY_REASON = (
     "Cartao ASAAS disponivel somente no fluxo seguro dedicado do checkout."
 )
@@ -26,6 +27,8 @@ def normalize_payment_provider(value: str | None) -> str:
         return PROVIDER_MERCADO_PAGO
     if raw == "asaas":
         return PROVIDER_ASAAS
+    if raw in {"pagarme", "pagar_me", "pagar.me"}:
+        return PROVIDER_PAGARME
     return raw or PROVIDER_MERCADO_PAGO
 
 
@@ -133,6 +136,15 @@ class PaymentGatewayResolver:
                     "max_installments": self.config.asaas_max_installments or 1,
                     "tokenization_status": self.config.asaas_tokenization_status,
                 },
+                PROVIDER_PAGARME: {
+                    "enabled": bool(self.config.pagarme_enabled),
+                    "environment": self.config.pagarme_environment,
+                    "public_key": self.config.pagarme_public_key or "",
+                    "configured": bool(self.config.pagarme_secret_key),
+                    "pix_enabled": bool(self.config.pagarme_pix_enabled),
+                    "credit_card_enabled": bool(self.config.pagarme_credit_card_enabled),
+                    "max_installments": self.config.pagarme_max_installments or 1,
+                },
             },
         }
 
@@ -167,12 +179,26 @@ class PaymentGatewayResolver:
                 return False, ASAAS_CARD_SAFETY_REASON
             return True, None
 
+        if provider == PROVIDER_PAGARME:
+            if not self.config.pagarme_enabled:
+                return False, "Pagar.me desativado."
+            if not self.config.pagarme_secret_key:
+                return False, "Pagar.me sem chave secreta configurada."
+            if method == PaymentMethod.pix and not self.config.pagarme_pix_enabled:
+                return False, "Pix Pagar.me desativado."
+            if method == PaymentMethod.credit_card:
+                if not self.config.pagarme_credit_card_enabled:
+                    return False, "Cartao Pagar.me desativado."
+                if not self.config.pagarme_public_key:
+                    return False, "Pagar.me sem chave publica para tokenizacao."
+            return True, None
+
         return False, "Provedor de pagamento nao suportado."
 
     def _public_method(self, resolved: ResolvedPaymentGateway) -> dict[str, Any]:
         implementation_available = (
             resolved.provider in {PROVIDER_MERCADO_PAGO, PROVIDER_ON_DELIVERY}
-            or (resolved.provider == PROVIDER_ASAAS and resolved.method in {PaymentMethod.pix, PaymentMethod.credit_card})
+            or (resolved.provider in {PROVIDER_ASAAS, PROVIDER_PAGARME} and resolved.method in {PaymentMethod.pix, PaymentMethod.credit_card})
         )
         implementation_status = "available" if implementation_available else "pending_backend"
         enabled = resolved.enabled and implementation_status == "available"
@@ -197,4 +223,6 @@ class PaymentGatewayResolver:
     def _max_installments(self, provider: str) -> int:
         if provider == PROVIDER_ASAAS:
             return max(1, int(self.config.asaas_max_installments or 1))
+        if provider == PROVIDER_PAGARME:
+            return max(1, int(self.config.pagarme_max_installments or 1))
         return max(1, int(self.config.mp_max_installments or 1))

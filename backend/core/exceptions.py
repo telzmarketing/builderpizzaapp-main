@@ -119,6 +119,17 @@ class PaymentOrderNotEligible(DomainError):
         )
 
 
+class IdempotencyKeyRequired(DomainError):
+    http_status = 428
+
+    def __init__(self):
+        super().__init__("O cabecalho Idempotency-Key e obrigatorio para criar pagamentos.")
+
+
+class IdempotencyConflict(DomainError):
+    http_status = 409
+
+
 class PaymentAmountMismatch(DomainError):
     def __init__(self, expected: float, received: float):
         super().__init__(

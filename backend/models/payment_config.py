@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Index, Integer, Text
 from datetime import datetime, timezone
 from backend.database import Base
@@ -6,7 +8,8 @@ from backend.database import Base
 class PaymentGatewayConfig(Base):
     """
     Stores payment gateway settings editable via the admin panel.
-    Only one row is active at a time (id='default').
+    Exactly one row belongs to each tenant.  The legacy tenant may keep the
+    historical ``id='default'``; new rows use opaque identifiers.
 
     Secret keys are stored as-is here (no encryption at rest).
     In production, use a secrets manager (AWS Secrets Manager, Vault, etc.)
@@ -18,7 +21,7 @@ class PaymentGatewayConfig(Base):
         Index("uq_payment_gateway_config_tenant_singleton", "tenant_id", unique=True),
     )
 
-    id = Column(String, primary_key=True, default="default")
+    id = Column(String, primary_key=True, default=lambda: f"pgc-{uuid.uuid4()}")
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_payment_gateway_config_tenant_id_tenants"), nullable=True)
 
     # Which gateway is active
@@ -50,6 +53,18 @@ class PaymentGatewayConfig(Base):
     asaas_last_health_check_at = Column(DateTime(timezone=True), nullable=True)
     asaas_last_health_check_status = Column(String(30), nullable=False, default="not_tested")
     asaas_last_health_check_message = Column(Text, nullable=True)
+
+    pagarme_enabled = Column(Boolean, default=False)
+    pagarme_environment = Column(String(20), nullable=False, default="sandbox")
+    pagarme_public_key = Column(String(300), nullable=True)
+    pagarme_secret_key = Column(String(500), nullable=True)
+    pagarme_webhook_secret = Column(String(500), nullable=True)
+    pagarme_pix_enabled = Column(Boolean, default=False)
+    pagarme_credit_card_enabled = Column(Boolean, default=False)
+    pagarme_max_installments = Column(Integer, default=1)
+    pagarme_last_health_check_at = Column(DateTime(timezone=True), nullable=True)
+    pagarme_last_health_check_status = Column(String(30), nullable=False, default="not_tested")
+    pagarme_last_health_check_message = Column(Text, nullable=True)
 
     # ── Stripe ────────────────────────────────────────────────────────────────
     stripe_publishable_key = Column(String(300), nullable=True)

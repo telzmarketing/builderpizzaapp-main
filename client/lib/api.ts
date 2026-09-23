@@ -107,6 +107,7 @@ function authHeaders(): HeadersInit {
 }
 
 function recoverUnauthorizedAdminSession(status: number, path: string): string | null {
+  if (path.startsWith("/auth/") || !window.location.pathname.startsWith("/painel")) return null;
   if (!shouldInvalidateAdminSession(status, path)) return null;
   if (readPlatformSupportSession()) {
     restorePlatformMasterSession();
@@ -120,7 +121,10 @@ function recoverUnauthorizedAdminSession(status: number, path: string): string |
 
 async function fetchApi(path: string, init: RequestInit): Promise<Response> {
   let lastError: Error | null = null;
-  for (const base of API_BASES) {
+  const method = (init.method ?? "GET").toUpperCase();
+  const safeToRetry = method === "GET" || method === "HEAD" || method === "OPTIONS";
+  const bases = safeToRetry ? API_BASES : API_BASES.slice(0, 1);
+  for (const base of bases) {
     try {
       const res = await fetch(`${base}${path}`, init);
       if (!res.ok) {
@@ -140,6 +144,16 @@ async function fetchApi(path: string, init: RequestInit): Promise<Response> {
     }
   }
   throw lastError ?? new Error("Nao foi possivel conectar a API.");
+}
+
+/** Low-level escape hatch for API surfaces that still need Response semantics. */
+export function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetchApi(path, init);
+}
+
+/** Centralized browser request for explicitly external, non-API resources. */
+export function externalFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(url, init);
 }
 
 async function requestForm<T>(method: string, path: string, body: FormData): Promise<T> {
@@ -241,7 +255,6 @@ function rememberOrderAccess(order: { id: string; delivery_phone?: string | null
     sessionStorage.setItem(
       `order_access:${order.id}`,
       JSON.stringify({
-        phone: order.delivery_phone ?? null,
         customer_id: order.customer_id ?? null,
       }),
     );
@@ -255,9 +268,8 @@ function orderAccessHeaders(orderId: string): HeadersInit {
   try {
     const raw = sessionStorage.getItem(`order_access:${orderId}`);
     if (raw) {
-      const access = JSON.parse(raw) as { phone?: string | null; customer_id?: string | null };
+      const access = JSON.parse(raw) as { customer_id?: string | null };
       Object.assign(headers, customerAccessHeaders(access.customer_id ?? undefined));
-      if (access.phone) headers["X-Customer-Phone"] = access.phone;
     } else {
       Object.assign(headers, customerAccessHeaders());
     }
@@ -269,8 +281,9 @@ function orderAccessHeaders(orderId: string): HeadersInit {
 
 function customerAccessHeaders(customerId?: string): HeadersInit {
   try {
+    const token = sessionStorage.getItem("customer_access_token");
     const raw = localStorage.getItem("customer");
-    if (!raw) return {};
+    if (!token || !raw) return {};
     const customer = JSON.parse(raw) as {
       id?: string;
       phone?: string | null;
@@ -278,13 +291,24 @@ function customerAccessHeaders(customerId?: string): HeadersInit {
     };
     if (customerId && customer.id !== customerId) return {};
 
-    const headers: Record<string, string> = {};
-    if (customer.phone) headers["X-Customer-Phone"] = customer.phone;
-    if (customer.email) headers["X-Customer-Email"] = customer.email;
-    return headers;
+    return { Authorization: `Bearer ${token}` };
   } catch {
     return {};
   }
+}
+
+function paymentMutationHeaders(orderId: string, operation: string): HeadersInit {
+  const headers = new Headers(orderAccessHeaders(orderId));
+  const storageKey = `payment_idempotency:${operation}:${orderId}`;
+  let key = sessionStorage.getItem(storageKey);
+  if (!key) {
+    key = typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    sessionStorage.setItem(storageKey, key);
+  }
+  headers.set("Idempotency-Key", key);
+  return headers;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1090,6 +1114,88 @@ export interface ApiOrder {
   } | null;
 }
 
+export interface KdsOrderItem {
+  id: string;
+  product_id: string;
+  product_name: string;
+  quantity: number;
+  selected_size?: string | null;
+  selected_crust_type?: string | null;
+  selected_drink_variant?: string | null;
+  notes?: string | null;
+  flavors: Array<{ name: string }>;
+}
+
+export interface KdsKitchenOrder {
+  id: string;
+  order_code?: string | null;
+  status: OrderStatus;
+  fulfillment_type: "delivery" | "pickup" | string;
+  sales_channel?: string | null;
+  notes?: string | null;
+  total: number;
+  estimated_time: number;
+  created_at: string;
+  updated_at: string;
+  preparation_started_at?: string | null;
+  items: KdsOrderItem[];
+}
+
+export interface KdsDispatchOrder extends KdsKitchenOrder {
+  delivery_name: string;
+  delivery_street: string;
+  delivery_city: string;
+  delivery_complement?: string | null;
+  payment_method?: string | null;
+  pay_on_delivery: boolean;
+  delivery_payment_method?: "cash" | "card" | string | null;
+  cash_needs_change?: boolean | null;
+  cash_change_for?: number | null;
+  delivery?: {
+    id: string;
+    status: string;
+    delivery_person_id?: string | null;
+    delivery_person_name?: string | null;
+    assigned_at?: string | null;
+  } | null;
+}
+
+export interface KdsDriver {
+  id: string;
+  name: string;
+  status: "available";
+  vehicle_type?: "motorcycle" | "bicycle" | "car" | "walking" | null;
+  average_rating?: number | null;
+}
+
+export interface KdsDispatchResult {
+  order: KdsDispatchOrder;
+  delivery?: {
+    id: string;
+    status: string;
+    delivery_person_id?: string | null;
+    delivery_person_name?: string | null;
+  } | null;
+}
+
+/** Endpoints operacionais mínimos usados pelas estações KDS touch. */
+export const kdsApi = {
+  listKitchenOrders: () => get<KdsKitchenOrder[]>("/kds/kitchen/orders"),
+  startKitchenOrder: (orderId: string) =>
+    post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/start`, {}),
+  markKitchenOrderReady: (orderId: string) =>
+    post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/ready`, {}),
+  completeKitchenPickup: (orderId: string) =>
+    post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/pickup-complete`, {}),
+  listDispatchOrders: () => get<KdsDispatchOrder[]>("/kds/dispatch/orders"),
+  listDispatchDrivers: () => get<KdsDriver[]>("/kds/dispatch/drivers"),
+  assignDispatchOrder: (orderId: string, deliveryPersonId: string, estimatedMinutes = 40) =>
+    post<KdsDispatchResult>(`/kds/dispatch/orders/${orderId}/assign`, {
+      delivery_person_id: deliveryPersonId,
+      estimated_minutes: estimatedMinutes,
+    }),
+};
+
 export interface CheckoutItemIn {
   product_id: string;
   quantity: number;
@@ -1892,8 +1998,23 @@ export interface ApiAsaasCreditCardPaymentInput {
   };
 }
 
+export interface ApiPagarmeCardInput {
+  number: string;
+  holder_name: string;
+  exp_month: string;
+  exp_year: string;
+  cvv: string;
+}
+
+export interface ApiPagarmeCardToken {
+  id: string;
+  type: "card" | string;
+  created_at?: string;
+  expires_at?: string;
+}
+
 export interface ApiPaymentMethods {
-  gateway: "mercadopago";
+  gateway: "mercadopago" | "pagarme" | "multi" | string;
   accept_pix: boolean;
   accept_credit_card: boolean;
   accept_debit_card: boolean;
@@ -2980,6 +3101,17 @@ export interface ApiPaymentGatewayConfig {
   asaas_last_health_check_at: string | null;
   asaas_last_health_check_status: string;
   asaas_last_health_check_message: string | null;
+  pagarme_enabled: boolean;
+  pagarme_environment: string;
+  pagarme_public_key: string | null;
+  pagarme_secret_key_masked: string | null;
+  pagarme_webhook_secret_masked: string | null;
+  pagarme_pix_enabled: boolean;
+  pagarme_credit_card_enabled: boolean;
+  pagarme_max_installments: number;
+  pagarme_last_health_check_at: string | null;
+  pagarme_last_health_check_status: string;
+  pagarme_last_health_check_message: string | null;
   stripe_publishable_key: string | null;
   stripe_secret_key_masked: string | null;
   pagseguro_email: string | null;
@@ -3016,6 +3148,14 @@ export interface ApiPaymentGatewayConfigUpdate {
   asaas_credit_card_enabled?: boolean;
   asaas_max_installments?: number;
   asaas_tokenization_status?: string;
+  pagarme_enabled?: boolean;
+  pagarme_environment?: string;
+  pagarme_public_key?: string | null;
+  pagarme_secret_key?: string | null;
+  pagarme_webhook_secret?: string | null;
+  pagarme_pix_enabled?: boolean;
+  pagarme_credit_card_enabled?: boolean;
+  pagarme_max_installments?: number;
   stripe_publishable_key?: string | null;
   stripe_secret_key?: string | null;
   stripe_webhook_secret?: string | null;
@@ -4363,6 +4503,14 @@ export const platformInvitationApi = {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
+export interface CustomerSession {
+  customer: ApiCustomer;
+  is_new: boolean;
+  access_token: string;
+  token_type: "bearer";
+  expires_in: number;
+}
+
 export const authApi = {
   checkPhone: (phone: string) =>
     post<{ exists: boolean; customer_id?: string; name?: string }>(
@@ -4371,16 +4519,16 @@ export const authApi = {
     ),
 
   login: (phone: string, password: string) =>
-    post<{ customer: ApiCustomer; is_new: boolean }>("/auth/login", {
+    post<CustomerSession>("/auth/login", {
       phone,
       password,
     }),
 
   googleLogin: (credential: string) =>
-    post<{ customer: ApiCustomer; is_new: boolean }>("/auth/google", { credential }),
+    post<CustomerSession>("/auth/google", { credential }),
 
   emailLogin: (email: string, password: string) =>
-    post<{ customer: ApiCustomer; is_new: boolean }>("/auth/login-email", { email, password }),
+    post<CustomerSession>("/auth/login-email", { email, password }),
 
   register: (data: {
     name: string; email: string; password: string; phone: string;
@@ -4389,7 +4537,9 @@ export const authApi = {
     label?: string;
     lgpd_consent: boolean; lgpd_policy_version?: string;
     marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean;
-  }) => post<{ customer: ApiCustomer; is_new: boolean }>("/auth/register", data),
+  }) => post<CustomerSession>("/auth/register", data),
+  me: () => request<{ customer: ApiCustomer }>("GET", "/auth/me", undefined, customerAccessHeaders()),
+  logout: () => request<null>("POST", "/auth/logout", {}, customerAccessHeaders()),
 };
 
 // ─── LGPD ─────────────────────────────────────────────────────────────────────
@@ -4641,7 +4791,12 @@ export interface ApiOrderWhatsappNotificationConfig {
 
 export const ordersApi = {
   checkout: async (data: CheckoutIn) => {
-    const order = await post<ApiOrder>("/orders", data);
+    const order = await request<ApiOrder>(
+      "POST",
+      "/orders",
+      data,
+      data.customer_id ? customerAccessHeaders(data.customer_id) : undefined,
+    );
     rememberOrderAccess(order);
     return order;
   },
@@ -4985,23 +5140,29 @@ export const paymentsApi = {
       "POST",
       "/payments/create",
       { order_id, amount, payment_method },
-      orderAccessHeaders(order_id),
+      paymentMutationHeaders(order_id, "create"),
     ),
 
   createPix: (order_id: string, amount: number, document?: string) =>
     request<ApiPayment>(
       "POST",
       "/payments/create",
-      {
+      (() => {
+        const identification = document
+          ? { type: document.replace(/\D/g, "").length > 11 ? "CNPJ" : "CPF", number: document.replace(/\D/g, "") }
+          : undefined;
+        return {
         order_id,
         amount,
         payment_method: "pix",
+        ...(identification ? { payer: { identification } } : {}),
         formData: {
           payment_method_id: "pix",
-          ...(document ? { payer: { identification: { type: document.replace(/\D/g, "").length > 11 ? "CNPJ" : "CPF", number: document.replace(/\D/g, "") } } } : {}),
+          ...(identification ? { payer: { identification } } : {}),
         },
-      },
-      orderAccessHeaders(order_id),
+        };
+      })(),
+      paymentMutationHeaders(order_id, "create-pix"),
     ),
 
   createFromBrick: (order_id: string, formData: Record<string, unknown>) =>
@@ -5009,7 +5170,7 @@ export const paymentsApi = {
       "POST",
       "/payments/create",
       { order_id, formData },
-      orderAccessHeaders(order_id),
+      paymentMutationHeaders(order_id, "create-brick"),
     ),
 
   createAsaasCreditCard: (order_id: string, data: Omit<ApiAsaasCreditCardPaymentInput, "order_id">) =>
@@ -5017,7 +5178,42 @@ export const paymentsApi = {
       "POST",
       "/payments/asaas/credit-card",
       { order_id, ...data },
-      orderAccessHeaders(order_id),
+      paymentMutationHeaders(order_id, "asaas-credit-card"),
+    ),
+
+  tokenizePagarmeCard: async (publicKey: string, card: ApiPagarmeCardInput) => {
+    if (!publicKey.trim()) throw new Error("Chave publica Pagar.me nao configurada.");
+    const response = await externalFetch(
+      `https://api.pagar.me/core/v5/tokens?appId=${encodeURIComponent(publicKey.trim())}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "card", card }),
+      },
+    );
+    if (!response.ok) {
+      let message = "Nao foi possivel validar o cartao no Pagar.me.";
+      try {
+        const data = await response.json() as { message?: string; error?: { message?: string }; errors?: Array<{ message?: string }> };
+        message = data.error?.message || data.message || data.errors?.[0]?.message || message;
+      } catch {
+        // A resposta do provedor pode nao ser JSON em indisponibilidades de borda.
+      }
+      throw new ApiRequestError(message, response.status);
+    }
+    const token = await response.json() as ApiPagarmeCardToken;
+    if (!token?.id || !token.id.startsWith("token_")) {
+      throw new Error("Token de cartao invalido retornado pelo Pagar.me.");
+    }
+    return token;
+  },
+
+  createPagarmeCreditCard: (order_id: string, token: string, installments = 1) =>
+    request<ApiPayment>(
+      "POST",
+      "/payments/create",
+      { order_id, payment_method: "credit_card", token, installments },
+      paymentMutationHeaders(order_id, "pagarme-credit-card"),
     ),
 
   switchToPayOnDelivery: (
@@ -5086,7 +5282,12 @@ export const couponsApi = {
   remove: (id: string) => del<void>(`/coupons/${id}`),
 
   apply: (code: string, order_subtotal: number, customer_id?: string, phone?: string, delivery_fee = 0) =>
-    post<ApiCouponApply>("/coupons/apply", { code, order_subtotal, customer_id, phone, delivery_fee }),
+    request<ApiCouponApply>(
+      "POST",
+      "/coupons/apply",
+      { code, order_subtotal, customer_id, phone, delivery_fee },
+      customer_id ? customerAccessHeaders(customer_id) : undefined,
+    ),
 
   listUsage: () => get<ApiCouponUsage[]>("/coupons/usage"),
 

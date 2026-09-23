@@ -688,6 +688,7 @@ class OrderService:
             session_id=tracking["session_id"],
             landing_page=tracking["landing_page"],
             referrer=tracking["referrer"],
+            fulfillment_type="pickup" if payload.delivery.is_pickup else "delivery",
             subtotal=subtotal,
             shipping_fee=delivery_fee_final,
             delivery_fee_original=delivery_fee_original,
@@ -932,6 +933,7 @@ class OrderService:
             delivery_complement=session.waiter_name,
             status=OrderStatus.preparing,
             sales_channel="dine_in",
+            fulfillment_type="dine_in",
             table_id=session.table_id,
             table_session_id=session.id,
             subtotal=subtotal,
@@ -1158,6 +1160,64 @@ class OrderService:
 
         # Award loyalty points when delivered
         if new_status == "delivered" and order.customer_id:
+            from backend.services.loyalty_service import award_points_for_order
+            points = award_points_for_order(
+                order.customer_id, order_id, order.total, self._db
+            )
+            order.loyalty_points_earned = points
+            self._db.flush()
+            sync_customer_order_metrics(self._db, order.customer_id)
+            self._db.commit()
+
+        self._db.refresh(order)
+        return order
+
+    def complete_customer_pickup(
+        self,
+        order_id: str,
+        *,
+        changed_by: str = "system",
+    ) -> Order:
+        """Complete a pickup without opening a delivery-flow status shortcut.
+
+        ``ready_for_pickup -> delivered`` is intentionally absent from the
+        global state graph.  Only an order explicitly owned by the pickup flow
+        may use this operation.
+        """
+        order = self._get_order(order_id)
+        current = order.status.value if hasattr(order.status, "value") else str(order.status)
+        if order.fulfillment_type != "pickup":
+            raise DomainError(
+                "Somente pedidos para retirada podem usar esta acao.",
+                code="KdsPickupOnly",
+            )
+        if current != OrderStatus.ready_for_pickup.value:
+            raise DomainError(
+                "O pedido para retirada ainda nao esta pronto.",
+                code="KdsPickupNotReady",
+            )
+
+        now = datetime.now(timezone.utc)
+        order.status = OrderStatus.delivered
+        order.updated_at = now
+        order.delivered_at = order.delivered_at or now
+        if order.paid_at:
+            order.total_time_minutes = int((now - order.paid_at).total_seconds() / 60)
+        self._db.flush()
+        sync_customer_order_metrics(self._db, order.customer_id)
+        from backend.services.automation_event_producer import AutomationEventProducer
+        AutomationEventProducer(self._db, order.tenant_id).order_status_changed(
+            order, current, OrderStatus.delivered.value
+        )
+        self._db.commit()
+
+        bus.publish(OrderStatusChanged(
+            order_id=order_id,
+            from_status=current,
+            to_status=OrderStatus.delivered.value,
+            changed_by=changed_by,
+        ))
+        if order.customer_id:
             from backend.services.loyalty_service import award_points_for_order
             points = award_points_for_order(
                 order.customer_id, order_id, order.total, self._db
