@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bike, CheckCircle2, Clock3, Loader2, MapPin, Maximize2, Minimize2, PackageCheck, RefreshCw, Truck, UserRound, WifiOff } from "lucide-react";
+import { Bike, CheckCircle2, Clock3, Loader2, MapPin, Maximize2, Minimize2, PackageCheck, Printer, RefreshCw, Truck, UserRound, WifiOff } from "lucide-react";
 import KdsSessionActions from "@/components/kds/KdsSessionActions";
+import LabelPrintDialog from "@/components/kds/LabelPrintDialog";
 import { useToast } from "@/hooks/use-toast";
 import { kdsApi, type KdsDispatchOrder, type KdsDriver, type KdsOrderItem } from "@/lib/api";
 import { loadSoundType, playOrderAlert } from "@/lib/orderSound";
@@ -42,6 +43,7 @@ export default function AdminExpedicao() {
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  const [labelOrder, setLabelOrder] = useState<KdsDispatchOrder | null>(null);
   const [, setTick] = useState(0);
   const knownOrderIds = useRef<Set<string>>(new Set());
   const initialLoad = useRef(true);
@@ -118,6 +120,26 @@ export default function AdminExpedicao() {
     }
   };
 
+  const completePickup = async (order: KdsDispatchOrder) => {
+    if (actionLock.current) return;
+    actionLock.current = true;
+    setAssigning(order.id);
+    try {
+      await kdsApi.completeDispatchPickup(order.id);
+      setOrders((current) => current.filter((item) => item.id !== order.id));
+      setError(null);
+      toast({ title: "Retirada concluída", description: `Pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()} entregue ao cliente.` });
+    } catch (caught) {
+      const message = errorMessage(caught);
+      setError(message);
+      toast({ title: "Retirada não concluída", description: message, variant: "destructive" });
+      void loadData();
+    } finally {
+      actionLock.current = false;
+      setAssigning(null);
+    }
+  };
+
   return (
     <section className={`${fullscreen ? "fixed inset-0 z-[100]" : "min-h-screen"} flex flex-col overflow-hidden bg-surface-00 text-cream`}>
       <header className="flex flex-col gap-4 border-b border-surface-03 bg-surface-02 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -131,16 +153,21 @@ export default function AdminExpedicao() {
         <div className="grid flex-1 auto-rows-max gap-4 overflow-y-auto p-4 xl:grid-cols-2 2xl:grid-cols-3">
           {orders.map((order) => {
             const selectedDriver = selectedDrivers[order.id];
+            const isPickup = order.fulfillment_type === "pickup";
             return <article key={order.id} className="flex flex-col gap-4 rounded-2xl border border-surface-03 bg-surface-02 p-5 shadow-soft">
-              <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-emerald-300">Pronto para despachar</p><h2 className="text-2xl font-black">#{(order.order_code || order.id.slice(0, 8)).toUpperCase()}</h2><p className="flex items-center gap-1 text-stone"><UserRound size={15} />{order.delivery_name}</p></div><span className="flex items-center gap-1 rounded-lg bg-amber-500/10 px-3 py-2 font-bold text-amber-300"><Clock3 size={17} />{elapsed(order.updated_at || order.created_at)}</span></div>
-              <div className="rounded-xl bg-surface-01 p-3 text-sm"><p className="flex items-start gap-2 font-semibold"><MapPin size={18} className="mt-0.5 shrink-0 text-gold" />{order.delivery_street}{order.delivery_complement ? `, ${order.delivery_complement}` : ""} · {order.delivery_city}</p><p className="mt-2 font-bold text-emerald-300">{paymentLabel(order)}</p></div>
+              <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-emerald-300">{isPickup ? "Pronto para retirada" : "Pronto para despachar"}</p><h2 className="text-2xl font-black">#{(order.order_code || order.id.slice(0, 8)).toUpperCase()}</h2><p className="flex items-center gap-1 text-stone"><UserRound size={15} />{order.delivery_name}</p>{isPickup && <span className="mt-2 inline-flex rounded-full bg-sky-500/15 px-3 py-1 text-xs font-black uppercase text-sky-200">Retirada</span>}</div><span className="flex items-center gap-1 rounded-lg bg-amber-500/10 px-3 py-2 font-bold text-amber-300"><Clock3 size={17} />{elapsed(order.updated_at || order.created_at)}</span></div>
+              {!isPickup && <div className="rounded-xl bg-surface-01 p-3 text-sm"><p className="flex items-start gap-2 font-semibold"><MapPin size={18} className="mt-0.5 shrink-0 text-gold" />{order.delivery_street}{order.delivery_complement ? `, ${order.delivery_complement}` : ""} · {order.delivery_city}</p><p className="mt-2 font-bold text-emerald-300">{paymentLabel(order)}</p></div>}
               <div className="space-y-3 border-y border-surface-03 py-4">{order.items.map((item) => <div key={item.id}><p className="font-bold"><span className="mr-2 text-lg text-gold">{item.quantity}x</span>{itemDescription(item)}</p>{item.notes && <p className="mt-1 rounded-lg bg-amber-500/10 p-2 text-sm font-semibold text-amber-200">Obs.: {item.notes}</p>}</div>)}</div>
-              <fieldset className="space-y-2"><legend className="mb-2 font-black">Escolha o motoboy</legend>{drivers.length === 0 ? <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center font-bold text-amber-200">Nenhum motoboy disponivel</div> : <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{drivers.map((driver) => <button type="button" key={driver.id} aria-pressed={selectedDriver === driver.id} disabled={Boolean(assigning)} onClick={() => setSelectedDrivers((current) => ({ ...current, [order.id]: driver.id }))} className={`min-h-14 rounded-xl border px-3 text-left font-bold transition-transform active:scale-[0.98] disabled:opacity-50 ${selectedDriver === driver.id ? "border-emerald-400 bg-emerald-500/20 text-emerald-200" : "border-surface-03 bg-surface-01 text-parchment"}`}><span className="flex items-center gap-2"><Bike size={18} />{driver.name}</span></button>)}</div>}</fieldset>
-              <button type="button" disabled={!selectedDriver || Boolean(assigning)} onClick={() => void assign(order)} className="mt-auto flex min-h-16 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-lg font-black text-white transition-transform active:scale-[0.98] active:bg-emerald-800 disabled:opacity-40">{assigning === order.id ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}{assigning === order.id ? "Finalizando..." : "Finalizar e atribuir"}</button>
+              {!isPickup && <fieldset className="space-y-2"><legend className="mb-2 font-black">Escolha o motoboy</legend>{drivers.length === 0 ? <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center font-bold text-amber-200">Nenhum motoboy disponivel</div> : <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{drivers.map((driver) => <button type="button" key={driver.id} aria-pressed={selectedDriver === driver.id} disabled={Boolean(assigning)} onClick={() => setSelectedDrivers((current) => ({ ...current, [order.id]: driver.id }))} className={`min-h-14 rounded-xl border px-3 text-left font-bold transition-transform active:scale-[0.98] disabled:opacity-50 ${selectedDriver === driver.id ? "border-emerald-400 bg-emerald-500/20 text-emerald-200" : "border-surface-03 bg-surface-01 text-parchment"}`}><span className="flex items-center gap-2"><Bike size={18} />{driver.name}</span></button>)}</div>}</fieldset>}
+              <div className="mt-auto grid gap-2 sm:grid-cols-2">
+                <button type="button" disabled={Boolean(assigning)} onClick={() => setLabelOrder(order)} className="flex min-h-16 w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/50 bg-emerald-500/10 px-4 text-lg font-black text-emerald-200 transition-transform active:scale-[0.98] disabled:opacity-40"><Printer/> Imprimir etiqueta</button>
+                {isPickup ? <button type="button" disabled={Boolean(assigning)} onClick={() => void completePickup(order)} className="flex min-h-16 w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-lg font-black text-white transition-transform active:scale-[0.98] disabled:opacity-40">{assigning === order.id ? <Loader2 className="animate-spin"/> : <CheckCircle2/>}{assigning === order.id ? "Concluindo..." : "Concluir retirada"}</button> : <button type="button" disabled={!selectedDriver || Boolean(assigning)} onClick={() => void assign(order)} className="flex min-h-16 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-lg font-black text-white transition-transform active:scale-[0.98] active:bg-emerald-800 disabled:opacity-40">{assigning === order.id ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}{assigning === order.id ? "Finalizando..." : "Finalizar e atribuir"}</button>}
+              </div>
             </article>;
           })}
         </div>
       )}
+      <LabelPrintDialog orderId={labelOrder?.id ?? null} orderCode={labelOrder?.order_code} open={Boolean(labelOrder)} onOpenChange={(next) => { if (!next) setLabelOrder(null); }}/>
     </section>
   );
 }

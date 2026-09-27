@@ -40,6 +40,7 @@ def test_kds_routes_are_registered_under_api_prefix():
     assert "/api/kds/kitchen/orders/{order_id}/pickup-complete" in paths
     assert "/api/kds/dispatch/orders" in paths
     assert "/api/kds/dispatch/drivers" in paths
+    assert "/api/kds/dispatch/orders/{order_id}/pickup-complete" in paths
     assert "/api/kds/dispatch/orders/{order_id}/assign" in paths
 
 
@@ -91,3 +92,30 @@ def test_kitchen_mutations_reuse_authoritative_order_service():
 def test_kds_payload_does_not_expose_customer_phone():
     source = (ROOT / "backend/services/kds_service.py").read_text(encoding="utf-8")
     assert '"delivery_phone"' not in source
+
+
+def test_ready_pickup_moves_from_kitchen_to_dispatch_and_uses_dispatch_audit():
+    source = (ROOT / "backend/services/kds_service.py").read_text(encoding="utf-8")
+    kitchen = source[source.index("    def kitchen_orders("):source.index("    def start_preparation(")]
+    dispatch = source[source.index("    def dispatch_orders("):source.index("    def available_drivers(")]
+    routes = (ROOT / "backend/routes/kds.py").read_text(encoding="utf-8")
+
+    assert "OrderStatus.ready_for_pickup" not in kitchen
+    assert 'Order.fulfillment_type == "pickup"' in dispatch
+    assert '@router.post("/dispatch/orders/{order_id}/pickup-complete")' in routes
+    assert 'require_rbac_permission("expedicao", "edit")' in routes
+    assert 'audit_module="expedicao"' in routes
+
+
+def test_status_change_does_not_auto_assign_before_dispatch_release():
+    main_source = (ROOT / "backend/main.py").read_text(encoding="utf-8")
+    delivery_source = (ROOT / "backend/services/delivery_service.py").read_text(encoding="utf-8")
+    auto_assign = delivery_source[
+        delivery_source.index("    def auto_assign_pending("):
+        delivery_source.index("    def geocode_address(")
+    ]
+
+    assert "_auto_assign_handler" not in main_source
+    assert "bus.subscribe(OrderStatusChanged, _auto_assign_handler)" not in main_source
+    assert "def auto_assign_pending(self)" in auto_assign
+    assert "DispatchReleaseRequired" not in auto_assign

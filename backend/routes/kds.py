@@ -76,6 +76,21 @@ def dispatch_drivers(
     return ok(KdsService(db, actor.tenant_context).available_drivers())
 
 
+@router.post("/dispatch/orders/{order_id}/pickup-complete")
+def dispatch_pickup_complete(
+    order_id: str,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("expedicao", "edit")),
+):
+    try:
+        result = KdsService(db, actor.tenant_context).complete_pickup(
+            order_id, actor_id=actor.user_id, audit_module="expedicao",
+        )
+        return ok(result, "Retirada concluida pela expedicao.")
+    except DomainError as exc:
+        return err(exc)
+
+
 @router.post("/dispatch/orders/{order_id}/assign")
 def dispatch_assign(
     order_id: str,

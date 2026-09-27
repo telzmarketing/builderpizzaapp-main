@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, String, Float, Integer, Enum, DateTime, ForeignKey, Index, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Column, String, Float, Integer, Enum, DateTime, ForeignKey, Index, JSON, Text, text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -117,6 +117,7 @@ class OrderItem(Base):
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_order_items_tenant_id_tenants"), nullable=True)
     order_id = Column(String, ForeignKey("orders.id"), nullable=False)
     product_id = Column(String, ForeignKey("products.id"), nullable=False)
+    position = Column(Integer, nullable=False, default=0)
 
     quantity = Column(Integer, default=1)
     selected_size = Column(String(50))
@@ -127,6 +128,7 @@ class OrderItem(Base):
     selected_crust_type = Column(String(100), nullable=True)
     selected_drink_variant = Column(String(100), nullable=True)
     notes = Column(Text, nullable=True)
+    add_ons = Column(JSON, nullable=False, default=list)
     unit_price = Column(Float, nullable=False)
     total_price = Column(Float, nullable=False)
     standard_unit_price = Column(Float, nullable=True)

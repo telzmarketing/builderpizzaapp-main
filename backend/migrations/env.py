@@ -30,6 +30,7 @@ from backend.models import (  # noqa: F401
     idempotency,
     inventory,
     loyalty,
+    label,
     marketing_intelligence,
     order,
     paid_traffic,

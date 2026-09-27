@@ -729,11 +729,12 @@ class OrderService:
         from backend.services.cmv_snapshot_service import CmvOrderItemContext, OrderCmvSnapshotService
 
         cmv_contexts: list[CmvOrderItemContext] = []
-        for item, unit_price, flavor_products, pricing, size_obj, crust_obj in item_data:
+        for item_position, (item, unit_price, flavor_products, pricing, size_obj, crust_obj) in enumerate(item_data):
             oi = OrderItem(
                 id=str(uuid.uuid4()),
                 order_id=order.id,
                 product_id=item.product_id,
+                position=item_position,
                 quantity=item.quantity,
                 selected_size=_clip_text(item.selected_size, 50),
                 selected_size_id=size_obj.id if size_obj else item.selected_size_id,
@@ -743,6 +744,7 @@ class OrderService:
                 selected_crust_type=_clip_text(item.selected_crust_type_name, 100),
                 selected_drink_variant=_clip_text(item.selected_drink_variant_name, 100),
                 notes=item.notes,
+                add_ons=list(item.add_ons),
                 unit_price=unit_price,
                 total_price=round(unit_price * item.quantity, 2),
                 standard_unit_price=pricing.standard_price,
@@ -776,6 +778,7 @@ class OrderService:
                 id=str(uuid.uuid4()),
                 order_id=order.id,
                 product_id=gift_result.product_id,
+                position=len(cmv_contexts),
                 quantity=gift_result.quantity,
                 selected_size="Brinde",
                 selected_size_id=None,
@@ -802,6 +805,7 @@ class OrderService:
                 id=str(uuid.uuid4()),
                 order_id=order.id,
                 product_id=gift["product_id"],
+                position=len(cmv_contexts),
                 quantity=gift["quantity"],
                 selected_size="Brinde",
                 selected_size_id=None,
@@ -957,12 +961,13 @@ class OrderService:
 
         items_count = 0
         cmv_contexts: list[CmvOrderItemContext] = []
-        for item in session.items:
+        for item_position, item in enumerate(session.items):
             items_count += int(item.quantity or 0)
             order_item = OrderItem(
                 id=str(uuid.uuid4()),
                 order_id=order.id,
                 product_id=item.product_id,
+                position=item_position,
                 quantity=item.quantity,
                 selected_size="Salao",
                 selected_size_id=None,

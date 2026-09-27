@@ -87,6 +87,7 @@ class OrderItemOut(BaseModel):
     selected_crust_type: Optional[str] = None
     selected_drink_variant: Optional[str] = None
     notes: Optional[str] = None
+    add_ons: list[str] = []
     unit_price: float
     total_price: float
     standard_unit_price: Optional[float] = None

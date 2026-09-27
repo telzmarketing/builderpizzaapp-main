@@ -102,7 +102,7 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
             "selected_drink_variant": item.selected_drink_variant,
             "notes": item.notes,
             "flavors": flavors,
-            "add_ons": [],
+            "add_ons": list(item.add_ons or []),
             "unit_price": item.unit_price,
             "final_price": item.unit_price,
             "standard_unit_price": item.standard_unit_price,

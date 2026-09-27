@@ -1178,6 +1178,160 @@ export interface KdsDispatchResult {
   } | null;
 }
 
+// Label dispatch contracts stay grouped here so the browser-first UI can be
+// adjusted independently if a physical print bridge is introduced later.
+export interface KdsLabelPrinter {
+  id: string;
+  name: string;
+  description?: string | null;
+  system_queue_hint?: string | null;
+  printer_type?: string | null;
+  connection_type?: string | null;
+  manufacturer_model?: string | null;
+  network_host?: string | null;
+  network_port?: number | null;
+  protocol?: string | null;
+  max_width_mm?: number | null;
+  sector?: string | null;
+  dpi: number;
+  active: boolean;
+  is_default?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface KdsLabelTemplate {
+  id: string;
+  name: string;
+  label_type: "continuous" | "gap" | "black_mark" | "roll" | "sheet" | "seal" | "custom";
+  width_mm: number;
+  height_mm: number;
+  margin_top_mm: number;
+  margin_right_mm: number;
+  margin_bottom_mm: number;
+  margin_left_mm: number;
+  gap_mm: number;
+  safe_area_mm: number;
+  columns: number;
+  labels_per_sheet: number;
+  orientation: "portrait" | "landscape";
+  show_logo: boolean;
+  show_printed_at: boolean;
+  dpi: number;
+  scale_percent: number;
+  default_copies: number;
+  font_scale_percent: number;
+  offset_x_mm: number;
+  offset_y_mm: number;
+  rotation: number;
+  density?: number | null;
+  speed?: number | null;
+  active: boolean;
+  is_default?: boolean;
+  printer_ids: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface KdsLabelSettings {
+  default_printer_id?: string | null;
+  default_template_id?: string | null;
+  include_drinks: boolean;
+  require_reprint_reason: boolean;
+  confirmation_required: boolean;
+  batch_printing: boolean;
+  updated_at?: string;
+}
+
+export interface KdsLabelVolume {
+  id?: string;
+  sequence: number;
+  total_volumes: number;
+  order_item_id: string;
+  unit_index: number;
+  volume_index: number;
+  product_id: string;
+  product_name: string;
+  product_description?: string | null;
+  quantity: number;
+  selected_size?: string | null;
+  selected_crust_type?: string | null;
+  selected_drink_variant?: string | null;
+  notes?: string | null;
+  add_ons: string[];
+  flavors: Array<{ name: string } | string>;
+}
+
+export interface KdsLabelPreview {
+  order: { id: string; order_code?: string | null; status: string; fulfillment_type: string; customer_name?: string | null; notes?: string | null };
+  restaurant: { name: string; logo_url?: string | null };
+  version: { id: string; number: number; fingerprint: string; created_at: string };
+  printer?: KdsLabelPrinter | null;
+  template: KdsLabelTemplate;
+  volumes: KdsLabelVolume[];
+  volume_count: number;
+  is_first_print: boolean;
+  previous_print_count: number;
+}
+
+export interface KdsLabelPrintJob {
+  id: string;
+  order_id: string;
+  label_version_id: string;
+  printer_id?: string | null;
+  template_id?: string | null;
+  job_type: "print" | "reprint" | string;
+  copies: number;
+  reason?: string | null;
+  result_status: string;
+  created_at: string;
+  actor_name?: string | null;
+  printer_name?: string | null;
+  template_name?: string | null;
+}
+
+export interface KdsLabelPrintResult { job: KdsLabelPrintJob; preview: KdsLabelPreview }
+
+export interface KdsLabelTestPreview {
+  test: true;
+  printer: KdsLabelPrinter;
+  template: KdsLabelTemplate;
+  content: { title: string; large_number: string; generated_at: string };
+  print_area: {
+    width_mm: number;
+    height_mm: number;
+    dpi: number;
+    margins_mm: { top: number; right: number; bottom: number; left: number };
+    safe_area_mm: number;
+    offset_x_mm: number;
+    offset_y_mm: number;
+  };
+}
+
+export type KdsLabelPrinterInput = Pick<KdsLabelPrinter, "name"> &
+  Partial<Omit<KdsLabelPrinter, "id" | "name" | "created_at" | "updated_at">>;
+export type KdsLabelTemplateInput = Pick<KdsLabelTemplate, "name" | "width_mm" | "height_mm"> &
+  Partial<Omit<KdsLabelTemplate, "id" | "name" | "width_mm" | "height_mm" | "created_at" | "updated_at">>;
+
+export interface KdsLabelPrintInput {
+  printer_id?: string | null;
+  template_id?: string | null;
+  copies: number;
+  idempotency_key: string;
+}
+
+export interface KdsLabelVolumeRule {
+  id: string;
+  scope_type: "product" | "category";
+  scope_value: string;
+  volumes_per_unit: number;
+  active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type KdsLabelVolumeRuleInput = Pick<KdsLabelVolumeRule, "scope_type" | "scope_value" | "volumes_per_unit" | "active">;
+
 /** Endpoints operacionais mínimos usados pelas estações KDS touch. */
 export const kdsApi = {
   listKitchenOrders: () => get<KdsKitchenOrder[]>("/kds/kitchen/orders"),
@@ -1194,6 +1348,52 @@ export const kdsApi = {
       delivery_person_id: deliveryPersonId,
       estimated_minutes: estimatedMinutes,
     }),
+  completeDispatchPickup: (orderId: string) =>
+    post<KdsDispatchOrder>(`/kds/dispatch/orders/${orderId}/pickup-complete`, {}),
+};
+
+const labelDispatchBase = "/kds/dispatch";
+
+/** Tenant-scoped label configuration and order label operations. */
+export const kdsLabelsApi = {
+  listPrinters: () => get<KdsLabelPrinter[]>(`${labelDispatchBase}/label-printers`),
+  createPrinter: (data: KdsLabelPrinterInput) =>
+    post<KdsLabelPrinter>(`${labelDispatchBase}/label-printers`, data),
+  updatePrinter: (id: string, data: Partial<KdsLabelPrinterInput>) =>
+    put<KdsLabelPrinter>(`${labelDispatchBase}/label-printers/${id}`, data),
+  deletePrinter: (id: string) => del<void>(`${labelDispatchBase}/label-printers/${id}`),
+  listTemplates: () => get<KdsLabelTemplate[]>(`${labelDispatchBase}/label-templates`),
+  createTemplate: (data: KdsLabelTemplateInput) =>
+    post<KdsLabelTemplate>(`${labelDispatchBase}/label-templates`, data),
+  updateTemplate: (id: string, data: Partial<KdsLabelTemplateInput>) =>
+    put<KdsLabelTemplate>(`${labelDispatchBase}/label-templates/${id}`, data),
+  deleteTemplate: (id: string) => del<void>(`${labelDispatchBase}/label-templates/${id}`),
+  getSettings: () => get<KdsLabelSettings>(`${labelDispatchBase}/label-settings`),
+  updateSettings: (data: KdsLabelSettings) =>
+    put<KdsLabelSettings>(`${labelDispatchBase}/label-settings`, data),
+  listVolumeRules: () => get<KdsLabelVolumeRule[]>(`${labelDispatchBase}/label-volume-rules`),
+  createVolumeRule: (data: KdsLabelVolumeRuleInput) =>
+    post<KdsLabelVolumeRule>(`${labelDispatchBase}/label-volume-rules`, data),
+  updateVolumeRule: (id: string, data: Partial<KdsLabelVolumeRuleInput>) =>
+    put<KdsLabelVolumeRule>(`${labelDispatchBase}/label-volume-rules/${id}`, data),
+  deleteVolumeRule: (id: string) => del<void>(`${labelDispatchBase}/label-volume-rules/${id}`),
+  preview: (orderId: string, printerId?: string | null, templateId?: string | null) => {
+    const query = new URLSearchParams();
+    if (printerId) query.set("printer_id", printerId);
+    if (templateId) query.set("template_id", templateId);
+    const suffix = query.toString();
+    return get<KdsLabelPreview>(`${labelDispatchBase}/orders/${orderId}/labels/preview${suffix ? `?${suffix}` : ""}`);
+  },
+  print: (orderId: string, data: KdsLabelPrintInput) =>
+    post<KdsLabelPrintResult>(`${labelDispatchBase}/orders/${orderId}/labels/print`, data),
+  reprint: (orderId: string, data: KdsLabelPrintInput & { reason: string }) =>
+    post<KdsLabelPrintResult>(`${labelDispatchBase}/orders/${orderId}/labels/reprint`, data),
+  history: (orderId: string) =>
+    get<KdsLabelPrintJob[]>(`${labelDispatchBase}/orders/${orderId}/labels/history`),
+  test: (data: KdsLabelPrintInput) =>
+    post<{ job: KdsLabelPrintJob; preview: KdsLabelTestPreview }>(`${labelDispatchBase}/labels/test`, data),
+  markDialogOpened: (jobId: string) =>
+    post<KdsLabelPrintJob>(`${labelDispatchBase}/label-jobs/${jobId}/dialog-opened`, {}),
 };
 
 export interface CheckoutItemIn {

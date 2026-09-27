@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
+import LabelPrintDialog from "@/components/kds/LabelPrintDialog";
 import {
   ordersApi, paymentsApi, deliveryApi, marketingVisitorsApi,
   type ApiEffectivePermissions, type ApiOrder, type OrderStatus, type DeliveryPerson,
@@ -296,6 +297,7 @@ export default function AdminOrders() {
   const [onlineStats, setOnlineStats] = useState({ visitors: 0, registeredCustomers: 0 });
   const [deleteModal, setDeleteModal] = useState<{ order: ApiOrder; confirmation: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [labelOrder, setLabelOrder] = useState<ApiOrder | null>(null);
   const adminPermissions = useMemo(() => loadStoredAdminPermissions(), []);
   const canDeleteOrders = useMemo(() => canDeleteOrdersFromPermissions(adminPermissions), [adminPermissions]);
   const orderSearchQuery = searchParams.get("q")?.trim().toLowerCase() ?? "";
@@ -751,6 +753,7 @@ export default function AdminOrders() {
                                 onRefundPayment={() => handlePaymentOperation(order.id, "refund")}
                                 onAssignMotoboy={() => openAssignModal(order)}
                                 onPrint={(tpl) => printOrder(order, tpl)}
+                                onLabels={() => setLabelOrder(order)}
                                 canDelete={canDeleteOrders}
                                 onRequestDelete={() => setDeleteModal({ order, confirmation: "" })}
                                 onDragStart={() => handleDragStart(order.id)}
@@ -828,6 +831,13 @@ export default function AdminOrders() {
           </div>
         </div>
       )}
+
+      <LabelPrintDialog
+        orderId={labelOrder?.id ?? null}
+        orderCode={labelOrder?.order_code}
+        open={Boolean(labelOrder)}
+        onOpenChange={(next) => { if (!next) setLabelOrder(null); }}
+      />
 
       {/* Motoboy assignment modal */}
       {assignModal && (
@@ -912,6 +922,7 @@ interface OrderCardProps {
   onRefundPayment: () => void;
   onAssignMotoboy?: () => void;
   onPrint: (template: PrintTemplate) => void;
+  onLabels: () => void;
   canDelete: boolean;
   onRequestDelete: () => void;
   onDragStart: () => void;
@@ -927,6 +938,7 @@ function OrderCard({
   onRefundPayment,
   onAssignMotoboy,
   onPrint,
+  onLabels,
   canDelete,
   onRequestDelete,
   onDragStart,
@@ -934,6 +946,7 @@ function OrderCard({
 }: OrderCardProps) {
   const [printMenuOpen, setPrintMenuOpen] = useState(false);
   const isReadyForPickup = order.status === "ready_for_pickup";
+  const canPrintLabels = ["ready_for_pickup", "on_the_way", "delivered"].includes(order.status);
   const isWaitingPayment = WAITING_PAYMENT_STATUSES.has(order.status);
   const nextLabel = isReadyForPickup ? null : NEXT_LABEL[order.status];
   const unresolvedDeliveryProblem = Boolean(order.delivery?.problem_report && !order.delivery.problem_resolved_at);
@@ -1167,6 +1180,17 @@ function OrderCard({
             <Printer size={14} />
           </button>
         </div>
+
+        {canPrintLabels && (
+          <button
+            onClick={onLabels}
+            title="Imprimir ou reimprimir etiquetas"
+            className="flex items-center justify-center gap-1 rounded-lg bg-emerald-500/15 px-2 py-2 text-[11px] font-bold text-emerald-300 transition-colors hover:bg-emerald-500/25"
+          >
+            <PackageCheck size={13} />
+            Etiquetas
+          </button>
+        )}
 
         {canDelete && (
           <button

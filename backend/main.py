@@ -67,6 +67,7 @@ from backend.routes import platform_errors as platform_errors_routes
 from backend.routes import platform_storage as platform_storage_routes
 from backend.routes import platform_backups as platform_backups_routes
 from backend.routes import kds as kds_routes
+from backend.routes import labels as labels_routes
 
 settings = get_settings()
 
@@ -226,18 +227,10 @@ async def lifespan(app: FastAPI):
 
     bus.subscribe(DeliveryAssigned, _delivery_driver_whatsapp_handler)
 
-    # Phase 4 - Auto-assign driver when order reaches ready_for_pickup.
-    def _auto_assign_handler(event: OrderStatusChanged):
-        if event.to_status not in ("ready_for_pickup", "preparing"):
-            return
-        try:
-            with SessionLocal() as db:
-                from backend.services.delivery_service import DeliveryService
-                DeliveryService(db).auto_assign_pending()
-        except Exception:
-            pass
-
-    bus.subscribe(OrderStatusChanged, _auto_assign_handler)
+    # Driver assignment must not consume a ready order before Dispatch has
+    # checked, packed and released it. Automatic assignment remains available
+    # as an explicit logistics operation, but is intentionally not subscribed
+    # to kitchen status changes.
 
     agente_whatsapp_worker_task = None
     if settings.AGENTE_WHATSAPP_WORKER_ENABLED:
@@ -1386,6 +1379,7 @@ app.include_router(marketing_workflow_routes.router, prefix="/api")
 app.include_router(marketing_intelligence_routes.router, prefix="/api")
 app.include_router(rbac_routes.router, prefix="/api")
 app.include_router(kds_routes.router, prefix="/api")
+app.include_router(labels_routes.router, prefix="/api")
 app.include_router(customer_events_routes.router, prefix="/api")
 app.include_router(lgpd_routes.router, prefix="/api")
 app.include_router(lgpd_routes.admin_router, prefix="/api")

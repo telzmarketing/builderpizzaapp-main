@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, BellOff, Check, Printer, Eye, Settings2, Volume2 } from "lucide-react";
+import { Bell, BellOff, Check, Printer, Eye, Settings2, Tags, Volume2 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
+import LabelSettingsPanel from "@/components/admin/LabelSettingsPanel";
 import {
   loadPrinterSettings, savePrinterSettings,
   buildCompletoHtml, buildCozinhaHtml, buildEntregaHtml,
@@ -15,7 +16,7 @@ import {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-type Tab = "impressora" | "som";
+type Tab = "impressora" | "etiquetas" | "som";
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -165,6 +166,14 @@ export default function AdminConfiguracoes() {
               Impressora
             </button>
             <button
+              type="button"
+              onClick={() => setActiveTab("etiquetas")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "etiquetas" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
+            >
+              <Tags size={14} />
+              Etiquetas da expedição
+            </button>
+            <button
               onClick={() => setActiveTab("som")}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "som" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
             >
@@ -174,6 +183,8 @@ export default function AdminConfiguracoes() {
           </div>
 
           <div className="p-8 space-y-8 max-w-5xl">
+
+            {activeTab === "etiquetas" && <LabelSettingsPanel />}
 
             {/* ── Aba Som ───────────────────────────────────────────────── */}
             {activeTab === "som" && (

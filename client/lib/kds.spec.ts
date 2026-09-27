@@ -20,13 +20,13 @@ function order(
 }
 
 describe("KDS state", () => {
-  it("moves delivery orders to dispatch and retains pickup orders for completion", () => {
+  it("moves every ready order out of the kitchen, including pickup", () => {
     expect(activeKitchenOrders([
       order("waiting", "paid"),
       order("cooking", "preparing"),
       order("delivery-ready", "ready_for_pickup"),
       order("pickup-ready", "ready_for_pickup", "pickup"),
-    ]).map((item) => item.id)).toEqual(["waiting", "cooking", "pickup-ready"]);
+    ]).map((item) => item.id)).toEqual(["waiting", "cooking"]);
   });
 
   it("clears a newly busy driver from every dispatch card", () => {

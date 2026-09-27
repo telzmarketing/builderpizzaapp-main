@@ -50,13 +50,9 @@ class KdsService:
     def kitchen_orders(self) -> list[dict]:
         orders = self._order_query().options(
             joinedload(Order.items), joinedload(Order.payment),
-        ).filter(or_(
+        ).filter(
             Order.status.in_(self.KITCHEN_STATUSES),
-            and_(
-                Order.fulfillment_type == "pickup",
-                Order.status == OrderStatus.ready_for_pickup,
-            ),
-        )).order_by(Order.created_at).all()
+        ).order_by(Order.created_at).all()
         return self._serialize_orders(orders, include_dispatch_details=False)
 
     def start_preparation(self, order_id: str, *, actor_id: str) -> dict:
@@ -82,14 +78,19 @@ class KdsService:
         ).change_status(order.id, OrderStatus.ready_for_pickup.value, changed_by=f"kds:{actor_id}")
         return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=False)[0]
 
-    def complete_pickup(self, order_id: str, *, actor_id: str) -> dict:
+    def complete_pickup(
+        self, order_id: str, *, actor_id: str, audit_module: str = "cozinha",
+    ) -> dict:
         order = self._load_order(order_id, lock=True)
         if order.fulfillment_type != "pickup":
             raise DomainError("Somente pedidos para retirada podem usar esta acao.", code="KdsPickupOnly")
         current = self._status(order)
         if current != OrderStatus.ready_for_pickup.value:
             raise DomainError("O pedido para retirada ainda nao esta pronto.", code="KdsPickupNotReady")
-        self._audit_order_transition(order, current, OrderStatus.delivered.value, actor_id)
+        self._audit_order_transition(
+            order, current, OrderStatus.delivered.value, actor_id,
+            module_key=audit_module,
+        )
         order = OrderService(
             self.db, self.tenant_context
         ).complete_customer_pickup(order.id, changed_by=f"kds:{actor_id}")
@@ -101,12 +102,17 @@ class KdsService:
             joinedload(Order.delivery).joinedload(Delivery.delivery_person),
         ).filter(
             Order.status == OrderStatus.ready_for_pickup,
-            Order.fulfillment_type == "delivery",
-            ~Order.delivery.has(Delivery.status.in_((
-                DeliveryStatus.assigned, DeliveryStatus.picked_up,
-                DeliveryStatus.on_the_way, DeliveryStatus.delivered,
-                DeliveryStatus.completed,
-            ))),
+            or_(
+                Order.fulfillment_type == "pickup",
+                and_(
+                    Order.fulfillment_type == "delivery",
+                    ~Order.delivery.has(Delivery.status.in_((
+                        DeliveryStatus.assigned, DeliveryStatus.picked_up,
+                        DeliveryStatus.on_the_way, DeliveryStatus.delivered,
+                        DeliveryStatus.completed,
+                    ))),
+                ),
+            ),
         ).order_by(Order.updated_at).all()
         return self._serialize_orders(orders, include_dispatch_details=True)
 
@@ -202,11 +208,14 @@ class KdsService:
             },
         }
 
-    def _audit_order_transition(self, order: Order, old: str, new: str, actor_id: str) -> None:
+    def _audit_order_transition(
+        self, order: Order, old: str, new: str, actor_id: str, *,
+        module_key: str = "cozinha",
+    ) -> None:
         from backend.models.rbac import AdminAuditLog
         self.db.add(AdminAuditLog(
             id=str(uuid.uuid4()), tenant_id=self.tenant_id, user_id=actor_id,
-            action="status_change", module_key="cozinha",
+            action="status_change", module_key=module_key,
             entity_type="order", entity_id=order.id,
             old_value=old, new_value=new,
         ))
@@ -244,6 +253,7 @@ class KdsService:
                     "selected_crust_type": item.selected_crust_type,
                     "selected_drink_variant": item.selected_drink_variant,
                     "notes": item.notes,
+                    "add_ons": list(item.add_ons or []),
                     "flavors": [{"name": flavor.flavor_name} for flavor in item.flavors],
                 } for item in order.items],
             }
