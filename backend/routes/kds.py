@@ -6,11 +6,22 @@ from backend.core.exceptions import DomainError
 from backend.core.rbac_authorization import AuthorizedTenantActor, require_rbac_permission
 from backend.core.response import err, ok
 from backend.database import get_db
-from backend.schemas.kds import DispatchAssignIn
+from backend.schemas.kds import DispatchAssignIn, KdsOverviewEnvelope, KdsOverviewOut
 from backend.services.kds_service import KdsService
 
 
 router = APIRouter(prefix="/kds", tags=["kds"])
+
+
+@router.get("/overview", response_model=KdsOverviewEnvelope)
+def overview(
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("pedidos", "view")),
+):
+    payload = KdsOverviewOut.model_validate(
+        KdsService(db, actor.tenant_context).overview()
+    )
+    return ok(payload)
 
 
 @router.get("/kitchen/orders")

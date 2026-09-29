@@ -117,8 +117,54 @@ install -d -m 0700 -o root -g root "$STATE_DIR"
   fail "Diretorios de estado/log do instalador nao podem ser symlinks"
   exit 1
 }
+INSTALLER_LOCK_DIR=/run/lock/telz-installer
+INSTALLER_LOCK_FILE="$INSTALLER_LOCK_DIR/install.lock"
+if [[ -e "$INSTALLER_LOCK_DIR" || -L "$INSTALLER_LOCK_DIR" ]]; then
+  [[ -d "$INSTALLER_LOCK_DIR" && ! -L "$INSTALLER_LOCK_DIR" && "$(stat -c '%U:%G %a' "$INSTALLER_LOCK_DIR")" == "root:root 700" ]] || {
+    fail "Diretorio global de lock do instalador e inseguro"
+    exit 1
+  }
+else
+  install -d -m 0700 -o root -g root "$INSTALLER_LOCK_DIR"
+fi
+[[ -d "$INSTALLER_LOCK_DIR" && ! -L "$INSTALLER_LOCK_DIR" && "$(stat -c '%U:%G %a' "$INSTALLER_LOCK_DIR")" == "root:root 700" ]] || {
+  fail "Diretorio global de lock do instalador e inseguro"
+  exit 1
+}
+if [[ -e "$INSTALLER_LOCK_FILE" || -L "$INSTALLER_LOCK_FILE" ]]; then
+  [[ -f "$INSTALLER_LOCK_FILE" && ! -L "$INSTALLER_LOCK_FILE" && "$(stat -c '%U:%G:%h' "$INSTALLER_LOCK_FILE")" == "root:root:1" && \
+     -z "$(find "$INSTALLER_LOCK_FILE" -maxdepth 0 -perm /022 -print -quit)" ]] || {
+    fail "Lock global do instalador e inseguro"
+    exit 1
+  }
+fi
+command -v flock >/dev/null 2>&1 || {
+  fail "Comando obrigatorio nao encontrado: flock"
+  exit 1
+}
+exec 8>"$INSTALLER_LOCK_FILE"
+chown root:root "$INSTALLER_LOCK_FILE"
+chmod 0600 "$INSTALLER_LOCK_FILE"
+flock -n 8 || {
+  fail "Outra execucao do instalador esta em andamento"
+  exit 1
+}
 LOG_FILE="$LOG_DIR/install-$(date +%Y%m%d-%H%M%S).log"
 exec > >(tee -a "$LOG_FILE") 2>&1
+
+BACKEND_ENV_STAGING_FILE=""
+OPERATION_CONFIG_STAGING_FILE=""
+cleanup_installer_temporary_files() {
+  if [[ -n "${BACKEND_ENV_STAGING_FILE:-}" ]]; then
+    rm -f -- "$BACKEND_ENV_STAGING_FILE" || true
+    BACKEND_ENV_STAGING_FILE=""
+  fi
+  if [[ -n "${OPERATION_CONFIG_STAGING_FILE:-}" ]]; then
+    rm -f -- "$OPERATION_CONFIG_STAGING_FILE" || true
+    OPERATION_CONFIG_STAGING_FILE=""
+  fi
+}
+trap cleanup_installer_temporary_files EXIT
 
 phase_done() {
   local marker="$STATE_DIR/$1.done"
@@ -158,9 +204,39 @@ validate_required JWT_SECRET_KEY
 validate_required ADMIN_EMAIL
 validate_required ADMIN_NAME
 validate_required ADMIN_PASSWORD
+for boolean_name in INSTALL_NGINX INSTALL_SSL INSTALL_BACKUP INSTALL_WHATSAPP_GATEWAY \
+  RUN_ALEMBIC RUN_TYPECHECK RUN_TESTS RUN_BUILD MULTI_TENANT_AUTH_ENABLED \
+  STARTUP_SCHEMA_BOOTSTRAP_ENABLED TENANT_DOMAINS_ENABLED TENANT_DOMAINS_TRUST_PROXY_HEADERS \
+  TENANT_IDENTITY_CATALOG_ENFORCEMENT_ENABLED TENANT_CUSTOMERS_ORDERS_ENFORCEMENT_ENABLED \
+  TENANT_OPERATIONS_ENFORCEMENT_ENABLED TENANT_PAYMENT_WEBHOOKS_ENABLED \
+  MULTI_TENANT_WAVE6_ORM_ENABLED MULTI_TENANT_WAVE7_ORM_ENABLED TENANT_BACKGROUND_CONTEXT_ENABLED \
+  TENANT_UPLOAD_NAMESPACE_ENABLED TENANT_CREDENTIALS_ENABLED PLATFORM_RBAC_ENABLED; do
+  normalize_boolean "$boolean_name"
+done
+if [[ -n "${TELZ_OVERWRITE_ENV:-}" ]]; then
+  normalize_boolean TELZ_OVERWRITE_ENV
+fi
+if is_true "$INSTALL_SSL" && ! is_true "$INSTALL_NGINX"; then
+  fail "INSTALL_SSL=true exige INSTALL_NGINX=true"
+  exit 1
+fi
+for gated_flag in STARTUP_SCHEMA_BOOTSTRAP_ENABLED TENANT_IDENTITY_CATALOG_ENFORCEMENT_ENABLED \
+  TENANT_CUSTOMERS_ORDERS_ENFORCEMENT_ENABLED TENANT_OPERATIONS_ENFORCEMENT_ENABLED \
+  TENANT_PAYMENT_WEBHOOKS_ENABLED MULTI_TENANT_WAVE6_ORM_ENABLED MULTI_TENANT_WAVE7_ORM_ENABLED \
+  TENANT_BACKGROUND_CONTEXT_ENABLED TENANT_UPLOAD_NAMESPACE_ENABLED; do
+  if is_true "${!gated_flag}"; then
+    fail "$gated_flag deve permanecer false na instalacao inicial; ative somente apos homologacao da wave"
+    exit 1
+  fi
+done
 validate_safe_slug "$PLATFORM_SLUG"
 validate_install_dir "$INSTALL_DIR"
 validate_service_user "$SERVICE_USER"
+validate_database_mode "$DATABASE_MODE"
+if [[ "$DATABASE_MODE" == "external" ]]; then
+  validate_database_host "$DATABASE_HOST"
+fi
+validate_monitoring_dir "$PLATFORM_MONITORING_SNAPSHOT_DIR"
 validate_domain "$PLATFORM_DOMAIN" || {
   fail "PLATFORM_DOMAIN invalido; informe apenas um hostname DNS completo"
   exit 1
@@ -184,7 +260,6 @@ validate_worker_count "${API_WORKERS:-2}" || {
   fail "API_WORKERS deve estar entre 1 e 64"
   exit 1
 }
-build_database_url
 confirm_plan
 
 CONFIG_FINGERPRINT="$({
@@ -223,6 +298,7 @@ fi
 
 run_phase 01_detect_os detect_os
 run_phase 02_system_packages install_system_packages
+build_database_url
 run_phase 00_trusted_assets stage_trusted_installer_assets
 load_trusted_installer_assets
 run_phase 03_service_user ensure_service_user
@@ -235,6 +311,7 @@ run_phase 09_env write_backend_env
 run_phase 10_database configure_postgresql_local
 run_phase 11_alembic run_alembic_gated
 run_phase 12_frontend build_frontend
+run_phase 13_operational_config persist_operational_config
 run_phase 13_systemd install_systemd_units
 run_phase 14_nginx install_nginx_site
 run_phase 15_ssl install_ssl_if_requested
@@ -242,11 +319,19 @@ run_phase 16_backup install_backup_cron
 
 info "Executando health check final"
 REQUIRE_PUBLIC_HTTPS=false
+HEALTH_ALEMBIC_TARGET=""
 if is_true "$INSTALL_SSL"; then
   REQUIRE_PUBLIC_HTTPS=true
 fi
-TELZ_ALEMBIC_TARGET="$ALEMBIC_TARGET" \
+if is_true "$RUN_ALEMBIC"; then
+  HEALTH_ALEMBIC_TARGET="$ALEMBIC_TARGET"
+fi
+TELZ_ALEMBIC_TARGET="$HEALTH_ALEMBIC_TARGET" \
   TELZ_REQUIRE_PUBLIC_HTTPS="$REQUIRE_PUBLIC_HTTPS" \
+  TELZ_SERVICE_USER="$SERVICE_USER" \
+  TELZ_HEALTH_API_PORT="$API_PORT" \
+  TELZ_HEALTH_WEB_PORT="$WEB_PORT" \
+  TELZ_MONITORING_DIR="$PLATFORM_MONITORING_SNAPSHOT_DIR" \
   /usr/local/sbin/telz-health-check "$INSTALL_DIR"
 write_summary
 cleanup_trusted_installer_assets

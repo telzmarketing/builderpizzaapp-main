@@ -315,3 +315,40 @@ prepare_directories() {
   chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
   chmod 750 "$INSTALL_DIR"
 }
+
+persist_operational_config() {
+  local config_dir="/etc/telz"
+  local config_file="$config_dir/operations.conf"
+  local temporary
+
+  if [[ -e "$config_dir" || -L "$config_dir" ]]; then
+    [[ -d "$config_dir" && ! -L "$config_dir" && "$(stat -c '%U:%G' "$config_dir")" == "root:root" && \
+       -z "$(find "$config_dir" -maxdepth 0 -perm /022 -print -quit)" ]] || {
+      fail "Diretorio de configuracao operacional inseguro: $config_dir"
+      return 1
+    }
+  else
+    install -d -m 0700 -o root -g root "$config_dir"
+  fi
+  [[ ! -L "$config_file" ]] || {
+    fail "Configuracao operacional nao pode ser symlink: $config_file"
+    return 1
+  }
+  temporary="$(mktemp "$config_dir/.operations.XXXXXX")"
+  OPERATION_CONFIG_STAGING_FILE="$temporary"
+  {
+    printf 'SERVICE_USER=%s\n' "$SERVICE_USER"
+    printf 'API_PORT=%s\n' "$API_PORT"
+    printf 'WEB_PORT=%s\n' "$WEB_PORT"
+    printf 'API_WORKERS=%s\n' "${API_WORKERS:-2}"
+    printf 'WHATSAPP_GATEWAY_PORT=%s\n' "$WHATSAPP_GATEWAY_PORT"
+    printf 'INSTALL_WHATSAPP_GATEWAY=%s\n' "$INSTALL_WHATSAPP_GATEWAY"
+    printf 'INSTALL_BACKUP=%s\n' "$INSTALL_BACKUP"
+    printf 'PLATFORM_MONITORING_SNAPSHOT_DIR=%s\n' "$PLATFORM_MONITORING_SNAPSHOT_DIR"
+  } > "$temporary"
+  chown root:root "$temporary"
+  chmod 0600 "$temporary"
+  mv -f -- "$temporary" "$config_file"
+  OPERATION_CONFIG_STAGING_FILE=""
+  ok "Configuracao operacional persistida em $config_file"
+}

@@ -1,108 +1,142 @@
 # Atualizacao Telz na VPS
 
-Atualizado em: 2026-08-09
+Atualizado em: 2026-09-29
 
-Use este procedimento para uma atualizacao incremental de uma instalacao
-existente em `/opt/telz`. `installer/install.sh` continua reservado para a
-primeira instalacao ou reconstrucao planejada.
+Este procedimento cobre atualizacao incremental de uma instalacao existente em
+`/opt/telz`. `installer/install.sh` e exclusivo da primeira instalacao ou de
+uma reconstrucao planejada; ele nao deve ser reutilizado como updater.
 
-## 1. Preflight
+## 1. Caminho suportado
 
-O checkout e os processos pertencem a `telz:telz`. Operacoes Git devem executar
-como esse usuario; nao configure `/opt/telz` como `safe.directory` global do
-`root`.
+O caminho operacional suportado e o `workflow_dispatch` de
+`.github/workflows/deploy.yml`, operacao `deploy`, no commit exato aprovado.
+O workflow:
+
+1. identifica a release ativa na VPS;
+2. sela o bundle operacional allowlisted;
+3. sela os archives de fonte do commit alvo e do commit anterior;
+4. resolve e sela o pacote offline de dependencias;
+5. verifica os mesmos artefatos em PostgreSQL 15, Python 3.12, Node 22 e pnpm
+   10.14.0;
+6. envia os artefatos por SSH com fingerprint configurado;
+7. promove os arquivos para staging root-owned e verifica SHA-256;
+8. materializa releases imutaveis em `/var/lib/telz/releases/<SHA>/app`;
+9. cria backup, aplica a revision explicita, troca `current`, reinicia e executa
+   health local e HTTPS publico.
+
+O target canonico desta entrega e:
+
+```text
+20260927_order_board_mvp
+```
+
+O deploy fica bloqueado se o commit publicado nao possuir exatamente esse unico
+head ou se banco, manifest, hashes e artefatos nao convergirem.
+
+## 2. Preflight
+
+Antes de acionar o workflow, registre sem expor segredos:
 
 ```bash
 sudo -u telz -H git -C /opt/telz status --short
 sudo -u telz -H git -C /opt/telz rev-parse HEAD
-sudo -u telz -H git -C /opt/telz fetch --prune origin main
+sudo readlink -f /var/lib/telz/current
+sudo readlink -f /var/backups/telz/latest
+sudo systemctl --no-pager --full status \
+  telz-api telz-web telz-whatsapp-gateway telz-monitoring.timer
 ```
 
-O atualizador rejeita qualquer arquivo alterado ou nao rastreado. Preserve
-`backend/.env`, uploads e backups fora do worktree; nao use `reset --hard` para
-contornar o gate.
+O checkout deve estar limpo. Preserve `backend/.env`, `uploads/`, certificados,
+backups e `.runtime/baileys`; nao use `reset --hard`, `safe.directory` global ou
+movimentacao manual para contornar o gate.
 
-## 2. Executar
+Confirme no commit alvo:
 
-O target canonico deste checkout e:
+- unico head Alembic `20260927_order_board_mvp`;
+- workflow e updater usando o mesmo target;
+- commit anterior ancestral do commit alvo;
+- secrets `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_HOST_FINGERPRINT` e,
+  quando necessario, `VPS_PORT`;
+- protecoes/aprovadores do environment `production`;
+- URL publica canonica `https://erp.telz.com.br/health` operacional.
+
+## 3. Comandos manuais que nao sao suportados
+
+Nao copie o updater do checkout e nao execute somente:
 
 ```text
-20260924_kds_kitchen_dispatch
+sudo /usr/local/sbin/update-telz /opt/telz
 ```
 
-Execute:
+Esse comando e inexequivel isoladamente por desenho. O updater exige, no mesmo
+deploy, todos estes inputs promovidos e root-owned:
 
-```bash
-sudo install -m 0755 -o root -g root \
-  /opt/telz/scripts/update-telz.sh \
-  /usr/local/sbin/update-telz
-sudo env TELZ_ALEMBIC_TARGET=20260924_kds_kitchen_dispatch \
-  /usr/local/sbin/update-telz /opt/telz
-```
+- `TELZ_EXPECTED_COMMIT` e `TELZ_PREVIOUS_COMMIT` completos;
+- `TELZ_OPERATION_BUNDLE_DIR` com a allowlist exata;
+- archive de fonte alvo e seu `TELZ_SOURCE_ARCHIVE_SHA256`;
+- archive de fonte anterior e seu `TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256`;
+- archive offline de dependencias e seu `TELZ_DEPENDENCY_ARCHIVE_SHA256`;
+- `TELZ_ALEMBIC_TARGET=20260927_order_board_mvp`;
+- `TELZ_PUBLIC_HEALTH_URL` quando HTTPS publico e obrigatorio.
 
-O script:
+Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
+remove a cadeia de promocao/verificacao e nao constitui procedimento aprovado.
+Se o workflow estiver indisponivel, o deploy deve permanecer bloqueado ate a
+cadeia de artefatos ser restaurada; nao use o instalador como fallback.
 
-1. adquire lock exclusivo;
-2. confirma worktree limpo e registra o commit anterior;
-3. atualiza `main` com Git executado como `telz`;
-4. instala os utilitarios operacionais root-owned;
-5. cria backup validado antes de dependencias e migration;
-6. valida sintaxe de scripts Bash;
-7. instala dependencias Python/Node e executa `pip check`;
-8. executa pytest, typecheck e Vitest;
-9. gera o build de producao;
-10. registra `current`, `heads` e `history` do Alembic;
-11. exige exatamente um head igual a `TELZ_ALEMBIC_TARGET`;
-12. aplica somente a revision explicita e confirma a convergencia do banco;
-13. instala observador/timer e agendamento de backup;
-14. reinicia os services e executa health check completo.
+## 4. Falha, recuperacao e rollback
 
-Nao ha prompt para `upgrade head` e o script nao usa essa forma. O target deve
-corresponder ao head unico do commit publicado.
+Antes da janela de manutencao, o updater valida releases alvo/anterior,
+compatibilidade de schema e backup. Em falha ele tenta restaurar release ativa,
+helpers/units, checkout e estado anterior dos servicos.
 
-## 3. GitHub Actions
+Nao existe downgrade automatico de banco. Se a migration ja foi aplicada:
 
-O push para `main` executa somente a validacao em PostgreSQL 15 descartavel,
-incluindo migration, suite backend, typecheck, Vitest e build. Ele nao inicia
-deploy de producao.
+- preserve logs, backup e release ativa;
+- mantenha writers parados se o health/recuperacao nao convergir;
+- prefira hotfix forward-only compativel com o schema atual;
+- use restore somente com janela aprovada e o procedimento de
+  `docs/BACKUP_AND_RESTORE.md`.
 
-O deploy exige acionamento manual por `workflow_dispatch`. Nesse fluxo, o job
-de producao somente inicia depois da mesma validacao e exige os secrets
-`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` e, opcionalmente, `VPS_PORT`, alem das
-protecoes configuradas no environment `production`.
-
-Na VPS, o workflow:
-
-- confirma ownership `telz:telz` e worktree limpo;
-- faz fast-forward para o SHA exato do workflow;
-- instala uma copia root-owned do atualizador;
-- executa o mesmo target `20260924_kds_kitchen_dispatch`;
-- confirma o commit final.
-
-## 4. Falha e rollback
-
-Se houver falha depois da troca de commit, o atualizador tenta restaurar o
-codigo e o build do commit anterior. Ele nunca executa downgrade automatico do
-banco. Se a migration ja tiver sido aplicada, a saida informa explicitamente
-essa condicao.
-
-Depois de dados reais, prefira hotfix forward-only. Restauracao de backup exige
-janela aprovada e o procedimento de `docs/BACKUP_AND_RESTORE.md`; voltar somente
-o codigo nao torna um schema novo antigo.
+O rollback por release aceita apenas um SHA completo ja materializado,
+root-owned, com manifest/digests validos e schema compativel. Voltar somente o
+codigo nao transforma um schema novo em antigo.
 
 ## 5. Evidencias de conclusao
 
-Registre depois do deploy:
+Depois de o workflow concluir, registre:
 
 ```bash
 sudo -u telz -H git -C /opt/telz rev-parse HEAD
-sudo -u telz -H bash -lc \
-  'cd /opt/telz && exec .venv/bin/alembic -c backend/alembic.ini current'
-sudo systemctl --no-pager --full status telz-api telz-web telz-whatsapp-gateway
-sudo systemctl --no-pager --full status telz-monitoring.timer
+sudo readlink -f /var/lib/telz/current
+sudo -u telz -H env TELZ_PROJECT_ROOT=/opt/telz bash -lc \
+  'cd /var/lib/telz/current && exec .venv/bin/alembic -c backend/alembic.ini current'
+sudo systemctl --no-pager --full status \
+  telz-api telz-web telz-whatsapp-gateway telz-monitoring.timer
 sudo /usr/local/sbin/telz-health-check /opt/telz
 ```
 
-Tambem valide HTTPS publico, login da plataforma, cada modulo operacional e
-logs recentes. Neste checkout, deploy do novo target, HTTPS publico, E2E e
-restore controlado ainda sao gates abertos ate existir evidencia da VPS/CI.
+Confirme que o link `current` termina em `/releases/<SHA-ALVO>/app`, o manifest
+registra o mesmo commit e `20260927_order_board_mvp`, e o banco possui uma unica
+revision igual ao target.
+
+Tambem valide HTTPS publico, login, loja, pedido, pagamentos, cozinha,
+expedicao, WhatsApp, logs e isolamento entre dois tenants. Para o painel TV,
+mantenha `ORDER_BOARD_ENABLED=false` e opt-in desativado ate passar HTTPS/cookie,
+isolamento A/B e ativacao controlada.
+
+## 6. Gates ainda externos
+
+Um workflow verde comprova a cadeia automatizada daquele run, nao homologacao
+geral de producao. Permanecem como evidencias separadas:
+
+- deploy real no host e health HTTPS publico;
+- migration em PostgreSQL real com volume/dados de producao representativos;
+- teste E2E de cliente e admin;
+- isolamento de tenants;
+- provedores de pagamento/webhooks reais;
+- backup recente e restore controlado;
+- rollback para uma release materializada compativel;
+- homologacao real das configuracoes nao padrao de usuario, portas e diretorios;
+  a propagacao pelo `/etc/telz/operations.conf` e automatizada, mas ainda exige
+  teste na VPS.

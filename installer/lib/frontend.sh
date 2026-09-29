@@ -40,12 +40,24 @@ install_node_runtime() {
 }
 
 build_frontend() {
-  info "Instalando dependencias Node e gerando build"
+  info "Instalando dependencias Node"
   sudo -u "$SERVICE_USER" bash -lc "cd '$INSTALL_DIR' && pnpm install --frozen-lockfile"
-  sudo -u "$SERVICE_USER" bash -lc "cd '$INSTALL_DIR' && pnpm run typecheck"
-  sudo -u "$SERVICE_USER" bash -lc "cd '$INSTALL_DIR' && pnpm test"
-  sudo -u "$SERVICE_USER" env \
-    VITE_PLATFORM_HOSTNAME="${PLATFORM_DOMAIN}" \
-    VITE_MULTI_TENANT_AUTH_ENABLED="${MULTI_TENANT_AUTH_ENABLED:-true}" \
-    bash -lc "cd '$INSTALL_DIR' && pnpm run build"
+  if is_true "$RUN_TYPECHECK"; then
+    sudo -u "$SERVICE_USER" bash -lc "cd '$INSTALL_DIR' && pnpm run typecheck"
+  else
+    info "Typecheck desabilitado por RUN_TYPECHECK=false."
+  fi
+  if is_true "$RUN_TESTS"; then
+    sudo -u "$SERVICE_USER" bash -lc "cd '$INSTALL_DIR' && pnpm test"
+  else
+    info "Testes de frontend desabilitados por RUN_TESTS=false."
+  fi
+  if is_true "$RUN_BUILD"; then
+    sudo -u "$SERVICE_USER" env \
+      VITE_PLATFORM_HOSTNAME="${PLATFORM_DOMAIN}" \
+      VITE_MULTI_TENANT_AUTH_ENABLED="${MULTI_TENANT_AUTH_ENABLED:-true}" \
+      bash -lc "cd '$INSTALL_DIR' && pnpm run build"
+  else
+    info "Build de frontend desabilitado por RUN_BUILD=false."
+  fi
 }

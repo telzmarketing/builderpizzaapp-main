@@ -201,9 +201,19 @@ PY
 }
 
 schema_pair_is_compatible() {
-  [[ "$1" == "$2" ]] || \
-    [[ "$1:$2" == "20260816_master_completion:20260818_platform_operations" ]] || \
-    [[ "$1:$2" == "20260817_platform_wave0:20260818_platform_operations" ]]
+  [[ "$1" == "$2" ]] && return 0
+  case "$1:$2" in
+    "20260816_master_completion:20260818_platform_operations" | \
+    "20260817_platform_wave0:20260818_platform_operations" | \
+    "20260924_kds_kitchen_dispatch:20260926_dispatch_labels" | \
+    "20260924_kds_kitchen_dispatch:20260927_order_board_mvp" | \
+    "20260926_dispatch_labels:20260927_order_board_mvp")
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 [[ -L "$CURRENT_LINK" && "$(stat -c '%U' "$CURRENT_LINK")" == "root" ]] || \

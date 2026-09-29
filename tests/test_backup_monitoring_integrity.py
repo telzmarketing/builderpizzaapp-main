@@ -202,5 +202,5 @@ def test_collector_uses_root_private_cache_and_never_trusts_manifest_status_alon
 
 def test_monitoring_unit_allows_private_cache_and_has_explicit_budget():
     unit = (ROOT / "installer/templates/telz-monitoring.service").read_text(encoding="utf-8")
-    assert "ReadWritePaths=/var/lib/telz/monitoring" in unit
+    assert "ReadWritePaths=__MONITORING_DIR__" in unit
     assert "TimeoutStartSec=15min" in unit

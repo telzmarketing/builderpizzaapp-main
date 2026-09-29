@@ -1,4 +1,6 @@
 from pathlib import Path
+from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -7,7 +9,8 @@ from backend.core.kds_station_access import station_path_allowed
 from backend.core.state_machine import order_sm
 from backend.core.tenant_context import TenantContext, TenantSource
 from backend.main import app
-from backend.models.order import Order
+from backend.models.delivery import DeliveryStatus
+from backend.models.order import Order, OrderStatus
 from backend.schemas.kds import DispatchAssignIn
 from backend.services.kds_service import KdsService
 
@@ -105,6 +108,87 @@ def test_ready_pickup_moves_from_kitchen_to_dispatch_and_uses_dispatch_audit():
     assert '@router.post("/dispatch/orders/{order_id}/pickup-complete")' in routes
     assert 'require_rbac_permission("expedicao", "edit")' in routes
     assert 'audit_module="expedicao"' in routes
+
+
+def test_kitchen_eager_loads_and_exposes_only_bounded_delivery_identity():
+    source = (ROOT / "backend/services/kds_service.py").read_text(encoding="utf-8")
+    kitchen = source[source.index("    def kitchen_orders("):source.index("    def start_preparation(")]
+    assert "joinedload(Order.delivery).joinedload(Delivery.delivery_person)" in kitchen
+
+    assigned_at = datetime(2026, 9, 27, 19, 0, tzinfo=timezone.utc)
+    driver = SimpleNamespace(id="driver-1", name="Carlos Silva")
+    delivery = SimpleNamespace(
+        id="delivery-1", status=DeliveryStatus.assigned,
+        delivery_person_id=driver.id, delivery_person=driver,
+        assigned_at=assigned_at,
+    )
+    order = SimpleNamespace(
+        id="order-1", order_code="1043", status=OrderStatus.preparing,
+        fulfillment_type="delivery", sales_channel="delivery", notes=None,
+        total=79.9, estimated_time=40,
+        created_at=assigned_at, updated_at=assigned_at,
+        preparation_started_at=assigned_at, items=[], payment=SimpleNamespace(
+            method="cash", pay_on_delivery=True, delivery_payment_method="cash",
+            cash_needs_change=True, cash_change_for=100,
+        ), delivery=delivery,
+        delivery_name="Cliente", delivery_street="Rua privada",
+        delivery_city="Cidade", delivery_complement="Apto 1",
+    )
+    context = TenantContext(tenant_id="tenant-a", source=TenantSource.JOB)
+    payload = KdsService(SimpleNamespace(), context)._serialize_orders(
+        [order], include_dispatch_details=False,
+    )[0]
+
+    assert payload["delivery"] == {
+        "id": "delivery-1", "status": "assigned",
+        "delivery_person_id": "driver-1",
+        "delivery_person_name": "Carlos Silva",
+        "assigned_at": assigned_at,
+    }
+    assert set(payload).isdisjoint({
+        "delivery_name", "delivery_street", "delivery_city",
+        "delivery_complement", "payment_method", "pay_on_delivery",
+        "delivery_payment_method", "cash_needs_change", "cash_change_for",
+        "can_assign_driver",
+    })
+
+
+def test_dispatch_keeps_assigned_order_visible_but_marks_it_read_only():
+    assert DeliveryStatus.assigned not in KdsService.DISPATCH_HIDDEN_DELIVERY_STATUSES
+    assert DeliveryStatus.picked_up in KdsService.DISPATCH_HIDDEN_DELIVERY_STATUSES
+    assert DeliveryStatus.on_the_way in KdsService.DISPATCH_HIDDEN_DELIVERY_STATUSES
+
+    now = datetime(2026, 9, 27, 19, 0, tzinfo=timezone.utc)
+    driver = SimpleNamespace(id="driver-1", name="Carlos Silva")
+    base = dict(
+        id="order-1", order_code="1043", status=OrderStatus.ready_for_pickup,
+        fulfillment_type="delivery", sales_channel="delivery", notes=None,
+        total=79.9, estimated_time=40, created_at=now, updated_at=now,
+        preparation_started_at=now, items=[], payment=None,
+        delivery_name="Cliente", delivery_street="Rua A", delivery_city="Cidade",
+        delivery_complement=None,
+    )
+    context = TenantContext(tenant_id="tenant-a", source=TenantSource.JOB)
+    service = KdsService(SimpleNamespace(), context)
+
+    assigned = SimpleNamespace(
+        id="delivery-1", status=DeliveryStatus.assigned,
+        delivery_person_id=driver.id, delivery_person=driver, assigned_at=now,
+    )
+    assigned_payload = service._serialize_orders(
+        [SimpleNamespace(**base, delivery=assigned)], include_dispatch_details=True,
+    )[0]
+    assert assigned_payload["delivery"]["delivery_person_name"] == "Carlos Silva"
+    assert assigned_payload["can_assign_driver"] is False
+
+    failed = SimpleNamespace(
+        id="delivery-2", status=DeliveryStatus.failed,
+        delivery_person_id=None, delivery_person=None, assigned_at=None,
+    )
+    failed_payload = service._serialize_orders(
+        [SimpleNamespace(**base, delivery=failed)], include_dispatch_details=True,
+    )[0]
+    assert failed_payload["can_assign_driver"] is True
 
 
 def test_status_change_does_not_auto_assign_before_dispatch_release():

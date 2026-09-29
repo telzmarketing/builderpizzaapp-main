@@ -10,8 +10,8 @@ write_summary() {
     printf 'install_dir=%s\n' "$INSTALL_DIR"
     printf 'admin_email=%s\n' "$ADMIN_EMAIL"
     printf 'admin_name=%s\n' "$ADMIN_NAME"
-    printf 'api_service=%s-api\n' "$PLATFORM_SLUG"
-    printf 'web_service=%s-web\n' "$PLATFORM_SLUG"
+    printf 'api_service=telz-api\n'
+    printf 'web_service=telz-web\n'
     printf 'multi_tenant_auth_enabled=%s\n' "${MULTI_TENANT_AUTH_ENABLED:-true}"
     printf 'tenant_domains_enabled=%s\n' "${TENANT_DOMAINS_ENABLED:-true}"
     printf 'tenant_enforcement_waves=disabled\n'
@@ -19,7 +19,13 @@ write_summary() {
     printf 'pnpm_version=10.14.0\n'
     printf 'privileged_assets=root-staged-and-verified\n'
     printf 'health_local=http://127.0.0.1:%s/health\n' "$API_PORT"
-    printf 'health_public=https://%s/health\n' "$PLATFORM_DOMAIN"
+    if ! is_true "$INSTALL_NGINX"; then
+      printf 'health_public=disabled\n'
+    elif is_true "$INSTALL_SSL"; then
+      printf 'health_public=https://%s/health\n' "$PLATFORM_DOMAIN"
+    else
+      printf 'health_public=http://%s/health\n' "$PLATFORM_DOMAIN"
+    fi
   } > "$report"
   cat "$report"
 }

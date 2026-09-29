@@ -92,6 +92,7 @@ class Order(Base):
 
     paid_at                  = Column(DateTime(timezone=True), nullable=True)
     preparation_started_at   = Column(DateTime(timezone=True), nullable=True)
+    ready_for_pickup_at      = Column(DateTime(timezone=True), nullable=True)
     out_for_delivery_at      = Column(DateTime(timezone=True), nullable=True)
     delivered_at             = Column(DateTime(timezone=True), nullable=True)
     target_delivery_minutes  = Column(Integer, default=45)

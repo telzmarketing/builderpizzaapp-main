@@ -27,6 +27,65 @@ require_root_owned_executable() {
   [[ -x "$candidate" ]] || die "arquivo deve ser executavel: $candidate"
 }
 
+load_operational_config() {
+  local config_file="$1"
+  local config_dir
+  local line key value
+  local -A seen=()
+  local -a required_keys=(
+    SERVICE_USER API_PORT WEB_PORT API_WORKERS WHATSAPP_GATEWAY_PORT
+    INSTALL_WHATSAPP_GATEWAY INSTALL_BACKUP PLATFORM_MONITORING_SNAPSHOT_DIR
+  )
+
+  config_dir="$(dirname -- "$config_file")"
+  [[ -d "$config_dir" && ! -L "$config_dir" && "$(realpath -e -- "$config_dir")" == "$config_dir" && \
+     "$(stat -c '%U' "$config_dir")" == "root" && -z "$(find "$config_dir" -maxdepth 0 -perm /022 -print -quit)" ]] || \
+    die "diretorio da configuracao operacional e inseguro"
+  require_root_owned_file "$config_file"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -n "$line" && "$line" == *=* ]] || die "linha invalida na configuracao operacional"
+    key="${line%%=*}"
+    value="${line#*=}"
+    [[ "$key" =~ ^[A-Z_]+$ ]] || die "chave operacional invalida"
+    [[ -z "${seen[$key]:-}" ]] || die "chave operacional duplicada: $key"
+    seen["$key"]=true
+    case "$key" in
+      SERVICE_USER) SERVICE_USER="$value" ;;
+      API_PORT) API_PORT="$value" ;;
+      WEB_PORT) WEB_PORT="$value" ;;
+      API_WORKERS) API_WORKERS="$value" ;;
+      WHATSAPP_GATEWAY_PORT) WHATSAPP_GATEWAY_PORT="$value" ;;
+      INSTALL_WHATSAPP_GATEWAY) GATEWAY_ENABLED="$value" ;;
+      INSTALL_BACKUP) BACKUP_ENABLED="$value" ;;
+      PLATFORM_MONITORING_SNAPSHOT_DIR) MONITORING_DIR="$value" ;;
+      *) die "chave operacional desconhecida: $key" ;;
+    esac
+  done < "$config_file"
+  for key in "${required_keys[@]}"; do
+    [[ "${seen[$key]:-}" == "true" ]] || die "chave operacional ausente: $key"
+  done
+}
+
+validate_operational_config() {
+  local canonical
+  [[ "$SERVICE_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$SERVICE_USER" != "root" ]] || \
+    die "SERVICE_USER operacional invalido"
+  for value in "$API_PORT" "$WEB_PORT" "$WHATSAPP_GATEWAY_PORT"; do
+    [[ "$value" =~ ^[0-9]+$ && "$value" -ge 1 && "$value" -le 65535 ]] || die "porta operacional invalida"
+  done
+  [[ "$API_PORT" != "$WEB_PORT" && "$API_PORT" != "$WHATSAPP_GATEWAY_PORT" && \
+     "$WEB_PORT" != "$WHATSAPP_GATEWAY_PORT" ]] || die "portas operacionais devem ser distintas"
+  [[ "$API_WORKERS" =~ ^[0-9]+$ && "$API_WORKERS" -ge 1 && "$API_WORKERS" -le 64 ]] || \
+    die "API_WORKERS operacional invalido"
+  [[ "$GATEWAY_ENABLED" == "true" || "$GATEWAY_ENABLED" == "false" ]] || \
+    die "INSTALL_WHATSAPP_GATEWAY operacional invalido"
+  [[ "$BACKUP_ENABLED" == "true" || "$BACKUP_ENABLED" == "false" ]] || \
+    die "INSTALL_BACKUP operacional invalido"
+  canonical="$(realpath -m -- "$MONITORING_DIR")" || die "diretorio de monitoramento invalido"
+  [[ "$MONITORING_DIR" == "$canonical" && "$canonical" =~ ^/var/lib/telz/[A-Za-z0-9._/-]+$ ]] || \
+    die "diretorio de monitoramento deve ser canonico e permanecer sob /var/lib/telz"
+}
+
 SOURCE_SCRIPT="$(realpath -e "$0")"
 require_root_owned_executable "$SOURCE_SCRIPT"
 
@@ -57,11 +116,28 @@ trap cleanup_temporary_state EXIT
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "execute como root"
 
 INSTALL_DIR="$(realpath -e "${1:-/opt/telz}")"
+OPERATION_CONFIG_FILE="/etc/telz/operations.conf"
 SERVICE_USER="${TELZ_SERVICE_USER:-telz}"
+API_PORT="${TELZ_API_PORT:-8000}"
+WEB_PORT="${TELZ_WEB_PORT:-3000}"
+API_WORKERS="${TELZ_API_WORKERS:-2}"
+WHATSAPP_GATEWAY_PORT="${TELZ_WHATSAPP_GATEWAY_PORT:-3020}"
+MONITORING_DIR="${TELZ_MONITORING_DIR:-/var/lib/telz/monitoring}"
+if [[ -f "$OPERATION_CONFIG_FILE" || -L "$OPERATION_CONFIG_FILE" ]]; then
+  GATEWAY_ENABLED=false
+  BACKUP_ENABLED=false
+  load_operational_config "$OPERATION_CONFIG_FILE"
+else
+  [[ ! -e "$OPERATION_CONFIG_FILE" ]] || die "configuracao operacional nao e arquivo regular"
+  [[ -f /etc/systemd/system/telz-whatsapp-gateway.service ]] && GATEWAY_ENABLED=true || GATEWAY_ENABLED=false
+  [[ -f /etc/cron.d/telz-backup ]] && BACKUP_ENABLED=true || BACKUP_ENABLED=false
+  echo "[update][aviso] configuracao operacional ausente; usando fallback legado validado" >&2
+fi
+validate_operational_config
 BRANCH="${BRANCH:-main}"
 RUN_TESTS="${RUN_TESTS:-false}"
 EXPECTED_COMMIT="${TELZ_EXPECTED_COMMIT:-}"
-ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20260924_kds_kitchen_dispatch}"
+ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20260927_order_board_mvp}"
 REQUIRE_PUBLIC_HTTPS="${TELZ_REQUIRE_PUBLIC_HTTPS:-true}"
 PUBLIC_HEALTH_URL="${TELZ_PUBLIC_HEALTH_URL:-}"
 OPERATION_BUNDLE_INPUT="${TELZ_OPERATION_BUNDLE_DIR:-}"
@@ -454,8 +530,18 @@ schema_is_rollback_compatible() {
   local code_revision="$1"
   local database_revision="$2"
   [[ "$code_revision" == "$database_revision" ]] && return 0
-  [[ "$code_revision:$database_revision" == "20260816_master_completion:20260818_platform_operations" ]] && return 0
-  [[ "$code_revision:$database_revision" == "20260817_platform_wave0:20260818_platform_operations" ]]
+  case "$code_revision:$database_revision" in
+    "20260816_master_completion:20260818_platform_operations" | \
+    "20260817_platform_wave0:20260818_platform_operations" | \
+    "20260924_kds_kitchen_dispatch:20260926_dispatch_labels" | \
+    "20260924_kds_kitchen_dispatch:20260927_order_board_mvp" | \
+    "20260926_dispatch_labels:20260927_order_board_mvp")
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 validate_release_tree() {
@@ -951,7 +1037,7 @@ stop_services() {
 
 start_new_services() {
   systemctl start telz-api telz-web
-  if unit_exists telz-whatsapp-gateway; then
+  if [[ "$GATEWAY_ENABLED" == "true" ]]; then
     systemctl start telz-whatsapp-gateway
   fi
 }
@@ -1160,6 +1246,10 @@ echo "[update] preflight completo da release ativa antes de qualquer mutacao"
 TELZ_ALEMBIC_TARGET="$DATABASE_CURRENT" \
   TELZ_REQUIRE_PUBLIC_HTTPS="$REQUIRE_PUBLIC_HTTPS" \
   TELZ_PUBLIC_HEALTH_URL="$PUBLIC_HEALTH_URL" \
+  TELZ_SERVICE_USER="$SERVICE_USER" \
+  TELZ_HEALTH_API_PORT="$API_PORT" \
+  TELZ_HEALTH_WEB_PORT="$WEB_PORT" \
+  TELZ_MONITORING_DIR="$MONITORING_DIR" \
   "$BUNDLE_HEALTH" "$INSTALL_DIR"
 
 snapshot_operational_artifacts
@@ -1171,6 +1261,9 @@ TELZ_MAINTENANCE_LOCK_HELD=true \
   TELZ_BACKUP_GIT_COMMIT_OVERRIDE="$PREVIOUS_ACTIVE_COMMIT" \
   TELZ_BACKUP_ALEMBIC_REVISION_OVERRIDE="$DATABASE_CURRENT" \
   TELZ_SERVICE_USER="$SERVICE_USER" \
+  TELZ_HEALTH_API_PORT="$API_PORT" \
+  TELZ_HEALTH_WEB_PORT="$WEB_PORT" \
+  TELZ_MONITORING_DIR="$MONITORING_DIR" \
   "$BUNDLE_BACKUP" "$INSTALL_DIR"
 
 if [[ "$SOURCE_PREVIOUS_COMMIT" != "$EXPECTED_COMMIT" ]]; then
@@ -1201,17 +1294,20 @@ install -m 0755 -o root -g root "$BUNDLE_SSL" "$SSL_COMMAND"
 UNIT_STAGE_DIR="$(mktemp -d /tmp/telz-unit-stage.XXXXXX)"
 chmod 0700 "$UNIT_STAGE_DIR"
 sed -e "s#__INSTALL_DIR__#$INSTALL_DIR#g" -e "s#__CODE_DIR__#$CURRENT_LINK#g" \
-  -e "s#__SERVICE_USER__#$SERVICE_USER#g" -e "s#__API_PORT__#${TELZ_API_PORT:-8000}#g" \
-  -e "s#__API_WORKERS__#${TELZ_API_WORKERS:-2}#g" \
+  -e "s#__SERVICE_USER__#$SERVICE_USER#g" -e "s#__API_PORT__#$API_PORT#g" \
+  -e "s#__API_WORKERS__#$API_WORKERS#g" \
   "$BUNDLE_API_UNIT" > "$UNIT_STAGE_DIR/telz-api.service"
 sed -e "s#__INSTALL_DIR__#$INSTALL_DIR#g" -e "s#__CODE_DIR__#$CURRENT_LINK#g" \
-  -e "s#__SERVICE_USER__#$SERVICE_USER#g" -e "s#__WEB_PORT__#${TELZ_WEB_PORT:-3000}#g" \
+  -e "s#__SERVICE_USER__#$SERVICE_USER#g" -e "s#__WEB_PORT__#$WEB_PORT#g" \
   "$BUNDLE_WEB_UNIT" > "$UNIT_STAGE_DIR/telz-web.service"
-sed -e "s#__INSTALL_DIR__#$INSTALL_DIR#g" -e "s#__CODE_DIR__#$CURRENT_LINK#g" \
-  -e "s#__SERVICE_USER__#$SERVICE_USER#g" -e "s#__WHATSAPP_GATEWAY_PORT__#${TELZ_WHATSAPP_GATEWAY_PORT:-3020}#g" \
-  "$BUNDLE_GATEWAY_UNIT" > "$UNIT_STAGE_DIR/telz-whatsapp-gateway.service"
+if [[ "$GATEWAY_ENABLED" == "true" ]]; then
+  sed -e "s#__INSTALL_DIR__#$INSTALL_DIR#g" -e "s#__CODE_DIR__#$CURRENT_LINK#g" \
+    -e "s#__SERVICE_USER__#$SERVICE_USER#g" -e "s#__WHATSAPP_GATEWAY_PORT__#$WHATSAPP_GATEWAY_PORT#g" \
+    "$BUNDLE_GATEWAY_UNIT" > "$UNIT_STAGE_DIR/telz-whatsapp-gateway.service"
+fi
 sed -e "s#__INSTALL_DIR__#$INSTALL_DIR#g" -e "s#__SERVICE_USER__#$SERVICE_USER#g" \
-  -e "s#__API_PORT__#${TELZ_API_PORT:-8000}#g" -e "s#__WEB_PORT__#${TELZ_WEB_PORT:-3000}#g" \
+  -e "s#__API_PORT__#$API_PORT#g" -e "s#__WEB_PORT__#$WEB_PORT#g" \
+  -e "s#__MONITORING_DIR__#$MONITORING_DIR#g" \
   "$BUNDLE_MONITOR_UNIT" > "$UNIT_STAGE_DIR/telz-monitoring.service"
 install -m 0644 -o root -g root "$BUNDLE_MONITOR_TIMER" "$UNIT_STAGE_DIR/telz-monitoring.timer"
 chmod 0644 "$UNIT_STAGE_DIR"/*.service
@@ -1219,16 +1315,26 @@ systemd-analyze verify "$UNIT_STAGE_DIR"/*.service "$UNIT_STAGE_DIR/telz-monitor
 for unit_file in "$UNIT_STAGE_DIR"/*.service "$UNIT_STAGE_DIR/telz-monitoring.timer"; do
   install -m 0644 -o root -g root "$unit_file" "/etc/systemd/system/$(basename "$unit_file")"
 done
-cat > /etc/cron.d/telz-backup <<EOF
+if [[ "$GATEWAY_ENABLED" == "false" ]]; then
+  if unit_exists telz-whatsapp-gateway; then
+    systemctl disable telz-whatsapp-gateway
+  fi
+  rm -f -- /etc/systemd/system/telz-whatsapp-gateway.service
+fi
+if [[ "$BACKUP_ENABLED" == "true" ]]; then
+  cat > /etc/cron.d/telz-backup <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-15 3 * * * root $BACKUP_COMMAND $INSTALL_DIR >/var/log/telz-backup.log 2>&1
+15 3 * * * root TELZ_SERVICE_USER=$SERVICE_USER TELZ_HEALTH_API_PORT=$API_PORT TELZ_HEALTH_WEB_PORT=$WEB_PORT TELZ_MONITORING_DIR=$MONITORING_DIR $BACKUP_COMMAND $INSTALL_DIR >/var/log/telz-backup.log 2>&1
 EOF
-chmod 0644 /etc/cron.d/telz-backup
-install -d -m 0750 -o root -g "$SERVICE_USER" /var/lib/telz/monitoring
+  chmod 0644 /etc/cron.d/telz-backup
+else
+  rm -f -- /etc/cron.d/telz-backup
+fi
+install -d -m 0750 -o root -g "$SERVICE_USER" "$MONITORING_DIR"
 systemctl daemon-reload
 systemctl enable telz-api telz-web telz-monitoring.timer
-if unit_exists telz-whatsapp-gateway; then
+if [[ "$GATEWAY_ENABLED" == "true" ]]; then
   systemctl enable telz-whatsapp-gateway
 fi
 systemctl enable --now telz-monitoring.timer
@@ -1238,6 +1344,10 @@ systemctl start telz-monitoring.service
 TELZ_ALEMBIC_TARGET="$ALEMBIC_TARGET" \
   TELZ_REQUIRE_PUBLIC_HTTPS="$REQUIRE_PUBLIC_HTTPS" \
   TELZ_PUBLIC_HEALTH_URL="$PUBLIC_HEALTH_URL" \
+  TELZ_SERVICE_USER="$SERVICE_USER" \
+  TELZ_HEALTH_API_PORT="$API_PORT" \
+  TELZ_HEALTH_WEB_PORT="$WEB_PORT" \
+  TELZ_MONITORING_DIR="$MONITORING_DIR" \
   "$HEALTH_COMMAND" "$INSTALL_DIR"
 
 MAINTENANCE_WINDOW=false

@@ -16,7 +16,7 @@ install_systemd_units() {
   timer_template="$(trusted_installer_asset installer/templates/telz-monitoring.timer)"
   install -m 0755 -o root -g root "$collector_source" /usr/local/sbin/telz-monitoring-collector
   install -m 0755 -o root -g root "$health_source" /usr/local/sbin/telz-health-check
-  install -d -m 0750 -o root -g "$SERVICE_USER" /var/lib/telz/monitoring
+  install -d -m 0750 -o root -g "$SERVICE_USER" "$PLATFORM_MONITORING_SNAPSHOT_DIR"
   command -v systemd-analyze >/dev/null 2>&1 || fail "systemd-analyze obrigatorio para validar units"
   unit_stage="$(mktemp -d /tmp/telz-installer-units.XXXXXX)"
   chmod 0700 "$unit_stage"
@@ -46,6 +46,7 @@ install_systemd_units() {
     -e "s#__SERVICE_USER__#${SERVICE_USER}#g" \
     -e "s#__API_PORT__#${API_PORT}#g" \
     -e "s#__WEB_PORT__#${WEB_PORT}#g" \
+    -e "s#__MONITORING_DIR__#${PLATFORM_MONITORING_SNAPSHOT_DIR}#g" \
     "$monitoring_template" > "$unit_stage/telz-monitoring.service"
   install -m 0644 -o root -g root "$timer_template" "$unit_stage/telz-monitoring.timer"
   chmod 0644 "$unit_stage"/*.service
@@ -54,6 +55,12 @@ install_systemd_units() {
   for unit_file in "${staged_units[@]}"; do
     install -m 0644 -o root -g root "$unit_file" "/etc/systemd/system/$(basename "$unit_file")"
   done
+  if ! is_true "${INSTALL_WHATSAPP_GATEWAY:-true}"; then
+    if systemctl list-unit-files telz-whatsapp-gateway.service --no-legend 2>/dev/null | grep -q '^telz-whatsapp-gateway.service'; then
+      systemctl disable --now telz-whatsapp-gateway
+    fi
+    rm -f -- /etc/systemd/system/telz-whatsapp-gateway.service
+  fi
   rm -rf -- "$unit_stage"
   systemctl daemon-reload
   systemctl enable telz-api telz-web telz-monitoring.timer

@@ -12,6 +12,5 @@ install_ssl_if_requested() {
   validate_required PLATFORM_DOMAIN
   validate_required SSL_EMAIL
   warn "SSL requer DNS apontando para esta VPS."
-  "$ssl_helper" "$PLATFORM_DOMAIN" "$SSL_EMAIL" || \
-    warn "SSL nao concluido. Finalize depois com: sudo $ssl_helper ${PLATFORM_DOMAIN} ${SSL_EMAIL}"
+  "$ssl_helper" "$PLATFORM_DOMAIN" "$SSL_EMAIL"
 }

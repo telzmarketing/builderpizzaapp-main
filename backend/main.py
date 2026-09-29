@@ -68,6 +68,7 @@ from backend.routes import platform_storage as platform_storage_routes
 from backend.routes import platform_backups as platform_backups_routes
 from backend.routes import kds as kds_routes
 from backend.routes import labels as labels_routes
+from backend.routes import order_board as order_board_routes
 
 settings = get_settings()
 
@@ -1267,6 +1268,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["ETag"],
 )
 
 
@@ -1380,6 +1382,8 @@ app.include_router(marketing_intelligence_routes.router, prefix="/api")
 app.include_router(rbac_routes.router, prefix="/api")
 app.include_router(kds_routes.router, prefix="/api")
 app.include_router(labels_routes.router, prefix="/api")
+app.include_router(order_board_routes.router, prefix="/api")
+app.include_router(order_board_routes.admin_router, prefix="/api")
 app.include_router(customer_events_routes.router, prefix="/api")
 app.include_router(lgpd_routes.router, prefix="/api")
 app.include_router(lgpd_routes.admin_router, prefix="/api")

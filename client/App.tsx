@@ -446,6 +446,7 @@ const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
 const AdminEmpresas = lazy(() => import("./pages/admin/Empresas"));
 const AdminProducts = lazy(() => import("./pages/admin/Products"));
 const AdminOrders = lazy(() => import("./pages/admin/Orders"));
+const KdsOverview = lazy(() => import("./pages/admin/KdsOverview"));
 const AdminCozinha = lazy(() => import("./pages/admin/Cozinha"));
 const AdminExpedicao = lazy(() => import("./pages/admin/Expedicao"));
 const AdminFidelidade = lazy(() => import("./pages/admin/AdminFidelidade"));
@@ -495,6 +496,7 @@ const AdminSalao = lazy(() => import("./pages/admin/salao/AdminSalao"));
 const AdminSalaoPage = lazy(() => import("./pages/admin/salao/AdminSalaoPage"));
 const PromotionalLandingEditor = lazy(() => import("./pages/admin/PromotionalLandingEditor"));
 const Motoboy = lazy(() => import("./pages/Motoboy"));
+const OrderBoardTv = lazy(() => import("./pages/OrderBoardTv"));
 const Campanha = lazy(() => import("./pages/Campanha"));
 const PromocaoLanding = lazy(() => import("./pages/PromocaoLanding"));
 const Fidelidade = lazy(() => import("./pages/Fidelidade"));
@@ -514,23 +516,32 @@ function ExperienceRoute({ salao, delivery }: { salao: JSX.Element; delivery: JS
   return getPublicExperience() === "salao" ? salao : delivery;
 }
 
+function FullPageRedirect({ to }: { to: string }) {
+  useEffect(() => {
+    window.location.replace(to);
+  }, [to]);
+
+  return <AppRouteFallback />;
+}
+
 function AppSurface() {
   const deferredWidgetsReady = useDeferredClientMount(3200);
   const platformSurface = isPlatformHostname(window.location.hostname);
+  const orderBoardSurface = window.location.pathname === "/tv" || window.location.pathname.startsWith("/tv/");
 
   return (
     <AppProvider>
       <AppErrorBoundary>
         <ChunkRecovery />
         <DocumentHead />
-        <ThemeInjector />
+        {!orderBoardSurface && <ThemeInjector />}
           <Toaster />
           <BrowserRouter>
-            {!platformSurface && <MotoboyNativeEntry />}
-            {!platformSurface && <RouteDataLoader />}
-            {!platformSurface && <StoreWidget />}
-            {!platformSurface && <TrackingInjector />}
-            {!platformSurface && !isSalaoExperience() && deferredWidgetsReady && (
+            {!platformSurface && !orderBoardSurface && <MotoboyNativeEntry />}
+            {!platformSurface && !orderBoardSurface && <RouteDataLoader />}
+            {!platformSurface && !orderBoardSurface && <StoreWidget />}
+            {!platformSurface && !orderBoardSurface && <TrackingInjector />}
+            {!platformSurface && !orderBoardSurface && !isSalaoExperience() && deferredWidgetsReady && (
               <Suspense fallback={null}>
                 <ExitPopup />
               </Suspense>
@@ -570,6 +581,8 @@ function AppSurface() {
               <Route path="/painel/trocar-senha" element={<AdminChangePassword />} />
               <Route path="/painel/convite/:token" element={<AcceptPlatformInvitation />} />
               <Route path="/motoboy" element={<Motoboy />} />
+              <Route path="/tv" element={<OrderBoardTv />} />
+              <Route path="/tv/motoboys" element={<OrderBoardTv />} />
 
               <Route element={<PlatformAdminGuard />}>
                 <Route element={<PlatformAdminLayout />}>
@@ -623,12 +636,14 @@ function AppSurface() {
                 <Route path="/painel/bi-mobile" element={<AdminBIMobile />} />
                 <Route path="/painel/cozinha" element={<AdminCozinha />} />
                 <Route path="/painel/expedicao" element={<AdminExpedicao />} />
+                <Route path="/painel/kds/sala-motoboy" element={<FullPageRedirect to="/tv/motoboys" />} />
                 <Route element={<AdminLayout />}>
                 <Route path="/painel" element={<AdminDashboard />} />
                 <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />
                 <Route path="/painel/products" element={<AdminProducts />} />
                 <Route path="/painel/products/landing/:productId/:promotionId" element={<PromotionalLandingEditor />} />
                 <Route path="/painel/orders" element={<AdminOrders />} />
+                <Route path="/painel/kds" element={<KdsOverview />} />
                 <Route path="/painel/salao" element={<AdminSalao />} />
                 <Route path="/painel/fidelidade" element={<AdminFidelidade />} />
                 <Route path="/painel/conteudo" element={<AdminConteudo />} />

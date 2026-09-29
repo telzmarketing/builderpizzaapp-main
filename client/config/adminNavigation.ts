@@ -9,11 +9,13 @@ import {
   CreditCard,
   Eye,
   FileText,
+  Gauge,
   KanbanSquare,
   LayoutDashboard,
   LogIn,
   Mail,
   MessageCircle,
+  Monitor,
   MousePointerClick,
   Package,
   Palette,
@@ -77,10 +79,17 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     label: "Operacoes",
     children: [
       { path: "/painel/orders", icon: ShoppingBag, label: "Pedidos", permissions: ["pedidos"] },
-      { path: "/painel/cozinha", icon: ChefHat, label: "Cozinha", permissions: ["cozinha"] },
-      { path: "/painel/expedicao", icon: Truck, label: "Expedição", permissions: ["expedicao"] },
       { path: "/painel/salao", icon: ClipboardList, label: "Salao & Reservas", permissions: ["pedidos"] },
       { path: "/painel/logistica", icon: Route, label: "Logistica", permissions: ["entregas", "motoboys"] },
+    ],
+  },
+  {
+    label: "KDS",
+    children: [
+      { path: "/painel/kds", icon: Gauge, label: "Painel Geral", exact: true, permissions: ["pedidos"] },
+      { path: "/painel/cozinha", icon: ChefHat, label: "KDS Cozinha", permissions: ["cozinha"] },
+      { path: "/painel/expedicao", icon: Truck, label: "KDS Expedição", permissions: ["expedicao"] },
+      { path: "/painel/kds/sala-motoboy", icon: Monitor, label: "Painel Sala Motoboy", permissions: ["pedidos"] },
     ],
   },
   {

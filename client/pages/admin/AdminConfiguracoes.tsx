@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, BellOff, Check, Printer, Eye, Settings2, Tags, Volume2 } from "lucide-react";
+import { Bell, BellOff, Check, Monitor, Printer, Eye, Settings2, Tags, Volume2 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import LabelSettingsPanel from "@/components/admin/LabelSettingsPanel";
+import OrderBoardSettingsPanel from "@/components/admin/OrderBoardSettingsPanel";
 import {
   loadPrinterSettings, savePrinterSettings,
   buildCompletoHtml, buildCozinhaHtml, buildEntregaHtml,
@@ -16,7 +17,7 @@ import {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-type Tab = "impressora" | "etiquetas" | "som";
+type Tab = "impressora" | "etiquetas" | "painel-tv" | "som";
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -174,6 +175,14 @@ export default function AdminConfiguracoes() {
               Etiquetas da expedição
             </button>
             <button
+              type="button"
+              onClick={() => setActiveTab("painel-tv")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "painel-tv" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
+            >
+              <Monitor size={14} />
+              Painéis TV
+            </button>
+            <button
               onClick={() => setActiveTab("som")}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "som" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
             >
@@ -185,6 +194,7 @@ export default function AdminConfiguracoes() {
           <div className="p-8 space-y-8 max-w-5xl">
 
             {activeTab === "etiquetas" && <LabelSettingsPanel />}
+            {activeTab === "painel-tv" && <OrderBoardSettingsPanel />}
 
             {/* ── Aba Som ───────────────────────────────────────────────── */}
             {activeTab === "som" && (

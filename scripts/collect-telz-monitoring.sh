@@ -352,6 +352,7 @@ def service_status(state: str) -> tuple[str, str]:
 api_status = ("healthy", "ok") if os.environ["TELZ_MONITOR_API_STATE"] == "active" and flag("TELZ_MONITOR_API_OK") else ("critical", "unreachable")
 web_status = ("healthy", "ok") if os.environ["TELZ_MONITOR_WEB_STATE"] == "active" and flag("TELZ_MONITOR_WEB_OK") else ("critical", "unreachable")
 nginx_status = ("healthy", "ok") if flag("TELZ_MONITOR_NGINX_OK") else ("critical", "config_invalid")
+database_status = ("healthy", "ok") if flag("TELZ_MONITOR_DB_OK") else ("critical", "unreachable")
 gateway_service_status = service_status(os.environ["TELZ_MONITOR_GATEWAY_STATE"])
 if os.environ["TELZ_MONITOR_GATEWAY_STATE"] == "not-installed":
     gateway_runtime_status = ("unknown", "unreachable")
@@ -367,6 +368,7 @@ health = {
         component("api", *api_status),
         component("web", *web_status),
         component("nginx", *nginx_status),
+        component("database", *database_status),
         component("gateway_service", *gateway_service_status),
         component("gateway_runtime", *gateway_runtime_status),
         component("observer", "healthy", "ok"),

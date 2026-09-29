@@ -1126,6 +1126,14 @@ export interface KdsOrderItem {
   flavors: Array<{ name: string }>;
 }
 
+export interface KdsDeliverySummary {
+  id: string;
+  status: string;
+  delivery_person_id?: string | null;
+  delivery_person_name?: string | null;
+  assigned_at?: string | null;
+}
+
 export interface KdsKitchenOrder {
   id: string;
   order_code?: string | null;
@@ -1138,6 +1146,7 @@ export interface KdsKitchenOrder {
   created_at: string;
   updated_at: string;
   preparation_started_at?: string | null;
+  delivery: KdsDeliverySummary | null;
   items: KdsOrderItem[];
 }
 
@@ -1151,13 +1160,7 @@ export interface KdsDispatchOrder extends KdsKitchenOrder {
   delivery_payment_method?: "cash" | "card" | string | null;
   cash_needs_change?: boolean | null;
   cash_change_for?: number | null;
-  delivery?: {
-    id: string;
-    status: string;
-    delivery_person_id?: string | null;
-    delivery_person_name?: string | null;
-    assigned_at?: string | null;
-  } | null;
+  can_assign_driver: boolean;
 }
 
 export interface KdsDriver {
@@ -1176,6 +1179,43 @@ export interface KdsDispatchResult {
     delivery_person_id?: string | null;
     delivery_person_name?: string | null;
   } | null;
+}
+
+export type KdsOverviewStage =
+  | "waiting_kitchen"
+  | "preparing"
+  | "ready_unassigned"
+  | "assigned_waiting_departure"
+  | "in_route";
+
+export interface KdsOverviewCounters {
+  waiting_kitchen: number;
+  preparing: number;
+  ready_unassigned: number;
+  assigned_waiting_departure: number;
+  in_route: number;
+  drivers_available: number;
+  drivers_busy: number;
+}
+
+export interface KdsOverviewOrder {
+  id: string;
+  order_code?: string | null;
+  stage: KdsOverviewStage;
+  status: string;
+  fulfillment_type: "delivery" | "pickup" | string;
+  created_at: string;
+  status_started_at: string;
+  delivery: {
+    status: string;
+    driver_name?: string | null;
+  } | null;
+}
+
+export interface KdsOverview {
+  generated_at: string;
+  counters: KdsOverviewCounters;
+  orders: KdsOverviewOrder[];
 }
 
 // Label dispatch contracts stay grouped here so the browser-first UI can be
@@ -1334,6 +1374,7 @@ export type KdsLabelVolumeRuleInput = Pick<KdsLabelVolumeRule, "scope_type" | "s
 
 /** Endpoints operacionais mínimos usados pelas estações KDS touch. */
 export const kdsApi = {
+  overview: () => get<KdsOverview>("/kds/overview"),
   listKitchenOrders: () => get<KdsKitchenOrder[]>("/kds/kitchen/orders"),
   startKitchenOrder: (orderId: string) =>
     post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/start`, {}),
@@ -1394,6 +1435,166 @@ export const kdsLabelsApi = {
     post<{ job: KdsLabelPrintJob; preview: KdsLabelTestPreview }>(`${labelDispatchBase}/labels/test`, data),
   markDialogOpened: (jobId: string) =>
     post<KdsLabelPrintJob>(`${labelDispatchBase}/label-jobs/${jobId}/dialog-opened`, {}),
+};
+
+// Order board contracts deliberately expose no customer identity, address,
+// item details or payment data. The TV credential is carried by an HttpOnly
+// cookie, while administrative calls keep using the regular bearer session.
+export interface OrderBoardOrder {
+  id: string;
+  order_code: string;
+  status: string;
+  created_at: string;
+  preparation_started_at?: string | null;
+  ready_for_pickup_at?: string | null;
+  delivery: {
+    provider_key: string;
+    provider_label: string;
+    driver_name?: string | null;
+  };
+  /** Normalized by the client from the official status timestamps. */
+  status_started_at?: string | null;
+  /** Compatibility alias for early API drafts. */
+  code?: string;
+}
+
+export interface OrderBoardSettings {
+  company_name: string;
+  logo_url?: string | null;
+  enabled: boolean;
+  polling_interval_seconds: number;
+  production_sla_minutes: number;
+  dispatch_sla_minutes: number;
+  completed_window_seconds: number;
+  sound_enabled: boolean;
+  max_orders: number;
+}
+
+export interface OrderBoardSnapshot {
+  tenant: { name: string; timezone: string; logo_url?: string | null };
+  settings: OrderBoardSettings;
+  orders: OrderBoardOrder[];
+  server_time: string;
+}
+
+export interface OrderBoardActivation {
+  id: string;
+  code: string;
+  expires_at: string;
+  poll_after_seconds: number;
+}
+
+export interface OrderBoardActivationStatus {
+  status: "pending" | "approved" | "claimed" | "expired";
+  expires_at: string;
+  device?: { id: string; name: string } | null;
+}
+
+export interface OrderBoardDevice {
+  id: string;
+  name: string;
+  status: "active" | "revoked" | string;
+  last_seen_at?: string | null;
+  activated_at?: string | null;
+  created_at: string;
+  revoked_at?: string | null;
+}
+
+interface OrderBoardSnapshotResponse {
+  snapshot: OrderBoardSnapshot | null;
+  etag: string | null;
+  notModified: boolean;
+}
+
+async function readApiEnvelope<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`;
+    try {
+      const payload = await response.json();
+      message = payload?.error?.message ?? payload?.detail ?? message;
+    } catch { /* response body is optional */ }
+    throw new ApiRequestError(typeof message === "string" ? message : `HTTP ${response.status}`, response.status);
+  }
+  const payload = await response.json();
+  return (payload && typeof payload === "object" && "data" in payload ? payload.data : payload) as T;
+}
+
+// Unlike most legacy routers, the order-board surface is deliberately exposed
+// only below /api. Build its canonical base explicitly so unsafe requests also
+// work in Vite development, where the generic client would otherwise stop at
+// http://localhost:8000/order-board after the first 404.
+const ORDER_BOARD_API_BASE = BASE.endsWith("/api") ? BASE : `${BASE}/api`;
+
+function orderBoardFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(`${ORDER_BOARD_API_BASE}${path}`, init);
+}
+
+async function adminOrderBoardRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const response = await orderBoardFetch(path, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+  const recoveryMessage = recoverUnauthorizedAdminSession(response.status, path);
+  if (recoveryMessage) throw new Error(recoveryMessage);
+  return readApiEnvelope<T>(response);
+}
+
+function normalizeOrderBoardSnapshot(snapshot: OrderBoardSnapshot): OrderBoardSnapshot {
+  const startedAt = (order: OrderBoardOrder) => {
+    if (order.status === "preparing") return order.preparation_started_at;
+    if (order.status === "ready_for_pickup") return order.ready_for_pickup_at;
+    return order.created_at;
+  };
+  return {
+    ...snapshot,
+    orders: snapshot.orders.map((order) => ({
+      ...order,
+      code: order.order_code,
+      status_started_at: startedAt(order),
+    })),
+  };
+}
+
+export const orderBoardApi = {
+  createActivation: async () => readApiEnvelope<OrderBoardActivation>(await orderBoardFetch("/order-board/activations", {
+    method: "POST", credentials: "include",
+  })),
+  activationStatus: async (activation: Pick<OrderBoardActivation, "id">) =>
+    readApiEnvelope<OrderBoardActivationStatus>(await orderBoardFetch(`/order-board/activations/${encodeURIComponent(activation.id)}/status`, {
+      method: "GET",
+      credentials: "include",
+    })),
+  snapshot: async (etag?: string | null): Promise<OrderBoardSnapshotResponse> => {
+    const response = await orderBoardFetch("/order-board/snapshot", {
+      method: "GET",
+      credentials: "include",
+      headers: etag ? { "If-None-Match": etag } : undefined,
+    });
+    if (response.status === 304) return { snapshot: null, etag: etag ?? null, notModified: true };
+    const snapshot = normalizeOrderBoardSnapshot(await readApiEnvelope<OrderBoardSnapshot>(response));
+    return { snapshot, etag: response.headers.get("etag"), notModified: false };
+  },
+  heartbeat: async () => readApiEnvelope<{ device_id: string; last_seen_at: string }>(await orderBoardFetch("/order-board/heartbeat", {
+    method: "POST", credentials: "include",
+  })),
+};
+
+export const adminOrderBoardApi = {
+  getSettings: () => adminOrderBoardRequest<OrderBoardSettings>("GET", "/admin/order-board/settings"),
+  updateSettings: (settings: OrderBoardSettings) => adminOrderBoardRequest<OrderBoardSettings>("PUT", "/admin/order-board/settings", settings),
+  listDevices: () => adminOrderBoardRequest<OrderBoardDevice[]>("GET", "/admin/order-board/devices"),
+  approveActivation: (code: string, name: string) =>
+    adminOrderBoardRequest<OrderBoardDevice>("POST", "/admin/order-board/activations/approve", { code, name }),
+  renameDevice: (id: string, name: string) =>
+    adminOrderBoardRequest<OrderBoardDevice>("PATCH", `/admin/order-board/devices/${encodeURIComponent(id)}`, { name }),
+  revokeDevice: (id: string) =>
+    adminOrderBoardRequest<OrderBoardDevice>("POST", `/admin/order-board/devices/${encodeURIComponent(id)}/revoke`, {}),
+  deleteDevice: (id: string) =>
+    adminOrderBoardRequest<void>("DELETE", `/admin/order-board/devices/${encodeURIComponent(id)}`),
 };
 
 export interface CheckoutItemIn {

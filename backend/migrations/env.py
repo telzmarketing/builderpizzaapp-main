@@ -33,6 +33,7 @@ from backend.models import (  # noqa: F401
     label,
     marketing_intelligence,
     order,
+    order_board,
     paid_traffic,
     payment,
     payment_config,

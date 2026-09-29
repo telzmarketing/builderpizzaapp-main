@@ -11,6 +11,7 @@ Group=root
 UMask=0027
 Environment=TELZ_MONITOR_API_PORT=__API_PORT__
 Environment=TELZ_MONITOR_WEB_PORT=__WEB_PORT__
+Environment=TELZ_MONITORING_DIR=__MONITORING_DIR__
 RuntimeDirectory=telz-monitoring
 RuntimeDirectoryMode=0750
 ExecStart=/usr/local/sbin/telz-monitoring-collector __INSTALL_DIR__ __SERVICE_USER__
@@ -19,4 +20,4 @@ PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
 ReadOnlyPaths=__INSTALL_DIR__ -/var/backups/telz
-ReadWritePaths=/var/lib/telz/monitoring
+ReadWritePaths=__MONITORING_DIR__

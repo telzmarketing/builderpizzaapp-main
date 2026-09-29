@@ -7,6 +7,66 @@ is_true() {
   esac
 }
 
+normalize_boolean() {
+  local name="$1"
+  local value="${!name:-}"
+  case "${value,,}" in
+    true|1|yes|sim) printf -v "$name" '%s' 'true' ;;
+    false|0|no|nao) printf -v "$name" '%s' 'false' ;;
+    *)
+      fail "$name deve ser booleano (true ou false)"
+      exit 1
+      ;;
+  esac
+}
+
+validate_database_mode() {
+  case "$1" in
+    local|external) return 0 ;;
+    *)
+      fail "DATABASE_MODE deve ser local ou external"
+      exit 1
+      ;;
+  esac
+}
+
+validate_database_host() {
+  local value="$1"
+  [[ -n "$value" && ${#value} -le 253 && "$value" != *[[:space:]/@?#%]* ]] || {
+    fail "DATABASE_HOST invalido"
+    exit 1
+  }
+  if [[ "$value" == *:* ]]; then
+    printf '%s' "$value" | /usr/bin/python3 -c \
+      'import ipaddress, sys; ipaddress.IPv6Address(sys.stdin.read())' 2>/dev/null || {
+        fail "DATABASE_HOST IPv6 invalido"
+        exit 1
+      }
+    return 0
+  fi
+  local label
+  IFS='.' read -r -a labels <<< "$value"
+  for label in "${labels[@]}"; do
+    [[ -n "$label" && ${#label} -le 63 && "$label" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$ ]] || {
+      fail "DATABASE_HOST invalido"
+      exit 1
+    }
+  done
+}
+
+validate_monitoring_dir() {
+  local value="$1"
+  local canonical
+  canonical="$(realpath -m -- "$value")" || {
+    fail "PLATFORM_MONITORING_SNAPSHOT_DIR nao pode ser normalizado: $value"
+    exit 1
+  }
+  if [[ "$value" != "$canonical" || ! "$canonical" =~ ^/var/lib/telz/[A-Za-z0-9._/-]+$ ]]; then
+    fail "PLATFORM_MONITORING_SNAPSHOT_DIR deve ser um caminho canonico sob /var/lib/telz"
+    exit 1
+  fi
+}
+
 require_root() {
   if [[ "${EUID}" -ne 0 ]]; then
     fail "Execute como root: sudo bash installer/install.sh"

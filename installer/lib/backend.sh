@@ -61,6 +61,7 @@ PY
   umask 077
   install -d -m 0700 -o root -g root /var/lib/telz-installer/env-staging
   env_temp="$(mktemp /var/lib/telz-installer/env-staging/environment.XXXXXX)"
+  BACKEND_ENV_STAGING_FILE="$env_temp"
   cat > "$env_temp" <<EOF
 DATABASE_URL=${DATABASE_URL}
 APP_NAME=${PLATFORM_NAME}
@@ -154,4 +155,5 @@ finally:
     os.close(install_fd)
 PY
   rm -f -- "$env_temp"
+  BACKEND_ENV_STAGING_FILE=""
 }

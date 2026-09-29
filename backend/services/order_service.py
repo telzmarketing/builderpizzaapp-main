@@ -1131,6 +1131,8 @@ class OrderService:
             order.paid_at = now
         if new_status == "preparing" and not order.preparation_started_at:
             order.preparation_started_at = now
+        if new_status == "ready_for_pickup" and not order.ready_for_pickup_at:
+            order.ready_for_pickup_at = now
         if new_status == "on_the_way" and not order.out_for_delivery_at:
             order.out_for_delivery_at = now
         if new_status == "delivered" and not order.delivered_at:

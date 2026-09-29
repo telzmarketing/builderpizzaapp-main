@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     TENANT_CREDENTIALS_ENABLED: bool = True
     PLATFORM_RBAC_ENABLED: bool = False
     TENANT_ENTITLEMENT_ENFORCEMENT_ENABLED: bool = False
+    # Global kill switch. Tenant opt-in is stored separately and also defaults
+    # to disabled, so applying the migration cannot expose a TV board.
+    ORDER_BOARD_ENABLED: bool = False
     # Root-owned, collector-generated operational projections. The API has
     # read-only access and never executes host commands from HTTP requests.
     PLATFORM_MONITORING_SNAPSHOT_DIR: str = "/var/lib/telz/monitoring"
