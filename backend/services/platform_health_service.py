@@ -31,6 +31,9 @@ MESSAGE_CODES = {
     "timeout": "Tempo limite excedido.",
     "inactive": "Servico inativo.",
     "config_invalid": "Configuracao invalida.",
+    "permission_denied": "Permissao insuficiente para executar a verificacao.",
+    "binary_unavailable": "Executavel da verificacao indisponivel.",
+    "execution_failed": "Falha ao executar a verificacao.",
     "unreachable": "Servico indisponivel.",
     "snapshot_stale": "Coleta operacional desatualizada.",
 }

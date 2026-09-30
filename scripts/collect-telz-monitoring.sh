@@ -208,10 +208,41 @@ probe() {
   fi
 }
 
+nginx_probe() {
+  local output_file exit_code result
+
+  if [[ ! -x /usr/sbin/nginx ]]; then
+    printf '%s\n' '[monitoring][nginx] resultado=binary_unavailable' >&2
+    printf 'binary_unavailable'
+    return 0
+  fi
+
+  output_file="$(mktemp)"
+  if /usr/sbin/nginx -t >"$output_file" 2>&1; then
+    exit_code=0
+    result=ok
+  else
+    exit_code=$?
+    if grep -Eqi 'permission denied|read-only file system|operation not permitted' "$output_file"; then
+      result=permission_denied
+    elif [[ "$exit_code" -eq 1 ]] && grep -Eqi '\[emerg\]|unknown directive|directive .* is not allowed|invalid number of arguments' "$output_file"; then
+      result=config_invalid
+    else
+      result=execution_failed
+    fi
+  fi
+  rm -f -- "$output_file"
+
+  # Keep diagnostics useful in the private journal without copying Nginx output,
+  # paths, hostnames, or configuration fragments into logs or snapshots.
+  printf '[monitoring][nginx] resultado=%s exit_code=%s\n' "$result" "$exit_code" >&2
+  printf '%s' "$result"
+}
+
 API_SERVICE_STATE="$(unit_state telz-api)"
 WEB_SERVICE_STATE="$(unit_state telz-web)"
 GATEWAY_SERVICE_STATE="$(unit_state telz-whatsapp-gateway)"
-NGINX_OK="$(probe nginx -t)"
+NGINX_RESULT="$(nginx_probe)"
 API_OK="$(probe curl --fail --silent --show-error --max-time 5 "$API_URL")"
 WEB_OK="$(probe curl --fail --silent --show-error --head --max-time 5 "$WEB_URL")"
 
@@ -247,7 +278,7 @@ export TELZ_MONITOR_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 export TELZ_MONITOR_API_STATE="$API_SERVICE_STATE"
 export TELZ_MONITOR_WEB_STATE="$WEB_SERVICE_STATE"
 export TELZ_MONITOR_GATEWAY_STATE="$GATEWAY_SERVICE_STATE"
-export TELZ_MONITOR_NGINX_OK="$NGINX_OK"
+export TELZ_MONITOR_NGINX_RESULT="$NGINX_RESULT"
 export TELZ_MONITOR_API_OK="$API_OK"
 export TELZ_MONITOR_WEB_OK="$WEB_OK"
 export TELZ_MONITOR_DB_OK="$DB_OK"
@@ -351,7 +382,16 @@ def service_status(state: str) -> tuple[str, str]:
 
 api_status = ("healthy", "ok") if os.environ["TELZ_MONITOR_API_STATE"] == "active" and flag("TELZ_MONITOR_API_OK") else ("critical", "unreachable")
 web_status = ("healthy", "ok") if os.environ["TELZ_MONITOR_WEB_STATE"] == "active" and flag("TELZ_MONITOR_WEB_OK") else ("critical", "unreachable")
-nginx_status = ("healthy", "ok") if flag("TELZ_MONITOR_NGINX_OK") else ("critical", "config_invalid")
+nginx_result = os.environ["TELZ_MONITOR_NGINX_RESULT"]
+if nginx_result not in {
+    "ok",
+    "config_invalid",
+    "permission_denied",
+    "binary_unavailable",
+    "execution_failed",
+}:
+    nginx_result = "execution_failed"
+nginx_status = ("healthy", "ok") if nginx_result == "ok" else ("critical", nginx_result)
 database_status = ("healthy", "ok") if flag("TELZ_MONITOR_DB_OK") else ("critical", "unreachable")
 gateway_service_status = service_status(os.environ["TELZ_MONITOR_GATEWAY_STATE"])
 if os.environ["TELZ_MONITOR_GATEWAY_STATE"] == "not-installed":

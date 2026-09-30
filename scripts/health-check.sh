@@ -149,6 +149,9 @@ API_URL="${API_URL:-http://127.0.0.1:${TELZ_HEALTH_API_PORT:-8000}/health}"
 WEB_URL="${WEB_URL:-http://127.0.0.1:${TELZ_HEALTH_WEB_PORT:-3000}}"
 MONITOR_DIR="${TELZ_MONITORING_DIR:-/var/lib/telz/monitoring}"
 MONITOR_MAX_AGE_SECONDS="${TELZ_MONITOR_MAX_AGE_SECONDS:-180}"
+API_READY_TIMEOUT_SECONDS="${TELZ_HEALTH_API_READY_TIMEOUT_SECONDS:-60}"
+API_REQUEST_TIMEOUT_SECONDS="${TELZ_HEALTH_API_REQUEST_TIMEOUT_SECONDS:-5}"
+API_RETRY_INTERVAL_SECONDS="${TELZ_HEALTH_API_RETRY_INTERVAL_SECONDS:-2}"
 REQUIRE_PUBLIC_HTTPS="${TELZ_REQUIRE_PUBLIC_HTTPS:-false}"
 PUBLIC_HEALTH_CANDIDATE="${TELZ_PUBLIC_HEALTH_URL:-${PUBLIC_HEALTH_URL:-}}"
 
@@ -156,6 +159,13 @@ case "$REQUIRE_PUBLIC_HTTPS" in
   true|false) ;;
   *) die "TELZ_REQUIRE_PUBLIC_HTTPS deve ser true ou false" ;;
 esac
+
+[[ "$API_READY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ && "$API_READY_TIMEOUT_SECONDS" -le 300 ]] || \
+  die "TELZ_HEALTH_API_READY_TIMEOUT_SECONDS deve estar entre 1 e 300"
+[[ "$API_REQUEST_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ && "$API_REQUEST_TIMEOUT_SECONDS" -le 30 ]] || \
+  die "TELZ_HEALTH_API_REQUEST_TIMEOUT_SECONDS deve estar entre 1 e 30"
+[[ "$API_RETRY_INTERVAL_SECONDS" =~ ^[1-9][0-9]*$ && "$API_RETRY_INTERVAL_SECONDS" -le 30 ]] || \
+  die "TELZ_HEALTH_API_RETRY_INTERVAL_SECONDS deve estar entre 1 e 30"
 
 unit_exists() {
   systemctl list-unit-files "$1.service" --no-legend 2>/dev/null | grep -q "^$1.service"
@@ -329,7 +339,10 @@ import json
 import sys
 from pathlib import Path
 
-payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+try:
+    payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+except (OSError, UnicodeError, json.JSONDecodeError):
+    raise SystemExit("resposta de health da API invalida")
 data = payload.get("data") if isinstance(payload, dict) else None
 status = data.get("status") if isinstance(data, dict) else payload.get("status") if isinstance(payload, dict) else None
 is_envelope = isinstance(data, dict) or (isinstance(payload, dict) and "success" in payload)
@@ -337,6 +350,50 @@ valid = payload.get("success") is True and status in {"ok", "healthy"} if is_env
 if not valid:
     raise SystemExit("resposta de health da API invalida")
 PY
+}
+
+health_monotonic_seconds() {
+  printf '%s\n' "$SECONDS"
+}
+
+wait_for_local_api() {
+  local response_file="$1"
+  local deadline now request_timeout remaining sleep_seconds attempt=0
+  now="$(health_monotonic_seconds)"
+  deadline=$((now + API_READY_TIMEOUT_SECONDS))
+
+  while true; do
+    now="$(health_monotonic_seconds)"
+    if (( now >= deadline )); then
+      break
+    fi
+    attempt=$((attempt + 1))
+    remaining=$((deadline - now))
+    request_timeout="$API_REQUEST_TIMEOUT_SECONDS"
+    if (( request_timeout > remaining )); then
+      request_timeout="$remaining"
+    fi
+    : > "$response_file"
+    if curl --fail --silent --show-error --max-time "$request_timeout" \
+      --output "$response_file" "$API_URL" && validate_health_response "$response_file"; then
+      echo "[health] API local pronta apos $attempt tentativa(s)"
+      return 0
+    fi
+
+    now="$(health_monotonic_seconds)"
+    remaining=$((deadline - now))
+    if (( remaining <= 0 )); then
+      break
+    fi
+    sleep_seconds="$API_RETRY_INTERVAL_SECONDS"
+    if (( sleep_seconds > remaining )); then
+      sleep_seconds="$remaining"
+    fi
+    echo "[health] API local ainda indisponivel; nova tentativa em ${sleep_seconds}s" >&2
+    sleep "$sleep_seconds"
+  done
+
+  die "API local nao ficou pronta em ${API_READY_TIMEOUT_SECONDS}s apos $attempt tentativa(s)"
 }
 
 validate_monitor_snapshot() {
@@ -386,8 +443,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[health] API local"
-curl --fail --silent --show-error --max-time 10 --output "$API_RESPONSE" "$API_URL"
-validate_health_response "$API_RESPONSE"
+wait_for_local_api "$API_RESPONSE"
 
 echo "[health] web local"
 curl --fail --silent --show-error --head --max-time 10 "$WEB_URL" >/dev/null

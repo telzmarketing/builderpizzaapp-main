@@ -21,3 +21,6 @@ ProtectHome=true
 ProtectSystem=strict
 ReadOnlyPaths=__INSTALL_DIR__ -/var/backups/telz
 ReadWritePaths=__MONITORING_DIR__
+# The bind exists only in this unit's mount namespace. It lets `nginx -t` open
+# its configured PID path without writing to the live /run/nginx.pid on the host.
+BindPaths=/dev/null:/run/nginx.pid
