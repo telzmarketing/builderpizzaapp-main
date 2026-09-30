@@ -13,16 +13,25 @@ import {
  * Padrão de desenvolvimento: http://localhost:8000
  */
 
-const RAW_API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 const isLocalApiBase = (value: string) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(value);
-const PRIMARY_API_BASE = RAW_API_BASE && !(import.meta.env.PROD && isLocalApiBase(RAW_API_BASE))
-  ? RAW_API_BASE
-  : (import.meta.env.DEV ? "http://localhost:8000" : "");
-const API_BASES = Array.from(new Set(
-  import.meta.env.PROD
-    ? [PRIMARY_API_BASE, "/api", ""].filter((base) => base || !PRIMARY_API_BASE)
-    : [PRIMARY_API_BASE, "", "/api"].filter(Boolean)
-));
+
+export function buildApiBases(rawApiBase: string, isProd: boolean, isDev: boolean): string[] {
+  const configuredBase = rawApiBase.replace(/\/$/, "");
+  const primaryBase = configuredBase && !(isProd && isLocalApiBase(configuredBase))
+    ? configuredBase
+    : (isDev ? "http://localhost:8000" : "");
+  const canonicalApiBase = primaryBase.endsWith("/api") ? primaryBase : `${primaryBase}/api`;
+  const candidates = isProd
+    ? [canonicalApiBase, primaryBase, ""]
+    : [canonicalApiBase, primaryBase, "/api", ""];
+  return Array.from(new Set(candidates));
+}
+
+const API_BASES = buildApiBases(
+  import.meta.env.VITE_API_URL ?? "",
+  import.meta.env.PROD,
+  import.meta.env.DEV,
+);
 const BASE = API_BASES[0] ?? "";
 const ASSET_BASE = BASE.endsWith("/api") ? BASE.slice(0, -4) : BASE;
 const UPLOAD_ASSET_BASE = BASE.endsWith("/api")
@@ -124,12 +133,13 @@ async function fetchApi(path: string, init: RequestInit): Promise<Response> {
   const method = (init.method ?? "GET").toUpperCase();
   const safeToRetry = method === "GET" || method === "HEAD" || method === "OPTIONS";
   const bases = safeToRetry ? API_BASES : API_BASES.slice(0, 1);
-  for (const base of bases) {
+  for (const [index, base] of bases.entries()) {
     try {
       const res = await fetch(`${base}${path}`, init);
       if (!res.ok) {
         lastError = new Error(`HTTP ${res.status}`);
-        if ([404, 405, 502, 503, 504].includes(res.status)) continue;
+        const hasFallback = index < bases.length - 1;
+        if (hasFallback && [404, 405, 502, 503, 504].includes(res.status)) continue;
       }
       if (res.ok && res.status !== 204) {
         const contentType = res.headers.get("content-type") ?? "";
