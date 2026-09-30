@@ -103,13 +103,15 @@ def test_nginx_probe_classifies_missing_binary(tmp_path: Path) -> None:
     assert "resultado=binary_unavailable" in result.stderr
 
 
-def test_monitoring_sandbox_hides_live_nginx_pid_without_broad_write_access() -> None:
+def test_monitoring_sandbox_hides_live_nginx_runtime_files_without_broad_write_access() -> None:
     unit = (ROOT / "installer/templates/telz-monitoring.service").read_text(encoding="utf-8")
 
     assert "ProtectSystem=strict" in unit
     assert "BindPaths=/dev/null:/run/nginx.pid" in unit
+    assert "TemporaryFileSystem=/var/log/nginx" in unit
     assert "ReadWritePaths=/run" not in unit
     assert "ReadWritePaths=/var" not in unit
+    assert "ReadWritePaths=/var/log/nginx" not in unit
     assert "ReadWritePaths=/etc" not in unit
 
 
