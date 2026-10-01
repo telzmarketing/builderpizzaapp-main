@@ -137,7 +137,7 @@ validate_operational_config
 BRANCH="${BRANCH:-main}"
 RUN_TESTS="${RUN_TESTS:-false}"
 EXPECTED_COMMIT="${TELZ_EXPECTED_COMMIT:-}"
-ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20260927_order_board_mvp}"
+ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20260930_tenant_runtime_uniqueness}"
 REQUIRE_PUBLIC_HTTPS="${TELZ_REQUIRE_PUBLIC_HTTPS:-true}"
 PUBLIC_HEALTH_URL="${TELZ_PUBLIC_HEALTH_URL:-}"
 OPERATION_BUNDLE_INPUT="${TELZ_OPERATION_BUNDLE_DIR:-}"
@@ -535,7 +535,8 @@ schema_is_rollback_compatible() {
     "20260817_platform_wave0:20260818_platform_operations" | \
     "20260924_kds_kitchen_dispatch:20260926_dispatch_labels" | \
     "20260924_kds_kitchen_dispatch:20260927_order_board_mvp" | \
-    "20260926_dispatch_labels:20260927_order_board_mvp")
+    "20260926_dispatch_labels:20260927_order_board_mvp" | \
+    "20260927_order_board_mvp:20260930_tenant_runtime_uniqueness")
       return 0
       ;;
     *)

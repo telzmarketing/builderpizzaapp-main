@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.config import get_settings
 from backend.core.response import created, err_msg, ok
+from backend.core.tenant_runtime import resolve_panel_tenant_context
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
 from backend.routes.whatsapp_marketing import _load_whatsapp_verify_token
@@ -525,10 +526,12 @@ def test_ai_settings(
 @router.post("/tools/execute", response_model=AgenteWhatsAppToolCallOut)
 def execute_tool(
     body: AgenteWhatsAppToolCallIn,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin=Depends(get_current_admin),
 ):
-    result = AgenteWhatsAppToolService(db).execute_tool(
+    context = resolve_panel_tenant_context(request, db, admin)
+    result = AgenteWhatsAppToolService(db, context).execute_tool(
         tool_name=body.tool_name,
         arguments=body.arguments,
         session_id=body.session_id,

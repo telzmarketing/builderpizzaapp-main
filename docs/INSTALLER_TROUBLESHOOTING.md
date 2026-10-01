@@ -65,7 +65,7 @@ sudo -u telz -H bash -lc \
 Deve existir exatamente um head e ele deve ser:
 
 ```text
-20260927_order_board_mvp
+20260930_tenant_runtime_uniqueness
 ```
 
 Se defaults, script, workflow, codigo e banco divergirem, pare. Nao execute
@@ -119,7 +119,7 @@ Service ativo nao prova sessao online. Conecte pelo QR Code e valide envio real.
 
 ## 7. Causas que exigem parar
 
-- target Alembic diferente de `20260927_order_board_mvp`;
+- target Alembic diferente de `20260930_tenant_runtime_uniqueness`;
 - runner/config/fingerprint com ownership ou permissao invalidos;
 - worktree sujo durante update;
 - Nginx invalido ou porta SSH nao preservada antes de UFW;

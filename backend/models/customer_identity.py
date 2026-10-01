@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -13,8 +13,6 @@ def _now_utc():
 class CustomerAuth(Base):
     __tablename__ = "customer_auth"
     __table_args__ = (
-        UniqueConstraint("customer_id", "auth_provider", name="uq_customer_auth_customer_provider"),
-        UniqueConstraint("auth_provider", "identifier", name="uq_customer_auth_provider_identifier"),
         Index("uq_customer_auth_tenant_id_id", "tenant_id", "id", unique=True),
         Index("uq_customer_auth_tenant_customer_provider", "tenant_id", "customer_id", "auth_provider", unique=True),
         Index("uq_customer_auth_tenant_provider_identifier", "tenant_id", "auth_provider", "identifier", unique=True,
@@ -39,7 +37,6 @@ class CustomerAuth(Base):
 class CustomerChannel(Base):
     __tablename__ = "customer_channels"
     __table_args__ = (
-        UniqueConstraint("channel", "normalized_identifier", name="uq_customer_channel_identifier"),
         Index("uq_customer_channels_tenant_id_id", "tenant_id", "id", unique=True),
         Index("uq_customer_channels_tenant_identifier", "tenant_id", "channel", "normalized_identifier", unique=True),
         Index("ix_customer_channels_tenant_marketing_status", "tenant_id", "marketing_status"),
@@ -79,7 +76,7 @@ class CustomerPreference(Base):
 
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_customer_preferences_tenant_id_tenants"), nullable=True)
-    customer_id = Column(String, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, unique=True)
+    customer_id = Column(String, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
     preferred_channel = Column(String(40), nullable=True)
     preferred_contact_time = Column(String(40), nullable=True)
     language = Column(String(10), nullable=False, default="pt_BR")

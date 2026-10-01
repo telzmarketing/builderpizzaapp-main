@@ -22,6 +22,8 @@ from backend.models.customer import Customer
 from backend.models.customer_event import CustomerEvent
 from backend.models.order import Order, OrderItem, OrderItemFlavor
 from backend.models.product import Product
+from backend.core.tenant_context import TenantContextMissing
+from backend.core.tenant_ownership import customers_orders_enforcement_enabled
 
 
 PAID_STATUSES = {
@@ -60,16 +62,26 @@ def _load_json(value: str | None, fallback: Any) -> Any:
         return fallback
 
 
-def _timeline(db: Session, customer_id: str, event_type: str, title: str, description: str | None = None, metadata: dict | None = None) -> None:
+def _timeline(
+    db: Session,
+    customer_id: str,
+    event_type: str,
+    title: str,
+    description: str | None = None,
+    metadata: dict | None = None,
+    *,
+    tenant_id: str | None = None,
+) -> None:
     db.execute(
         text(
             """
-            INSERT INTO customer_timeline (id, customer_id, event_type, title, description, metadata_json, created_at)
-            VALUES (:id, :customer_id, :event_type, :title, :description, :metadata_json, :created_at)
+            INSERT INTO customer_timeline (id, tenant_id, customer_id, event_type, title, description, metadata_json, created_at)
+            VALUES (:id, :tenant_id, :customer_id, :event_type, :title, :description, :metadata_json, :created_at)
             """
         ),
         {
             "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
             "customer_id": customer_id,
             "event_type": event_type,
             "title": title,
@@ -134,32 +146,51 @@ def _suggestion_to_dict(suggestion: CustomerAISuggestion) -> dict[str, Any]:
     }
 
 
-def get_customer_ai_profile(db: Session, customer_id: str) -> dict[str, Any] | None:
-    profile = db.query(CustomerAIProfile).filter(CustomerAIProfile.customer_id == customer_id).first()
+def get_customer_ai_profile(
+    db: Session, customer_id: str, *, tenant_id: str | None = None
+) -> dict[str, Any] | None:
+    query = db.query(CustomerAIProfile).filter(CustomerAIProfile.customer_id == customer_id)
+    if tenant_id:
+        query = query.filter(CustomerAIProfile.tenant_id == tenant_id)
+    profile = query.first()
     return _profile_to_dict(profile) if profile else None
 
 
-def list_customer_ai_suggestions(db: Session, customer_id: str, status: str = "pending") -> list[dict[str, Any]]:
+def list_customer_ai_suggestions(
+    db: Session,
+    customer_id: str,
+    status: str = "pending",
+    *,
+    tenant_id: str | None = None,
+) -> list[dict[str, Any]]:
     query = db.query(CustomerAISuggestion).filter(CustomerAISuggestion.customer_id == customer_id)
+    if tenant_id:
+        query = query.filter(CustomerAISuggestion.tenant_id == tenant_id)
     if status != "all":
         query = query.filter(CustomerAISuggestion.status == status)
     suggestions = query.order_by(CustomerAISuggestion.created_at.desc()).all()
     return [_suggestion_to_dict(suggestion) for suggestion in suggestions]
 
 
-def analyze_customer_profile(db: Session, customer_id: str) -> dict[str, Any]:
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+def analyze_customer_profile(
+    db: Session, customer_id: str, *, tenant_id: str | None = None
+) -> dict[str, Any]:
+    customer_query = db.query(Customer).filter(Customer.id == customer_id)
+    if tenant_id:
+        customer_query = customer_query.filter(Customer.tenant_id == tenant_id)
+    customer = customer_query.first()
     if not customer:
         raise ValueError("Cliente nao encontrado.")
 
-    orders = (
-        db.query(Order)
-        .filter(Order.customer_id == customer_id)
-        .order_by(Order.created_at.asc())
-        .all()
-    )
+    orders_query = db.query(Order).filter(Order.customer_id == customer_id)
+    if tenant_id:
+        orders_query = orders_query.filter(Order.tenant_id == tenant_id)
+    orders = orders_query.order_by(Order.created_at.asc()).all()
     paid_orders = [order for order in orders if _status(order) in PAID_STATUSES]
-    events = db.query(CustomerEvent).filter(CustomerEvent.customer_id == customer_id).all()
+    events_query = db.query(CustomerEvent).filter(CustomerEvent.customer_id == customer_id)
+    if tenant_id:
+        events_query = events_query.filter(CustomerEvent.tenant_id == tenant_id)
+    events = events_query.all()
 
     total_orders = len(paid_orders)
     total_spent = sum(float(order.total or 0) for order in paid_orders)
@@ -173,13 +204,15 @@ def analyze_customer_profile(db: Session, customer_id: str) -> dict[str, Any]:
     crust_counter: Counter = Counter()
     drink_counter: Counter = Counter()
 
-    item_rows = (
+    item_query = (
         db.query(OrderItem, Product)
         .join(Order, OrderItem.order_id == Order.id)
         .outerjoin(Product, OrderItem.product_id == Product.id)
         .filter(Order.customer_id == customer_id)
-        .all()
     )
+    if tenant_id:
+        item_query = item_query.filter(Order.tenant_id == tenant_id, OrderItem.tenant_id == tenant_id)
+    item_rows = item_query.all()
     item_ids: list[str] = []
     for item, product in item_rows:
         item_ids.append(item.id)
@@ -195,7 +228,10 @@ def analyze_customer_profile(db: Session, customer_id: str) -> dict[str, Any]:
             drink_counter[item.selected_drink_variant] += item.quantity or 1
 
     if item_ids:
-        flavors = db.query(OrderItemFlavor).filter(OrderItemFlavor.order_item_id.in_(item_ids)).all()
+        flavor_query = db.query(OrderItemFlavor).filter(OrderItemFlavor.order_item_id.in_(item_ids))
+        if tenant_id:
+            flavor_query = flavor_query.filter(OrderItemFlavor.tenant_id == tenant_id)
+        flavors = flavor_query.all()
         for flavor in flavors:
             flavor_counter[flavor.flavor_name] += 1
 
@@ -300,9 +336,12 @@ def analyze_customer_profile(db: Session, customer_id: str) -> dict[str, Any]:
         "chatbot_interactions": chatbot_interactions,
     }
 
-    profile = db.query(CustomerAIProfile).filter(CustomerAIProfile.customer_id == customer_id).first()
+    profile_query = db.query(CustomerAIProfile).filter(CustomerAIProfile.customer_id == customer_id)
+    if tenant_id:
+        profile_query = profile_query.filter(CustomerAIProfile.tenant_id == tenant_id)
+    profile = profile_query.first()
     if not profile:
-        profile = CustomerAIProfile(id=str(uuid.uuid4()), customer_id=customer_id)
+        profile = CustomerAIProfile(id=str(uuid.uuid4()), tenant_id=tenant_id or customer.tenant_id, customer_id=customer_id)
         db.add(profile)
     profile.profile_summary = summary
     profile.segment = segment
@@ -331,7 +370,7 @@ def analyze_customer_profile(db: Session, customer_id: str) -> dict[str, Any]:
         coupon_events=coupon_events,
         favorite_category=category_counter.most_common(1)[0][0] if category_counter else None,
     )
-    _replace_pending_suggestions(db, customer_id, suggestions)
+    _replace_pending_suggestions(db, customer_id, suggestions, tenant_id=tenant_id or customer.tenant_id)
     _timeline(
         db,
         customer_id,
@@ -339,12 +378,13 @@ def analyze_customer_profile(db: Session, customer_id: str) -> dict[str, Any]:
         "Perfil inteligente analisado",
         summary,
         {"segment": segment, "churn_risk": churn_risk, "repurchase_probability": repurchase_probability},
+        tenant_id=tenant_id or customer.tenant_id,
     )
     db.commit()
     db.refresh(profile)
     return {
         "profile": _profile_to_dict(profile),
-        "suggestions": list_customer_ai_suggestions(db, customer_id),
+        "suggestions": list_customer_ai_suggestions(db, customer_id, tenant_id=tenant_id),
     }
 
 
@@ -391,20 +431,30 @@ def _build_suggestions(
     return suggestions
 
 
-def _replace_pending_suggestions(db: Session, customer_id: str, suggestions: list[dict[str, str]]) -> None:
-    db.query(CustomerAISuggestion).filter(
+def _replace_pending_suggestions(
+    db: Session,
+    customer_id: str,
+    suggestions: list[dict[str, str]],
+    *,
+    tenant_id: str | None = None,
+) -> None:
+    pending_query = db.query(CustomerAISuggestion).filter(
         CustomerAISuggestion.customer_id == customer_id,
         CustomerAISuggestion.status == "pending",
-    ).delete(synchronize_session=False)
+    )
+    if tenant_id:
+        pending_query = pending_query.filter(CustomerAISuggestion.tenant_id == tenant_id)
+    pending_query.delete(synchronize_session=False)
 
+    resolved_query = db.query(CustomerAISuggestion).filter(
+        CustomerAISuggestion.customer_id == customer_id,
+        CustomerAISuggestion.status.in_(["accepted", "rejected"]),
+    )
+    if tenant_id:
+        resolved_query = resolved_query.filter(CustomerAISuggestion.tenant_id == tenant_id)
     existing = {
         (suggestion.suggestion_type, suggestion.slug)
-        for suggestion in db.query(CustomerAISuggestion)
-        .filter(
-            CustomerAISuggestion.customer_id == customer_id,
-            CustomerAISuggestion.status.in_(["accepted", "rejected"]),
-        )
-        .all()
+        for suggestion in resolved_query.all()
     }
     for data in suggestions:
         key = (data["suggestion_type"], data["slug"])
@@ -413,6 +463,7 @@ def _replace_pending_suggestions(db: Session, customer_id: str, suggestions: lis
         db.add(
             CustomerAISuggestion(
                 id=str(uuid.uuid4()),
+                tenant_id=tenant_id,
                 customer_id=customer_id,
                 suggestion_type=data["suggestion_type"],
                 name=data["name"],
@@ -425,8 +476,17 @@ def _replace_pending_suggestions(db: Session, customer_id: str, suggestions: lis
         )
 
 
-def accept_customer_ai_suggestion(db: Session, suggestion_id: str, admin_name: str | None = None) -> dict[str, Any]:
-    suggestion = db.query(CustomerAISuggestion).filter(CustomerAISuggestion.id == suggestion_id).first()
+def accept_customer_ai_suggestion(
+    db: Session,
+    suggestion_id: str,
+    admin_name: str | None = None,
+    *,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
+    suggestion_query = db.query(CustomerAISuggestion).filter(CustomerAISuggestion.id == suggestion_id)
+    if tenant_id:
+        suggestion_query = suggestion_query.filter(CustomerAISuggestion.tenant_id == tenant_id)
+    suggestion = suggestion_query.first()
     if not suggestion:
         raise ValueError("Sugestao nao encontrada.")
     if suggestion.status != "pending":
@@ -450,14 +510,20 @@ def accept_customer_ai_suggestion(db: Session, suggestion_id: str, admin_name: s
         "Sugestao da IA aceita",
         f"{suggestion.suggestion_type}: {suggestion.name}",
         {"suggestion_id": suggestion.id, "target_id": target_id},
+        tenant_id=tenant_id or suggestion.tenant_id,
     )
     db.commit()
     db.refresh(suggestion)
     return _suggestion_to_dict(suggestion)
 
 
-def reject_customer_ai_suggestion(db: Session, suggestion_id: str) -> dict[str, Any]:
-    suggestion = db.query(CustomerAISuggestion).filter(CustomerAISuggestion.id == suggestion_id).first()
+def reject_customer_ai_suggestion(
+    db: Session, suggestion_id: str, *, tenant_id: str | None = None
+) -> dict[str, Any]:
+    suggestion_query = db.query(CustomerAISuggestion).filter(CustomerAISuggestion.id == suggestion_id)
+    if tenant_id:
+        suggestion_query = suggestion_query.filter(CustomerAISuggestion.tenant_id == tenant_id)
+    suggestion = suggestion_query.first()
     if not suggestion:
         raise ValueError("Sugestao nao encontrada.")
     suggestion.status = "rejected"
@@ -470,6 +536,7 @@ def reject_customer_ai_suggestion(db: Session, suggestion_id: str) -> dict[str, 
         "Sugestao da IA rejeitada",
         f"{suggestion.suggestion_type}: {suggestion.name}",
         {"suggestion_id": suggestion.id},
+        tenant_id=tenant_id or suggestion.tenant_id,
     )
     db.commit()
     db.refresh(suggestion)
@@ -494,9 +561,21 @@ def _job_to_dict(job: CustomerAIAnalysisJob | None) -> dict[str, Any] | None:
     }
 
 
-def create_customer_ai_analysis_job(db: Session, created_by: str | None = None) -> tuple[dict[str, Any], bool]:
+def _require_analysis_tenant(tenant_id: str | None) -> str | None:
+    if customers_orders_enforcement_enabled() and not tenant_id:
+        raise TenantContextMissing("Tenant obrigatorio para analise de clientes.")
+    return tenant_id
+
+
+def create_customer_ai_analysis_job(
+    db: Session, created_by: str | None = None, *, tenant_id: str | None = None
+) -> tuple[dict[str, Any], bool]:
+    tenant_id = _require_analysis_tenant(tenant_id)
+    existing_query = db.query(CustomerAIAnalysisJob)
+    if tenant_id:
+        existing_query = existing_query.filter(CustomerAIAnalysisJob.tenant_id == tenant_id)
     existing = (
-        db.query(CustomerAIAnalysisJob)
+        existing_query
         .filter(CustomerAIAnalysisJob.status.in_(["pending", "running"]))
         .order_by(CustomerAIAnalysisJob.created_at.desc())
         .first()
@@ -504,9 +583,13 @@ def create_customer_ai_analysis_job(db: Session, created_by: str | None = None) 
     if existing:
         return _job_to_dict(existing) or {}, False
 
-    total = db.query(Customer).count()
+    customer_query = db.query(Customer)
+    if tenant_id:
+        customer_query = customer_query.filter(Customer.tenant_id == tenant_id)
+    total = customer_query.count()
     job = CustomerAIAnalysisJob(
         id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
         status="pending",
         total_customers=total,
         processed_customers=0,
@@ -527,8 +610,12 @@ def run_customer_ai_analysis_job(job_id: str) -> None:
         job = db.query(CustomerAIAnalysisJob).filter(CustomerAIAnalysisJob.id == job_id).first()
         if not job:
             return
+        tenant_id = _require_analysis_tenant(job.tenant_id)
 
-        customer_ids = [row[0] for row in db.query(Customer.id).order_by(Customer.created_at.asc()).all()]
+        customer_query = db.query(Customer.id)
+        if tenant_id:
+            customer_query = customer_query.filter(Customer.tenant_id == tenant_id)
+        customer_ids = [row[0] for row in customer_query.order_by(Customer.created_at.asc()).all()]
         job.status = "running"
         job.total_customers = len(customer_ids)
         job.processed_customers = 0
@@ -541,7 +628,7 @@ def run_customer_ai_analysis_job(job_id: str) -> None:
         failed = 0
         for customer_id in customer_ids:
             try:
-                analyze_customer_profile(db, customer_id)
+                analyze_customer_profile(db, customer_id, tenant_id=tenant_id)
                 processed += 1
             except Exception as exc:  # noqa: BLE001 - job must continue per customer
                 db.rollback()
@@ -577,33 +664,40 @@ def run_customer_ai_analysis_job(job_id: str) -> None:
         db.close()
 
 
-def get_customer_ai_analysis_status(db: Session, limit: int = 100) -> dict[str, Any]:
+def get_customer_ai_analysis_status(
+    db: Session, limit: int = 100, *, tenant_id: str | None = None
+) -> dict[str, Any]:
+    tenant_id = _require_analysis_tenant(tenant_id)
+
+    def scoped(query, model):
+        return query.filter(model.tenant_id == tenant_id) if tenant_id else query
+
     latest_job = (
-        db.query(CustomerAIAnalysisJob)
+        scoped(db.query(CustomerAIAnalysisJob), CustomerAIAnalysisJob)
         .order_by(CustomerAIAnalysisJob.created_at.desc())
         .first()
     )
 
-    analyzed_total = db.query(CustomerAIProfile).count()
-    tags_suggested = db.query(CustomerAISuggestion).filter(
+    analyzed_total = scoped(db.query(CustomerAIProfile), CustomerAIProfile).count()
+    tags_suggested = scoped(db.query(CustomerAISuggestion), CustomerAISuggestion).filter(
         CustomerAISuggestion.status == "pending",
         CustomerAISuggestion.suggestion_type == "tag",
     ).count()
-    groups_suggested = db.query(CustomerAISuggestion).filter(
+    groups_suggested = scoped(db.query(CustomerAISuggestion), CustomerAISuggestion).filter(
         CustomerAISuggestion.status == "pending",
         CustomerAISuggestion.suggestion_type == "group",
     ).count()
-    vip_total = db.query(CustomerAIProfile).filter(CustomerAIProfile.segment == "vip").count()
-    inactive_total = db.query(CustomerAIProfile).filter(CustomerAIProfile.segment == "inativo").count()
-    risk_total = db.query(CustomerAIProfile).filter(
+    vip_total = scoped(db.query(CustomerAIProfile), CustomerAIProfile).filter(CustomerAIProfile.segment == "vip").count()
+    inactive_total = scoped(db.query(CustomerAIProfile), CustomerAIProfile).filter(CustomerAIProfile.segment == "inativo").count()
+    risk_total = scoped(db.query(CustomerAIProfile), CustomerAIProfile).filter(
         CustomerAIProfile.churn_risk.in_(["medium", "high"])
     ).count()
-    high_repurchase_total = db.query(CustomerAIProfile).filter(
+    high_repurchase_total = scoped(db.query(CustomerAIProfile), CustomerAIProfile).filter(
         CustomerAIProfile.repurchase_probability >= 0.7
     ).count()
 
     rows = (
-        db.query(CustomerAIProfile, Customer)
+        scoped(db.query(CustomerAIProfile, Customer), CustomerAIProfile)
         .join(Customer, Customer.id == CustomerAIProfile.customer_id)
         .order_by(CustomerAIProfile.generated_at.desc())
         .limit(limit)
@@ -611,7 +705,7 @@ def get_customer_ai_analysis_status(db: Session, limit: int = 100) -> dict[str, 
     )
     customers: list[dict[str, Any]] = []
     for profile, customer in rows:
-        suggestions = db.query(CustomerAISuggestion).filter(
+        suggestions = scoped(db.query(CustomerAISuggestion), CustomerAISuggestion).filter(
             CustomerAISuggestion.customer_id == customer.id,
             CustomerAISuggestion.status == "pending",
         ).all()
@@ -701,21 +795,26 @@ def _accept_tag_suggestion(db: Session, suggestion: CustomerAISuggestion, admin_
             "Tag adicionada ao cliente",
             tag.name,
             {"tag_id": tag.id, "source": "ai"},
+            tenant_id=tenant_id,
         )
     return tag.id
 
 
 def _accept_group_suggestion(db: Session, suggestion: CustomerAISuggestion, admin_name: str | None) -> str:
+    customer = db.query(Customer).filter(Customer.id == suggestion.customer_id).first()
+    tenant_id = getattr(suggestion, "tenant_id", None) or (customer.tenant_id if customer else None)
+    if not customer or not tenant_id or customer.tenant_id != tenant_id:
+        raise ValueError("Cliente ou tenant invalido para sugestao de grupo.")
     row = db.execute(
         text(
             """
             SELECT id FROM customer_groups
-            WHERE COALESCE(tenant_id, 'default') = 'default'
+            WHERE tenant_id = :tenant_id
               AND (slug = :slug OR LOWER(name) = LOWER(:name))
             LIMIT 1
             """
         ),
-        {"slug": suggestion.slug, "name": suggestion.name},
+        {"tenant_id": tenant_id, "slug": suggestion.slug, "name": suggestion.name},
     ).fetchone()
     if row:
         group_id = row[0]
@@ -727,12 +826,13 @@ def _accept_group_suggestion(db: Session, suggestion: CustomerAISuggestion, admi
                 INSERT INTO customer_groups (
                     id, tenant_id, name, slug, description, group_type, color, active, source, created_by, created_at, updated_at
                 ) VALUES (
-                    :id, 'default', :name, :slug, :description, 'manual', '#f97316', TRUE, 'ai', :created_by, :now, :now
+                    :id, :tenant_id, :name, :slug, :description, 'manual', '#f97316', TRUE, 'ai', :created_by, :now, :now
                 )
                 """
             ),
             {
                 "id": group_id,
+                "tenant_id": tenant_id,
                 "name": suggestion.name,
                 "slug": suggestion.slug,
                 "description": suggestion.reason,
@@ -745,12 +845,13 @@ def _accept_group_suggestion(db: Session, suggestion: CustomerAISuggestion, admi
         text(
             """
             INSERT INTO customer_group_members (id, tenant_id, group_id, customer_id, source, created_by)
-            VALUES (:id, 'default', :group_id, :customer_id, 'ai', :created_by)
+            VALUES (:id, :tenant_id, :group_id, :customer_id, 'ai', :created_by)
             ON CONFLICT DO NOTHING
             """
         ),
         {
             "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
             "group_id": group_id,
             "customer_id": suggestion.customer_id,
             "created_by": admin_name,
@@ -763,5 +864,6 @@ def _accept_group_suggestion(db: Session, suggestion: CustomerAISuggestion, admi
         "Cliente adicionado ao grupo",
         suggestion.name,
         {"group_id": group_id, "source": "ai"},
+        tenant_id=tenant_id,
     )
     return group_id

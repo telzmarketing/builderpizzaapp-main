@@ -27,7 +27,7 @@ O workflow:
 O target canonico desta entrega e:
 
 ```text
-20260927_order_board_mvp
+20260930_tenant_runtime_uniqueness
 ```
 
 O deploy fica bloqueado se o commit publicado nao possuir exatamente esse unico
@@ -52,7 +52,7 @@ movimentacao manual para contornar o gate.
 
 Confirme no commit alvo:
 
-- unico head Alembic `20260927_order_board_mvp`;
+- unico head Alembic `20260930_tenant_runtime_uniqueness`;
 - workflow e updater usando o mesmo target;
 - commit anterior ancestral do commit alvo;
 - secrets `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_HOST_FINGERPRINT` e,
@@ -76,7 +76,7 @@ deploy, todos estes inputs promovidos e root-owned:
 - archive de fonte alvo e seu `TELZ_SOURCE_ARCHIVE_SHA256`;
 - archive de fonte anterior e seu `TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256`;
 - archive offline de dependencias e seu `TELZ_DEPENDENCY_ARCHIVE_SHA256`;
-- `TELZ_ALEMBIC_TARGET=20260927_order_board_mvp`;
+- `TELZ_ALEMBIC_TARGET=20260930_tenant_runtime_uniqueness`;
 - `TELZ_PUBLIC_HEALTH_URL` quando HTTPS publico e obrigatorio.
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
@@ -117,7 +117,7 @@ sudo /usr/local/sbin/telz-health-check /opt/telz
 ```
 
 Confirme que o link `current` termina em `/releases/<SHA-ALVO>/app`, o manifest
-registra o mesmo commit e `20260927_order_board_mvp`, e o banco possui uma unica
+registra o mesmo commit e `20260930_tenant_runtime_uniqueness`, e o banco possui uma unica
 revision igual ao target.
 
 Tambem valide HTTPS publico, login, loja, pedido, pagamentos, cozinha,

@@ -12,6 +12,8 @@ def require_order_or_admin(
     authorization: str | None,
     x_customer_phone: str | None,
     x_customer_email: str | None,
+    *,
+    expected_tenant_id: str | None = None,
 ) -> None:
     if authorization and authorization.startswith("Bearer "):
         try:
@@ -28,6 +30,7 @@ def require_order_or_admin(
                 authorization,
                 x_customer_phone,
                 x_customer_email,
+                expected_tenant_id=expected_tenant_id,
             )
             return
         except HTTPException:

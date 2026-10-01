@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from backend.models.customer import Customer
 from backend.routes.admin_auth import authenticate_admin_token
 from backend.core.customer_auth import authenticate_customer_token
+from backend.core.tenant_auth import get_current_tenant_context
+from backend.core.tenant_ownership import customers_orders_enforcement_enabled
 
 
 def require_customer_or_admin(
@@ -12,10 +14,21 @@ def require_customer_or_admin(
     authorization: str | None,
     x_customer_phone: str | None,
     x_customer_email: str | None,
+    *,
+    expected_tenant_id: str | None = None,
 ) -> None:
     if authorization and authorization.startswith("Bearer "):
         try:
-            authenticate_admin_token(authorization=authorization, db=db)
+            admin = authenticate_admin_token(authorization=authorization, db=db)
+            if customers_orders_enforcement_enabled() and expected_tenant_id:
+                context = get_current_tenant_context(
+                    authorization=authorization,
+                    requested_tenant_id=expected_tenant_id,
+                    admin=admin,
+                    db=db,
+                )
+                if context.tenant_id != expected_tenant_id:
+                    raise HTTPException(403, "Acesso ao tenant nao autorizado.")
             return
         except HTTPException:
             authenticated = authenticate_customer_token(
@@ -38,8 +51,13 @@ def require_customer_id_or_admin(
     authorization: str | None,
     x_customer_phone: str | None,
     x_customer_email: str | None,
+    *,
+    expected_tenant_id: str | None = None,
 ) -> Customer:
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    query = db.query(Customer).filter(Customer.id == customer_id)
+    if customers_orders_enforcement_enabled() and expected_tenant_id:
+        query = query.filter(Customer.tenant_id == expected_tenant_id)
+    customer = query.first()
     if not customer:
         raise HTTPException(404, "Cliente nao encontrado.")
 
@@ -49,5 +67,6 @@ def require_customer_id_or_admin(
         authorization,
         x_customer_phone,
         x_customer_email,
+        expected_tenant_id=expected_tenant_id,
     )
     return customer

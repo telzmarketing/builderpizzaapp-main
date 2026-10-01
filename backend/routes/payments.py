@@ -82,6 +82,7 @@ def create_payment(
                 request.headers.get("authorization"),
                 request.headers.get("x-customer-phone"),
                 request.headers.get("x-customer-email"),
+                expected_tenant_id=tenant_id,
             )
         idempotency = IdempotencyService(db, tenant_id)
         claim = idempotency.claim(idempotency_key, "payment.create", body.model_dump(mode="json"))
@@ -131,6 +132,7 @@ def create_asaas_credit_card_payment(
                 request.headers.get("authorization"),
                 request.headers.get("x-customer-phone"),
                 request.headers.get("x-customer-email"),
+                expected_tenant_id=tenant_id,
             )
         idempotency = IdempotencyService(db, tenant_id)
         claim = idempotency.claim(idempotency_key, "payment.asaas.credit_card", body.model_dump(mode="json"))
@@ -160,6 +162,7 @@ def get_payment(order_id: str, request: Request, db: Session = Depends(get_db)):
                 request.headers.get("authorization"),
                 request.headers.get("x-customer-phone"),
                 request.headers.get("x-customer-email"),
+                expected_tenant_id=tenant_id,
             )
         return ok(PaymentService(db, tenant_id=tenant_id).get_by_order(order_id))
     except DomainError as exc:
@@ -178,6 +181,7 @@ def create_preference(order_id: str, request: Request, db: Session = Depends(get
                 request.headers.get("authorization"),
                 request.headers.get("x-customer-phone"),
                 request.headers.get("x-customer-email"),
+                expected_tenant_id=tenant_id,
             )
         result = PaymentService(db, tenant_id=tenant_id).create_preference(order_id)
         return created(result, "Preferencia de pagamento criada.")
@@ -197,6 +201,7 @@ def switch_to_pay_on_delivery(order_id: str, body: PayOnDeliverySwitch, request:
                 request.headers.get("authorization"),
                 request.headers.get("x-customer-phone"),
                 request.headers.get("x-customer-email"),
+                expected_tenant_id=tenant_id,
             )
         payment = PaymentService(db, tenant_id=tenant_id).switch_to_pay_on_delivery(order_id, body)
         return ok(payment, "Pedido alterado para pagamento na entrega.")

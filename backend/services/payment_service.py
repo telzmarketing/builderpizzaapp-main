@@ -753,7 +753,7 @@ class PaymentService:
         from backend.services.inventory_service import InventoryService
 
         InventoryService(self._db).consume_order_sale(order.id)
-        sync_customer_order_metrics(self._db, order.customer_id)
+        sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
         self._db.commit()
         self._db.refresh(payment)
         return PaymentOut.model_validate(payment)
@@ -833,7 +833,7 @@ class PaymentService:
 
                     inventory_service = InventoryService(self._db)
                 inventory_service.reverse_order_sale(order.id)
-            sync_customer_order_metrics(self._db, order.customer_id)
+            sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
 
         if status == PaymentStatus.approved and status_changed:
             from backend.services.automation_event_producer import AutomationEventProducer

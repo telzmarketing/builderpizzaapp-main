@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
@@ -10,6 +10,8 @@ from backend.schemas.promotion_landing_page import (
     PromotionLandingPageUpdate,
 )
 from backend.services.promotion_landing_service import PromotionLandingService
+from backend.core.tenant_ownership import identity_catalog_enforcement_enabled, scope_query_to_tenant
+from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
 
 router = APIRouter(prefix="/promotion-landings", tags=["promotion-landings"])
 
@@ -25,18 +27,19 @@ def _landing_payload(service: PromotionLandingService, landing) -> dict:
 
 
 @router.get("", response_model=list[PromotionLandingPageOut])
-def list_landing_pages(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    service = PromotionLandingService(db)
+def list_landing_pages(request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    service = PromotionLandingService(db, resolve_panel_tenant_context(request, db, admin))
     return [_landing_payload(service, landing) for landing in service.list()]
 
 
 @router.post("", response_model=PromotionLandingPageOut, status_code=201)
 def create_landing_page(
     body: PromotionLandingPageCreate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin=Depends(get_current_admin),
 ):
-    service = PromotionLandingService(db)
+    service = PromotionLandingService(db, resolve_panel_tenant_context(request, db, admin))
     landing = service.create(body.model_dump())
     return _landing_payload(service, landing)
 
@@ -45,27 +48,31 @@ def create_landing_page(
 def get_landing_by_product_promotion(
     product_id: str,
     promotion_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin=Depends(get_current_admin),
 ):
-    service = PromotionLandingService(db)
+    service = PromotionLandingService(db, resolve_panel_tenant_context(request, db, admin))
     landing = service.get_by_product_promotion(product_id, promotion_id)
     return _landing_payload(service, landing) if landing else None
 
 
 @router.get("/slug/{slug}", response_model=PromotionLandingPageOut)
-def get_public_landing(slug: str, db: Session = Depends(get_db)):
-    service = PromotionLandingService(db)
+def get_public_landing(slug: str, request: Request, db: Session = Depends(get_db)):
+    service = PromotionLandingService(db, resolve_public_tenant_context(request, db))
     landing = service.get_public_by_slug(slug)
     return _landing_payload(service, landing)
 
 
 @router.get("/decision/{product_id}", response_model=PromotionLandingDecisionOut)
-def get_landing_decision(product_id: str, db: Session = Depends(get_db)):
+def get_landing_decision(product_id: str, request: Request, db: Session = Depends(get_db)):
     from backend.models.product import Product
 
-    product = db.query(Product).filter(Product.id == product_id, Product.active == True).first()  # noqa: E712
-    landing = PromotionLandingService(db).active_landing_for_product(product) if product else None
+    context = resolve_public_tenant_context(request, db)
+    product = scope_query_to_tenant(
+        db.query(Product), Product, context, enabled=identity_catalog_enforcement_enabled()
+    ).filter(Product.id == product_id, Product.active == True).first()  # noqa: E712
+    landing = PromotionLandingService(db, context).active_landing_for_product(product) if product else None
     return {
         "product_id": product_id,
         "promotion_id": landing.promotion_id if landing else None,
@@ -77,8 +84,8 @@ def get_landing_decision(product_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{landing_id}", response_model=PromotionLandingPageOut)
-def get_landing_page(landing_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    service = PromotionLandingService(db)
+def get_landing_page(landing_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    service = PromotionLandingService(db, resolve_panel_tenant_context(request, db, admin))
     return _landing_payload(service, service.get(landing_id))
 
 
@@ -86,21 +93,22 @@ def get_landing_page(landing_id: str, db: Session = Depends(get_db), _=Depends(g
 def update_landing_page(
     landing_id: str,
     body: PromotionLandingPageUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin=Depends(get_current_admin),
 ):
-    service = PromotionLandingService(db)
+    service = PromotionLandingService(db, resolve_panel_tenant_context(request, db, admin))
     landing = service.update(landing_id, body.model_dump(exclude_unset=True))
     return _landing_payload(service, landing)
 
 
 @router.post("/{landing_id}/publish", response_model=PromotionLandingPageOut)
-def publish_landing_page(landing_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    service = PromotionLandingService(db)
+def publish_landing_page(landing_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    service = PromotionLandingService(db, resolve_panel_tenant_context(request, db, admin))
     return _landing_payload(service, service.publish(landing_id))
 
 
 @router.post("/{landing_id}/unpublish", response_model=PromotionLandingPageOut)
-def unpublish_landing_page(landing_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    service = PromotionLandingService(db)
+def unpublish_landing_page(landing_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    service = PromotionLandingService(db, resolve_panel_tenant_context(request, db, admin))
     return _landing_payload(service, service.unpublish(landing_id))

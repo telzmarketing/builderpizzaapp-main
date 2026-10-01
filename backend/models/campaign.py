@@ -40,7 +40,7 @@ class Campaign(Base):
     start_at = Column(DateTime(timezone=True), nullable=True)
     end_at = Column(DateTime(timezone=True), nullable=True)
     banner = Column(Text, nullable=True)
-    slug = Column(String(200), unique=True, nullable=False)
+    slug = Column(String(200), nullable=False)
     campaign_type = Column(Enum(CampaignType), nullable=False, default=CampaignType.products_promo)
     display_title = Column(String(300), nullable=True)
     display_subtitle = Column(String(300), nullable=True)

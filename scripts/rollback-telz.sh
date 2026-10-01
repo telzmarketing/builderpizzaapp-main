@@ -207,7 +207,8 @@ schema_pair_is_compatible() {
     "20260817_platform_wave0:20260818_platform_operations" | \
     "20260924_kds_kitchen_dispatch:20260926_dispatch_labels" | \
     "20260924_kds_kitchen_dispatch:20260927_order_board_mvp" | \
-    "20260926_dispatch_labels:20260927_order_board_mvp")
+    "20260926_dispatch_labels:20260927_order_board_mvp" | \
+    "20260927_order_board_mvp:20260930_tenant_runtime_uniqueness")
       return 0
       ;;
     *)

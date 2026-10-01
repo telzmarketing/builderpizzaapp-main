@@ -29,6 +29,8 @@ from backend.services.inventory_service import ProductInventoryAvailabilityServi
 from backend.core.tenant_context import TenantContext
 from backend.core.tenant_ownership import assign_tenant_on_create, identity_catalog_enforcement_enabled, scope_query_to_tenant
 from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
+from backend.core.security import decode_access_token
+from jose import JWTError
 
 _VALID_BADGE_STATUSES = [
     OrderStatus.paid, OrderStatus.pago, OrderStatus.preparing,
@@ -36,9 +38,10 @@ _VALID_BADGE_STATUSES = [
 ]
 
 
-def _get_best_seller_badge_ids(db: Session) -> set[str]:
+def _get_best_seller_badge_ids(db: Session, context: TenantContext | None = None) -> set[str]:
     """Returns IDs of products that qualify for the automatic best-seller badge."""
-    config = db.query(BestSellerConfig).filter(BestSellerConfig.id == "default").first()
+    config_id = f"best-seller-{context.tenant_id}" if identity_catalog_enforcement_enabled() and context else "default"
+    config = _tenant_query(db, BestSellerConfig, context).filter(BestSellerConfig.id == config_id).first()
     if not config:
         return set()
     q = (
@@ -46,6 +49,8 @@ def _get_best_seller_badge_ids(db: Session) -> set[str]:
         .join(Order, Order.id == OrderItem.order_id)
         .filter(Order.status.in_(_VALID_BADGE_STATUSES))
     )
+    if identity_catalog_enforcement_enabled() and context:
+        q = q.filter(Order.tenant_id == context.tenant_id)
     if config.period_days > 0:
         cutoff = datetime.now(timezone.utc) - timedelta(days=config.period_days)
         q = q.filter(Order.created_at >= cutoff)
@@ -70,6 +75,17 @@ def _require_admin(request: Request, db: Session) -> AdminUser:
         authorization=request.headers.get("authorization"),
         db=db,
     )
+
+
+def _has_admin_bearer(request: Request) -> bool:
+    authorization = request.headers.get("authorization") or ""
+    if not authorization.startswith("Bearer "):
+        return False
+    try:
+        payload = decode_access_token(authorization.removeprefix("Bearer ").strip())
+    except JWTError:
+        return False
+    return payload.get("token_kind") != "customer"
 
 
 def _ensure_weekdays(days: list[int] | None) -> list[int]:
@@ -114,16 +130,19 @@ def _add_promotion_combinations(
     db: Session,
     promotion: ProductPromotion,
     combinations,
+    context: TenantContext | None = None,
 ) -> None:
     for combo in combinations:
-        db.add(ProductPromotionCombination(
+        row = ProductPromotionCombination(
             id=f"ppc-{uuid.uuid4().hex[:10]}",
             promotion_id=promotion.id,
             product_size_id=combo.product_size_id,
             product_crust_type_id=combo.product_crust_type_id,
             active=combo.active,
             promotional_value=combo.promotional_value,
-        ))
+        )
+        assign_tenant_on_create(row, context, enabled=identity_catalog_enforcement_enabled())
+        db.add(row)
 
 
 def _product_payload(
@@ -131,12 +150,13 @@ def _product_payload(
     db: Session,
     auto_badge_ids: set[str] | None = None,
     inventory_payload: dict | None = None,
+    context: TenantContext | None = None,
 ) -> dict:
     payload = ProductOut.model_validate(product).model_dump()
     default_size = next((size for size in product.sizes if size.active and size.is_default), None)
     if not default_size:
         default_size = next((size for size in product.sizes if size.active), None)
-    pricing = ProductPricingService(db)
+    pricing = ProductPricingService(db, context)
     quote = pricing.calculate(product=product, size=default_size)
     active_sizes = [size for size in product.sizes if size.active] or [None]
     active_crusts = [crust for crust in product.crust_types if crust.active]
@@ -151,7 +171,7 @@ def _product_payload(
     if promotion_quotes:
         quote = min(promotion_quotes, key=lambda candidate: candidate.final_price)
     try:
-        landing = PromotionLandingService(db).active_landing_for_product(product) if promotion_quotes else None
+        landing = PromotionLandingService(db, context).active_landing_for_product(product) if promotion_quotes else None
     except Exception:
         landing = None
 
@@ -159,7 +179,7 @@ def _product_payload(
     if mode == "manual":
         show_badge = True
     elif mode == "auto":
-        badge_set = auto_badge_ids if auto_badge_ids is not None else _get_best_seller_badge_ids(db)
+        badge_set = auto_badge_ids if auto_badge_ids is not None else _get_best_seller_badge_ids(db, context)
         show_badge = product.id in badge_set
     else:
         show_badge = False
@@ -193,10 +213,13 @@ def _product_payload(
 
 
 @router.get("/config/multi-flavors", response_model=MultiFlavorsConfigOut)
-def get_multi_flavors_config(db: Session = Depends(get_db)):
-    config = db.query(MultiFlavorsConfig).filter(MultiFlavorsConfig.id == "default").first()
+def get_multi_flavors_config(request: Request, db: Session = Depends(get_db)):
+    context = resolve_public_tenant_context(request, db)
+    config_id = f"multi-flavors-{context.tenant_id}" if identity_catalog_enforcement_enabled() and context else "default"
+    config = _tenant_query(db, MultiFlavorsConfig, context).filter(MultiFlavorsConfig.id == config_id).first()
     if not config:
-        config = MultiFlavorsConfig(id="default")
+        config = MultiFlavorsConfig(id=config_id)
+        assign_tenant_on_create(config, context, enabled=identity_catalog_enforcement_enabled())
         db.add(config)
         db.commit()
         db.refresh(config)
@@ -206,10 +229,13 @@ def get_multi_flavors_config(db: Session = Depends(get_db)):
 
 
 @router.patch("/config/multi-flavors", response_model=MultiFlavorsConfigOut)
-def update_multi_flavors_config(body: MultiFlavorsConfigUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    config = db.query(MultiFlavorsConfig).filter(MultiFlavorsConfig.id == "default").first()
+def update_multi_flavors_config(body: MultiFlavorsConfigUpdate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    config_id = f"multi-flavors-{context.tenant_id}" if identity_catalog_enforcement_enabled() and context else "default"
+    config = _tenant_query(db, MultiFlavorsConfig, context).filter(MultiFlavorsConfig.id == config_id).first()
     if not config:
-        config = MultiFlavorsConfig(id="default")
+        config = MultiFlavorsConfig(id=config_id)
+        assign_tenant_on_create(config, context, enabled=identity_catalog_enforcement_enabled())
         db.add(config)
         db.flush()
     for key, value in body.model_dump(exclude_none=True).items():
@@ -251,10 +277,13 @@ def delete_category(category_id: str, request: Request, db: Session = Depends(ge
 
 
 @router.get("/config/best-seller", response_model=BestSellerConfigOut)
-def get_best_seller_config(db: Session = Depends(get_db)):
-    config = db.query(BestSellerConfig).filter(BestSellerConfig.id == "default").first()
+def get_best_seller_config(request: Request, db: Session = Depends(get_db)):
+    context = resolve_public_tenant_context(request, db)
+    config_id = f"best-seller-{context.tenant_id}" if identity_catalog_enforcement_enabled() and context else "default"
+    config = _tenant_query(db, BestSellerConfig, context).filter(BestSellerConfig.id == config_id).first()
     if not config:
-        config = BestSellerConfig(id="default")
+        config = BestSellerConfig(id=config_id)
+        assign_tenant_on_create(config, context, enabled=identity_catalog_enforcement_enabled())
         db.add(config)
         db.commit()
         db.refresh(config)
@@ -264,12 +293,16 @@ def get_best_seller_config(db: Session = Depends(get_db)):
 @router.patch("/config/best-seller", response_model=BestSellerConfigOut)
 def update_best_seller_config(
     body: BestSellerConfigUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin=Depends(get_current_admin),
 ):
-    config = db.query(BestSellerConfig).filter(BestSellerConfig.id == "default").first()
+    context = resolve_panel_tenant_context(request, db, admin)
+    config_id = f"best-seller-{context.tenant_id}" if identity_catalog_enforcement_enabled() and context else "default"
+    config = _tenant_query(db, BestSellerConfig, context).filter(BestSellerConfig.id == config_id).first()
     if not config:
-        config = BestSellerConfig(id="default")
+        config = BestSellerConfig(id=config_id)
+        assign_tenant_on_create(config, context, enabled=identity_catalog_enforcement_enabled())
         db.add(config)
         db.flush()
     for key, value in body.model_dump(exclude_none=True).items():
@@ -287,10 +320,11 @@ def list_products(
     channel: str | None = Query(default=None, pattern="^(delivery|dine_in)$"),
     db: Session = Depends(get_db),
 ):
-    context = resolve_public_tenant_context(request, db)
-    if not active_only or product_type == "brinde":
-        admin = _require_admin(request, db)
-        context = resolve_panel_tenant_context(request, db, admin)
+    context = (
+        resolve_panel_tenant_context(request, db, _require_admin(request, db))
+        if not active_only or product_type == "brinde"
+        else resolve_public_tenant_context(request, db)
+    )
     q = _tenant_query(db, Product, context).options(
         selectinload(Product.sizes),
         selectinload(Product.crust_types),
@@ -310,28 +344,33 @@ def list_products(
         q = q.filter(Product.visible_dine_in == True)  # noqa: E712
     products = q.order_by(Product.name).all()
     auto_badge_ids = (
-        _get_best_seller_badge_ids(db)
+        _get_best_seller_badge_ids(db, context)
         if any((product.best_seller_badge_mode or "off") == "auto" for product in products)
         else set()
     )
-    inventory_payloads = ProductInventoryAvailabilityService(db).product_payloads([product.id for product in products])
-    return [_product_payload(product, db, auto_badge_ids, inventory_payloads.get(product.id)) for product in products]
+    inventory_payloads = ProductInventoryAvailabilityService(
+        db, tenant_id=context.tenant_id if context else None
+    ).product_payloads([product.id for product in products])
+    return [_product_payload(product, db, auto_badge_ids, inventory_payloads.get(product.id), context) for product in products]
 
 
 @router.get("/{product_id}", response_model=ProductOut)
 def get_product(product_id: str, request: Request, db: Session = Depends(get_db)):
-    context = resolve_public_tenant_context(request, db)
+    is_admin_request = _has_admin_bearer(request)
+    context = (
+        resolve_panel_tenant_context(request, db, _require_admin(request, db))
+        if is_admin_request
+        else resolve_public_tenant_context(request, db)
+    )
     product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
-    if not product.active:
-        admin = _require_admin(request, db)
-        context = resolve_panel_tenant_context(request, db, admin)
-        product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
-        if not product:
-            raise HTTPException(404, "Produto nao encontrado.")
-    inventory_payload = ProductInventoryAvailabilityService(db).product_payloads([product.id]).get(product.id)
-    return _product_payload(product, db, inventory_payload=inventory_payload)
+    if not product.active and not is_admin_request:
+        raise HTTPException(404, "Produto nao encontrado.")
+    inventory_payload = ProductInventoryAvailabilityService(
+        db, tenant_id=context.tenant_id if context else None
+    ).product_payloads([product.id]).get(product.id)
+    return _product_payload(product, db, inventory_payload=inventory_payload, context=context)
 
 
 @router.get("/{product_id}/price", response_model=ProductPriceQuoteOut)
@@ -369,7 +408,7 @@ def quote_product_price(
         if not crust:
             raise HTTPException(404, "Tipo de massa nao encontrado.")
 
-    result = ProductPricingService(db).calculate(
+    result = ProductPricingService(db, context).calculate(
         product=product,
         size=size,
         crust=crust,
@@ -397,12 +436,13 @@ def quote_product_price(
 
 
 @router.get("/{product_id}/promotions", response_model=list[ProductPromotionOut])
-def list_product_promotions(product_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    product = db.query(Product).filter(Product.id == product_id).first()
+def list_product_promotions(product_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto nao encontrado.")
     promotions = (
-        db.query(ProductPromotion)
+        _tenant_query(db, ProductPromotion, context)
         .filter(ProductPromotion.product_id == product_id)
         .order_by(ProductPromotion.created_at.desc())
         .all()
@@ -411,8 +451,9 @@ def list_product_promotions(product_id: str, db: Session = Depends(get_db), _=De
 
 
 @router.post("/{product_id}/promotions", response_model=ProductPromotionOut, status_code=201)
-def create_product_promotion(product_id: str, body: ProductPromotionCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    product = db.query(Product).filter(Product.id == product_id).first()
+def create_product_promotion(product_id: str, body: ProductPromotionCreate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto nao encontrado.")
     promotion = ProductPromotion(
@@ -434,18 +475,20 @@ def create_product_promotion(product_id: str, body: ProductPromotionCreate, db: 
         blocks_other_coupons=body.blocks_other_coupons,
         timezone=body.timezone,
     )
+    assign_tenant_on_create(promotion, context, enabled=identity_catalog_enforcement_enabled())
     db.add(promotion)
     db.flush()
-    _add_promotion_combinations(db, promotion, body.combinations)
+    _add_promotion_combinations(db, promotion, body.combinations, context)
     db.commit()
     db.refresh(promotion)
     return _promotion_payload(promotion)
 
 
 @router.put("/{product_id}/promotions/{promotion_id}", response_model=ProductPromotionOut)
-def update_product_promotion(product_id: str, promotion_id: str, body: ProductPromotionUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def update_product_promotion(product_id: str, promotion_id: str, body: ProductPromotionUpdate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
     promotion = (
-        db.query(ProductPromotion)
+        _tenant_query(db, ProductPromotion, context)
         .filter(ProductPromotion.id == promotion_id, ProductPromotion.product_id == product_id)
         .first()
     )
@@ -459,10 +502,10 @@ def update_product_promotion(product_id: str, promotion_id: str, body: ProductPr
         setattr(promotion, key, value)
 
     if body.combinations is not None:
-        db.query(ProductPromotionCombination).filter(
+        _tenant_query(db, ProductPromotionCombination, context).filter(
             ProductPromotionCombination.promotion_id == promotion.id
         ).delete(synchronize_session=False)
-        _add_promotion_combinations(db, promotion, body.combinations)
+        _add_promotion_combinations(db, promotion, body.combinations, context)
 
     db.commit()
     db.refresh(promotion)
@@ -470,9 +513,10 @@ def update_product_promotion(product_id: str, promotion_id: str, body: ProductPr
 
 
 @router.delete("/{product_id}/promotions/{promotion_id}", status_code=204)
-def delete_product_promotion(product_id: str, promotion_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def delete_product_promotion(product_id: str, promotion_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
     promotion = (
-        db.query(ProductPromotion)
+        _tenant_query(db, ProductPromotion, context)
         .filter(ProductPromotion.id == promotion_id, ProductPromotion.product_id == product_id)
         .first()
     )
@@ -490,7 +534,7 @@ def create_product(body: ProductCreate, request: Request, db: Session = Depends(
     db.add(product)
     db.commit()
     db.refresh(product)
-    return _product_payload(product, db)
+    return _product_payload(product, db, context=context)
 
 
 @router.put("/{product_id}", response_model=ProductOut)
@@ -503,7 +547,7 @@ def update_product(product_id: str, body: ProductUpdate, request: Request, db: S
         setattr(product, key, value)
     db.commit()
     db.refresh(product)
-    return _product_payload(product, db)
+    return _product_payload(product, db, context=context)
 
 
 @router.delete("/{product_id}", status_code=204)
@@ -524,23 +568,30 @@ def list_sizes(
     active_only: bool = True,
     db: Session = Depends(get_db),
 ):
-    product = db.query(Product).filter(Product.id == product_id).first()
+    context = (
+        resolve_public_tenant_context(request, db)
+        if active_only
+        else resolve_panel_tenant_context(request, db, _require_admin(request, db))
+    )
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
-    if not active_only or not product.active:
-        _require_admin(request, db)
-    q = db.query(ProductSize).filter(ProductSize.product_id == product_id)
+    if active_only and not product.active:
+        raise HTTPException(404, "Produto nao encontrado.")
+    q = _tenant_query(db, ProductSize, context).filter(ProductSize.product_id == product_id)
     if active_only:
         q = q.filter(ProductSize.active == True)  # noqa: E712
     return q.order_by(ProductSize.sort_order).all()
 
 
 @router.post("/{product_id}/sizes", response_model=ProductSizeOut, status_code=201)
-def create_size(product_id: str, body: ProductSizeCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    product = db.query(Product).filter(Product.id == product_id).first()
+def create_size(product_id: str, body: ProductSizeCreate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
     size = ProductSize(id=f"size-{uuid.uuid4().hex[:8]}", product_id=product_id, **body.model_dump())
+    assign_tenant_on_create(size, context, enabled=identity_catalog_enforcement_enabled())
     db.add(size)
     db.commit()
     db.refresh(size)
@@ -548,8 +599,9 @@ def create_size(product_id: str, body: ProductSizeCreate, db: Session = Depends(
 
 
 @router.put("/{product_id}/sizes/{size_id}", response_model=ProductSizeOut)
-def update_size(product_id: str, size_id: str, body: ProductSizeUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    size = db.query(ProductSize).filter(ProductSize.id == size_id, ProductSize.product_id == product_id).first()
+def update_size(product_id: str, size_id: str, body: ProductSizeUpdate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    size = _tenant_query(db, ProductSize, context).filter(ProductSize.id == size_id, ProductSize.product_id == product_id).first()
     if not size:
         raise HTTPException(404, "Tamanho não encontrado.")
     for key, value in body.model_dump(exclude_none=True).items():
@@ -560,8 +612,9 @@ def update_size(product_id: str, size_id: str, body: ProductSizeUpdate, db: Sess
 
 
 @router.delete("/{product_id}/sizes/{size_id}", status_code=204)
-def delete_size(product_id: str, size_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    size = db.query(ProductSize).filter(ProductSize.id == size_id, ProductSize.product_id == product_id).first()
+def delete_size(product_id: str, size_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    size = _tenant_query(db, ProductSize, context).filter(ProductSize.id == size_id, ProductSize.product_id == product_id).first()
     if not size:
         raise HTTPException(404, "Tamanho não encontrado.")
     db.delete(size)
@@ -575,23 +628,30 @@ def list_crusts(
     active_only: bool = True,
     db: Session = Depends(get_db),
 ):
-    product = db.query(Product).filter(Product.id == product_id).first()
+    context = (
+        resolve_public_tenant_context(request, db)
+        if active_only
+        else resolve_panel_tenant_context(request, db, _require_admin(request, db))
+    )
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
-    if not active_only or not product.active:
-        _require_admin(request, db)
-    q = db.query(ProductCrustType).filter(ProductCrustType.product_id == product_id)
+    if active_only and not product.active:
+        raise HTTPException(404, "Produto nao encontrado.")
+    q = _tenant_query(db, ProductCrustType, context).filter(ProductCrustType.product_id == product_id)
     if active_only:
         q = q.filter(ProductCrustType.active == True)  # noqa: E712
     return q.order_by(ProductCrustType.sort_order).all()
 
 
 @router.post("/{product_id}/crusts", response_model=ProductCrustTypeOut, status_code=201)
-def create_crust(product_id: str, body: ProductCrustTypeCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    product = db.query(Product).filter(Product.id == product_id).first()
+def create_crust(product_id: str, body: ProductCrustTypeCreate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
     crust = ProductCrustType(id=f"crust-{uuid.uuid4().hex[:8]}", product_id=product_id, **body.model_dump())
+    assign_tenant_on_create(crust, context, enabled=identity_catalog_enforcement_enabled())
     db.add(crust)
     db.commit()
     db.refresh(crust)
@@ -599,8 +659,9 @@ def create_crust(product_id: str, body: ProductCrustTypeCreate, db: Session = De
 
 
 @router.put("/{product_id}/crusts/{crust_id}", response_model=ProductCrustTypeOut)
-def update_crust(product_id: str, crust_id: str, body: ProductCrustTypeUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    crust = db.query(ProductCrustType).filter(ProductCrustType.id == crust_id, ProductCrustType.product_id == product_id).first()
+def update_crust(product_id: str, crust_id: str, body: ProductCrustTypeUpdate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    crust = _tenant_query(db, ProductCrustType, context).filter(ProductCrustType.id == crust_id, ProductCrustType.product_id == product_id).first()
     if not crust:
         raise HTTPException(404, "Tipo de massa não encontrado.")
     for key, value in body.model_dump(exclude_none=True).items():
@@ -611,8 +672,9 @@ def update_crust(product_id: str, crust_id: str, body: ProductCrustTypeUpdate, d
 
 
 @router.delete("/{product_id}/crusts/{crust_id}", status_code=204)
-def delete_crust(product_id: str, crust_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    crust = db.query(ProductCrustType).filter(ProductCrustType.id == crust_id, ProductCrustType.product_id == product_id).first()
+def delete_crust(product_id: str, crust_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    crust = _tenant_query(db, ProductCrustType, context).filter(ProductCrustType.id == crust_id, ProductCrustType.product_id == product_id).first()
     if not crust:
         raise HTTPException(404, "Tipo de massa não encontrado.")
     db.delete(crust)
@@ -626,23 +688,30 @@ def list_drink_variants(
     active_only: bool = True,
     db: Session = Depends(get_db),
 ):
-    product = db.query(Product).filter(Product.id == product_id).first()
+    context = (
+        resolve_public_tenant_context(request, db)
+        if active_only
+        else resolve_panel_tenant_context(request, db, _require_admin(request, db))
+    )
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
-    if not active_only or not product.active:
-        _require_admin(request, db)
-    q = db.query(ProductDrinkVariant).filter(ProductDrinkVariant.product_id == product_id)
+    if active_only and not product.active:
+        raise HTTPException(404, "Produto nao encontrado.")
+    q = _tenant_query(db, ProductDrinkVariant, context).filter(ProductDrinkVariant.product_id == product_id)
     if active_only:
         q = q.filter(ProductDrinkVariant.active == True)  # noqa: E712
     return q.order_by(ProductDrinkVariant.sort_order).all()
 
 
 @router.post("/{product_id}/drink-variants", response_model=ProductDrinkVariantOut, status_code=201)
-def create_drink_variant(product_id: str, body: ProductDrinkVariantCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    product = db.query(Product).filter(Product.id == product_id).first()
+def create_drink_variant(product_id: str, body: ProductDrinkVariantCreate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
     variant = ProductDrinkVariant(id=f"dvar-{uuid.uuid4().hex[:8]}", product_id=product_id, **body.model_dump())
+    assign_tenant_on_create(variant, context, enabled=identity_catalog_enforcement_enabled())
     db.add(variant)
     db.commit()
     db.refresh(variant)
@@ -650,8 +719,9 @@ def create_drink_variant(product_id: str, body: ProductDrinkVariantCreate, db: S
 
 
 @router.put("/{product_id}/drink-variants/{variant_id}", response_model=ProductDrinkVariantOut)
-def update_drink_variant(product_id: str, variant_id: str, body: ProductDrinkVariantUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    variant = db.query(ProductDrinkVariant).filter(ProductDrinkVariant.id == variant_id, ProductDrinkVariant.product_id == product_id).first()
+def update_drink_variant(product_id: str, variant_id: str, body: ProductDrinkVariantUpdate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    variant = _tenant_query(db, ProductDrinkVariant, context).filter(ProductDrinkVariant.id == variant_id, ProductDrinkVariant.product_id == product_id).first()
     if not variant:
         raise HTTPException(404, "Variante não encontrada.")
     for key, value in body.model_dump(exclude_none=True).items():
@@ -662,8 +732,9 @@ def update_drink_variant(product_id: str, variant_id: str, body: ProductDrinkVar
 
 
 @router.delete("/{product_id}/drink-variants/{variant_id}", status_code=204)
-def delete_drink_variant(product_id: str, variant_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    variant = db.query(ProductDrinkVariant).filter(ProductDrinkVariant.id == variant_id, ProductDrinkVariant.product_id == product_id).first()
+def delete_drink_variant(product_id: str, variant_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    variant = _tenant_query(db, ProductDrinkVariant, context).filter(ProductDrinkVariant.id == variant_id, ProductDrinkVariant.product_id == product_id).first()
     if not variant:
         raise HTTPException(404, "Variante não encontrada.")
     db.delete(variant)

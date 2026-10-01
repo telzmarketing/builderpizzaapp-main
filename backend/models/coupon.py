@@ -14,6 +14,7 @@ class Coupon(Base):
     __tablename__ = "coupons"
     __table_args__ = (
         Index("uq_coupons_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_coupons_tenant_code", "tenant_id", "code", unique=True),
     )
 
     id = Column(String, primary_key=True)
@@ -22,7 +23,7 @@ class Coupon(Base):
         ForeignKey("tenants.id", name="fk_coupons_tenant_id_tenants"),
         nullable=True,
     )
-    code = Column(String(50), unique=True, nullable=False)
+    code = Column(String(50), nullable=False)
     description = Column(String(300))
     icon = Column(String(50), default="🎟️")
     coupon_type = Column(Enum(CouponType), nullable=False, default=CouponType.percentage)

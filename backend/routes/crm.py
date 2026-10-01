@@ -1278,11 +1278,14 @@ def crm_dashboard(period: str = "30d", db: Session = Depends(get_db), _=Depends(
 @router.post("/analyze-all")
 def analyze_all_customers(
     background_tasks: BackgroundTasks,
+    request: Request,
     db: Session = Depends(get_db),
     admin=Depends(get_current_admin),
 ):
+    context = resolve_panel_tenant_context(request, db, admin)
+    tenant_id = context.tenant_id if context else None
     admin_name = getattr(admin, "name", None) or getattr(admin, "email", None)
-    job, created_job = create_customer_ai_analysis_job(db, created_by=admin_name)
+    job, created_job = create_customer_ai_analysis_job(db, created_by=admin_name, tenant_id=tenant_id)
     if created_job:
         background_tasks.add_task(run_customer_ai_analysis_job, job["id"])
         return ok(job, "Analise em massa iniciada.")
@@ -1291,11 +1294,15 @@ def analyze_all_customers(
 
 @router.get("/analysis/status")
 def customer_intelligence_status(
+    request: Request,
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
-    _admin=Depends(get_current_admin),
+    admin=Depends(get_current_admin),
 ):
-    return ok(get_customer_ai_analysis_status(db, limit=limit))
+    context = resolve_panel_tenant_context(request, db, admin)
+    return ok(get_customer_ai_analysis_status(
+        db, limit=limit, tenant_id=context.tenant_id if context else None
+    ))
 
 
 # ── Pipeline PATCH / DELETE ───────────────────────────────────────────────────

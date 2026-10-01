@@ -210,15 +210,17 @@ def create_order(body: CheckoutIn, request: Request, db: Session = Depends(get_d
             code="CustomerRequired",
             status_code=401,
         )
+    tenant_context = resolve_public_tenant_context(request, db)
     require_customer_id_or_admin(
         body.customer_id,
         db,
         request.headers.get("authorization"),
         request.headers.get("x-customer-phone"),
         request.headers.get("x-customer-email"),
+        expected_tenant_id=tenant_context.tenant_id if tenant_context else None,
     )
     try:
-        svc = OrderService(db, resolve_public_tenant_context(request, db))
+        svc = OrderService(db, tenant_context)
         order = svc.create_from_checkout(body)
         order = svc.get(order.id)
         return created(_serialize_orders(db, [order])[0], "Pedido criado com sucesso.")
@@ -243,14 +245,15 @@ def list_orders(
 ):
     try:
         if customer_id:
+            tenant_context = resolve_public_tenant_context(request, db)
             require_customer_id_or_admin(
                 customer_id,
                 db,
                 request.headers.get("authorization"),
                 request.headers.get("x-customer-phone"),
                 request.headers.get("x-customer-email"),
+                expected_tenant_id=tenant_context.tenant_id if tenant_context else None,
             )
-            tenant_context = resolve_public_tenant_context(request, db)
         else:
             admin = _require_admin(request, db)
             tenant_context = resolve_panel_tenant_context(request, db, admin)
@@ -325,10 +328,12 @@ def operational_report(
 
 @router.get("/new-order-whatsapp-notifications")
 def get_new_order_whatsapp_notifications(
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
-    service = OrderWhatsAppNotificationService(db)
+    context = resolve_panel_tenant_context(request, db, admin)
+    service = OrderWhatsAppNotificationService(db, context.tenant_id if context else None)
     return ok({
         "settings": service.get_settings(),
         "available_recipients": service.list_recipients(),
@@ -338,10 +343,12 @@ def get_new_order_whatsapp_notifications(
 @router.put("/new-order-whatsapp-notifications")
 def update_new_order_whatsapp_notifications(
     body: OrderWhatsAppNotificationSettingsIn,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
-    service = OrderWhatsAppNotificationService(db)
+    context = resolve_panel_tenant_context(request, db, admin)
+    service = OrderWhatsAppNotificationService(db, context.tenant_id if context else None)
     try:
         settings = service.update_settings(body.model_dump())
     except ValueError as exc:
@@ -363,6 +370,7 @@ def get_order(order_id: str, request: Request, db: Session = Depends(get_db)):
             request.headers.get("authorization"),
             request.headers.get("x-customer-phone"),
             request.headers.get("x-customer-email"),
+            expected_tenant_id=tenant_context.tenant_id if tenant_context else None,
         )
         return ok(_serialize_orders(db, [order])[0])
     except DomainError as exc:
@@ -380,6 +388,7 @@ def get_order_payment_status(order_id: str, request: Request, db: Session = Depe
             request.headers.get("authorization"),
             request.headers.get("x-customer-phone"),
             request.headers.get("x-customer-email"),
+            expected_tenant_id=tenant_context.tenant_id if tenant_context else None,
         )
         return ok(PaymentService(db, tenant_id=order.tenant_id).payment_status(order_id))
     except DomainError as exc:
@@ -473,6 +482,7 @@ def customer_cancel_order(
             request.headers.get("authorization"),
             request.headers.get("x-customer-phone"),
             request.headers.get("x-customer-email"),
+            expected_tenant_id=tenant_context.tenant_id if tenant_context else None,
         )
         # Só permite cancelar pedidos não pagos
         non_cancellable = {"paid", "pago", "preparing", "ready_for_pickup", "on_the_way", "delivered"}

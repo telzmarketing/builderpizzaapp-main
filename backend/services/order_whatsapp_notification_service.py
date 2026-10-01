@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.models.admin import AdminUser
+from backend.models.membership import TenantMembership
 from backend.models.order import Order
 from backend.models.rbac import Role
 from backend.services.whatsapp_gateway_service import WhatsAppGatewayService
@@ -33,12 +34,17 @@ class OrderWhatsAppNotificationService:
     Agente WhatsApp sessions, messages or outbox.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_id: str | None = None):
         self._db = db
+        self._tenant_id = tenant_id
+
+    @property
+    def _settings_key(self) -> str:
+        return f"{SITE_CONFIG_KEY}:{self._tenant_id}" if self._tenant_id else SITE_CONFIG_KEY
 
     def get_settings(self) -> dict[str, Any]:
         content = self._get_site_content()
-        raw = content.get(SITE_CONFIG_KEY)
+        raw = content.get(self._settings_key)
         if not isinstance(raw, dict):
             raw = {}
         return self._sanitize_settings(raw)
@@ -51,7 +57,7 @@ class OrderWhatsAppNotificationService:
             raise ValueError("Selecione apenas usuarios ativos com telefone cadastrado.")
 
         content = self._get_site_content()
-        content[SITE_CONFIG_KEY] = settings
+        content[self._settings_key] = settings
         self._save_site_content(content)
         return settings
 
@@ -60,9 +66,16 @@ class OrderWhatsAppNotificationService:
             self._db.query(AdminUser, Role)
             .outerjoin(Role, AdminUser.role_id == Role.id)
             .filter(AdminUser.active == True)  # noqa: E712
-            .order_by(AdminUser.name.asc())
-            .all()
         )
+        if self._tenant_id:
+            rows = rows.join(
+                TenantMembership,
+                TenantMembership.user_id == AdminUser.id,
+            ).filter(
+                TenantMembership.tenant_id == self._tenant_id,
+                TenantMembership.status == "active",
+            )
+        rows = rows.order_by(AdminUser.name.asc()).all()
         result: list[dict[str, Any]] = []
         for user, role in rows:
             role_name = role.name if role else ("Master" if not user.role_id else None)

@@ -22,6 +22,7 @@ class CmvService:
         module_enabled = bool(settings and settings.enabled and settings.status != "disabled")
         products = (
             self._db.query(Product)
+            .filter(Product.tenant_id == self._tenant_id)
             .filter(Product.active == True)  # noqa: E712
             .filter((Product.product_type == None) | (Product.product_type != "brinde"))  # noqa: E711
             .order_by(Product.name)

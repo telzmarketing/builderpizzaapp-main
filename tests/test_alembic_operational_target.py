@@ -89,6 +89,7 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20260924_kds_kitchen_dispatch:20260926_dispatch_labels",
         "20260924_kds_kitchen_dispatch:20260927_order_board_mvp",
         "20260926_dispatch_labels:20260927_order_board_mvp",
+        "20260927_order_board_mvp:20260930_tenant_runtime_uniqueness",
     }
 
     sources = {

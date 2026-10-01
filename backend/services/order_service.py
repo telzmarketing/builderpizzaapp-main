@@ -187,13 +187,18 @@ class OrderService:
         return order
 
     def _get_config(self) -> MultiFlavorsConfig:
+        config_id = (
+            f"multi-flavors-{self._tenant_context.tenant_id}"
+            if self._catalog_tenant_enabled and self._tenant_context
+            else "default"
+        )
         config = (
             self._tenant_query(MultiFlavorsConfig, catalog=True)
-            .filter(MultiFlavorsConfig.id == "default")
+            .filter(MultiFlavorsConfig.id == config_id)
             .first()
         )
         if not config:
-            config = MultiFlavorsConfig(id="default")
+            config = MultiFlavorsConfig(id=config_id)
             self._own(config, catalog=True)
             self._db.add(config)
             self._db.flush()
@@ -202,13 +207,19 @@ class OrderService:
     def _resolve_campaign_id(self, campaign_id: str | None, utm_campaign: str | None) -> str | None:
         candidate = _clip_text(campaign_id, 120)
         if candidate:
-            exists = self._db.query(TrafficCampaign.id).filter(TrafficCampaign.id == candidate).first()
+            query = self._db.query(TrafficCampaign.id).filter(TrafficCampaign.id == candidate)
+            if self._tenant_context:
+                query = query.filter(TrafficCampaign.tenant_id == self._tenant_context.tenant_id)
+            exists = query.first()
             if exists:
                 return candidate
 
         utm = _clip_text(utm_campaign, 200)
         if utm:
-            link = self._db.query(CampaignLink).filter(CampaignLink.utm_campaign == utm).first()
+            query = self._db.query(CampaignLink).filter(CampaignLink.utm_campaign == utm)
+            if self._tenant_context:
+                query = query.filter(CampaignLink.tenant_id == self._tenant_context.tenant_id)
+            link = query.first()
             if link:
                 return link.campaign_id
 
@@ -234,14 +245,15 @@ class OrderService:
         if not payload.delivery.street or not payload.delivery.city:
             return
         has_address = (
-            self._db.query(Address.id)
+            self._tenant_query(Address)
+            .with_entities(Address.id)
             .filter(Address.customer_id == payload.customer_id)
             .first()
             is not None
         )
         if has_address:
             return
-        self._db.add(Address(
+        address = Address(
             id=str(uuid.uuid4()),
             customer_id=payload.customer_id,
             label="Primeiro pedido",
@@ -252,7 +264,9 @@ class OrderService:
             city=_clip_text(payload.delivery.city, 100) or "",
             zip_code=_clip_text(payload.delivery.zip_code, 20),
             is_default=True,
-        ))
+        )
+        self._own(address)
+        self._db.add(address)
 
     def _validate_item(
         self,
@@ -378,7 +392,7 @@ class OrderService:
 
         primary_product = next((p for p in flavor_products if p.id == item.product_id), flavor_products[0] if flavor_products else None)
         if primary_product:
-            pricing = ProductPricingService(self._db).calculate(
+            pricing = ProductPricingService(self._db, self._tenant_context).calculate(
                 product=primary_product,
                 size=selected_size_obj,
                 crust=selected_crust_obj,
@@ -514,7 +528,7 @@ class OrderService:
                 )
             from backend.services.coupon_service import CouponService
             from backend.schemas.coupon import CouponApplyIn
-            coupon_result = CouponService(self._db).apply(
+            coupon_result = CouponService(self._db, self._tenant_context).apply(
                 CouponApplyIn(
                     code=payload.coupon_code,
                     order_subtotal=subtotal,
@@ -616,7 +630,7 @@ class OrderService:
                 )
             from backend.services.coupon_service import CouponService
             from backend.schemas.coupon import CouponApplyIn
-            coupon_result = CouponService(self._db).apply(
+            coupon_result = CouponService(self._db, self._tenant_context).apply(
                 CouponApplyIn(
                     code=payload.coupon_code,
                     order_subtotal=subtotal,
@@ -646,7 +660,12 @@ class OrderService:
         is_pay_on_delivery = payload.payment_method == "pay_on_delivery"
         delivery_payment_method = (payload.delivery_payment_method or "").strip().lower() if is_pay_on_delivery else None
         if is_pay_on_delivery:
-            payment_config = self._db.query(PaymentGatewayConfig).filter(PaymentGatewayConfig.id == "default").first()
+            payment_config_query = self._db.query(PaymentGatewayConfig)
+            if self._tenant_context:
+                payment_config_query = payment_config_query.filter(
+                    PaymentGatewayConfig.tenant_id == self._tenant_context.tenant_id
+                )
+            payment_config = payment_config_query.first()
             if payment_config and not payment_config.accept_cash:
                 raise DomainError("Pagamento na entrega esta indisponivel no momento.", code="PaymentMethodDisabled")
         if is_pay_on_delivery and delivery_payment_method not in {"cash", "card"}:
@@ -834,14 +853,14 @@ class OrderService:
         # 6. Record coupon usage
         if resolved_coupon_id:
             from backend.services.coupon_service import CouponService
-            CouponService(self._db).record_usage(
+            CouponService(self._db, self._tenant_context).record_usage(
                 coupon_id=resolved_coupon_id,
                 customer_id=payload.customer_id,
                 phone=payload.delivery.phone if payload.delivery else None,
                 order_id=order.id,
             )
 
-        sync_customer_order_metrics(self._db, order.customer_id)
+        sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
         from backend.services.automation_event_producer import AutomationEventProducer
         AutomationEventProducer(self._db, order.tenant_id).order_created(order)
         self._db.commit()
@@ -888,7 +907,10 @@ class OrderService:
         try:
             from backend.services.order_whatsapp_notification_service import OrderWhatsAppNotificationService
 
-            OrderWhatsAppNotificationService(self._db).notify_new_order(order)
+            OrderWhatsAppNotificationService(
+                self._db,
+                self._tenant_context.tenant_id if self._tenant_context else None,
+            ).notify_new_order(order)
         except Exception:
             self._db.rollback()
             pass
@@ -1009,7 +1031,7 @@ class OrderService:
         session.status = "pending_payment"
         session.updated_at = now
         OrderCmvSnapshotService(self._db).create_for_order(order, cmv_contexts)
-        sync_customer_order_metrics(self._db, order.customer_id)
+        sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
         from backend.services.automation_event_producer import AutomationEventProducer
         AutomationEventProducer(self._db, order.tenant_id).order_created(order)
         self._db.commit()
@@ -1088,7 +1110,7 @@ class OrderService:
 
         self._db.flush()
         self._consume_inventory_for_effective_sale(order.id)
-        sync_customer_order_metrics(self._db, order.customer_id)
+        sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
         from backend.services.automation_event_producer import AutomationEventProducer
         AutomationEventProducer(self._db, order.tenant_id).payment_confirmed(
             payment, order.customer_id
@@ -1151,7 +1173,7 @@ class OrderService:
             self._consume_inventory_for_effective_sale(order.id)
         if new_status in {"cancelled", "refunded"}:
             self._reverse_inventory_for_cancelled_sale(order.id)
-        sync_customer_order_metrics(self._db, order.customer_id)
+        sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
         from backend.services.automation_event_producer import AutomationEventProducer
         AutomationEventProducer(self._db, order.tenant_id).order_status_changed(
             order, old_status, new_status
@@ -1173,7 +1195,7 @@ class OrderService:
             )
             order.loyalty_points_earned = points
             self._db.flush()
-            sync_customer_order_metrics(self._db, order.customer_id)
+            sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
             self._db.commit()
 
         self._db.refresh(order)
@@ -1211,7 +1233,7 @@ class OrderService:
         if order.paid_at:
             order.total_time_minutes = int((now - order.paid_at).total_seconds() / 60)
         self._db.flush()
-        sync_customer_order_metrics(self._db, order.customer_id)
+        sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
         from backend.services.automation_event_producer import AutomationEventProducer
         AutomationEventProducer(self._db, order.tenant_id).order_status_changed(
             order, current, OrderStatus.delivered.value
@@ -1231,7 +1253,7 @@ class OrderService:
             )
             order.loyalty_points_earned = points
             self._db.flush()
-            sync_customer_order_metrics(self._db, order.customer_id)
+            sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
             self._db.commit()
 
         self._db.refresh(order)

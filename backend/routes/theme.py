@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from backend.routes.admin_auth import get_current_admin
@@ -6,6 +6,9 @@ from backend.core.response import ok
 from backend.database import get_db
 from backend.models.theme import ThemeSettings
 from backend.schemas.theme import ThemeSettingsOut, ThemeSettingsUpdate
+from backend.core.tenant_context import TenantContext
+from backend.core.tenant_ownership import assign_tenant_on_create, identity_catalog_enforcement_enabled, scope_query_to_tenant
+from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
 
 router = APIRouter(prefix="/theme", tags=["theme"])
 
@@ -38,10 +41,15 @@ _DEFAULTS = {
 }
 
 
-def _get_or_create(db: Session) -> ThemeSettings:
-    row = db.get(ThemeSettings, "default")
+def _get_or_create(db: Session, context: TenantContext | None) -> ThemeSettings:
+    enabled = identity_catalog_enforcement_enabled()
+    row_id = f"theme-{context.tenant_id}" if enabled and context else "default"
+    row = scope_query_to_tenant(
+        db.query(ThemeSettings), ThemeSettings, context, enabled=enabled
+    ).filter(ThemeSettings.id == row_id).first()
     if row is None:
-        row = ThemeSettings(**_DEFAULTS)
+        row = ThemeSettings(**{**_DEFAULTS, "id": row_id})
+        assign_tenant_on_create(row, context, enabled=enabled)
         db.add(row)
         db.commit()
         db.refresh(row)
@@ -49,17 +57,19 @@ def _get_or_create(db: Session) -> ThemeSettings:
 
 
 @router.get("", response_model=ThemeSettingsOut)
-def get_theme(db: Session = Depends(get_db)):
-    return ok(ThemeSettingsOut.model_validate(_get_or_create(db)))
+def get_theme(request: Request, db: Session = Depends(get_db)):
+    context = resolve_public_tenant_context(request, db)
+    return ok(ThemeSettingsOut.model_validate(_get_or_create(db, context)))
 
 
 @router.put("", response_model=ThemeSettingsOut)
 def update_theme(
     body: ThemeSettingsUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _: dict = Depends(get_current_admin),
+    admin=Depends(get_current_admin),
 ):
-    row = _get_or_create(db)
+    row = _get_or_create(db, resolve_panel_tenant_context(request, db, admin))
     for field, val in body.model_dump(exclude_none=True).items():
         setattr(row, field, val)
     db.commit()

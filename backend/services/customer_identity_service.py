@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from backend.config import get_settings
 from backend.core.security import hash_password
+from backend.core.tenant_context import TenantContextMissing
+from backend.core.tenant_ownership import customers_orders_enforcement_enabled
 from backend.models.customer import Customer
 from backend.models.customer_identity import CustomerAuth, CustomerChannel, CustomerPreference
 
@@ -43,6 +45,8 @@ class CustomerIdentityService:
 
     def find_by_phone(self, phone: str | None, *, channel: str | None = None,
                       tenant_id: str | None = None) -> Customer | None:
+        if customers_orders_enforcement_enabled() and not tenant_id:
+            raise TenantContextMissing("Tenant obrigatorio para localizar cliente por telefone.")
         normalized = normalize_phone(phone)
         if not normalized:
             return None
@@ -113,7 +117,10 @@ class CustomerIdentityService:
     def ensure_preferences(self, customer: Customer, *, preferred_channel: str | None = None) -> CustomerPreference:
         row = (
             self._db.query(CustomerPreference)
-            .filter(CustomerPreference.customer_id == customer.id)
+            .filter(
+                CustomerPreference.customer_id == customer.id,
+                CustomerPreference.tenant_id == customer.tenant_id,
+            )
             .first()
         )
         if row:
@@ -124,6 +131,7 @@ class CustomerIdentityService:
 
         row = CustomerPreference(
             id=str(uuid.uuid4()),
+            tenant_id=customer.tenant_id,
             customer_id=customer.id,
             preferred_channel=preferred_channel,
         )
@@ -144,6 +152,7 @@ class CustomerIdentityService:
         row = (
             self._db.query(CustomerAuth)
             .filter(
+                CustomerAuth.tenant_id == customer.tenant_id,
                 CustomerAuth.customer_id == customer.id,
                 CustomerAuth.auth_provider == auth_provider,
             )
@@ -152,6 +161,7 @@ class CustomerIdentityService:
         if not row:
             row = CustomerAuth(
                 id=str(uuid.uuid4()),
+                tenant_id=customer.tenant_id,
                 customer_id=customer.id,
                 auth_provider=auth_provider,
                 identifier=normalized_identifier,
@@ -223,6 +233,8 @@ class CustomerIdentityService:
         source: str = "whatsapp",
         tenant_id: str | None = None,
     ) -> tuple[Customer, bool]:
+        if customers_orders_enforcement_enabled() and not tenant_id:
+            raise TenantContextMissing("Tenant obrigatorio para criar lead do WhatsApp.")
         normalized = normalize_phone(phone)
         if not normalized:
             raise ValueError("Telefone invalido.")

@@ -661,7 +661,10 @@ class InventoryService:
                 target[item.inventory_item_id] = target.get(item.inventory_item_id, 0.0) + (float(item.quantity or 0.0) * waste_multiplier * multiplier)
 
     def _ensure_product(self, product_id: str) -> Product:
-        product = self._db.query(Product).filter(Product.id == product_id).first()
+        product = self._db.query(Product).filter(
+            Product.id == product_id,
+            Product.tenant_id == self._tenant_id,
+        ).first()
         if not product:
             raise InventoryInvalidReference("Produto do catalogo nao encontrado.")
         return product

@@ -29,7 +29,7 @@ pacote offline de dependencias, hashes e commits promovidos pelo workflow.
 Todos os componentes operacionais devem convergir para um unico target:
 
 ```text
-20260927_order_board_mvp
+20260930_tenant_runtime_uniqueness
 ```
 
 Confirme antes de qualquer alteracao que:
@@ -71,7 +71,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Use inicialmente:
 
 ```env
-ALEMBIC_TARGET=20260927_order_board_mvp
+ALEMBIC_TARGET=20260930_tenant_runtime_uniqueness
 INSTALL_SSL=false
 ```
 
@@ -102,7 +102,7 @@ Gates durante a execucao:
 
 - confirmar plano e migration quando solicitado;
 - preservar banco, uploads, certificados, backups e `.runtime/baileys`;
-- exigir um unico head igual a `20260927_order_board_mvp`;
+- exigir um unico head igual a `20260930_tenant_runtime_uniqueness`;
 - executar testes/build e validar units/Nginx;
 - nao executar a aplicacao como root;
 - nao iniciar duas instalacoes simultaneas.
@@ -160,7 +160,7 @@ sudo /usr/local/bin/backup-telz /opt/telz
 sudo readlink -f /var/backups/telz/latest
 ```
 
-Gate: uma unica revision `20260927_order_board_mvp`, backup validado e restore
+Gate: uma unica revision `20260930_tenant_runtime_uniqueness`, backup validado e restore
 ensaiado em PostgreSQL 15 fora de producao. Dump criado, `compileall`, SQL
 offline e adapter/mocks nao provam restore nem migration real.
 

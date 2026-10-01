@@ -25,6 +25,8 @@ from backend.core.state_machine import delivery_sm, order_sm, payment_sm
 from backend.core.events import (
     bus, DeliveryAssigned, DeliveryStatusChanged, DeliveryCompleted,
 )
+from backend.core.tenant_ownership import operations_enforcement_enabled
+from backend.core.tenant_context import TenantContextMissing
 from backend.models.delivery import (
     Delivery, DeliveryEvent, DeliveryEarning, DeliveryPerson, DeliveryStatus,
     DeliveryPersonStatus, LogisticsSettings, GeocodeCache,
@@ -42,8 +44,17 @@ class DeliveryService:
     Both the loja REST API and the ERP use this class.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_id: str | None = None):
         self._db = db
+        self._tenant_id = tenant_id
+        self._tenant_enabled = operations_enforcement_enabled()
+        if self._tenant_enabled and not tenant_id:
+            raise TenantContextMissing("Tenant obrigatorio para operacoes de entrega.")
+
+    def _scope(self, query, model):
+        if self._tenant_enabled:
+            return query.filter(model.tenant_id == self._tenant_id)
+        return query
 
     def _publish_order_status_changed(self, order: Order, old_status: str, new_status: str) -> None:
         from backend.services.automation_event_producer import AutomationEventProducer
@@ -52,14 +63,14 @@ class DeliveryService:
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _get_delivery(self, delivery_id: str) -> Delivery:
-        d = self._db.query(Delivery).filter(Delivery.id == delivery_id).first()
+        d = self._scope(self._db.query(Delivery), Delivery).filter(Delivery.id == delivery_id).first()
         if not d:
             raise DeliveryNotFound(delivery_id)
         return d
 
     def _get_delivery_person(self, person_id: str) -> DeliveryPerson:
         p = (
-            self._db.query(DeliveryPerson)
+            self._scope(self._db.query(DeliveryPerson), DeliveryPerson)
             .filter(
                 DeliveryPerson.id == person_id,
                 DeliveryPerson.active == True,  # noqa: E712
@@ -73,7 +84,7 @@ class DeliveryService:
 
     def _get_any_delivery_person(self, person_id: str) -> DeliveryPerson:
         p = (
-            self._db.query(DeliveryPerson)
+            self._scope(self._db.query(DeliveryPerson), DeliveryPerson)
             .filter(
                 DeliveryPerson.id == person_id,
                 DeliveryPerson.deleted_at.is_(None),
@@ -85,7 +96,7 @@ class DeliveryService:
         return p
 
     def _get_order(self, order_id: str) -> Order:
-        o = self._db.query(Order).filter(Order.id == order_id).first()
+        o = self._scope(self._db.query(Order), Order).filter(Order.id == order_id).first()
         if not o:
             raise OrderNotFound(order_id)
         return o
@@ -102,6 +113,7 @@ class DeliveryService:
     ) -> DeliveryEvent:
         event = DeliveryEvent(
             id=str(uuid.uuid4()),
+            tenant_id=self._tenant_id if self._tenant_enabled else None,
             delivery_id=delivery_id,
             event_type=event_type,
             description=description,
@@ -176,7 +188,7 @@ class DeliveryService:
 
         # Check for existing delivery
         existing = (
-            self._db.query(Delivery)
+            self._scope(self._db.query(Delivery), Delivery)
             .filter(Delivery.order_id == order_id)
             .first()
         )
@@ -206,6 +218,7 @@ class DeliveryService:
         else:
             delivery = Delivery(
                 id=str(uuid.uuid4()),
+                tenant_id=self._tenant_id if self._tenant_enabled else None,
                 order_id=order_id,
                 delivery_person_id=delivery_person_id,
                 status=DeliveryStatus.assigned,
@@ -298,13 +311,13 @@ class DeliveryService:
                         order.customer_id, delivery.order_id, order.total, self._db
                     )
                     order.loyalty_points_earned = points
-                    sync_customer_order_metrics(self._db, order.customer_id)
+                    sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
 
         elif new_status in ("failed", "cancelled"):
             # Free up the delivery person
             if delivery.delivery_person_id:
                 person = (
-                    self._db.query(DeliveryPerson)
+                    self._scope(self._db.query(DeliveryPerson), DeliveryPerson)
                     .filter(DeliveryPerson.id == delivery.delivery_person_id)
                     .first()
                 )
@@ -360,7 +373,7 @@ class DeliveryService:
         duration_minutes = 0
         if delivery.delivery_person_id:
             person = (
-                self._db.query(DeliveryPerson)
+                self._scope(self._db.query(DeliveryPerson), DeliveryPerson)
                 .filter(DeliveryPerson.id == delivery.delivery_person_id)
                 .first()
             )
@@ -374,11 +387,12 @@ class DeliveryService:
 
         # Auto-create earnings record if rate_per_delivery is configured
         try:
-            settings_row = self._db.query(LogisticsSettings).filter(LogisticsSettings.id == "default").first()
+            settings_row = self._scope(self._db.query(LogisticsSettings), LogisticsSettings).first()
             rate = (getattr(settings_row, "rate_per_delivery", None) or 0.0) if settings_row else 0.0
             if rate > 0 and delivery.delivery_person_id:
                 earning = DeliveryEarning(
                     id=str(uuid.uuid4()),
+                    tenant_id=self._tenant_id if self._tenant_enabled else None,
                     delivery_id=delivery.id,
                     delivery_person_id=delivery.delivery_person_id,
                     amount=rate,
@@ -422,7 +436,7 @@ class DeliveryService:
         # Update running average on delivery person
         if delivery.delivery_person_id:
             person = (
-                self._db.query(DeliveryPerson)
+                self._scope(self._db.query(DeliveryPerson), DeliveryPerson)
                 .filter(DeliveryPerson.id == delivery.delivery_person_id)
                 .first()
             )
@@ -459,7 +473,7 @@ class DeliveryService:
         return self._get_delivery(delivery_id)
 
     def get_by_order(self, order_id: str) -> Delivery:
-        d = self._db.query(Delivery).filter(Delivery.order_id == order_id).first()
+        d = self._scope(self._db.query(Delivery), Delivery).filter(Delivery.order_id == order_id).first()
         if not d:
             raise DeliveryNotFound(order_id)
         return d
@@ -467,7 +481,7 @@ class DeliveryService:
     def list_active(self) -> list[Delivery]:
         """Return deliveries currently in progress."""
         return (
-            self._db.query(Delivery)
+            self._scope(self._db.query(Delivery), Delivery)
             .filter(
                 Delivery.status.in_([
                     DeliveryStatus.assigned,
@@ -481,7 +495,7 @@ class DeliveryService:
     # ── Delivery Person CRUD ──────────────────────────────────────────────────
 
     def list_persons(self, *, available_only: bool = False, include_inactive: bool = False) -> list[DeliveryPerson]:
-        q = self._db.query(DeliveryPerson).filter(DeliveryPerson.deleted_at.is_(None))
+        q = self._scope(self._db.query(DeliveryPerson), DeliveryPerson).filter(DeliveryPerson.deleted_at.is_(None))
         if not include_inactive:
             q = q.filter(DeliveryPerson.active == True)  # noqa: E712
         if available_only:
@@ -509,6 +523,7 @@ class DeliveryService:
         from backend.models.delivery import VehicleType
         person = DeliveryPerson(
             id=str(uuid.uuid4()),
+            tenant_id=self._tenant_id if self._tenant_enabled else None,
             name=name,
             phone=phone,
             vehicle_type=VehicleType(vehicle_type),
@@ -609,7 +624,7 @@ class DeliveryService:
         from sqlalchemy import func
         from sqlalchemy.orm import joinedload
         return (
-            self._db.query(Delivery)
+            self._scope(self._db.query(Delivery), Delivery)
             .options(joinedload(Delivery.order))
             .join(Order, Order.id == Delivery.order_id)
             .filter(
@@ -736,7 +751,7 @@ class DeliveryService:
             from backend.services.customer_metrics_service import sync_customer_order_metrics
             points = award_points_for_order(order.customer_id, delivery.order_id, order.total, self._db)
             order.loyalty_points_earned = points
-            sync_customer_order_metrics(self._db, order.customer_id)
+            sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
 
         self._add_event(
             delivery_id,
@@ -979,6 +994,7 @@ class DeliveryService:
 
         event = DeliveryEvent(
             id=str(uuid.uuid4()),
+            tenant_id=self._tenant_id if self._tenant_enabled else None,
             delivery_id=delivery_id,
             event_type="confirmed_by_code",
             description="Entrega confirmada pelo codigo de confirmacao.",
@@ -1042,7 +1058,7 @@ class DeliveryService:
         """List earnings with optional filters. Returns plain dicts to avoid lazy-load issues."""
         from sqlalchemy.orm import joinedload
         q = (
-            self._db.query(DeliveryEarning)
+            self._scope(self._db.query(DeliveryEarning), DeliveryEarning)
             .options(joinedload(DeliveryEarning.delivery_person))
         )
         if person_id:

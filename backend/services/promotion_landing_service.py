@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
+from backend.core.tenant_context import TenantContext
+from backend.core.tenant_ownership import assign_tenant_on_create, identity_catalog_enforcement_enabled, scope_query_to_tenant
 from backend.models.product import Product
 from backend.models.product_promotion import ProductPromotion
 from backend.models.promotion_landing_page import PromotionLandingPage
@@ -30,25 +32,35 @@ class PromotionLandingRuleError(DomainError):
 
 
 class PromotionLandingService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
+        self._tenant_context = tenant_context
+        self._tenant_enabled = identity_catalog_enforcement_enabled()
+
+    def _query(self, model):
+        return scope_query_to_tenant(
+            self._db.query(model), model, self._tenant_context, enabled=self._tenant_enabled
+        )
+
+    def _own(self, resource):
+        return assign_tenant_on_create(resource, self._tenant_context, enabled=self._tenant_enabled)
 
     def list(self) -> list[PromotionLandingPage]:
         return (
-            self._db.query(PromotionLandingPage)
+            self._query(PromotionLandingPage)
             .order_by(PromotionLandingPage.updated_at.desc())
             .all()
         )
 
     def get(self, landing_id: str) -> PromotionLandingPage:
-        landing = self._db.query(PromotionLandingPage).filter(PromotionLandingPage.id == landing_id).first()
+        landing = self._query(PromotionLandingPage).filter(PromotionLandingPage.id == landing_id).first()
         if not landing:
             raise PromotionLandingNotFound()
         return landing
 
     def get_by_product_promotion(self, product_id: str, promotion_id: str) -> PromotionLandingPage | None:
         return (
-            self._db.query(PromotionLandingPage)
+            self._query(PromotionLandingPage)
             .filter(
                 PromotionLandingPage.product_id == product_id,
                 PromotionLandingPage.promotion_id == promotion_id,
@@ -59,7 +71,7 @@ class PromotionLandingService:
 
     def get_public_by_slug(self, slug: str) -> PromotionLandingPage:
         landing = (
-            self._db.query(PromotionLandingPage)
+            self._query(PromotionLandingPage)
             .filter(
                 PromotionLandingPage.slug == slug,
                 PromotionLandingPage.status == "published",
@@ -76,7 +88,7 @@ class PromotionLandingService:
         base_slug = data.get("slug") or product.name
         status = data.get("status") or "draft"
         data["media_order"] = self._normalize_media_order(data.get("media_order"))
-        landing = PromotionLandingPage(
+        landing = self._own(PromotionLandingPage(
             id=f"plp-{uuid.uuid4().hex[:10]}",
             **{
                 **data,
@@ -84,7 +96,7 @@ class PromotionLandingService:
                 "status": status,
                 "published_at": datetime.now(timezone.utc) if status == "published" else None,
             },
-        )
+        ))
         self._db.add(landing)
         self._db.commit()
         self._db.refresh(landing)
@@ -129,7 +141,7 @@ class PromotionLandingService:
         if not active_promotion_ids:
             return None
         return (
-            self._db.query(PromotionLandingPage)
+            self._query(PromotionLandingPage)
             .filter(
                 PromotionLandingPage.product_id == product.id,
                 PromotionLandingPage.promotion_id.in_(active_promotion_ids),
@@ -156,11 +168,11 @@ class PromotionLandingService:
         return ordered
 
     def _validate_product_promotion(self, product_id: str, promotion_id: str) -> tuple[Product, ProductPromotion]:
-        product = self._db.query(Product).filter(Product.id == product_id).first()
+        product = self._query(Product).filter(Product.id == product_id).first()
         if not product:
             raise PromotionLandingRuleError("Produto vinculado nao encontrado.", code="ProductNotFound")
         promotion = (
-            self._db.query(ProductPromotion)
+            self._query(ProductPromotion)
             .filter(ProductPromotion.id == promotion_id, ProductPromotion.product_id == product_id)
             .first()
         )
@@ -172,7 +184,7 @@ class PromotionLandingService:
         return product, promotion
 
     def _active_promotion_ids_for_product(self, product: Product) -> set[str]:
-        pricing = ProductPricingService(self._db)
+        pricing = ProductPricingService(self._db, self._tenant_context)
         active_sizes = [size for size in product.sizes if size.active] or [None]
         active_crusts = [crust for crust in product.crust_types if crust.active]
         crust_options = active_crusts or [None]
@@ -195,7 +207,7 @@ class PromotionLandingService:
         return slug
 
     def _slug_exists(self, slug: str, *, current_id: str | None = None) -> bool:
-        q = self._db.query(PromotionLandingPage).filter(PromotionLandingPage.slug == slug)
+        q = self._query(PromotionLandingPage).filter(PromotionLandingPage.slug == slug)
         if current_id:
             q = q.filter(PromotionLandingPage.id != current_id)
         return self._db.query(q.exists()).scalar()

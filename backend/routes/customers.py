@@ -60,11 +60,13 @@ def _profile_level(customer: Customer) -> str:
 
 
 def _identity_payload(db: Session, customer: Customer, created: bool = False) -> dict:
-    channel = (
-        db.query(CustomerChannel)
-        .filter(CustomerChannel.customer_id == customer.id, CustomerChannel.channel == "whatsapp")
-        .first()
+    channel_query = db.query(CustomerChannel).filter(
+        CustomerChannel.customer_id == customer.id,
+        CustomerChannel.channel == "whatsapp",
     )
+    if customers_orders_enforcement_enabled():
+        channel_query = channel_query.filter(CustomerChannel.tenant_id == customer.tenant_id)
+    channel = channel_query.first()
     return CustomerIdentityOut(
         customer=CustomerOut.model_validate(customer),
         channel=channel,
@@ -85,14 +87,19 @@ def list_customers(
 
 @router.get("/identity/by-phone")
 def get_customer_identity_by_phone(
+    request: Request,
     phone: str = Query(..., min_length=8),
     channel: str | None = Query(default="whatsapp"),
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
+    context = resolve_panel_tenant_context(request, db, admin)
     normalized = normalize_phone(phone)
     identity = CustomerIdentityService(db)
-    customer = identity.find_by_phone(normalized, channel=channel) or identity.find_by_phone(normalized)
+    tenant_id = context.tenant_id if context else None
+    customer = identity.find_by_phone(normalized, channel=channel, tenant_id=tenant_id) or identity.find_by_phone(
+        normalized, tenant_id=tenant_id
+    )
     if not customer:
         return ok(None, "Cliente nao encontrado para este telefone.")
     return ok(_identity_payload(db, customer))
@@ -106,16 +113,17 @@ def create_whatsapp_lead(
     admin: AdminUser = Depends(get_current_admin),
 ):
     context = resolve_panel_tenant_context(request, db, admin)
+    tenant_id = context.tenant_id if context else None
     try:
         customer, created = CustomerIdentityService(db).get_or_create_whatsapp_lead(
             phone=body.phone,
             name=body.name,
             source=body.source or "whatsapp",
-            tenant_id=context.tenant_id,
+            tenant_id=tenant_id,
         )
-        if created:
+        if created and tenant_id:
             from backend.services.automation_event_producer import AutomationEventProducer
-            AutomationEventProducer(db, context.tenant_id).customer_created(customer)
+            AutomationEventProducer(db, tenant_id).customer_created(customer)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.commit()
@@ -151,8 +159,10 @@ def create_customer(body: CustomerCreate, request: Request, db: Session = Depend
     db.add(customer)
     db.flush()
     CustomerIdentityService(db).sync_registered_customer(customer, auth_provider="manual")
-    from backend.services.automation_event_producer import AutomationEventProducer
-    AutomationEventProducer(db, context.tenant_id).customer_created(customer)
+    tenant_id = context.tenant_id if context else customer.tenant_id
+    if tenant_id:
+        from backend.services.automation_event_producer import AutomationEventProducer
+        AutomationEventProducer(db, tenant_id).customer_created(customer)
     db.commit()
     db.refresh(customer)
     return customer
@@ -172,7 +182,10 @@ def update_customer(
     customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
-    require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
+    require_customer_or_admin(
+        customer, db, authorization, x_customer_phone, x_customer_email,
+        expected_tenant_id=context.tenant_id if context else None,
+    )
     for key, value in body.model_dump(exclude_none=True).items():
         setattr(customer, key, value)
     db.commit()
@@ -195,7 +208,10 @@ def list_addresses(
     customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
-    require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
+    require_customer_or_admin(
+        customer, db, authorization, x_customer_phone, x_customer_email,
+        expected_tenant_id=context.tenant_id if context else None,
+    )
     return _tenant_query(db, Address, context).filter(Address.customer_id == customer_id).all()
 
 
@@ -213,7 +229,10 @@ def add_address(
     customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
-    require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
+    require_customer_or_admin(
+        customer, db, authorization, x_customer_phone, x_customer_email,
+        expected_tenant_id=context.tenant_id if context else None,
+    )
     if body.is_default:
         _tenant_query(db, Address, context).filter(Address.customer_id == customer_id).update({"is_default": False})
     address = Address(id=str(uuid.uuid4()), customer_id=customer_id, **body.model_dump())
@@ -238,7 +257,10 @@ def delete_address(
     customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
-    require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
+    require_customer_or_admin(
+        customer, db, authorization, x_customer_phone, x_customer_email,
+        expected_tenant_id=context.tenant_id if context else None,
+    )
     address = _tenant_query(db, Address, context).filter(
         Address.id == address_id, Address.customer_id == customer_id
     ).first()
@@ -264,7 +286,10 @@ def get_customer_orders(
     customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
-    require_customer_or_admin(customer, db, authorization, x_customer_phone, x_customer_email)
+    require_customer_or_admin(
+        customer, db, authorization, x_customer_phone, x_customer_email,
+        expected_tenant_id=context.tenant_id if context else None,
+    )
 
     orders = (
         _tenant_query(db, Order, context)
@@ -319,16 +344,18 @@ def get_customer_orders(
 @router.get("/{customer_id}/events")
 def get_customer_events(
     customer_id: str,
+    request: Request,
     event_type: Optional[str] = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    context = resolve_panel_tenant_context(request, db, admin)
+    customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
 
-    q = db.query(CustomerEvent).filter(CustomerEvent.customer_id == customer_id)
+    q = _tenant_query(db, CustomerEvent, context).filter(CustomerEvent.customer_id == customer_id)
     if event_type:
         q = q.filter(CustomerEvent.event_type == event_type)
 
@@ -360,14 +387,16 @@ def get_customer_events(
 @router.get("/{customer_id}/summary")
 def get_customer_summary(
     customer_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    context = resolve_panel_tenant_context(request, db, admin)
+    customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente não encontrado.")
 
-    orders = db.query(Order).filter(Order.customer_id == customer_id).all()
+    orders = _tenant_query(db, Order, context).filter(Order.customer_id == customer_id).all()
     total_orders = len(orders)
     total_spent = sum(o.total or 0 for o in orders)
     avg_ticket = total_spent / total_orders if total_orders > 0 else 0
@@ -383,7 +412,7 @@ def get_customer_summary(
     last_order = sorted_orders[-1] if sorted_orders else None
     first_order = sorted_orders[0] if sorted_orders else None
 
-    events = db.query(CustomerEvent).filter(CustomerEvent.customer_id == customer_id).all()
+    events = _tenant_query(db, CustomerEvent, context).filter(CustomerEvent.customer_id == customer_id).all()
     total_visits = sum(1 for e in events if e.event_type == "site_opened")
     products_viewed = sum(1 for e in events if e.event_type == "product_viewed")
     cart_abandonments = sum(1 for e in events if e.event_type == "cart_abandoned")
@@ -442,11 +471,14 @@ def get_customer_summary(
 @router.post("/{customer_id}/analyze")
 def analyze_customer(
     customer_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
+    context = resolve_panel_tenant_context(request, db, admin)
+    tenant_id = context.tenant_id if context and customers_orders_enforcement_enabled() else None
     try:
-        result = analyze_customer_profile(db, customer_id)
+        result = analyze_customer_profile(db, customer_id, tenant_id=tenant_id)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
     return ok(result, "Perfil inteligente analisado.")
@@ -455,37 +487,52 @@ def analyze_customer(
 @router.get("/{customer_id}/profile")
 def get_customer_profile(
     customer_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    context = resolve_panel_tenant_context(request, db, admin)
+    customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente nao encontrado.")
-    return ok(get_customer_ai_profile(db, customer_id))
+    return ok(get_customer_ai_profile(
+        db, customer_id,
+        tenant_id=context.tenant_id if context and customers_orders_enforcement_enabled() else None,
+    ))
 
 
 @router.get("/{customer_id}/suggestions")
 def get_customer_suggestions(
     customer_id: str,
+    request: Request,
     status: str = Query(default="pending"),
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    context = resolve_panel_tenant_context(request, db, admin)
+    customer = _tenant_query(db, Customer, context).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(404, "Cliente nao encontrado.")
-    return ok(list_customer_ai_suggestions(db, customer_id, status=status))
+    return ok(list_customer_ai_suggestions(
+        db, customer_id, status=status,
+        tenant_id=context.tenant_id if context and customers_orders_enforcement_enabled() else None,
+    ))
 
 
 @suggestions_router.post("/{suggestion_id}/accept")
 def accept_suggestion(
     suggestion_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
+    context = resolve_panel_tenant_context(request, db, admin)
     admin_name = getattr(admin, "name", None) or getattr(admin, "email", None)
     try:
-        result = accept_customer_ai_suggestion(db, suggestion_id, admin_name=admin_name)
+        result = accept_customer_ai_suggestion(
+            db, suggestion_id, admin_name=admin_name,
+            tenant_id=context.tenant_id if context and customers_orders_enforcement_enabled() else None,
+        )
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
     return ok(result, "Sugestao aceita.")
@@ -494,11 +541,16 @@ def accept_suggestion(
 @suggestions_router.post("/{suggestion_id}/reject")
 def reject_suggestion(
     suggestion_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
+    context = resolve_panel_tenant_context(request, db, admin)
     try:
-        result = reject_customer_ai_suggestion(db, suggestion_id)
+        result = reject_customer_ai_suggestion(
+            db, suggestion_id,
+            tenant_id=context.tenant_id if context and customers_orders_enforcement_enabled() else None,
+        )
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
     return ok(result, "Sugestao rejeitada.")

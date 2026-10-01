@@ -26,7 +26,7 @@ uma VPS descartavel antes do uso em producao.
 O target Alembic desta entrega e:
 
 ```text
-20260927_order_board_mvp
+20260930_tenant_runtime_uniqueness
 ```
 
 Antes de instalar, confirme que esse valor e o unico head do commit publicado e
@@ -49,7 +49,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Defina explicitamente:
 
 ```env
-ALEMBIC_TARGET=20260927_order_board_mvp
+ALEMBIC_TARGET=20260930_tenant_runtime_uniqueness
 INSTALL_SSL=false
 ```
 
@@ -147,7 +147,7 @@ sudo journalctl -u telz-whatsapp-gateway -n 100 --no-pager
 
 Registre separadamente:
 
-- revision unica `20260927_order_board_mvp` no codigo e no banco;
+- revision unica `20260930_tenant_runtime_uniqueness` no codigo e no banco;
 - health local e HTTP/HTTPS publico;
 - login, loja, pedido, painel e WhatsApp;
 - isolamento entre pelo menos dois tenants;

@@ -55,7 +55,7 @@ class ProductCategory(Base):
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_product_categories_tenant_id_tenants"), nullable=True)
     parent_id = Column(String, ForeignKey("product_categories.id", ondelete="CASCADE"), nullable=True)
-    name = Column(String(100), nullable=False, unique=True)
+    name = Column(String(100), nullable=False)
     active = Column(Boolean, default=True)
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

@@ -13,7 +13,6 @@ class PromotionLandingPage(Base):
     __tablename__ = "promotion_landing_pages"
     __table_args__ = (
         Index("uq_promotion_landing_pages_tenant_id_id", "tenant_id", "id", unique=True),
-        UniqueConstraint("slug", name="uq_promotion_landing_pages_slug"),
         UniqueConstraint("tenant_id", "slug", name="uq_promotion_landing_pages_tenant_slug"),
     )
 

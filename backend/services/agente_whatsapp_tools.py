@@ -11,6 +11,11 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.core.tenant_context import TenantContext, TenantSource
+from backend.core.tenant_context import TenantContextMissing
+from backend.core.tenant_ownership import (
+    customers_orders_enforcement_enabled,
+    identity_catalog_enforcement_enabled,
+)
 from backend.core.exceptions import DomainError
 from backend.models.agente_whatsapp import AgenteWhatsAppEvent, AgenteWhatsAppSession, AgenteWhatsAppToolCall
 from backend.models.customer import Address, Customer
@@ -47,8 +52,9 @@ class AgenteWhatsAppToolService:
     confirmation and delegate all business rules to the existing services.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
+        self._tenant_context = tenant_context
         self._handlers: dict[str, Callable[[dict[str, Any], dict[str, Any]], Any]] = {
             "buscar_cliente_por_telefone": self._buscar_cliente_por_telefone,
             "buscar_produtos": self._buscar_produtos,
@@ -287,6 +293,7 @@ class AgenteWhatsAppToolService:
 
         try:
             context = self._resolve_context(session_id=session_id, customer_id=customer_id)
+            self._tenant_context = context.get("tenant_context")
             handler = self._handlers.get(tool_name)
             if not handler:
                 raise ValueError("Ferramenta nao cadastrada para o AGENTE WHATSAPP.")
@@ -324,36 +331,51 @@ class AgenteWhatsAppToolService:
 
     def _resolve_context(self, *, session_id: str | None, customer_id: str | None) -> dict[str, Any]:
         session = None
-        tenant_context = None
+        tenant_context = self._tenant_context
         if session_id:
-            session = self._db.query(AgenteWhatsAppSession).filter(AgenteWhatsAppSession.id == session_id).first()
+            session_query = self._db.query(AgenteWhatsAppSession).filter(AgenteWhatsAppSession.id == session_id)
+            if tenant_context:
+                session_query = session_query.filter(AgenteWhatsAppSession.tenant_id == tenant_context.tenant_id)
+            session = session_query.first()
             if not session:
                 raise ValueError("Sessao do AGENTE WHATSAPP nao encontrada.")
             customer_id = customer_id or session.customer_id
             if session.tenant_id:
-                tenant_context = TenantContext(
-                    tenant_id=session.tenant_id,
-                    source=TenantSource.JOB,
-                    correlation_id=session.id,
+                if tenant_context and tenant_context.tenant_id != session.tenant_id:
+                    raise ValueError("Sessao nao pertence ao tenant informado.")
+                tenant_context = tenant_context or TenantContext(
+                    tenant_id=session.tenant_id, source=TenantSource.JOB, correlation_id=session.id,
                 )
+        if (identity_catalog_enforcement_enabled() or customers_orders_enforcement_enabled()) and not tenant_context:
+            raise TenantContextMissing("Contexto de tenant obrigatorio para ferramenta do Agente WhatsApp.")
+        self._tenant_context = tenant_context
         if customer_id:
-            exists = self._db.query(Customer.id).filter(Customer.id == customer_id).first()
+            exists = self._query(Customer).with_entities(Customer.id).filter(Customer.id == customer_id).first()
             if not exists:
                 raise ValueError("Cliente nao encontrado.")
         return {
             "session_id": session.id if session else None,
             "customer_id": customer_id,
-            "tenant_id": session.tenant_id if session else None,
+            "tenant_id": tenant_context.tenant_id if tenant_context else None,
             "tenant_context": tenant_context,
         }
+
+    def _query(self, model):
+        query = self._db.query(model)
+        if self._tenant_context:
+            return query.filter(model.tenant_id == self._tenant_context.tenant_id)
+        return query
 
     def _buscar_cliente_por_telefone(self, args: dict[str, Any], _context: dict[str, Any]) -> dict[str, Any]:
         phone = args.get("phone")
         if not phone:
             raise ValueError("Informe o telefone.")
-        customer = CustomerIdentityService(self._db).find_by_phone(str(phone), channel="whatsapp")
+        tenant_id = _context.get("tenant_id")
+        customer = CustomerIdentityService(self._db).find_by_phone(
+            str(phone), channel="whatsapp", tenant_id=tenant_id
+        )
         if not customer:
-            customer = CustomerIdentityService(self._db).find_by_phone(str(phone))
+            customer = CustomerIdentityService(self._db).find_by_phone(str(phone), tenant_id=tenant_id)
         if not customer:
             return {"found": False, "phone": normalize_phone(str(phone))}
         return {"found": True, "customer": self._customer_payload(customer)}
@@ -371,7 +393,7 @@ class AgenteWhatsAppToolService:
 
     def _buscar_produtos(self, args: dict[str, Any], _context: dict[str, Any]) -> dict[str, Any]:
         limit = max(1, min(int(args.get("limit") or 20), 50))
-        q = self._db.query(Product)
+        q = self._query(Product)
         if args.get("active_only", True):
             q = q.filter(Product.active == True)  # noqa: E712
         product_type = (args.get("product_type") or "").strip()
@@ -390,7 +412,7 @@ class AgenteWhatsAppToolService:
             raise ValueError("Informe o nome do produto.")
         like = f"%{name}%"
         product = (
-            self._db.query(Product)
+            self._query(Product)
             .filter(Product.active == True, Product.name.ilike(like))  # noqa: E712
             .order_by(Product.name.asc())
             .first()
@@ -403,7 +425,7 @@ class AgenteWhatsAppToolService:
         limit = max(1, min(int(args.get("limit") or 20), 50))
         now = datetime.now(timezone.utc)
         banners = (
-            self._db.query(Promotion)
+            self._query(Promotion)
             .filter(
                 Promotion.active == True,  # noqa: E712
                 or_(Promotion.valid_from == None, Promotion.valid_from <= now),  # noqa: E711
@@ -414,7 +436,7 @@ class AgenteWhatsAppToolService:
             .all()
         )
         product_promotions = (
-            self._db.query(ProductPromotion)
+            self._query(ProductPromotion)
             .join(Product, Product.id == ProductPromotion.product_id)
             .filter(ProductPromotion.active == True, Product.active == True)  # noqa: E712
             .order_by(ProductPromotion.created_at.desc())
@@ -459,7 +481,7 @@ class AgenteWhatsAppToolService:
         if context.get("customer_id") and not payload_data.get("customer_id"):
             payload_data["customer_id"] = context["customer_id"]
         payload = CouponApplyIn.model_validate(payload_data)
-        return CouponService(self._db).apply(payload).model_dump()
+        return CouponService(self._db, context.get("tenant_context")).apply(payload).model_dump()
 
     def _consultar_status_pedido(self, args: dict[str, Any], _context: dict[str, Any]) -> dict[str, Any]:
         order = self._order_by_id(args.get("order_id"))
@@ -478,7 +500,7 @@ class AgenteWhatsAppToolService:
         if not customer_id:
             raise ValueError("Informe o cliente.")
         rows = (
-            self._db.query(Address)
+            self._query(Address)
             .filter(Address.customer_id == str(customer_id))
             .order_by(Address.is_default.desc(), Address.created_at.desc())
             .all()
@@ -507,7 +529,7 @@ class AgenteWhatsAppToolService:
         if not customer_id:
             raise ValueError("Informe o cliente.")
         order = (
-            self._db.query(Order)
+            self._query(Order)
             .filter(Order.customer_id == str(customer_id))
             .order_by(Order.created_at.desc())
             .first()
@@ -714,7 +736,7 @@ class AgenteWhatsAppToolService:
     def _active_product(self, product_id: Any) -> Product:
         if not product_id:
             raise ValueError("Informe o produto.")
-        product = self._db.query(Product).filter(Product.id == str(product_id), Product.active == True).first()  # noqa: E712
+        product = self._query(Product).filter(Product.id == str(product_id), Product.active == True).first()  # noqa: E712
         if not product:
             raise ValueError("Produto nao encontrado ou inativo.")
         return product
@@ -722,7 +744,7 @@ class AgenteWhatsAppToolService:
     def _resolve_size(self, product: Product, size_id: Any) -> ProductSize | None:
         if size_id:
             size = (
-                self._db.query(ProductSize)
+                self._query(ProductSize)
                 .filter(ProductSize.id == str(size_id), ProductSize.product_id == product.id, ProductSize.active == True)  # noqa: E712
                 .first()
             )
@@ -738,7 +760,7 @@ class AgenteWhatsAppToolService:
         if not crust_id:
             return None
         crust = (
-            self._db.query(ProductCrustType)
+            self._query(ProductCrustType)
             .filter(ProductCrustType.id == str(crust_id), ProductCrustType.product_id == product.id, ProductCrustType.active == True)  # noqa: E712
             .first()
         )
@@ -750,7 +772,7 @@ class AgenteWhatsAppToolService:
         if not variant_id:
             return None
         variant = (
-            self._db.query(ProductDrinkVariant)
+            self._query(ProductDrinkVariant)
             .filter(ProductDrinkVariant.id == str(variant_id), ProductDrinkVariant.product_id == product.id, ProductDrinkVariant.active == True)  # noqa: E712
             .first()
         )
@@ -762,13 +784,16 @@ class AgenteWhatsAppToolService:
         if not order_id:
             raise ValueError("Informe o ID do pedido.")
         order_ref = str(order_id).strip()
-        order = self._db.query(Order).filter(or_(Order.id == order_ref, Order.order_code == order_ref)).first()
+        order = self._query(Order).filter(or_(Order.id == order_ref, Order.order_code == order_ref)).first()
         if not order:
             raise ValueError("Pedido nao encontrado.")
         return order
 
     @staticmethod
     def _ensure_order_matches_context(order: Order, context: dict[str, Any]) -> None:
+        tenant_id = context.get("tenant_id")
+        if tenant_id and order.tenant_id != tenant_id:
+            raise ValueError("Pedido nao pertence ao tenant da conversa.")
         customer_id = context.get("customer_id")
         if customer_id and order.customer_id and order.customer_id != customer_id:
             raise ValueError("Pedido nao pertence ao cliente da conversa.")
@@ -793,7 +818,7 @@ class AgenteWhatsAppToolService:
         default_size = next((size for size in product.sizes if size.active and size.is_default), None)
         if not default_size:
             default_size = next((size for size in product.sizes if size.active), None)
-        quote = ProductPricingService(self._db).calculate(product=product, size=default_size)
+        quote = ProductPricingService(self._db, self._tenant_context).calculate(product=product, size=default_size)
         payload = {
             "id": product.id,
             "name": product.name,
@@ -880,7 +905,7 @@ class AgenteWhatsAppToolService:
     def _product_name(self, product_id: str | None) -> str | None:
         if not product_id:
             return None
-        row = self._db.query(Product.name).filter(Product.id == product_id).first()
+        row = self._query(Product).with_entities(Product.name).filter(Product.id == product_id).first()
         return row[0] if row else None
 
     @staticmethod

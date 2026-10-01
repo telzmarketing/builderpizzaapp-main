@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from backend.core.tenant_context import TenantContext
+from backend.core.tenant_ownership import assign_tenant_on_create, identity_catalog_enforcement_enabled, scope_query_to_tenant
 from backend.models.coupon import Coupon, CouponType, CouponUsage
 from backend.models.customer import Customer
 from backend.models.product import Product
@@ -11,12 +13,19 @@ from backend.services.automation_service import customer_matches_automation_trig
 
 
 class CouponService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
+        self._tenant_context = tenant_context
+        self._tenant_enabled = identity_catalog_enforcement_enabled()
+
+    def _query(self, model):
+        return scope_query_to_tenant(
+            self._db.query(model), model, self._tenant_context, enabled=self._tenant_enabled
+        )
 
     def apply(self, payload: CouponApplyIn) -> CouponApplyOut:
         coupon: Coupon | None = (
-            self._db.query(Coupon)
+            self._query(Coupon)
             .filter(Coupon.code == payload.code.upper(), Coupon.active == True)  # noqa: E712
             .first()
         )
@@ -96,7 +105,7 @@ class CouponService:
             return None
 
         product = (
-            self._db.query(Product)
+            self._query(Product)
             .filter(Product.id == coupon.gift_product_id, Product.active == True)  # noqa: E712
             .first()
         )
@@ -140,7 +149,7 @@ class CouponService:
         phone = (payload.phone or "").strip()
         if not phone:
             return None
-        customer = self._db.query(Customer).filter(Customer.phone == phone).first()
+        customer = self._query(Customer).filter(Customer.phone == phone).first()
         return customer.id if customer else None
 
     @staticmethod
@@ -162,12 +171,16 @@ class CouponService:
     def _count_customer_uses(self, coupon_id: str, customer_id: str | None, phone: str | None) -> int:
         if not customer_id and not phone:
             return 0
-        q = self._db.query(CouponUsage).filter(CouponUsage.coupon_id == coupon_id)
+        q = self._db.query(CouponUsage).join(Coupon, Coupon.id == CouponUsage.coupon_id)
+        q = scope_query_to_tenant(q, Coupon, self._tenant_context, enabled=self._tenant_enabled).filter(CouponUsage.coupon_id == coupon_id)
         if customer_id:
             return q.filter(CouponUsage.customer_id == customer_id).count()
         return q.filter(CouponUsage.phone == phone).count()
 
     def record_usage(self, coupon_id: str, customer_id: str | None, phone: str | None, order_id: str | None) -> None:
+        coupon = self._query(Coupon).filter(Coupon.id == coupon_id).first()
+        if not coupon:
+            return
         usage = CouponUsage(
             id=str(uuid.uuid4()),
             coupon_id=coupon_id,
@@ -176,25 +189,28 @@ class CouponService:
             order_id=order_id,
         )
         self._db.add(usage)
-        coupon = self._db.query(Coupon).filter(Coupon.id == coupon_id).first()
-        if coupon:
-            coupon.used_count += 1
+        coupon.used_count += 1
         self._db.commit()
 
     def list_usage(self, coupon_id: str | None = None):
-        q = self._db.query(CouponUsage)
+        q = self._db.query(CouponUsage).join(Coupon, Coupon.id == CouponUsage.coupon_id)
+        q = scope_query_to_tenant(q, Coupon, self._tenant_context, enabled=self._tenant_enabled)
         if coupon_id:
             q = q.filter(CouponUsage.coupon_id == coupon_id)
         return q.order_by(CouponUsage.created_at.desc()).all()
 
 
-def apply_coupon(payload: CouponApplyIn, db: Session) -> CouponApplyOut:
-    return CouponService(db).apply(payload)
+def apply_coupon(
+    payload: CouponApplyIn, db: Session, tenant_context: TenantContext | None = None
+) -> CouponApplyOut:
+    return CouponService(db, tenant_context).apply(payload)
 
 
-def mark_coupon_used(coupon_id: str, db: Session) -> None:
-    svc = CouponService(db)
-    coupon = db.query(Coupon).filter(Coupon.id == coupon_id).first()
+def mark_coupon_used(
+    coupon_id: str, db: Session, tenant_context: TenantContext | None = None
+) -> None:
+    svc = CouponService(db, tenant_context)
+    coupon = svc._query(Coupon).filter(Coupon.id == coupon_id).first()
     if coupon:
         coupon.used_count += 1
         db.commit()

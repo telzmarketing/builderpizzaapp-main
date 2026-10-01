@@ -22,16 +22,24 @@ CRM_REVENUE_ORDER_STATUSES = (
 )
 
 
-def sync_customer_order_metrics(db: Session, customer_id: str | None) -> None:
+def sync_customer_order_metrics(
+    db: Session,
+    customer_id: str | None,
+    *,
+    tenant_id: str | None = None,
+) -> None:
     """Recalculate order metrics for one customer inside the current transaction."""
     if not customer_id:
         return
 
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    customer_query = db.query(Customer).filter(Customer.id == customer_id)
+    if tenant_id:
+        customer_query = customer_query.filter(Customer.tenant_id == tenant_id)
+    customer = customer_query.first()
     if not customer:
         return
 
-    total_orders, total_spent, first_order_at, last_order_at = (
+    metrics_query = (
         db.query(
             func.count(Order.id),
             func.coalesce(func.sum(Order.total), 0.0),
@@ -42,8 +50,10 @@ def sync_customer_order_metrics(db: Session, customer_id: str | None) -> None:
             Order.customer_id == customer_id,
             Order.status.in_(CRM_REVENUE_ORDER_STATUSES),
         )
-        .one()
     )
+    if tenant_id:
+        metrics_query = metrics_query.filter(Order.tenant_id == tenant_id)
+    total_orders, total_spent, first_order_at, last_order_at = metrics_query.one()
 
     total_orders = int(total_orders or 0)
     total_spent = float(total_spent or 0.0)

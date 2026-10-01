@@ -9,6 +9,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import NapolitanaMultiFlavorNotAllowed
+from backend.core.tenant_context import TenantContext
+from backend.core.tenant_ownership import identity_catalog_enforcement_enabled, scope_query_to_tenant
 from backend.models.product import Product, ProductCrustType, ProductSize
 from backend.models.product_promotion import ProductPromotion, ProductPromotionCombination
 
@@ -53,8 +55,17 @@ class ProductPriceResult:
 class ProductPricingService:
     """Centralizes product price calculation, including valid product promotions."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
+        self._tenant_context = tenant_context
+
+    def _query(self, model):
+        return scope_query_to_tenant(
+            self._db.query(model),
+            model,
+            self._tenant_context,
+            enabled=identity_catalog_enforcement_enabled(),
+        )
 
     def calculate(
         self,
@@ -167,7 +178,7 @@ class ProductPricingService:
         prices: list[float] = []
         for flavor_product_id in flavor_product_ids:
             flavor_product = product if flavor_product_id == product.id else (
-                self._db.query(Product)
+                self._query(Product)
                 .filter(Product.id == flavor_product_id, Product.active == True)  # noqa: E712
                 .first()
             )
@@ -257,7 +268,7 @@ class ProductPricingService:
             )
 
         promotion_id = promotion
-        query = self._db.query(ProductPromotionCombination).filter(
+        query = self._query(ProductPromotionCombination).filter(
             ProductPromotionCombination.promotion_id == promotion_id,
             ProductPromotionCombination.active == True,  # noqa: E712
         )
@@ -285,7 +296,7 @@ class ProductPricingService:
         if not promotion.gift_enabled or not promotion.gift_product_id:
             return None
         return (
-            self._db.query(Product)
+            self._query(Product)
             .filter(Product.id == promotion.gift_product_id, Product.active == True)  # noqa: E712
             .first()
         )

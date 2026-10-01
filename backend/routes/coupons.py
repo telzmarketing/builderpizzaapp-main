@@ -14,24 +14,36 @@ from backend.schemas.coupon import (
     CouponApplyIn, CouponApplyOut, CouponUsageOut,
 )
 from backend.services.coupon_service import CouponService
+from backend.core.tenant_context import TenantContext
+from backend.core.tenant_ownership import assign_tenant_on_create, identity_catalog_enforcement_enabled, scope_query_to_tenant
+from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
 
 router = APIRouter(prefix="/coupons", tags=["coupons"])
 
 
-def _validate_trigger_automation(trigger_automation_id: str | None, db: Session) -> None:
+def _validate_trigger_automation(trigger_automation_id: str | None, db: Session, context: TenantContext | None) -> None:
     if not trigger_automation_id:
         return
+    enabled = identity_catalog_enforcement_enabled()
+    sql = "SELECT 1 FROM marketing_automations WHERE id = :id"
+    params = {"id": trigger_automation_id}
+    if enabled:
+        if context is None:
+            raise HTTPException(404, "Gatilho selecionado nao encontrado.")
+        sql += " AND tenant_id = :tenant_id"
+        params["tenant_id"] = context.tenant_id
     exists = db.execute(
-        text("SELECT 1 FROM marketing_automations WHERE id = :id"),
-        {"id": trigger_automation_id},
+        text(sql),
+        params,
     ).scalar()
     if not exists:
         raise HTTPException(400, "Gatilho selecionado nao encontrado.")
 
 
 @router.get("", response_model=list[CouponOut])
-def list_coupons(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return db.query(Coupon).order_by(Coupon.created_at.desc()).all()
+def list_coupons(request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    return scope_query_to_tenant(db.query(Coupon), Coupon, context, enabled=identity_catalog_enforcement_enabled()).order_by(Coupon.created_at.desc()).all()
 
 
 @router.get("/public", response_model=list[CouponOut])
@@ -40,6 +52,7 @@ def list_public_coupons(
     customer_id: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
+    context = resolve_public_tenant_context(request, db)
     now = datetime.now(timezone.utc)
     customer_phone: str | None = None
     if customer_id:
@@ -50,10 +63,12 @@ def list_public_coupons(
             x_customer_phone=request.headers.get("x-customer-phone"),
             x_customer_email=request.headers.get("x-customer-email"),
         )
+        if identity_catalog_enforcement_enabled() and customer.tenant_id != context.tenant_id:
+            raise HTTPException(404, "Cliente nao encontrado.")
         customer_phone = customer.phone
 
     public_coupons = (
-        db.query(Coupon)
+        scope_query_to_tenant(db.query(Coupon), Coupon, context, enabled=identity_catalog_enforcement_enabled())
         .filter(Coupon.active == True)  # noqa: E712
         .filter(Coupon.public_profile == True)  # noqa: E712
         .filter((Coupon.starts_at.is_(None)) | (Coupon.starts_at <= now))
@@ -78,7 +93,7 @@ def list_public_coupons(
         used_coupon_ids = {coupon_id for (coupon_id,) in usages}
         if used_coupon_ids:
             used_coupons = (
-                db.query(Coupon)
+                scope_query_to_tenant(db.query(Coupon), Coupon, context, enabled=identity_catalog_enforcement_enabled())
                 .filter(Coupon.id.in_(used_coupon_ids))
                 .order_by(Coupon.created_at.desc())
                 .all()
@@ -120,32 +135,40 @@ def list_public_coupons(
 
 
 @router.get("/usage", response_model=list[CouponUsageOut])
-def list_all_usage(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return CouponService(db).list_usage()
+def list_all_usage(request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    return CouponService(db, resolve_panel_tenant_context(request, db, admin)).list_usage()
 
 
 @router.get("/{coupon_id}", response_model=CouponOut)
-def get_coupon(coupon_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    coupon = db.query(Coupon).filter(Coupon.id == coupon_id).first()
+def get_coupon(coupon_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    coupon = scope_query_to_tenant(db.query(Coupon), Coupon, context, enabled=identity_catalog_enforcement_enabled()).filter(Coupon.id == coupon_id).first()
     if not coupon:
         raise HTTPException(404, "Cupom não encontrado.")
     return coupon
 
 
 @router.get("/{coupon_id}/usage", response_model=list[CouponUsageOut])
-def get_coupon_usage(coupon_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return CouponService(db).list_usage(coupon_id=coupon_id)
+def get_coupon_usage(coupon_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    coupon = scope_query_to_tenant(db.query(Coupon), Coupon, context, enabled=identity_catalog_enforcement_enabled()).filter(Coupon.id == coupon_id).first()
+    if not coupon:
+        raise HTTPException(404, "Cupom nao encontrado.")
+    return CouponService(db, context).list_usage(coupon_id=coupon_id)
 
 
 @router.post("", response_model=CouponOut, status_code=201)
-def create_coupon(body: CouponCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    existing = db.query(Coupon).filter(Coupon.code == body.code.upper()).first()
+def create_coupon(body: CouponCreate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    query = scope_query_to_tenant(db.query(Coupon), Coupon, context, enabled=identity_catalog_enforcement_enabled())
+    existing = query.filter(Coupon.code == body.code.upper()).first()
     if existing:
         raise HTTPException(400, f"Código '{body.code}' já existe.")
     data = body.model_dump()
     data["trigger_automation_id"] = data.get("trigger_automation_id") or None
-    _validate_trigger_automation(data["trigger_automation_id"], db)
+    _validate_trigger_automation(data["trigger_automation_id"], db, context)
     coupon = Coupon(id=str(uuid.uuid4()), **{**data, "code": body.code.upper()})
+    assign_tenant_on_create(coupon, context, enabled=identity_catalog_enforcement_enabled())
     db.add(coupon)
     db.commit()
     db.refresh(coupon)
@@ -153,19 +176,21 @@ def create_coupon(body: CouponCreate, db: Session = Depends(get_db), _=Depends(g
 
 
 @router.put("/{coupon_id}", response_model=CouponOut)
-def update_coupon(coupon_id: str, body: CouponUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    coupon = db.query(Coupon).filter(Coupon.id == coupon_id).first()
+def update_coupon(coupon_id: str, body: CouponUpdate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    query = scope_query_to_tenant(db.query(Coupon), Coupon, context, enabled=identity_catalog_enforcement_enabled())
+    coupon = query.filter(Coupon.id == coupon_id).first()
     if not coupon:
         raise HTTPException(404, "Cupom não encontrado.")
     data = body.model_dump(exclude_unset=True)
     if "code" in data:
         data["code"] = data["code"].upper()
-        existing = db.query(Coupon).filter(Coupon.code == data["code"], Coupon.id != coupon_id).first()
+        existing = query.filter(Coupon.code == data["code"], Coupon.id != coupon_id).first()
         if existing:
             raise HTTPException(400, f"Código '{data['code']}' já existe.")
     if "trigger_automation_id" in data:
         data["trigger_automation_id"] = data.get("trigger_automation_id") or None
-        _validate_trigger_automation(data["trigger_automation_id"], db)
+        _validate_trigger_automation(data["trigger_automation_id"], db, context)
     for key, value in data.items():
         setattr(coupon, key, value)
     db.commit()
@@ -174,8 +199,9 @@ def update_coupon(coupon_id: str, body: CouponUpdate, db: Session = Depends(get_
 
 
 @router.delete("/{coupon_id}", status_code=204)
-def delete_coupon(coupon_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    coupon = db.query(Coupon).filter(Coupon.id == coupon_id).first()
+def delete_coupon(coupon_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    coupon = scope_query_to_tenant(db.query(Coupon), Coupon, context, enabled=identity_catalog_enforcement_enabled()).filter(Coupon.id == coupon_id).first()
     if not coupon:
         raise HTTPException(404, "Cupom não encontrado.")
     db.delete(coupon)
@@ -183,5 +209,5 @@ def delete_coupon(coupon_id: str, db: Session = Depends(get_db), _=Depends(get_c
 
 
 @router.post("/apply", response_model=CouponApplyOut)
-def apply(body: CouponApplyIn, db: Session = Depends(get_db)):
-    return CouponService(db).apply(body)
+def apply(body: CouponApplyIn, request: Request, db: Session = Depends(get_db)):
+    return CouponService(db, resolve_public_tenant_context(request, db)).apply(body)
