@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiRequestError, buildApiBases, platformTenantsApi } from "./api";
+import { buildApiBases, platformTenantsApi } from "./api";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -80,7 +80,7 @@ describe("platform tenant mutations", () => {
 
     const request = platformTenantsApi.create({} as never);
 
-    await expect(request).rejects.toMatchObject<ApiRequestError>({
+    await expect(request).rejects.toMatchObject({
       status: 404,
       message: "Plano informado nao existe ou esta inativo.",
     });
