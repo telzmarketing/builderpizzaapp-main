@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.config import get_settings
 from backend.core.tenant_context import TenantContext, TenantContextMismatch, TenantContextMissing, TenantSource
 from backend.core.wave7_tenant_orm import assign_wave7_tenant, scope_wave7_query, wave7_orm_enabled
 
@@ -21,6 +22,7 @@ def context() -> TenantContext:
 
 def test_wave7_gate_is_disabled_by_default(monkeypatch):
     monkeypatch.delenv("MULTI_TENANT_WAVE7_ORM_ENABLED", raising=False)
+    get_settings.cache_clear()
     assert wave7_orm_enabled() is False
     resource = SimpleNamespace(tenant_id=None)
     assert assign_wave7_tenant(resource, None) is resource
@@ -29,6 +31,7 @@ def test_wave7_gate_is_disabled_by_default(monkeypatch):
 
 def test_wave7_enabled_requires_trusted_context(monkeypatch):
     monkeypatch.setenv("MULTI_TENANT_WAVE7_ORM_ENABLED", "true")
+    get_settings.cache_clear()
     with pytest.raises(TenantContextMissing):
         assign_wave7_tenant(SimpleNamespace(tenant_id=None), None)
     with pytest.raises(TenantContextMissing):
@@ -37,8 +40,10 @@ def test_wave7_enabled_requires_trusted_context(monkeypatch):
 
 def test_wave7_assigns_and_rejects_cross_tenant(monkeypatch):
     monkeypatch.setenv("MULTI_TENANT_WAVE7_ORM_ENABLED", "true")
+    get_settings.cache_clear()
     resource = SimpleNamespace(tenant_id=None)
     assign_wave7_tenant(resource, context())
     assert resource.tenant_id == "tenant-a"
     with pytest.raises(TenantContextMismatch):
         assign_wave7_tenant(SimpleNamespace(tenant_id="tenant-b"), context())
+    get_settings.cache_clear()

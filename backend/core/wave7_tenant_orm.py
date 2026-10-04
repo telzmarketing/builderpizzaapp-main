@@ -6,9 +6,9 @@ scoped. The gate is disabled by default and no route is enabled in this wave.
 """
 from __future__ import annotations
 
-import os
 from typing import Any, TypeVar
 
+from backend.config import get_settings
 from backend.core.tenant_context import TenantContext, TenantContextMissing
 
 
@@ -17,7 +17,7 @@ WAVE7_ENV_FLAG = "MULTI_TENANT_WAVE7_ORM_ENABLED"
 
 
 def wave7_orm_enabled() -> bool:
-    return os.getenv(WAVE7_ENV_FLAG, "false").strip().lower() in {"1", "true", "yes", "on"}
+    return bool(get_settings().MULTI_TENANT_WAVE7_ORM_ENABLED)
 
 
 def scope_wave7_query(query: QueryT, model: Any, context: TenantContext | None) -> QueryT:

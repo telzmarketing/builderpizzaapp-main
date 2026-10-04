@@ -35,7 +35,7 @@ router = APIRouter(prefix="/gestao/inventory", tags=["gestao-inventory"])
 
 
 def service(db: Session, tenant_context: TenantContext | None) -> InventoryService:
-    return InventoryService(db, operation_tenant_id(tenant_context))
+    return InventoryService(db, operation_tenant_id(tenant_context), tenant_context)
 
 
 @router.get("/overview", response_model=InventoryOverviewOut)

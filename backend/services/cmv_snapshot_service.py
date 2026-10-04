@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from backend.core.tenant_context import TenantContext, TenantContextMissing
+from backend.core.wave7_tenant_orm import wave7_orm_enabled
 from backend.models.cmv import OrderCmvSnapshot, OrderItemCmvIngredientSnapshot, OrderItemCmvSnapshot
 from backend.models.gestao import GestaoModuleSettings
 from backend.models.inventory import InventoryItem, InventoryRecipeItem, InventoryRecipeVersion, InventoryStockMovement
@@ -32,9 +34,20 @@ class _RecipeUse:
 class OrderCmvSnapshotService:
     """Persists frozen CMV for real sales without mutating stock."""
 
-    def __init__(self, db: Session, tenant_id: str = TENANT_ID):
+    def __init__(
+        self,
+        db: Session,
+        tenant_id: str = TENANT_ID,
+        tenant_context: TenantContext | None = None,
+    ):
         self._db = db
-        self._tenant_id = tenant_id
+        if wave7_orm_enabled():
+            if tenant_context is None:
+                raise TenantContextMissing("Contexto confiavel obrigatorio para snapshots de CMV da Wave 7.")
+            if tenant_id not in {None, TENANT_ID, tenant_context.tenant_id}:
+                tenant_context.assert_tenant(tenant_id)
+            tenant_id = tenant_context.tenant_id
+        self._tenant_id = tenant_id or TENANT_ID
 
     def module_enabled(self) -> bool:
         settings = (
@@ -50,7 +63,10 @@ class OrderCmvSnapshotService:
     def create_for_order(self, order: Order, contexts: list[CmvOrderItemContext] | None = None) -> OrderCmvSnapshot | None:
         if not self.module_enabled():
             return None
-        if self._db.query(OrderCmvSnapshot).filter(OrderCmvSnapshot.order_id == order.id).first():
+        if self._db.query(OrderCmvSnapshot).filter(
+            OrderCmvSnapshot.order_id == order.id,
+            OrderCmvSnapshot.tenant_id == self._tenant_id,
+        ).first():
             return None
 
         contexts = contexts or [CmvOrderItemContext(order_item=item) for item in (order.items or [])]
@@ -117,7 +133,10 @@ class OrderCmvSnapshotService:
     def _product_map(self, product_ids: list[str]) -> dict[str, Product]:
         if not product_ids:
             return {}
-        products = self._db.query(Product).filter(Product.id.in_(product_ids)).all()
+        products = self._db.query(Product).filter(
+            Product.id.in_(product_ids),
+            Product.tenant_id == self._tenant_id,
+        ).all()
         return {product.id: product for product in products}
 
     def _recipe_map(self, product_ids: list[str]) -> dict[str, list[InventoryRecipeVersion]]:

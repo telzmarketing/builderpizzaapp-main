@@ -3,6 +3,8 @@ from __future__ import annotations
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from backend.core.tenant_context import TenantContext, TenantContextMissing
+from backend.core.wave7_tenant_orm import wave7_orm_enabled
 from backend.models.cmv import OrderCmvSnapshot
 from backend.models.gestao import GestaoModuleSettings
 from backend.models.inventory import InventoryItem, InventoryRecipeItem, InventoryRecipeVersion, InventoryStockMovement
@@ -13,9 +15,20 @@ TENANT_ID = "default"
 
 
 class CmvService:
-    def __init__(self, db: Session, tenant_id: str = TENANT_ID):
+    def __init__(
+        self,
+        db: Session,
+        tenant_id: str = TENANT_ID,
+        tenant_context: TenantContext | None = None,
+    ):
         self._db = db
-        self._tenant_id = tenant_id
+        if wave7_orm_enabled():
+            if tenant_context is None:
+                raise TenantContextMissing("Contexto confiavel obrigatorio para CMV da Wave 7.")
+            if tenant_id not in {None, TENANT_ID, tenant_context.tenant_id}:
+                tenant_context.assert_tenant(tenant_id)
+            tenant_id = tenant_context.tenant_id
+        self._tenant_id = tenant_id or TENANT_ID
 
     def overview(self) -> dict:
         settings = self._settings()

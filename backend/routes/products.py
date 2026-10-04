@@ -349,7 +349,7 @@ def list_products(
         else set()
     )
     inventory_payloads = ProductInventoryAvailabilityService(
-        db, tenant_id=context.tenant_id if context else None
+        db, tenant_id=context.tenant_id if context else None, tenant_context=context
     ).product_payloads([product.id for product in products])
     return [_product_payload(product, db, auto_badge_ids, inventory_payloads.get(product.id), context) for product in products]
 
@@ -368,7 +368,7 @@ def get_product(product_id: str, request: Request, db: Session = Depends(get_db)
     if not product.active and not is_admin_request:
         raise HTTPException(404, "Produto nao encontrado.")
     inventory_payload = ProductInventoryAvailabilityService(
-        db, tenant_id=context.tenant_id if context else None
+        db, tenant_id=context.tenant_id if context else None, tenant_context=context
     ).product_payloads([product.id]).get(product.id)
     return _product_payload(product, db, inventory_payload=inventory_payload, context=context)
 

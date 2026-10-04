@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from backend.core.exceptions import DomainError
 from backend.core.events import InventoryPurchaseConfirmed, bus
+from backend.core.tenant_context import TenantContext
+from backend.core.wave7_tenant_orm import wave7_orm_enabled
 from backend.models.cmv import OrderCmvSnapshot, OrderItemCmvSnapshot
 from backend.models.gestao import GestaoModuleSettings
 from backend.models.inventory import (
@@ -62,9 +64,32 @@ class InventoryUnavailable(DomainError):
 
 
 class InventoryService:
-    def __init__(self, db: Session, tenant_id: str = TENANT_ID):
+    def __init__(
+        self,
+        db: Session,
+        tenant_id: str = TENANT_ID,
+        tenant_context: TenantContext | None = None,
+    ):
         self._db = db
-        self._tenant_id = tenant_id
+        self._tenant_context = tenant_context
+        self._tenant_id = self._resolve_tenant_id(tenant_id, tenant_context)
+
+    @staticmethod
+    def _resolve_tenant_id(tenant_id: str | None, context: TenantContext | None) -> str:
+        """Keep the legacy default until Wave 7 is deliberately enabled.
+
+        Once enabled, a raw tenant id is not a proof of ownership.  Every
+        inventory read or write must originate from a verified HTTP/job context.
+        """
+        if not wave7_orm_enabled():
+            return tenant_id or TENANT_ID
+        if context is None:
+            from backend.core.tenant_context import TenantContextMissing
+
+            raise TenantContextMissing("Contexto confiavel obrigatorio para estoque da Wave 7.")
+        if tenant_id not in {None, TENANT_ID, context.tenant_id}:
+            context.assert_tenant(tenant_id)
+        return context.tenant_id
 
     def overview(self) -> dict:
         return {
@@ -225,6 +250,7 @@ class InventoryService:
                 total_amount=float(purchase.total_amount or 0.0),
                 invoice_number=purchase.invoice_number,
                 expected_date=purchase.expected_date,
+                tenant_id=purchase.tenant_id,
             ))
         except Exception:
             pass
@@ -735,6 +761,7 @@ class InventoryService:
             total += total_cost
             self._db.add(InventoryPurchaseItem(
                 id=f"inv-pit-{uuid.uuid4().hex[:12]}",
+                tenant_id=self._tenant_id,
                 purchase_id=purchase.id,
                 item_id=item["item_id"],
                 quantity=item["quantity"],
@@ -747,6 +774,7 @@ class InventoryService:
         for item in items:
             self._db.add(InventoryRecipeItem(
                 id=f"inv-rci-{uuid.uuid4().hex[:12]}",
+                tenant_id=self._tenant_id,
                 recipe_id=recipe.id,
                 inventory_item_id=item["inventory_item_id"],
                 quantity=round(float(item["quantity"]), 6),
@@ -892,9 +920,15 @@ class InventoryService:
 
 
 class ProductInventoryAvailabilityService:
-    def __init__(self, db: Session, tenant_id: str = TENANT_ID):
+    def __init__(
+        self,
+        db: Session,
+        tenant_id: str = TENANT_ID,
+        tenant_context: TenantContext | None = None,
+    ):
         self._db = db
-        self._tenant_id = tenant_id
+        self._tenant_context = tenant_context
+        self._tenant_id = InventoryService._resolve_tenant_id(tenant_id, tenant_context)
 
     def sales_control_enabled(self) -> bool:
         item = (
@@ -925,7 +959,7 @@ class ProductInventoryAvailabilityService:
                 }
                 for product_id in product_ids
             }
-        balances = InventoryService(self._db, self._tenant_id)._stock_balance_map()
+        balances = InventoryService(self._db, self._tenant_id, self._tenant_context)._stock_balance_map()
         recipes = self._active_recipes(product_ids)
         return {
             product_id: self._availability_for_product(product_id, recipes.get(product_id, []), balances)
@@ -941,7 +975,7 @@ class ProductInventoryAvailabilityService:
             if not payload["inventory_available"]:
                 raise InventoryUnavailable(payload.get("product_name"))
 
-        balances = InventoryService(self._db, self._tenant_id)._stock_balance_map()
+        balances = InventoryService(self._db, self._tenant_id, self._tenant_context)._stock_balance_map()
         required: dict[str, float] = {}
         primary_recipes = self._matching_recipes(
             item.product_id,

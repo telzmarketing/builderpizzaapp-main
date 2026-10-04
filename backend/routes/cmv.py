@@ -14,4 +14,4 @@ router = APIRouter(prefix="/gestao/cmv", tags=["gestao-cmv"])
 
 @router.get("/overview", response_model=CmvOverviewOut)
 def overview(db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
-    return CmvService(db, operation_tenant_id(tenant_context)).overview()
+    return CmvService(db, operation_tenant_id(tenant_context), tenant_context).overview()
