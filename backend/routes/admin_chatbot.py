@@ -11,8 +11,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.config import save_ai_api_keys
 from backend.core.response import ok, created, err_msg
+from backend.core.wave6_tenant_context import WAVE6_SESSION_TENANT_KEY, panel_wave6_context, wave6_tenant_id
 from backend.database import get_db
 from backend.models.chatbot import (
     ChatbotAutomation, ChatbotConversation, ChatbotFAQ,
@@ -33,7 +33,14 @@ from backend.schemas.chatbot import (
 from backend.services.ai.factory import check_provider_status
 from backend.services.chatbot_service import ChatbotService
 
-router = APIRouter(prefix="/admin/chatbot", tags=["admin-chatbot"])
+router = APIRouter(
+    prefix="/admin/chatbot", tags=["admin-chatbot"],
+    dependencies=[Depends(panel_wave6_context)],
+)
+
+
+def _tenant_id(db: Session) -> str:
+    return wave6_tenant_id(db.info.get(WAVE6_SESSION_TENANT_KEY))
 
 # ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -42,7 +49,7 @@ def get_settings(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    svc = ChatbotService(db)
+    svc = ChatbotService(db, _tenant_id(db))
     s = svc.get_settings()
     return ok(ChatbotSettingsOut.model_validate(s))
 
@@ -53,7 +60,7 @@ def update_settings(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    svc = ChatbotService(db)
+    svc = ChatbotService(db, _tenant_id(db))
     s = svc.update_settings(body.model_dump(exclude_none=True))
     return ok(ChatbotSettingsOut.model_validate(s))
 
@@ -64,7 +71,7 @@ def ai_provider_status(
     _=Depends(get_current_admin),
 ):
     """Retorna status das chaves (configurada / não) — sem expor os valores."""
-    svc = ChatbotService(db)
+    svc = ChatbotService(db, _tenant_id(db))
     settings = svc.get_settings()
     return ok(check_provider_status(settings))
 
@@ -75,25 +82,11 @@ def update_ai_keys(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    """Salva chaves de IA no banco e espelha no backend/.env."""
+    """Salva chaves de IA somente no registro isolado da empresa."""
     if not body.openai_api_key and not body.anthropic_api_key:
         return err_msg("Informe pelo menos uma chave de API.", status_code=400)
 
-    try:
-        save_ai_api_keys(
-            openai_api_key=body.openai_api_key,
-            anthropic_api_key=body.anthropic_api_key,
-        )
-    except ValueError as exc:
-        return err_msg(str(exc), status_code=400)
-    except OSError as exc:
-        return err_msg(
-            f"Nao foi possivel salvar as chaves no backend/.env: {exc}",
-            code="AIKeySaveError",
-            status_code=500,
-        )
-
-    svc = ChatbotService(db)
+    svc = ChatbotService(db, _tenant_id(db))
     settings = svc.get_settings()
 
     if body.anthropic_api_key:
@@ -103,7 +96,7 @@ def update_ai_keys(
 
     db.commit()
     db.refresh(settings)
-    return ok(check_provider_status(settings), "Chaves salvas com sucesso no banco e no backend/.env.")
+    return ok(check_provider_status(settings), "Chaves salvas com sucesso para esta empresa.")
 
 
 @router.post("/settings/test-ai", response_model=None)
@@ -115,7 +108,7 @@ def test_ai_connection(
     from backend.services.ai.factory import get_ai_provider
     from backend.services.ai.base import AIMessage
 
-    svc = ChatbotService(db)
+    svc = ChatbotService(db, _tenant_id(db))
     settings = svc.get_settings()
     provider = get_ai_provider(settings)
 
@@ -146,7 +139,7 @@ def list_faq(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    q = db.query(ChatbotFAQ)
+    q = db.query(ChatbotFAQ).filter(ChatbotFAQ.tenant_id == _tenant_id(db))
     if ativo is not None:
         q = q.filter(ChatbotFAQ.ativo == ativo)
     if categoria:
@@ -161,10 +154,10 @@ def create_faq(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    faq = ChatbotFAQ(**body.model_dump())
+    faq = ChatbotFAQ(tenant_id=_tenant_id(db), **body.model_dump())
     db.add(faq)
     db.flush()
-    _update_faq_vector(db, faq)
+    _update_faq_vector(db, faq, _tenant_id(db))
     db.commit()
     db.refresh(faq)
     return created(ChatbotFAQOut.model_validate(faq))
@@ -177,12 +170,12 @@ def update_faq(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    faq = db.query(ChatbotFAQ).filter(ChatbotFAQ.id == faq_id).first()
+    faq = db.query(ChatbotFAQ).filter(ChatbotFAQ.id == faq_id, ChatbotFAQ.tenant_id == _tenant_id(db)).first()
     if not faq:
         return err_msg("FAQ não encontrado.", status_code=404)
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(faq, k, v)
-    _update_faq_vector(db, faq)
+    _update_faq_vector(db, faq, _tenant_id(db))
     db.commit()
     db.refresh(faq)
     return ok(ChatbotFAQOut.model_validate(faq))
@@ -194,7 +187,7 @@ def delete_faq(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    faq = db.query(ChatbotFAQ).filter(ChatbotFAQ.id == faq_id).first()
+    faq = db.query(ChatbotFAQ).filter(ChatbotFAQ.id == faq_id, ChatbotFAQ.tenant_id == _tenant_id(db)).first()
     if not faq:
         return err_msg("FAQ não encontrado.", status_code=404)
     db.delete(faq)
@@ -209,7 +202,7 @@ def list_automations(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    items = db.query(ChatbotAutomation).order_by(ChatbotAutomation.prioridade.desc()).all()
+    items = db.query(ChatbotAutomation).filter(ChatbotAutomation.tenant_id == _tenant_id(db)).order_by(ChatbotAutomation.prioridade.desc()).all()
     return ok([ChatbotAutomationOut.model_validate(i) for i in items])
 
 
@@ -219,7 +212,7 @@ def create_automation(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    item = ChatbotAutomation(**body.model_dump())
+    item = ChatbotAutomation(tenant_id=_tenant_id(db), **body.model_dump())
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -233,7 +226,7 @@ def update_automation(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    item = db.query(ChatbotAutomation).filter(ChatbotAutomation.id == item_id).first()
+    item = db.query(ChatbotAutomation).filter(ChatbotAutomation.id == item_id, ChatbotAutomation.tenant_id == _tenant_id(db)).first()
     if not item:
         return err_msg("Automação não encontrada.", status_code=404)
     for k, v in body.model_dump(exclude_none=True).items():
@@ -249,7 +242,7 @@ def delete_automation(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    item = db.query(ChatbotAutomation).filter(ChatbotAutomation.id == item_id).first()
+    item = db.query(ChatbotAutomation).filter(ChatbotAutomation.id == item_id, ChatbotAutomation.tenant_id == _tenant_id(db)).first()
     if not item:
         return err_msg("Automação não encontrada.", status_code=404)
     db.delete(item)
@@ -264,7 +257,7 @@ def list_knowledge(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    items = db.query(ChatbotKnowledgeDoc).order_by(ChatbotKnowledgeDoc.created_at.desc()).all()
+    items = db.query(ChatbotKnowledgeDoc).filter(ChatbotKnowledgeDoc.tenant_id == _tenant_id(db)).order_by(ChatbotKnowledgeDoc.created_at.desc()).all()
     return ok([ChatbotKnowledgeDocOut.model_validate(i) for i in items])
 
 
@@ -274,10 +267,10 @@ def create_knowledge(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    doc = ChatbotKnowledgeDoc(**body.model_dump())
+    doc = ChatbotKnowledgeDoc(tenant_id=_tenant_id(db), **body.model_dump())
     db.add(doc)
     db.flush()
-    _update_doc_vector(db, doc)
+    _update_doc_vector(db, doc, _tenant_id(db))
     db.commit()
     db.refresh(doc)
     return created(ChatbotKnowledgeDocOut.model_validate(doc))
@@ -290,12 +283,12 @@ def update_knowledge(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    doc = db.query(ChatbotKnowledgeDoc).filter(ChatbotKnowledgeDoc.id == doc_id).first()
+    doc = db.query(ChatbotKnowledgeDoc).filter(ChatbotKnowledgeDoc.id == doc_id, ChatbotKnowledgeDoc.tenant_id == _tenant_id(db)).first()
     if not doc:
         return err_msg("Documento não encontrado.", status_code=404)
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(doc, k, v)
-    _update_doc_vector(db, doc)
+    _update_doc_vector(db, doc, _tenant_id(db))
     db.commit()
     db.refresh(doc)
     return ok(ChatbotKnowledgeDocOut.model_validate(doc))
@@ -307,7 +300,7 @@ def delete_knowledge(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    doc = db.query(ChatbotKnowledgeDoc).filter(ChatbotKnowledgeDoc.id == doc_id).first()
+    doc = db.query(ChatbotKnowledgeDoc).filter(ChatbotKnowledgeDoc.id == doc_id, ChatbotKnowledgeDoc.tenant_id == _tenant_id(db)).first()
     if not doc:
         return err_msg("Documento não encontrado.", status_code=404)
     db.delete(doc)
@@ -317,11 +310,11 @@ def delete_knowledge(
 
 # ── Conversas ─────────────────────────────────────────────────────────────────
 
-def _resolve_customer_names(db: Session, convs: list) -> dict[str, str]:
+def _resolve_customer_names(db: Session, convs: list, tenant_id: str) -> dict[str, str]:
     ids = [c.cliente_id for c in convs if c.cliente_id]
     if not ids:
         return {}
-    return {c.id: c.name for c in db.query(Customer).filter(Customer.id.in_(ids)).all()}
+    return {c.id: c.name for c in db.query(Customer).filter(Customer.id.in_(ids), Customer.tenant_id == tenant_id).all()}
 
 
 def _conv_dict(conv, nome_cliente: Optional[str]) -> dict:
@@ -338,7 +331,8 @@ def list_conversations(
     db: Session             = Depends(get_db),
     _                       = Depends(get_current_admin),
 ):
-    q = db.query(ChatbotConversation).order_by(ChatbotConversation.iniciada_em.desc())
+    tenant_id = _tenant_id(db)
+    q = db.query(ChatbotConversation).filter(ChatbotConversation.tenant_id == tenant_id).order_by(ChatbotConversation.iniciada_em.desc())
     if status:
         try:
             q = q.filter(ChatbotConversation.status == ConversationStatus(status))
@@ -347,7 +341,7 @@ def list_conversations(
 
     total = q.count()
     items = q.offset((page - 1) * page_size).limit(page_size).all()
-    names = _resolve_customer_names(db, items)
+    names = _resolve_customer_names(db, items, tenant_id)
     return ok({
         "total": total,
         "page": page,
@@ -362,12 +356,13 @@ def get_conversation(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    conv = db.query(ChatbotConversation).filter(ChatbotConversation.id == conv_id).first()
+    tenant_id = _tenant_id(db)
+    conv = db.query(ChatbotConversation).filter(ChatbotConversation.id == conv_id, ChatbotConversation.tenant_id == tenant_id).first()
     if not conv:
         return err_msg("Conversa não encontrada.", status_code=404)
     nome_cliente = None
     if conv.cliente_id:
-        c = db.query(Customer).filter(Customer.id == conv.cliente_id).first()
+        c = db.query(Customer).filter(Customer.id == conv.cliente_id, Customer.tenant_id == tenant_id).first()
         nome_cliente = c.name if c else None
     detail = ChatbotConversationDetailOut.model_validate(conv).model_dump()
     detail["nome_cliente"] = nome_cliente
@@ -381,7 +376,7 @@ def takeover(
     db: Session = Depends(get_db),
     admin=Depends(get_current_admin),
 ):
-    svc = ChatbotService(db)
+    svc = ChatbotService(db, _tenant_id(db))
     try:
         conv = svc.takeover(conv_id, admin.id, body.motivo)
     except ValueError as e:
@@ -396,7 +391,7 @@ def admin_reply(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    svc = ChatbotService(db)
+    svc = ChatbotService(db, _tenant_id(db))
     try:
         msg = svc.admin_reply(conv_id, body.mensagem)
     except ValueError as e:
@@ -410,7 +405,7 @@ def close_conversation(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    svc = ChatbotService(db)
+    svc = ChatbotService(db, _tenant_id(db))
     try:
         conv = svc.close_by_admin(conv_id)
     except ValueError as e:
@@ -424,7 +419,7 @@ def return_to_bot(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    svc = ChatbotService(db)
+    svc = ChatbotService(db, _tenant_id(db))
     try:
         conv = svc.return_to_bot(conv_id)
     except ValueError as e:
@@ -440,7 +435,7 @@ def update_tags(
     _=Depends(get_current_admin),
 ):
     import json as _json
-    conv = db.query(ChatbotConversation).filter(ChatbotConversation.id == conv_id).first()
+    conv = db.query(ChatbotConversation).filter(ChatbotConversation.id == conv_id, ChatbotConversation.tenant_id == _tenant_id(db)).first()
     if not conv:
         return err_msg("Conversa não encontrada.", status_code=404)
     conv.tags = _json.dumps(body.tags, ensure_ascii=False)
@@ -455,37 +450,37 @@ def get_analytics(
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
-    svc = ChatbotService(db)
+    svc = ChatbotService(db, _tenant_id(db))
     return ok(svc.get_analytics())
 
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
 
-def _update_faq_vector(db: Session, faq: ChatbotFAQ) -> None:
+def _update_faq_vector(db: Session, faq: ChatbotFAQ, tenant_id: str) -> None:
     """Atualiza o tsvector do FAQ com pergunta + resposta."""
     try:
         from sqlalchemy import text
         db.execute(
             text(
                 "UPDATE chatbot_faq SET busca_vetor = "
-                "to_tsvector('portuguese', :text) WHERE id = :id"
+                "to_tsvector('portuguese', :text) WHERE id = :id AND tenant_id = :tenant_id"
             ),
-            {"text": f"{faq.pergunta} {faq.resposta}", "id": faq.id},
+            {"text": f"{faq.pergunta} {faq.resposta}", "id": faq.id, "tenant_id": tenant_id},
         )
     except Exception:
         pass   # non-fatal — busca full-text degradada até próximo update
 
 
-def _update_doc_vector(db: Session, doc: ChatbotKnowledgeDoc) -> None:
+def _update_doc_vector(db: Session, doc: ChatbotKnowledgeDoc, tenant_id: str) -> None:
     """Atualiza o tsvector do documento de conhecimento."""
     try:
         from sqlalchemy import text
         db.execute(
             text(
                 "UPDATE chatbot_knowledge_docs SET busca_vetor = "
-                "to_tsvector('portuguese', :text) WHERE id = :id"
+                "to_tsvector('portuguese', :text) WHERE id = :id AND tenant_id = :tenant_id"
             ),
-            {"text": f"{doc.titulo} {doc.conteudo}", "id": doc.id},
+            {"text": f"{doc.titulo} {doc.conteudo}", "id": doc.id, "tenant_id": tenant_id},
         )
     except Exception:
         pass

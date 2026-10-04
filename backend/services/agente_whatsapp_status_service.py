@@ -59,7 +59,7 @@ class AgenteWhatsAppStatusService:
         self._db = db
 
     def handle_order_created(self, event: OrderCreated) -> dict[str, Any]:
-        return self.queue_order_status(event.order_id, "order_created", {"event": event.name})
+        return self.queue_order_status(event.order_id, "order_created", {"event": event.name}, tenant_id=event.tenant_id)
 
     def handle_payment_confirmed(self, event: PaymentConfirmed) -> dict[str, Any]:
         return self.queue_order_status(
@@ -72,6 +72,7 @@ class AgenteWhatsAppStatusService:
                 "gateway": event.gateway,
                 "transaction_id": event.transaction_id,
             },
+            tenant_id=event.tenant_id,
         )
 
     def handle_payment_failed(self, event: PaymentFailed) -> dict[str, Any]:
@@ -79,6 +80,7 @@ class AgenteWhatsAppStatusService:
             event.order_id,
             "payment_failed",
             {"event": event.name, "payment_id": event.payment_id, "reason": event.reason},
+            tenant_id=event.tenant_id,
         )
 
     def handle_order_status_changed(self, event: OrderStatusChanged) -> dict[str, Any] | None:
@@ -94,6 +96,7 @@ class AgenteWhatsAppStatusService:
                 "to_status": event.to_status,
                 "changed_by": event.changed_by,
             },
+            tenant_id=event.tenant_id,
         )
 
     def handle_order_cancelled(self, event: OrderCancelled) -> dict[str, Any]:
@@ -101,6 +104,7 @@ class AgenteWhatsAppStatusService:
             event.order_id,
             "order_cancelled",
             {"event": event.name, "reason": event.reason, "refund_required": event.refund_required},
+            tenant_id=event.tenant_id,
         )
 
     def handle_delivery_assigned(self, event: DeliveryAssigned) -> dict[str, Any]:
@@ -114,6 +118,7 @@ class AgenteWhatsAppStatusService:
                 "delivery_person_name": event.delivery_person_name,
                 "estimated_minutes": event.estimated_minutes,
             },
+            tenant_id=event.tenant_id,
         )
 
     def handle_delivery_completed(self, event: DeliveryCompleted) -> dict[str, Any]:
@@ -126,6 +131,7 @@ class AgenteWhatsAppStatusService:
                 "delivery_person_id": event.delivery_person_id,
                 "duration_minutes": event.duration_minutes,
             },
+            tenant_id=event.tenant_id,
         )
 
     def queue_order_status(
@@ -133,8 +139,13 @@ class AgenteWhatsAppStatusService:
         order_id: str,
         notification_type: str,
         payload: dict[str, Any] | None = None,
+        *,
+        tenant_id: str | None = None,
     ) -> dict[str, Any]:
-        order = self._db.query(Order).filter(Order.id == order_id).first()
+        query = self._db.query(Order).filter(Order.id == order_id)
+        if tenant_id:
+            query = query.filter(Order.tenant_id == tenant_id)
+        order = query.first()
         if not order:
             return {"queued": False, "reason": "order_not_found", "order_id": order_id}
 
@@ -152,11 +163,12 @@ class AgenteWhatsAppStatusService:
             provider="official",
             origin="order_status",
             ai_enabled=False,
-            metadata={"source": "order_status", "order_id": order.id},
+            metadata={"source": "order_status", "order_id": order.id, "tenant_id": order.tenant_id},
         )
 
         message = AgenteWhatsAppMessage(
             id=str(uuid.uuid4()),
+            tenant_id=order.tenant_id,
             session_id=session.id,
             customer_id=session.customer_id or order.customer_id,
             direction="outbound",
@@ -179,6 +191,7 @@ class AgenteWhatsAppStatusService:
         self._db.add(
             AgenteWhatsAppEvent(
                 id=str(uuid.uuid4()),
+                tenant_id=order.tenant_id,
                 session_id=session.id,
                 customer_id=session.customer_id or order.customer_id,
                 order_id=order.id,

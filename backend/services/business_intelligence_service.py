@@ -5,10 +5,11 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Iterable
 
-from sqlalchemy import distinct, func, text
+from sqlalchemy import distinct, func, or_, text
 from sqlalchemy.orm import Session
 
 from backend.core.local_time import local_period_bounds, local_today, to_store_datetime
+from backend.core.wave6_tenant_orm import wave6_tenant_orm_enabled
 from backend.models.business_intelligence import BusinessInsight, ProductPerformance
 from backend.models.customer import Address, Customer
 from backend.models.customer_event import CustomerEvent
@@ -75,8 +76,9 @@ class BusinessIntelligenceService:
     )
     PERIOD_DAYS = {"7d": 7, "30d": 30, "90d": 90}
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_id: str):
         self._db = db
+        self._tenant_id = tenant_id
 
     def dashboard(self, period: str = "30d", date_from: date | None = None, date_to: date | None = None) -> dict:
         bounds = self.resolve_bounds(period, date_from, date_to)
@@ -134,7 +136,13 @@ class BusinessIntelligenceService:
         )
         visitors_today = self._visitor_access_count(start_dt, end_dt)
         online_counts = self._online_presence_counts()
-        whatsapp_metrics = AgenteWhatsAppService(self._db).operational_metrics()
+        # Agente WhatsApp has a separate Wave 6 migration.  Do not query its
+        # still-global tables through BI after this route is unlocked.
+        whatsapp_metrics = (
+            self._empty_whatsapp_metrics()
+            if wave6_tenant_orm_enabled()
+            else AgenteWhatsAppService(self._db).operational_metrics()
+        )
 
         return {
             "date": selected_date.isoformat(),
@@ -169,7 +177,11 @@ class BusinessIntelligenceService:
         cancelled = all_orders.filter(Order.status.in_(self.CANCELLED_STATUSES)).count()
         new_customers = (
             self._db.query(Customer)
-            .filter(Customer.created_at >= start_dt, Customer.created_at <= end_dt)
+            .filter(
+                Customer.tenant_id == self._tenant_id,
+                Customer.created_at >= start_dt,
+                Customer.created_at <= end_dt,
+            )
             .count()
         )
         recurring_customers = (
@@ -181,7 +193,11 @@ class BusinessIntelligenceService:
         )
         payment_problems = (
             self._db.query(Payment)
-            .filter(Payment.created_at >= start_dt, Payment.created_at <= end_dt)
+            .filter(
+                Payment.tenant_id == self._tenant_id,
+                Payment.created_at >= start_dt,
+                Payment.created_at <= end_dt,
+            )
             .filter(Payment.status.in_(self.PAYMENT_PROBLEM_STATUSES))
             .count()
         )
@@ -302,7 +318,14 @@ class BusinessIntelligenceService:
             .join(Order, Order.id == OrderItem.order_id)
             .join(Payment, Payment.order_id == Order.id)
             .outerjoin(Product, Product.id == OrderItem.product_id)
-            .filter(Order.created_at >= start_dt, Order.created_at <= end_dt)
+            .filter(
+                OrderItem.tenant_id == self._tenant_id,
+                Order.tenant_id == self._tenant_id,
+                Payment.tenant_id == self._tenant_id,
+                or_(Product.id.is_(None), Product.tenant_id == self._tenant_id),
+                Order.created_at >= start_dt,
+                Order.created_at <= end_dt,
+            )
             .filter(Payment.status.in_(self.PAID_PAYMENT_STATUSES))
             .filter(~Order.status.in_(self.CANCELLED_STATUSES))
             .group_by(OrderItem.product_id, Product.name, Product.category)
@@ -346,20 +369,21 @@ class BusinessIntelligenceService:
     ) -> dict:
         now = datetime.now(timezone.utc)
         inactive_cutoff = now - timedelta(days=30)
-        total_customers = self._db.query(Customer).count()
-        new_customers = self._db.query(Customer).filter(Customer.created_at >= start_dt, Customer.created_at <= end_dt).count()
+        customers_q = self._db.query(Customer).filter(Customer.tenant_id == self._tenant_id)
+        total_customers = customers_q.count()
+        new_customers = customers_q.filter(Customer.created_at >= start_dt, Customer.created_at <= end_dt).count()
         inactive = (
-            self._db.query(Customer)
+            customers_q
             .filter((Customer.last_order_at.is_(None)) | (Customer.last_order_at < inactive_cutoff))
             .count()
         )
-        high_value_threshold = self._db.query(func.coalesce(func.avg(Customer.total_spent), 0)).scalar() or 0
-        high_value = self._db.query(Customer).filter(Customer.total_spent > high_value_threshold, Customer.total_orders > 1).count()
-        recurring = self._db.query(Customer).filter(Customer.total_orders > 1).count()
-        low_ticket = self._db.query(Customer).filter(Customer.total_orders > 0, Customer.avg_ticket < 50).count()
+        high_value_threshold = customers_q.with_entities(func.coalesce(func.avg(Customer.total_spent), 0)).scalar() or 0
+        high_value = customers_q.filter(Customer.total_spent > high_value_threshold, Customer.total_orders > 1).count()
+        recurring = customers_q.filter(Customer.total_orders > 1).count()
+        low_ticket = customers_q.filter(Customer.total_orders > 0, Customer.avg_ticket < 50).count()
 
         top_rows = (
-            self._db.query(Customer)
+            customers_q
             .filter(Customer.total_orders > 0)
             .order_by(Customer.total_spent.desc())
             .limit(8)
@@ -404,7 +428,11 @@ class BusinessIntelligenceService:
         date_from: date | None = None,
         date_to: date | None = None,
     ) -> dict:
-        events_q = self._db.query(CustomerEvent).filter(CustomerEvent.created_at >= start_dt, CustomerEvent.created_at <= end_dt)
+        events_q = self._db.query(CustomerEvent).filter(
+            CustomerEvent.tenant_id == self._tenant_id,
+            CustomerEvent.created_at >= start_dt,
+            CustomerEvent.created_at <= end_dt,
+        )
         events_rows = (
             events_q.with_entities(CustomerEvent.event_type, func.count(CustomerEvent.id))
             .group_by(CustomerEvent.event_type)
@@ -426,6 +454,7 @@ class BusinessIntelligenceService:
         spend = self._round(
             self._db.query(func.coalesce(func.sum(AdDailyMetric.spend), 0))
             .filter(
+                AdDailyMetric.tenant_id == self._tenant_id,
                 AdDailyMetric.metric_date >= (date_from or start_dt.date()),
                 AdDailyMetric.metric_date <= (date_to or end_dt.date()),
             )
@@ -473,12 +502,14 @@ class BusinessIntelligenceService:
             FROM visitor_profiles
             WHERE last_seen_at >= :start_dt
               AND last_seen_at <= :end_dt
+              AND tenant_id = :tenant_id
               AND neighborhood IS NOT NULL
               AND TRIM(neighborhood) <> ''
               AND (
                 EXISTS (
                   SELECT 1 FROM visitor_events ve
                   WHERE ve.visitor_id = visitor_profiles.id
+                    AND ve.tenant_id = :tenant_id
                     AND ve.created_at >= :start_dt
                     AND ve.created_at <= :end_dt
                     AND {_public_tracking_sql("ve.page")}
@@ -486,6 +517,7 @@ class BusinessIntelligenceService:
                 OR EXISTS (
                   SELECT 1 FROM visitor_sessions vs
                   WHERE vs.visitor_id = visitor_profiles.id
+                    AND vs.tenant_id = :tenant_id
                     AND vs.started_at >= :start_dt
                     AND vs.started_at <= :end_dt
                     AND {_public_tracking_sql("vs.landing_page")}
@@ -493,7 +525,7 @@ class BusinessIntelligenceService:
               )
             GROUP BY COALESCE(NULLIF(TRIM(neighborhood), ''), 'Sem bairro')
             """),
-            {"start_dt": start_dt, "end_dt": end_dt},
+            {"start_dt": start_dt, "end_dt": end_dt, "tenant_id": self._tenant_id},
         ).fetchall()
         by_key: dict[str, dict] = {}
         for row in raw_visitor_rows:
@@ -519,13 +551,15 @@ class BusinessIntelligenceService:
             JOIN visitor_profiles vp ON vp.id = ve.visitor_id
             WHERE ve.created_at >= :start_dt
               AND ve.created_at <= :end_dt
+              AND ve.tenant_id = :tenant_id
+              AND vp.tenant_id = :tenant_id
               AND ve.event_type = 'order_created'
               AND {_public_tracking_sql("ve.page")}
               AND vp.neighborhood IS NOT NULL
               AND TRIM(vp.neighborhood) <> ''
             GROUP BY COALESCE(NULLIF(TRIM(vp.neighborhood), ''), 'Sem bairro')
             """),
-            {"start_dt": start_dt, "end_dt": end_dt},
+            {"start_dt": start_dt, "end_dt": end_dt, "tenant_id": self._tenant_id},
         ).fetchall()
         for row in raw_visitor_order_rows:
             name = row[0] or "Sem bairro"
@@ -550,7 +584,13 @@ class BusinessIntelligenceService:
             )
             .join(Order, Order.address_id == Address.id)
             .join(Payment, Payment.order_id == Order.id)
-            .filter(Order.created_at >= start_dt, Order.created_at <= end_dt)
+            .filter(
+                Address.tenant_id == self._tenant_id,
+                Order.tenant_id == self._tenant_id,
+                Payment.tenant_id == self._tenant_id,
+                Order.created_at >= start_dt,
+                Order.created_at <= end_dt,
+            )
             .filter(Payment.status.in_(self.PAID_PAYMENT_STATUSES))
             .filter(~Order.status.in_(self.CANCELLED_STATUSES))
             .filter(Address.neighborhood.isnot(None), func.trim(Address.neighborhood) != "")
@@ -734,14 +774,17 @@ class BusinessIntelligenceService:
         }
 
     def latest_insights(self, status: str | None = None, limit: int = 50) -> list[dict]:
-        q = self._db.query(BusinessInsight)
+        q = self._db.query(BusinessInsight).filter(BusinessInsight.tenant_id == self._tenant_id)
         if status:
             q = q.filter(BusinessInsight.status == status)
         rows = q.order_by(BusinessInsight.created_at.desc()).limit(limit).all()
         return [self._insight_row_to_dict(row) for row in rows]
 
     def update_insight_status(self, insight_id: str, status: str) -> dict:
-        row = self._db.query(BusinessInsight).filter(BusinessInsight.id == insight_id).first()
+        row = self._db.query(BusinessInsight).filter(
+            BusinessInsight.id == insight_id,
+            BusinessInsight.tenant_id == self._tenant_id,
+        ).first()
         if not row:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Insight nao encontrado.")
@@ -759,13 +802,20 @@ class BusinessIntelligenceService:
         return self._period_payload(bounds)
 
     def _orders_in_period(self, start_dt: datetime, end_dt: datetime):
-        return self._db.query(Order).filter(Order.created_at >= start_dt, Order.created_at <= end_dt)
+        return self._db.query(Order).filter(
+            Order.tenant_id == self._tenant_id,
+            Order.created_at >= start_dt,
+            Order.created_at <= end_dt,
+        )
 
     def _paid_orders_in_period(self, start_dt: datetime, end_dt: datetime):
         return (
             self._orders_in_period(start_dt, end_dt)
             .join(Payment, Payment.order_id == Order.id)
-            .filter(Payment.status.in_(self.PAID_PAYMENT_STATUSES))
+            .filter(
+                Payment.tenant_id == self._tenant_id,
+                Payment.status.in_(self.PAID_PAYMENT_STATUSES),
+            )
             .filter(~Order.status.in_(self.CANCELLED_STATUSES))
         )
 
@@ -775,8 +825,9 @@ class BusinessIntelligenceService:
             text("""
             SELECT COALESCE(online_visitor_minutes, 5)
             FROM marketing_settings
-            WHERE id = 'default'
-            """)
+            WHERE tenant_id = :tenant_id
+            """),
+            {"tenant_id": self._tenant_id},
         ).scalar() or 5
         try:
             online_minutes = max(int(online_minutes), 1)
@@ -789,9 +840,10 @@ class BusinessIntelligenceService:
             SELECT COUNT(DISTINCT visitor_id)
             FROM visitor_events
             WHERE created_at >= :online_since
+              AND tenant_id = :tenant_id
               AND {_public_tracking_sql("page")}
             """),
-            {"online_since": online_since},
+            {"online_since": online_since, "tenant_id": self._tenant_id},
         ).scalar() or 0
         customers = self._db.execute(
             text("""
@@ -799,8 +851,9 @@ class BusinessIntelligenceService:
             FROM customer_events
             WHERE created_at >= :online_since
               AND customer_id IS NOT NULL
+              AND tenant_id = :tenant_id
             """),
-            {"online_since": online_since},
+            {"online_since": online_since, "tenant_id": self._tenant_id},
         ).scalar() or 0
         return {"visitors": int(visitors), "customers": int(customers)}
 
@@ -813,15 +866,17 @@ class BusinessIntelligenceService:
                 SELECT DISTINCT visitor_id
                 FROM visitor_events
                 WHERE created_at >= :start_dt AND created_at <= :end_dt
+                  AND tenant_id = :tenant_id
                   AND {_public_tracking_sql("page")}
                 UNION
                 SELECT DISTINCT visitor_id
                 FROM visitor_sessions
                 WHERE started_at >= :start_dt AND started_at <= :end_dt
+                  AND tenant_id = :tenant_id
                   AND {_public_tracking_sql("landing_page")}
             ) period_visitors
             """),
-            {"start_dt": start_dt, "end_dt": end_dt},
+            {"start_dt": start_dt, "end_dt": end_dt, "tenant_id": self._tenant_id},
         ).scalar()
         return int(total or 0)
 
@@ -830,7 +885,10 @@ class BusinessIntelligenceService:
         for item in insights:
             row = (
                 self._db.query(BusinessInsight)
-                .filter(BusinessInsight.dedupe_key == self._dedupe_key(item, bounds))
+                .filter(
+                    BusinessInsight.tenant_id == self._tenant_id,
+                    BusinessInsight.dedupe_key == self._dedupe_key(item, bounds),
+                )
                 .first()
             )
             if row and row.status in ("resolved", "ignored"):
@@ -849,10 +907,14 @@ class BusinessIntelligenceService:
         saved: list[dict] = []
         for item in insights:
             dedupe_key = self._dedupe_key(item, bounds)
-            row = self._db.query(BusinessInsight).filter(BusinessInsight.dedupe_key == dedupe_key).first()
+            row = self._db.query(BusinessInsight).filter(
+                BusinessInsight.tenant_id == self._tenant_id,
+                BusinessInsight.dedupe_key == dedupe_key,
+            ).first()
             if row is None:
                 row = BusinessInsight(
                     id=str(uuid.uuid4()),
+                    tenant_id=self._tenant_id,
                     dedupe_key=dedupe_key,
                     status="active",
                     created_at=datetime.now(timezone.utc),
@@ -878,11 +940,15 @@ class BusinessIntelligenceService:
 
     def _save_product_performance(self, products: list[dict], bounds: dict) -> None:
         metric_date = bounds["date_to"]
-        self._db.query(ProductPerformance).filter(ProductPerformance.metric_date == metric_date).delete(synchronize_session=False)
+        self._db.query(ProductPerformance).filter(
+            ProductPerformance.tenant_id == self._tenant_id,
+            ProductPerformance.metric_date == metric_date,
+        ).delete(synchronize_session=False)
         now = datetime.now(timezone.utc)
         for item in products:
             self._db.add(ProductPerformance(
                 id=str(uuid.uuid4()),
+                tenant_id=self._tenant_id,
                 metric_date=metric_date,
                 product_id=item.get("product_id"),
                 product_name_snapshot=item["name"],
@@ -960,7 +1026,12 @@ class BusinessIntelligenceService:
         return (
             self._db.query(Delivery)
             .join(Order, Order.id == Delivery.order_id)
-            .filter(Order.created_at >= start_dt, Order.created_at <= end_dt)
+            .filter(
+                Delivery.tenant_id == self._tenant_id,
+                Order.tenant_id == self._tenant_id,
+                Order.created_at >= start_dt,
+                Order.created_at <= end_dt,
+            )
             .filter(Order.delivered_at.isnot(None))
             .filter(Order.total_time_minutes.isnot(None))
             .filter(Order.total_time_minutes > Order.target_delivery_minutes)
@@ -1013,3 +1084,20 @@ class BusinessIntelligenceService:
 
     def _round(self, value) -> float:
         return round(float(value or 0), 2)
+
+    @staticmethod
+    def _empty_whatsapp_metrics() -> dict[str, int | str]:
+        return {
+            "chatbots_online": 0,
+            "conversations_online": 0,
+            "active_attendances": 0,
+            "waiting_response": 0,
+            "finalized_today": 0,
+            "unread_messages": 0,
+            "avg_response_time_seconds": 0,
+            "avg_attendance_time_seconds": 0,
+            "simultaneous_attendances": 0,
+            "active_ai_agents": 0,
+            "human_attendants_online": 0,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }

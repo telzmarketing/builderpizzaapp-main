@@ -128,18 +128,30 @@ async def lifespan(app: FastAPI):
     bus.subscribe(DeliveryCompleted, erp_delivery_completed_handler)
     bus.subscribe(DeliveryCompleted, push_notification_handler)
 
+    def _event_tenant_id(event) -> str:
+        tenant_id = getattr(event, "tenant_id", None)
+        if tenant_id:
+            return tenant_id
+        if get_settings().TENANT_BACKGROUND_CONTEXT_ENABLED:
+            from backend.core.tenant_context import TenantContextMissing
+
+            raise TenantContextMissing("Evento assíncrono sem tenant confiavel.")
+        return "default"
+
     def _finance_payment_confirmed_handler(event: PaymentConfirmed):
         try:
             with SessionLocal() as db:
                 from backend.services.finance_service import FinanceService
 
-                FinanceService(db).sync_payment_confirmed(
+                FinanceService(db, _event_tenant_id(event)).sync_payment_confirmed(
                     payment_id=event.payment_id,
                     order_id=event.order_id,
                     amount=event.amount,
                     gateway=event.gateway,
                     transaction_id=event.transaction_id,
                 )
+        except TenantContextError:
+            raise
         except Exception:
             pass
 
@@ -150,7 +162,7 @@ async def lifespan(app: FastAPI):
             with SessionLocal() as db:
                 from backend.services.finance_service import FinanceService
 
-                FinanceService(db).sync_payment_reversed(
+                FinanceService(db, _event_tenant_id(event)).sync_payment_reversed(
                     payment_id=event.payment_id,
                     order_id=event.order_id,
                     amount=event.amount,
@@ -158,6 +170,8 @@ async def lifespan(app: FastAPI):
                     transaction_id=event.transaction_id,
                     reason=event.reason,
                 )
+        except TenantContextError:
+            raise
         except Exception:
             pass
 
@@ -168,7 +182,9 @@ async def lifespan(app: FastAPI):
             with SessionLocal() as db:
                 from backend.services.finance_service import FinanceService
 
-                FinanceService(db).sync_purchase_confirmed(purchase_id=event.purchase_id)
+                FinanceService(db, _event_tenant_id(event)).sync_purchase_confirmed(purchase_id=event.purchase_id)
+        except TenantContextError:
+            raise
         except Exception:
             pass
 
@@ -205,6 +221,8 @@ async def lifespan(app: FastAPI):
                 elif isinstance(event, EvDeliveryCompleted):
                     service.handle_delivery_completed(event)
                 db.commit()
+        except TenantContextError:
+            raise
         except Exception:
             pass
 
@@ -223,6 +241,8 @@ async def lifespan(app: FastAPI):
 
                 DeliveryDriverWhatsAppService(db).handle_delivery_assigned(event)
                 db.commit()
+        except TenantContextError:
+            raise
         except Exception:
             pass
 
@@ -1323,6 +1343,7 @@ app.include_router(crm_routes.router)
 app.include_router(marketing_routes.router)
 app.include_router(marketing_routes.public_router)
 app.include_router(whatsapp_marketing_routes.router)
+app.include_router(whatsapp_marketing_routes.webhook_router)
 app.include_router(customer_contact_risk_routes.router)
 app.include_router(email_marketing_routes.router)
 app.include_router(automations_routes.router)
@@ -1335,6 +1356,7 @@ app.include_router(bi_routes.router)
 app.include_router(store_notifications_routes.router)
 app.include_router(upsells_routes.router)
 app.include_router(agente_whatsapp_routes.router)
+app.include_router(agente_whatsapp_routes.webhook_router)
 app.include_router(whatsapp_gateway_routes.router)
 app.include_router(salao_routes.router)
 app.include_router(salao_page_routes.router)
@@ -1373,6 +1395,7 @@ app.include_router(store_operation.router, prefix="/api")
 app.include_router(marketing_routes.router, prefix="/api")
 app.include_router(marketing_routes.public_router, prefix="/api")
 app.include_router(whatsapp_marketing_routes.router, prefix="/api")
+app.include_router(whatsapp_marketing_routes.webhook_router, prefix="/api")
 app.include_router(customer_contact_risk_routes.router, prefix="/api")
 app.include_router(email_marketing_routes.router, prefix="/api")
 app.include_router(automations_routes.router, prefix="/api")
@@ -1391,6 +1414,7 @@ app.include_router(bi_routes.router, prefix="/api")
 app.include_router(store_notifications_routes.router, prefix="/api")
 app.include_router(upsells_routes.router, prefix="/api")
 app.include_router(agente_whatsapp_routes.router, prefix="/api")
+app.include_router(agente_whatsapp_routes.webhook_router, prefix="/api")
 app.include_router(whatsapp_gateway_routes.router, prefix="/api")
 app.include_router(salao_routes.router, prefix="/api")
 app.include_router(salao_page_routes.router, prefix="/api")
@@ -1418,8 +1442,9 @@ app.include_router(upload_optimized_routes.router, prefix="/api")
 # ── Static files (uploaded images) ───────────────────────────────────────────
 # Must be mounted AFTER all route registrations.
 os.makedirs("uploads", exist_ok=True)
-app.mount("/uploads", CachedStaticFiles(directory="uploads", html=False), name="uploads")
-app.mount("/api/uploads", CachedStaticFiles(directory="uploads", html=False), name="api-uploads")
+if not settings.TENANT_UPLOAD_NAMESPACE_ENABLED:
+    app.mount("/uploads", CachedStaticFiles(directory="uploads", html=False), name="uploads")
+    app.mount("/api/uploads", CachedStaticFiles(directory="uploads", html=False), name="api-uploads")
 
 # ── Health check ──────────────────────────────────────────────────────────────
 @app.get("/health", tags=["system"])
@@ -1445,6 +1470,7 @@ def readiness():
 # ── Global exception handlers ─────────────────────────────────────────────────
 
 from backend.core.exceptions import DomainError  # noqa: E402
+from backend.core.tenant_context import TenantContextError  # noqa: E402
 
 @app.exception_handler(DomainError)
 async def domain_error_handler(request, exc: DomainError):
@@ -1454,6 +1480,18 @@ async def domain_error_handler(request, exc: DomainError):
         content={
             "success": False,
             "error": {"code": exc.code, "message": exc.message},
+        },
+    )
+
+
+@app.exception_handler(TenantContextError)
+async def tenant_context_error_handler(request, exc: TenantContextError):
+    """Fail closed when a tenant-owned route cannot prove trusted ownership."""
+    return JSONResponse(
+        status_code=403,
+        content={
+            "success": False,
+            "error": {"code": type(exc).__name__, "message": str(exc)},
         },
     )
 

@@ -1,6 +1,6 @@
 # Metodo de instalacao VPS por fases - Telz
 
-Atualizado em: 2026-09-29
+Atualizado em: 2026-10-04
 
 Este documento descreve os gates operacionais atuais. Ele nao e um segundo
 instalador manual: os comandos avulsos antigos de criar usuario, banco, units,
@@ -29,12 +29,17 @@ pacote offline de dependencias, hashes e commits promovidos pelo workflow.
 Todos os componentes operacionais devem convergir para um unico target:
 
 ```text
-20260930_tenant_runtime_uniqueness
+20261003_agente_whatsapp_tenant_foundation
 ```
 
 Confirme antes de qualquer alteracao que:
 
 - o commit publicado possui exatamente esse unico head;
+- a cadeia termina em `20261003_agente_whatsapp_tenant_foundation`, passando por
+  `20261003_marketing_workflow_tenant_isolation`, `20261003_chatbot_tenant_keys`,
+  `20261003_marketing_tenant_keys`,
+  `20261003_whatsapp_meta_webhook_tenant_keys` e
+  `20261003_email_marketing_tenant_config`;
 - `installer/config/defaults.env`, updater e workflow usam o mesmo valor;
 - o banco existente possui uma unica revision conhecida;
 - existe caminho forward e compatibilidade de rollback de aplicacao.
@@ -71,7 +76,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Use inicialmente:
 
 ```env
-ALEMBIC_TARGET=20260930_tenant_runtime_uniqueness
+ALEMBIC_TARGET=20261003_agente_whatsapp_tenant_foundation
 INSTALL_SSL=false
 ```
 
@@ -102,7 +107,7 @@ Gates durante a execucao:
 
 - confirmar plano e migration quando solicitado;
 - preservar banco, uploads, certificados, backups e `.runtime/baileys`;
-- exigir um unico head igual a `20260930_tenant_runtime_uniqueness`;
+- exigir um unico head igual a `20261003_agente_whatsapp_tenant_foundation`;
 - executar testes/build e validar units/Nginx;
 - nao executar a aplicacao como root;
 - nao iniciar duas instalacoes simultaneas.
@@ -160,7 +165,7 @@ sudo /usr/local/bin/backup-telz /opt/telz
 sudo readlink -f /var/backups/telz/latest
 ```
 
-Gate: uma unica revision `20260930_tenant_runtime_uniqueness`, backup validado e restore
+Gate: uma unica revision `20261003_agente_whatsapp_tenant_foundation`, backup validado e restore
 ensaiado em PostgreSQL 15 fora de producao. Dump criado, `compileall`, SQL
 offline e adapter/mocks nao provam restore nem migration real.
 

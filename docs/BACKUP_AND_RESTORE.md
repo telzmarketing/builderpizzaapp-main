@@ -104,7 +104,7 @@ PostgreSQL 15:
 2. checksums, manifest e `pg_restore --list` forem aprovados;
 3. o restore terminar sem erro;
 4. `SELECT 1`, `alembic current` e o health check convergirem;
-5. a revision for unica e igual a `20260930_tenant_runtime_uniqueness` para esta entrega;
+5. a revision for unica e igual a `20261003_agente_whatsapp_tenant_foundation` para esta entrega;
 6. uploads e sessao Baileys forem verificados sem expor segredos;
 7. login e fluxos criticos forem testados;
 8. duracao, resultado, responsavel e procedimento de retorno forem registrados.

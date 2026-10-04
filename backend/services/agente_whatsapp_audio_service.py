@@ -11,6 +11,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.config import PROJECT_ROOT, get_ai_api_key, get_settings
+from backend.core.tenant_context import TenantContext
+from backend.core.wave6_tenant_context import wave6_tenant_id
 from backend.models.agente_whatsapp import (
     AgenteWhatsAppAISettings,
     AgenteWhatsAppAudioArtifact,
@@ -66,12 +68,17 @@ def _safe_error(value: Any) -> str:
 
 
 class AgenteWhatsAppAudioService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
         self._settings = get_settings()
+        self._tenant_context = tenant_context
+        self._tenant_id = wave6_tenant_id(tenant_context)
 
     def transcribe_message(self, message_id: str, *, force: bool = False) -> dict[str, Any]:
-        message = self._db.query(AgenteWhatsAppMessage).filter(AgenteWhatsAppMessage.id == message_id).first()
+        message = self._db.query(AgenteWhatsAppMessage).filter(
+            AgenteWhatsAppMessage.id == message_id,
+            AgenteWhatsAppMessage.tenant_id == self._tenant_id,
+        ).first()
         if not message:
             raise ValueError("Mensagem do AGENTE WHATSAPP nao encontrada.")
         if message.message_type != "audio":
@@ -157,7 +164,10 @@ class AgenteWhatsAppAudioService:
     ) -> dict[str, Any]:
         response_message = (
             self._db.query(AgenteWhatsAppMessage)
-            .filter(AgenteWhatsAppMessage.id == response_message_id)
+            .filter(
+                AgenteWhatsAppMessage.id == response_message_id,
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
+            )
             .first()
         )
         if not response_message:
@@ -168,6 +178,8 @@ class AgenteWhatsAppAudioService:
             raise ValueError("A mensagem informada nao e uma resposta textual para TTS.")
         if not response_message.session:
             raise ValueError("Sessao da resposta textual nao encontrada para TTS.")
+        if response_message.session.tenant_id != self._tenant_id:
+            raise ValueError("Sessao da resposta textual nao pertence ao tenant.")
 
         existing_audio = self._existing_tts_message(response_message.id)
         if existing_audio and not force:
@@ -180,11 +192,13 @@ class AgenteWhatsAppAudioService:
         if not text_value:
             raise ValueError("Resposta textual vazia para gerar audio.")
 
-        audio_settings = AgenteWhatsAppAudioSettingsService(self._db).get_settings()
+        audio_settings = AgenteWhatsAppAudioSettingsService(self._db, self._tenant_context).get_settings()
         if not audio_settings["enabled"]:
             raise ValueError("Saida de audio desativada por configuracao.")
 
-        ai_settings = self._db.query(AgenteWhatsAppAISettings).filter(AgenteWhatsAppAISettings.id == "default").first()
+        ai_settings = self._db.query(AgenteWhatsAppAISettings).filter(
+            AgenteWhatsAppAISettings.tenant_id == self._tenant_id,
+        ).first()
         api_key = ((ai_settings.openai_api_key if ai_settings else "") or get_ai_api_key("OPENAI_API_KEY")).strip()
         provider = OpenAIProvider(api_key=api_key)
         result = provider.synthesize_speech(
@@ -205,7 +219,7 @@ class AgenteWhatsAppAudioService:
 
         from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 
-        audio_message = AgenteWhatsAppService(self._db).add_message(
+        audio_message = AgenteWhatsAppService(self._db, self._tenant_context).add_message(
             response_message.session,
             direction="outbound",
             sender_type="ai",
@@ -328,7 +342,11 @@ class AgenteWhatsAppAudioService:
 
     def _load_meta_credentials(self) -> dict[str, Any]:
         conn = self._db.execute(
-            text("SELECT credentials_json FROM integration_connections WHERE integration_type = 'whatsapp_cloud'")
+            text(
+                "SELECT credentials_json FROM integration_connections "
+                "WHERE integration_type = 'whatsapp_cloud' AND tenant_id = :tenant_id"
+            ),
+            {"tenant_id": self._tenant_id},
         ).fetchone()
         if not conn or not conn[0]:
             return {}
@@ -366,6 +384,7 @@ class AgenteWhatsAppAudioService:
     ) -> AgenteWhatsAppAudioArtifact:
         artifact = AgenteWhatsAppAudioArtifact(
             id=str(uuid.uuid4()),
+            tenant_id=self._tenant_id,
             message_id=message.id,
             artifact_type="original",
             storage_key=storage_key,
@@ -412,6 +431,7 @@ class AgenteWhatsAppAudioService:
     ) -> AgenteWhatsAppAudioArtifact:
         artifact = AgenteWhatsAppAudioArtifact(
             id=str(uuid.uuid4()),
+            tenant_id=self._tenant_id,
             message_id=message.id,
             artifact_type="tts",
             storage_key=storage_key,
@@ -430,7 +450,9 @@ class AgenteWhatsAppAudioService:
         return artifact
 
     def _transcribe_with_fallback(self, file_path: Path) -> dict[str, Any]:
-        ai_settings = self._db.query(AgenteWhatsAppAISettings).filter(AgenteWhatsAppAISettings.id == "default").first()
+        ai_settings = self._db.query(AgenteWhatsAppAISettings).filter(
+            AgenteWhatsAppAISettings.tenant_id == self._tenant_id,
+        ).first()
         api_key = ((ai_settings.openai_api_key if ai_settings else "") or get_ai_api_key("OPENAI_API_KEY")).strip()
         provider = OpenAIProvider(api_key=api_key)
         primary_model = self._settings.WHATSAPP_AUDIO_STT_MODEL
@@ -502,6 +524,7 @@ class AgenteWhatsAppAudioService:
         return (
             self._db.query(AgenteWhatsAppMessage)
             .filter(
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.direction == "outbound",
                 AgenteWhatsAppMessage.message_type == "audio",
                 AgenteWhatsAppMessage.response_to_message_id == response_message_id,
@@ -525,7 +548,7 @@ class AgenteWhatsAppAudioService:
 
     def _prepare_tts_text(self, text_value: str) -> str:
         cleaned = " ".join((text_value or "").split())
-        audio_settings = AgenteWhatsAppAudioSettingsService(self._db).get_settings()
+        audio_settings = AgenteWhatsAppAudioSettingsService(self._db, self._tenant_context).get_settings()
         max_chars = max(120, int(audio_settings["max_chars"] or 900))
         if len(cleaned) <= max_chars:
             return cleaned

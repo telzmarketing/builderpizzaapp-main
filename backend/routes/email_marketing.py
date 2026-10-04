@@ -20,11 +20,13 @@ except Exception:  # pragma: no cover - dependency is declared, fallback keeps a
     dns = None
 
 from backend.database import get_db, Base
+from backend.core.tenant_context import TenantContext
+from backend.core.wave6_tenant_context import WAVE6_SESSION_TENANT_KEY, panel_wave6_context, wave6_tenant_id
 from backend.core.wave6_tenant_orm import wave6_tenant_column
 from backend.routes.admin_auth import get_current_admin
 from backend.core.response import ok, created
 
-router = APIRouter(prefix="/email", tags=["email-marketing"])
+router = APIRouter(prefix="/email", tags=["email-marketing"], dependencies=[Depends(panel_wave6_context)])
 
 EMAIL_NOT_FOUND_ERROR = "Email não existe"
 
@@ -105,7 +107,7 @@ class EmailCampaign(Base):
 class EmailConfig(Base):
     __tablename__ = "email_config"
     tenant_id = wave6_tenant_column("email_config")
-    id = Column(String, primary_key=True, default="default")
+    id = Column(String, primary_key=True)
     provider = Column(String(30), default="smtp")
     smtp_host = Column(String(200), default="")
     smtp_port = Column(Integer, default=587)
@@ -200,6 +202,10 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _tenant_id(db: Session) -> str:
+    return wave6_tenant_id(db.info.get(WAVE6_SESSION_TENANT_KEY))
+
+
 def _normalize_email_address(value: str | None) -> tuple[str | None, str | None]:
     email = (value or "").strip()
     if not email:
@@ -275,10 +281,10 @@ def _prepare_email_contact_list_contacts(contacts: list[EmailContactListItemPayl
     return result
 
 
-def _get_config(db: Session) -> EmailConfig:
-    cfg = db.query(EmailConfig).filter(EmailConfig.id == "default").first()
+def _get_config(db: Session, tenant_id: str) -> EmailConfig:
+    cfg = db.query(EmailConfig).filter(EmailConfig.tenant_id == tenant_id).first()
     if not cfg:
-        cfg = EmailConfig(id="default")
+        cfg = EmailConfig(id=f"email-config-{tenant_id}", tenant_id=tenant_id)
         db.add(cfg)
         db.commit()
         db.refresh(cfg)
@@ -336,7 +342,7 @@ def _send_email(to_email: str, subject: str, body_html: str, cfg: EmailConfig) -
 
 
 def _resolve_recipients(customer_ids: list[str], group_id: Optional[str],
-                         contact_list_id: Optional[str], emails: list[str], db: Session) -> list[dict]:
+                         contact_list_id: Optional[str], emails: list[str], db: Session, tenant_id: str) -> list[dict]:
     """Resolve recipients to list of {id?, name?, email}."""
     result: list[dict] = []
     seen: set[str] = set()
@@ -345,24 +351,26 @@ def _resolve_recipients(customer_ids: list[str], group_id: Optional[str],
             "SELECT i.name, i.email FROM email_contact_list_items i "
             "JOIN email_contact_lists l ON l.id = i.list_id "
             "WHERE i.list_id = :list_id AND l.active = TRUE "
+            "AND i.tenant_id = :tenant_id AND l.tenant_id = :tenant_id "
             "ORDER BY i.created_at ASC"
-        ), {"list_id": contact_list_id}).fetchall()
+        ), {"list_id": contact_list_id, "tenant_id": tenant_id}).fetchall()
         for row in rows:
             _append_email_recipient(result, seen, row[1], name=row[0])
     if group_id:
         rows = db.execute(text(
             "SELECT c.id, c.name, c.email FROM customers c "
             "JOIN customer_group_members cgm ON cgm.customer_id = c.id "
-            "WHERE cgm.group_id = :gid AND c.email IS NOT NULL AND c.email != ''"
-        ), {"gid": group_id}).fetchall()
+            "WHERE cgm.group_id = :gid AND c.email IS NOT NULL AND c.email != '' "
+            "AND c.tenant_id = :tenant_id AND cgm.tenant_id = :tenant_id"
+        ), {"gid": group_id, "tenant_id": tenant_id}).fetchall()
         for row in rows:
             _append_email_recipient(result, seen, row[2], customer_id=row[0], name=row[1])
     if customer_ids:
         for cid in customer_ids:
             row = db.execute(text(
                 "SELECT id, name, email FROM customers WHERE id = :cid "
-                "AND email IS NOT NULL AND email != ''"
-            ), {"cid": cid}).fetchone()
+                "AND tenant_id = :tenant_id AND email IS NOT NULL AND email != ''"
+            ), {"cid": cid, "tenant_id": tenant_id}).fetchone()
             if row:
                 _append_email_recipient(result, seen, row[2], customer_id=row[0], name=row[1])
     if emails:
@@ -371,10 +379,10 @@ def _resolve_recipients(customer_ids: list[str], group_id: Optional[str],
     return result
 
 
-def _contact_list_to_dict(item: EmailContactList, db: Session, *, include_contacts: bool = False) -> dict:
+def _contact_list_to_dict(item: EmailContactList, db: Session, tenant_id: str, *, include_contacts: bool = False) -> dict:
     count = db.execute(
-        text("SELECT COUNT(*) FROM email_contact_list_items WHERE list_id = :list_id"),
-        {"list_id": item.id},
+        text("SELECT COUNT(*) FROM email_contact_list_items WHERE list_id = :list_id AND tenant_id = :tenant_id"),
+        {"list_id": item.id, "tenant_id": tenant_id},
     ).scalar() or 0
     payload = {
         "id": item.id,
@@ -389,19 +397,43 @@ def _contact_list_to_dict(item: EmailContactList, db: Session, *, include_contac
             text("""
                 SELECT id, name, email
                 FROM email_contact_list_items
-                WHERE list_id = :list_id
+                WHERE list_id = :list_id AND tenant_id = :tenant_id
                 ORDER BY created_at ASC
             """),
-            {"list_id": item.id},
+            {"list_id": item.id, "tenant_id": tenant_id},
         ).fetchall()
         payload["contacts"] = [{"id": r[0], "name": r[1], "email": r[2]} for r in rows]
     return payload
+
+
+def _assert_campaign_references(
+    db: Session,
+    tenant_id: str,
+    *,
+    template_id: str | None,
+    contact_list_id: str | None,
+    group_id: str | None,
+) -> None:
+    if template_id and not db.query(EmailTemplate.id).filter(
+        EmailTemplate.id == template_id, EmailTemplate.tenant_id == tenant_id
+    ).first():
+        raise HTTPException(404, "Template nao encontrado.")
+    if contact_list_id and not db.query(EmailContactList.id).filter(
+        EmailContactList.id == contact_list_id, EmailContactList.tenant_id == tenant_id
+    ).first():
+        raise HTTPException(404, "Lista de emails nao encontrada.")
+    if group_id and not db.execute(
+        text("SELECT id FROM customer_groups WHERE id = :group_id AND tenant_id = :tenant_id"),
+        {"group_id": group_id, "tenant_id": tenant_id},
+    ).fetchone():
+        raise HTTPException(404, "Grupo de clientes nao encontrado.")
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
 @router.get("/dashboard")
 def get_dashboard(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    tenant_id = _tenant_id(db)
     totals = db.execute(text("""
         SELECT
             COUNT(*) FILTER (WHERE status IN ('sent','delivered','opened','clicked')) AS sent,
@@ -412,17 +444,20 @@ def get_dashboard(db: Session = Depends(get_db), _=Depends(get_current_admin)):
             COUNT(*) FILTER (WHERE status = 'unsubscribed') AS unsubscribed,
             COUNT(*) FILTER (WHERE status = 'failed') AS errors
         FROM email_messages
-    """)).fetchone()
+        WHERE tenant_id = :tenant_id
+    """), {"tenant_id": tenant_id}).fetchone()
 
     camp_stats = db.execute(text("""
         SELECT
             COUNT(*) FILTER (WHERE status = 'running') AS active_campaigns,
             COUNT(*) FILTER (WHERE status = 'scheduled') AS scheduled_campaigns
         FROM email_campaigns
-    """)).fetchone()
+        WHERE tenant_id = :tenant_id
+    """), {"tenant_id": tenant_id}).fetchone()
 
     orders = db.execute(text(
-        "SELECT COUNT(*), COALESCE(SUM(total),0) FROM orders WHERE utm_medium = 'email'"
+        "SELECT COUNT(*), COALESCE(SUM(total),0) FROM orders WHERE tenant_id = :tenant_id AND utm_medium = 'email'",
+        {"tenant_id": tenant_id},
     )).fetchone()
 
     sent = totals[0] or 0
@@ -453,7 +488,7 @@ def get_dashboard(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 def list_templates(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     templates = (
         db.query(EmailTemplate)
-        .filter(EmailTemplate.active == True)  # noqa: E712
+        .filter(EmailTemplate.tenant_id == _tenant_id(db), EmailTemplate.active == True)  # noqa: E712
         .order_by(EmailTemplate.created_at.desc())
         .all()
     )
@@ -468,7 +503,7 @@ def list_templates(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 def create_template(body: EmailTemplateCreate, db: Session = Depends(get_db),
                     _=Depends(get_current_admin)):
     t = EmailTemplate(
-        id=str(uuid.uuid4()),
+        id=str(uuid.uuid4()), tenant_id=_tenant_id(db),
         name=body.name, subject=body.subject,
         body_html=body.body_html, category=body.category,
     )
@@ -481,7 +516,7 @@ def create_template(body: EmailTemplateCreate, db: Session = Depends(get_db),
 @router.patch("/templates/{template_id}")
 def update_template(template_id: str, body: EmailTemplateUpdate,
                     db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    t = db.query(EmailTemplate).filter(EmailTemplate.id == template_id).first()
+    t = db.query(EmailTemplate).filter(EmailTemplate.id == template_id, EmailTemplate.tenant_id == _tenant_id(db)).first()
     if not t:
         raise HTTPException(404, "Template não encontrado.")
     if body.name is not None:      t.name = body.name
@@ -497,7 +532,7 @@ def update_template(template_id: str, body: EmailTemplateUpdate,
 @router.delete("/templates/{template_id}")
 def delete_template(template_id: str, db: Session = Depends(get_db),
                     _=Depends(get_current_admin)):
-    t = db.query(EmailTemplate).filter(EmailTemplate.id == template_id).first()
+    t = db.query(EmailTemplate).filter(EmailTemplate.id == template_id, EmailTemplate.tenant_id == _tenant_id(db)).first()
     if not t:
         raise HTTPException(404, "Template não encontrado.")
     t.active = False
@@ -510,24 +545,27 @@ def delete_template(template_id: str, db: Session = Depends(get_db),
 
 @router.get("/contact-lists")
 def list_contact_lists(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    tenant_id = _tenant_id(db)
     items = (
         db.query(EmailContactList)
-        .filter(EmailContactList.active == True)  # noqa: E712
+        .filter(EmailContactList.tenant_id == tenant_id, EmailContactList.active == True)  # noqa: E712
         .order_by(EmailContactList.created_at.desc())
         .all()
     )
-    return ok([_contact_list_to_dict(item, db) for item in items])
+    return ok([_contact_list_to_dict(item, db, tenant_id) for item in items])
 
 
 @router.get("/contact-lists/{list_id}")
 def get_contact_list(list_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    tenant_id = _tenant_id(db)
     item = db.query(EmailContactList).filter(
         EmailContactList.id == list_id,
+        EmailContactList.tenant_id == tenant_id,
         EmailContactList.active == True,  # noqa: E712
     ).first()
     if not item:
         raise HTTPException(404, "Lista de emails nao encontrada.")
-    return ok(_contact_list_to_dict(item, db, include_contacts=True))
+    return ok(_contact_list_to_dict(item, db, tenant_id, include_contacts=True))
 
 
 @router.post("/contact-lists")
@@ -539,25 +577,28 @@ def create_contact_list(body: EmailContactListCreate, db: Session = Depends(get_
     if not clean_contacts:
         raise HTTPException(400, "Inclua pelo menos um contato com nome e email valido.")
 
-    item = EmailContactList(id=str(uuid.uuid4()), name=body.name.strip())
+    tenant_id = _tenant_id(db)
+    item = EmailContactList(id=str(uuid.uuid4()), tenant_id=tenant_id, name=body.name.strip())
     db.add(item)
     db.flush()
     for contact in clean_contacts:
         db.add(EmailContactListItem(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             list_id=item.id,
             name=contact["name"],
             email=contact["email"],
         ))
     db.commit()
     db.refresh(item)
-    return created(_contact_list_to_dict(item, db, include_contacts=True), "Lista de emails criada.")
+    return created(_contact_list_to_dict(item, db, tenant_id, include_contacts=True), "Lista de emails criada.")
 
 
 @router.patch("/contact-lists/{list_id}")
 def update_contact_list(list_id: str, body: EmailContactListUpdate,
                         db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    item = db.query(EmailContactList).filter(EmailContactList.id == list_id).first()
+    tenant_id = _tenant_id(db)
+    item = db.query(EmailContactList).filter(EmailContactList.id == list_id, EmailContactList.tenant_id == tenant_id).first()
     if not item or not item.active:
         raise HTTPException(404, "Lista de emails nao encontrada.")
     if body.name is not None:
@@ -568,22 +609,23 @@ def update_contact_list(list_id: str, body: EmailContactListUpdate,
         clean_contacts = _prepare_email_contact_list_contacts(body.contacts)
         if not clean_contacts:
             raise HTTPException(400, "Inclua pelo menos um contato com nome e email valido.")
-        db.execute(text("DELETE FROM email_contact_list_items WHERE list_id = :list_id"), {"list_id": list_id})
+        db.execute(text("DELETE FROM email_contact_list_items WHERE list_id = :list_id AND tenant_id = :tenant_id"), {"list_id": list_id, "tenant_id": tenant_id})
         for contact in clean_contacts:
             db.add(EmailContactListItem(
                 id=str(uuid.uuid4()),
+                tenant_id=tenant_id,
                 list_id=item.id,
                 name=contact["name"],
                 email=contact["email"],
             ))
     item.updated_at = _now()
     db.commit()
-    return ok(_contact_list_to_dict(item, db, include_contacts=True))
+    return ok(_contact_list_to_dict(item, db, tenant_id, include_contacts=True))
 
 
 @router.delete("/contact-lists/{list_id}")
 def delete_contact_list(list_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    item = db.query(EmailContactList).filter(EmailContactList.id == list_id).first()
+    item = db.query(EmailContactList).filter(EmailContactList.id == list_id, EmailContactList.tenant_id == _tenant_id(db)).first()
     if not item:
         raise HTTPException(404, "Lista de emails nao encontrada.")
     item.active = False
@@ -594,21 +636,26 @@ def delete_contact_list(list_id: str, db: Session = Depends(get_db), _=Depends(g
 
 @router.get("/campaigns")
 def list_campaigns(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    campaigns = db.query(EmailCampaign).order_by(EmailCampaign.created_at.desc()).all()
+    campaigns = db.query(EmailCampaign).filter(EmailCampaign.tenant_id == _tenant_id(db)).order_by(EmailCampaign.created_at.desc()).all()
     return ok([_campaign_to_dict(c) for c in campaigns])
 
 
 @router.post("/campaigns")
 def create_campaign(body: CampaignCreate, db: Session = Depends(get_db),
                     _=Depends(get_current_admin)):
+    tenant_id = _tenant_id(db)
     sched = None
     if body.scheduled_at:
         try:
             sched = datetime.fromisoformat(body.scheduled_at.replace("Z", "+00:00"))
         except Exception:
             pass
+    _assert_campaign_references(
+        db, tenant_id, template_id=body.template_id or None,
+        contact_list_id=body.contact_list_id or None, group_id=body.group_id or None,
+    )
     c = EmailCampaign(
-        id=str(uuid.uuid4()), name=body.name,
+        id=str(uuid.uuid4()), tenant_id=tenant_id, name=body.name,
         template_id=body.template_id or None,
         group_id=body.group_id or None,
         contact_list_id=body.contact_list_id or None,
@@ -624,11 +671,19 @@ def create_campaign(body: CampaignCreate, db: Session = Depends(get_db),
 @router.patch("/campaigns/{campaign_id}")
 def update_campaign(campaign_id: str, body: CampaignUpdate,
                     db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    c = db.query(EmailCampaign).filter(EmailCampaign.id == campaign_id).first()
+    tenant_id = _tenant_id(db)
+    c = db.query(EmailCampaign).filter(EmailCampaign.id == campaign_id, EmailCampaign.tenant_id == tenant_id).first()
     if not c:
         raise HTTPException(404, "Campanha não encontrada.")
     if body.name is not None:        c.name = body.name
     if body.status is not None:      c.status = body.status
+    next_template_id = body.template_id if body.template_id is not None else c.template_id
+    next_group_id = body.group_id if body.group_id is not None else c.group_id
+    next_contact_list_id = body.contact_list_id if body.contact_list_id is not None else c.contact_list_id
+    _assert_campaign_references(
+        db, tenant_id, template_id=next_template_id or None,
+        contact_list_id=next_contact_list_id or None, group_id=next_group_id or None,
+    )
     if body.template_id is not None: c.template_id = body.template_id or None
     if body.group_id is not None:    c.group_id = body.group_id or None
     if body.contact_list_id is not None: c.contact_list_id = body.contact_list_id or None
@@ -645,7 +700,7 @@ def update_campaign(campaign_id: str, body: CampaignUpdate,
 @router.delete("/campaigns/{campaign_id}")
 def delete_campaign(campaign_id: str, db: Session = Depends(get_db),
                     _=Depends(get_current_admin)):
-    c = db.query(EmailCampaign).filter(EmailCampaign.id == campaign_id).first()
+    c = db.query(EmailCampaign).filter(EmailCampaign.id == campaign_id, EmailCampaign.tenant_id == _tenant_id(db)).first()
     if not c:
         raise HTTPException(404, "Campanha não encontrada.")
     db.delete(c)
@@ -658,7 +713,8 @@ def delete_campaign(campaign_id: str, db: Session = Depends(get_db),
 @router.post("/send")
 def send_emails(body: EmailSendRequest, db: Session = Depends(get_db),
                 _=Depends(get_current_admin)):
-    cfg = _get_config(db)
+    tenant_id = _tenant_id(db)
+    cfg = _get_config(db, tenant_id)
 
     # Resolve template or free-text
     subject: str
@@ -666,6 +722,7 @@ def send_emails(body: EmailSendRequest, db: Session = Depends(get_db),
     if body.template_id:
         template = db.query(EmailTemplate).filter(
             EmailTemplate.id == body.template_id,
+            EmailTemplate.tenant_id == tenant_id,
             EmailTemplate.active == True,  # noqa: E712
         ).first()
         if not template:
@@ -678,7 +735,9 @@ def send_emails(body: EmailSendRequest, db: Session = Depends(get_db),
     else:
         raise HTTPException(400, "Informe template_id ou subject + body_html.")
 
-    recipients = _resolve_recipients(body.customer_ids, body.group_id, body.contact_list_id, body.emails, db)
+    recipients = _resolve_recipients(
+        body.customer_ids, body.group_id, body.contact_list_id, body.emails, db, tenant_id
+    )
     if not recipients:
         raise HTTPException(400, "Nenhum destinatário com email encontrado.")
 
@@ -690,6 +749,7 @@ def send_emails(body: EmailSendRequest, db: Session = Depends(get_db),
     for r in recipients:
         msg = EmailMessage(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             template_id=body.template_id or None,
             customer_id=r.get("id"),
             to_email=r["email"],
@@ -740,6 +800,7 @@ def send_emails(body: EmailSendRequest, db: Session = Depends(get_db),
 
 @router.get("/messages")
 def list_messages(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    tenant_id = _tenant_id(db)
     rows = db.execute(text("""
         SELECT
             em.id, em.template_id, em.customer_id,
@@ -748,11 +809,12 @@ def list_messages(db: Session = Depends(get_db), _=Depends(get_current_admin)):
             em.to_email, em.subject_sent, em.status, em.error,
             em.sent_at, em.created_at
         FROM email_messages em
-        LEFT JOIN customers c ON c.id = em.customer_id
-        LEFT JOIN email_templates et ON et.id = em.template_id
+        LEFT JOIN customers c ON c.id = em.customer_id AND c.tenant_id = em.tenant_id
+        LEFT JOIN email_templates et ON et.id = em.template_id AND et.tenant_id = em.tenant_id
+        WHERE em.tenant_id = :tenant_id
         ORDER BY em.created_at DESC
         LIMIT 200
-    """)).fetchall()
+    """), {"tenant_id": tenant_id}).fetchall()
 
     return ok([{
         "id": r[0], "template_id": r[1], "customer_id": r[2],
@@ -767,13 +829,13 @@ def list_messages(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 
 @router.get("/config")
 def get_config(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return ok(_cfg_to_dict(_get_config(db)))
+    return ok(_cfg_to_dict(_get_config(db, _tenant_id(db))))
 
 
 @router.patch("/config")
 def update_config(body: ConfigUpdate, db: Session = Depends(get_db),
                   _=Depends(get_current_admin)):
-    cfg = _get_config(db)
+    cfg = _get_config(db, _tenant_id(db))
     if body.provider is not None:      cfg.provider = body.provider
     if body.smtp_host is not None:     cfg.smtp_host = body.smtp_host
     if body.smtp_port is not None:     cfg.smtp_port = body.smtp_port
@@ -796,9 +858,11 @@ def update_config(body: ConfigUpdate, db: Session = Depends(get_db),
 def test_connection(body: ConfigUpdate, db: Session = Depends(get_db),
                     _=Depends(get_current_admin)):
     """Test SMTP connection using the provided (or saved) credentials."""
-    cfg = _get_config(db)
+    tenant_id = _tenant_id(db)
+    cfg = _get_config(db, tenant_id)
     # Override with what the user submitted for testing
     test_cfg = EmailConfig(
+        tenant_id=tenant_id,
         smtp_host=body.smtp_host or cfg.smtp_host,
         smtp_port=body.smtp_port or cfg.smtp_port or 587,
         smtp_user=body.smtp_user or cfg.smtp_user,

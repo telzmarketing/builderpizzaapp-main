@@ -6,6 +6,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from backend.core.tenant_context import TenantContext
+from backend.core.wave6_tenant_context import wave6_tenant_id
 from backend.models.agente_whatsapp import (
     AgenteWhatsAppAudioArtifact,
     AgenteWhatsAppMessage,
@@ -62,8 +64,9 @@ def _same_or_before(value: datetime | None, end: datetime) -> bool:
 
 
 class AgenteWhatsAppAnalyticsService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
+        self._tenant_id = wave6_tenant_id(tenant_context)
 
     def audio_metrics(self, *, days: int = 7) -> dict[str, Any]:
         days = max(1, min(int(days or 7), 90))
@@ -73,6 +76,7 @@ class AgenteWhatsAppAnalyticsService:
         inbound_audio = (
             self._db.query(AgenteWhatsAppMessage)
             .filter(
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.message_type == "audio",
                 AgenteWhatsAppMessage.direction == "inbound",
                 AgenteWhatsAppMessage.created_at >= start,
@@ -82,6 +86,7 @@ class AgenteWhatsAppAnalyticsService:
         outbound_audio = (
             self._db.query(AgenteWhatsAppMessage)
             .filter(
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.message_type == "audio",
                 AgenteWhatsAppMessage.direction == "outbound",
                 AgenteWhatsAppMessage.created_at >= start,
@@ -91,6 +96,7 @@ class AgenteWhatsAppAnalyticsService:
         tts_artifacts = (
             self._db.query(AgenteWhatsAppAudioArtifact)
             .filter(
+                AgenteWhatsAppAudioArtifact.tenant_id == self._tenant_id,
                 AgenteWhatsAppAudioArtifact.artifact_type == "tts",
                 AgenteWhatsAppAudioArtifact.created_at >= start,
             )
@@ -99,6 +105,7 @@ class AgenteWhatsAppAnalyticsService:
         jobs = (
             self._db.query(AgenteWhatsAppProcessingJob)
             .filter(
+                AgenteWhatsAppProcessingJob.tenant_id == self._tenant_id,
                 AgenteWhatsAppProcessingJob.job_type.in_(["audio_transcription", "agent_response", "tts_generation"]),
                 AgenteWhatsAppProcessingJob.created_at >= start,
             )
@@ -175,6 +182,7 @@ class AgenteWhatsAppAnalyticsService:
         campaign_messages = (
             self._db.query(AgenteWhatsAppMessage)
             .filter(
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.campaign_id.isnot(None),
                 AgenteWhatsAppMessage.created_at >= start,
             )
@@ -205,7 +213,11 @@ class AgenteWhatsAppAnalyticsService:
 
         orders = (
             self._db.query(Order)
-            .filter(Order.created_at >= start, Order.created_at <= end + timedelta(days=CONVERSION_WINDOW_DAYS))
+            .filter(
+                Order.tenant_id == self._tenant_id,
+                Order.created_at >= start,
+                Order.created_at <= end + timedelta(days=CONVERSION_WINDOW_DAYS),
+            )
             .all()
         )
         total_orders = 0

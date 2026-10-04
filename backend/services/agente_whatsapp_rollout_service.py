@@ -9,7 +9,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
+from backend.core.tenant_context import TenantContext
 from backend.core.local_time import local_now, local_period_bounds, local_today
+from backend.core.wave6_tenant_context import wave6_tenant_id
 from backend.models.agente_whatsapp import AgenteWhatsAppMessage
 from backend.services.customer_identity_service import normalize_phone
 
@@ -18,10 +20,16 @@ ROLLOUT_SETTINGS_KEY = "agente_whatsapp_audio_rollout"
 
 
 class AgenteWhatsAppRolloutService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
         self._env = get_settings()
+        self._tenant_id = wave6_tenant_id(tenant_context)
         self._settings_cache: dict[str, Any] | None = None
+
+    @property
+    def _config_id(self) -> str:
+        # Do not read or mutate the platform-global ``site_config.default``.
+        return f"agente-whatsapp-rollout:{self._tenant_id}"
 
     def defaults(self) -> dict[str, Any]:
         return {
@@ -62,16 +70,18 @@ class AgenteWhatsAppRolloutService:
         }
         self._db.execute(
             text(
-                "INSERT INTO site_config (id, content, updated_at) VALUES ('default', :content, NOW()) "
+                "INSERT INTO site_config (id, content, updated_at) VALUES (:id, :content, NOW()) "
                 "ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()"
             ),
-            {"content": json.dumps(content, ensure_ascii=False, default=str)},
+            {"id": self._config_id, "content": json.dumps(content, ensure_ascii=False, default=str)},
         )
         self._db.flush()
         self._settings_cache = None
         return self.get_settings()
 
     def check_message(self, message: AgenteWhatsAppMessage, action: str) -> tuple[bool, str | None]:
+        if message.tenant_id != self._tenant_id:
+            return False, "Mensagem nao pertence ao tenant do rollout de audio."
         mode = self._mode()
         if mode == "off":
             return False, "Rollout de audio esta desligado por configuracao."
@@ -170,6 +180,7 @@ class AgenteWhatsAppRolloutService:
     def _daily_count(self, action: str) -> int:
         start_dt, end_dt = local_period_bounds(local_today(), local_today())
         query = self._db.query(func.count(AgenteWhatsAppMessage.id)).filter(
+            AgenteWhatsAppMessage.tenant_id == self._tenant_id,
             AgenteWhatsAppMessage.created_at >= start_dt,
             AgenteWhatsAppMessage.created_at <= end_dt,
         )
@@ -204,7 +215,10 @@ class AgenteWhatsAppRolloutService:
         return self._settings_cache
 
     def _load_site_config(self) -> tuple[dict[str, Any], datetime | None]:
-        row = self._db.execute(text("SELECT content, updated_at FROM site_config WHERE id = 'default'")).fetchone()
+        row = self._db.execute(
+            text("SELECT content, updated_at FROM site_config WHERE id = :id"),
+            {"id": self._config_id},
+        ).fetchone()
         if not row:
             return {}, None
         try:

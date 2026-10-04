@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from backend.core.response import ok, created, err_msg
 from backend.database import get_db, Base
 from backend.core.wave6_tenant_orm import wave6_tenant_column
+from backend.core.wave6_tenant_context import WAVE6_SESSION_TENANT_KEY, panel_wave6_context, wave6_tenant_id
 from backend.routes.admin_auth import get_current_admin
 
 DEFAULT_PIXEL_EVENTS = "PageView,ViewContent,AddToCart,InitiateCheckout,Purchase,Lead"
@@ -133,12 +134,20 @@ def _serialize_pixel(pixel: AdsPixel) -> dict:
     }
 
 
-def _get_creds(platform: str, db: Session) -> dict | None:
+def _tenant_id(db: Session) -> str:
+    """Return the trusted tenant bound by ``panel_wave6_context``."""
+    return wave6_tenant_id(db.info.get(WAVE6_SESSION_TENANT_KEY))
+
+
+def _get_creds(platform: str, db: Session, tenant_id: str) -> dict | None:
     """Fetch credentials from integration_connections for the given platform."""
     try:
         row = db.execute(
-            text("SELECT credentials_json FROM integration_connections WHERE integration_type = :p"),
-            {"p": platform},
+            text("""
+                SELECT credentials_json FROM integration_connections
+                WHERE integration_type = :p AND tenant_id = :tenant_id
+            """),
+            {"p": platform, "tenant_id": tenant_id},
         ).fetchone()
         if row is None or not row[0]:
             return None
@@ -147,31 +156,32 @@ def _get_creds(platform: str, db: Session) -> dict | None:
         return None
 
 
-def _save_creds(platform: str, creds: dict, db: Session) -> None:
+def _save_creds(platform: str, creds: dict, db: Session, tenant_id: str) -> None:
     """Upsert credentials into integration_connections."""
     now = datetime.now(timezone.utc)
     creds_json = json.dumps(creds)
     try:
-        existing = db.execute(
-            text("SELECT id FROM integration_connections WHERE integration_type = :p"),
-            {"p": platform},
-        ).fetchone()
+        scope = tenant_id
+        existing = db.execute(text("""
+            SELECT id FROM integration_connections
+            WHERE integration_type = :p AND tenant_id = :tenant_id
+        """), {"p": platform, "tenant_id": scope}).fetchone()
         if existing:
             db.execute(
                 text(
                     "UPDATE integration_connections "
                     "SET credentials_json = :c, status = 'connected', updated_at = :u "
-                    "WHERE integration_type = :p"
+                    "WHERE integration_type = :p AND tenant_id = :tenant_id"
                 ),
-                {"c": creds_json, "u": now, "p": platform},
+                {"c": creds_json, "u": now, "p": platform, "tenant_id": scope},
             )
         else:
             db.execute(
                 text(
-                    "INSERT INTO integration_connections (id, integration_type, status, credentials_json, updated_at) "
-                    "VALUES (:id, :p, 'connected', :c, :u)"
+                    "INSERT INTO integration_connections (id, tenant_id, integration_type, status, credentials_json, updated_at) "
+                    "VALUES (:id, :tenant_id, :p, 'connected', :c, :u)"
                 ),
-                {"id": str(uuid.uuid4()), "p": platform, "c": creds_json, "u": now},
+                {"id": str(uuid.uuid4()), "tenant_id": scope, "p": platform, "c": creds_json, "u": now},
             )
         db.commit()
     except Exception:
@@ -290,10 +300,12 @@ def _exchange_tiktok_token(code: str, app_id: str, app_secret: str) -> dict:
 
 # ── Campaign sync helpers ─────────────────────────────────────────────────────
 
-def _upsert_campaign(db: Session, campaign_id: str, platform: str, external_id: str, fields: dict) -> None:
+def _upsert_campaign(db: Session, campaign_id: str, platform: str, external_id: str, fields: dict, tenant_id: str) -> None:
     """Upsert a single campaign row into ads_campaigns."""
     now = datetime.now(timezone.utc)
-    existing = db.query(AdsCampaign).filter(AdsCampaign.id == campaign_id).first()
+    existing = db.query(AdsCampaign).filter(
+        AdsCampaign.id == campaign_id, AdsCampaign.tenant_id == tenant_id
+    ).first()
     if existing:
         for k, v in fields.items():
             if hasattr(existing, k):
@@ -303,6 +315,7 @@ def _upsert_campaign(db: Session, campaign_id: str, platform: str, external_id: 
     else:
         row = AdsCampaign(
             id=campaign_id,
+            tenant_id=tenant_id,
             platform=platform,
             external_id=external_id,
             last_synced_at=now,
@@ -311,7 +324,7 @@ def _upsert_campaign(db: Session, campaign_id: str, platform: str, external_id: 
         db.add(row)
 
 
-def _sync_meta_campaigns(creds: dict, db: Session, date_preset: str = "last_30_days") -> int:
+def _sync_meta_campaigns(creds: dict, db: Session, tenant_id: str, date_preset: str = "last_30_days") -> int:
     """Fetch campaigns + insights from Meta Graph API and upsert into ads_campaigns."""
     try:
         token = creds.get("access_token", "")
@@ -366,7 +379,7 @@ def _sync_meta_campaigns(creds: dict, db: Session, date_preset: str = "last_30_d
                 budget_daily_raw = camp.get("daily_budget")
                 budget_daily = float(budget_daily_raw) / 100.0 if budget_daily_raw else None
 
-                campaign_id = f"meta_{ext_id}"
+                campaign_id = f"{tenant_id}:meta_{ext_id}"
                 _upsert_campaign(db, campaign_id, "meta", ext_id, {
                     "name": camp.get("name"),
                     "status": camp.get("status"),
@@ -381,7 +394,7 @@ def _sync_meta_campaigns(creds: dict, db: Session, date_preset: str = "last_30_d
                     "cpc": cpc,
                     "cpa": cpa,
                     "roas": roas,
-                })
+                }, tenant_id)
                 count += 1
 
         db.commit()
@@ -391,7 +404,7 @@ def _sync_meta_campaigns(creds: dict, db: Session, date_preset: str = "last_30_d
         return 0
 
 
-def _sync_google_campaigns(creds: dict, db: Session) -> int:
+def _sync_google_campaigns(creds: dict, db: Session, tenant_id: str) -> int:
     """Fetch campaigns from Google Ads API and upsert into ads_campaigns."""
     try:
         access_token = creds.get("access_token", "")
@@ -435,7 +448,7 @@ def _sync_google_campaigns(creds: dict, db: Session) -> int:
             cpa = (spend / conversions) if conversions > 0 else 0.0
 
             status_raw = camp.get("status", "UNKNOWN")
-            campaign_id = f"google_{ext_id}"
+            campaign_id = f"{tenant_id}:google_{ext_id}"
             _upsert_campaign(db, campaign_id, "google", ext_id, {
                 "name": camp.get("name"),
                 "status": status_raw,
@@ -446,7 +459,7 @@ def _sync_google_campaigns(creds: dict, db: Session) -> int:
                 "ctr": ctr,
                 "cpc": cpc,
                 "cpa": cpa,
-            })
+            }, tenant_id)
             count += 1
 
         db.commit()
@@ -456,7 +469,7 @@ def _sync_google_campaigns(creds: dict, db: Session) -> int:
         return 0
 
 
-def _sync_tiktok_campaigns(creds: dict, db: Session) -> int:
+def _sync_tiktok_campaigns(creds: dict, db: Session, tenant_id: str) -> int:
     """Fetch campaigns from TikTok Business API and upsert into ads_campaigns."""
     try:
         access_token = creds.get("access_token", "")
@@ -483,13 +496,13 @@ def _sync_tiktok_campaigns(creds: dict, db: Session) -> int:
             budget_raw = camp.get("budget", 0)
             budget_daily = float(budget_raw) if budget_raw else None
 
-            campaign_id = f"tiktok_{ext_id}"
+            campaign_id = f"{tenant_id}:tiktok_{ext_id}"
             _upsert_campaign(db, campaign_id, "tiktok", ext_id, {
                 "name": camp.get("campaign_name"),
                 "status": camp.get("primary_status", camp.get("operation_status")),
                 "objective": camp.get("objective_type"),
                 "budget_daily": budget_daily,
-            })
+            }, tenant_id)
             count += 1
 
         db.commit()
@@ -508,13 +521,17 @@ def _fire_meta_capi_event(
     order_id: str,
     phone_hash: str | None,
     db: Session,
+    tenant_id: str,
 ) -> None:
     """Send a server-side Conversions API event to Meta. Never raises."""
     try:
         targets = [
             {"pixel_id": p.pixel_id, "access_token": p.conversion_access_token}
             for p in db.query(AdsPixel)
-            .filter(AdsPixel.platform == "meta", AdsPixel.enabled == True)  # noqa: E712
+            .filter(
+                AdsPixel.tenant_id == tenant_id,
+                AdsPixel.platform == "meta", AdsPixel.enabled == True,  # noqa: E712
+            )
             .all()
             if p.pixel_id and p.conversion_access_token
         ]
@@ -522,7 +539,7 @@ def _fire_meta_capi_event(
         # Backward compatibility for older installs that stored CAPI credentials
         # under Marketing > Integracoes > Meta Ads.
         if not targets:
-            creds = _get_creds("meta_ads", db)
+            creds = _get_creds("meta_ads", db, tenant_id)
             if creds and creds.get("access_token") and creds.get("pixel_id"):
                 targets.append({
                     "pixel_id": creds.get("pixel_id", ""),
@@ -596,7 +613,7 @@ class CapiEventBody(BaseModel):
 
 # ── Router ────────────────────────────────────────────────────────────────────
 
-router = APIRouter(prefix="/ads", tags=["ads-oauth"])
+router = APIRouter(prefix="/ads", tags=["ads-oauth"], dependencies=[Depends(panel_wave6_context)])
 
 _SUPPORTED_PLATFORMS = {"meta", "google", "tiktok"}
 _PLATFORM_KEY_MAP = {
@@ -624,13 +641,15 @@ def get_connect_url(
     if platform not in _SUPPORTED_PLATFORMS:
         return err_msg(f"Plataforma '{platform}' não suportada. Use: meta, google ou tiktok.")
 
-    creds = _get_creds(_resolve_platform_key(platform), db)
+    tenant_id = _tenant_id(db)
+    creds = _get_creds(_resolve_platform_key(platform), db, tenant_id)
     if not creds:
         return err_msg("Configure as credenciais da plataforma primeiro.", status_code=400)
 
     state_id = str(uuid.uuid4())
     state_row = AdsOAuthState(
         id=state_id,
+        tenant_id=tenant_id,
         platform=platform,
         redirect_uri=redirect_uri,
     )
@@ -674,11 +693,16 @@ def oauth_callback(
         return err_msg(f"Plataforma '{platform}' não suportada.", status_code=400)
 
     # Validate CSRF state
-    state_row = db.query(AdsOAuthState).filter(AdsOAuthState.id == body.state).first()
-    if not state_row:
+    tenant_id = _tenant_id(db)
+    state_row = db.query(AdsOAuthState).filter(
+        AdsOAuthState.id == body.state,
+        AdsOAuthState.tenant_id == tenant_id,
+        AdsOAuthState.platform == platform,
+    ).first()
+    if not state_row or state_row.redirect_uri != body.redirect_uri:
         return err_msg("Estado OAuth inválido ou expirado.", status_code=400)
 
-    creds = _get_creds(_resolve_platform_key(platform), db) or {}
+    creds = _get_creds(_resolve_platform_key(platform), db, tenant_id) or {}
 
     try:
         if platform == "meta":
@@ -713,7 +737,7 @@ def oauth_callback(
     except Exception as exc:
         return err_msg(f"Falha ao trocar código por token: {exc}", status_code=502)
 
-    _save_creds(_resolve_platform_key(platform), creds, db)
+    _save_creds(_resolve_platform_key(platform), creds, db, tenant_id)
 
     # Clean up used state
     try:
@@ -734,7 +758,7 @@ def list_campaigns(
     _admin=Depends(get_current_admin),
 ):
     """List all synced campaigns, optionally filtered by platform, ordered by spend DESC."""
-    query = db.query(AdsCampaign)
+    query = db.query(AdsCampaign).filter(AdsCampaign.tenant_id == _tenant_id(db))
     if platform:
         query = query.filter(AdsCampaign.platform == platform)
     campaigns = query.order_by(AdsCampaign.spend.desc()).all()
@@ -789,7 +813,8 @@ def get_insights(
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     campaigns = db.query(AdsCampaign).filter(
-        AdsCampaign.last_synced_at >= cutoff
+        AdsCampaign.tenant_id == _tenant_id(db),
+        AdsCampaign.last_synced_at >= cutoff,
     ).all()
 
     by_platform: dict[str, dict] = {}
@@ -858,18 +883,19 @@ def sync_platform(
     if platform not in _SUPPORTED_PLATFORMS:
         return err_msg(f"Plataforma '{platform}' não suportada.", status_code=400)
 
-    creds = _get_creds(_resolve_platform_key(platform), db)
+    tenant_id = _tenant_id(db)
+    creds = _get_creds(_resolve_platform_key(platform), db, tenant_id)
     if not creds:
         return err_msg("Plataforma não configurada.", status_code=400)
 
     date_preset = _PERIOD_TO_PRESET.get(period, "last_30_days")
 
     if platform == "meta":
-        synced = _sync_meta_campaigns(creds, db, date_preset=date_preset)
+        synced = _sync_meta_campaigns(creds, db, tenant_id, date_preset=date_preset)
     elif platform == "google":
-        synced = _sync_google_campaigns(creds, db)
+        synced = _sync_google_campaigns(creds, db, tenant_id)
     else:
-        synced = _sync_tiktok_campaigns(creds, db)
+        synced = _sync_tiktok_campaigns(creds, db, tenant_id)
 
     return ok({"synced": synced, "platform": platform, "period": period})
 
@@ -882,20 +908,21 @@ def sync_all(
 ):
     """Sync campaigns from all platforms. Failures per platform are isolated. period: 7d | 30d | 90d"""
     date_preset = _PERIOD_TO_PRESET.get(period, "last_30_days")
+    tenant_id = _tenant_id(db)
     results: dict[str, int] = {}
 
     for platform in ("meta", "google", "tiktok"):
         try:
-            creds = _get_creds(_resolve_platform_key(platform), db)
+            creds = _get_creds(_resolve_platform_key(platform), db, tenant_id)
             if not creds:
                 results[platform] = 0
                 continue
             if platform == "meta":
-                results[platform] = _sync_meta_campaigns(creds, db, date_preset=date_preset)
+                results[platform] = _sync_meta_campaigns(creds, db, tenant_id, date_preset=date_preset)
             elif platform == "google":
-                results[platform] = _sync_google_campaigns(creds, db)
+                results[platform] = _sync_google_campaigns(creds, db, tenant_id)
             else:
-                results[platform] = _sync_tiktok_campaigns(creds, db)
+                results[platform] = _sync_tiktok_campaigns(creds, db, tenant_id)
         except Exception:
             results[platform] = 0
 
@@ -914,7 +941,7 @@ def platform_status(
     if platform not in _SUPPORTED_PLATFORMS:
         return err_msg(f"Plataforma '{platform}' não suportada.", status_code=400)
 
-    creds = _get_creds(_resolve_platform_key(platform), db)
+    creds = _get_creds(_resolve_platform_key(platform), db, _tenant_id(db))
     connected = bool(creds and creds.get("access_token"))
 
     token_expires_at = None
@@ -954,6 +981,7 @@ def fire_capi_event(
         order_id=body.order_id,
         phone_hash=phone_hash,
         db=db,
+        tenant_id=_tenant_id(db),
     )
     return ok({"fired": True})
 
@@ -962,7 +990,9 @@ def fire_capi_event(
 
 @router.get("/utms")
 def list_utms(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    utms = db.query(AdsUtmLink).order_by(AdsUtmLink.created_at.desc()).all()
+    utms = db.query(AdsUtmLink).filter(
+        AdsUtmLink.tenant_id == _tenant_id(db)
+    ).order_by(AdsUtmLink.created_at.desc()).all()
     return ok([{
         "id": u.id, "name": u.name, "url": u.url,
         "utm_source": u.utm_source, "utm_medium": u.utm_medium,
@@ -977,7 +1007,7 @@ def list_utms(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 def create_utm(body: UtmLinkCreate, db: Session = Depends(get_db),
                _=Depends(get_current_admin)):
     u = AdsUtmLink(
-        id=str(uuid.uuid4()), name=body.name, url=body.url,
+        id=str(uuid.uuid4()), tenant_id=_tenant_id(db), name=body.name, url=body.url,
         utm_source=body.utm_source, utm_medium=body.utm_medium,
         utm_campaign=body.utm_campaign, utm_term=body.utm_term,
         utm_content=body.utm_content,
@@ -991,7 +1021,9 @@ def create_utm(body: UtmLinkCreate, db: Session = Depends(get_db),
 @router.delete("/utms/{utm_id}")
 def delete_utm(utm_id: str, db: Session = Depends(get_db),
                _=Depends(get_current_admin)):
-    u = db.query(AdsUtmLink).filter(AdsUtmLink.id == utm_id).first()
+    u = db.query(AdsUtmLink).filter(
+        AdsUtmLink.id == utm_id, AdsUtmLink.tenant_id == _tenant_id(db)
+    ).first()
     if not u:
         from fastapi import HTTPException
         raise HTTPException(404, "Link UTM não encontrado.")
@@ -1013,10 +1045,11 @@ def list_leads(db: Session = Depends(get_db), _=Depends(get_current_admin)):
             NULL AS value,
             c.created_at
         FROM customers c
-        WHERE c.utm_source IS NOT NULL OR c.source IS NOT NULL
+        WHERE c.tenant_id = :tenant_id
+          AND (c.utm_source IS NOT NULL OR c.source IS NOT NULL)
         ORDER BY c.created_at DESC
         LIMIT 200
-    """)).fetchall()
+    """), {"tenant_id": _tenant_id(db)}).fetchall()
     return ok([{
         "id": r[0], "customer_name": r[1], "phone": r[2], "email": r[3],
         "source": r[4], "utm_source": r[5], "utm_campaign": r[6],
@@ -1029,7 +1062,9 @@ def list_leads(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 
 @router.get("/pixels")
 def list_pixels(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    pixels = db.query(AdsPixel).order_by(AdsPixel.created_at.desc()).all()
+    pixels = db.query(AdsPixel).filter(
+        AdsPixel.tenant_id == _tenant_id(db)
+    ).order_by(AdsPixel.created_at.desc()).all()
     return ok([_serialize_pixel(p) for p in pixels])
 
 
@@ -1037,7 +1072,7 @@ def list_pixels(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 def create_pixel(body: PixelCreate, db: Session = Depends(get_db),
                  _=Depends(get_current_admin)):
     p = AdsPixel(
-        id=str(uuid.uuid4()), platform=body.platform,
+        id=str(uuid.uuid4()), tenant_id=_tenant_id(db), platform=body.platform,
         pixel_id=body.pixel_id, events_tracked=body.events_tracked,
         conversion_access_token=body.conversion_access_token or None,
         base_code=body.base_code or None,
@@ -1052,7 +1087,9 @@ def create_pixel(body: PixelCreate, db: Session = Depends(get_db),
 def update_pixel(pixel_id: str, body: PixelUpdate,
                  db: Session = Depends(get_db), _=Depends(get_current_admin)):
     from fastapi import HTTPException
-    p = db.query(AdsPixel).filter(AdsPixel.id == pixel_id).first()
+    p = db.query(AdsPixel).filter(
+        AdsPixel.id == pixel_id, AdsPixel.tenant_id == _tenant_id(db)
+    ).first()
     if not p:
         raise HTTPException(404, "Pixel não encontrado.")
     if body.enabled is not None:        p.enabled = body.enabled
@@ -1072,7 +1109,9 @@ def update_pixel(pixel_id: str, body: PixelUpdate,
 def delete_pixel(pixel_id: str, db: Session = Depends(get_db),
                  _=Depends(get_current_admin)):
     from fastapi import HTTPException
-    p = db.query(AdsPixel).filter(AdsPixel.id == pixel_id).first()
+    p = db.query(AdsPixel).filter(
+        AdsPixel.id == pixel_id, AdsPixel.tenant_id == _tenant_id(db)
+    ).first()
     if not p:
         raise HTTPException(404, "Pixel não encontrado.")
     db.delete(p)
@@ -1089,6 +1128,7 @@ def get_roi(period: str = "30d", db: Session = Depends(get_db),
     period_days = {"7d": 7, "30d": 30, "90d": 90}
     days = period_days.get(period, 30)
     since = datetime.now(timezone.utc) - timedelta(days=days)
+    tenant_id = _tenant_id(db)
 
     # Per-platform aggregation from ads_campaigns
     rows = db.execute(text("""
@@ -1099,16 +1139,18 @@ def get_roi(period: str = "30d", db: Session = Depends(get_db),
             SUM(conversions) AS orders,
             SUM(clicks) AS leads
         FROM ads_campaigns
+        WHERE tenant_id = :tenant_id
         GROUP BY platform
-    """)).fetchall()
+    """), {"tenant_id": tenant_id}).fetchall()
 
     # Orders & revenue attributed via utm_medium for last N days
     utm_rows = db.execute(text("""
         SELECT utm_medium, COUNT(*), COALESCE(SUM(total), 0)
         FROM orders
-        WHERE utm_medium IS NOT NULL AND created_at >= :since
+        WHERE tenant_id = :tenant_id
+          AND utm_medium IS NOT NULL AND created_at >= :since
         GROUP BY utm_medium
-    """), {"since": since}).fetchall()
+    """), {"since": since, "tenant_id": tenant_id}).fetchall()
     utm_map = {r[0]: {"orders": r[1], "revenue": float(r[2])} for r in utm_rows}
 
     result = []

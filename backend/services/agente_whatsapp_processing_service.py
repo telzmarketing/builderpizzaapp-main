@@ -10,6 +10,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
+from backend.core.tenant_context import TenantContext
+from backend.core.wave6_tenant_context import wave6_tenant_id
 from backend.models.agente_whatsapp import AgenteWhatsAppMessage, AgenteWhatsAppProcessingJob
 from backend.services.agente_whatsapp_audio_settings_service import AgenteWhatsAppAudioSettingsService
 from backend.services.agente_whatsapp_audio_service import AgenteWhatsAppAudioService
@@ -36,11 +38,24 @@ def _json_load(value: str | None) -> dict[str, Any]:
 
 
 class AgenteWhatsAppProcessingService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
         self._settings = get_settings()
+        self._tenant_context = tenant_context
+        self._tenant_id = wave6_tenant_id(tenant_context)
+
+    def _scope_jobs(self, query):
+        return query.filter(AgenteWhatsAppProcessingJob.tenant_id == self._tenant_id)
+
+    def _message_for_tenant(self, message_id: str) -> AgenteWhatsAppMessage | None:
+        return self._db.query(AgenteWhatsAppMessage).filter(
+            AgenteWhatsAppMessage.id == message_id,
+            AgenteWhatsAppMessage.tenant_id == self._tenant_id,
+        ).first()
 
     def enqueue_inbound_message(self, message: AgenteWhatsAppMessage) -> AgenteWhatsAppProcessingJob | None:
+        if message.tenant_id != self._tenant_id:
+            raise ValueError("Mensagem de processamento nao pertence ao tenant.")
         if message.direction != "inbound":
             return None
 
@@ -61,7 +76,7 @@ class AgenteWhatsAppProcessingService:
 
         idempotency_key = f"{job_type}:{message.id}"
         existing = (
-            self._db.query(AgenteWhatsAppProcessingJob)
+            self._scope_jobs(self._db.query(AgenteWhatsAppProcessingJob))
             .filter(AgenteWhatsAppProcessingJob.idempotency_key == idempotency_key)
             .first()
         )
@@ -77,6 +92,7 @@ class AgenteWhatsAppProcessingService:
             message.transcription_status = "pending"
         job = AgenteWhatsAppProcessingJob(
             id=str(uuid.uuid4()),
+            tenant_id=self._tenant_id,
             message_id=message.id,
             session_id=message.session_id,
             customer_id=message.customer_id,
@@ -109,6 +125,8 @@ class AgenteWhatsAppProcessingService:
         return job
 
     def enqueue_agent_response(self, message: AgenteWhatsAppMessage) -> AgenteWhatsAppProcessingJob | None:
+        if message.tenant_id != self._tenant_id:
+            raise ValueError("Mensagem de processamento nao pertence ao tenant.")
         if message.direction != "inbound":
             return None
         if message.message_type == "audio" and message.transcription_status not in {"done", "low_confidence"}:
@@ -118,7 +136,7 @@ class AgenteWhatsAppProcessingService:
 
         idempotency_key = f"agent_response:{message.id}"
         existing = (
-            self._db.query(AgenteWhatsAppProcessingJob)
+            self._scope_jobs(self._db.query(AgenteWhatsAppProcessingJob))
             .filter(AgenteWhatsAppProcessingJob.idempotency_key == idempotency_key)
             .first()
         )
@@ -128,6 +146,7 @@ class AgenteWhatsAppProcessingService:
         now = _now_utc()
         job = AgenteWhatsAppProcessingJob(
             id=str(uuid.uuid4()),
+            tenant_id=self._tenant_id,
             message_id=message.id,
             session_id=message.session_id,
             customer_id=message.customer_id,
@@ -160,6 +179,10 @@ class AgenteWhatsAppProcessingService:
         *,
         source_message: AgenteWhatsAppMessage | None = None,
     ) -> AgenteWhatsAppProcessingJob | None:
+        if response_message.tenant_id != self._tenant_id:
+            raise ValueError("Mensagem TTS nao pertence ao tenant.")
+        if source_message and source_message.tenant_id != self._tenant_id:
+            raise ValueError("Mensagem de origem TTS nao pertence ao tenant.")
         if not self._settings.WHATSAPP_AUDIO_TTS_WORKER_ENABLED:
             return None
         if not self._should_generate_tts(response_message, source_message=source_message):
@@ -167,7 +190,7 @@ class AgenteWhatsAppProcessingService:
 
         idempotency_key = f"tts_generation:{response_message.id}"
         existing = (
-            self._db.query(AgenteWhatsAppProcessingJob)
+            self._scope_jobs(self._db.query(AgenteWhatsAppProcessingJob))
             .filter(AgenteWhatsAppProcessingJob.idempotency_key == idempotency_key)
             .first()
         )
@@ -177,6 +200,7 @@ class AgenteWhatsAppProcessingService:
         now = _now_utc()
         job = AgenteWhatsAppProcessingJob(
             id=str(uuid.uuid4()),
+            tenant_id=self._tenant_id,
             message_id=response_message.id,
             session_id=response_message.session_id,
             customer_id=response_message.customer_id,
@@ -204,6 +228,7 @@ class AgenteWhatsAppProcessingService:
         rows = (
             self._db.query(AgenteWhatsAppMessage)
             .filter(
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.direction == "inbound",
                 AgenteWhatsAppMessage.processing_status.in_(["recorded", "failed"]),
             )
@@ -216,7 +241,7 @@ class AgenteWhatsAppProcessingService:
         for message in rows:
             job_type = "audio_transcription" if message.message_type == "audio" else "inbound_message"
             existing = (
-                self._db.query(AgenteWhatsAppProcessingJob.id)
+                self._scope_jobs(self._db.query(AgenteWhatsAppProcessingJob.id))
                 .filter(AgenteWhatsAppProcessingJob.idempotency_key == f"{job_type}:{message.id}")
                 .first()
             )
@@ -234,7 +259,7 @@ class AgenteWhatsAppProcessingService:
 
         now = _now_utc()
         jobs = (
-            self._db.query(AgenteWhatsAppProcessingJob)
+            self._scope_jobs(self._db.query(AgenteWhatsAppProcessingJob))
             .filter(
                 AgenteWhatsAppProcessingJob.job_type == "audio_transcription",
                 AgenteWhatsAppProcessingJob.status.in_(["pending", "failed"]),
@@ -260,7 +285,7 @@ class AgenteWhatsAppProcessingService:
             job.updated_at = now
             self._db.flush()
             try:
-                message = self._db.query(AgenteWhatsAppMessage).filter(AgenteWhatsAppMessage.id == job.message_id).first()
+                message = self._message_for_tenant(job.message_id)
                 if message:
                     allowed, reason = AgenteWhatsAppRolloutService(self._db).check_message(message, "audio_input")
                     if not allowed:
@@ -274,9 +299,7 @@ class AgenteWhatsAppProcessingService:
                 status = result.get("transcription_status")
                 if status in {"done", "low_confidence"}:
                     message = message or (
-                        self._db.query(AgenteWhatsAppMessage)
-                        .filter(AgenteWhatsAppMessage.id == job.message_id)
-                        .first()
+                        self._message_for_tenant(job.message_id)
                     )
                     if message:
                         self.enqueue_agent_response(message)
@@ -303,7 +326,7 @@ class AgenteWhatsAppProcessingService:
     def process_agent_responses(self, *, limit: int = 10) -> dict[str, int]:
         now = _now_utc()
         jobs = (
-            self._db.query(AgenteWhatsAppProcessingJob)
+            self._scope_jobs(self._db.query(AgenteWhatsAppProcessingJob))
             .filter(
                 AgenteWhatsAppProcessingJob.job_type == "agent_response",
                 AgenteWhatsAppProcessingJob.status.in_(["pending", "failed"]),
@@ -330,7 +353,7 @@ class AgenteWhatsAppProcessingService:
             job.updated_at = now
             self._db.flush()
             try:
-                message = self._db.query(AgenteWhatsAppMessage).filter(AgenteWhatsAppMessage.id == job.message_id).first()
+                message = self._message_for_tenant(job.message_id)
                 if not message:
                     job.status = "dead"
                     job.error = "Mensagem de origem nao encontrada."
@@ -381,9 +404,7 @@ class AgenteWhatsAppProcessingService:
                 response_message_id = response_payload.get("id") if response_payload else None
                 if response_message_id:
                     response_message = (
-                        self._db.query(AgenteWhatsAppMessage)
-                        .filter(AgenteWhatsAppMessage.id == response_message_id)
-                        .first()
+                        self._message_for_tenant(response_message_id)
                     )
                     if response_message:
                         self.enqueue_tts_generation(response_message, source_message=message)
@@ -413,7 +434,7 @@ class AgenteWhatsAppProcessingService:
 
         now = _now_utc()
         jobs = (
-            self._db.query(AgenteWhatsAppProcessingJob)
+            self._scope_jobs(self._db.query(AgenteWhatsAppProcessingJob))
             .filter(
                 AgenteWhatsAppProcessingJob.job_type == "tts_generation",
                 AgenteWhatsAppProcessingJob.status.in_(["pending", "failed"]),
@@ -440,7 +461,7 @@ class AgenteWhatsAppProcessingService:
             job.updated_at = now
             self._db.flush()
             try:
-                message = self._db.query(AgenteWhatsAppMessage).filter(AgenteWhatsAppMessage.id == job.message_id).first()
+                message = self._message_for_tenant(job.message_id)
                 if not message:
                     job.status = "dead"
                     job.error = "Mensagem textual de origem nao encontrada."
@@ -486,6 +507,7 @@ class AgenteWhatsAppProcessingService:
         return (
             self._db.query(AgenteWhatsAppMessage)
             .filter(
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.direction == "outbound",
                 AgenteWhatsAppMessage.response_to_message_id == message_id,
             )
@@ -548,6 +570,7 @@ class AgenteWhatsAppProcessingService:
         return (
             self._db.query(AgenteWhatsAppMessage)
             .filter(
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.direction == "outbound",
                 AgenteWhatsAppMessage.message_type == "audio",
                 AgenteWhatsAppMessage.response_to_message_id == response_message_id,
@@ -562,7 +585,10 @@ class AgenteWhatsAppProcessingService:
             return None
         return (
             self._db.query(AgenteWhatsAppMessage)
-            .filter(AgenteWhatsAppMessage.id == source_message_id)
+            .filter(
+                AgenteWhatsAppMessage.id == source_message_id,
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
+            )
             .first()
         )
 
@@ -604,11 +630,11 @@ class AgenteWhatsAppProcessingService:
                 },
             },
         )
-        AgenteWhatsAppOutboxService(self._db).enqueue_queued_messages(limit=20)
+        AgenteWhatsAppOutboxService(self._db, self._tenant_context).enqueue_queued_messages(limit=20)
         return response
 
     def list_jobs(self, *, status: str | None = None, limit: int = 100) -> list[AgenteWhatsAppProcessingJob]:
-        q = self._db.query(AgenteWhatsAppProcessingJob)
+        q = self._scope_jobs(self._db.query(AgenteWhatsAppProcessingJob))
         if status:
             q = q.filter(AgenteWhatsAppProcessingJob.status == status)
         return q.order_by(AgenteWhatsAppProcessingJob.created_at.desc()).limit(limit).all()
@@ -616,6 +642,7 @@ class AgenteWhatsAppProcessingService:
     def summary(self) -> dict[str, int]:
         rows = (
             self._db.query(AgenteWhatsAppProcessingJob.status, func.count(AgenteWhatsAppProcessingJob.id))
+            .filter(AgenteWhatsAppProcessingJob.tenant_id == self._tenant_id)
             .group_by(AgenteWhatsAppProcessingJob.status)
             .all()
         )
@@ -625,6 +652,7 @@ class AgenteWhatsAppProcessingService:
         counts["queued_messages"] = (
             self._db.query(func.count(AgenteWhatsAppMessage.id))
             .filter(
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.direction == "inbound",
                 AgenteWhatsAppMessage.processing_status == "queued",
             )

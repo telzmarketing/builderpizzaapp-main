@@ -17,6 +17,7 @@ from backend.models.order import Order, OrderItem
 from backend.models.paid_traffic import AdDailyMetric, CampaignLink, TrackingEvent, TrackingSession, TrafficCampaign
 from backend.models.payment import Payment, PaymentStatus
 from backend.models.product import Product
+from backend.models.product_promotion import ProductPromotion
 from backend.schemas.marketing_intelligence import (
     MarketingGoalCreate,
     MarketingGoalStatusUpdate,
@@ -65,9 +66,10 @@ class MarketingIntelligenceService:
         "average_ticket": ("Ticket medio", "currency"),
     }
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_id: str):
         self._db = db
-        self._bi = BusinessIntelligenceService(db)
+        self._tenant_id = tenant_id
+        self._bi = BusinessIntelligenceService(db, tenant_id)
 
     def dashboard(self, period: str = "30d", date_from: date | None = None, date_to: date | None = None) -> dict:
         bounds = self._bounds(period, date_from, date_to)
@@ -78,6 +80,7 @@ class MarketingIntelligenceService:
         visitors = self._visitor_count(bounds)
         leads = self._event_count(bounds, self.LEAD_EVENT_TYPES)
         new_customers = self._db.query(Customer).filter(
+            Customer.tenant_id == self._tenant_id,
             Customer.created_at >= bounds["start_dt"],
             Customer.created_at <= bounds["end_dt"],
         ).count()
@@ -121,6 +124,7 @@ class MarketingIntelligenceService:
         campaign_utms = self._campaign_utm_map()
         traffic_campaigns = (
             self._db.query(TrafficCampaign)
+            .filter(TrafficCampaign.tenant_id == self._tenant_id)
             .order_by(TrafficCampaign.created_at.desc())
             .limit(max(limit, 1))
             .all()
@@ -132,7 +136,10 @@ class MarketingIntelligenceService:
             orders = orders_q.with_entities(func.count(distinct(Order.id))).scalar() or 0
             spend = self._round(
                 self._db.query(func.coalesce(func.sum(AdDailyMetric.spend), 0))
-                .filter(AdDailyMetric.traffic_campaign_id == campaign.id)
+                .filter(
+                    AdDailyMetric.tenant_id == self._tenant_id,
+                    AdDailyMetric.traffic_campaign_id == campaign.id,
+                )
                 .filter(AdDailyMetric.metric_date >= bounds["date_from"], AdDailyMetric.metric_date <= bounds["date_to"])
                 .scalar()
             )
@@ -159,22 +166,29 @@ class MarketingIntelligenceService:
 
         promo_campaigns = (
             self._db.query(Campaign)
+            .filter(Campaign.tenant_id == self._tenant_id)
             .order_by(Campaign.created_at.desc())
             .limit(max(limit, 1))
             .all()
         )
         for campaign in promo_campaigns:
             orders_q = (
-                self._paid_orders_query(bounds)
-                .join(Coupon, Coupon.id == Order.coupon_id)
-                .filter(Coupon.campaign_id == campaign.id)
+            self._paid_orders_query(bounds)
+            .join(Coupon, Coupon.id == Order.coupon_id)
+            .filter(
+                Coupon.tenant_id == self._tenant_id,
+                Coupon.campaign_id == campaign.id,
+            )
             )
             orders = orders_q.with_entities(func.count(distinct(Order.id))).scalar() or 0
             revenue = self._round(orders_q.with_entities(func.coalesce(func.sum(Order.total), 0)).scalar())
             uses = (
                 self._db.query(func.count(CouponUsage.id))
                 .join(Coupon, Coupon.id == CouponUsage.coupon_id)
-                .filter(Coupon.campaign_id == campaign.id)
+                .filter(
+                    Coupon.tenant_id == self._tenant_id,
+                    Coupon.campaign_id == campaign.id,
+                )
                 .filter(CouponUsage.created_at >= bounds["start_dt"], CouponUsage.created_at <= bounds["end_dt"])
                 .scalar() or 0
             )
@@ -213,7 +227,13 @@ class MarketingIntelligenceService:
 
         order_rows = (
             self._paid_orders_query(bounds)
-            .outerjoin(TrafficCampaign, TrafficCampaign.id == Order.campaign_id)
+            .outerjoin(
+                TrafficCampaign,
+                and_(
+                    TrafficCampaign.id == Order.campaign_id,
+                    TrafficCampaign.tenant_id == self._tenant_id,
+                ),
+            )
             .with_entities(
                 TrafficCampaign.platform,
                 Order.utm_source,
@@ -234,7 +254,11 @@ class MarketingIntelligenceService:
                 AdDailyMetric.platform,
                 func.coalesce(func.sum(AdDailyMetric.spend), 0).label("spend"),
             )
-            .filter(AdDailyMetric.metric_date >= bounds["date_from"], AdDailyMetric.metric_date <= bounds["date_to"])
+            .filter(
+                AdDailyMetric.tenant_id == self._tenant_id,
+                AdDailyMetric.metric_date >= bounds["date_from"],
+                AdDailyMetric.metric_date <= bounds["date_to"],
+            )
             .group_by(AdDailyMetric.platform)
             .all()
         )
@@ -248,7 +272,11 @@ class MarketingIntelligenceService:
                 TrackingSession.utm_source,
                 func.count(distinct(TrackingSession.id)).label("visitors"),
             )
-            .filter(TrackingSession.first_seen_at >= bounds["start_dt"], TrackingSession.first_seen_at <= bounds["end_dt"])
+            .filter(
+                TrackingSession.tenant_id == self._tenant_id,
+                TrackingSession.first_seen_at >= bounds["start_dt"],
+                TrackingSession.first_seen_at <= bounds["end_dt"],
+            )
             .group_by(TrackingSession.utm_source)
             .all()
         )
@@ -263,7 +291,11 @@ class MarketingIntelligenceService:
                     TrackingEvent.utm_source,
                     func.count(TrackingEvent.id).label("total"),
                 )
-                .filter(TrackingEvent.created_at >= bounds["start_dt"], TrackingEvent.created_at <= bounds["end_dt"])
+                .filter(
+                    TrackingEvent.tenant_id == self._tenant_id,
+                    TrackingEvent.created_at >= bounds["start_dt"],
+                    TrackingEvent.created_at <= bounds["end_dt"],
+                )
                 .filter(TrackingEvent.event_type.in_(event_types))
                 .group_by(TrackingEvent.utm_source)
                 .all()
@@ -326,8 +358,17 @@ class MarketingIntelligenceService:
             )
             .join(Order, Order.id == OrderItem.order_id)
             .join(Payment, Payment.order_id == Order.id)
-            .outerjoin(Product, Product.id == OrderItem.product_id)
-            .filter(Order.created_at >= bounds["start_dt"], Order.created_at <= bounds["end_dt"])
+            .outerjoin(
+                Product,
+                and_(Product.id == OrderItem.product_id, Product.tenant_id == self._tenant_id),
+            )
+            .filter(
+                OrderItem.tenant_id == self._tenant_id,
+                Order.tenant_id == self._tenant_id,
+                Payment.tenant_id == self._tenant_id,
+                Order.created_at >= bounds["start_dt"],
+                Order.created_at <= bounds["end_dt"],
+            )
             .filter(Payment.status.in_(self.PAID_PAYMENT_STATUSES))
             .filter(~Order.status.in_(self.CANCELLED_ORDER_STATUSES))
             .group_by(OrderItem.product_id, Product.name, Product.category)
@@ -357,8 +398,15 @@ class MarketingIntelligenceService:
                     Product.category,
                     func.count(CustomerEvent.id).label("total"),
                 )
-                .outerjoin(Product, Product.id == CustomerEvent.product_id)
-                .filter(CustomerEvent.created_at >= bounds["start_dt"], CustomerEvent.created_at <= bounds["end_dt"])
+                .outerjoin(
+                    Product,
+                    and_(Product.id == CustomerEvent.product_id, Product.tenant_id == self._tenant_id),
+                )
+                .filter(
+                    CustomerEvent.tenant_id == self._tenant_id,
+                    CustomerEvent.created_at >= bounds["start_dt"],
+                    CustomerEvent.created_at <= bounds["end_dt"],
+                )
                 .filter(CustomerEvent.product_id.isnot(None))
                 .filter(CustomerEvent.event_type.in_(event_types))
                 .group_by(CustomerEvent.product_id, Product.name, Product.category)
@@ -401,6 +449,7 @@ class MarketingIntelligenceService:
         coupon_order_rows = (
             self._paid_orders_query(bounds)
             .join(Coupon, Coupon.id == Order.coupon_id)
+            .filter(Coupon.tenant_id == self._tenant_id)
             .with_entities(
                 Coupon.id,
                 Coupon.code,
@@ -413,13 +462,22 @@ class MarketingIntelligenceService:
             .all()
         )
         coupon_usage_counts = dict(
+            # CouponUsage predates tenant columns: its ownership is enforced
+            # through the joined coupon (rather than CouponUsage.tenant_id == self._tenant_id).
             self._db.query(CouponUsage.coupon_id, func.count(CouponUsage.id))
+            .join(Coupon, Coupon.id == CouponUsage.coupon_id)
+            .filter(Coupon.tenant_id == self._tenant_id)
             .filter(CouponUsage.created_at >= bounds["start_dt"], CouponUsage.created_at <= bounds["end_dt"])
             .group_by(CouponUsage.coupon_id)
             .all()
         )
         coupon_ids = {row.id for row in coupon_order_rows} | set(coupon_usage_counts)
-        coupons = {coupon.id: coupon for coupon in self._db.query(Coupon).filter(Coupon.id.in_(coupon_ids)).all()} if coupon_ids else {}
+        coupons = {
+            coupon.id: coupon
+            for coupon in self._db.query(Coupon)
+            .filter(Coupon.tenant_id == self._tenant_id, Coupon.id.in_(coupon_ids))
+            .all()
+        } if coupon_ids else {}
         for row in coupon_order_rows:
             uses = int(coupon_usage_counts.get(row.id, 0) or 0)
             revenue = self._round(row.revenue)
@@ -464,7 +522,13 @@ class MarketingIntelligenceService:
             )
             .join(Order, Order.id == OrderItem.order_id)
             .join(Payment, Payment.order_id == Order.id)
-            .filter(Order.created_at >= bounds["start_dt"], Order.created_at <= bounds["end_dt"])
+            .filter(
+                OrderItem.tenant_id == self._tenant_id,
+                Order.tenant_id == self._tenant_id,
+                Payment.tenant_id == self._tenant_id,
+                Order.created_at >= bounds["start_dt"],
+                Order.created_at <= bounds["end_dt"],
+            )
             .filter(Payment.status.in_(self.PAID_PAYMENT_STATUSES))
             .filter(~Order.status.in_(self.CANCELLED_ORDER_STATUSES))
             .filter(OrderItem.promotion_id.isnot(None))
@@ -502,7 +566,7 @@ class MarketingIntelligenceService:
         }
 
     def list_goals(self, status: str | None = None, limit: int = 100) -> dict:
-        query = self._db.query(MarketingGoal)
+        query = self._db.query(MarketingGoal).filter(MarketingGoal.tenant_id == self._tenant_id)
         if status:
             query = query.filter(MarketingGoal.status == status)
         rows = query.order_by(MarketingGoal.period_end.desc(), MarketingGoal.created_at.desc()).limit(limit).all()
@@ -510,8 +574,10 @@ class MarketingIntelligenceService:
 
     def create_goal(self, body: MarketingGoalCreate, created_by: str | None = None) -> dict:
         self._validate_goal_period(body.period_start, body.period_end)
+        self._validate_reference_ownership(body.model_dump())
         row = MarketingGoal(
             id=f"mg-{uuid.uuid4().hex[:12]}",
+            tenant_id=self._tenant_id,
             created_by=created_by,
             completed_at=datetime.now(timezone.utc) if body.status == "completed" else None,
             **self._goal_payload(body.model_dump()),
@@ -524,6 +590,7 @@ class MarketingIntelligenceService:
     def update_goal(self, goal_id: str, body: MarketingGoalUpdate) -> dict:
         row = self._get_goal(goal_id)
         data = body.model_dump(exclude_unset=True)
+        self._validate_reference_ownership(data)
         period_start = data.get("period_start", row.period_start)
         period_end = data.get("period_end", row.period_end)
         self._validate_goal_period(period_start, period_end)
@@ -560,7 +627,9 @@ class MarketingIntelligenceService:
         search: str | None = None,
         limit: int = 100,
     ) -> dict:
-        query = self._db.query(MarketingTimelineEvent)
+        query = self._db.query(MarketingTimelineEvent).filter(
+            MarketingTimelineEvent.tenant_id == self._tenant_id
+        )
         if date_from:
             query = query.filter(MarketingTimelineEvent.event_date >= self._bi.resolve_bounds("today", date_from, date_from)["start_dt"])
         if date_to:
@@ -578,8 +647,10 @@ class MarketingIntelligenceService:
         return {"timeline": [self._timeline_to_dict(row) for row in rows]}
 
     def create_timeline_event(self, body: MarketingTimelineEventCreate, created_by: str | None = None) -> dict:
+        self._validate_reference_ownership(body.model_dump())
         row = MarketingTimelineEvent(
             id=f"mt-{uuid.uuid4().hex[:12]}",
+            tenant_id=self._tenant_id,
             created_by=created_by,
             **self._timeline_payload(body.model_dump()),
         )
@@ -590,7 +661,9 @@ class MarketingIntelligenceService:
 
     def update_timeline_event(self, event_id: str, body: MarketingTimelineEventUpdate) -> dict:
         row = self._get_timeline_event(event_id)
-        payload = self._timeline_payload(body.model_dump(exclude_unset=True), partial=True)
+        data = body.model_dump(exclude_unset=True)
+        self._validate_reference_ownership(data)
+        payload = self._timeline_payload(data, partial=True)
         for key, value in payload.items():
             setattr(row, key, value)
         self._db.commit()
@@ -603,13 +676,19 @@ class MarketingIntelligenceService:
         self._db.commit()
 
     def _get_goal(self, goal_id: str) -> MarketingGoal:
-        row = self._db.query(MarketingGoal).filter(MarketingGoal.id == goal_id).first()
+        row = self._db.query(MarketingGoal).filter(
+            MarketingGoal.id == goal_id,
+            MarketingGoal.tenant_id == self._tenant_id,
+        ).first()
         if not row:
             raise HTTPException(status_code=404, detail="Meta de marketing nao encontrada.")
         return row
 
     def _get_timeline_event(self, event_id: str) -> MarketingTimelineEvent:
-        row = self._db.query(MarketingTimelineEvent).filter(MarketingTimelineEvent.id == event_id).first()
+        row = self._db.query(MarketingTimelineEvent).filter(
+            MarketingTimelineEvent.id == event_id,
+            MarketingTimelineEvent.tenant_id == self._tenant_id,
+        ).first()
         if not row:
             raise HTTPException(status_code=404, detail="Evento de timeline nao encontrado.")
         return row
@@ -617,6 +696,27 @@ class MarketingIntelligenceService:
     def _validate_goal_period(self, period_start: date, period_end: date) -> None:
         if period_end < period_start:
             raise HTTPException(status_code=400, detail="Periodo final deve ser maior ou igual ao periodo inicial.")
+
+    def _validate_reference_ownership(self, data: dict) -> None:
+        """Reject cross-tenant IDs before a goal or timeline can persist them."""
+        references = {
+            "goal_id": (MarketingGoal, "id"),
+            "campaign_id": (Campaign, "id"),
+            "traffic_campaign_id": (TrafficCampaign, "id"),
+            "coupon_id": (Coupon, "id"),
+            "promotion_id": (ProductPromotion, "id"),
+            "product_id": (Product, "id"),
+        }
+        for field, (model, primary_key) in references.items():
+            reference_id = data.get(field)
+            if reference_id is None:
+                continue
+            row = self._db.query(model).filter(
+                getattr(model, primary_key) == reference_id,
+                model.tenant_id == self._tenant_id,
+            ).first()
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Recurso de marketing nao encontrado: {field}.")
 
     def _goal_payload(self, data: dict, partial: bool = False) -> dict:
         payload = dict(data)
@@ -812,13 +912,20 @@ class MarketingIntelligenceService:
         return self._bi.period_payload(bounds)
 
     def _orders_query(self, bounds: dict):
-        return self._db.query(Order).filter(Order.created_at >= bounds["start_dt"], Order.created_at <= bounds["end_dt"])
+        return self._db.query(Order).filter(
+            Order.tenant_id == self._tenant_id,
+            Order.created_at >= bounds["start_dt"],
+            Order.created_at <= bounds["end_dt"],
+        )
 
     def _paid_orders_query(self, bounds: dict):
         return (
             self._orders_query(bounds)
             .join(Payment, Payment.order_id == Order.id)
-            .filter(Payment.status.in_(self.PAID_PAYMENT_STATUSES))
+            .filter(
+                Payment.tenant_id == self._tenant_id,
+                Payment.status.in_(self.PAID_PAYMENT_STATUSES),
+            )
             .filter(~Order.status.in_(self.CANCELLED_ORDER_STATUSES))
         )
 
@@ -828,12 +935,19 @@ class MarketingIntelligenceService:
     def _spend(self, bounds: dict) -> float:
         return self._round(
             self._db.query(func.coalesce(func.sum(AdDailyMetric.spend), 0))
-            .filter(AdDailyMetric.metric_date >= bounds["date_from"], AdDailyMetric.metric_date <= bounds["date_to"])
+            .filter(
+                AdDailyMetric.tenant_id == self._tenant_id,
+                AdDailyMetric.metric_date >= bounds["date_from"],
+                AdDailyMetric.metric_date <= bounds["date_to"],
+            )
             .scalar()
         )
 
     def _campaign_utm_map(self) -> dict[str, set[str]]:
-        rows = self._db.query(CampaignLink.campaign_id, CampaignLink.utm_campaign).filter(CampaignLink.utm_campaign.isnot(None)).all()
+        rows = self._db.query(CampaignLink.campaign_id, CampaignLink.utm_campaign).filter(
+            CampaignLink.tenant_id == self._tenant_id,
+            CampaignLink.utm_campaign.isnot(None),
+        ).all()
         result: dict[str, set[str]] = {}
         for campaign_id, utm_campaign in rows:
             if campaign_id and utm_campaign:
@@ -858,13 +972,21 @@ class MarketingIntelligenceService:
     def _campaign_visitors(self, bounds: dict, campaign_id: str, utms: set[str]) -> int:
         session_count = (
             self._db.query(func.count(distinct(TrackingSession.id)))
-            .filter(TrackingSession.first_seen_at >= bounds["start_dt"], TrackingSession.first_seen_at <= bounds["end_dt"])
+            .filter(
+                TrackingSession.tenant_id == self._tenant_id,
+                TrackingSession.first_seen_at >= bounds["start_dt"],
+                TrackingSession.first_seen_at <= bounds["end_dt"],
+            )
             .filter(self._campaign_tracking_filter(TrackingSession, campaign_id, utms))
             .scalar() or 0
         )
         event_session_count = (
             self._db.query(func.count(distinct(TrackingEvent.session_id)))
-            .filter(TrackingEvent.created_at >= bounds["start_dt"], TrackingEvent.created_at <= bounds["end_dt"])
+            .filter(
+                TrackingEvent.tenant_id == self._tenant_id,
+                TrackingEvent.created_at >= bounds["start_dt"],
+                TrackingEvent.created_at <= bounds["end_dt"],
+            )
             .filter(TrackingEvent.session_id.isnot(None))
             .filter(self._campaign_tracking_filter(TrackingEvent, campaign_id, utms))
             .scalar() or 0
@@ -874,7 +996,11 @@ class MarketingIntelligenceService:
     def _campaign_event_count(self, bounds: dict, campaign_id: str, utms: set[str], event_types: tuple[str, ...]) -> int:
         return int(
             self._db.query(func.count(TrackingEvent.id))
-            .filter(TrackingEvent.created_at >= bounds["start_dt"], TrackingEvent.created_at <= bounds["end_dt"])
+            .filter(
+                TrackingEvent.tenant_id == self._tenant_id,
+                TrackingEvent.created_at >= bounds["start_dt"],
+                TrackingEvent.created_at <= bounds["end_dt"],
+            )
             .filter(TrackingEvent.event_type.in_(event_types))
             .filter(self._campaign_tracking_filter(TrackingEvent, campaign_id, utms))
             .scalar() or 0
@@ -883,18 +1009,30 @@ class MarketingIntelligenceService:
     def _visitor_count(self, bounds: dict) -> int:
         session_count = (
             self._db.query(func.count(distinct(TrackingSession.id)))
-            .filter(TrackingSession.first_seen_at >= bounds["start_dt"], TrackingSession.first_seen_at <= bounds["end_dt"])
+            .filter(
+                TrackingSession.tenant_id == self._tenant_id,
+                TrackingSession.first_seen_at >= bounds["start_dt"],
+                TrackingSession.first_seen_at <= bounds["end_dt"],
+            )
             .scalar() or 0
         )
         event_session_count = (
             self._db.query(func.count(distinct(TrackingEvent.session_id)))
-            .filter(TrackingEvent.created_at >= bounds["start_dt"], TrackingEvent.created_at <= bounds["end_dt"])
+            .filter(
+                TrackingEvent.tenant_id == self._tenant_id,
+                TrackingEvent.created_at >= bounds["start_dt"],
+                TrackingEvent.created_at <= bounds["end_dt"],
+            )
             .filter(TrackingEvent.session_id.isnot(None))
             .scalar() or 0
         )
         customer_event_sessions = (
             self._db.query(func.count(distinct(CustomerEvent.session_id)))
-            .filter(CustomerEvent.created_at >= bounds["start_dt"], CustomerEvent.created_at <= bounds["end_dt"])
+            .filter(
+                CustomerEvent.tenant_id == self._tenant_id,
+                CustomerEvent.created_at >= bounds["start_dt"],
+                CustomerEvent.created_at <= bounds["end_dt"],
+            )
             .filter(CustomerEvent.session_id.isnot(None))
             .scalar() or 0
         )
@@ -903,13 +1041,21 @@ class MarketingIntelligenceService:
     def _event_count(self, bounds: dict, event_types: tuple[str, ...]) -> int:
         tracking_total = (
             self._db.query(func.count(TrackingEvent.id))
-            .filter(TrackingEvent.created_at >= bounds["start_dt"], TrackingEvent.created_at <= bounds["end_dt"])
+            .filter(
+                TrackingEvent.tenant_id == self._tenant_id,
+                TrackingEvent.created_at >= bounds["start_dt"],
+                TrackingEvent.created_at <= bounds["end_dt"],
+            )
             .filter(TrackingEvent.event_type.in_(event_types))
             .scalar() or 0
         )
         customer_total = (
             self._db.query(func.count(CustomerEvent.id))
-            .filter(CustomerEvent.created_at >= bounds["start_dt"], CustomerEvent.created_at <= bounds["end_dt"])
+            .filter(
+                CustomerEvent.tenant_id == self._tenant_id,
+                CustomerEvent.created_at >= bounds["start_dt"],
+                CustomerEvent.created_at <= bounds["end_dt"],
+            )
             .filter(CustomerEvent.event_type.in_(event_types))
             .scalar() or 0
         )

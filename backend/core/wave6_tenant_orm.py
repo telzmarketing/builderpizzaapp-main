@@ -6,8 +6,10 @@ not scope queries and must never be treated as an isolation boundary.
 from __future__ import annotations
 
 from hashlib import sha1
+import re
 
 from sqlalchemy import Column, ForeignKey, Index, String, event, text
+from sqlalchemy.orm import Session
 from sqlalchemy.sql.schema import Table
 
 
@@ -40,7 +42,11 @@ WAVE6_TABLES = frozenset({
     "whatsapp_gateway_scheduler_settings", "store_notification_settings",
     "store_notifications", "store_notification_days", "store_notification_impressions",
     "store_notification_captured",
+    "marketing_workflows", "marketing_workflow_comments",
 })
+
+_WRITE_OR_READ_RE = re.compile(r"^\s*(select|insert|update|delete)\b", re.IGNORECASE | re.DOTALL)
+_TENANT_FILTER_RE = re.compile(r"\btenant_id\b", re.IGNORECASE)
 
 SCOPED_UNIQUES = {
     "customer_ai_profiles": ("uq_mt_customer_ai_profile_customer", ("tenant_id", "customer_id"), None),
@@ -63,6 +69,7 @@ SCOPED_UNIQUES = {
     "whatsapp_config": ("uq_mt_whatsapp_config_singleton", ("tenant_id",), "tenant_id IS NOT NULL"),
     "exit_popup_config": ("uq_mt_exit_popup_singleton", ("tenant_id",), "tenant_id IS NOT NULL"),
     "chatbot_settings": ("uq_mt_chatbot_settings_singleton", ("tenant_id",), "tenant_id IS NOT NULL"),
+    "marketing_workflows": ("uq_mt_marketing_workflow_tenant_id", ("tenant_id", "id"), None),
     "agente_whatsapp_ai_settings": ("uq_mt_agente_ai_settings_singleton", ("tenant_id",), "tenant_id IS NOT NULL"),
     "agente_whatsapp_channel_settings": ("uq_mt_agente_channel_settings_singleton", ("tenant_id",), "tenant_id IS NOT NULL"),
     "store_notification_settings": ("uq_mt_store_notification_settings_singleton", ("tenant_id",), "tenant_id IS NOT NULL"),
@@ -81,6 +88,25 @@ def wave6_tenant_orm_enabled() -> bool:
     return get_settings().MULTI_TENANT_WAVE6_ORM_ENABLED
 
 
+def unsafe_wave6_statement_reason(statement: str) -> str | None:
+    """Return the first Wave 6 table touched without an explicit tenant predicate.
+
+    This is a runtime guard for legacy raw SQL and unmigrated ORM queries. It is
+    intentionally conservative: when the Wave 6 flag is active, SQL that touches
+    a tenant-owned Wave 6 table must include tenant_id in the generated statement.
+    """
+    sql = str(statement or "")
+    if not _WRITE_OR_READ_RE.search(sql):
+        return None
+    lowered = sql.lower()
+    if _TENANT_FILTER_RE.search(lowered):
+        return None
+    for table in sorted(WAVE6_TABLES, key=len, reverse=True):
+        if re.search(rf"(?<![a-z0-9_]){re.escape(table)}(?![a-z0-9_])", lowered):
+            return table
+    return None
+
+
 def wave6_tenant_column(table_name: str):
     """Create the nullable, no-default ownership column used during expand."""
     if table_name not in WAVE6_TABLES:
@@ -92,6 +118,47 @@ def wave6_tenant_column(table_name: str):
         default=None,
         server_default=None,
     )
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _guard_wave6_orm_execute(execute_state) -> None:
+    if not wave6_tenant_orm_enabled():
+        return
+    reason = unsafe_wave6_statement_reason(str(execute_state.statement))
+    if reason is None:
+        return
+    from backend.core.tenant_context import TenantContextMissing
+
+    raise TenantContextMissing(
+        "Acesso Wave 6 sem tenant_id bloqueado para evitar vazamento entre empresas "
+        f"(tabela: {reason})."
+    )
+
+
+@event.listens_for(Session, "before_flush")
+def _assign_wave6_tenant_before_flush(session: Session, _flush_context, _instances) -> None:
+    if not wave6_tenant_orm_enabled():
+        return
+    from backend.core.tenant_context import TenantContext, TenantContextMissing, TenantContextMismatch
+    from backend.core.wave6_tenant_context import WAVE6_SESSION_TENANT_KEY
+
+    context = session.info.get(WAVE6_SESSION_TENANT_KEY)
+    if not isinstance(context, TenantContext):
+        for obj in list(session.new) + list(session.dirty) + list(session.deleted):
+            table = getattr(getattr(obj, "__table__", None), "name", None)
+            if table in WAVE6_TABLES and hasattr(obj, "tenant_id"):
+                raise TenantContextMissing("Contexto de tenant obrigatorio para gravacao Wave 6.")
+        return
+
+    for obj in list(session.new) + list(session.dirty) + list(session.deleted):
+        table = getattr(getattr(obj, "__table__", None), "name", None)
+        if table not in WAVE6_TABLES or not hasattr(obj, "tenant_id"):
+            continue
+        current = getattr(obj, "tenant_id", None)
+        if current is None and obj in session.new:
+            setattr(obj, "tenant_id", context.tenant_id)
+        elif current != context.tenant_id:
+            raise TenantContextMismatch("Recurso Wave 6 nao pertence ao tenant do contexto.")
 
 
 @event.listens_for(Table, "after_parent_attach", propagate=True)

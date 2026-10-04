@@ -63,7 +63,7 @@ class ChatbotSettings(Base):
     __tablename__ = "chatbot_settings"
     tenant_id = wave6_tenant_column("chatbot_settings")
 
-    id                      = Column(String, primary_key=True, default="default")
+    id                      = Column(String, primary_key=True)
     ativo                   = Column(Boolean, default=True)
     ia_ativo                = Column(Boolean, default=True)
     nome_bot                = Column(String(100), default="Assistente")
@@ -124,7 +124,7 @@ class ChatbotConversation(Base):
     tenant_id = wave6_tenant_column("chatbot_conversations")
 
     id                   = Column(String, primary_key=True, default=lambda: _uid("conv"))
-    session_id           = Column(String, unique=True, nullable=False, index=True)
+    session_id           = Column(String, nullable=False, index=True)
     cliente_id           = Column(
         String, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True
     )

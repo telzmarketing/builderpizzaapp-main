@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     # Metadata alignment for the Wave 6 slice is not query isolation and stays
     # disabled until application ownership checks are implemented and tested.
     MULTI_TENANT_WAVE6_ORM_ENABLED: bool = False
+    # Metadata alignment for the Wave 7 backoffice/async slice. Runtime
+    # callers must still pass a trusted TenantContext before reads/writes.
+    MULTI_TENANT_WAVE7_ORM_ENABLED: bool = False
     # Runtime ownership for operations, freight, delivery and dining room.
     # ORM/schema alignment alone must never imply route-level isolation.
     TENANT_OPERATIONS_ENFORCEMENT_ENABLED: bool = False

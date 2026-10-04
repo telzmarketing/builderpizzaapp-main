@@ -9,6 +9,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from backend.config import get_ai_api_key
+from backend.core.tenant_context import TenantContext
+from backend.core.wave6_tenant_context import wave6_tenant_id
 from backend.models.agente_whatsapp import (
     AgenteWhatsAppAISettings,
     AgenteWhatsAppContext,
@@ -78,16 +80,26 @@ class AgenteWhatsAppAIService:
     registered tools, then composes short replies from tool outputs.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
-        self._service = AgenteWhatsAppService(db)
-        self._tools = AgenteWhatsAppToolService(db)
+        self._tenant_context = tenant_context
+        self._tenant_id = wave6_tenant_id(tenant_context)
+        self._service = AgenteWhatsAppService(db, tenant_context)
+        self._tools = AgenteWhatsAppToolService(db, tenant_context)
+
+    @property
+    def _settings_id(self) -> str:
+        return "default" if self._tenant_id == "tenant-legacy-default" else f"agente-whatsapp-ai:{self._tenant_id}"
 
     def get_settings(self) -> AgenteWhatsAppAISettings:
-        settings = self._db.query(AgenteWhatsAppAISettings).filter(AgenteWhatsAppAISettings.id == "default").first()
+        settings = self._db.query(AgenteWhatsAppAISettings).filter(
+            AgenteWhatsAppAISettings.id == self._settings_id,
+            AgenteWhatsAppAISettings.tenant_id == self._tenant_id,
+        ).first()
         if not settings:
             settings = AgenteWhatsAppAISettings(
-                id="default",
+                id=self._settings_id,
+                tenant_id=self._tenant_id,
                 prompt_base=(
                     "Voce e o AGENTE WHATSAPP oficial da loja. Atenda com objetividade, "
                     "venda com naturalidade e use somente dados vindos das ferramentas reais."
@@ -253,6 +265,7 @@ class AgenteWhatsAppAIService:
                 .filter(
                     AgenteWhatsAppMessage.id == source_message_id,
                     AgenteWhatsAppMessage.session_id == session.id,
+                    AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 )
                 .first()
             )
@@ -294,9 +307,9 @@ class AgenteWhatsAppAIService:
             source_message_id = source_message_id or inbound_message.id
             source_message = source_message or inbound_message
         campaign_context = (
-            AgenteWhatsAppCampaignContextService(self._db).resolve_message(source_message, persist=True)
+            AgenteWhatsAppCampaignContextService(self._db, self._tenant_context).resolve_message(source_message, persist=True)
             if source_message
-            else AgenteWhatsAppCampaignContextService(self._db).resolve_latest_for_session(session.id, persist=True)
+            else AgenteWhatsAppCampaignContextService(self._db, self._tenant_context).resolve_latest_for_session(session.id, persist=True)
         )
 
         guardrails = self.guardrails(session_id=session.id)
@@ -375,7 +388,10 @@ class AgenteWhatsAppAIService:
                     "source_message_id": source_message_id,
                 },
             )
-            enqueue_result = AgenteWhatsAppOutboxService(self._db).enqueue_queued_messages(limit=20)
+            enqueue_result = AgenteWhatsAppOutboxService(
+                self._db,
+                self._tenant_context,
+            ).enqueue_queued_messages(limit=20)
         elif auto_queue:
             outbound_message = self._service.add_message(
                 session,
@@ -467,6 +483,7 @@ class AgenteWhatsAppAIService:
         recent_ai_responses = (
             self._db.query(AgenteWhatsAppMessage)
             .filter(
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.session_id == session.id,
                 AgenteWhatsAppMessage.direction == "outbound",
                 AgenteWhatsAppMessage.sender_type == "ai",
@@ -476,7 +493,10 @@ class AgenteWhatsAppAIService:
         )
         latest_messages = (
             self._db.query(AgenteWhatsAppMessage)
-            .filter(AgenteWhatsAppMessage.session_id == session.id)
+            .filter(
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
+                AgenteWhatsAppMessage.session_id == session.id,
+            )
             .order_by(AgenteWhatsAppMessage.created_at.desc())
             .limit(20)
             .all()
@@ -532,6 +552,7 @@ class AgenteWhatsAppAIService:
         return (
             self._db.query(AgenteWhatsAppMessage)
             .filter(
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.direction == "outbound",
                 AgenteWhatsAppMessage.response_to_message_id == message_id,
             )

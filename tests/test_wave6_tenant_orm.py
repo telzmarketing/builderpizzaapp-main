@@ -1,14 +1,15 @@
 from backend.core.wave6_tenant_orm import (
     SCOPED_UNIQUES,
     WAVE6_TABLES,
+    unsafe_wave6_statement_reason,
     wave6_tenant_column,
     wave6_tenant_orm_enabled,
 )
 
 
 def test_wave6_inventory_and_scoped_uniques_are_complete():
-    assert len(WAVE6_TABLES) == 88
-    assert len(SCOPED_UNIQUES) == 24
+    assert len(WAVE6_TABLES) == 90
+    assert len(SCOPED_UNIQUES) == 25
     assert set(SCOPED_UNIQUES).issubset(WAVE6_TABLES)
 
 
@@ -41,3 +42,19 @@ def test_wave6_model_metadata_uses_migration_constraint_names():
     assert "fk_customer_ai_profiles_tenant" in fk_names
     assert "uq_customer_ai_profiles_tenant_id_id" in index_names
     assert "uq_mt_customer_ai_profile_customer" in index_names
+
+
+def test_wave6_statement_guard_detects_unscoped_table_access():
+    assert unsafe_wave6_statement_reason("SELECT * FROM marketing_campaigns") == "marketing_campaigns"
+    assert unsafe_wave6_statement_reason("UPDATE crm_cards SET title = :title") == "crm_cards"
+    assert unsafe_wave6_statement_reason("DELETE FROM whatsapp_messages WHERE id = :id") == "whatsapp_messages"
+
+
+def test_wave6_statement_guard_allows_explicit_tenant_predicate():
+    assert unsafe_wave6_statement_reason(
+        "SELECT * FROM marketing_campaigns WHERE tenant_id = :tenant_id"
+    ) is None
+    assert unsafe_wave6_statement_reason(
+        "INSERT INTO crm_cards (id, tenant_id, title) VALUES (:id, :tenant_id, :title)"
+    ) is None
+    assert unsafe_wave6_statement_reason("SELECT * FROM products") is None

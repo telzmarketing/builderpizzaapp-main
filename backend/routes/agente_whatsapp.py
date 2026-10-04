@@ -1,15 +1,24 @@
+import hashlib
+import hmac
+import json
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
 from backend.core.response import created, err_msg, ok
+from backend.core.tenant_context import TenantContext, TenantSource
 from backend.core.tenant_runtime import resolve_panel_tenant_context
+from backend.core.wave6_tenant_context import panel_wave6_context
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
-from backend.routes.whatsapp_marketing import _load_whatsapp_verify_token
+from backend.routes.whatsapp_marketing import (
+    _meta_connection_for_verify_token,
+    _meta_connections_for_phone_ids,
+)
 from backend.schemas.agente_whatsapp import (
     AgenteWhatsAppAIGuardrailsOut,
     AgenteWhatsAppAIKeysUpdate,
@@ -87,16 +96,27 @@ from backend.services.agente_whatsapp_tools import AgenteWhatsAppToolService
 from backend.services.whatsapp_gateway_service import WhatsAppGatewayService
 
 router = APIRouter(prefix="/agente-whatsapp", tags=["agente-whatsapp"])
+# Provider callbacks cannot have a panel-session dependency.  Keep them on a
+# separate router so the admin surface remains guarded while the public
+# boundary proves a tenant from provider credentials.
+webhook_router = APIRouter(prefix="/agente-whatsapp", tags=["agente-whatsapp-webhook"])
 
 
-def _get_channel_settings(db: Session) -> AgenteWhatsAppChannelSettings:
+def _get_channel_settings(db: Session, context: TenantContext | None) -> AgenteWhatsAppChannelSettings:
+    tenant_id = context.tenant_id if context else "tenant-legacy-default"
     settings = (
         db.query(AgenteWhatsAppChannelSettings)
-        .filter(AgenteWhatsAppChannelSettings.id == "default")
+        .filter(
+            AgenteWhatsAppChannelSettings.tenant_id == tenant_id,
+        )
         .first()
     )
     if not settings:
-        settings = AgenteWhatsAppChannelSettings(id="default", active_provider="official")
+        settings = AgenteWhatsAppChannelSettings(
+            id=f"agente-whatsapp-channel-{tenant_id}",
+            tenant_id=tenant_id,
+            active_provider="official",
+        )
         db.add(settings)
         db.flush()
     return settings
@@ -111,69 +131,163 @@ def _serialize_channel_settings(settings: AgenteWhatsAppChannelSettings) -> dict
     }
 
 
-@router.get("/webhook/meta", include_in_schema=False)
+def _trusted_process_context(tenant_id: str, request: Request) -> TenantContext:
+    return TenantContext(
+        tenant_id=tenant_id,
+        source=TenantSource.WEBHOOK,
+        correlation_id=getattr(request.state, "correlation_id", None),
+    )
+
+
+def _meta_phone_ids(payload: dict) -> set[str]:
+    """Extract all phone ids relevant to a Meta event without trusting them."""
+    phone_ids: set[str] = set()
+    for entry in payload.get("entry", []) or []:
+        for change in entry.get("changes", []) or []:
+            value = change.get("value") or {}
+            if not ((value.get("messages") or []) or (value.get("statuses") or [])):
+                continue
+            phone_number_id = str(
+                (value.get("metadata") or {}).get("phone_number_id") or ""
+            ).strip()
+            if not phone_number_id:
+                raise ValueError("Webhook Meta sem phone_number_id.")
+            phone_ids.add(phone_number_id)
+    return phone_ids
+
+
+def _meta_connections_for_callback(db: Session, phone_ids: set[str]) -> dict[str, dict]:
+    """Resolve persisted Meta identities, not caller-provided tenant input.
+
+    The shared resolver reads ``whatsapp_phone_number_id`` and the GET
+    challenge is separately bound by ``whatsapp_webhook_verify_token_hash``.
+    """
+    return _meta_connections_for_phone_ids(db, phone_ids)
+
+
+def _evolution_connection_for_instance(db: Session, instance: str, api_key: str) -> str:
+    """Resolve one Evolution instance and verify its tenant-owned secret."""
+    if not instance or not api_key:
+        raise ValueError("Instancia ou segredo Evolution ausente.")
+    matches = db.execute(
+        # ``whatsapp_config`` is the tenant-owned source of the Evolution
+        # configuration.  Do not fall back to a global/default config here.
+        text(
+            """
+            SELECT tenant_id, evolution_api_key
+            FROM whatsapp_config
+            WHERE evolution_instance = :instance
+              AND tenant_id IS NOT NULL
+            """
+        ),
+        {"instance": instance},
+    ).mappings().all()
+    if len(matches) != 1:
+        raise ValueError("Evolution nao configurado para este webhook.")
+    configured_secret = str(matches[0]["evolution_api_key"] or "")
+    if not configured_secret or not hmac.compare_digest(configured_secret, api_key):
+        raise ValueError("Segredo Evolution invalido.")
+    return str(matches[0]["tenant_id"])
+
+
+@webhook_router.get("/webhook/meta", include_in_schema=False)
 def verify_meta_webhook(request: Request, db: Session = Depends(get_db)):
     mode = request.query_params.get("hub.mode")
     token = request.query_params.get("hub.verify_token")
     challenge = request.query_params.get("hub.challenge")
-    expected = _load_whatsapp_verify_token(db)
-
-    if mode == "subscribe" and expected and token == expected and challenge:
+    if mode == "subscribe" and _meta_connection_for_verify_token(db, token) and challenge:
         return PlainTextResponse(challenge)
     return PlainTextResponse("Forbidden", status_code=403)
 
 
-@router.post("/webhook/meta", include_in_schema=False)
+@webhook_router.post("/webhook/meta", include_in_schema=False)
 async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
     try:
-        payload = await request.json()
+        raw_body = await request.body()
+        payload = json.loads(raw_body)
     except Exception:
         return err_msg("Payload de webhook invalido.", code="AgenteWhatsAppWebhookInvalid", status_code=400)
 
-    result = AgenteWhatsAppService(db).process_meta_webhook(payload)
+    try:
+        phone_ids = _meta_phone_ids(payload)
+        connections = _meta_connections_for_callback(db, phone_ids)
+    except ValueError as exc:
+        return err_msg(str(exc), code="AgenteWhatsAppWebhookTenantInvalid", status_code=403)
+    if not phone_ids:
+        return err_msg("Webhook Meta sem evento identificavel.", code="AgenteWhatsAppWebhookTenantMissing", status_code=403)
+    app_secrets = {str(item["credentials"]["app_secret"]) for item in connections.values()}
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    if len(app_secrets) != 1 or not signature.startswith("sha256="):
+        return err_msg("Assinatura Meta invalida.", code="AgenteWhatsAppWebhookSignatureInvalid", status_code=401)
+    expected_signature = "sha256=" + hmac.new(
+        next(iter(app_secrets)).encode("utf-8"), raw_body, hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected_signature):
+        return err_msg("Assinatura Meta invalida.", code="AgenteWhatsAppWebhookSignatureInvalid", status_code=401)
+    tenant_ids = {str(item["tenant_id"]) for item in connections.values()}
+    if len(tenant_ids) != 1:
+        return err_msg("Webhook Meta cobre empresas diferentes.", code="AgenteWhatsAppWebhookTenantInvalid", status_code=403)
+    tenant_context = _trusted_process_context(next(iter(tenant_ids)), request)
+    result = AgenteWhatsAppService(db, tenant_context).process_meta_webhook(payload)
     db.commit()
     return ok(result, "Webhook Meta processado.")
 
 
-@router.post("/webhook/evolution", include_in_schema=False)
+@webhook_router.post("/webhook/evolution", include_in_schema=False)
 async def receive_evolution_webhook(request: Request, db: Session = Depends(get_db)):
     try:
         payload = await request.json()
     except Exception:
         return err_msg("Payload de webhook invalido.", code="AgenteWhatsAppWebhookInvalid", status_code=400)
 
-    result = AgenteWhatsAppService(db).process_evolution_webhook(payload)
+    instance = str(payload.get("instance") or "").strip()
+    api_key = request.headers.get("apikey", "")
+    try:
+        tenant_id = _evolution_connection_for_instance(db, instance, api_key)
+    except ValueError as exc:
+        return err_msg(str(exc), code="AgenteWhatsAppWebhookTenantInvalid", status_code=403)
+    tenant_context = _trusted_process_context(tenant_id, request)
+    result = AgenteWhatsAppService(db, tenant_context).process_evolution_webhook(payload)
     db.commit()
     return ok(result, "Webhook Evolution processado.")
 
 
 @router.get("/dashboard", response_model=AgenteWhatsAppDashboardOut)
-def dashboard(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return AgenteWhatsAppService(db).dashboard()
+def dashboard(
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+):
+    return AgenteWhatsAppService(db, context).dashboard()
 
 
 @router.get("/operational-metrics", response_model=AgenteWhatsAppOperationalMetricsOut)
-def operational_metrics(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return AgenteWhatsAppService(db).operational_metrics()
+def operational_metrics(
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+):
+    return AgenteWhatsAppService(db, context).operational_metrics()
 
 
 @router.get("/audio/metrics", response_model=AgenteWhatsAppAudioMetricsOut)
 def audio_metrics(
     days: int = Query(default=7, ge=1, le=90),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    return AgenteWhatsAppAnalyticsService(db).audio_metrics(days=days)
+    return AgenteWhatsAppAnalyticsService(db, context).audio_metrics(days=days)
 
 
 @router.get("/audio/production-readiness", response_model=AgenteWhatsAppProductionReadinessOut)
-def audio_production_readiness(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def audio_production_readiness(
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+):
     settings = get_settings()
-    outbox_service = AgenteWhatsAppOutboxService(db)
-    processing_summary = AgenteWhatsAppProcessingService(db).summary()
+    outbox_service = AgenteWhatsAppOutboxService(db, context)
+    processing_summary = AgenteWhatsAppProcessingService(db, context).summary()
     outbox_metrics = outbox_service.metrics()
-    audio_settings = AgenteWhatsAppAudioSettingsService(db).get_settings()
-    rollout_status = AgenteWhatsAppRolloutService(db).status()
+    audio_settings = AgenteWhatsAppAudioSettingsService(db, context).get_settings()
+    rollout_status = AgenteWhatsAppRolloutService(db, context).status()
 
     checks = [
         {
@@ -267,9 +381,9 @@ def cleanup_audio_retention(
     dry_run: bool = Query(default=True),
     limit: int = Query(default=50, ge=1, le=500),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    result = AgenteWhatsAppRetentionService(db).audio_cleanup(dry_run=dry_run, limit=limit)
+    result = AgenteWhatsAppRetentionService(db, context).audio_cleanup(dry_run=dry_run, limit=limit)
     if not dry_run:
         db.commit()
     return result
@@ -284,10 +398,10 @@ def list_conversations(
     date_to: date | None = Query(default=None),
     limit: int = Query(default=80, ge=1, le=200),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
     normalized_status = None if status in (None, "", "all") else status
-    return AgenteWhatsAppService(db).list_conversations(
+    return AgenteWhatsAppService(db, context).list_conversations(
         status=normalized_status,
         search=search,
         assigned_admin_id=assigned_admin_id,
@@ -298,17 +412,17 @@ def list_conversations(
 
 
 @router.get("/automations/templates", response_model=list[AgenteWhatsAppAutomationTemplateOut])
-def automation_templates(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return AgenteWhatsAppService(db).automation_templates()
+def automation_templates(db: Session = Depends(get_db), context: TenantContext | None = Depends(panel_wave6_context)):
+    return AgenteWhatsAppService(db, context).automation_templates()
 
 
 @router.post("/automations/run", response_model=AgenteWhatsAppAutomationRunOut)
 def run_commercial_automation(
     body: AgenteWhatsAppAutomationRunIn,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     try:
         result = service.run_commercial_automation(
             key=body.key,
@@ -326,30 +440,30 @@ def run_commercial_automation(
 def run_due_commercial_automations(
     limit_per_automation: int = Query(default=30, ge=1, le=200),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    result = AgenteWhatsAppService(db).run_due_commercial_automations(limit_per_automation=limit_per_automation)
+    result = AgenteWhatsAppService(db, context).run_due_commercial_automations(limit_per_automation=limit_per_automation)
     db.commit()
     return ok(result, "Automacoes comerciais processadas.")
 
 
 @router.get("/campaigns/templates", response_model=list[AgenteWhatsAppCampaignTemplateOut])
-def campaign_templates(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return AgenteWhatsAppService(db).campaign_templates()
+def campaign_templates(db: Session = Depends(get_db), context: TenantContext | None = Depends(panel_wave6_context)):
+    return AgenteWhatsAppService(db, context).campaign_templates()
 
 
 @router.get("/stories/templates", response_model=list[AgenteWhatsAppStoryTemplateOut])
-def story_templates(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return AgenteWhatsAppService(db).story_templates()
+def story_templates(db: Session = Depends(get_db), context: TenantContext | None = Depends(panel_wave6_context)):
+    return AgenteWhatsAppService(db, context).story_templates()
 
 
 @router.post("/stories/process-scheduled")
 def process_scheduled_stories(
     limit: int = Query(default=10, ge=1, le=100),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    result = AgenteWhatsAppService(db).process_scheduled_stories(limit=limit)
+    result = AgenteWhatsAppService(db, context).process_scheduled_stories(limit=limit)
     db.commit()
     return ok(result, "Stories agendados processados.")
 
@@ -359,9 +473,9 @@ def list_stories(
     status: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     normalized_status = None if status in (None, "", "all") else status
     return [service.serialize_story(story) for story in service.list_stories(status=normalized_status, limit=limit)]
 
@@ -371,8 +485,9 @@ def create_story(
     body: AgenteWhatsAppStoryCreate,
     db: Session = Depends(get_db),
     admin=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     story = service.create_story(body.model_dump(), created_by=getattr(admin, "email", None))
     db.commit()
     db.refresh(story)
@@ -384,9 +499,9 @@ def update_story(
     story_id: str,
     body: AgenteWhatsAppStoryUpdate,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     story = service.get_story(story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story nao encontrado.")
@@ -401,9 +516,9 @@ def publish_story(
     story_id: str,
     force: bool = Query(default=False),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     story = service.get_story(story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story nao encontrado.")
@@ -416,9 +531,9 @@ def publish_story(
 def process_scheduled_campaigns(
     limit: int = Query(default=10, ge=1, le=100),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    result = AgenteWhatsAppService(db).process_scheduled_campaigns(limit=limit)
+    result = AgenteWhatsAppService(db, context).process_scheduled_campaigns(limit=limit)
     db.commit()
     return ok(result, "Campanhas agendadas processadas.")
 
@@ -427,9 +542,9 @@ def process_scheduled_campaigns(
 def list_campaigns(
     limit: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     return [service.serialize_campaign(campaign) for campaign in service.list_campaigns(limit=limit)]
 
 
@@ -438,8 +553,9 @@ def create_campaign(
     body: AgenteWhatsAppCampaignCreate,
     db: Session = Depends(get_db),
     admin=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     try:
         campaign = service.create_campaign(body.model_dump(), created_by=getattr(admin, "email", None))
     except ValueError as exc:
@@ -454,9 +570,9 @@ def dispatch_campaign(
     campaign_id: str,
     force: bool = Query(default=False),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     campaign = service.get_campaign(campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campanha nao encontrada.")
@@ -471,8 +587,11 @@ def list_tools(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 
 
 @router.get("/ai/settings", response_model=AgenteWhatsAppAISettingsOut)
-def get_ai_settings(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    service = AgenteWhatsAppAIService(db)
+def get_ai_settings(
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+):
+    service = AgenteWhatsAppAIService(db, context)
     return service.serialize_settings(service.get_settings())
 
 
@@ -480,26 +599,29 @@ def get_ai_settings(db: Session = Depends(get_db), _=Depends(get_current_admin))
 def update_ai_settings(
     body: AgenteWhatsAppAISettingsUpdate,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    result = AgenteWhatsAppAIService(db).update_settings(body.model_dump(exclude_none=True))
+    result = AgenteWhatsAppAIService(db, context).update_settings(body.model_dump(exclude_none=True))
     db.commit()
     return result
 
 
 @router.get("/ai/settings/status", response_model=AgenteWhatsAppAIProviderStatusOut)
-def ai_provider_status(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return AgenteWhatsAppAIService(db).provider_status()
+def ai_provider_status(
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+):
+    return AgenteWhatsAppAIService(db, context).provider_status()
 
 
 @router.put("/ai/settings/keys", response_model=AgenteWhatsAppAIProviderStatusOut)
 def update_ai_keys(
     body: AgenteWhatsAppAIKeysUpdate,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
     try:
-        result = AgenteWhatsAppAIService(db).update_ai_keys(
+        result = AgenteWhatsAppAIService(db, context).update_ai_keys(
             openai_api_key=body.openai_api_key,
             anthropic_api_key=body.anthropic_api_key,
         )
@@ -513,10 +635,10 @@ def update_ai_keys(
 def test_ai_settings(
     body: AgenteWhatsAppAITestIn,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
     try:
-        return AgenteWhatsAppAIService(db).test_ai_connection(message=body.message)
+        return AgenteWhatsAppAIService(db, context).test_ai_connection(message=body.message)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:
@@ -542,33 +664,39 @@ def execute_tool(
 
 
 @router.get("/audio/settings", response_model=AgenteWhatsAppAudioSettingsOut)
-def get_audio_settings(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return AgenteWhatsAppAudioSettingsService(db).get_settings()
+def get_audio_settings(
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+):
+    return AgenteWhatsAppAudioSettingsService(db, context).get_settings()
 
 
 @router.put("/audio/settings", response_model=AgenteWhatsAppAudioSettingsOut)
 def update_audio_settings(
     body: AgenteWhatsAppAudioSettingsUpdate,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    result = AgenteWhatsAppAudioSettingsService(db).update_settings(body.model_dump(exclude_none=True))
+    result = AgenteWhatsAppAudioSettingsService(db, context).update_settings(body.model_dump(exclude_none=True))
     db.commit()
     return result
 
 
 @router.get("/audio/rollout", response_model=AgenteWhatsAppRolloutSettingsOut)
-def get_audio_rollout_settings(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return AgenteWhatsAppRolloutService(db).get_settings()
+def get_audio_rollout_settings(
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+):
+    return AgenteWhatsAppRolloutService(db, context).get_settings()
 
 
 @router.put("/audio/rollout", response_model=AgenteWhatsAppRolloutSettingsOut)
 def update_audio_rollout_settings(
     body: AgenteWhatsAppRolloutSettingsUpdate,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    result = AgenteWhatsAppRolloutService(db).update_settings(body.model_dump(exclude_none=True))
+    result = AgenteWhatsAppRolloutService(db, context).update_settings(body.model_dump(exclude_none=True))
     db.commit()
     return result
 
@@ -578,10 +706,10 @@ def ai_respond(
     session_id: str,
     body: AgenteWhatsAppAIRespondIn,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
     try:
-        result = AgenteWhatsAppAIService(db).respond(
+        result = AgenteWhatsAppAIService(db, context).respond(
             session_id=session_id,
             message=body.message,
             auto_queue=body.auto_queue,
@@ -598,10 +726,10 @@ def ai_respond(
 def ai_guardrails(
     session_id: str,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
     try:
-        return AgenteWhatsAppAIService(db).guardrails(session_id=session_id)
+        return AgenteWhatsAppAIService(db, context).guardrails(session_id=session_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -610,12 +738,12 @@ def ai_guardrails(
 def get_session_campaign_context(
     session_id: str,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     if not service.get_session(session_id):
         raise HTTPException(status_code=404, detail="Sessao nao encontrada.")
-    payload = AgenteWhatsAppCampaignContextService(db).resolve_latest_for_session(session_id, persist=True)
+    payload = AgenteWhatsAppCampaignContextService(db, context).resolve_latest_for_session(session_id, persist=True)
     db.commit()
     return payload
 
@@ -624,10 +752,10 @@ def get_session_campaign_context(
 def resolve_message_campaign_context(
     message_id: str,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
     try:
-        payload = AgenteWhatsAppCampaignContextService(db).resolve_for_message(message_id, persist=True)
+        payload = AgenteWhatsAppCampaignContextService(db, context).resolve_for_message(message_id, persist=True)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     db.commit()
@@ -635,41 +763,41 @@ def resolve_message_campaign_context(
 
 
 @router.get("/outbox/summary", response_model=AgenteWhatsAppOutboxSummaryOut)
-def outbox_summary(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return AgenteWhatsAppOutboxService(db).summary()
+def outbox_summary(db: Session = Depends(get_db), context: TenantContext | None = Depends(panel_wave6_context)):
+    return AgenteWhatsAppOutboxService(db, context).summary()
 
 
 @router.get("/outbox/metrics", response_model=AgenteWhatsAppOutboxMetricsOut)
-def outbox_metrics(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return AgenteWhatsAppOutboxService(db).metrics()
+def outbox_metrics(db: Session = Depends(get_db), context: TenantContext | None = Depends(panel_wave6_context)):
+    return AgenteWhatsAppOutboxService(db, context).metrics()
 
 
 @router.get("/observability", response_model=AgenteWhatsAppObservabilityOut)
-def observability(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    service = AgenteWhatsAppOutboxService(db)
+def observability(db: Session = Depends(get_db), context: TenantContext | None = Depends(panel_wave6_context)):
+    service = AgenteWhatsAppOutboxService(db, context)
     payload = service.observability()
     db.commit()
     return payload
 
 
 @router.get("/outbox/alerts", response_model=AgenteWhatsAppOutboxAlertsOut)
-def outbox_alerts(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    payload = AgenteWhatsAppOutboxService(db).alerts()
+def outbox_alerts(db: Session = Depends(get_db), context: TenantContext | None = Depends(panel_wave6_context)):
+    payload = AgenteWhatsAppOutboxService(db, context).alerts()
     db.commit()
     return payload
 
 
 @router.get("/outbox/providers", response_model=list[AgenteWhatsAppProviderStateOut])
-def outbox_providers(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    service = AgenteWhatsAppOutboxService(db)
+def outbox_providers(db: Session = Depends(get_db), context: TenantContext | None = Depends(panel_wave6_context)):
+    service = AgenteWhatsAppOutboxService(db, context)
     states = service.provider_states()
     db.commit()
     return [service.serialize_provider_state(state) for state in states]
 
 
 @router.get("/channel/settings", response_model=AgenteWhatsAppChannelSettingsOut)
-def get_channel_settings(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    settings = _get_channel_settings(db)
+def get_channel_settings(db: Session = Depends(get_db), context: TenantContext | None = Depends(panel_wave6_context)):
+    settings = _get_channel_settings(db, context)
     db.commit()
     db.refresh(settings)
     return _serialize_channel_settings(settings)
@@ -679,15 +807,15 @@ def get_channel_settings(db: Session = Depends(get_db), _=Depends(get_current_ad
 def update_channel_settings(
     body: AgenteWhatsAppChannelSettingsUpdate,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    settings = _get_channel_settings(db)
+    settings = _get_channel_settings(db, context)
     if body.active_provider is not None:
         settings.active_provider = body.active_provider
     if body.whatsapp_gateway_instance_id is not None:
         instance_id = body.whatsapp_gateway_instance_id.strip()
         if instance_id:
-            instance = WhatsAppGatewayService(db).get_instance(instance_id)
+            instance = WhatsAppGatewayService(db, tenant_context=context).get_instance(instance_id)
             if not instance:
                 raise HTTPException(status_code=404, detail="Instancia do WhatsApp Gateway nao encontrada.")
             settings.whatsapp_gateway_instance_id = instance_id
@@ -703,9 +831,9 @@ def list_internal_alerts(
     status: str | None = Query(default="active"),
     limit: int = Query(default=30, ge=1, le=100),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppOutboxService(db)
+    service = AgenteWhatsAppOutboxService(db, context)
     normalized_status = None if status in (None, "", "all") else status
     alerts = service.list_internal_alerts(status=normalized_status, limit=limit)
     db.commit()
@@ -716,9 +844,9 @@ def list_internal_alerts(
 def acknowledge_internal_alert(
     alert_id: str,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppOutboxService(db)
+    service = AgenteWhatsAppOutboxService(db, context)
     alert = service.acknowledge_internal_alert(alert_id)
     if not alert:
         raise HTTPException(status_code=404, detail="Alerta interno nao encontrado.")
@@ -732,9 +860,9 @@ def list_outbox(
     status: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=300),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppOutboxService(db)
+    service = AgenteWhatsAppOutboxService(db, context)
     return [service.serialize_outbox(row) for row in service.list_outbox(status=status, limit=limit)]
 
 
@@ -742,9 +870,9 @@ def list_outbox(
 def enqueue_outbox(
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    result = AgenteWhatsAppOutboxService(db).enqueue_queued_messages(limit=limit)
+    result = AgenteWhatsAppOutboxService(db, context).enqueue_queued_messages(limit=limit)
     db.commit()
     return ok(result, "Mensagens queued enfileiradas.")
 
@@ -754,9 +882,9 @@ def pause_outbox_provider(
     provider: str,
     body: AgenteWhatsAppProviderPauseIn,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppOutboxService(db)
+    service = AgenteWhatsAppOutboxService(db, context)
     state = service.pause_provider(provider, reason=body.reason, minutes=body.minutes)
     db.commit()
     db.refresh(state)
@@ -767,9 +895,9 @@ def pause_outbox_provider(
 def resume_outbox_provider(
     provider: str,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppOutboxService(db)
+    service = AgenteWhatsAppOutboxService(db, context)
     state = service.resume_provider(provider)
     db.commit()
     db.refresh(state)
@@ -780,16 +908,16 @@ def resume_outbox_provider(
 def process_outbox(
     body: AgenteWhatsAppOutboxProcessIn,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    result = AgenteWhatsAppOutboxService(db).process_pending(limit=body.limit)
+    result = AgenteWhatsAppOutboxService(db, context).process_pending(limit=body.limit)
     db.commit()
     return result
 
 
 @router.get("/processing/summary", response_model=AgenteWhatsAppProcessingSummaryOut)
-def processing_summary(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return AgenteWhatsAppProcessingService(db).summary()
+def processing_summary(db: Session = Depends(get_db), context: TenantContext | None = Depends(panel_wave6_context)):
+    return AgenteWhatsAppProcessingService(db, context).summary()
 
 
 @router.get("/processing/jobs", response_model=list[AgenteWhatsAppProcessingJobOut])
@@ -797,9 +925,9 @@ def list_processing_jobs(
     status: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=300),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppProcessingService(db)
+    service = AgenteWhatsAppProcessingService(db, context)
     return [service.serialize_job(job) for job in service.list_jobs(status=status, limit=limit)]
 
 
@@ -807,9 +935,9 @@ def list_processing_jobs(
 def enqueue_processing_jobs(
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    result = AgenteWhatsAppProcessingService(db).enqueue_pending_inbound(limit=limit)
+    result = AgenteWhatsAppProcessingService(db, context).enqueue_pending_inbound(limit=limit)
     db.commit()
     return result
 
@@ -818,9 +946,9 @@ def enqueue_processing_jobs(
 def process_audio_transcriptions(
     limit: int = Query(default=10, ge=1, le=50),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    result = AgenteWhatsAppProcessingService(db).process_audio_transcriptions(limit=limit)
+    result = AgenteWhatsAppProcessingService(db, context).process_audio_transcriptions(limit=limit)
     db.commit()
     return result
 
@@ -829,9 +957,9 @@ def process_audio_transcriptions(
 def process_agent_responses(
     limit: int = Query(default=10, ge=1, le=50),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    result = AgenteWhatsAppProcessingService(db).process_agent_responses(limit=limit)
+    result = AgenteWhatsAppProcessingService(db, context).process_agent_responses(limit=limit)
     db.commit()
     return result
 
@@ -840,9 +968,9 @@ def process_agent_responses(
 def process_tts_generations(
     limit: int = Query(default=10, ge=1, le=50),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    result = AgenteWhatsAppProcessingService(db).process_tts_generations(limit=limit)
+    result = AgenteWhatsAppProcessingService(db, context).process_tts_generations(limit=limit)
     db.commit()
     return result
 
@@ -851,20 +979,24 @@ def process_tts_generations(
 def retry_message_tts(
     message_id: str,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
     try:
-        result = AgenteWhatsAppAudioService(db).synthesize_response_audio(message_id)
+        result = AgenteWhatsAppAudioService(db, context).synthesize_response_audio(message_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     message_payload = result.get("message") if isinstance(result.get("message"), dict) else None
     generated_id = message_payload.get("id") if message_payload else None
     if generated_id:
-        generated = db.query(AgenteWhatsAppMessage).filter(AgenteWhatsAppMessage.id == generated_id).first()
+        tenant_id = context.tenant_id if context else "tenant-legacy-default"
+        generated = db.query(AgenteWhatsAppMessage).filter(
+            AgenteWhatsAppMessage.id == generated_id,
+            AgenteWhatsAppMessage.tenant_id == tenant_id,
+        ).first()
         if generated:
             generated.provider_status = "queued"
             generated.error = None
-    AgenteWhatsAppOutboxService(db).enqueue_queued_messages(limit=20)
+    AgenteWhatsAppOutboxService(db, context).enqueue_queued_messages(limit=20)
     db.commit()
     return result
 
@@ -873,10 +1005,10 @@ def retry_message_tts(
 def retry_message_transcription(
     message_id: str,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
     try:
-        result = AgenteWhatsAppAudioService(db).transcribe_message(message_id, force=True)
+        result = AgenteWhatsAppAudioService(db, context).transcribe_message(message_id, force=True)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     db.commit()
@@ -887,9 +1019,9 @@ def retry_message_transcription(
 def retry_outbox(
     outbox_id: str,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppOutboxService(db)
+    service = AgenteWhatsAppOutboxService(db, context)
     item = service.retry(outbox_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item da fila nao encontrado.")
@@ -903,9 +1035,9 @@ def list_sessions(
     status: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     return [service.serialize_session(row) for row in service.list_sessions(status=status, limit=limit)]
 
 
@@ -913,9 +1045,9 @@ def list_sessions(
 def create_session(
     body: AgenteWhatsAppSessionCreate,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     try:
         session, was_created = service.get_or_create_session(
             phone=body.phone,
@@ -938,9 +1070,9 @@ def create_session(
 def get_session(
     session_id: str,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     session = service.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Sessao nao encontrada.")
@@ -957,9 +1089,9 @@ def update_session(
     session_id: str,
     body: AgenteWhatsAppSessionUpdate,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     session = service.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Sessao nao encontrada.")
@@ -974,9 +1106,9 @@ def list_messages(
     session_id: str,
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     if not service.get_session(session_id):
         raise HTTPException(status_code=404, detail="Sessao nao encontrada.")
     return [service.serialize_message(message) for message in service.list_messages(session_id, limit=limit)]
@@ -987,9 +1119,9 @@ def add_message(
     session_id: str,
     body: AgenteWhatsAppMessageCreate,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    context: TenantContext | None = Depends(panel_wave6_context),
 ):
-    service = AgenteWhatsAppService(db)
+    service = AgenteWhatsAppService(db, context)
     session = service.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Sessao nao encontrada.")

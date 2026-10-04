@@ -51,6 +51,7 @@ class OrderCreated(DomainEvent):
     total: float
     items_count: int
     delivery_city: str
+    tenant_id: str | None = None
 
 
 @dataclass
@@ -59,6 +60,7 @@ class OrderStatusChanged(DomainEvent):
     from_status: str
     to_status: str
     changed_by: str = "system"        # "system" | "admin" | "webhook"
+    tenant_id: str | None = None
 
 
 @dataclass
@@ -66,6 +68,7 @@ class OrderCancelled(DomainEvent):
     order_id: str
     reason: str
     refund_required: bool = False
+    tenant_id: str | None = None
 
 
 # ── Payment events ────────────────────────────────────────────────────────────
@@ -77,6 +80,7 @@ class PaymentCreated(DomainEvent):
     method: str
     amount: float
     gateway: str
+    tenant_id: str | None = None
 
 
 @dataclass
@@ -86,6 +90,7 @@ class PaymentConfirmed(DomainEvent):
     amount: float
     gateway: str
     transaction_id: str
+    tenant_id: str | None = None
 
 
 @dataclass
@@ -96,6 +101,7 @@ class PaymentReversed(DomainEvent):
     gateway: str
     transaction_id: str
     reason: str
+    tenant_id: str | None = None
 
 
 @dataclass
@@ -103,6 +109,7 @@ class PaymentFailed(DomainEvent):
     payment_id: str
     order_id: str
     reason: str
+    tenant_id: str | None = None
 
 
 @dataclass
@@ -112,6 +119,7 @@ class InventoryPurchaseConfirmed(DomainEvent):
     total_amount: float
     invoice_number: str | None
     expected_date: date | None
+    tenant_id: str | None = None
 
 
 # ── Delivery events ───────────────────────────────────────────────────────────
@@ -123,6 +131,7 @@ class DeliveryAssigned(DomainEvent):
     delivery_person_id: str
     delivery_person_name: str
     estimated_minutes: int
+    tenant_id: str | None = None
 
 
 @dataclass
@@ -131,6 +140,7 @@ class DeliveryStatusChanged(DomainEvent):
     order_id: str
     from_status: str
     to_status: str
+    tenant_id: str | None = None
 
 
 @dataclass
@@ -139,6 +149,7 @@ class DeliveryCompleted(DomainEvent):
     order_id: str
     delivery_person_id: str
     duration_minutes: int
+    tenant_id: str | None = None
 
 
 # ── Loyalty events ───────────────────────────────────────────────────────────

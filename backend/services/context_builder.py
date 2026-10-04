@@ -48,8 +48,9 @@ _STATUS_LABEL = {
 
 
 class ContextBuilder:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_id: str):
         self._db = db
+        self._tenant_id = tenant_id
 
     # ── Ponto de entrada ─────────────────────────────────────────────────────
 
@@ -152,7 +153,9 @@ class ContextBuilder:
 
     def _customer_context(self, customer_id: str) -> str:
         try:
-            customer = self._db.query(Customer).filter(Customer.id == customer_id).first()
+            customer = self._db.query(Customer).filter(
+                Customer.id == customer_id, Customer.tenant_id == self._tenant_id
+            ).first()
             if not customer:
                 return ""
             parts = [f"Cliente logado: {customer.name}"]
@@ -168,6 +171,7 @@ class ContextBuilder:
                 self._db.query(Order)
                 .filter(
                     Order.customer_id == customer_id,
+                    Order.tenant_id == self._tenant_id,
                     Order.status.in_(_ACTIVE_ORDER_STATUSES),
                 )
                 .order_by(Order.created_at.desc())
@@ -191,7 +195,8 @@ class ContextBuilder:
             match = re.search(r"/product/([^/?#]+)", page_url)
             if match:
                 prod = self._db.query(Product).filter(
-                    Product.id == match.group(1), Product.active == True  # noqa: E712
+                    Product.id == match.group(1), Product.tenant_id == self._tenant_id,
+                    Product.active == True,  # noqa: E712
                 ).first()
                 if prod:
                     return (
@@ -201,7 +206,7 @@ class ContextBuilder:
 
         products = (
             self._db.query(Product)
-            .filter(Product.active == True)  # noqa: E712
+            .filter(Product.tenant_id == self._tenant_id, Product.active == True)  # noqa: E712
             .order_by(Product.rating.desc())
             .limit(_MAX_PRODUCTS_CONTEXT)
             .all()
@@ -215,7 +220,7 @@ class ContextBuilder:
         now = datetime.now(timezone.utc)
         promos = (
             self._db.query(Promotion)
-            .filter(Promotion.active == True)  # noqa: E712
+            .filter(Promotion.tenant_id == self._tenant_id, Promotion.active == True)  # noqa: E712
             .limit(5)
             .all()
         )
@@ -235,6 +240,7 @@ class ContextBuilder:
             results = (
                 self._db.query(ChatbotFAQ)
                 .filter(
+                    ChatbotFAQ.tenant_id == self._tenant_id,
                     ChatbotFAQ.ativo == True,  # noqa: E712
                     ChatbotFAQ.busca_vetor.op("@@")(
                         func.to_tsquery("portuguese", tsquery)
@@ -248,7 +254,7 @@ class ContextBuilder:
             # Fallback sem full-text (tabela sem vetor ainda populado)
             results = (
                 self._db.query(ChatbotFAQ)
-                .filter(ChatbotFAQ.ativo == True)  # noqa: E712
+                .filter(ChatbotFAQ.tenant_id == self._tenant_id, ChatbotFAQ.ativo == True)  # noqa: E712
                 .order_by(ChatbotFAQ.prioridade.desc())
                 .limit(3)
                 .all()
@@ -268,6 +274,7 @@ class ContextBuilder:
             docs = (
                 self._db.query(ChatbotKnowledgeDoc)
                 .filter(
+                    ChatbotKnowledgeDoc.tenant_id == self._tenant_id,
                     ChatbotKnowledgeDoc.ativo == True,  # noqa: E712
                     ChatbotKnowledgeDoc.busca_vetor.op("@@")(
                         func.to_tsquery("portuguese", tsquery)
@@ -304,7 +311,7 @@ class ContextBuilder:
     ) -> list[AIMessage]:
         msgs = (
             self._db.query(ChatbotMessage)
-            .filter(ChatbotMessage.conversation_id == conv.id)
+            .filter(ChatbotMessage.conversation_id == conv.id, ChatbotMessage.tenant_id == self._tenant_id)
             .order_by(ChatbotMessage.timestamp.desc())
             .limit(_MAX_HISTORY_MSGS)
             .all()

@@ -6,6 +6,11 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from backend.core.response import ok
+from backend.core.wave6_tenant_context import (
+    WAVE6_SESSION_TENANT_KEY,
+    panel_wave6_context,
+    wave6_tenant_id,
+)
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
 from backend.schemas.marketing_intelligence import (
@@ -22,12 +27,15 @@ from backend.services.marketing_intelligence_service import MarketingIntelligenc
 router = APIRouter(
     prefix="/marketing-intelligence",
     tags=["marketing-intelligence"],
-    dependencies=[Depends(get_current_admin)],
+    dependencies=[Depends(get_current_admin), Depends(panel_wave6_context)],
 )
 
 
 def _service(db: Session) -> MarketingIntelligenceService:
-    return MarketingIntelligenceService(db)
+    return MarketingIntelligenceService(
+        db,
+        wave6_tenant_id(db.info.get(WAVE6_SESSION_TENANT_KEY)),
+    )
 
 
 @router.get("/dashboard")

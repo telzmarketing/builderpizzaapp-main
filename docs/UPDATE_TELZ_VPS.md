@@ -1,6 +1,6 @@
 # Atualizacao Telz na VPS
 
-Atualizado em: 2026-09-29
+Atualizado em: 2026-10-04
 
 Este procedimento cobre atualizacao incremental de uma instalacao existente em
 `/opt/telz`. `installer/install.sh` e exclusivo da primeira instalacao ou de
@@ -27,11 +27,24 @@ O workflow:
 O target canonico desta entrega e:
 
 ```text
-20260930_tenant_runtime_uniqueness
+20261003_agente_whatsapp_tenant_foundation
 ```
 
 O deploy fica bloqueado se o commit publicado nao possuir exatamente esse unico
 head ou se banco, manifest, hashes e artefatos nao convergirem.
+
+A cadeia operacional que deve existir no commit publicado e linear:
+
+```text
+20260927_order_board_mvp
+  -> 20260930_tenant_runtime_uniqueness
+  -> 20261003_marketing_workflow_tenant_isolation
+  -> 20261003_chatbot_tenant_keys
+  -> 20261003_marketing_tenant_keys
+  -> 20261003_whatsapp_meta_webhook_tenant_keys
+  -> 20261003_email_marketing_tenant_config
+  -> 20261003_agente_whatsapp_tenant_foundation
+```
 
 ## 2. Preflight
 
@@ -52,13 +65,25 @@ movimentacao manual para contornar o gate.
 
 Confirme no commit alvo:
 
-- unico head Alembic `20260930_tenant_runtime_uniqueness`;
+- unico head Alembic `20261003_agente_whatsapp_tenant_foundation`;
 - workflow e updater usando o mesmo target;
+- CI verde para o mesmo SHA, incluindo o upgrade Alembic em PostgreSQL
+  descartavel; CI verde nao substitui o backup nem a migration na VPS;
 - commit anterior ancestral do commit alvo;
-- secrets `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_HOST_FINGERPRINT` e,
-  quando necessario, `VPS_PORT`;
+- secrets `VPS_HOST`, `VPS_USER` (atualmente `root`), `VPS_PORT`,
+  `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS` e `VPS_HOST_FINGERPRINT`;
 - protecoes/aprovadores do environment `production`;
 - URL publica canonica `https://erp.telz.com.br/health` operacional.
+
+`VPS_KNOWN_HOSTS` deve conter a linha completa no formato `known_hosts` para
+`VPS_HOST:VPS_PORT`; ele e usado pelas etapas SSH com
+`StrictHostKeyChecking=yes`. Nao o substitua pelo fingerprint. Cole-o no secret
+somente depois de conferir a chave publica/fingerprint do host por canal
+independente e confiavel; nunca aceite uma chave apresentada durante um deploy.
+
+Antes da janela, confirme tambem que o backup recente pode ser lido e que o
+procedimento de restore foi ensaiado fora de producao. O updater cria um backup
+coerente antes de migrar, mas nao transforma um backup novo em restore provado.
 
 ## 3. Comandos manuais que nao sao suportados
 
@@ -76,7 +101,7 @@ deploy, todos estes inputs promovidos e root-owned:
 - archive de fonte alvo e seu `TELZ_SOURCE_ARCHIVE_SHA256`;
 - archive de fonte anterior e seu `TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256`;
 - archive offline de dependencias e seu `TELZ_DEPENDENCY_ARCHIVE_SHA256`;
-- `TELZ_ALEMBIC_TARGET=20260930_tenant_runtime_uniqueness`;
+- `TELZ_ALEMBIC_TARGET=20261003_agente_whatsapp_tenant_foundation`;
 - `TELZ_PUBLIC_HEALTH_URL` quando HTTPS publico e obrigatorio.
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
@@ -117,7 +142,7 @@ sudo /usr/local/sbin/telz-health-check /opt/telz
 ```
 
 Confirme que o link `current` termina em `/releases/<SHA-ALVO>/app`, o manifest
-registra o mesmo commit e `20260930_tenant_runtime_uniqueness`, e o banco possui uma unica
+registra o mesmo commit e `20261003_agente_whatsapp_tenant_foundation`, e o banco possui uma unica
 revision igual ao target.
 
 Tambem valide HTTPS publico, login, loja, pedido, pagamentos, cozinha,

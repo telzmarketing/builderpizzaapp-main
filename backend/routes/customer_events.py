@@ -5,14 +5,16 @@ Endpoints públicos para receber eventos da loja.
 from __future__ import annotations
 import uuid
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
+from backend.core.tenant_context import TenantContext
 from backend.models.admin import AdminUser
 from backend.models.customer_event import CustomerEvent
 from backend.schemas.customer_event import CustomerEventCreate, IdentifySessionRequest
 from backend.core.response import ok, created
+from backend.core.wave6_tenant_context import panel_wave6_context, public_wave6_context, wave6_tenant_id
 from backend.routes.admin_auth import get_current_admin
 from backend.routes.customer_access import require_customer_id_or_admin
 
@@ -55,11 +57,14 @@ EVENT_FRIENDLY_NAMES: dict[str, str] = {
 @router.post("", status_code=201)
 def register_event(
     body: CustomerEventCreate,
+    request: Request,
     db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(public_wave6_context),
     authorization: str | None = Header(default=None),
     x_customer_phone: str | None = Header(default=None),
     x_customer_email: str | None = Header(default=None),
 ):
+    tenant_id = wave6_tenant_id(context)
     if body.customer_id:
         require_customer_id_or_admin(
             body.customer_id,
@@ -67,9 +72,11 @@ def register_event(
             authorization,
             x_customer_phone,
             x_customer_email,
+            expected_tenant_id=tenant_id,
         )
     event = CustomerEvent(
         id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
         customer_id=body.customer_id,
         session_id=body.session_id,
         event_type=body.event_type,
@@ -101,12 +108,14 @@ def register_event(
 @router.get("/by-session/{session_id}")
 def events_by_session(
     session_id: str,
+    request: Request,
     db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
     _admin: AdminUser = Depends(get_current_admin),
 ):
     events = (
         db.query(CustomerEvent)
-        .filter(CustomerEvent.session_id == session_id)
+        .filter(CustomerEvent.session_id == session_id, CustomerEvent.tenant_id == wave6_tenant_id(context))
         .order_by(CustomerEvent.created_at.desc())
         .limit(100)
         .all()
@@ -117,23 +126,28 @@ def events_by_session(
 @router.post("/identify")
 def identify_session(
     body: IdentifySessionRequest,
+    request: Request,
     db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(public_wave6_context),
     authorization: str | None = Header(default=None),
     x_customer_phone: str | None = Header(default=None),
     x_customer_email: str | None = Header(default=None),
 ):
     """Vincula todos os eventos anônimos de uma session_id ao customer_id."""
+    tenant_id = wave6_tenant_id(context)
     require_customer_id_or_admin(
         body.customer_id,
         db,
         authorization,
         x_customer_phone,
         x_customer_email,
+        expected_tenant_id=tenant_id,
     )
     updated = (
         db.query(CustomerEvent)
         .filter(
             CustomerEvent.session_id == body.session_id,
+            CustomerEvent.tenant_id == tenant_id,
             CustomerEvent.customer_id.is_(None),
         )
         .update({"customer_id": body.customer_id})

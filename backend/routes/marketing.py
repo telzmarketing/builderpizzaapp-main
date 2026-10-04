@@ -14,13 +14,17 @@ from sqlalchemy.orm import Session
 from backend.core.local_time import local_period_bounds, local_today
 from backend.database import get_db, Base
 from backend.core.wave6_tenant_orm import wave6_tenant_column
+from backend.core.tenant_context import TenantContext
+from backend.core.wave6_tenant_context import panel_wave6_context, public_wave6_context, wave6_tenant_id
 from backend.models.customer_event import CustomerEvent
+from backend.models.product import Product
+from backend.models.coupon import Coupon
+from backend.models.crm import CustomerGroup
 from backend.models.paid_traffic import TrafficCampaign
 from backend.routes.admin_auth import get_current_admin
 from backend.routes.email_marketing import EmailCampaign
 from backend.routes.whatsapp_marketing import WhatsAppCampaign
 from backend.core.response import ok, created, err_msg
-
 router = APIRouter(prefix="/marketing", tags=["marketing"])
 public_router = APIRouter(prefix="/marketing", tags=["marketing-public"])
 
@@ -59,7 +63,7 @@ class VisitorProfile(Base):
     __tablename__ = "visitor_profiles"
     tenant_id = wave6_tenant_column("visitor_profiles")
     id = Column(String, primary_key=True)
-    fingerprint = Column(String(128), unique=True)
+    fingerprint = Column(String(128))
     customer_id = Column(String, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
     ip_hash = Column(String(64))
     city = Column(String(100))
@@ -114,7 +118,7 @@ class TrackingLink(Base):
     __tablename__ = "tracking_links"
     tenant_id = wave6_tenant_column("tracking_links")
     id = Column(String, primary_key=True)
-    slug = Column(String(100), unique=True, nullable=False)
+    slug = Column(String(100), nullable=False)
     destination_url = Column(Text, nullable=False)
     campaign_id = Column(String, ForeignKey("marketing_campaigns.id", ondelete="SET NULL"), nullable=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
@@ -135,7 +139,7 @@ class TrackingLink(Base):
 class MarketingSettings(Base):
     __tablename__ = "marketing_settings"
     tenant_id = wave6_tenant_column("marketing_settings")
-    id = Column(String, primary_key=True, default="default")
+    id = Column(String, primary_key=True)
     tracking_enabled = Column(Boolean, default=True)
     ip_anonymization = Column(Boolean, default=True)
     online_visitor_minutes = Column(Integer, default=5)
@@ -153,9 +157,13 @@ class IntegrationConnection(Base):
     __tablename__ = "integration_connections"
     tenant_id = wave6_tenant_column("integration_connections")
     id = Column(String, primary_key=True)
-    integration_type = Column(String(50), nullable=False, unique=True)
+    integration_type = Column(String(50), nullable=False)
     status = Column(String(20), default="disconnected")
     credentials_json = Column(Text)
+    # Materialized only for the Meta webhook boundary. Secrets remain in the
+    # existing credentials payload; the verification token is stored as a hash.
+    whatsapp_phone_number_id = Column(String(100), nullable=True)
+    whatsapp_webhook_verify_token_hash = Column(String(128), nullable=True)
     last_sync_at = Column(DateTime(timezone=True))
     last_error = Column(Text)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -362,9 +370,9 @@ def _normalize_unofficial_whatsapp_provider(value: str | None) -> str:
     return "evolution"
 
 
-def _sync_unofficial_whatsapp_config(db: Session, creds: dict, now: datetime) -> None:
+def _sync_unofficial_whatsapp_config(db: Session, creds: dict, now: datetime, tenant_id: str) -> None:
     provider = _normalize_unofficial_whatsapp_provider(creds.get("provider"))
-    db.execute(text("INSERT INTO whatsapp_config (id) VALUES ('default') ON CONFLICT DO NOTHING"))
+    db.execute(text("INSERT INTO whatsapp_config (id, tenant_id) VALUES (:id, :tenant_id) ON CONFLICT (tenant_id) DO NOTHING"), {"id": f"whatsapp-config-{tenant_id}", "tenant_id": tenant_id})
     if provider == "uazapi":
         db.execute(
             text(
@@ -376,7 +384,7 @@ def _sync_unofficial_whatsapp_config(db: Session, creds: dict, now: datetime) ->
                     uazapi_instance = :instance,
                     status = :status,
                     updated_at = :now
-                WHERE id = 'default'
+                WHERE tenant_id = :tenant_id
                 """
             ),
             {
@@ -385,6 +393,7 @@ def _sync_unofficial_whatsapp_config(db: Session, creds: dict, now: datetime) ->
                 "instance": (creds.get("uazapi_instance") or "").strip(),
                 "status": "connected" if creds.get("uazapi_base_url") and creds.get("uazapi_token") else "disconnected",
                 "now": now,
+                "tenant_id": tenant_id,
             },
         )
         return
@@ -399,7 +408,7 @@ def _sync_unofficial_whatsapp_config(db: Session, creds: dict, now: datetime) ->
                 evolution_instance = :instance,
                 status = :status,
                 updated_at = :now
-            WHERE id = 'default'
+            WHERE tenant_id = :tenant_id
             """
         ),
         {
@@ -412,7 +421,19 @@ def _sync_unofficial_whatsapp_config(db: Session, creds: dict, now: datetime) ->
                 creds.get("evolution_instance"),
             ]) else "disconnected",
             "now": now,
+            "tenant_id": tenant_id,
         },
+    )
+
+
+def _set_whatsapp_config_status(db: Session, tenant_id: str, status: str, now: datetime, *, official: bool = False) -> None:
+    db.execute(
+        text("INSERT INTO whatsapp_config (id, tenant_id) VALUES (:id, :tenant_id) ON CONFLICT (tenant_id) DO NOTHING"),
+        {"id": f"whatsapp-config-{tenant_id}", "tenant_id": tenant_id},
+    )
+    db.execute(
+        text("UPDATE whatsapp_config SET status=:status, connection_type=CASE WHEN :official THEN 'official' ELSE connection_type END, updated_at=:now WHERE tenant_id=:tenant_id"),
+        {"status": status, "official": official, "now": now, "tenant_id": tenant_id},
     )
 
 
@@ -511,10 +532,12 @@ def _public_tracking_sql(column: str) -> str:
     return f"({value} = '' OR ({' AND '.join(filters)}))"
 
 
-def _get_or_create_visitor(fingerprint: str, db: Session, ip_hash: str = "") -> VisitorProfile:
-    visitor = db.query(VisitorProfile).filter(VisitorProfile.fingerprint == fingerprint).first()
+def _get_or_create_visitor(fingerprint: str, db: Session, tenant_id: str, ip_hash: str = "") -> VisitorProfile:
+    visitor = db.query(VisitorProfile).filter(
+        VisitorProfile.fingerprint == fingerprint, VisitorProfile.tenant_id == tenant_id
+    ).first()
     if not visitor:
-        visitor = VisitorProfile(id=str(uuid.uuid4()), fingerprint=fingerprint, ip_hash=ip_hash)
+        visitor = VisitorProfile(id=str(uuid.uuid4()), tenant_id=tenant_id, fingerprint=fingerprint, ip_hash=ip_hash)
         db.add(visitor)
         db.flush()
     visitor.last_seen_at = datetime.now(timezone.utc)
@@ -596,9 +619,9 @@ def _reverse_geocode(latitude: float, longitude: float) -> dict:
 @router.get("/campaigns")
 def list_campaigns(
     status: str | None = None, channel: str | None = None,
-    db: Session = Depends(get_db), _=Depends(get_current_admin)
+    db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)
 ):
-    q = db.query(MarketingCampaign)
+    q = db.query(MarketingCampaign).filter(MarketingCampaign.tenant_id == wave6_tenant_id(context))
     if status:
         q = q.filter(MarketingCampaign.status == status)
     if channel:
@@ -610,13 +633,14 @@ def list_campaigns(
 @router.get("/campaigns/aggregate")
 def list_campaigns_aggregate(
     status: str | None = None, channel: str | None = None,
-    db: Session = Depends(get_db), _=Depends(get_current_admin)
+    db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)
 ):
+    tenant_id = wave6_tenant_id(context)
     campaigns = [
-        *[_marketing_campaign_to_dict(c) for c in db.query(MarketingCampaign).all()],
-        *[_traffic_campaign_to_marketing_dict(c) for c in db.query(TrafficCampaign).all()],
-        *[_whatsapp_campaign_to_marketing_dict(c) for c in db.query(WhatsAppCampaign).all()],
-        *[_email_campaign_to_marketing_dict(c) for c in db.query(EmailCampaign).all()],
+        *[_marketing_campaign_to_dict(c) for c in db.query(MarketingCampaign).filter(MarketingCampaign.tenant_id == tenant_id).all()],
+        *[_traffic_campaign_to_marketing_dict(c) for c in db.query(TrafficCampaign).filter(TrafficCampaign.tenant_id == tenant_id).all()],
+        *[_whatsapp_campaign_to_marketing_dict(c) for c in db.query(WhatsAppCampaign).filter(WhatsAppCampaign.tenant_id == tenant_id).all()],
+        *[_email_campaign_to_marketing_dict(c) for c in db.query(EmailCampaign).filter(EmailCampaign.tenant_id == tenant_id).all()],
     ]
     if status:
         campaigns = [c for c in campaigns if c["status"] == status]
@@ -627,10 +651,10 @@ def list_campaigns_aggregate(
 
 
 @router.post("/campaigns")
-def create_campaign(body: CampaignCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def create_campaign(body: CampaignCreate, db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)):
     from datetime import date
     c = MarketingCampaign(
-        id=str(uuid.uuid4()), name=body.name, campaign_type=body.campaign_type,
+        id=str(uuid.uuid4()), tenant_id=wave6_tenant_id(context), name=body.name, campaign_type=body.campaign_type,
         channel=body.channel, status=body.status, product_id=body.product_id,
         coupon_id=body.coupon_id, group_id=body.group_id, budget=body.budget,
         target_url=body.target_url, description=body.description,
@@ -644,8 +668,8 @@ def create_campaign(body: CampaignCreate, db: Session = Depends(get_db), _=Depen
 
 
 @router.patch("/campaigns/{campaign_id}")
-def update_campaign(campaign_id: str, body: CampaignUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    c = db.query(MarketingCampaign).filter(MarketingCampaign.id == campaign_id).first()
+def update_campaign(campaign_id: str, body: CampaignUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)):
+    c = db.query(MarketingCampaign).filter(MarketingCampaign.id == campaign_id, MarketingCampaign.tenant_id == wave6_tenant_id(context)).first()
     if not c:
         raise HTTPException(404, "Campanha não encontrada.")
     for field, value in body.model_dump(exclude_none=True).items():
@@ -656,8 +680,8 @@ def update_campaign(campaign_id: str, body: CampaignUpdate, db: Session = Depend
 
 
 @router.delete("/campaigns/{campaign_id}")
-def delete_campaign(campaign_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    c = db.query(MarketingCampaign).filter(MarketingCampaign.id == campaign_id).first()
+def delete_campaign(campaign_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)):
+    c = db.query(MarketingCampaign).filter(MarketingCampaign.id == campaign_id, MarketingCampaign.tenant_id == wave6_tenant_id(context)).first()
     if not c:
         raise HTTPException(404, "Campanha não encontrada.")
     db.delete(c)
@@ -670,8 +694,9 @@ def delete_campaign(campaign_id: str, db: Session = Depends(get_db), _=Depends(g
 @router.get("/dashboard")
 def marketing_dashboard(
     period: str = Query("7d", regex="^(today|yesterday|7d|30d|90d)$"),
-    db: Session = Depends(get_db), _=Depends(get_current_admin)
+    db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)
 ):
+    tenant_id = wave6_tenant_id(context)
     now = datetime.now(timezone.utc)
     today = local_today()
     if period == "today":
@@ -691,50 +716,52 @@ def marketing_dashboard(
         end_date = today
     since, period_end = local_period_bounds(start_date, end_date)
 
-    total_campaigns = db.query(func.count(MarketingCampaign.id)).scalar() or 0
-    active_campaigns = db.query(func.count(MarketingCampaign.id)).filter(MarketingCampaign.status == "active").scalar() or 0
-    total_revenue = db.query(func.sum(MarketingCampaign.revenue)).scalar() or 0
-    total_spend = db.query(func.sum(MarketingCampaign.spend)).scalar() or 0
-    total_clicks = db.query(func.sum(MarketingCampaign.clicks)).scalar() or 0
-    total_orders = db.query(func.sum(MarketingCampaign.orders_count)).scalar() or 0
-    total_leads = db.query(func.sum(MarketingCampaign.leads)).scalar() or 0
+    campaign_q = db.query(MarketingCampaign).filter(MarketingCampaign.tenant_id == tenant_id)
+    total_campaigns = campaign_q.with_entities(func.count(MarketingCampaign.id)).scalar() or 0
+    active_campaigns = campaign_q.filter(MarketingCampaign.status == "active").with_entities(func.count(MarketingCampaign.id)).scalar() or 0
+    total_revenue = campaign_q.with_entities(func.sum(MarketingCampaign.revenue)).scalar() or 0
+    total_spend = campaign_q.with_entities(func.sum(MarketingCampaign.spend)).scalar() or 0
+    total_clicks = campaign_q.with_entities(func.sum(MarketingCampaign.clicks)).scalar() or 0
+    total_orders = campaign_q.with_entities(func.sum(MarketingCampaign.orders_count)).scalar() or 0
+    total_leads = campaign_q.with_entities(func.sum(MarketingCampaign.leads)).scalar() or 0
 
     public_event_filter = _public_tracking_sql("page")
     visitors_period = db.execute(text(f"""
         SELECT COUNT(*)
         FROM (
             SELECT DISTINCT visitor_id
-            FROM visitor_events
-            WHERE created_at >= :since AND created_at <= :period_end
-              AND {public_event_filter}
+            FROM visitor_events ve
+            WHERE ve.tenant_id = :tenant_id AND created_at >= :since AND created_at <= :period_end
+              AND {_public_tracking_sql("ve.page")}
             UNION
             SELECT DISTINCT visitor_id
-            FROM visitor_sessions
-            WHERE started_at >= :since AND started_at <= :period_end
-              AND {_public_tracking_sql("landing_page")}
+            FROM visitor_sessions vs
+            WHERE vs.tenant_id = :tenant_id AND started_at >= :since AND started_at <= :period_end
+              AND {_public_tracking_sql("vs.landing_page")}
         ) visitors
-    """), {"since": since, "period_end": period_end}).scalar() or 0
+    """), {"since": since, "period_end": period_end, "tenant_id": tenant_id}).scalar() or 0
     online_since = now - timedelta(minutes=5)
     visitors_online = db.execute(text(f"""
         SELECT COUNT(DISTINCT visitor_id)
-        FROM visitor_events
-        WHERE created_at >= :online_since
-          AND {public_event_filter}
-    """), {"online_since": online_since}).scalar() or 0
+        FROM visitor_events ve
+        WHERE ve.tenant_id = :tenant_id AND created_at >= :online_since
+          AND {_public_tracking_sql("ve.page")}
+    """), {"online_since": online_since, "tenant_id": tenant_id}).scalar() or 0
 
-    tracking_links = db.query(func.count(TrackingLink.id)).filter(TrackingLink.active == True).scalar() or 0  # noqa: E712
-    link_clicks = db.query(func.sum(TrackingLink.clicks)).scalar() or 0
+    tracking_links = db.query(func.count(TrackingLink.id)).filter(TrackingLink.tenant_id == tenant_id, TrackingLink.active == True).scalar() or 0  # noqa: E712
+    link_clicks = db.query(func.sum(TrackingLink.clicks)).filter(TrackingLink.tenant_id == tenant_id).scalar() or 0
 
     roas = round(total_revenue / total_spend, 2) if total_spend > 0 else None
     cpa = round(total_spend / total_orders, 2) if total_orders > 0 else None
 
     channels = db.execute(text("""
         SELECT channel, COUNT(id) as count, SUM(revenue) as rev, SUM(spend) as spend
-        FROM marketing_campaigns WHERE channel IS NOT NULL
+        FROM marketing_campaigns WHERE tenant_id = :tenant_id AND channel IS NOT NULL
         GROUP BY channel ORDER BY rev DESC NULLS LAST
-    """)).fetchall()
+    """), {"tenant_id": tenant_id}).fetchall()
     recent_campaigns = (
         db.query(MarketingCampaign)
+        .filter(MarketingCampaign.tenant_id == tenant_id)
         .order_by(MarketingCampaign.created_at.desc())
         .limit(8)
         .all()
@@ -786,8 +813,8 @@ def marketing_dashboard(
 # ── Tracking links ────────────────────────────────────────────────────────────
 
 @router.get("/tracking-links")
-def list_tracking_links(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    links = db.query(TrackingLink).filter(TrackingLink.active == True).order_by(TrackingLink.created_at.desc()).all()  # noqa: E712
+def list_tracking_links(db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)):
+    links = db.query(TrackingLink).filter(TrackingLink.tenant_id == wave6_tenant_id(context), TrackingLink.active == True).order_by(TrackingLink.created_at.desc()).all()  # noqa: E712
     return ok([{
         "id": l.id, "slug": l.slug, "destination_url": l.destination_url,
         "clicks": l.clicks, "unique_clicks": l.unique_clicks, "orders_count": l.orders_count,
@@ -797,12 +824,13 @@ def list_tracking_links(db: Session = Depends(get_db), _=Depends(get_current_adm
 
 
 @router.post("/tracking-links")
-def create_tracking_link(body: TrackingLinkCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def create_tracking_link(body: TrackingLinkCreate, db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)):
+    tenant_id = wave6_tenant_id(context)
     slug = body.slug.lower().strip().replace(" ", "-")
-    if db.query(TrackingLink).filter(TrackingLink.slug == slug).first():
+    if db.query(TrackingLink).filter(TrackingLink.slug == slug, TrackingLink.tenant_id == tenant_id).first():
         raise HTTPException(400, f"Slug '{slug}' já existe.")
     link = TrackingLink(
-        id=str(uuid.uuid4()), slug=slug, destination_url=body.destination_url,
+        id=str(uuid.uuid4()), tenant_id=tenant_id, slug=slug, destination_url=body.destination_url,
         campaign_id=body.campaign_id, product_id=body.product_id, coupon_id=body.coupon_id,
         utm_source=body.utm_source, utm_medium=body.utm_medium, utm_campaign=body.utm_campaign,
     )
@@ -812,8 +840,8 @@ def create_tracking_link(body: TrackingLinkCreate, db: Session = Depends(get_db)
 
 
 @router.delete("/tracking-links/{link_id}")
-def delete_tracking_link(link_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    link = db.query(TrackingLink).filter(TrackingLink.id == link_id).first()
+def delete_tracking_link(link_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)):
+    link = db.query(TrackingLink).filter(TrackingLink.id == link_id, TrackingLink.tenant_id == wave6_tenant_id(context)).first()
     if not link:
         raise HTTPException(404, "Link não encontrado.")
     link.active = False
@@ -824,18 +852,19 @@ def delete_tracking_link(link_id: str, db: Session = Depends(get_db), _=Depends(
 # ── Visitor events (public — called from frontend tracking script) ─────────────
 
 @public_router.post("/track")
-async def track_event(body: VisitorEventIn, request: Request, db: Session = Depends(get_db)):
+async def track_event(body: VisitorEventIn, request: Request, db: Session = Depends(get_db), context: TenantContext | None = Depends(public_wave6_context)):
     if _is_internal_tracking_page(body.page):
         return {"ok": True, "ignored": True}
 
-    settings = db.query(MarketingSettings).filter(MarketingSettings.id == "default").first()
+    tenant_id = wave6_tenant_id(context)
+    settings = db.query(MarketingSettings).filter(MarketingSettings.tenant_id == tenant_id).first()
     if settings and not settings.tracking_enabled:
         return {"ok": True}
 
     ip = request.client.host if request.client else None
     ip_hash = _hash_ip(ip, anonymize=settings.ip_anonymization if settings else True)
 
-    visitor = _get_or_create_visitor(body.fingerprint, db, ip_hash)
+    visitor = _get_or_create_visitor(body.fingerprint, db, tenant_id, ip_hash)
     device, browser, os_name = _client_device(request.headers.get("user-agent"))
     visitor.device_type = visitor.device_type or device
     visitor.browser = visitor.browser or browser
@@ -855,10 +884,10 @@ async def track_event(body: VisitorEventIn, request: Request, db: Session = Depe
     # Create / reuse session
     session = None
     if body.session_id:
-        session = db.query(VisitorSession).filter(VisitorSession.id == body.session_id).first()
+        session = db.query(VisitorSession).filter(VisitorSession.id == body.session_id, VisitorSession.tenant_id == tenant_id).first()
     if not session and body.event_type == "page_view":
         session = VisitorSession(
-            id=body.session_id or str(uuid.uuid4()), visitor_id=visitor.id,
+            id=body.session_id or str(uuid.uuid4()), tenant_id=tenant_id, visitor_id=visitor.id,
             utm_source=body.utm_source, utm_medium=body.utm_medium,
             utm_campaign=body.utm_campaign, utm_content=body.utm_content,
             utm_term=body.utm_term, landing_page=body.page, referrer=body.referrer,
@@ -868,7 +897,7 @@ async def track_event(body: VisitorEventIn, request: Request, db: Session = Depe
         db.flush()
 
     event = VisitorEvent(
-        id=str(uuid.uuid4()), visitor_id=visitor.id,
+        id=str(uuid.uuid4()), tenant_id=tenant_id, visitor_id=visitor.id,
         session_id=session.id if session else None,
         event_type=body.event_type, page=body.page, product_id=body.product_id,
         metadata_json=json.dumps(body.metadata) if body.metadata else None,
@@ -892,8 +921,9 @@ def list_visitors(
     period: str = Query("today", regex="^(today|7d|30d|90d)$"),
     selected_date: date | None = Query(default=None, alias="date"),
     limit: int = 100,
-    db: Session = Depends(get_db), _=Depends(get_current_admin)
+    db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)
 ):
+    tenant_id = wave6_tenant_id(context)
     now = datetime.now(timezone.utc)
     if selected_date:
         start_date = selected_date
@@ -908,18 +938,18 @@ def list_visitors(
         start_dt, end_dt = local_period_bounds(start_date, end_date)
         period_label = period
 
-    params = {"start_dt": start_dt, "end_dt": end_dt}
-    public_event_filter = _public_tracking_sql("page")
-    public_session_filter = _public_tracking_sql("landing_page")
+    params = {"start_dt": start_dt, "end_dt": end_dt, "tenant_id": tenant_id}
+    public_event_filter = _public_tracking_sql("ve.page")
+    public_session_filter = _public_tracking_sql("vs.landing_page")
     period_visitors_cte = """
         SELECT DISTINCT visitor_id
-        FROM visitor_events
-        WHERE created_at >= :start_dt AND created_at <= :end_dt
+        FROM visitor_events ve
+        WHERE ve.tenant_id = :tenant_id AND created_at >= :start_dt AND created_at <= :end_dt
           AND {public_event_filter}
         UNION
         SELECT DISTINCT visitor_id
-        FROM visitor_sessions
-        WHERE started_at >= :start_dt AND started_at <= :end_dt
+        FROM visitor_sessions vs
+        WHERE vs.tenant_id = :tenant_id AND started_at >= :start_dt AND started_at <= :end_dt
           AND {public_session_filter}
     """.format(public_event_filter=public_event_filter, public_session_filter=public_session_filter)
 
@@ -927,16 +957,17 @@ def list_visitors(
         text(f"SELECT COUNT(*) FROM ({period_visitors_cte}) period_visitors"),
         params,
     ).scalar() or 0
-    settings = db.query(MarketingSettings).filter(MarketingSettings.id == "default").first()
+    settings = db.query(MarketingSettings).filter(MarketingSettings.tenant_id == tenant_id).first()
     online_minutes = settings.online_visitor_minutes if settings and settings.online_visitor_minutes else 5
     online_since = now - timedelta(minutes=online_minutes)
     online = db.execute(text(f"""
         SELECT COUNT(DISTINCT visitor_id)
-        FROM visitor_events
-        WHERE created_at >= :online_since
+        FROM visitor_events ve
+        WHERE ve.tenant_id = :tenant_id AND created_at >= :online_since
           AND {public_event_filter}
-    """), {"online_since": online_since}).scalar() or 0
+    """), {"online_since": online_since, "tenant_id": tenant_id}).scalar() or 0
     online_registered_customers = db.query(func.count(func.distinct(CustomerEvent.customer_id))).filter(
+        CustomerEvent.tenant_id == tenant_id,
         CustomerEvent.created_at >= online_since,
         CustomerEvent.customer_id.isnot(None),
     ).scalar() or 0
@@ -945,8 +976,8 @@ def list_visitors(
         WITH period_visitors AS ({period_visitors_cte}),
         period_sessions AS (
             SELECT visitor_id, COUNT(*) AS sessions, COALESCE(SUM(pageviews), 0) AS session_pageviews
-            FROM visitor_sessions
-            WHERE started_at >= :start_dt AND started_at <= :end_dt
+            FROM visitor_sessions vs
+            WHERE vs.tenant_id = :tenant_id AND started_at >= :start_dt AND started_at <= :end_dt
               AND {public_session_filter}
             GROUP BY visitor_id
         ),
@@ -956,8 +987,8 @@ def list_visitors(
                 COUNT(*) AS events,
                 COUNT(*) FILTER (WHERE event_type = 'page_view') AS event_pageviews,
                 MAX(created_at) AS last_event_at
-            FROM visitor_events
-            WHERE created_at >= :start_dt AND created_at <= :end_dt
+            FROM visitor_events ve
+            WHERE ve.tenant_id = :tenant_id AND created_at >= :start_dt AND created_at <= :end_dt
               AND {public_event_filter}
             GROUP BY visitor_id
         )
@@ -981,6 +1012,7 @@ def list_visitors(
         JOIN period_visitors pv ON pv.visitor_id = vp.id
         LEFT JOIN period_sessions ps ON ps.visitor_id = vp.id
         LEFT JOIN period_events pe ON pe.visitor_id = vp.id
+        WHERE vp.tenant_id = :tenant_id
         ORDER BY period_last_seen DESC
         LIMIT :limit
     """), {**params, "limit": limit}).fetchall()
@@ -988,8 +1020,8 @@ def list_visitors(
     # Top events
     top_events = db.execute(text(f"""
         SELECT event_type, COUNT(*) as cnt
-        FROM visitor_events
-        WHERE created_at >= :start_dt AND created_at <= :end_dt
+        FROM visitor_events ve
+        WHERE ve.tenant_id = :tenant_id AND created_at >= :start_dt AND created_at <= :end_dt
           AND {public_event_filter}
         GROUP BY event_type ORDER BY cnt DESC LIMIT 10
     """), params).fetchall()
@@ -1003,8 +1035,8 @@ def list_visitors(
                 COUNT(*) AS sessions,
                 COUNT(*) FILTER (WHERE total_orders > 0) AS conversions
             FROM visitor_sessions vs
-            JOIN visitor_profiles vp ON vp.id = vs.visitor_id
-            WHERE vs.started_at >= :start_dt AND vs.started_at <= :end_dt
+            JOIN visitor_profiles vp ON vp.id = vs.visitor_id AND vp.tenant_id = vs.tenant_id
+            WHERE vs.tenant_id = :tenant_id AND vs.started_at >= :start_dt AND vs.started_at <= :end_dt
               AND {_public_tracking_sql("vs.landing_page")}
             GROUP BY utm_source, utm_medium, utm_campaign
             ORDER BY sessions DESC
@@ -1025,6 +1057,7 @@ def list_visitors(
             SELECT COALESCE(device_type, 'unknown') AS device_type, COUNT(*) AS sessions
             FROM visitor_profiles vp
             JOIN period_visitors pv ON pv.visitor_id = vp.id
+            WHERE vp.tenant_id = :tenant_id
             GROUP BY device_type ORDER BY sessions DESC
         """), params).fetchall()
         total_dev = sum(r[1] for r in dev_rows) or 1
@@ -1042,8 +1075,8 @@ def list_visitors(
                    COUNT(ve.id) FILTER (WHERE ve.event_type = 'order_created') AS orders,
                    0 AS revenue
             FROM visitor_events ve
-            JOIN products p ON p.id = ve.product_id
-            WHERE ve.created_at >= :start_dt AND ve.created_at <= :end_dt AND ve.product_id IS NOT NULL
+            JOIN products p ON p.id = ve.product_id AND p.tenant_id = ve.tenant_id
+            WHERE ve.tenant_id = :tenant_id AND ve.created_at >= :start_dt AND ve.created_at <= :end_dt AND ve.product_id IS NOT NULL
               AND {_public_tracking_sql("ve.page")}
             GROUP BY p.name ORDER BY views DESC LIMIT 10
         """), params).fetchall()
@@ -1060,8 +1093,8 @@ def list_visitors(
                 COUNT(DISTINCT visitor_id) FILTER (WHERE event_type IN ('add_to_cart', 'cart_item_added', 'cart_opened')) AS carts,
                 COUNT(DISTINCT visitor_id) FILTER (WHERE event_type IN ('checkout_start', 'checkout_started')) AS checkouts,
                 COUNT(DISTINCT visitor_id) FILTER (WHERE event_type = 'order_created') AS orders
-            FROM visitor_events
-            WHERE created_at >= :start_dt AND created_at <= :end_dt
+            FROM visitor_events ve
+            WHERE ve.tenant_id = :tenant_id AND created_at >= :start_dt AND created_at <= :end_dt
               AND {public_event_filter}
         """), params).fetchone()
         product_views = funnel_data[0] or 0
@@ -1081,7 +1114,7 @@ def list_visitors(
     # Count total sessions and events in period
     try:
         total_sessions = db.execute(
-            text(f"SELECT COUNT(*) FROM visitor_sessions WHERE started_at >= :start_dt AND started_at <= :end_dt AND {public_session_filter}"),
+            text(f"SELECT COUNT(*) FROM visitor_sessions vs WHERE vs.tenant_id = :tenant_id AND started_at >= :start_dt AND started_at <= :end_dt AND {public_session_filter}"),
             params,
         ).scalar() or 0
     except Exception:
@@ -1089,7 +1122,7 @@ def list_visitors(
 
     try:
         total_events = db.execute(
-            text(f"SELECT COUNT(*) FROM visitor_events WHERE created_at >= :start_dt AND created_at <= :end_dt AND {public_event_filter}"),
+            text(f"SELECT COUNT(*) FROM visitor_events ve WHERE ve.tenant_id = :tenant_id AND created_at >= :start_dt AND created_at <= :end_dt AND {public_event_filter}"),
             params,
         ).scalar() or 0
     except Exception:
@@ -1100,8 +1133,8 @@ def list_visitors(
             SELECT
                 COUNT(*) FILTER (WHERE COALESCE(pageviews, 0) <= 1) AS bounced,
                 COUNT(*) AS total
-            FROM visitor_sessions
-            WHERE started_at >= :start_dt AND started_at <= :end_dt
+            FROM visitor_sessions vs
+            WHERE vs.tenant_id = :tenant_id AND started_at >= :start_dt AND started_at <= :end_dt
               AND {public_session_filter}
         """), params).fetchone()
         bounced_sessions = bounce_rows[0] or 0
@@ -1113,8 +1146,8 @@ def list_visitors(
     try:
         avg_session_duration = db.execute(text(f"""
             SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (ended_at - started_at))), 0)
-            FROM visitor_sessions
-            WHERE started_at >= :start_dt
+            FROM visitor_sessions vs
+            WHERE vs.tenant_id = :tenant_id AND started_at >= :start_dt
               AND started_at <= :end_dt
               AND ended_at IS NOT NULL
               AND {public_session_filter}
@@ -1193,8 +1226,8 @@ def list_visitors(
 # ── Integrations ──────────────────────────────────────────────────────────────
 
 @router.get("/integrations")
-def list_integrations(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    conns = db.query(IntegrationConnection).all()
+def list_integrations(db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)):
+    conns = db.query(IntegrationConnection).filter(IntegrationConnection.tenant_id == wave6_tenant_id(context)).all()
     return ok([{
         "id": c.id,
         "name": INTEGRATION_LABELS.get(c.integration_type, c.integration_type),
@@ -1209,8 +1242,9 @@ def list_integrations(db: Session = Depends(get_db), _=Depends(get_current_admin
 
 
 @router.patch("/integrations/{integration_type}")
-def update_integration(integration_type: str, body: dict, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    conn = db.query(IntegrationConnection).filter(IntegrationConnection.integration_type == integration_type).first()
+def update_integration(integration_type: str, body: dict, db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)):
+    tenant_id = wave6_tenant_id(context)
+    conn = db.query(IntegrationConnection).filter(IntegrationConnection.integration_type == integration_type, IntegrationConnection.tenant_id == tenant_id).first()
     if not conn:
         raise HTTPException(404, "Integração não encontrada.")
     incoming_credentials = body.get("credentials")
@@ -1220,6 +1254,25 @@ def update_integration(integration_type: str, body: dict, db: Session = Depends(
         creds = _merge_credentials(_load_credentials(conn), incoming_credentials)
         if integration_type == "whatsapp_unofficial":
             creds["provider"] = _normalize_unofficial_whatsapp_provider(creds.get("provider"))
+        if integration_type == "whatsapp_cloud":
+            phone_number_id = str(creds.get("phone_number_id") or "").strip() or None
+            verify_token = str(creds.get("verify_token") or creds.get("webhook_verify_token") or "")
+            if phone_number_id:
+                existing = (
+                    db.query(IntegrationConnection)
+                    .filter(
+                        IntegrationConnection.integration_type == "whatsapp_cloud",
+                        IntegrationConnection.whatsapp_phone_number_id == phone_number_id,
+                        IntegrationConnection.id != conn.id,
+                    )
+                    .first()
+                )
+                if existing:
+                    raise HTTPException(409, "Este phone_number_id da Meta ja pertence a outra empresa.")
+            conn.whatsapp_phone_number_id = phone_number_id
+            conn.whatsapp_webhook_verify_token_hash = (
+                hashlib.sha256(verify_token.encode("utf-8")).hexdigest() if verify_token else None
+            )
         conn.credentials_json = json.dumps(creds, ensure_ascii=False)
         if integration_type == "whatsapp_unofficial":
             now = datetime.now(timezone.utc)
@@ -1231,7 +1284,7 @@ def update_integration(integration_type: str, body: dict, db: Session = Depends(
                     creds.get("evolution_api_key"),
                     creds.get("evolution_instance"),
                 ]) else "disconnected"
-            _sync_unofficial_whatsapp_config(db, creds, now)
+            _sync_unofficial_whatsapp_config(db, creds, now, tenant_id)
         else:
             conn.status = "connected" if any(v for v in creds.values()) else "disconnected"
     if "status" in body:
@@ -1248,8 +1301,9 @@ def update_integration(integration_type: str, body: dict, db: Session = Depends(
 
 
 @router.post("/integrations/{integration_type}/test")
-def test_integration(integration_type: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    conn = db.query(IntegrationConnection).filter(IntegrationConnection.integration_type == integration_type).first()
+def test_integration(integration_type: str, db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)):
+    tenant_id = wave6_tenant_id(context)
+    conn = db.query(IntegrationConnection).filter(IntegrationConnection.integration_type == integration_type, IntegrationConnection.tenant_id == tenant_id).first()
     if not conn:
         return err_msg("Integracao nao encontrada.", code="IntegrationNotFound", status_code=404)
 
@@ -1278,27 +1332,21 @@ def test_integration(integration_type: str, db: Session = Depends(get_db), _=Dep
                 conn.last_error = None
                 conn.last_sync_at = now
                 conn.updated_at = now
-                db.execute(text("INSERT INTO whatsapp_config (id) VALUES ('default') ON CONFLICT DO NOTHING"))
-                db.execute(
-                    text("UPDATE whatsapp_config SET status = 'connected', connection_type = 'official', updated_at = :now WHERE id = 'default'"),
-                    {"now": now},
-                )
+                _set_whatsapp_config_status(db, tenant_id, "connected", now, official=True)
                 db.commit()
                 return ok({"connected": True, "display_phone_number": data.get("display_phone_number")}, "WhatsApp Cloud API conectada.")
             message = data.get("error", {}).get("message", resp.text)
             conn.status = "disconnected"
             conn.last_error = message
             conn.updated_at = now
-            db.execute(text("INSERT INTO whatsapp_config (id) VALUES ('default') ON CONFLICT DO NOTHING"))
-            db.execute(text("UPDATE whatsapp_config SET status = 'disconnected', updated_at = :now WHERE id = 'default'"), {"now": now})
+            _set_whatsapp_config_status(db, tenant_id, "disconnected", now)
             db.commit()
             return err_msg(message, code="WhatsAppConnectionFailed")
         except Exception as exc:
             conn.status = "disconnected"
             conn.last_error = str(exc)
             conn.updated_at = now
-            db.execute(text("INSERT INTO whatsapp_config (id) VALUES ('default') ON CONFLICT DO NOTHING"))
-            db.execute(text("UPDATE whatsapp_config SET status = 'disconnected', updated_at = :now WHERE id = 'default'"), {"now": now})
+            _set_whatsapp_config_status(db, tenant_id, "disconnected", now)
             db.commit()
             return err_msg(str(exc), code="WhatsAppConnectionFailed")
 
@@ -1327,7 +1375,7 @@ def test_integration(integration_type: str, db: Session = Depends(get_db), _=Dep
             conn.last_error = None
             conn.last_sync_at = now
             conn.updated_at = now
-            _sync_unofficial_whatsapp_config(db, creds, now)
+            _sync_unofficial_whatsapp_config(db, creds, now, tenant_id)
             db.commit()
             return ok({"connected": True, "provider": "uazapi"}, "Uazapi configurada como API nao oficial.")
 
@@ -1348,7 +1396,7 @@ def test_integration(integration_type: str, db: Session = Depends(get_db), _=Dep
         conn.last_error = None
         conn.last_sync_at = now
         conn.updated_at = now
-        _sync_unofficial_whatsapp_config(db, creds, now)
+        _sync_unofficial_whatsapp_config(db, creds, now, tenant_id)
         db.commit()
         return ok({"connected": True, "provider": "evolution"}, "Evolution API configurada como API nao oficial.")
 
@@ -1366,10 +1414,11 @@ def test_integration(integration_type: str, db: Session = Depends(get_db), _=Dep
 # ── Marketing settings ────────────────────────────────────────────────────────
 
 @router.get("/settings")
-def get_settings(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    s = db.query(MarketingSettings).filter(MarketingSettings.id == "default").first()
+def get_settings(db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)):
+    tenant_id = wave6_tenant_id(context)
+    s = db.query(MarketingSettings).filter(MarketingSettings.tenant_id == tenant_id).first()
     if not s:
-        s = MarketingSettings(id="default")
+        s = MarketingSettings(id=f"marketing-settings-{tenant_id}", tenant_id=tenant_id)
         db.add(s)
         db.commit()
     return ok({
@@ -1382,10 +1431,11 @@ def get_settings(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 
 
 @router.put("/settings")
-def update_settings(body: dict, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    s = db.query(MarketingSettings).filter(MarketingSettings.id == "default").first()
+def update_settings(body: dict, db: Session = Depends(get_db), _=Depends(get_current_admin), context: TenantContext | None = Depends(panel_wave6_context)):
+    tenant_id = wave6_tenant_id(context)
+    s = db.query(MarketingSettings).filter(MarketingSettings.tenant_id == tenant_id).first()
     if not s:
-        s = MarketingSettings(id="default")
+        s = MarketingSettings(id=f"marketing-settings-{tenant_id}", tenant_id=tenant_id)
         db.add(s)
     for k, v in body.items():
         if hasattr(s, k):

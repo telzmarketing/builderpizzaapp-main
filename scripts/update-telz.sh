@@ -137,7 +137,7 @@ validate_operational_config
 BRANCH="${BRANCH:-main}"
 RUN_TESTS="${RUN_TESTS:-false}"
 EXPECTED_COMMIT="${TELZ_EXPECTED_COMMIT:-}"
-ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20260930_tenant_runtime_uniqueness}"
+ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261003_agente_whatsapp_tenant_foundation}"
 REQUIRE_PUBLIC_HTTPS="${TELZ_REQUIRE_PUBLIC_HTTPS:-true}"
 PUBLIC_HEALTH_URL="${TELZ_PUBLIC_HEALTH_URL:-}"
 OPERATION_BUNDLE_INPUT="${TELZ_OPERATION_BUNDLE_DIR:-}"
@@ -536,7 +536,22 @@ schema_is_rollback_compatible() {
     "20260924_kds_kitchen_dispatch:20260926_dispatch_labels" | \
     "20260924_kds_kitchen_dispatch:20260927_order_board_mvp" | \
     "20260926_dispatch_labels:20260927_order_board_mvp" | \
-    "20260927_order_board_mvp:20260930_tenant_runtime_uniqueness")
+    "20260930_tenant_runtime_uniqueness:20261003_marketing_workflow_tenant_isolation")
+      return 0
+      ;;
+    "20261003_marketing_workflow_tenant_isolation:20261003_chatbot_tenant_keys")
+      return 0
+      ;;
+    "20261003_chatbot_tenant_keys:20261003_marketing_tenant_keys")
+      return 0
+      ;;
+    "20261003_marketing_tenant_keys:20261003_whatsapp_meta_webhook_tenant_keys")
+      return 0
+      ;;
+    "20261003_whatsapp_meta_webhook_tenant_keys:20261003_email_marketing_tenant_config")
+      return 0
+      ;;
+    "20261003_email_marketing_tenant_config:20261003_agente_whatsapp_tenant_foundation")
       return 0
       ;;
     *)

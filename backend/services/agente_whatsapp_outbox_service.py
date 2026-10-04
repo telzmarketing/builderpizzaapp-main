@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from backend.config import get_settings
 from backend.core.tenant_context import TenantContext, TenantSource
+from backend.core.wave6_tenant_context import wave6_tenant_id
+from backend.core.wave6_tenant_orm import wave6_tenant_orm_enabled
 from backend.models.agente_whatsapp import (
     AgenteWhatsAppChannelSettings,
     AgenteWhatsAppInternalAlert,
@@ -69,15 +71,21 @@ class AgenteWhatsAppOutboxService:
     ):
         self._db = db
         self._settings = get_settings()
-        # Background jobs have no request from which to resolve a tenant. The
-        # persisted legacy tenant is the trusted compatibility context for
-        # pre-multi-tenant callers; new tenant-aware callers can pass their
-        # already-authorized context without changing the public service API.
-        self._tenant_context = tenant_context or TenantContext(
-            tenant_id=LEGACY_TENANT_ID,
-            source=TenantSource.JOB,
-        )
-        self._tenant_id = self._tenant_context.tenant_id
+        # A worker receives its context only from persisted ownership selected
+        # by the worker coordinator.  ``wave6_tenant_id`` preserves the seeded
+        # legacy compatibility tenant only while Wave 6 is disabled; once it is
+        # enabled, callers without a trusted context fail closed.
+        self._tenant_context = tenant_context
+        if self._tenant_context is None and not wave6_tenant_orm_enabled():
+            self._tenant_context = TenantContext(
+                tenant_id=LEGACY_TENANT_ID,
+                source=TenantSource.JOB,
+            )
+        if self._tenant_context is None:
+            # Raises TenantContextMissing once Wave 6 is active.
+            self._tenant_id = wave6_tenant_id(None)
+        else:
+            self._tenant_id = self._tenant_context.tenant_id
 
     def _scope(self, query, model):
         return query.filter(model.tenant_id == self._tenant_id)
@@ -793,6 +801,7 @@ class AgenteWhatsAppOutboxService:
                 item.phone,
                 body,
                 self._db,
+                self._tenant_id,
                 media_type=media_type,
                 media_url=media_url,
                 caption=None if is_audio else (body if media_url else None),

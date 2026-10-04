@@ -7,16 +7,27 @@ from sqlalchemy.orm import Session
 
 from backend.core.local_time import local_today
 from backend.core.response import ok
+from backend.core.wave6_tenant_context import WAVE6_SESSION_TENANT_KEY, panel_wave6_context, wave6_tenant_id
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
 from backend.schemas.bi import BIInsightStatusUpdate, GranularityKey, PeriodKey
 from backend.services.business_intelligence_service import BusinessIntelligenceService
 
-router = APIRouter(prefix="/bi", tags=["business-intelligence"], dependencies=[Depends(get_current_admin)])
+router = APIRouter(
+    prefix="/bi",
+    tags=["business-intelligence"],
+    dependencies=[
+        Depends(get_current_admin),
+        Depends(panel_wave6_context),
+    ],
+)
 
 
 def _service(db: Session) -> BusinessIntelligenceService:
-    return BusinessIntelligenceService(db)
+    return BusinessIntelligenceService(
+        db,
+        wave6_tenant_id(db.info.get(WAVE6_SESSION_TENANT_KEY)),
+    )
 
 
 @router.get("/dashboard")

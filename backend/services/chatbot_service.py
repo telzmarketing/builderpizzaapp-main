@@ -23,6 +23,7 @@ from backend.models.chatbot import (
     ChatbotConversation, ChatbotHandoff, ChatbotMessage,
     ChatbotSettings, ConversationStatus, MessageSender, MessageType,
 )
+from backend.models.customer import Customer
 from backend.schemas.chatbot import (
     ChatbotAnalyticsOut, SendMessageOut, StartSessionOut,
     ChatbotPublicConfigOut,
@@ -37,15 +38,18 @@ _DAY_KEYS = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"]
 
 
 class ChatbotService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_id: str):
         self._db = db
+        self._tenant_id = tenant_id
 
     # ── Settings (singleton) ─────────────────────────────────────────────────
 
     def get_settings(self) -> ChatbotSettings:
-        s = self._db.query(ChatbotSettings).filter(ChatbotSettings.id == "default").first()
+        s = self._db.query(ChatbotSettings).filter(
+            ChatbotSettings.tenant_id == self._tenant_id
+        ).first()
         if not s:
-            s = ChatbotSettings(id="default")
+            s = ChatbotSettings(id=f"settings-{self._tenant_id}", tenant_id=self._tenant_id)
             self._db.add(s)
             self._db.commit()
             self._db.refresh(s)
@@ -60,6 +64,16 @@ class ChatbotService:
         self._db.refresh(s)
         return s
 
+    def _customer_id_for_tenant(self, customer_id: Optional[str]) -> Optional[str]:
+        if not customer_id:
+            return None
+        exists = self._db.query(Customer.id).filter(
+            Customer.id == customer_id, Customer.tenant_id == self._tenant_id
+        ).first()
+        if not exists:
+            raise ValueError("Cliente nao encontrado para esta empresa.")
+        return customer_id
+
     # ── Sessão / conversa ────────────────────────────────────────────────────
 
     def start_session(
@@ -72,12 +86,15 @@ class ChatbotService:
         customer_id: Optional[str] = None,
     ) -> StartSessionOut:
         settings = self.get_settings()
+        customer_id = self._customer_id_for_tenant(customer_id)
         conv = self._db.query(ChatbotConversation).filter(
             ChatbotConversation.session_id == session_id,
+            ChatbotConversation.tenant_id == self._tenant_id,
         ).first()
 
         if not conv:
             conv = ChatbotConversation(
+                tenant_id=self._tenant_id,
                 session_id=session_id,
                 visitor_fingerprint=visitor_fingerprint,
                 pagina_origem=pagina_origem,
@@ -97,6 +114,7 @@ class ChatbotService:
     def get_conversation(self, session_id: str) -> Optional[ChatbotConversation]:
         return self._db.query(ChatbotConversation).filter(
             ChatbotConversation.session_id == session_id,
+            ChatbotConversation.tenant_id == self._tenant_id,
         ).first()
 
     def close_conversation(self, session_id: str) -> None:
@@ -117,11 +135,13 @@ class ChatbotService:
         customer_id: Optional[str] = None,
     ) -> SendMessageOut:
         settings = self.get_settings()
+        customer_id = self._customer_id_for_tenant(customer_id)
         conv = self.get_conversation(session_id)
 
         # Conversa não existe — cria on-the-fly
         if not conv:
             conv = ChatbotConversation(
+                tenant_id=self._tenant_id,
                 session_id=session_id,
                 visitor_fingerprint=visitor_fingerprint,
                 pagina_origem=page_url,
@@ -185,7 +205,7 @@ class ChatbotService:
             )
 
         # Monta contexto e chama IA
-        builder = ContextBuilder(self._db)
+        builder = ContextBuilder(self._db, self._tenant_id)
         system_prompt, messages = builder.build(settings, conv, user_message, page_url, conv.cliente_id)
         context_snapshot = builder.build_snapshot(settings, conv, user_message, page_url, conv.cliente_id)
 
@@ -241,7 +261,8 @@ class ChatbotService:
 
     def takeover(self, conversation_id: str, operador_id: str, motivo: Optional[str]) -> ChatbotConversation:
         conv = self._db.query(ChatbotConversation).filter(
-            ChatbotConversation.id == conversation_id
+            ChatbotConversation.id == conversation_id,
+            ChatbotConversation.tenant_id == self._tenant_id,
         ).first()
         if not conv:
             raise ValueError("Conversa não encontrada.")
@@ -250,6 +271,7 @@ class ChatbotService:
         conv.assumida_por_user_id = operador_id
 
         handoff = ChatbotHandoff(
+            tenant_id=self._tenant_id,
             conversation_id=conv.id,
             operador_id=operador_id,
             motivo=motivo,
@@ -266,7 +288,8 @@ class ChatbotService:
 
     def admin_reply(self, conversation_id: str, mensagem: str) -> ChatbotMessage:
         conv = self._db.query(ChatbotConversation).filter(
-            ChatbotConversation.id == conversation_id
+            ChatbotConversation.id == conversation_id,
+            ChatbotConversation.tenant_id == self._tenant_id,
         ).first()
         if not conv:
             raise ValueError("Conversa não encontrada.")
@@ -276,7 +299,8 @@ class ChatbotService:
 
     def close_by_admin(self, conversation_id: str) -> ChatbotConversation:
         conv = self._db.query(ChatbotConversation).filter(
-            ChatbotConversation.id == conversation_id
+            ChatbotConversation.id == conversation_id,
+            ChatbotConversation.tenant_id == self._tenant_id,
         ).first()
         if not conv:
             raise ValueError("Conversa não encontrada.")
@@ -284,6 +308,7 @@ class ChatbotService:
         # Fecha handoff aberto se existir
         open_handoff = self._db.query(ChatbotHandoff).filter(
             ChatbotHandoff.conversation_id == conv.id,
+            ChatbotHandoff.tenant_id == self._tenant_id,
             ChatbotHandoff.encerrado_em.is_(None),
         ).first()
         if open_handoff:
@@ -298,13 +323,15 @@ class ChatbotService:
 
     def return_to_bot(self, conversation_id: str) -> ChatbotConversation:
         conv = self._db.query(ChatbotConversation).filter(
-            ChatbotConversation.id == conversation_id
+            ChatbotConversation.id == conversation_id,
+            ChatbotConversation.tenant_id == self._tenant_id,
         ).first()
         if not conv:
             raise ValueError("Conversa não encontrada.")
 
         open_handoff = self._db.query(ChatbotHandoff).filter(
             ChatbotHandoff.conversation_id == conv.id,
+            ChatbotHandoff.tenant_id == self._tenant_id,
             ChatbotHandoff.encerrado_em.is_(None),
         ).first()
         if open_handoff:
@@ -331,7 +358,9 @@ class ChatbotService:
         semana = hoje - timedelta(days=7)
         mes    = hoje - timedelta(days=30)
 
-        q = self._db.query(ChatbotConversation)
+        q = self._db.query(ChatbotConversation).filter(
+            ChatbotConversation.tenant_id == self._tenant_id
+        )
 
         total_hoje   = q.filter(ChatbotConversation.iniciada_em >= hoje).count()
         total_semana = q.filter(ChatbotConversation.iniciada_em >= semana).count()
@@ -342,6 +371,7 @@ class ChatbotService:
 
         # Tempo médio de primeira resposta (latência da 1ª msg bot no mês)
         avg_lat = self._db.query(func.avg(ChatbotMessage.latencia_ms)).filter(
+            ChatbotMessage.tenant_id == self._tenant_id,
             ChatbotMessage.sender == MessageSender.bot,
             ChatbotMessage.timestamp >= mes,
             ChatbotMessage.latencia_ms.isnot(None),
@@ -349,6 +379,7 @@ class ChatbotService:
 
         # Tokens no mês
         tokens_mes = self._db.query(func.coalesce(func.sum(ChatbotMessage.tokens_consumidos), 0)).filter(
+            ChatbotMessage.tenant_id == self._tenant_id,
             ChatbotMessage.timestamp >= mes,
             ChatbotMessage.tokens_consumidos.isnot(None),
         ).scalar() or 0
@@ -383,6 +414,7 @@ class ChatbotService:
         tipo: MessageType = MessageType.text,
     ) -> ChatbotMessage:
         msg = ChatbotMessage(
+            tenant_id=self._tenant_id,
             conversation_id=conversation_id,
             sender=sender,
             mensagem=mensagem,
@@ -399,7 +431,8 @@ class ChatbotService:
     def _maybe_summarize(self, conv: ChatbotConversation, settings: ChatbotSettings) -> None:
         """Gera resumo quando o histórico excede o threshold."""
         count = self._db.query(ChatbotMessage).filter(
-            ChatbotMessage.conversation_id == conv.id
+            ChatbotMessage.conversation_id == conv.id,
+            ChatbotMessage.tenant_id == self._tenant_id,
         ).count()
 
         if count < _SUMMARY_THRESHOLD or conv.resumo_conversa:
@@ -407,7 +440,7 @@ class ChatbotService:
 
         msgs = (
             self._db.query(ChatbotMessage)
-            .filter(ChatbotMessage.conversation_id == conv.id)
+            .filter(ChatbotMessage.conversation_id == conv.id, ChatbotMessage.tenant_id == self._tenant_id)
             .order_by(ChatbotMessage.timestamp)
             .limit(_SUMMARY_THRESHOLD)
             .all()

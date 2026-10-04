@@ -7,6 +7,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from backend.config import PROJECT_ROOT, get_settings
+from backend.core.tenant_context import TenantContext
+from backend.core.wave6_tenant_context import wave6_tenant_id
 from backend.models.agente_whatsapp import AgenteWhatsAppAudioArtifact, AgenteWhatsAppMessage
 
 
@@ -25,9 +27,10 @@ def _same_or_before(value: datetime | None, limit: datetime) -> bool:
 
 
 class AgenteWhatsAppRetentionService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
         self._settings = get_settings()
+        self._tenant_id = wave6_tenant_id(tenant_context)
 
     def audio_cleanup(self, *, dry_run: bool = True, limit: int | None = None) -> dict[str, Any]:
         days = max(1, int(self._settings.WHATSAPP_AUDIO_RETENTION_DAYS or 30))
@@ -38,6 +41,7 @@ class AgenteWhatsAppRetentionService:
         rows = (
             self._db.query(AgenteWhatsAppAudioArtifact)
             .filter(
+                AgenteWhatsAppAudioArtifact.tenant_id == self._tenant_id,
                 AgenteWhatsAppAudioArtifact.status.in_(["stored", "generated"]),
                 AgenteWhatsAppAudioArtifact.created_at <= cutoff,
             )
@@ -54,6 +58,10 @@ class AgenteWhatsAppRetentionService:
         errors: list[dict[str, str]] = []
 
         for artifact in rows:
+            if not artifact.message or artifact.message.tenant_id != self._tenant_id:
+                skipped += 1
+                errors.append({"artifact_id": artifact.id, "error": "artifact/message fora do tenant"})
+                continue
             if not _same_or_before(artifact.created_at, cutoff):
                 skipped += 1
                 continue

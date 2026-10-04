@@ -5,10 +5,12 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from backend.core.local_time import local_period_bounds, local_today
+from backend.core.tenant_context import TenantContext
+from backend.core.wave6_tenant_context import wave6_tenant_id
 from backend.models.agente_whatsapp import (
     AgenteWhatsAppAISettings,
     AgenteWhatsAppCampaign,
@@ -53,8 +55,14 @@ def _safe_int(value: Any) -> int | None:
 
 
 class AgenteWhatsAppService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
+        # The public service boundary owns the scope.  Callers must never
+        # select a tenant through payload metadata or an object identifier.
+        # ``wave6_tenant_id`` retains the seeded-tenant compatibility mode
+        # while the rollout flag is off and fails closed once it is enabled.
+        self._tenant_context = tenant_context
+        self._tenant_id = wave6_tenant_id(tenant_context)
 
     def dashboard(self) -> dict[str, int]:
         today_start, _today_end = local_period_bounds(local_today(), local_today())
@@ -65,8 +73,8 @@ class AgenteWhatsAppService:
             "messages_today": self._count_messages(today_start),
             "inbound_today": self._count_messages(today_start, "inbound"),
             "outbound_today": self._count_messages(today_start, "outbound"),
-            "campaigns_total": self._db.query(func.count(AgenteWhatsAppCampaign.id)).scalar() or 0,
-            "stories_total": self._db.query(func.count(AgenteWhatsAppStory.id)).scalar() or 0,
+            "campaigns_total": self._db.query(func.count(AgenteWhatsAppCampaign.id)).filter(AgenteWhatsAppCampaign.tenant_id == self._tenant_id).scalar() or 0,
+            "stories_total": self._db.query(func.count(AgenteWhatsAppStory.id)).filter(AgenteWhatsAppStory.tenant_id == self._tenant_id).scalar() or 0,
         }
 
     def operational_metrics(self) -> dict[str, Any]:
@@ -75,16 +83,20 @@ class AgenteWhatsAppService:
         active_statuses = ["open", "waiting_human", "human", "ai_paused"]
         online_since = now - timedelta(minutes=5)
 
-        open_q = self._db.query(AgenteWhatsAppSession).filter(AgenteWhatsAppSession.status.in_(active_statuses))
+        open_q = self._db.query(AgenteWhatsAppSession).filter(
+            AgenteWhatsAppSession.tenant_id == self._tenant_id,
+            AgenteWhatsAppSession.status.in_(active_statuses),
+        )
         waiting_response = (
             self._db.query(func.count(AgenteWhatsAppSession.id))
-            .filter(AgenteWhatsAppSession.status == "waiting_human")
+            .filter(AgenteWhatsAppSession.tenant_id == self._tenant_id, AgenteWhatsAppSession.status == "waiting_human")
             .scalar()
             or 0
         )
         finalized_today = (
             self._db.query(func.count(AgenteWhatsAppSession.id))
             .filter(
+                AgenteWhatsAppSession.tenant_id == self._tenant_id,
                 AgenteWhatsAppSession.status == "closed",
                 AgenteWhatsAppSession.updated_at >= start_dt,
                 AgenteWhatsAppSession.updated_at <= end_dt,
@@ -95,13 +107,17 @@ class AgenteWhatsAppService:
         unread_messages = (
             self._db.query(func.count(AgenteWhatsAppMessage.id))
             .filter(
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.direction == "inbound",
                 AgenteWhatsAppMessage.read_at.is_(None),
             )
             .scalar()
             or 0
         )
-        ai_settings = self._db.query(AgenteWhatsAppAISettings).filter(AgenteWhatsAppAISettings.id == "default").first()
+        ai_settings = self._db.query(AgenteWhatsAppAISettings).filter(
+            AgenteWhatsAppAISettings.tenant_id == self._tenant_id,
+            AgenteWhatsAppAISettings.id == "default",
+        ).first()
         chatbots_online = 1 if ai_settings is None or ai_settings.enabled else 0
         active_ai_agents = (
             open_q.filter(AgenteWhatsAppSession.ai_enabled.is_(True)).count()
@@ -109,6 +125,7 @@ class AgenteWhatsAppService:
         human_attendants_online = (
             self._db.query(func.count(func.distinct(AgenteWhatsAppSession.assigned_admin_id)))
             .filter(
+                AgenteWhatsAppSession.tenant_id == self._tenant_id,
                 AgenteWhatsAppSession.status == "human",
                 AgenteWhatsAppSession.assigned_admin_id.isnot(None),
                 AgenteWhatsAppSession.last_message_at >= online_since,
@@ -119,6 +136,7 @@ class AgenteWhatsAppService:
         conversations_online = (
             self._db.query(func.count(AgenteWhatsAppSession.id))
             .filter(
+                AgenteWhatsAppSession.tenant_id == self._tenant_id,
                 AgenteWhatsAppSession.status.in_(active_statuses),
                 AgenteWhatsAppSession.last_message_at >= online_since,
             )
@@ -144,13 +162,16 @@ class AgenteWhatsAppService:
     def _count_sessions(self, status: str) -> int:
         return (
             self._db.query(func.count(AgenteWhatsAppSession.id))
-            .filter(AgenteWhatsAppSession.status == status)
+            .filter(AgenteWhatsAppSession.tenant_id == self._tenant_id, AgenteWhatsAppSession.status == status)
             .scalar()
             or 0
         )
 
     def _count_messages(self, since: datetime, direction: str | None = None) -> int:
-        q = self._db.query(func.count(AgenteWhatsAppMessage.id)).filter(AgenteWhatsAppMessage.created_at >= since)
+        q = self._db.query(func.count(AgenteWhatsAppMessage.id)).filter(
+            AgenteWhatsAppMessage.tenant_id == self._tenant_id,
+            AgenteWhatsAppMessage.created_at >= since,
+        )
         if direction:
             q = q.filter(AgenteWhatsAppMessage.direction == direction)
         return q.scalar() or 0
@@ -304,7 +325,10 @@ class AgenteWhatsAppService:
 
         enqueue_result = {"enqueued": 0}
         if queued:
-            enqueue_result = AgenteWhatsAppOutboxService(self._db).enqueue_queued_messages(limit=max(queued, 20))
+            enqueue_result = AgenteWhatsAppOutboxService(
+                self._db,
+                self._tenant_context,
+            ).enqueue_queued_messages(limit=max(queued, 20))
         self._db.flush()
         return {
             "key": key,
@@ -548,7 +572,10 @@ class AgenteWhatsAppService:
             )
             queued += 1
 
-        enqueue_result = AgenteWhatsAppOutboxService(self._db).enqueue_queued_messages(limit=max(queued, 20))
+        enqueue_result = AgenteWhatsAppOutboxService(
+            self._db,
+            self._tenant_context,
+        ).enqueue_queued_messages(limit=max(queued, 20))
         campaign.sent_count = (campaign.sent_count or 0) + queued
         campaign.status = "queued" if queued else "sent"
         campaign.updated_at = datetime.now(timezone.utc)
@@ -815,7 +842,9 @@ class AgenteWhatsAppService:
         date_from: date | None = None,
         date_to: date | None = None,
     ) -> list[AgenteWhatsAppSession]:
-        q = self._db.query(AgenteWhatsAppSession)
+        q = self._db.query(AgenteWhatsAppSession).filter(
+            AgenteWhatsAppSession.tenant_id == self._tenant_id
+        )
         if status:
             q = q.filter(AgenteWhatsAppSession.status == status)
         if assigned_admin_id:
@@ -830,7 +859,13 @@ class AgenteWhatsAppService:
             )
         if search:
             term = f"%{search.strip()}%"
-            q = q.outerjoin(Customer, Customer.id == AgenteWhatsAppSession.customer_id).filter(
+            q = q.outerjoin(
+                Customer,
+                and_(
+                    Customer.id == AgenteWhatsAppSession.customer_id,
+                    Customer.tenant_id == self._tenant_id,
+                ),
+            ).filter(
                 or_(
                     AgenteWhatsAppSession.phone.ilike(term),
                     AgenteWhatsAppSession.current_intent.ilike(term),
@@ -865,7 +900,14 @@ class AgenteWhatsAppService:
         return [self.serialize_conversation(session) for session in sessions]
 
     def get_session(self, session_id: str) -> AgenteWhatsAppSession | None:
-        return self._db.query(AgenteWhatsAppSession).filter(AgenteWhatsAppSession.id == session_id).first()
+        return (
+            self._db.query(AgenteWhatsAppSession)
+            .filter(
+                AgenteWhatsAppSession.id == session_id,
+                AgenteWhatsAppSession.tenant_id == self._tenant_id,
+            )
+            .first()
+        )
 
     def get_or_create_session(
         self,
@@ -882,12 +924,14 @@ class AgenteWhatsAppService:
         if not normalized_phone:
             raise ValueError("Telefone invalido.")
 
-        tenant_id = str((metadata or {}).get("tenant_id") or "").strip()
+        tenant_id = self._tenant_id
+        metadata = {key: value for key, value in (metadata or {}).items() if key != "tenant_id"}
         customer = None
         if customer_id:
-            customer_query = self._db.query(Customer).filter(Customer.id == customer_id)
-            if tenant_id:
-                customer_query = customer_query.filter(Customer.tenant_id == tenant_id)
+            customer_query = self._db.query(Customer).filter(
+                Customer.id == customer_id,
+                Customer.tenant_id == tenant_id,
+            )
             customer = customer_query.first()
             if not customer:
                 raise ValueError("Cliente nao encontrado.")
@@ -895,9 +939,9 @@ class AgenteWhatsAppService:
             customer, customer_created = CustomerIdentityService(self._db).get_or_create_whatsapp_lead(
                 phone=normalized_phone,
                 source="agente_whatsapp",
-                tenant_id=tenant_id or None,
+                tenant_id=tenant_id,
             )
-            if customer_created and tenant_id:
+            if customer_created:
                 from backend.services.automation_event_producer import AutomationEventProducer
                 AutomationEventProducer(self._db, tenant_id).customer_created(customer)
 
@@ -905,6 +949,7 @@ class AgenteWhatsAppService:
             self._db.query(AgenteWhatsAppSession)
             .filter(
                 AgenteWhatsAppSession.phone == normalized_phone,
+                AgenteWhatsAppSession.tenant_id == tenant_id,
                 AgenteWhatsAppSession.status.in_(["open", "waiting_human", "human", "ai_paused"]),
             )
             .order_by(AgenteWhatsAppSession.created_at.desc())
@@ -920,6 +965,7 @@ class AgenteWhatsAppService:
 
         session = AgenteWhatsAppSession(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             customer_id=customer.id if customer else None,
             phone=normalized_phone,
             provider=provider,
@@ -933,6 +979,7 @@ class AgenteWhatsAppService:
         self._db.add(
             AgenteWhatsAppContext(
                 id=str(uuid.uuid4()),
+                tenant_id=tenant_id,
                 session_id=session.id,
                 customer_id=session.customer_id,
             )
@@ -948,6 +995,8 @@ class AgenteWhatsAppService:
         return session, True
 
     def update_session(self, session: AgenteWhatsAppSession, data: dict[str, Any]) -> AgenteWhatsAppSession:
+        if session.tenant_id != self._tenant_id:
+            raise ValueError("Sessao nao pertence a empresa atual.")
         metadata = data.pop("metadata", None)
         for key, value in data.items():
             if value is not None:
@@ -960,7 +1009,10 @@ class AgenteWhatsAppService:
     def list_messages(self, session_id: str, *, limit: int = 100) -> list[AgenteWhatsAppMessage]:
         return (
             self._db.query(AgenteWhatsAppMessage)
-            .filter(AgenteWhatsAppMessage.session_id == session_id)
+            .filter(
+                AgenteWhatsAppMessage.session_id == session_id,
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
+            )
             .order_by(AgenteWhatsAppMessage.created_at.asc())
             .limit(limit)
             .all()
@@ -969,7 +1021,10 @@ class AgenteWhatsAppService:
     def latest_message(self, session_id: str) -> AgenteWhatsAppMessage | None:
         return (
             self._db.query(AgenteWhatsAppMessage)
-            .filter(AgenteWhatsAppMessage.session_id == session_id)
+            .filter(
+                AgenteWhatsAppMessage.session_id == session_id,
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
+            )
             .order_by(AgenteWhatsAppMessage.created_at.desc())
             .first()
         )
@@ -979,6 +1034,7 @@ class AgenteWhatsAppService:
             self._db.query(func.count(AgenteWhatsAppMessage.id))
             .filter(
                 AgenteWhatsAppMessage.session_id == session_id,
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.direction == "inbound",
                 AgenteWhatsAppMessage.read_at.is_(None),
             )
@@ -991,6 +1047,7 @@ class AgenteWhatsAppService:
             self._db.query(AgenteWhatsAppMessage)
             .filter(
                 AgenteWhatsAppMessage.created_at >= start_dt,
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.created_at <= end_dt,
             )
             .order_by(AgenteWhatsAppMessage.session_id.asc(), AgenteWhatsAppMessage.created_at.asc())
@@ -1012,6 +1069,7 @@ class AgenteWhatsAppService:
             self._db.query(AgenteWhatsAppSession)
             .filter(
                 AgenteWhatsAppSession.status == "closed",
+                AgenteWhatsAppSession.tenant_id == self._tenant_id,
                 AgenteWhatsAppSession.updated_at >= start_dt,
                 AgenteWhatsAppSession.updated_at <= end_dt,
             )
@@ -1046,10 +1104,15 @@ class AgenteWhatsAppService:
         provider_status: str | None = None,
         raw_payload: dict[str, Any] | None = None,
     ) -> AgenteWhatsAppMessage:
+        if session.tenant_id != self._tenant_id:
+            raise ValueError("Sessao nao pertence a empresa atual.")
         if provider_message_id:
             existing = (
                 self._db.query(AgenteWhatsAppMessage)
-                .filter(AgenteWhatsAppMessage.provider_message_id == provider_message_id)
+                .filter(
+                    AgenteWhatsAppMessage.provider_message_id == provider_message_id,
+                    AgenteWhatsAppMessage.tenant_id == self._tenant_id,
+                )
                 .first()
             )
             if existing:
@@ -1072,7 +1135,10 @@ class AgenteWhatsAppService:
                 if media_size_bytes and not existing.media_size_bytes:
                     existing.media_size_bytes = media_size_bytes
                 if existing.direction == "inbound":
-                    AgenteWhatsAppProcessingService(self._db).enqueue_inbound_message(existing)
+                    AgenteWhatsAppProcessingService(
+                        self._db,
+                        self._tenant_context,
+                    ).enqueue_inbound_message(existing)
                 return existing
 
         now = datetime.now(timezone.utc)
@@ -1080,6 +1146,7 @@ class AgenteWhatsAppService:
         idempotency_key = f"{resolved_provider}:{provider_message_id}" if provider_message_id else None
         message = AgenteWhatsAppMessage(
             id=str(uuid.uuid4()),
+            tenant_id=self._tenant_id,
             session_id=session.id,
             customer_id=session.customer_id,
             provider=resolved_provider,
@@ -1106,7 +1173,10 @@ class AgenteWhatsAppService:
         self._db.add(message)
         self._db.flush()
         if direction == "inbound":
-            AgenteWhatsAppProcessingService(self._db).enqueue_inbound_message(message)
+            AgenteWhatsAppProcessingService(
+                self._db,
+                self._tenant_context,
+            ).enqueue_inbound_message(message)
         session.last_message_at = now
         session.updated_at = now
         self.add_event(
@@ -1291,6 +1361,7 @@ class AgenteWhatsAppService:
         message = (
             self._db.query(AgenteWhatsAppMessage)
             .filter(AgenteWhatsAppMessage.provider_message_id == provider_message_id)
+            .filter(AgenteWhatsAppMessage.tenant_id == self._tenant_id)
             .first()
         )
         if not message:
@@ -1311,6 +1382,7 @@ class AgenteWhatsAppService:
         return (
             self._db.query(AgenteWhatsAppMessage.id)
             .filter(AgenteWhatsAppMessage.provider_message_id == provider_message_id)
+            .filter(AgenteWhatsAppMessage.tenant_id == self._tenant_id)
             .first()
             is not None
         )
@@ -1407,6 +1479,7 @@ class AgenteWhatsAppService:
     ) -> AgenteWhatsAppEvent:
         event = AgenteWhatsAppEvent(
             id=str(uuid.uuid4()),
+            tenant_id=self._tenant_id,
             session_id=session_id,
             customer_id=customer_id,
             order_id=order_id,

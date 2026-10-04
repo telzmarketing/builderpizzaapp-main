@@ -96,7 +96,10 @@ class ActionHandlerRegistry:
             allowed, reason = eligibility.allowed, eligibility.reason
         if not allowed:
             return "cancelled", reason, None
-        automation = {"channel": channel, "template_id": None}
+        # The action worker receives the tenant from the claimed execution, never
+        # from action metadata.  Keep it on the transient automation envelope so
+        # provider configuration is resolved in the same tenant.
+        automation = {"channel": channel, "template_id": None, "tenant_id": tenant_id}
         status, error, provider_id = send_message(db, automation, customer,
             str(config.get("subject") or "") or None, str(config.get("message") or ""))
         if status == "sent" and risk_service:

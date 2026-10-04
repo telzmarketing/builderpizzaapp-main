@@ -45,6 +45,7 @@ def test_settings_snapshot_is_allowlisted_and_never_serializes_secrets():
         "tenant_identity_catalog_enforcement",
         "tenant_customers_orders_enforcement",
         "multi_tenant_wave6_orm",
+        "multi_tenant_wave7_orm",
         "tenant_operations_enforcement",
         "tenant_payment_webhooks",
         "tenant_background_context",
@@ -144,6 +145,23 @@ def test_settings_detects_default_secret_with_hmac_and_derives_status():
     )).get_settings()
     assert ok_payload["status"] == "ok"
     assert ok_payload["alerts"] == []
+
+    wave6_payload = PlatformSettingsService(_settings(
+        MULTI_TENANT_WAVE6_ORM_ENABLED=True,
+    )).get_settings()
+    assert wave6_payload["status"] == "attention"
+    assert "wave6_route_enforcement_pending" in {
+        alert["key"] for alert in wave6_payload["alerts"]
+    }
+
+    upload_payload = PlatformSettingsService(_settings(
+        TENANT_UPLOAD_NAMESPACE_ENABLED=True,
+        TENANT_DOMAINS_ENABLED=False,
+    )).get_settings()
+    assert upload_payload["status"] == "critical"
+    assert "tenant_upload_namespace_requires_domains" in {
+        alert["key"] for alert in upload_payload["alerts"]
+    }
 
     service_source = (
         ROOT / "backend/services/platform_settings_service.py"

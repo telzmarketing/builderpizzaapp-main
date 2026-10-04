@@ -501,7 +501,7 @@ def _run_automation(automation_id: str, db: Session, tenant_id: str) -> dict:
                 if body_html:
                     try:
                         from backend.routes.email_marketing import _send_email, _get_config
-                        cfg = _get_config(db)
+                        cfg = _get_config(db, tenant_id)
                         success, error_msg = _send_email(to_email, subject, body_html, cfg)
                         status = "sent" if success else "failed"
                     except Exception as exc:

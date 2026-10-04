@@ -93,6 +93,12 @@ class PlatformSettingsService:
                 "category": "isolation",
             },
             {
+                "key": "multi_tenant_wave7_orm",
+                "label": "Mapeamento ORM multiempresa da onda 7",
+                "enabled": bool(settings.MULTI_TENANT_WAVE7_ORM_ENABLED),
+                "category": "isolation",
+            },
+            {
                 "key": "tenant_operations_enforcement",
                 "label": "Isolamento de operacoes",
                 "enabled": bool(settings.TENANT_OPERATIONS_ENFORCEMENT_ENABLED),
@@ -198,6 +204,20 @@ class PlatformSettingsService:
                 "severity": "critical",
                 "title": "Proxy confiavel ausente",
                 "description": "Cabecalhos de proxy estao habilitados sem uma rede confiavel valida.",
+            })
+        if settings.TENANT_UPLOAD_NAMESPACE_ENABLED and not settings.TENANT_DOMAINS_ENABLED:
+            alerts.append({
+                "key": "tenant_upload_namespace_requires_domains",
+                "severity": "critical",
+                "title": "Uploads tenantizados exigem dominios",
+                "description": "Ative a resolucao de dominios por tenant antes de servir uploads isolados.",
+            })
+        if settings.MULTI_TENANT_WAVE6_ORM_ENABLED:
+            alerts.append({
+                "key": "wave6_route_enforcement_pending",
+                "severity": "warning",
+                "title": "Onda 6 ainda exige validacao de rotas",
+                "description": "A flag Wave 6 alinha metadados ORM, mas nao deve ser tratada como isolamento completo de marketing, CRM, WhatsApp e BI.",
             })
         if not settings.TENANT_ENTITLEMENT_ENFORCEMENT_ENABLED:
             alerts.append({

@@ -1,6 +1,8 @@
 """WhatsApp Marketing — templates, campanhas, disparo, monitoramento, config."""
 from __future__ import annotations
 import json
+import hashlib
+import hmac
 import random
 import time
 import uuid
@@ -11,11 +13,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
-from sqlalchemy import Column, String, Boolean, Text, DateTime, ForeignKey, Integer, Float, text
+from sqlalchemy import Column, String, Boolean, Text, DateTime, ForeignKey, Integer, Float, bindparam, text
 from sqlalchemy.orm import Session
 
 from backend.database import get_db, Base
 from backend.core.tenant_runtime import resolve_panel_tenant_context
+from backend.core.tenant_context import TenantContext
+from backend.core.wave6_tenant_context import WAVE6_SESSION_TENANT_KEY, panel_wave6_context, wave6_tenant_id
 from backend.core.wave6_tenant_orm import wave6_tenant_column
 from backend.models.admin import AdminUser
 from backend.routes.admin_auth import get_current_admin
@@ -23,7 +27,13 @@ from backend.core.response import ok, created, err_msg
 from backend.services.customer_contact_risk_service import CustomerContactRiskService
 from backend.services.whatsapp_gateway_service import WhatsAppGatewayService
 
-router = APIRouter(prefix="/whatsapp", tags=["whatsapp-marketing"])
+router = APIRouter(
+    prefix="/whatsapp", tags=["whatsapp-marketing"],
+    dependencies=[Depends(panel_wave6_context)],
+)
+# Meta calls this endpoint without a panel session. It must remain isolated
+# from the authenticated router above and prove the tenant cryptographically.
+webhook_router = APIRouter(prefix="/whatsapp", tags=["whatsapp-marketing-webhook"])
 
 WHATSAPP_NOT_FOUND_ERROR = "Whatsapp não existe"
 
@@ -273,6 +283,14 @@ class ConfigUpdate(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _tenant_id(db: Session) -> str:
+    return wave6_tenant_id(db.info.get(WAVE6_SESSION_TENANT_KEY))
+
+
+def _tenant_context(db: Session) -> TenantContext | None:
+    return db.info.get(WAVE6_SESSION_TENANT_KEY)
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -299,8 +317,8 @@ def _validate_whatsapp_phone(phone: str | None) -> tuple[str | None, str | None]
     return digits, None
 
 
-def _verify_whatsapp_contact(phone: str, db: Session, cfg: WhatsAppConfig) -> tuple[bool, str | None]:
-    gateway = WhatsAppGatewayService(db)
+def _verify_whatsapp_contact(phone: str, db: Session, cfg: WhatsAppConfig, tenant_context: TenantContext | None) -> tuple[bool, str | None]:
+    gateway = WhatsAppGatewayService(db, tenant_context)
     if cfg.whatsapp_gateway_instance_id:
         instance = gateway.get_instance(cfg.whatsapp_gateway_instance_id)
         if not instance or instance.status != "connected":
@@ -401,10 +419,10 @@ def _resolve_phones(body: SendRequest, db: Session, tenant_id: str = "default") 
     return result
 
 
-def _get_config(db: Session) -> WhatsAppConfig:
-    cfg = db.query(WhatsAppConfig).filter(WhatsAppConfig.id == "default").first()
+def _get_config(db: Session, tenant_id: str = "tenant-legacy-default") -> WhatsAppConfig:
+    cfg = db.query(WhatsAppConfig).filter(WhatsAppConfig.tenant_id == tenant_id).first()
     if not cfg:
-        cfg = WhatsAppConfig(id="default")
+        cfg = WhatsAppConfig(id=f"whatsapp-config-{tenant_id}", tenant_id=tenant_id)
         db.add(cfg)
         db.commit()
         db.refresh(cfg)
@@ -449,10 +467,10 @@ def _campaign_to_dict(c: WhatsAppCampaign) -> dict:
     }
 
 
-def _campaign_name_snapshot(db: Session, campaign_id: str | None) -> str | None:
+def _campaign_name_snapshot(db: Session, campaign_id: str | None, tenant_id: str) -> str | None:
     if not campaign_id:
         return None
-    campaign = db.query(WhatsAppCampaign).filter(WhatsAppCampaign.id == campaign_id).first()
+    campaign = db.query(WhatsAppCampaign).filter(WhatsAppCampaign.id == campaign_id, WhatsAppCampaign.tenant_id == tenant_id).first()
     return campaign.name if campaign else None
 
 
@@ -486,7 +504,7 @@ def _create_campaign_delivery(
         media_url=msg.media_url,
         caption_snapshot=caption,
         template_name_snapshot=template.name if template else None,
-        campaign_name_snapshot=_campaign_name_snapshot(db, msg.campaign_id),
+        campaign_name_snapshot=_campaign_name_snapshot(db, msg.campaign_id, tenant_id),
         variables_json=_json_dump({"variables": variables or []}),
         provider_payload_json=_json_dump({
             "source": "whatsapp_marketing",
@@ -533,10 +551,10 @@ def _apply_delivery_status(
     delivery.updated_at = now
 
 
-def _contact_list_to_dict(item: WhatsAppContactList, db: Session, *, include_contacts: bool = False) -> dict:
+def _contact_list_to_dict(item: WhatsAppContactList, db: Session, tenant_id: str = "tenant-legacy-default", *, include_contacts: bool = False) -> dict:
     count = db.execute(
-        text("SELECT COUNT(*) FROM whatsapp_contact_list_items WHERE list_id = :list_id"),
-        {"list_id": item.id},
+        text("SELECT COUNT(*) FROM whatsapp_contact_list_items WHERE list_id = :list_id AND tenant_id = :tenant_id"),
+        {"list_id": item.id, "tenant_id": tenant_id},
     ).scalar() or 0
     payload = {
         "id": item.id,
@@ -551,10 +569,10 @@ def _contact_list_to_dict(item: WhatsAppContactList, db: Session, *, include_con
             text("""
                 SELECT id, name, phone
                 FROM whatsapp_contact_list_items
-                WHERE list_id = :list_id
+                WHERE list_id = :list_id AND tenant_id = :tenant_id
                 ORDER BY created_at ASC
             """),
-            {"list_id": item.id},
+            {"list_id": item.id, "tenant_id": tenant_id},
         ).fetchall()
         payload["contacts"] = [{"id": r[0], "name": r[1], "phone": r[2]} for r in rows]
     return payload
@@ -573,9 +591,10 @@ def _render_contact_variables(text_value: Optional[str], recipient: dict) -> str
     )
 
 
-def _load_whatsapp_cloud_credentials(db: Session) -> tuple[dict, Optional[str]]:
+def _load_whatsapp_cloud_credentials(db: Session, tenant_id: str = "tenant-legacy-default") -> tuple[dict, Optional[str]]:
     conn = db.execute(
-        text("SELECT credentials_json FROM integration_connections WHERE integration_type = 'whatsapp_cloud'")
+        text("SELECT credentials_json FROM integration_connections WHERE integration_type = 'whatsapp_cloud' AND tenant_id = :tenant_id"),
+        {"tenant_id": tenant_id},
     ).fetchone()
     if not conn or not conn[0]:
         return {}, "WhatsApp Cloud API nao configurado."
@@ -667,6 +686,11 @@ def _uazapi_credentials(cfg: WhatsAppConfig) -> tuple[dict, Optional[str]]:
 
 
 def _load_whatsapp_verify_token(db: Session) -> Optional[str]:
+    """Legacy helper used by the still-blocked agente-whatsapp webhook.
+
+    New WhatsApp Marketing callbacks must use the tenant-specific helpers
+    below. Do not use this to authorize a multi-tenant public endpoint.
+    """
     conn = db.execute(
         text("SELECT credentials_json FROM integration_connections WHERE integration_type = 'whatsapp_cloud'")
     ).fetchone()
@@ -677,6 +701,53 @@ def _load_whatsapp_verify_token(db: Session) -> Optional[str]:
     except Exception:
         return None
     return creds.get("verify_token") or creds.get("webhook_verify_token")
+
+
+def _meta_connections_for_phone_ids(db: Session, phone_ids: set[str]) -> dict[str, dict]:
+    """Return exactly one Cloud connection per Meta phone number, or fail closed."""
+    if not phone_ids:
+        return {}
+    rows = db.execute(
+        text("""
+            SELECT tenant_id, credentials_json, whatsapp_phone_number_id
+            FROM integration_connections
+            WHERE integration_type = 'whatsapp_cloud'
+              AND whatsapp_phone_number_id IN :phone_ids
+        """).bindparams(bindparam("phone_ids", expanding=True)),
+        {"phone_ids": sorted(phone_ids)},
+    ).mappings().all()
+    matches: dict[str, dict] = {}
+    for row in rows:
+        phone_id = str(row["whatsapp_phone_number_id"] or "")
+        if not phone_id or phone_id in matches:
+            raise ValueError("Conta Meta ausente ou ambigua para webhook.")
+        try:
+            credentials = json.loads(row["credentials_json"] or "{}")
+        except (TypeError, ValueError):
+            raise ValueError("Credenciais Meta invalidas para webhook.") from None
+        if not isinstance(credentials, dict) or not credentials.get("app_secret"):
+            raise ValueError("app_secret da Meta ausente para webhook.")
+        matches[phone_id] = {"tenant_id": row["tenant_id"], "credentials": credentials}
+    if set(matches) != phone_ids:
+        raise ValueError("Conta Meta nao encontrada para webhook.")
+    return matches
+
+
+def _meta_connection_for_verify_token(db: Session, token: str | None) -> bool:
+    """Accept a verification challenge only for one tenant-bound token hash."""
+    if not token:
+        return False
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    matches = db.execute(
+        text("""
+            SELECT id
+            FROM integration_connections
+            WHERE integration_type = 'whatsapp_cloud'
+              AND whatsapp_webhook_verify_token_hash = :token_hash
+        """),
+        {"token_hash": token_hash},
+    ).fetchall()
+    return len(matches) == 1
 
 
 def _render_template_preview(template_body: str, variables: list[str]) -> str:
@@ -690,6 +761,7 @@ def _send_whatsapp_api(
     phone: str,
     body: str,
     db: Session,
+    tenant_id: str,
     *,
     template_name: str | None = None,
     template_language: str = "pt_BR",
@@ -699,7 +771,7 @@ def _send_whatsapp_api(
     caption: str | None = None,
 ) -> tuple[Optional[str], str, Optional[str]]:
     """Envia via WhatsApp Cloud API. Retorna (wamid, status, error)."""
-    creds, error = _load_whatsapp_cloud_credentials(db)
+    creds, error = _load_whatsapp_cloud_credentials(db, tenant_id)
     if error:
         return None, "failed", error
 
@@ -770,6 +842,7 @@ def _send_baileys_gateway(
     phone: str,
     body: str,
     db: Session,
+    tenant_context: TenantContext | None,
     *,
     instance_id: str | None = None,
     media_type: str | None = None,
@@ -778,7 +851,7 @@ def _send_baileys_gateway(
     mimetype: str | None = None,
     file_name: str | None = None,
 ) -> tuple[Optional[str], str, Optional[str]]:
-    gateway = WhatsAppGatewayService(db)
+    gateway = WhatsAppGatewayService(db, tenant_context)
     if media_url:
         result = gateway.send_media_message(
             phone=phone,
@@ -802,6 +875,7 @@ def _send_baileys_gateway(
 def _sync_marketing_message_to_agent(
     db: Session,
     *,
+    tenant_context: TenantContext | None,
     msg: WhatsAppMessage,
     delivery: WhatsAppCampaignDelivery | None,
     phone: str,
@@ -815,7 +889,7 @@ def _sync_marketing_message_to_agent(
     try:
         from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 
-        service = AgenteWhatsAppService(db)
+        service = AgenteWhatsAppService(db, tenant_context)
         session, _created = service.get_or_create_session(
             phone=phone,
             customer_id=msg.customer_id,
@@ -979,9 +1053,10 @@ def _send_uazapi_api(
         return None, "failed", str(exc)
 
 
-def _sent_today_count(db: Session) -> int:
+def _sent_today_count(db: Session, tenant_id: str) -> int:
     row = db.execute(
-        text("SELECT COUNT(*) FROM whatsapp_messages WHERE status = 'sent' AND sent_at::date = CURRENT_DATE")
+        text("SELECT COUNT(*) FROM whatsapp_messages WHERE tenant_id = :tenant_id AND status = 'sent' AND sent_at::date = CURRENT_DATE"),
+        {"tenant_id": tenant_id},
     ).fetchone()
     return int(row[0]) if row and row[0] is not None else 0
 
@@ -1002,34 +1077,36 @@ def _send_delay_seconds(cfg: WhatsAppConfig) -> float:
 
 @router.get("/dashboard")
 def get_dashboard(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    tenant_id = _tenant_id(db)
+
     def _q(sql: str, params: dict = {}) -> int:  # noqa: B006
         try:
-            row = db.execute(text(sql), params).fetchone()
+            row = db.execute(text(sql), {"tenant_id": tenant_id, **params}).fetchone()
             return int(row[0]) if row and row[0] is not None else 0
         except Exception:
             return 0
 
     def _qf(sql: str, params: dict = {}) -> float:  # noqa: B006
         try:
-            row = db.execute(text(sql), params).fetchone()
+            row = db.execute(text(sql), {"tenant_id": tenant_id, **params}).fetchone()
             return float(row[0]) if row and row[0] is not None else 0.0
         except Exception:
             return 0.0
 
-    sent       = _q("SELECT COUNT(*) FROM whatsapp_messages WHERE status IN ('sent','delivered','read')")
-    delivered  = _q("SELECT COUNT(*) FROM whatsapp_messages WHERE status IN ('delivered','read')")
-    read_      = _q("SELECT COUNT(*) FROM whatsapp_messages WHERE status = 'read'")
-    errors     = _q("SELECT COUNT(*) FROM whatsapp_messages WHERE status = 'failed'")
-    active_c   = _q("SELECT COUNT(*) FROM whatsapp_campaigns WHERE status = 'running'")
-    sched_c    = _q("SELECT COUNT(*) FROM whatsapp_campaigns WHERE status = 'draft' AND scheduled_at IS NOT NULL")
+    sent       = _q("SELECT COUNT(*) FROM whatsapp_messages WHERE tenant_id = :tenant_id AND status IN ('sent','delivered','read')")
+    delivered  = _q("SELECT COUNT(*) FROM whatsapp_messages WHERE tenant_id = :tenant_id AND status IN ('delivered','read')")
+    read_      = _q("SELECT COUNT(*) FROM whatsapp_messages WHERE tenant_id = :tenant_id AND status = 'read'")
+    errors     = _q("SELECT COUNT(*) FROM whatsapp_messages WHERE tenant_id = :tenant_id AND status = 'failed'")
+    active_c   = _q("SELECT COUNT(*) FROM whatsapp_campaigns WHERE tenant_id = :tenant_id AND status = 'running'")
+    sched_c    = _q("SELECT COUNT(*) FROM whatsapp_campaigns WHERE tenant_id = :tenant_id AND status = 'draft' AND scheduled_at IS NOT NULL")
 
     # responded: heurística — mensagens marcadas como 'responded' (se existir) ou 0
-    responded  = _q("SELECT COUNT(*) FROM whatsapp_messages WHERE status = 'responded'")
+    responded  = _q("SELECT COUNT(*) FROM whatsapp_messages WHERE tenant_id = :tenant_id AND status = 'responded'")
     response_rate = (responded / sent) if sent > 0 else 0.0
 
     # Pedidos com utm_medium = 'whatsapp' como proxy de pedidos gerados
-    orders_gen = _q("SELECT COUNT(*) FROM orders WHERE utm_medium = 'whatsapp'")
-    revenue_gen = _qf("SELECT COALESCE(SUM(total),0) FROM orders WHERE utm_medium = 'whatsapp'")
+    orders_gen = _q("SELECT COUNT(*) FROM orders WHERE tenant_id = :tenant_id AND utm_medium = 'whatsapp'")
+    revenue_gen = _qf("SELECT COALESCE(SUM(total),0) FROM orders WHERE tenant_id = :tenant_id AND utm_medium = 'whatsapp'")
 
     return ok({
         "sent": sent,
@@ -1047,62 +1124,100 @@ def get_dashboard(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 
 # ── Webhook oficial Meta ──────────────────────────────────────────────────────
 
-@router.get("/webhook", include_in_schema=False)
+@webhook_router.get("/webhook", include_in_schema=False)
 def verify_meta_webhook(request: Request, db: Session = Depends(get_db)):
     mode = request.query_params.get("hub.mode")
     token = request.query_params.get("hub.verify_token")
     challenge = request.query_params.get("hub.challenge")
-    expected = _load_whatsapp_verify_token(db)
-
-    if mode == "subscribe" and expected and token == expected and challenge:
+    if mode == "subscribe" and _meta_connection_for_verify_token(db, token) and challenge:
         return PlainTextResponse(challenge)
     return PlainTextResponse("Forbidden", status_code=403)
 
 
-@router.post("/webhook", include_in_schema=False)
+@webhook_router.post("/webhook", include_in_schema=False)
 async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
     try:
-        payload = await request.json()
+        raw_body = await request.body()
+        payload = json.loads(raw_body)
     except Exception:
         return err_msg("Payload de webhook invalido.", code="WhatsAppWebhookInvalid")
 
-    updated = 0
+    status_changes: list[tuple[str, dict]] = []
+    phone_ids: set[str] = set()
     for entry in payload.get("entry", []) or []:
         for change in entry.get("changes", []) or []:
             value = change.get("value") or {}
-            for item in value.get("statuses", []) or []:
-                wamid = item.get("id")
-                status = item.get("status")
-                if not wamid or not status:
-                    continue
-                errors = item.get("errors") or []
-                error_message = None
-                if errors:
-                    first_error = errors[0] or {}
-                    error_message = first_error.get("message") or first_error.get("title")
-                result = db.execute(
-                    text("""
-                        UPDATE whatsapp_messages
-                        SET status = :status,
-                            error = :error,
-                            sent_at = COALESCE(sent_at, CASE WHEN :status = 'sent' THEN NOW() ELSE sent_at END)
-                        WHERE wamid = :wamid
-                    """),
-                    {"status": status, "error": error_message, "wamid": wamid},
-                )
-                updated += int(result.rowcount or 0)
-                delivery = (
-                    db.query(WhatsAppCampaignDelivery)
-                    .filter(WhatsAppCampaignDelivery.provider_message_id == wamid)
-                    .first()
-                )
-                _apply_delivery_status(
-                    delivery,
-                    status=status,
-                    provider_message_id=wamid,
-                    error=error_message,
-                    provider_payload={"webhook_status": item},
-                )
+            statuses = value.get("statuses", []) or []
+            if not statuses:
+                continue
+            phone_number_id = str((value.get("metadata") or {}).get("phone_number_id") or "").strip()
+            if not phone_number_id:
+                return err_msg("Webhook Meta sem phone_number_id.", code="WhatsAppWebhookTenantMissing", status_code=403)
+            phone_ids.add(phone_number_id)
+            for item in statuses:
+                status_changes.append((phone_number_id, item))
+
+    if not status_changes:
+        return ok({"updated": 0})
+    try:
+        connections = _meta_connections_for_phone_ids(db, phone_ids)
+    except ValueError as exc:
+        return err_msg(str(exc), code="WhatsAppWebhookTenantInvalid", status_code=403)
+
+    app_secrets = {str(item["credentials"]["app_secret"]) for item in connections.values()}
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    if len(app_secrets) != 1 or not signature.startswith("sha256="):
+        return err_msg("Assinatura Meta invalida.", code="WhatsAppWebhookSignatureInvalid", status_code=401)
+    expected_signature = "sha256=" + hmac.new(
+        next(iter(app_secrets)).encode("utf-8"), raw_body, hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected_signature):
+        return err_msg("Assinatura Meta invalida.", code="WhatsAppWebhookSignatureInvalid", status_code=401)
+
+    updated = 0
+    for phone_number_id, item in status_changes:
+        wamid = item.get("id")
+        status = item.get("status")
+        if not wamid or not status:
+            continue
+        tenant_id = connections[phone_number_id]["tenant_id"]
+        errors = item.get("errors") or []
+        error_message = None
+        if errors:
+            first_error = errors[0] or {}
+            error_message = first_error.get("message") or first_error.get("title")
+        result = db.execute(
+            text("""
+                UPDATE whatsapp_messages
+                SET status = :status,
+                    error = :error,
+                    sent_at = COALESCE(sent_at, CASE WHEN :status = 'sent' THEN NOW() ELSE sent_at END)
+                WHERE wamid = :wamid
+                  AND tenant_id = :tenant_id
+                  AND provider = 'official'
+            """),
+            {"status": status, "error": error_message, "wamid": wamid, "tenant_id": tenant_id},
+        )
+        updated += int(result.rowcount or 0)
+        deliveries = (
+            db.query(WhatsAppCampaignDelivery)
+            .filter(
+                WhatsAppCampaignDelivery.tenant_id == tenant_id,
+                WhatsAppCampaignDelivery.provider == "official",
+                WhatsAppCampaignDelivery.provider_message_id == wamid,
+            )
+            .all()
+        )
+        if len(deliveries) > 1:
+            db.rollback()
+            return err_msg("Entrega Meta ambigua para a empresa.", code="WhatsAppWebhookDeliveryAmbiguous", status_code=409)
+        _apply_delivery_status(
+            deliveries[0] if deliveries else None,
+            status=status,
+            provider_message_id=wamid,
+            error=error_message,
+            provider_payload={"webhook_status": item},
+        )
 
     db.commit()
     return ok({"updated": updated})
@@ -1114,7 +1229,7 @@ async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
 def list_templates(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     templates = (
         db.query(WhatsAppTemplate)
-        .filter(WhatsAppTemplate.active == True)  # noqa: E712
+        .filter(WhatsAppTemplate.tenant_id == _tenant_id(db), WhatsAppTemplate.active == True)  # noqa: E712
         .order_by(WhatsAppTemplate.created_at.desc())
         .all()
     )
@@ -1130,7 +1245,7 @@ def list_templates(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 @router.post("/templates")
 def create_template(body: TemplateCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     t = WhatsAppTemplate(
-        id=str(uuid.uuid4()),
+        id=str(uuid.uuid4()), tenant_id=_tenant_id(db),
         name=body.name,
         body=body.body,
         category=body.category,
@@ -1151,7 +1266,7 @@ def create_template(body: TemplateCreate, db: Session = Depends(get_db), _=Depen
 @router.patch("/templates/{template_id}")
 def update_template(template_id: str, body: TemplateUpdate,
                     db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    t = db.query(WhatsAppTemplate).filter(WhatsAppTemplate.id == template_id).first()
+    t = db.query(WhatsAppTemplate).filter(WhatsAppTemplate.id == template_id, WhatsAppTemplate.tenant_id == _tenant_id(db)).first()
     if not t:
         raise HTTPException(404, "Template não encontrado.")
     if body.name is not None:
@@ -1183,7 +1298,7 @@ def update_template(template_id: str, body: TemplateUpdate,
 
 @router.delete("/templates/{template_id}")
 def delete_template(template_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    t = db.query(WhatsAppTemplate).filter(WhatsAppTemplate.id == template_id).first()
+    t = db.query(WhatsAppTemplate).filter(WhatsAppTemplate.id == template_id, WhatsAppTemplate.tenant_id == _tenant_id(db)).first()
     if not t:
         raise HTTPException(404, "Template não encontrado.")
     t.active = False
@@ -1200,22 +1315,23 @@ def delete_template(template_id: str, db: Session = Depends(get_db), _=Depends(g
 def list_contact_lists(db: Session = Depends(get_db), _=Depends(get_current_admin)):
     items = (
         db.query(WhatsAppContactList)
-        .filter(WhatsAppContactList.active == True)  # noqa: E712
+        .filter(WhatsAppContactList.tenant_id == _tenant_id(db), WhatsAppContactList.active == True)  # noqa: E712
         .order_by(WhatsAppContactList.created_at.desc())
         .all()
     )
-    return ok([_contact_list_to_dict(item, db) for item in items])
+    return ok([_contact_list_to_dict(item, db, _tenant_id(db)) for item in items])
 
 
 @router.get("/contact-lists/{list_id}")
 def get_contact_list(list_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     item = db.query(WhatsAppContactList).filter(
         WhatsAppContactList.id == list_id,
+        WhatsAppContactList.tenant_id == _tenant_id(db),
         WhatsAppContactList.active == True,  # noqa: E712
     ).first()
     if not item:
         raise HTTPException(404, "Lista de contatos nao encontrada.")
-    return ok(_contact_list_to_dict(item, db, include_contacts=True))
+    return ok(_contact_list_to_dict(item, db, _tenant_id(db), include_contacts=True))
 
 
 @router.post("/contact-lists")
@@ -1226,25 +1342,28 @@ def create_contact_list(body: ContactListCreate, db: Session = Depends(get_db), 
     if not clean_contacts:
         raise HTTPException(400, "Inclua pelo menos um contato com nome e telefone valido.")
 
-    item = WhatsAppContactList(id=str(uuid.uuid4()), name=body.name.strip())
+    tenant_id = _tenant_id(db)
+    item = WhatsAppContactList(id=str(uuid.uuid4()), tenant_id=tenant_id, name=body.name.strip())
     db.add(item)
     db.flush()
     for contact in clean_contacts:
         db.add(WhatsAppContactListItem(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             list_id=item.id,
             name=contact["name"],
             phone=contact["phone"],
         ))
     db.commit()
     db.refresh(item)
-    return created(_contact_list_to_dict(item, db, include_contacts=True), "Lista de contatos criada.")
+    return created(_contact_list_to_dict(item, db, tenant_id, include_contacts=True), "Lista de contatos criada.")
 
 
 @router.patch("/contact-lists/{list_id}")
 def update_contact_list(list_id: str, body: ContactListUpdate,
                         db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    item = db.query(WhatsAppContactList).filter(WhatsAppContactList.id == list_id).first()
+    tenant_id = _tenant_id(db)
+    item = db.query(WhatsAppContactList).filter(WhatsAppContactList.id == list_id, WhatsAppContactList.tenant_id == tenant_id).first()
     if not item or not item.active:
         raise HTTPException(404, "Lista de contatos nao encontrada.")
     if body.name is not None:
@@ -1255,22 +1374,23 @@ def update_contact_list(list_id: str, body: ContactListUpdate,
         clean_contacts = _prepare_contact_list_contacts(body.contacts)
         if not clean_contacts:
             raise HTTPException(400, "Inclua pelo menos um contato com nome e telefone valido.")
-        db.execute(text("DELETE FROM whatsapp_contact_list_items WHERE list_id = :list_id"), {"list_id": list_id})
+        db.execute(text("DELETE FROM whatsapp_contact_list_items WHERE list_id = :list_id AND tenant_id = :tenant_id"), {"list_id": list_id, "tenant_id": tenant_id})
         for contact in clean_contacts:
             db.add(WhatsAppContactListItem(
                 id=str(uuid.uuid4()),
+                tenant_id=tenant_id,
                 list_id=item.id,
                 name=contact["name"],
                 phone=contact["phone"],
             ))
     item.updated_at = _now()
     db.commit()
-    return ok(_contact_list_to_dict(item, db, include_contacts=True))
+    return ok(_contact_list_to_dict(item, db, tenant_id, include_contacts=True))
 
 
 @router.delete("/contact-lists/{list_id}")
 def delete_contact_list(list_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    item = db.query(WhatsAppContactList).filter(WhatsAppContactList.id == list_id).first()
+    item = db.query(WhatsAppContactList).filter(WhatsAppContactList.id == list_id, WhatsAppContactList.tenant_id == _tenant_id(db)).first()
     if not item:
         raise HTTPException(404, "Lista de contatos nao encontrada.")
     item.active = False
@@ -1281,7 +1401,7 @@ def delete_contact_list(list_id: str, db: Session = Depends(get_db), _=Depends(g
 
 @router.get("/campaigns")
 def list_campaigns(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    campaigns = db.query(WhatsAppCampaign).order_by(WhatsAppCampaign.created_at.desc()).all()
+    campaigns = db.query(WhatsAppCampaign).filter(WhatsAppCampaign.tenant_id == _tenant_id(db)).order_by(WhatsAppCampaign.created_at.desc()).all()
     return ok([_campaign_to_dict(c) for c in campaigns])
 
 
@@ -1295,7 +1415,7 @@ def create_campaign(body: CampaignCreate, db: Session = Depends(get_db), _=Depen
             raise HTTPException(400, "scheduled_at inválido (use ISO 8601).")
 
     c = WhatsAppCampaign(
-        id=str(uuid.uuid4()),
+        id=str(uuid.uuid4()), tenant_id=_tenant_id(db),
         name=body.name,
         status="draft",
         template_id=body.template_id or None,
@@ -1312,7 +1432,7 @@ def create_campaign(body: CampaignCreate, db: Session = Depends(get_db), _=Depen
 @router.patch("/campaigns/{campaign_id}")
 def update_campaign(campaign_id: str, body: CampaignUpdate,
                     db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    c = db.query(WhatsAppCampaign).filter(WhatsAppCampaign.id == campaign_id).first()
+    c = db.query(WhatsAppCampaign).filter(WhatsAppCampaign.id == campaign_id, WhatsAppCampaign.tenant_id == _tenant_id(db)).first()
     if not c:
         raise HTTPException(404, "Campanha não encontrada.")
     if body.name is not None:
@@ -1337,7 +1457,7 @@ def update_campaign(campaign_id: str, body: CampaignUpdate,
 
 @router.delete("/campaigns/{campaign_id}")
 def delete_campaign(campaign_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    c = db.query(WhatsAppCampaign).filter(WhatsAppCampaign.id == campaign_id).first()
+    c = db.query(WhatsAppCampaign).filter(WhatsAppCampaign.id == campaign_id, WhatsAppCampaign.tenant_id == _tenant_id(db)).first()
     if not c:
         raise HTTPException(404, "Campanha não encontrada.")
     db.delete(c)
@@ -1355,9 +1475,9 @@ def send_messages(
     admin: AdminUser = Depends(get_current_admin),
 ):
     tenant_context = resolve_panel_tenant_context(request, db, admin)
-    tenant_id = tenant_context.tenant_id if tenant_context else "default"
+    tenant_id = _tenant_id(db)
     risk_service = CustomerContactRiskService(db, tenant_id)
-    cfg = _get_config(db)
+    cfg = _get_config(db, tenant_id)
     provider = _normalize_provider(body.provider or cfg.connection_type)
     if provider == "qr":
         return err_msg(
@@ -1368,15 +1488,15 @@ def send_messages(
     if provider not in {"official", "baileys"}:
         return err_msg("Provedor WhatsApp invalido. Use official ou baileys.", code="WhatsAppProviderInvalid")
     if provider == "official":
-        _, cloud_error = _load_whatsapp_cloud_credentials(db)
+        _, cloud_error = _load_whatsapp_cloud_credentials(db, tenant_id)
         if cloud_error:
             return err_msg(cloud_error, code="WhatsAppConfigMissing")
     if provider == "baileys":
         if cfg.whatsapp_gateway_instance_id:
-            instance = WhatsAppGatewayService(db).get_instance(cfg.whatsapp_gateway_instance_id)
+            instance = WhatsAppGatewayService(db, _tenant_context(db)).get_instance(cfg.whatsapp_gateway_instance_id)
             if not instance or instance.status != "connected":
                 return err_msg("Instancia do WhatsApp Gateway nao esta conectada.", code="WhatsAppGatewayInstanceDisconnected")
-        elif not WhatsAppGatewayService(db).overview().get("connected_instances"):
+        elif not WhatsAppGatewayService(db, _tenant_context(db)).overview().get("connected_instances"):
             return err_msg("Nenhuma instancia conectada no WhatsApp Gateway.", code="WhatsAppGatewayInstanceMissing")
     if body.scheduled_at:
         return err_msg("Agendamento ainda nao possui worker ativo. Faca disparo imediato por enquanto.", code="WhatsAppScheduleUnavailable")
@@ -1393,6 +1513,7 @@ def send_messages(
     if body.template_id:
         template = db.query(WhatsAppTemplate).filter(
             WhatsAppTemplate.id == body.template_id,
+            WhatsAppTemplate.tenant_id == tenant_id,
             WhatsAppTemplate.active == True,  # noqa: E712
         ).first()
         if not template:
@@ -1415,7 +1536,7 @@ def send_messages(
     if not recipients:
         raise HTTPException(400, "Nenhum destinatário encontrado.")
 
-    sent_today = _sent_today_count(db)
+    sent_today = _sent_today_count(db, tenant_id)
     if cfg.daily_limit and sent_today >= cfg.daily_limit:
         return err_msg("Limite diario de mensagens atingido.", code="WhatsAppDailyLimitReached")
 
@@ -1457,7 +1578,7 @@ def send_messages(
             rec["customer_id"] = eligibility.customer_id
 
         msg = WhatsAppMessage(
-            id=str(uuid.uuid4()),
+            id=str(uuid.uuid4()), tenant_id=tenant_id,
             template_id=template.id if template else None,
             customer_id=rec.get("customer_id"),
             phone=normalized_phone or phone,
@@ -1488,7 +1609,7 @@ def send_messages(
             })
             continue
 
-        verified, verification_error = _verify_whatsapp_contact(normalized_phone or phone, db, cfg)
+        verified, verification_error = _verify_whatsapp_contact(normalized_phone or phone, db, cfg, _tenant_context(db))
         if not verified:
             msg.status = "failed"
             msg.error = verification_error
@@ -1522,6 +1643,7 @@ def send_messages(
                 normalized_phone or phone,
                 msg_body,
                 db,
+                _tenant_context(db),
                 instance_id=cfg.whatsapp_gateway_instance_id,
                 media_type=media_type,
                 media_url=media_url,
@@ -1534,6 +1656,7 @@ def send_messages(
                 normalized_phone or phone,
                 msg_body,
                 db,
+                tenant_id,
                 template_name=template.name if template else None,
                 template_language=template.language if template else "pt_BR",
                 template_variables=recipient_variables if template else None,
@@ -1569,6 +1692,7 @@ def send_messages(
                 )
             _sync_marketing_message_to_agent(
                 db,
+                tenant_context=tenant_context,
                 msg=msg,
                 delivery=delivery,
                 phone=normalized_phone or phone,
@@ -1605,6 +1729,7 @@ def send_messages(
 
 @router.get("/messages")
 def list_messages(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+    tenant_id = _tenant_id(db)
     rows = db.execute(text("""
         SELECT
             wm.id, wm.template_id, wm.customer_id,
@@ -1618,12 +1743,13 @@ def list_messages(db: Session = Depends(get_db), _=Depends(get_current_admin)):
             wm.media_type, wm.media_url, wm.caption,
             wcd.id AS campaign_delivery_id
         FROM whatsapp_messages wm
-        LEFT JOIN customers c ON c.id = wm.customer_id
-        LEFT JOIN whatsapp_templates wt ON wt.id = wm.template_id
-        LEFT JOIN whatsapp_campaign_deliveries wcd ON wcd.whatsapp_message_id = wm.id
+        LEFT JOIN customers c ON c.id = wm.customer_id AND c.tenant_id = wm.tenant_id
+        LEFT JOIN whatsapp_templates wt ON wt.id = wm.template_id AND wt.tenant_id = wm.tenant_id
+        LEFT JOIN whatsapp_campaign_deliveries wcd ON wcd.whatsapp_message_id = wm.id AND wcd.tenant_id = wm.tenant_id
+        WHERE wm.tenant_id = :tenant_id
         ORDER BY wm.created_at DESC
         LIMIT 200
-    """)).fetchall()
+    """), {"tenant_id": tenant_id}).fetchall()
 
     return ok([{
         "id": r[0],
@@ -1652,12 +1778,13 @@ def list_messages(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 
 @router.get("/config")
 def get_config(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    return ok(_cfg_to_dict(_get_config(db)))
+    return ok(_cfg_to_dict(_get_config(db, _tenant_id(db))))
 
 
 @router.patch("/config")
 def update_config(body: ConfigUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    cfg = _get_config(db)
+    tenant_id = _tenant_id(db)
+    cfg = _get_config(db, tenant_id)
     if body.connection_type is not None:
         cfg.connection_type = _normalize_provider(body.connection_type)
         if cfg.connection_type in {"qr", "evolution", "uazapi"}:
@@ -1684,7 +1811,7 @@ def update_config(body: ConfigUpdate, db: Session = Depends(get_db), _=Depends(g
     if body.whatsapp_gateway_instance_id is not None:
         clean_instance_id = body.whatsapp_gateway_instance_id.strip()
         if clean_instance_id:
-            instance = WhatsAppGatewayService(db).get_instance(clean_instance_id)
+            instance = WhatsAppGatewayService(db, _tenant_context(db)).get_instance(clean_instance_id)
             if not instance:
                 return err_msg("Instancia do WhatsApp Gateway nao encontrada.", code="WhatsAppGatewayInstanceNotFound")
             cfg.whatsapp_gateway_instance_id = clean_instance_id
@@ -1704,12 +1831,12 @@ def update_config(body: ConfigUpdate, db: Session = Depends(get_db), _=Depends(g
         cfg.uazapi_instance = body.uazapi_instance.strip()
     if cfg.connection_type == "baileys":
         if cfg.whatsapp_gateway_instance_id:
-            instance = WhatsAppGatewayService(db).get_instance(cfg.whatsapp_gateway_instance_id)
+            instance = WhatsAppGatewayService(db, _tenant_context(db)).get_instance(cfg.whatsapp_gateway_instance_id)
             cfg.status = "connected" if instance and instance.status == "connected" else "disconnected"
         else:
-            cfg.status = "connected" if WhatsAppGatewayService(db).overview().get("connected_instances") else "disconnected"
+            cfg.status = "connected" if WhatsAppGatewayService(db, _tenant_context(db)).overview().get("connected_instances") else "disconnected"
     elif body.connection_type is not None and cfg.connection_type == "official":
-        _, cloud_error = _load_whatsapp_cloud_credentials(db)
+        _, cloud_error = _load_whatsapp_cloud_credentials(db, tenant_id)
         cfg.status = "disconnected" if cloud_error else "connected"
     cfg.updated_at = _now()
     db.commit()

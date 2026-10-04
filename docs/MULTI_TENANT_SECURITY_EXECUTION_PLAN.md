@@ -91,7 +91,7 @@ Para cada dominio liberado, testar com tenants A e B:
 ## Estado desta execucao
 
 - P0.1: inventario executado e head operacional atualizado para
-  `20260930_tenant_runtime_uniqueness`;
+  `20261003_agente_whatsapp_tenant_foundation`;
 - P0.2: contexto confiavel e fail-closed aplicados ao nucleo comercial e as
   ferramentas do Agente WhatsApp;
 - P0.3: catalogo, campanhas, promocoes, cupons, clientes, pedidos e pagamentos

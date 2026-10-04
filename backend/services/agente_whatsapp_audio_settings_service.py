@@ -8,15 +8,27 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
+from backend.core.tenant_context import TenantContext
+from backend.core.wave6_tenant_context import wave6_tenant_id
 
 
 AUDIO_SETTINGS_KEY = "agente_whatsapp_audio"
 
 
 class AgenteWhatsAppAudioSettingsService:
-    def __init__(self, db: Session):
+    """Tenant-owned audio preferences stored in isolated site_config rows."""
+
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
         self._env = get_settings()
+        self._tenant_id = wave6_tenant_id(tenant_context)
+
+    @property
+    def _config_id(self) -> str:
+        # ``site_config.default`` is platform-global and cannot carry
+        # tenant-owned audio preferences.  A deterministic namespaced key is
+        # available without a schema change and also isolates legacy data.
+        return f"agente-whatsapp-audio:{self._tenant_id}"
 
     def defaults(self) -> dict[str, Any]:
         return {
@@ -46,16 +58,19 @@ class AgenteWhatsAppAudioSettingsService:
         content[AUDIO_SETTINGS_KEY] = stored
         self._db.execute(
             text(
-                "INSERT INTO site_config (id, content, updated_at) VALUES ('default', :content, NOW()) "
+                "INSERT INTO site_config (id, content, updated_at) VALUES (:id, :content, NOW()) "
                 "ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()"
             ),
-            {"content": json.dumps(content, ensure_ascii=False, default=str)},
+            {"id": self._config_id, "content": json.dumps(content, ensure_ascii=False, default=str)},
         )
         self._db.flush()
         return self.get_settings()
 
     def _load_site_config(self) -> tuple[dict[str, Any], datetime | None]:
-        row = self._db.execute(text("SELECT content, updated_at FROM site_config WHERE id = 'default'")).fetchone()
+        row = self._db.execute(
+            text("SELECT content, updated_at FROM site_config WHERE id = :id"),
+            {"id": self._config_id},
+        ).fetchone()
         if not row:
             return {}, None
         try:

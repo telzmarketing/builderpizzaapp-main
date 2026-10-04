@@ -1,12 +1,14 @@
 """Exit popup configuration — public GET, admin-only PUT."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy import Column, Boolean, Integer, String, Text, DateTime
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 
 from backend.database import get_db, Base
+from backend.core.tenant_context import TenantContext
 from backend.core.wave6_tenant_orm import wave6_tenant_column
+from backend.core.wave6_tenant_context import panel_wave6_context, public_wave6_context, wave6_tenant_id
 from backend.routes.admin_auth import get_current_admin
 
 router = APIRouter(prefix="/exit-popup", tags=["exit_popup"])
@@ -40,10 +42,15 @@ class ExitPopupUpdate(BaseModel):
     trigger_delay_seconds: int | None = None
 
 
-def _get_or_create(db: Session) -> ExitPopupConfig:
-    cfg = db.query(ExitPopupConfig).filter(ExitPopupConfig.id == "default").first()
+def _get_or_create(db: Session, tenant_id: str) -> ExitPopupConfig:
+    config_id = "default" if tenant_id == "default" else f"exit-popup-{tenant_id}"
+    cfg = (
+        db.query(ExitPopupConfig)
+        .filter(ExitPopupConfig.id == config_id, ExitPopupConfig.tenant_id == tenant_id)
+        .first()
+    )
     if not cfg:
-        cfg = ExitPopupConfig(id="default")
+        cfg = ExitPopupConfig(id=config_id, tenant_id=tenant_id)
         db.add(cfg)
         db.commit()
         db.refresh(cfg)
@@ -66,13 +73,23 @@ def _to_dict(cfg: ExitPopupConfig) -> dict:
 
 
 @router.get("")
-def get_exit_popup(db: Session = Depends(get_db)):
-    return _to_dict(_get_or_create(db))
+def get_exit_popup(
+    request: Request,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(public_wave6_context),
+):
+    return _to_dict(_get_or_create(db, wave6_tenant_id(context)))
 
 
 @router.put("")
-def update_exit_popup(body: ExitPopupUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    cfg = _get_or_create(db)
+def update_exit_popup(
+    body: ExitPopupUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    cfg = _get_or_create(db, wave6_tenant_id(context))
     for field, value in body.model_dump(exclude_none=True).items():
         if field == "trigger_delay_seconds":
             value = max(1, min(int(value), 3600))

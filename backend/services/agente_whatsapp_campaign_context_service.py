@@ -9,6 +9,8 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
+from backend.core.tenant_context import TenantContext
+from backend.core.wave6_tenant_context import wave6_tenant_id
 from backend.models.agente_whatsapp import AgenteWhatsAppContext, AgenteWhatsAppMessage, AgenteWhatsAppSession
 
 
@@ -40,12 +42,16 @@ def _snapshot_text(value: str | None, *, limit: int = 1600) -> str | None:
 class AgenteWhatsAppCampaignContextService:
     """Resolve campaign context without trusting mutable campaign/template state."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
         self._settings = get_settings()
+        self._tenant_id = wave6_tenant_id(tenant_context)
 
     def resolve_for_message(self, message_id: str, *, persist: bool = True) -> dict[str, Any]:
-        message = self._db.query(AgenteWhatsAppMessage).filter(AgenteWhatsAppMessage.id == message_id).first()
+        message = self._db.query(AgenteWhatsAppMessage).filter(
+            AgenteWhatsAppMessage.id == message_id,
+            AgenteWhatsAppMessage.tenant_id == self._tenant_id,
+        ).first()
         if not message:
             raise ValueError("Mensagem do AGENTE WHATSAPP nao encontrada.")
         return self.resolve_message(message, persist=persist)
@@ -55,6 +61,7 @@ class AgenteWhatsAppCampaignContextService:
             self._db.query(AgenteWhatsAppMessage)
             .filter(
                 AgenteWhatsAppMessage.session_id == session_id,
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
                 AgenteWhatsAppMessage.direction == "inbound",
             )
             .order_by(AgenteWhatsAppMessage.created_at.desc())
@@ -65,6 +72,8 @@ class AgenteWhatsAppCampaignContextService:
         return self.resolve_message(message, persist=persist)
 
     def resolve_message(self, message: AgenteWhatsAppMessage, *, persist: bool = True) -> dict[str, Any]:
+        if message.tenant_id != self._tenant_id:
+            raise ValueError("Mensagem do AGENTE WHATSAPP nao pertence ao tenant.")
         if not self._settings.WHATSAPP_CAMPAIGN_CONTEXT_ENABLED:
             return self._empty_context("disabled")
 
@@ -116,7 +125,10 @@ class AgenteWhatsAppCampaignContextService:
         WhatsAppCampaignDelivery, _WhatsAppCampaign = self._models()
         return (
             self._db.query(WhatsAppCampaignDelivery)
-            .filter(WhatsAppCampaignDelivery.id == delivery_id)
+            .filter(
+                WhatsAppCampaignDelivery.id == delivery_id,
+                WhatsAppCampaignDelivery.tenant_id == self._tenant_id,
+            )
             .first()
         )
 
@@ -124,14 +136,20 @@ class AgenteWhatsAppCampaignContextService:
         WhatsAppCampaignDelivery, _WhatsAppCampaign = self._models()
         quoted_message = (
             self._db.query(AgenteWhatsAppMessage)
-            .filter(AgenteWhatsAppMessage.provider_message_id == provider_message_id)
+            .filter(
+                AgenteWhatsAppMessage.provider_message_id == provider_message_id,
+                AgenteWhatsAppMessage.tenant_id == self._tenant_id,
+            )
             .first()
         )
         if quoted_message and quoted_message.campaign_delivery_id:
             return self._delivery_by_id(quoted_message.campaign_delivery_id)
         return (
             self._db.query(WhatsAppCampaignDelivery)
-            .filter(WhatsAppCampaignDelivery.provider_message_id == provider_message_id)
+            .filter(
+                WhatsAppCampaignDelivery.provider_message_id == provider_message_id,
+                WhatsAppCampaignDelivery.tenant_id == self._tenant_id,
+            )
             .order_by(WhatsAppCampaignDelivery.created_at.desc())
             .first()
         )
@@ -146,6 +164,7 @@ class AgenteWhatsAppCampaignContextService:
         return (
             self._db.query(WhatsAppCampaignDelivery)
             .filter(
+                WhatsAppCampaignDelivery.tenant_id == self._tenant_id,
                 WhatsAppCampaignDelivery.phone_normalized == phone,
                 or_(
                     WhatsAppCampaignDelivery.sent_at >= window_start,
@@ -245,6 +264,8 @@ class AgenteWhatsAppCampaignContextService:
         session = message.session
         if not session:
             return
+        if session.tenant_id != self._tenant_id:
+            raise ValueError("Sessao do contexto de campanha nao pertence ao tenant.")
         if delivery:
             message.campaign_delivery_id = message.campaign_delivery_id or delivery.id
             message.campaign_id = message.campaign_id or delivery.campaign_id
@@ -257,6 +278,7 @@ class AgenteWhatsAppCampaignContextService:
         if not context:
             context = AgenteWhatsAppContext(
                 id=str(uuid.uuid4()),
+                tenant_id=self._tenant_id,
                 session_id=session.id,
                 customer_id=session.customer_id,
             )

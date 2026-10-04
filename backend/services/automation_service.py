@@ -672,12 +672,16 @@ def create_execution(
             "now": _now(),
         },
     )
-    log_execution_event(db, execution_id, automation["id"], customer["id"], "pending", "queued", "Execucao enfileirada.")
+    log_execution_event(
+        db, automation["tenant_id"], execution_id, automation["id"], customer["id"],
+        "pending", "queued", "Execucao enfileirada.",
+    )
     return execution_id
 
 
 def update_execution(
     db: Session,
+    tenant_id: str,
     execution_id: str,
     status: str,
     *,
@@ -697,11 +701,12 @@ def update_execution(
                 error = :error,
                 attempts = attempts + 1,
                 updated_at = :now
-            WHERE id = :execution_id
+            WHERE id = :execution_id AND tenant_id = :tenant_id
             """
         ),
         {
             "execution_id": execution_id,
+            "tenant_id": tenant_id,
             "status": status,
             "provider_message_id": provider_message_id,
             "error": error,
@@ -710,7 +715,9 @@ def update_execution(
     )
 
 
-def reschedule_execution(db: Session, execution_id: str, error: str | None, retry_minutes: int = 15) -> None:
+def reschedule_execution(
+    db: Session, tenant_id: str, execution_id: str, error: str | None, retry_minutes: int = 15,
+) -> None:
     next_attempt = _now() + timedelta(minutes=retry_minutes)
     db.execute(
         text(
@@ -722,15 +729,16 @@ def reschedule_execution(db: Session, execution_id: str, error: str | None, retr
                 next_attempt_at = :next_attempt,
                 scheduled_at = :next_attempt,
                 updated_at = :now
-            WHERE id = :execution_id
+            WHERE id = :execution_id AND tenant_id = :tenant_id
             """
         ),
-        {"execution_id": execution_id, "error": error, "next_attempt": next_attempt, "now": _now()},
+        {"tenant_id": tenant_id, "execution_id": execution_id, "error": error, "next_attempt": next_attempt, "now": _now()},
     )
 
 
 def log_execution_event(
     db: Session,
+    tenant_id: str,
     execution_id: str | None,
     automation_id: str,
     customer_id: str | None,
@@ -747,7 +755,7 @@ def log_execution_event(
                 message, error, metadata_json, created_at
             )
             VALUES (
-                :id, (SELECT tenant_id FROM marketing_automations WHERE id=:automation_id),
+                :id, :tenant_id,
                 :execution_id, :automation_id, :customer_id, :status, :event_type,
                 :message, :error, '{}', :created_at
             )
@@ -755,6 +763,7 @@ def log_execution_event(
         ),
         {
             "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
             "execution_id": execution_id,
             "automation_id": automation_id,
             "customer_id": customer_id,
@@ -767,16 +776,20 @@ def log_execution_event(
     )
 
 
-def log_legacy_automation(db: Session, automation_id: str, customer_id: str, channel: str, status: str, error: str | None) -> None:
+def log_legacy_automation(
+    db: Session, tenant_id: str, automation_id: str, customer_id: str, channel: str,
+    status: str, error: str | None,
+) -> None:
     db.execute(
         text(
             """
-            INSERT INTO automation_logs (id, automation_id, customer_id, channel, status, error, created_at)
-            VALUES (:id, :automation_id, :customer_id, :channel, :status, :error, :created_at)
+            INSERT INTO automation_logs (id, tenant_id, automation_id, customer_id, channel, status, error, created_at)
+            VALUES (:id, :tenant_id, :automation_id, :customer_id, :channel, :status, :error, :created_at)
             """
         ),
         {
             "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
             "automation_id": automation_id,
             "customer_id": customer_id,
             "channel": channel,
@@ -803,15 +816,16 @@ def log_channel_message(
             text(
                 """
                 INSERT INTO whatsapp_messages (
-                    id, template_id, customer_id, phone, body_sent, status, wamid, error, sent_at, created_at
+                    id, tenant_id, template_id, customer_id, phone, body_sent, status, wamid, error, sent_at, created_at
                 )
                 VALUES (
-                    :id, :template_id, :customer_id, :phone, :body, :status, :wamid, :error, :sent_at, :created_at
+                    :id, :tenant_id, :template_id, :customer_id, :phone, :body, :status, :wamid, :error, :sent_at, :created_at
                 )
                 """
             ),
             {
                 "id": str(uuid.uuid4()),
+                "tenant_id": automation["tenant_id"],
                 "template_id": automation.get("template_id"),
                 "customer_id": customer["id"],
                 "phone": customer.get("phone"),
@@ -828,15 +842,16 @@ def log_channel_message(
             text(
                 """
                 INSERT INTO email_messages (
-                    id, template_id, customer_id, to_email, subject_sent, status, error, sent_at, created_at
+                    id, tenant_id, template_id, customer_id, to_email, subject_sent, status, error, sent_at, created_at
                 )
                 VALUES (
-                    :id, :template_id, :customer_id, :to_email, :subject, :status, :error, :sent_at, :created_at
+                    :id, :tenant_id, :template_id, :customer_id, :to_email, :subject, :status, :error, :sent_at, :created_at
                 )
                 """
             ),
             {
                 "id": str(uuid.uuid4()),
+                "tenant_id": automation["tenant_id"],
                 "template_id": automation.get("template_id"),
                 "customer_id": customer["id"],
                 "to_email": customer.get("email"),
@@ -853,13 +868,15 @@ def send_message(db: Session, automation: dict[str, Any], customer: dict[str, An
     if automation["channel"] == "whatsapp":
         from backend.routes.whatsapp_marketing import _send_whatsapp_api
 
-        provider_message_id, status, error = _send_whatsapp_api(customer["phone"], body, db)
+        provider_message_id, status, error = _send_whatsapp_api(
+            customer["phone"], body, db, automation["tenant_id"],
+        )
         return status, error, provider_message_id
 
     if automation["channel"] == "email":
         from backend.routes.email_marketing import _get_config, _send_email
 
-        cfg = _get_config(db)
+        cfg = _get_config(db, automation["tenant_id"])
         success, error = _send_email(customer["email"], subject or "Mensagem da Pizzaria", body, cfg)
         return ("sent" if success else "failed"), error, None
 
@@ -881,7 +898,7 @@ def enqueue_automation(db: Session, automation: dict[str, Any]) -> dict[str, int
         allowed, reason = customer_allows_channel(customer, automation["channel"])
         if not allowed:
             skipped_count += 1
-            log_execution_event(db, None, automation["id"], customer["id"], "skipped", "skipped", error=reason)
+            log_execution_event(db, automation["tenant_id"], None, automation["id"], customer["id"], "skipped", "skipped", error=reason)
             continue
 
         if already_sent(db, automation, customer["id"]):
@@ -891,7 +908,7 @@ def enqueue_automation(db: Session, automation: dict[str, Any]) -> dict[str, int
         if not raw_body:
             failed_count += 1
             log_execution_event(
-                db,
+                db, automation["tenant_id"],
                 None,
                 automation["id"],
                 customer["id"],
@@ -926,10 +943,10 @@ def enqueue_automation(db: Session, automation: dict[str, Any]) -> dict[str, int
             SET last_evaluated_at = :now,
                 next_run_at = :next_run_at,
                 updated_at = :now
-            WHERE id = :automation_id
+            WHERE id = :automation_id AND tenant_id = :tenant_id
             """
         ),
-        {"automation_id": automation["id"], "now": _now(), "next_run_at": next_run_at},
+        {"automation_id": automation["id"], "tenant_id": automation["tenant_id"], "now": _now(), "next_run_at": next_run_at},
     )
     return {"queued": queued_count, "failed": failed_count, "skipped": skipped_count}
 
@@ -1026,9 +1043,9 @@ def process_pending_executions(db: Session, tenant_id: str, limit: int = 100) ->
             )
             allowed, reason = eligibility.allowed, eligibility.reason
         if not allowed:
-            update_execution(db, execution["execution_id"], "cancelled", error=reason)
+            update_execution(db, tenant_id, execution["execution_id"], "cancelled", error=reason)
             log_execution_event(
-                db,
+                db, tenant_id,
                 execution["execution_id"],
                 execution["automation_id"],
                 execution["customer_id"],
@@ -1036,7 +1053,7 @@ def process_pending_executions(db: Session, tenant_id: str, limit: int = 100) ->
                 "cancelled",
                 error=reason,
             )
-            log_legacy_automation(db, execution["automation_id"], execution["customer_id"], execution["channel"], "skipped", reason)
+            log_legacy_automation(db, tenant_id, execution["automation_id"], execution["customer_id"], execution["channel"], "skipped", reason)
             totals["skipped"] += 1
             continue
 
@@ -1054,9 +1071,9 @@ def process_pending_executions(db: Session, tenant_id: str, limit: int = 100) ->
             provider_message_id = None
 
         if status != "sent" and int(execution.get("attempts") or 0) + 1 < int(execution.get("max_attempts") or 3):
-            reschedule_execution(db, execution["execution_id"], error_msg)
+            reschedule_execution(db, tenant_id, execution["execution_id"], error_msg)
             log_execution_event(
-                db,
+                db, tenant_id,
                 execution["execution_id"],
                 execution["automation_id"],
                 execution["customer_id"],
@@ -1067,9 +1084,9 @@ def process_pending_executions(db: Session, tenant_id: str, limit: int = 100) ->
             totals["retried"] += 1
             continue
 
-        update_execution(db, execution["execution_id"], status, error=error_msg, provider_message_id=provider_message_id)
+        update_execution(db, tenant_id, execution["execution_id"], status, error=error_msg, provider_message_id=provider_message_id)
         log_execution_event(
-            db,
+            db, tenant_id,
             execution["execution_id"],
             execution["automation_id"],
             execution["customer_id"],
@@ -1087,7 +1104,7 @@ def process_pending_executions(db: Session, tenant_id: str, limit: int = 100) ->
             provider_message_id=provider_message_id,
             error=error_msg,
         )
-        log_legacy_automation(db, execution["automation_id"], execution["customer_id"], execution["channel"], status, error_msg)
+        log_legacy_automation(db, tenant_id, execution["automation_id"], execution["customer_id"], execution["channel"], status, error_msg)
 
         if status == "sent":
             if risk_service and execution["customer_id"]:
@@ -1133,8 +1150,8 @@ def run_automation_now(db: Session, automation_id: str, tenant_id: str) -> dict[
             status = "skipped"
             error_msg = reason
             skipped_count += 1
-            log_legacy_automation(db, automation_id, customer["id"], automation["channel"], status, error_msg)
-            log_execution_event(db, None, automation_id, customer["id"], status, "skipped", error=error_msg)
+            log_legacy_automation(db, tenant_id, automation_id, customer["id"], automation["channel"], status, error_msg)
+            log_execution_event(db, tenant_id, None, automation_id, customer["id"], status, "skipped", error=error_msg)
             continue
 
         if already_sent(db, automation, customer["id"]):
@@ -1145,8 +1162,8 @@ def run_automation_now(db: Session, automation_id: str, tenant_id: str) -> dict[
             status = "failed"
             error_msg = "Nenhum corpo de mensagem definido."
             failed_count += 1
-            log_legacy_automation(db, automation_id, customer["id"], automation["channel"], status, error_msg)
-            log_execution_event(db, None, automation_id, customer["id"], status, "failed", error=error_msg)
+            log_legacy_automation(db, tenant_id, automation_id, customer["id"], automation["channel"], status, error_msg)
+            log_execution_event(db, tenant_id, None, automation_id, customer["id"], status, "failed", error=error_msg)
             continue
 
         variables = build_customer_variables(db, customer, automation)
@@ -1164,9 +1181,9 @@ def run_automation_now(db: Session, automation_id: str, tenant_id: str) -> dict[
             error_msg = str(exc)
             provider_message_id = None
 
-        update_execution(db, execution_id, status, error=error_msg, provider_message_id=provider_message_id)
+        update_execution(db, tenant_id, execution_id, status, error=error_msg, provider_message_id=provider_message_id)
         log_execution_event(
-            db,
+            db, tenant_id,
             execution_id,
             automation_id,
             customer["id"],
@@ -1184,7 +1201,7 @@ def run_automation_now(db: Session, automation_id: str, tenant_id: str) -> dict[
             provider_message_id=provider_message_id,
             error=error_msg,
         )
-        log_legacy_automation(db, automation_id, customer["id"], automation["channel"], status, error_msg)
+        log_legacy_automation(db, tenant_id, automation_id, customer["id"], automation["channel"], status, error_msg)
 
         if status == "sent":
             sent_count += 1
@@ -1201,10 +1218,10 @@ def run_automation_now(db: Session, automation_id: str, tenant_id: str) -> dict[
                 last_run_at = :now,
                 last_evaluated_at = :now,
                 updated_at = :now
-            WHERE id = :automation_id
+            WHERE id = :automation_id AND tenant_id = :tenant_id
             """
         ),
-        {"automation_id": automation_id, "now": _now()},
+        {"automation_id": automation_id, "tenant_id": tenant_id, "now": _now()},
     )
     db.commit()
     return {"sent": sent_count, "failed": failed_count, "skipped": skipped_count}

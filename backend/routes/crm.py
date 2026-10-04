@@ -14,8 +14,9 @@ from backend.database import get_db, Base
 from backend.core.wave6_tenant_orm import wave6_tenant_column
 from backend.models.crm import CustomerSegment, CustomerTag, CustomerTagAssignment
 from backend.routes.admin_auth import get_current_admin
-from backend.core.tenant_runtime import resolve_panel_tenant_context
 from backend.core.response import ok, created
+from backend.core.tenant_context import TenantContext
+from backend.core.wave6_tenant_context import panel_wave6_context, wave6_tenant_id
 from backend.services.customer_ai_service import (
     create_customer_ai_analysis_job,
     get_customer_ai_analysis_status,
@@ -265,6 +266,14 @@ def _slugify(value: str) -> str:
     return slug or uuid.uuid4().hex[:12]
 
 
+def _tenant(context: TenantContext | None) -> str:
+    return wave6_tenant_id(context)
+
+
+def _customer_exists_sql() -> str:
+    return "SELECT 1 FROM customers WHERE id = :id AND tenant_id = :tenant_id"
+
+
 def _tag_to_dict(tag: CustomerTag, member_count: int | None = None) -> dict:
     data = {
         "id": tag.id,
@@ -304,11 +313,11 @@ def _segment_to_dict(segment: CustomerSegment) -> dict:
     }
 
 
-def _card_to_dict(card: CrmCard, db: Session) -> dict:
+def _card_to_dict(card: CrmCard, db: Session, tenant_id: str) -> dict:
     customer = None
     if card.customer_id:
         from backend.models.customer import Customer
-        c = db.query(Customer).filter(Customer.id == card.customer_id).first()
+        c = db.query(Customer).filter(Customer.id == card.customer_id, Customer.tenant_id == tenant_id).first()
         if c:
             customer = {"id": c.id, "name": c.name, "email": c.email, "phone": c.phone}
     import json
@@ -326,12 +335,21 @@ def _card_to_dict(card: CrmCard, db: Session) -> dict:
 
 # ── Pipeline routes ───────────────────────────────────────────────────────────
 
+def _q(db: Session, model, tenant_id: str):
+    return db.query(model).filter(model.tenant_id == tenant_id)
+
+
 @router.get("/pipelines")
-def list_pipelines(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    pipelines = db.query(CrmPipeline).filter(CrmPipeline.active == True).order_by(CrmPipeline.sort_order).all()  # noqa: E712
+def list_pipelines(
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
+    pipelines = _q(db, CrmPipeline, tenant_id).filter(CrmPipeline.active == True).order_by(CrmPipeline.sort_order).all()  # noqa: E712
     result = []
     for p in pipelines:
-        stages = db.query(CrmStage).filter(CrmStage.pipeline_id == p.id).order_by(CrmStage.sort_order).all()
+        stages = _q(db, CrmStage, tenant_id).filter(CrmStage.pipeline_id == p.id).order_by(CrmStage.sort_order).all()
         result.append({
             "id": p.id, "name": p.name, "description": p.description,
             "pipeline_type": p.pipeline_type, "sort_order": p.sort_order,
@@ -341,8 +359,13 @@ def list_pipelines(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 
 
 @router.post("/pipelines")
-def create_pipeline(body: PipelineCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    p = CrmPipeline(id=str(uuid.uuid4()), name=body.name, description=body.description, pipeline_type=body.pipeline_type)
+def create_pipeline(
+    body: PipelineCreate,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    p = CrmPipeline(id=str(uuid.uuid4()), tenant_id=_tenant(context), name=body.name, description=body.description, pipeline_type=body.pipeline_type)
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -350,10 +373,17 @@ def create_pipeline(body: PipelineCreate, db: Session = Depends(get_db), _=Depen
 
 
 @router.post("/pipelines/{pipeline_id}/stages")
-def create_stage(pipeline_id: str, body: StageCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    if not db.query(CrmPipeline).filter(CrmPipeline.id == pipeline_id).first():
+def create_stage(
+    pipeline_id: str,
+    body: StageCreate,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
+    if not _q(db, CrmPipeline, tenant_id).filter(CrmPipeline.id == pipeline_id).first():
         raise HTTPException(404, "Pipeline não encontrado.")
-    s = CrmStage(id=str(uuid.uuid4()), pipeline_id=pipeline_id, name=body.name,
+    s = CrmStage(id=str(uuid.uuid4()), tenant_id=tenant_id, pipeline_id=pipeline_id, name=body.name,
                  description=body.description, color=body.color, sort_order=body.sort_order)
     db.add(s)
     db.commit()
@@ -362,8 +392,13 @@ def create_stage(pipeline_id: str, body: StageCreate, db: Session = Depends(get_
 
 
 @router.delete("/stages/{stage_id}")
-def delete_stage(stage_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    s = db.query(CrmStage).filter(CrmStage.id == stage_id).first()
+def delete_stage(
+    stage_id: str,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    s = _q(db, CrmStage, _tenant(context)).filter(CrmStage.id == stage_id).first()
     if not s:
         raise HTTPException(404, "Etapa não encontrada.")
     db.delete(s)
@@ -374,28 +409,59 @@ def delete_stage(stage_id: str, db: Session = Depends(get_db), _=Depends(get_cur
 # ── Card routes ───────────────────────────────────────────────────────────────
 
 @router.get("/pipelines/{pipeline_id}/cards")
-def list_cards(pipeline_id: str, archived: bool = False, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    cards = (db.query(CrmCard)
+def list_cards(
+    pipeline_id: str,
+    archived: bool = False,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
+    cards = (_q(db, CrmCard, tenant_id)
              .filter(CrmCard.pipeline_id == pipeline_id, CrmCard.archived == archived)
              .order_by(CrmCard.stage_id, CrmCard.sort_order)
              .all())
-    return ok([_card_to_dict(c, db) for c in cards])
+    return ok([_card_to_dict(c, db, tenant_id) for c in cards])
 
 
 @router.post("/cards")
-def create_card_shorthand(body: CardCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def create_card_shorthand(
+    body: CardCreate,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
     """Shorthand — looks up pipeline_id from the stage."""
-    stage = db.query(CrmStage).filter(CrmStage.id == body.stage_id).first()
+    tenant_id = _tenant(context)
+    stage = _q(db, CrmStage, tenant_id).filter(CrmStage.id == body.stage_id).first()
     if not stage:
         raise HTTPException(404, "Etapa não encontrada.")
-    return create_card(stage.pipeline_id, body, db, None)
+    return _create_card(stage.pipeline_id, body, db, tenant_id)
 
 
 @router.post("/pipelines/{pipeline_id}/cards")
-def create_card(pipeline_id: str, body: CardCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def create_card(
+    pipeline_id: str,
+    body: CardCreate,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    return _create_card(pipeline_id, body, db, _tenant(context))
+
+
+def _create_card(pipeline_id: str, body: CardCreate, db: Session, tenant_id: str):
     import json
+    if not _q(db, CrmPipeline, tenant_id).filter(CrmPipeline.id == pipeline_id).first():
+        raise HTTPException(404, "Pipeline nÃ£o encontrado.")
+    if not _q(db, CrmStage, tenant_id).filter(CrmStage.id == body.stage_id, CrmStage.pipeline_id == pipeline_id).first():
+        raise HTTPException(404, "Etapa nÃ£o encontrada.")
+    if body.customer_id:
+        exists = db.execute(text(_customer_exists_sql()), {"id": body.customer_id, "tenant_id": tenant_id}).first()
+        if not exists:
+            raise HTTPException(404, "Cliente nÃ£o encontrado.")
     card = CrmCard(
-        id=str(uuid.uuid4()), pipeline_id=pipeline_id, stage_id=body.stage_id,
+        id=str(uuid.uuid4()), tenant_id=tenant_id, pipeline_id=pipeline_id, stage_id=body.stage_id,
         customer_id=body.customer_id, title=body.title, description=body.description,
         value=body.value, source=body.source, responsible=body.responsible,
         tags=json.dumps(body.tags), last_interaction_at=_now(),
@@ -403,27 +469,43 @@ def create_card(pipeline_id: str, body: CardCreate, db: Session = Depends(get_db
     db.add(card)
     db.commit()
     db.refresh(card)
-    return created(_card_to_dict(card, db), "Card criado.")
+    return created(_card_to_dict(card, db, tenant_id), "Card criado.")
 
 
 @router.patch("/cards/{card_id}/move")
-def move_card(card_id: str, body: CardMove, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    card = db.query(CrmCard).filter(CrmCard.id == card_id).first()
+def move_card(
+    card_id: str,
+    body: CardMove,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
+    card = _q(db, CrmCard, tenant_id).filter(CrmCard.id == card_id).first()
     if not card:
         raise HTTPException(404, "Card não encontrado.")
+    if not _q(db, CrmStage, tenant_id).filter(CrmStage.id == body.stage_id, CrmStage.pipeline_id == card.pipeline_id).first():
+        raise HTTPException(404, "Etapa nÃ£o encontrada.")
     card.stage_id = body.stage_id
     if body.sort_order is not None:
         card.sort_order = body.sort_order
     card.last_interaction_at = _now()
     card.updated_at = _now()
     db.commit()
-    return ok(_card_to_dict(card, db))
+    return ok(_card_to_dict(card, db, tenant_id))
 
 
 @router.patch("/cards/{card_id}")
-def update_card(card_id: str, body: CardUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def update_card(
+    card_id: str,
+    body: CardUpdate,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
     import json
-    card = db.query(CrmCard).filter(CrmCard.id == card_id).first()
+    tenant_id = _tenant(context)
+    card = _q(db, CrmCard, tenant_id).filter(CrmCard.id == card_id).first()
     if not card:
         raise HTTPException(404, "Card não encontrado.")
     if body.title is not None:
@@ -442,12 +524,17 @@ def update_card(card_id: str, body: CardUpdate, db: Session = Depends(get_db), _
         card.next_follow_up_at = datetime.fromisoformat(body.next_follow_up_at)
     card.updated_at = _now()
     db.commit()
-    return ok(_card_to_dict(card, db))
+    return ok(_card_to_dict(card, db, tenant_id))
 
 
 @router.delete("/cards/{card_id}")
-def delete_card(card_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    card = db.query(CrmCard).filter(CrmCard.id == card_id).first()
+def delete_card(
+    card_id: str,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    card = _q(db, CrmCard, _tenant(context)).filter(CrmCard.id == card_id).first()
     if not card:
         raise HTTPException(404, "Card não encontrado.")
     db.delete(card)
@@ -459,8 +546,10 @@ def delete_card(card_id: str, db: Session = Depends(get_db), _=Depends(get_curre
 
 @router.get("/tasks")
 def list_tasks(customer_id: str | None = None, status: str | None = None,
-               db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    q = db.query(CrmTask)
+               db: Session = Depends(get_db),
+               context: TenantContext | None = Depends(panel_wave6_context),
+               _=Depends(get_current_admin)):
+    q = _q(db, CrmTask, _tenant(context))
     if customer_id:
         q = q.filter(CrmTask.customer_id == customer_id)
     if status:
@@ -476,10 +565,22 @@ def list_tasks(customer_id: str | None = None, status: str | None = None,
 
 
 @router.post("/tasks")
-def create_task(body: TaskCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def create_task(
+    body: TaskCreate,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
     resolved_card_id = body.card_id or body.pipeline_card_id or None
+    tenant_id = _tenant(context)
+    if resolved_card_id and not _q(db, CrmCard, tenant_id).filter(CrmCard.id == resolved_card_id).first():
+        raise HTTPException(404, "Card nÃ£o encontrado.")
+    if body.customer_id:
+        exists = db.execute(text(_customer_exists_sql()), {"id": body.customer_id, "tenant_id": tenant_id}).first()
+        if not exists:
+            raise HTTPException(404, "Cliente nÃ£o encontrado.")
     task = CrmTask(
-        id=str(uuid.uuid4()), card_id=resolved_card_id, customer_id=body.customer_id,
+        id=str(uuid.uuid4()), tenant_id=tenant_id, card_id=resolved_card_id, customer_id=body.customer_id,
         title=body.title, description=body.description, task_type=body.task_type,
         responsible=body.responsible, priority=body.priority,
         status=body.status or "pending",
@@ -491,8 +592,13 @@ def create_task(body: TaskCreate, db: Session = Depends(get_db), _=Depends(get_c
 
 
 @router.patch("/tasks/{task_id}/complete")
-def complete_task(task_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    task = db.query(CrmTask).filter(CrmTask.id == task_id).first()
+def complete_task(
+    task_id: str,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    task = _q(db, CrmTask, _tenant(context)).filter(CrmTask.id == task_id).first()
     if not task:
         raise HTTPException(404, "Tarefa não encontrada.")
     task.status = "completed"
@@ -510,8 +616,14 @@ class TaskUpdate(BaseModel):
 
 
 @router.patch("/tasks/{task_id}")
-def update_task(task_id: str, body: TaskUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    task = db.query(CrmTask).filter(CrmTask.id == task_id).first()
+def update_task(
+    task_id: str,
+    body: TaskUpdate,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    task = _q(db, CrmTask, _tenant(context)).filter(CrmTask.id == task_id).first()
     if not task:
         raise HTTPException(404, "Tarefa não encontrada.")
     if body.status is not None:
@@ -534,8 +646,13 @@ def update_task(task_id: str, body: TaskUpdate, db: Session = Depends(get_db), _
 
 
 @router.delete("/tasks/{task_id}")
-def delete_task(task_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    task = db.query(CrmTask).filter(CrmTask.id == task_id).first()
+def delete_task(
+    task_id: str,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    task = _q(db, CrmTask, _tenant(context)).filter(CrmTask.id == task_id).first()
     if not task:
         raise HTTPException(404, "Tarefa não encontrada.")
     db.delete(task)
@@ -550,9 +667,11 @@ def list_tags(
     status: str | None = Query(default="active"),
     search: str | None = Query(default=None),
     db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
     _=Depends(get_current_admin),
 ):
-    q = db.query(CustomerTag)
+    tenant_id = _tenant(context)
+    q = _q(db, CustomerTag, tenant_id)
     if status:
         q = q.filter(CustomerTag.status == status)
     if search:
@@ -561,7 +680,7 @@ def list_tags(
     tags = q.order_by(CustomerTag.name.asc()).all()
 
     counts = dict(
-        db.query(CustomerTagAssignment.tag_id, func.count(CustomerTagAssignment.id))
+        _q(db, CustomerTagAssignment, tenant_id).with_entities(CustomerTagAssignment.tag_id, func.count(CustomerTagAssignment.id))
         .group_by(CustomerTagAssignment.tag_id)
         .all()
     )
@@ -569,15 +688,21 @@ def list_tags(
 
 
 @router.post("/tags")
-def create_tag(body: TagCreate, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+def create_tag(
+    body: TagCreate,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    admin=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
     name = body.name.strip()
     if not name:
         raise HTTPException(400, "Nome da tag é obrigatório.")
 
     slug = _slugify(name)
     exists = (
-        db.query(CustomerTag)
-        .filter(CustomerTag.tenant_id == "default", CustomerTag.slug == slug)
+        _q(db, CustomerTag, tenant_id)
+        .filter(CustomerTag.slug == slug)
         .first()
     )
     if exists:
@@ -585,7 +710,7 @@ def create_tag(body: TagCreate, db: Session = Depends(get_db), admin=Depends(get
 
     tag = CustomerTag(
         id=f"tag-{uuid.uuid4().hex[:10]}",
-        tenant_id="default",
+        tenant_id=tenant_id,
         name=name,
         slug=slug,
         description=body.description,
@@ -600,8 +725,15 @@ def create_tag(body: TagCreate, db: Session = Depends(get_db), admin=Depends(get
 
 
 @router.patch("/tags/{tag_id}")
-def update_tag(tag_id: str, body: TagUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    tag = db.query(CustomerTag).filter(CustomerTag.id == tag_id).first()
+def update_tag(
+    tag_id: str,
+    body: TagUpdate,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
+    tag = _q(db, CustomerTag, tenant_id).filter(CustomerTag.id == tag_id).first()
     if not tag:
         raise HTTPException(404, "Tag não encontrada.")
 
@@ -611,8 +743,8 @@ def update_tag(tag_id: str, body: TagUpdate, db: Session = Depends(get_db), _=De
             raise HTTPException(400, "Nome da tag é obrigatório.")
         slug = _slugify(name)
         exists = (
-            db.query(CustomerTag)
-            .filter(CustomerTag.tenant_id == tag.tenant_id, CustomerTag.slug == slug, CustomerTag.id != tag.id)
+            _q(db, CustomerTag, tenant_id)
+            .filter(CustomerTag.slug == slug, CustomerTag.id != tag.id)
             .first()
         )
         if exists:
@@ -631,8 +763,13 @@ def update_tag(tag_id: str, body: TagUpdate, db: Session = Depends(get_db), _=De
 
 
 @router.delete("/tags/{tag_id}")
-def inactive_tag(tag_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    tag = db.query(CustomerTag).filter(CustomerTag.id == tag_id).first()
+def inactive_tag(
+    tag_id: str,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    tag = _q(db, CustomerTag, _tenant(context)).filter(CustomerTag.id == tag_id).first()
     if not tag:
         raise HTTPException(404, "Tag não encontrada.")
     tag.status = "inactive"
@@ -642,11 +779,17 @@ def inactive_tag(tag_id: str, db: Session = Depends(get_db), _=Depends(get_curre
 
 
 @router.get("/customers/{customer_id}/tags")
-def list_customer_tags(customer_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def list_customer_tags(
+    customer_id: str,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
     rows = (
         db.query(CustomerTag, CustomerTagAssignment)
         .join(CustomerTagAssignment, CustomerTagAssignment.tag_id == CustomerTag.id)
-        .filter(CustomerTagAssignment.customer_id == customer_id)
+        .filter(CustomerTag.tenant_id == tenant_id, CustomerTagAssignment.tenant_id == tenant_id, CustomerTagAssignment.customer_id == customer_id)
         .order_by(CustomerTag.name.asc())
         .all()
     )
@@ -663,18 +806,19 @@ def list_customer_tags(customer_id: str, db: Session = Depends(get_db), _=Depend
 
 @router.post("/customers/{customer_id}/tags/{tag_id}")
 def assign_tag(customer_id: str, tag_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
-    context = resolve_panel_tenant_context(request, db, admin)
-    tag = db.query(CustomerTag).filter(CustomerTag.id == tag_id, CustomerTag.tenant_id == context.tenant_id, CustomerTag.status == "active").first()
+    context = panel_wave6_context(request, db, admin)
+    tenant_id = _tenant(context)
+    tag = _q(db, CustomerTag, tenant_id).filter(CustomerTag.id == tag_id, CustomerTag.status == "active").first()
     if not tag:
         raise HTTPException(404, "Tag ativa não encontrada.")
 
-    customer_exists = db.execute(text("SELECT 1 FROM customers WHERE id = :id AND tenant_id = :tenant_id"), {"id": customer_id, "tenant_id": context.tenant_id}).first()
+    customer_exists = db.execute(text("SELECT 1 FROM customers WHERE id = :id AND tenant_id = :tenant_id"), {"id": customer_id, "tenant_id": tenant_id}).first()
     if not customer_exists:
         raise HTTPException(404, "Cliente não encontrado.")
 
     assignment = CustomerTagAssignment(
         id=f"cta-{uuid.uuid4().hex[:12]}",
-        tenant_id=context.tenant_id,
+        tenant_id=tenant_id,
         customer_id=customer_id,
         tag_id=tag.id,
         source="manual",
@@ -684,9 +828,10 @@ def assign_tag(customer_id: str, tag_id: str, request: Request, db: Session = De
     try:
         db.flush()
         from backend.services.automation_event_producer import AutomationEventProducer
-        AutomationEventProducer(db, context.tenant_id).customer_tag_assigned(assignment)
+        AutomationEventProducer(db, tenant_id).customer_tag_assigned(assignment)
         db.add(CustomerTimeline(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             customer_id=customer_id,
             event_type="tag_added",
             title=f"Tag adicionada: {tag.name}",
@@ -702,16 +847,24 @@ def assign_tag(customer_id: str, tag_id: str, request: Request, db: Session = De
 
 
 @router.delete("/customers/{customer_id}/tags/{tag_id}")
-def remove_customer_tag(customer_id: str, tag_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    tag = db.query(CustomerTag).filter(CustomerTag.id == tag_id).first()
+def remove_customer_tag(
+    customer_id: str,
+    tag_id: str,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
+    tag = _q(db, CustomerTag, tenant_id).filter(CustomerTag.id == tag_id).first()
     deleted = (
-        db.query(CustomerTagAssignment)
+        _q(db, CustomerTagAssignment, tenant_id)
         .filter(CustomerTagAssignment.customer_id == customer_id, CustomerTagAssignment.tag_id == tag_id)
         .delete()
     )
     if deleted and tag:
         db.add(CustomerTimeline(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             customer_id=customer_id,
             event_type="tag_removed",
             title=f"Tag removida: {tag.name}",
@@ -728,23 +881,30 @@ def remove_customer_tag(customer_id: str, tag_id: str, db: Session = Depends(get
 def list_segments(
     status: str | None = Query(default="active"),
     db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
     _=Depends(get_current_admin),
 ):
-    q = db.query(CustomerSegment)
+    q = _q(db, CustomerSegment, _tenant(context))
     if status:
         q = q.filter(CustomerSegment.status == status)
     return ok([_segment_to_dict(segment) for segment in q.order_by(CustomerSegment.name.asc()).all()])
 
 
 @router.post("/segments")
-def create_segment(body: SegmentCreate, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+def create_segment(
+    body: SegmentCreate,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    admin=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
     name = body.name.strip()
     if not name:
         raise HTTPException(400, "Nome do segmento é obrigatório.")
     slug = _slugify(name)
     exists = (
-        db.query(CustomerSegment)
-        .filter(CustomerSegment.tenant_id == "default", CustomerSegment.slug == slug)
+        _q(db, CustomerSegment, tenant_id)
+        .filter(CustomerSegment.slug == slug)
         .first()
     )
     if exists:
@@ -752,7 +912,7 @@ def create_segment(body: SegmentCreate, db: Session = Depends(get_db), admin=Dep
 
     segment = CustomerSegment(
         id=f"seg-{uuid.uuid4().hex[:10]}",
-        tenant_id="default",
+        tenant_id=tenant_id,
         name=name,
         slug=slug,
         description=body.description,
@@ -767,8 +927,15 @@ def create_segment(body: SegmentCreate, db: Session = Depends(get_db), admin=Dep
 
 
 @router.patch("/segments/{segment_id}")
-def update_segment(segment_id: str, body: SegmentUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    segment = db.query(CustomerSegment).filter(CustomerSegment.id == segment_id).first()
+def update_segment(
+    segment_id: str,
+    body: SegmentUpdate,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
+    segment = _q(db, CustomerSegment, tenant_id).filter(CustomerSegment.id == segment_id).first()
     if not segment:
         raise HTTPException(404, "Segmento não encontrado.")
 
@@ -778,8 +945,8 @@ def update_segment(segment_id: str, body: SegmentUpdate, db: Session = Depends(g
             raise HTTPException(400, "Nome do segmento é obrigatório.")
         slug = _slugify(name)
         exists = (
-            db.query(CustomerSegment)
-            .filter(CustomerSegment.tenant_id == segment.tenant_id, CustomerSegment.slug == slug, CustomerSegment.id != segment.id)
+            _q(db, CustomerSegment, tenant_id)
+            .filter(CustomerSegment.slug == slug, CustomerSegment.id != segment.id)
             .first()
         )
         if exists:
@@ -798,8 +965,13 @@ def update_segment(segment_id: str, body: SegmentUpdate, db: Session = Depends(g
 
 
 @router.delete("/segments/{segment_id}")
-def inactive_segment(segment_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    segment = db.query(CustomerSegment).filter(CustomerSegment.id == segment_id).first()
+def inactive_segment(
+    segment_id: str,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    segment = _q(db, CustomerSegment, _tenant(context)).filter(CustomerSegment.id == segment_id).first()
     if not segment:
         raise HTTPException(404, "Segmento não encontrado.")
     segment.status = "inactive"
@@ -809,8 +981,15 @@ def inactive_segment(segment_id: str, db: Session = Depends(get_db), _=Depends(g
 
 
 @router.post("/segments/{segment_id}/preview")
-def preview_segment(segment_id: str, limit: int = Query(default=50, ge=1, le=200), db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    segment = db.query(CustomerSegment).filter(CustomerSegment.id == segment_id).first()
+def preview_segment(
+    segment_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
+    segment = _q(db, CustomerSegment, tenant_id).filter(CustomerSegment.id == segment_id).first()
     if not segment:
         raise HTTPException(404, "Segmento não encontrado.")
     try:
@@ -822,14 +1001,14 @@ def preview_segment(segment_id: str, limit: int = Query(default=50, ge=1, le=200
     if not valid:
         return ok({"total": 0, "customers": [], "message": "Nenhuma condição válida para avaliar."})
 
-    total = db.execute(text(f"SELECT COUNT(*) FROM customers WHERE {where_clause}")).scalar() or 0  # noqa: S608
+    total = db.execute(text(f"SELECT COUNT(*) FROM customers WHERE tenant_id = :tenant_id AND {where_clause}"), {"tenant_id": tenant_id}).scalar() or 0  # noqa: S608
     rows = db.execute(text(f"""
         SELECT id, name, email, phone, crm_status, total_orders, total_spent, avg_ticket, last_order_at
         FROM customers
-        WHERE {where_clause}
+        WHERE tenant_id = :tenant_id AND {where_clause}
         ORDER BY total_spent DESC NULLS LAST, name ASC
         LIMIT :limit
-    """), {"limit": limit}).fetchall()  # noqa: S608
+    """), {"limit": limit, "tenant_id": tenant_id}).fetchall()  # noqa: S608
 
     return ok({
         "total": total,
@@ -853,13 +1032,18 @@ def preview_segment(segment_id: str, limit: int = Query(default=50, ge=1, le=200
 # ── Customer Groups ───────────────────────────────────────────────────────────
 
 @router.get("/groups")
-def list_groups(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    groups = db.query(CustomerGroup).filter(CustomerGroup.active == True).all()  # noqa: E712
+def list_groups(
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
+    groups = _q(db, CustomerGroup, tenant_id).filter(CustomerGroup.active == True).all()  # noqa: E712
     result = []
     for g in groups:
         count = db.execute(
-            text("SELECT COUNT(*) FROM customer_group_members WHERE group_id = :gid"),
-            {"gid": g.id}
+            text("SELECT COUNT(*) FROM customer_group_members m JOIN customers c ON c.id=m.customer_id WHERE m.group_id = :gid AND m.tenant_id = :tenant_id AND c.tenant_id = :tenant_id"),
+            {"gid": g.id, "tenant_id": tenant_id}
         ).scalar()
         rules = db.execute(
             text("SELECT field, operator, value FROM customer_group_rules WHERE group_id = :gid ORDER BY created_at"),
@@ -875,10 +1059,15 @@ def list_groups(db: Session = Depends(get_db), _=Depends(get_current_admin)):
 
 
 @router.post("/groups")
-def create_group(body: GroupCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def create_group(
+    body: GroupCreate,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
     import json
     g = CustomerGroup(
-        id=str(uuid.uuid4()), name=body.name, description=body.description,
+        id=str(uuid.uuid4()), tenant_id=_tenant(context), name=body.name, description=body.description,
         group_type=body.group_type, color=body.color, icon=body.icon,
     )
     db.add(g)
@@ -901,8 +1090,14 @@ class GroupUpdate(BaseModel):
 
 
 @router.patch("/groups/{group_id}")
-def update_group(group_id: str, body: GroupUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    g = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
+def update_group(
+    group_id: str,
+    body: GroupUpdate,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    g = _q(db, CustomerGroup, _tenant(context)).filter(CustomerGroup.id == group_id).first()
     if not g:
         raise HTTPException(404, "Grupo não encontrado.")
     if body.name is not None:
@@ -927,8 +1122,13 @@ def update_group(group_id: str, body: GroupUpdate, db: Session = Depends(get_db)
 
 
 @router.delete("/groups/{group_id}")
-def delete_group(group_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    g = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
+def delete_group(
+    group_id: str,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    g = _q(db, CustomerGroup, _tenant(context)).filter(CustomerGroup.id == group_id).first()
     if not g:
         raise HTTPException(404, "Grupo não encontrado.")
     g.active = False
@@ -938,7 +1138,13 @@ def delete_group(group_id: str, db: Session = Depends(get_db), _=Depends(get_cur
 
 
 @router.get("/customers/{customer_id}/groups")
-def list_customer_groups(customer_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def list_customer_groups(
+    customer_id: str,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
     rows = db.execute(
         text(
             """
@@ -946,11 +1152,11 @@ def list_customer_groups(customer_id: str, db: Session = Depends(get_db), _=Depe
                    g.created_at, m.id AS member_id, m.source, m.added_at
             FROM customer_group_members m
             JOIN customer_groups g ON g.id = m.group_id
-            WHERE m.customer_id = :customer_id AND g.active = TRUE
+            WHERE m.customer_id = :customer_id AND m.tenant_id = :tenant_id AND g.tenant_id = :tenant_id AND g.active = TRUE
             ORDER BY g.name ASC
             """
         ),
-        {"customer_id": customer_id},
+        {"customer_id": customer_id, "tenant_id": tenant_id},
     ).fetchall()
     return ok([
         {
@@ -1012,9 +1218,15 @@ def _build_evaluate_sql(rules: list) -> tuple[str, bool]:
 
 
 @router.post("/groups/{group_id}/evaluate")
-def evaluate_group(group_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def evaluate_group(
+    group_id: str,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
     """Re-evaluate dynamic rules and populate customer_group_members."""
-    g = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
+    tenant_id = _tenant(context)
+    g = _q(db, CustomerGroup, tenant_id).filter(CustomerGroup.id == group_id).first()
     if not g:
         raise HTTPException(404, "Grupo não encontrado.")
     if g.group_type != "dynamic":
@@ -1032,14 +1244,14 @@ def evaluate_group(group_id: str, db: Session = Depends(get_db), _=Depends(get_c
     if not valid:
         return ok({"added": 0, "message": "Nenhuma condição válida para avaliar."})
 
-    customer_ids = db.execute(text(f"SELECT id FROM customers WHERE {where_clause}")).fetchall()  # noqa: S608
+    customer_ids = db.execute(text(f"SELECT id FROM customers WHERE tenant_id = :tenant_id AND {where_clause}"), {"tenant_id": tenant_id}).fetchall()  # noqa: S608
 
     added = 0
     for (cid,) in customer_ids:
         try:
             db.execute(text(
-                "INSERT INTO customer_group_members (id, group_id, customer_id) VALUES (:id, :gid, :cid) ON CONFLICT DO NOTHING"
-            ), {"id": str(uuid.uuid4()), "gid": group_id, "cid": cid})
+                "INSERT INTO customer_group_members (id, tenant_id, group_id, customer_id) VALUES (:id, :tenant_id, :gid, :cid) ON CONFLICT DO NOTHING"
+            ), {"id": str(uuid.uuid4()), "tenant_id": tenant_id, "gid": group_id, "cid": cid})
             added += 1
         except Exception:
             pass
@@ -1048,24 +1260,32 @@ def evaluate_group(group_id: str, db: Session = Depends(get_db), _=Depends(get_c
 
 
 @router.post("/groups/{group_id}/members/{customer_id}")
-def add_member(group_id: str, customer_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    group = db.query(CustomerGroup).filter(CustomerGroup.id == group_id, CustomerGroup.active == True).first()  # noqa: E712
+def add_member(
+    group_id: str,
+    customer_id: str,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
+    group = _q(db, CustomerGroup, tenant_id).filter(CustomerGroup.id == group_id, CustomerGroup.active == True).first()  # noqa: E712
     if not group:
         raise HTTPException(404, "Grupo nao encontrado.")
-    customer_exists = db.execute(text("SELECT 1 FROM customers WHERE id = :id"), {"id": customer_id}).first()
+    customer_exists = db.execute(text("SELECT 1 FROM customers WHERE id = :id AND tenant_id = :tenant_id"), {"id": customer_id, "tenant_id": tenant_id}).first()
     if not customer_exists:
         raise HTTPException(404, "Cliente nao encontrado.")
 
     existing = db.execute(
-        text("SELECT 1 FROM customer_group_members WHERE group_id = :gid AND customer_id = :cid"),
-        {"gid": group_id, "cid": customer_id},
+        text("SELECT 1 FROM customer_group_members WHERE tenant_id = :tenant_id AND group_id = :gid AND customer_id = :cid"),
+        {"tenant_id": tenant_id, "gid": group_id, "cid": customer_id},
     ).first()
     if not existing:
         db.execute(text(
-            "INSERT INTO customer_group_members (id, group_id, customer_id, source) VALUES (:id, :gid, :cid, 'manual') ON CONFLICT DO NOTHING"
-        ), {"id": str(uuid.uuid4()), "gid": group_id, "cid": customer_id})
+            "INSERT INTO customer_group_members (id, tenant_id, group_id, customer_id, source) VALUES (:id, :tenant_id, :gid, :cid, 'manual') ON CONFLICT DO NOTHING"
+        ), {"id": str(uuid.uuid4()), "tenant_id": tenant_id, "gid": group_id, "cid": customer_id})
         db.add(CustomerTimeline(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             customer_id=customer_id,
             event_type="group_added",
             title=f"Grupo adicionado: {group.name}",
@@ -1077,13 +1297,21 @@ def add_member(group_id: str, customer_id: str, db: Session = Depends(get_db), _
 
 
 @router.delete("/groups/{group_id}/members/{customer_id}")
-def remove_member(group_id: str, customer_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    group = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
-    deleted = db.execute(text("DELETE FROM customer_group_members WHERE group_id=:gid AND customer_id=:cid"),
-                         {"gid": group_id, "cid": customer_id}).rowcount
+def remove_member(
+    group_id: str,
+    customer_id: str,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    tenant_id = _tenant(context)
+    group = _q(db, CustomerGroup, tenant_id).filter(CustomerGroup.id == group_id).first()
+    deleted = db.execute(text("DELETE FROM customer_group_members WHERE tenant_id=:tenant_id AND group_id=:gid AND customer_id=:cid"),
+                         {"tenant_id": tenant_id, "gid": group_id, "cid": customer_id}).rowcount
     if deleted and group:
         db.add(CustomerTimeline(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             customer_id=customer_id,
             event_type="group_removed",
             title=f"Grupo removido: {group.name}",
@@ -1097,8 +1325,14 @@ def remove_member(group_id: str, customer_id: str, db: Session = Depends(get_db)
 # ── Customer Timeline ─────────────────────────────────────────────────────────
 
 @router.get("/timeline/{customer_id}")
-def customer_timeline(customer_id: str, limit: int = 50, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    events = (db.query(CustomerTimeline)
+def customer_timeline(
+    customer_id: str,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
+    events = (_q(db, CustomerTimeline, _tenant(context))
               .filter(CustomerTimeline.customer_id == customer_id)
               .order_by(CustomerTimeline.created_at.desc())
               .limit(limit).all())
@@ -1109,9 +1343,15 @@ def customer_timeline(customer_id: str, limit: int = 50, db: Session = Depends(g
 
 
 @router.post("/timeline/{customer_id}")
-def add_timeline_event(customer_id: str, body: dict, db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def add_timeline_event(
+    customer_id: str,
+    body: dict,
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
     event = CustomerTimeline(
-        id=str(uuid.uuid4()), customer_id=customer_id,
+        id=str(uuid.uuid4()), tenant_id=_tenant(context), customer_id=customer_id,
         event_type=body.get("event_type", "note"),
         title=body.get("title", "Observação"),
         description=body.get("description"),
@@ -1124,7 +1364,12 @@ def add_timeline_event(customer_id: str, body: dict, db: Session = Depends(get_d
 # ── CRM Dashboard ─────────────────────────────────────────────────────────────
 
 @router.get("/dashboard")
-def crm_dashboard(period: str = "30d", db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def crm_dashboard(
+    period: str = "30d",
+    db: Session = Depends(get_db),
+    context: TenantContext | None = Depends(panel_wave6_context),
+    _=Depends(get_current_admin),
+):
     from sqlalchemy import func, text as sql_text
     from backend.models.customer import Customer
     from datetime import datetime, timezone, timedelta
@@ -1133,14 +1378,15 @@ def crm_dashboard(period: str = "30d", db: Session = Depends(get_db), _=Depends(
     _period_days = {"today": 1, "7d": 7, "30d": 30, "90d": 90}
     days = _period_days.get(period, 30)
     since = datetime.now(timezone.utc) - timedelta(days=days)
+    tenant_id = _tenant(context)
 
-    total = db.query(func.count(Customer.id)).scalar() or 0
+    total = db.query(func.count(Customer.id)).filter(Customer.tenant_id == tenant_id).scalar() or 0
 
     # New clients in period
     try:
         new_clients = db.execute(
-            sql_text("SELECT COUNT(*) FROM customers WHERE created_at >= :since"),
-            {"since": since},
+            sql_text("SELECT COUNT(*) FROM customers WHERE tenant_id = :tenant_id AND created_at >= :since"),
+            {"since": since, "tenant_id": tenant_id},
         ).scalar() or 0
     except Exception:
         new_clients = 0
@@ -1148,7 +1394,8 @@ def crm_dashboard(period: str = "30d", db: Session = Depends(get_db), _=Depends(
     # Recurring clients (more than 1 order)
     try:
         recurring = db.execute(
-            sql_text("SELECT COUNT(*) FROM customers WHERE total_orders > 1"),
+            sql_text("SELECT COUNT(*) FROM customers WHERE tenant_id = :tenant_id AND total_orders > 1"),
+            {"tenant_id": tenant_id},
         ).scalar() or 0
     except Exception:
         recurring = 0
@@ -1157,8 +1404,8 @@ def crm_dashboard(period: str = "30d", db: Session = Depends(get_db), _=Depends(
     try:
         inactive_since = datetime.now(timezone.utc) - timedelta(days=60)
         inactive = db.execute(
-            sql_text("SELECT COUNT(*) FROM customers WHERE last_order_at < :s OR last_order_at IS NULL"),
-            {"s": inactive_since},
+            sql_text("SELECT COUNT(*) FROM customers WHERE tenant_id = :tenant_id AND (last_order_at < :s OR last_order_at IS NULL)"),
+            {"s": inactive_since, "tenant_id": tenant_id},
         ).scalar() or 0
     except Exception:
         inactive = 0
@@ -1166,7 +1413,8 @@ def crm_dashboard(period: str = "30d", db: Session = Depends(get_db), _=Depends(
     # Birthday clients this month
     try:
         birthday = db.execute(
-            sql_text("SELECT COUNT(*) FROM customers WHERE birth_date IS NOT NULL AND EXTRACT(MONTH FROM birth_date) = EXTRACT(MONTH FROM CURRENT_DATE)"),
+            sql_text("SELECT COUNT(*) FROM customers WHERE tenant_id = :tenant_id AND birth_date IS NOT NULL AND EXTRACT(MONTH FROM birth_date) = EXTRACT(MONTH FROM CURRENT_DATE)"),
+            {"tenant_id": tenant_id},
         ).scalar() or 0
     except Exception:
         birthday = 0
@@ -1174,7 +1422,8 @@ def crm_dashboard(period: str = "30d", db: Session = Depends(get_db), _=Depends(
     # Avg ticket
     try:
         avg_ticket = db.execute(
-            sql_text("SELECT COALESCE(AVG(avg_ticket), 0) FROM customers WHERE avg_ticket > 0"),
+            sql_text("SELECT COALESCE(AVG(avg_ticket), 0) FROM customers WHERE tenant_id = :tenant_id AND avg_ticket > 0"),
+            {"tenant_id": tenant_id},
         ).scalar() or 0.0
     except Exception:
         avg_ticket = 0.0
@@ -1182,45 +1431,48 @@ def crm_dashboard(period: str = "30d", db: Session = Depends(get_db), _=Depends(
     # Revenue per client
     try:
         rev_per_client = db.execute(
-            sql_text("SELECT COALESCE(AVG(total_spent), 0) FROM customers WHERE total_spent > 0"),
+            sql_text("SELECT COALESCE(AVG(total_spent), 0) FROM customers WHERE tenant_id = :tenant_id AND total_spent > 0"),
+            {"tenant_id": tenant_id},
         ).scalar() or 0.0
     except Exception:
         rev_per_client = 0.0
 
-    active_cards = db.query(func.count(CrmCard.id)).filter(CrmCard.archived == False).scalar() or 0  # noqa: E712
+    active_cards = _q(db, CrmCard, tenant_id).filter(CrmCard.archived == False).with_entities(func.count(CrmCard.id)).scalar() or 0  # noqa: E712
 
     # Open opportunities (cards with value > 0)
     try:
         open_opps = db.execute(
-            sql_text("SELECT COUNT(*) FROM crm_cards WHERE archived = FALSE AND value > 0"),
+            sql_text("SELECT COUNT(*) FROM crm_cards WHERE tenant_id = :tenant_id AND archived = FALSE AND value > 0"),
+            {"tenant_id": tenant_id},
         ).scalar() or 0
     except Exception:
         open_opps = 0
 
-    tasks_pending = db.query(func.count(CrmTask.id)).filter(CrmTask.status == "pending").scalar() or 0
+    tasks_pending = _q(db, CrmTask, tenant_id).filter(CrmTask.status == "pending").with_entities(func.count(CrmTask.id)).scalar() or 0
 
     # Overdue tasks
     try:
         overdue = db.execute(
-            sql_text("SELECT COUNT(*) FROM crm_tasks WHERE status = 'pending' AND due_date < NOW()"),
+            sql_text("SELECT COUNT(*) FROM crm_tasks WHERE tenant_id = :tenant_id AND status = 'pending' AND due_date < NOW()"),
+            {"tenant_id": tenant_id},
         ).scalar() or 0
     except Exception:
         overdue = 0
 
-    groups_count = db.query(func.count(CustomerGroup.id)).filter(CustomerGroup.active == True).scalar() or 0  # noqa: E712
+    groups_count = _q(db, CustomerGroup, tenant_id).filter(CustomerGroup.active == True).with_entities(func.count(CustomerGroup.id)).scalar() or 0  # noqa: E712
 
     # Funnel
-    first_pipeline = db.query(CrmPipeline).filter(CrmPipeline.active == True).order_by(CrmPipeline.sort_order).first()  # noqa: E712
+    first_pipeline = _q(db, CrmPipeline, tenant_id).filter(CrmPipeline.active == True).order_by(CrmPipeline.sort_order).first()  # noqa: E712
     funnel_rows = []
     if first_pipeline:
         funnel_rows = db.execute(sql_text("""
             SELECT cs.name, COUNT(cc.id) as cards
             FROM crm_stages cs
-            LEFT JOIN crm_cards cc ON cc.stage_id = cs.id AND cc.archived = FALSE
-            WHERE cs.pipeline_id = :pid
+            LEFT JOIN crm_cards cc ON cc.stage_id = cs.id AND cc.tenant_id = :tenant_id AND cc.archived = FALSE
+            WHERE cs.tenant_id = :tenant_id AND cs.pipeline_id = :pid
             GROUP BY cs.id, cs.name, cs.sort_order
             ORDER BY cs.sort_order
-        """), {"pid": first_pipeline.id}).fetchall()
+        """), {"pid": first_pipeline.id, "tenant_id": tenant_id}).fetchall()
 
     # Clients by neighborhood
     try:
@@ -1229,11 +1481,12 @@ def crm_dashboard(period: str = "30d", db: Session = Depends(get_db), _=Depends(
                 SELECT a.neighborhood as name, COUNT(DISTINCT c.id) as count
                 FROM customers c
                 JOIN addresses a ON a.customer_id = c.id
-                WHERE a.neighborhood IS NOT NULL AND a.neighborhood <> ''
+                WHERE c.tenant_id = :tenant_id AND a.tenant_id = :tenant_id AND a.neighborhood IS NOT NULL AND a.neighborhood <> ''
                 GROUP BY a.neighborhood
                 ORDER BY count DESC
                 LIMIT 10
             """),
+            {"tenant_id": tenant_id},
         ).fetchall()
         clients_by_neighborhood = [{"name": r[0], "count": r[1]} for r in nbh_rows]
     except Exception:
@@ -1245,10 +1498,12 @@ def crm_dashboard(period: str = "30d", db: Session = Depends(get_db), _=Depends(
             sql_text("""
                 SELECT COALESCE(source, 'Desconhecida') as name, COUNT(*) as count
                 FROM customers
+                WHERE tenant_id = :tenant_id
                 GROUP BY source
                 ORDER BY count DESC
                 LIMIT 8
             """),
+            {"tenant_id": tenant_id},
         ).fetchall()
         clients_by_origin = [{"name": r[0], "count": r[1]} for r in origin_rows]
     except Exception:
@@ -1282,8 +1537,8 @@ def analyze_all_customers(
     db: Session = Depends(get_db),
     admin=Depends(get_current_admin),
 ):
-    context = resolve_panel_tenant_context(request, db, admin)
-    tenant_id = context.tenant_id if context else None
+    context = panel_wave6_context(request, db, admin)
+    tenant_id = _tenant(context)
     admin_name = getattr(admin, "name", None) or getattr(admin, "email", None)
     job, created_job = create_customer_ai_analysis_job(db, created_by=admin_name, tenant_id=tenant_id)
     if created_job:
@@ -1299,9 +1554,9 @@ def customer_intelligence_status(
     db: Session = Depends(get_db),
     admin=Depends(get_current_admin),
 ):
-    context = resolve_panel_tenant_context(request, db, admin)
+    context = panel_wave6_context(request, db, admin)
     return ok(get_customer_ai_analysis_status(
-        db, limit=limit, tenant_id=context.tenant_id if context else None
+        db, limit=limit, tenant_id=_tenant(context)
     ))
 
 
@@ -1309,8 +1564,10 @@ def customer_intelligence_status(
 
 @router.patch("/pipelines/{pipeline_id}")
 def update_pipeline(pipeline_id: str, body: PipelineUpdate,
-                    db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    p = db.query(CrmPipeline).filter(CrmPipeline.id == pipeline_id).first()
+                    db: Session = Depends(get_db),
+                    context: TenantContext | None = Depends(panel_wave6_context),
+                    _=Depends(get_current_admin)):
+    p = _q(db, CrmPipeline, _tenant(context)).filter(CrmPipeline.id == pipeline_id).first()
     if not p:
         raise HTTPException(404, "Pipeline não encontrado.")
     if body.name is not None:          p.name = body.name
@@ -1323,8 +1580,9 @@ def update_pipeline(pipeline_id: str, body: PipelineUpdate,
 
 @router.delete("/pipelines/{pipeline_id}")
 def delete_pipeline(pipeline_id: str, db: Session = Depends(get_db),
+                    context: TenantContext | None = Depends(panel_wave6_context),
                     _=Depends(get_current_admin)):
-    p = db.query(CrmPipeline).filter(CrmPipeline.id == pipeline_id).first()
+    p = _q(db, CrmPipeline, _tenant(context)).filter(CrmPipeline.id == pipeline_id).first()
     if not p:
         raise HTTPException(404, "Pipeline não encontrado.")
     p.active = False
@@ -1337,8 +1595,10 @@ def delete_pipeline(pipeline_id: str, db: Session = Depends(get_db),
 
 @router.patch("/stages/{stage_id}")
 def update_stage(stage_id: str, body: StageUpdate,
-                 db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    s = db.query(CrmStage).filter(CrmStage.id == stage_id).first()
+                 db: Session = Depends(get_db),
+                 context: TenantContext | None = Depends(panel_wave6_context),
+                 _=Depends(get_current_admin)):
+    s = _q(db, CrmStage, _tenant(context)).filter(CrmStage.id == stage_id).first()
     if not s:
         raise HTTPException(404, "Etapa não encontrada.")
     if body.name is not None:        s.name = body.name
@@ -1354,9 +1614,13 @@ def update_stage(stage_id: str, body: StageUpdate,
 
 @router.get("/cards/{card_id}/notes")
 def list_card_notes(card_id: str, db: Session = Depends(get_db),
+                    context: TenantContext | None = Depends(panel_wave6_context),
                     _=Depends(get_current_admin)):
+    tenant_id = _tenant(context)
+    if not _q(db, CrmCard, tenant_id).filter(CrmCard.id == card_id).first():
+        raise HTTPException(404, "Card nÃ£o encontrado.")
     notes = (
-        db.query(CrmCardNote)
+        _q(db, CrmCardNote, tenant_id)
         .filter(CrmCardNote.card_id == card_id)
         .order_by(CrmCardNote.created_at.desc())
         .all()
@@ -1369,14 +1633,17 @@ def list_card_notes(card_id: str, db: Session = Depends(get_db),
 
 @router.post("/cards/{card_id}/notes")
 def create_card_note(card_id: str, body: CardNoteCreate,
-                     db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    if not db.query(CrmCard).filter(CrmCard.id == card_id).first():
+                     db: Session = Depends(get_db),
+                     context: TenantContext | None = Depends(panel_wave6_context),
+                     _=Depends(get_current_admin)):
+    tenant_id = _tenant(context)
+    if not _q(db, CrmCard, tenant_id).filter(CrmCard.id == card_id).first():
         raise HTTPException(404, "Card não encontrado.")
-    n = CrmCardNote(id=str(uuid.uuid4()), card_id=card_id,
+    n = CrmCardNote(id=str(uuid.uuid4()), tenant_id=tenant_id, card_id=card_id,
                     author=body.author, body=body.body)
     db.add(n)
     # Also record in history
-    h = CrmCardHistory(id=str(uuid.uuid4()), card_id=card_id,
+    h = CrmCardHistory(id=str(uuid.uuid4()), tenant_id=tenant_id, card_id=card_id,
                        event_type="note_added",
                        description=f"{body.author} adicionou uma nota.")
     db.add(h)
@@ -1389,9 +1656,13 @@ def create_card_note(card_id: str, body: CardNoteCreate,
 
 @router.get("/cards/{card_id}/history")
 def list_card_history(card_id: str, db: Session = Depends(get_db),
+                      context: TenantContext | None = Depends(panel_wave6_context),
                       _=Depends(get_current_admin)):
+    tenant_id = _tenant(context)
+    if not _q(db, CrmCard, tenant_id).filter(CrmCard.id == card_id).first():
+        raise HTTPException(404, "Card nÃ£o encontrado.")
     rows = (
-        db.query(CrmCardHistory)
+        _q(db, CrmCardHistory, tenant_id)
         .filter(CrmCardHistory.card_id == card_id)
         .order_by(CrmCardHistory.created_at.desc())
         .limit(50)

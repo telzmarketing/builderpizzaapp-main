@@ -1,6 +1,6 @@
 # Troubleshooting do instalador Telz
 
-Atualizado em: 2026-09-29
+Atualizado em: 2026-10-04
 
 Este runbook diagnostica uma primeira instalacao. Para falha de deploy
 incremental, use o run do GitHub Actions e `docs/UPDATE_TELZ_VPS.md`.
@@ -65,7 +65,7 @@ sudo -u telz -H bash -lc \
 Deve existir exatamente um head e ele deve ser:
 
 ```text
-20260930_tenant_runtime_uniqueness
+20261003_agente_whatsapp_tenant_foundation
 ```
 
 Se defaults, script, workflow, codigo e banco divergirem, pare. Nao execute
@@ -119,7 +119,7 @@ Service ativo nao prova sessao online. Conecte pelo QR Code e valide envio real.
 
 ## 7. Causas que exigem parar
 
-- target Alembic diferente de `20260930_tenant_runtime_uniqueness`;
+- target Alembic diferente de `20261003_agente_whatsapp_tenant_foundation`;
 - runner/config/fingerprint com ownership ou permissao invalidos;
 - worktree sujo durante update;
 - Nginx invalido ou porta SSH nao preservada antes de UFW;
