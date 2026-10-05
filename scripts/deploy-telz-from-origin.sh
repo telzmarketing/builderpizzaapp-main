@@ -157,9 +157,22 @@ find "$STAGE_DIR/target-source" "$STAGE_DIR/previous-source" -type f -exec chmod
 
 install -d -m 0700 -o "$BUILD_USER" -g "$BUILD_GROUP" \
   "$DEPENDENCIES" "$DEPENDENCIES/wheelhouse" "$DEPENDENCIES/pnpm-store" "$STAGE_DIR/build-home"
+install -d -m 0700 -o "$BUILD_USER" -g "$BUILD_GROUP" \
+  "$STAGE_DIR/build-home/cache" "$STAGE_DIR/build-home/config"
 run_as_builder() {
-  sudo -u "$BUILD_USER" -H env HOME="$STAGE_DIR/build-home" PATH=/usr/local/bin:/usr/bin:/bin \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 NPM_CONFIG_USERCONFIG=/dev/null "$@"
+  sudo -u "$BUILD_USER" -H env -i \
+    HOME="$STAGE_DIR/build-home" XDG_CACHE_HOME="$STAGE_DIR/build-home/cache" XDG_CONFIG_HOME="$STAGE_DIR/build-home/config" \
+    PATH=/usr/local/bin:/usr/bin:/bin PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    NPM_CONFIG_USERCONFIG=/dev/null NPM_CONFIG_GLOBALCONFIG=/dev/null "$@"
+}
+run_as_builder_in() {
+  local working_dir="$1"
+  shift
+  sudo -u "$BUILD_USER" -H env -i \
+    HOME="$STAGE_DIR/build-home" XDG_CACHE_HOME="$STAGE_DIR/build-home/cache" XDG_CONFIG_HOME="$STAGE_DIR/build-home/config" \
+    PATH=/usr/local/bin:/usr/bin:/bin PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    NPM_CONFIG_USERCONFIG=/dev/null NPM_CONFIG_GLOBALCONFIG=/dev/null \
+    /usr/bin/bash -c 'cd -- "$1"; shift; exec "$@"' bash "$working_dir" "$@"
 }
 run_as_builder python3.12 -m pip install --dry-run --ignore-installed --only-binary=:all: --report "$DEPENDENCIES/target-report.json" -r "$STAGE_DIR/target-source/backend/requirements.txt"
 run_as_builder python3.12 -m pip install --dry-run --ignore-installed --only-binary=:all: --report "$DEPENDENCIES/previous-report.json" -r "$STAGE_DIR/previous-source/backend/requirements.txt"
@@ -174,8 +187,8 @@ for report, output in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[4])):
 PY
 chown "$BUILD_USER:$BUILD_GROUP" "$STAGE_DIR"/*-freeze.txt
 run_as_builder python3.12 -m pip download --only-binary=:all: --dest "$DEPENDENCIES/wheelhouse" pip==25.1.1 pytest==8.3.5 -r "$STAGE_DIR/target-freeze.txt" -r "$STAGE_DIR/previous-freeze.txt"
-run_as_builder pnpm --dir "$STAGE_DIR/target-source" fetch --frozen-lockfile --ignore-scripts --store-dir "$DEPENDENCIES/pnpm-store"
-run_as_builder pnpm --dir "$STAGE_DIR/previous-source" fetch --frozen-lockfile --ignore-scripts --store-dir "$DEPENDENCIES/pnpm-store"
+run_as_builder_in "$STAGE_DIR/target-source" pnpm fetch --frozen-lockfile --ignore-scripts --store-dir "$DEPENDENCIES/pnpm-store"
+run_as_builder_in "$STAGE_DIR/previous-source" pnpm fetch --frozen-lockfile --ignore-scripts --store-dir "$DEPENDENCIES/pnpm-store"
 
 /usr/bin/python3 - "$DEPENDENCIES" "$TARGET_COMMIT" "$PREVIOUS_COMMIT" "$STAGE_DIR/target-source" "$STAGE_DIR/previous-source" "$STAGE_DIR/target-freeze.txt" "$STAGE_DIR/previous-freeze.txt" <<'PY'
 import hashlib, json, sys

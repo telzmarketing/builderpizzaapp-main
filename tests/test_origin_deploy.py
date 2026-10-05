@@ -28,8 +28,11 @@ def test_origin_deploy_keeps_artifacts_root_owned_and_never_runs_checkout_script
     assert 'install -d -m 0700 -o "$BUILD_USER" -g "$BUILD_GROUP"' in source
     assert 'chmod 0711 "$STAGE_DIR"' in source
     assert '"$DEPENDENCIES/target-report.json"' in source
+    assert 'env -i' in source
+    assert 'NPM_CONFIG_GLOBALCONFIG=/dev/null' in source
+    assert "cd -- \"$1\"; shift; exec \"$@\"" in source
     assert 'run_as_builder python3.12 -m pip download --only-binary=:all:' in source
-    assert 'pnpm --dir "$STAGE_DIR/target-source" fetch --frozen-lockfile --ignore-scripts' in source
+    assert 'run_as_builder_in "$STAGE_DIR/target-source" pnpm fetch --frozen-lockfile --ignore-scripts' in source
     assert 'alembic upgrade' not in source
     assert 'systemctl restart' not in source
     assert 'git -C "$INSTALL_DIR" merge ' not in source
