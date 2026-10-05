@@ -1,0 +1,193 @@
+name: Preparar pacote de deploy manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      previous_commit:
+        description: SHA completo (40 caracteres) atualmente ativo na VPS
+        required: true
+        type: string
+
+concurrency:
+  group: telz-manual-package-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TELZ_ALEMBIC_TARGET: 20261004_tenant_upload_ownership_contract
+  TELZ_PUBLIC_HEALTH_URL: https://erp.telz.com.br/health
+
+jobs:
+  validate:
+    name: Validar codigo e migration descartavel
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:15@sha256:0dda651c259bfe50e2bcc28ca23d1fcca772fa90b0210803aa7b97379ccf4e85
+        env:
+          POSTGRES_DB: telz_ci
+          POSTGRES_USER: telz_ci
+          POSTGRES_PASSWORD: telz_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U telz_ci -d telz_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci
+      JWT_SECRET_KEY: ci-only-not-for-production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt pytest
+          pnpm install --frozen-lockfile
+      - name: Validar scripts, schema e aplicacao
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          while IFS= read -r -d '' script; do bash -n "$script"; done < <(find scripts installer -type f -name '*.sh' -print0)
+          mapfile -t heads < <(alembic -c backend/alembic.ini heads | awk 'NF {print $1}')
+          test "${#heads[@]}" -eq 1
+          test "${heads[0]}" = "$TELZ_ALEMBIC_TARGET"
+          alembic -c backend/alembic.ini upgrade "$TELZ_ALEMBIC_TARGET"
+          python -m pytest -q
+          pnpm run typecheck
+          pnpm test
+          pnpm run build
+
+  package:
+    name: Gerar pacote manual selado sem segredos
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - name: Empacotar e validar artefatos de operacao
+        shell: bash
+        env:
+          PREVIOUS_COMMIT: ${{ inputs.previous_commit }}
+        run: |
+          set -Eeuo pipefail
+          target_commit="$(git rev-parse HEAD)"
+          [[ "$target_commit" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PREVIOUS_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "$target_commit^{commit}"
+          git cat-file -e "$PREVIOUS_COMMIT^{commit}"
+          git merge-base --is-ancestor "$PREVIOUS_COMMIT" "$target_commit"
+          test "$PREVIOUS_COMMIT" != "$target_commit"
+
+          work="$RUNNER_TEMP/telz-manual-package"
+          delivery="$work/delivery"
+          dependencies="$work/dependencies"
+          mkdir -p "$delivery" "$dependencies/wheelhouse" "$dependencies/pnpm-store"
+
+          files=(
+            scripts/update-telz.sh scripts/backup-telz.sh scripts/health-check.sh
+            scripts/collect-telz-monitoring.sh scripts/restore-telz.sh scripts/rollback-telz.sh
+            scripts/finish-ssl.sh scripts/build-telz-release.sh
+            installer/templates/telz-api.service installer/templates/telz-web.service
+            installer/templates/telz-whatsapp-gateway.service installer/templates/telz-monitoring.service
+            installer/templates/telz-monitoring.timer
+          )
+          for file in "${files[@]}"; do test -f "$file"; test ! -L "$file"; done
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+            -czf "$delivery/operation-bundle.tar.gz" -- "${files[@]}"
+          git archive --format=tar --add-virtual-file=".telz-source-commit:$target_commit" "$target_commit" | gzip -n > "$delivery/target-source.tar.gz"
+          git archive --format=tar --add-virtual-file=".telz-source-commit:$PREVIOUS_COMMIT" "$PREVIOUS_COMMIT" | gzip -n > "$delivery/previous-source.tar.gz"
+
+          target_source="$work/target-source"
+          previous_source="$work/previous-source"
+          mkdir -p "$target_source" "$previous_source"
+          git archive "$target_commit" | tar -xf - -C "$target_source"
+          git archive "$PREVIOUS_COMMIT" | tar -xf - -C "$previous_source"
+          python -m pip install --dry-run --ignore-installed --only-binary=:all: --report "$work/target-report.json" -r "$target_source/backend/requirements.txt"
+          python -m pip install --dry-run --ignore-installed --only-binary=:all: --report "$work/previous-report.json" -r "$previous_source/backend/requirements.txt"
+          /usr/bin/python3 - "$work/target-report.json" "$work/target-freeze.txt" "$work/previous-report.json" "$work/previous-freeze.txt" <<'PY'
+          import json, sys
+          from pathlib import Path
+          for report, output in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[4])):
+              rows = sorted({f"{item['metadata']['name']}=={item['metadata']['version']}" for item in json.loads(Path(report).read_text(encoding='utf-8')).get('install', [])}, key=str.casefold)
+              if not rows: raise SystemExit('resolver Python nao produziu dependencias')
+              Path(output).write_text('\n'.join(rows) + '\n', encoding='utf-8')
+          PY
+          python -m pip download --only-binary=:all: --dest "$dependencies/wheelhouse" pip==25.1.1 pytest==8.3.5 -r "$work/target-freeze.txt" -r "$work/previous-freeze.txt"
+          test "$(pnpm --version)" = "10.14.0"
+          [[ "$(node --version)" == v22.* ]]
+          pnpm --dir "$target_source" fetch --frozen-lockfile --store-dir "$dependencies/pnpm-store"
+          pnpm --dir "$previous_source" fetch --frozen-lockfile --store-dir "$dependencies/pnpm-store"
+          /usr/bin/python3 - "$dependencies" "$target_commit" "$PREVIOUS_COMMIT" "$target_source" "$previous_source" "$work/target-freeze.txt" "$work/previous-freeze.txt" <<'PY'
+          import hashlib, json, sys
+          from pathlib import Path
+          root = Path(sys.argv[1])
+          digest = lambda p: hashlib.sha256(Path(p).read_bytes()).hexdigest()
+          public = {"VITE_API_URL":"", "VITE_MULTI_TENANT_AUTH_ENABLED":"true", "VITE_PLATFORM_HOSTNAME":"erp.telz.com.br", "VITE_PLATFORM_HOSTNAMES":"erp.telz.com.br"}
+          public_path = root / '.telz-public-build.json'
+          public_path.write_text(json.dumps(public, sort_keys=True, separators=(',', ':')) + '\n', encoding='utf-8')
+          commits = {}
+          for commit, source, freeze in ((sys.argv[2], sys.argv[4], sys.argv[6]), (sys.argv[3], sys.argv[5], sys.argv[7])):
+              commits[commit] = {"python_freeze_sha256": digest(freeze), "requirements_sha256": digest(Path(source) / 'backend' / 'requirements.txt'), "pnpm_lock_sha256": digest(Path(source) / 'pnpm-lock.yaml')}
+          (root / '.telz-dependencies.json').write_text(json.dumps({"schema_version":1,"target_commit":sys.argv[2],"previous_commit":sys.argv[3],"python":"3.12","pip":"25.1.1","node":"22","pnpm":"10.14.0","public_build_config_sha256":digest(public_path),"commits":commits}, sort_keys=True, separators=(',', ':')) + '\n', encoding='utf-8')
+          PY
+          tar --dereference --hard-dereference --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+            -C "$dependencies" -czf "$delivery/dependency-bundle.tar.gz" -- wheelhouse pnpm-store .telz-dependencies.json .telz-public-build.json
+
+          /usr/bin/python3 - "$delivery" "$target_commit" "$PREVIOUS_COMMIT" "$TELZ_ALEMBIC_TARGET" "$TELZ_PUBLIC_HEALTH_URL" <<'PY'
+          import hashlib, json, sys, tarfile
+          from pathlib import Path, PurePosixPath
+          root = Path(sys.argv[1])
+          target, previous, alembic, health = sys.argv[2:]
+          expected_operation = {
+              'scripts/update-telz.sh','scripts/backup-telz.sh','scripts/health-check.sh','scripts/collect-telz-monitoring.sh','scripts/restore-telz.sh','scripts/rollback-telz.sh','scripts/finish-ssl.sh','scripts/build-telz-release.sh',
+              'installer/templates/telz-api.service','installer/templates/telz-web.service','installer/templates/telz-whatsapp-gateway.service','installer/templates/telz-monitoring.service','installer/templates/telz-monitoring.timer'}
+          operation = root / 'operation-bundle.tar.gz'
+          with tarfile.open(operation, 'r:gz') as tar:
+              names = {m.name for m in tar.getmembers() if not m.isdir()}
+              if names != expected_operation: raise SystemExit('bundle operacional incompleto')
+          for filename, commit in (('target-source.tar.gz', target), ('previous-source.tar.gz', previous)):
+              with tarfile.open(root / filename, 'r:gz') as tar:
+                  marker = None
+                  for member in tar.getmembers():
+                      path = PurePosixPath(member.name)
+                      if path.is_absolute() or '..' in path.parts or not (member.isdir() or member.isreg()): raise SystemExit('archive fonte inseguro')
+                      if member.name == '.telz-source-commit': marker = tar.extractfile(member).read().decode('ascii').strip()
+                  if marker != commit: raise SystemExit('marcador do source archive divergiu')
+          with tarfile.open(root / 'dependency-bundle.tar.gz', 'r:gz') as tar:
+              names = {m.name for m in tar.getmembers()}
+              if not {'.telz-dependencies.json','.telz-public-build.json'}.issubset(names): raise SystemExit('bundle de dependencias incompleto')
+          artifacts = {name: {'sha256': hashlib.sha256((root / name).read_bytes()).hexdigest()} for name in ('operation-bundle.tar.gz','target-source.tar.gz','previous-source.tar.gz','dependency-bundle.tar.gz')}
+          manifest = {'schema_version':1,'target_commit':target,'previous_commit':previous,'alembic_target':alembic,'public_health_url':health,'artifacts':artifacts}
+          (root / 'telz-manual-manifest.json').write_text(json.dumps(manifest, sort_keys=True, separators=(',', ':')) + '\n', encoding='utf-8')
+          PY
+      - name: Publicar pacote manual unico
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: telz-manual-deploy-${{ github.sha }}
+          path: ${{ runner.temp }}/telz-manual-package/delivery
+          if-no-files-found: error
+          retention-days: 14

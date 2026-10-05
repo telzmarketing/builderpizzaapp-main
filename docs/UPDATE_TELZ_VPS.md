@@ -6,11 +6,15 @@ Este procedimento cobre atualizacao incremental de uma instalacao existente em
 `/opt/telz`. `installer/install.sh` e exclusivo da primeira instalacao ou de
 uma reconstrucao planejada; ele nao deve ser reutilizado como updater.
 
-## 1. Caminho suportado
+## 1. Caminhos suportados
 
-O caminho operacional suportado e o `workflow_dispatch` de
-`.github/workflows/deploy.yml`, operacao `deploy`, no commit exato aprovado.
-O workflow:
+Existem dois caminhos aprovados. Ambos exigem CI verde no commit exato e nunca
+autorizam `git pull`, instalador, `alembic upgrade` ou updater isolado.
+
+### 1.1 Deploy remoto pelo GitHub
+
+O `workflow_dispatch` de `.github/workflows/deploy.yml`, operacao `deploy`,
+requer que o GitHub tenha acesso SSH verificado a VPS. O workflow:
 
 1. identifica a release ativa na VPS;
 2. sela o bundle operacional allowlisted;
@@ -23,6 +27,60 @@ O workflow:
 8. materializa releases imutaveis em `/var/lib/telz/releases/<SHA>/app`;
 9. cria backup, aplica a revision explicita, troca `current`, reinicia e executa
    health local e HTTPS publico.
+
+### 1.2 Deploy manual por pacote selado
+
+Quando a VPS nao deve ser acessada pelo GitHub, use
+`.github/workflows/prepare-manual-deploy.yml`. Ele nao possui secrets, SSH ou
+SCP: valida o commit e produz um unico artifact de 14 dias contendo fonte alvo
+e anterior, dependencias offline, bundle operacional e manifesto SHA-256.
+
+1. Na VPS, com os servicos normais e sem revelar configuracoes, registre o SHA
+   atual:
+
+   ```bash
+   sudo -u telz -H git -C /opt/telz status --short
+   sudo -u telz -H git -C /opt/telz rev-parse HEAD
+   ```
+
+2. No GitHub, execute **Preparar pacote de deploy manual** no commit aprovado e
+   informe esse SHA completo no campo `previous_commit`. Espere os jobs
+   `Validar codigo e migration descartavel` e `Gerar pacote manual selado sem
+   segredos` ficarem verdes.
+
+3. Baixe e extraia o artifact `telz-manual-deploy-<SHA-ALVO>` no seu computador.
+   Confirme que ele contem somente estes cinco arquivos:
+
+   ```text
+   operation-bundle.tar.gz
+   target-source.tar.gz
+   previous-source.tar.gz
+   dependency-bundle.tar.gz
+   telz-manual-manifest.json
+   ```
+
+4. Transfira essa pasta usando a sua propria chave SSH, por exemplo:
+
+   ```bash
+   scp -r telz-manual-deploy-<SHA-ALVO> root@SEU_HOST:/root/
+   ```
+
+5. Na VPS, promova os arquivos para um diretorio root-only, instale o helper
+   diretamente do `target-source.tar.gz` cujo hash esta no manifesto e execute
+   o helper. Nao altere o manifesto nem os artefatos entre estes comandos:
+
+   ```bash
+   sudo install -d -m 0700 -o root -g root /var/lib/telz/manual/<SHA-ALVO>
+   sudo install -m 0400 -o root -g root /root/telz-manual-deploy-<SHA-ALVO>/* /var/lib/telz/manual/<SHA-ALVO>/
+   sudo tar -xOzf /var/lib/telz/manual/<SHA-ALVO>/target-source.tar.gz scripts/deploy-telz-artifacts-manually.sh | sudo install -m 0755 -o root -g root /dev/stdin /usr/local/sbin/telz-deploy-artifacts-manually
+   sudo /usr/local/sbin/telz-deploy-artifacts-manually /var/lib/telz/manual/<SHA-ALVO> /opt/telz
+   ```
+
+O helper exige que todos os arquivos sejam root-owned, que sejam exatamente os
+cinco nomes acima, que os SHA-256 coincidam, que o commit ativo corresponda ao
+`previous_commit` e que o bundle operacional seja allowlisted. So depois chama
+o updater existente, que cria backup, aplica a migration, materializa a release
+imutavel e executa health checks.
 
 O target canonico desta entrega e:
 
@@ -38,6 +96,7 @@ A cadeia operacional que deve existir no commit publicado e linear:
 ```text
 20260927_order_board_mvp
   -> 20260930_tenant_runtime_uniqueness
+  -> 20261002_marketing_workflow_foundation
   -> 20261003_marketing_workflow_tenant_isolation
   -> 20261003_chatbot_tenant_keys
   -> 20261003_marketing_tenant_keys
@@ -75,9 +134,9 @@ Confirme no commit alvo:
 - CI verde para o mesmo SHA, incluindo o upgrade Alembic em PostgreSQL
   descartavel; CI verde nao substitui o backup nem a migration na VPS;
 - commit anterior ancestral do commit alvo;
-- secrets `VPS_HOST`, `VPS_USER` (atualmente `root`), `VPS_PORT`,
-  `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS` e `VPS_HOST_FINGERPRINT`;
-- protecoes/aprovadores do environment `production`;
+- para o caminho remoto, secrets `VPS_HOST`, `VPS_USER` (atualmente `root`),
+  `VPS_PORT`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS` e `VPS_HOST_FINGERPRINT`, mais
+  protecoes/aprovadores do environment `production`;
 - URL publica canonica `https://erp.telz.com.br/health` operacional.
 
 `VPS_KNOWN_HOSTS` deve conter a linha completa no formato `known_hosts` para
@@ -111,8 +170,8 @@ deploy, todos estes inputs promovidos e root-owned:
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
 remove a cadeia de promocao/verificacao e nao constitui procedimento aprovado.
-Se o workflow estiver indisponivel, o deploy deve permanecer bloqueado ate a
-cadeia de artefatos ser restaurada; nao use o instalador como fallback.
+O unico caminho manual aprovado e o pacote selado e o helper descritos na secao
+1.2; nao use o instalador como fallback.
 
 ## 4. Falha, recuperacao e rollback
 

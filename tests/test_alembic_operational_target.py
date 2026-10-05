@@ -8,6 +8,7 @@ EXPECTED_TARGET_FILES = {
     "installer/config/defaults.env",
     "scripts/update-telz.sh",
     ".github/workflows/deploy.yml",
+    ".github/workflows/prepare-manual-deploy.yml",
     "docs/INSTALL_TELZ_VPS.md",
     "docs/TELZ_VPS_INSTALL_PHASED_METHOD.md",
     "docs/UPDATE_TELZ_VPS.md",
