@@ -208,7 +208,8 @@ schema_pair_is_compatible() {
     "20260924_kds_kitchen_dispatch:20260926_dispatch_labels" | \
     "20260924_kds_kitchen_dispatch:20260927_order_board_mvp" | \
     "20260926_dispatch_labels:20260927_order_board_mvp" | \
-    "20260930_tenant_runtime_uniqueness:20261003_marketing_workflow_tenant_isolation")
+    "20260930_tenant_runtime_uniqueness:20261002_marketing_workflow_foundation" | \
+    "20261002_marketing_workflow_foundation:20261003_marketing_workflow_tenant_isolation")
       return 0
       ;;
     "20261003_marketing_workflow_tenant_isolation:20261003_chatbot_tenant_keys")

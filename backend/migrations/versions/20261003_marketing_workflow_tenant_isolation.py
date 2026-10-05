@@ -1,14 +1,14 @@
 """Tenant-scope marketing approval workflows and comments.
 
 Revision ID: 20261003_marketing_workflow_tenant_isolation
-Revises: 20260930_tenant_runtime_uniqueness
+Revises: 20261002_marketing_workflow_foundation
 """
 from alembic import op
 import sqlalchemy as sa
 
 
 revision = "20261003_marketing_workflow_tenant_isolation"
-down_revision = "20260930_tenant_runtime_uniqueness"
+down_revision = "20261002_marketing_workflow_foundation"
 branch_labels = None
 depends_on = None
 

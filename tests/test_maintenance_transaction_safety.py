@@ -53,8 +53,15 @@ def test_database_credentials_never_enter_postgres_tool_argv():
     restore = read("scripts/restore-telz.sh")
     assert 'pg_dump --format=custom "$DATABASE_URL"' not in backup
     assert '--dbname="$CURRENT_DATABASE_URL"' not in restore
-    assert "PGPASSFILE=" in backup and "PGDATABASE=" in backup
-    assert "PGPASSFILE=" in restore and "PGDATABASE=" in restore
+    for script in (backup, restore):
+        assert "PGPASSFILE=" in script
+        assert "PGHOST=" in script
+        assert "PGPORT=" in script
+        assert "PGUSER=" in script
+        assert "PGDATABASE=" in script
+        assert 'mapfile -d \'\' -t PG_CONNECTION' in script
+        assert "DATABASE_URL deve informar usuario e banco PostgreSQL" in script
+        assert "pgdatabase" not in script
     assert "--single-transaction" in restore
     assert "TELZ_ALLOW_DATABASE_URL_CHANGE" not in restore
 

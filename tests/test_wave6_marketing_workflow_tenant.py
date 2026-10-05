@@ -23,6 +23,20 @@ def test_marketing_workflow_migration_backfills_and_constrains_tenants():
     assert "nullable=False" in source
 
 
+def test_marketing_workflow_foundation_precedes_tenant_isolation_on_clean_schema():
+    foundation = (
+        ROOT / "backend/migrations/versions/20261002_marketing_workflow_foundation.py"
+    ).read_text(encoding="utf-8")
+    isolation = (
+        ROOT / "backend/migrations/versions/20261003_marketing_workflow_tenant_isolation.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'down_revision = "20260930_tenant_runtime_uniqueness"' in foundation
+    assert "CREATE TABLE IF NOT EXISTS marketing_workflows" in foundation
+    assert "CREATE TABLE IF NOT EXISTS marketing_workflow_comments" in foundation
+    assert 'down_revision = "20261002_marketing_workflow_foundation"' in isolation
+
+
 def test_marketing_workflow_route_scopes_every_operation():
     source = (ROOT / "backend/routes/marketing_workflow.py").read_text(encoding="utf-8")
     assert "block_unsafe_wave6_route" not in source

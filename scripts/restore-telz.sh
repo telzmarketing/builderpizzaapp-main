@@ -335,7 +335,7 @@ import ast
 import os
 import sys
 from pathlib import Path
-from urllib.parse import quote, unquote, urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit
 
 database_url = None
 for raw_line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
@@ -365,29 +365,34 @@ except ValueError as exc:
     raise SystemExit("porta PostgreSQL invalida") from exc
 username = unquote(parsed.username or "")
 password = unquote(parsed.password or "") if parsed.password is not None else ""
-if any(char in password for char in ("\x00", "\n", "\r")):
-    raise SystemExit("senha PostgreSQL invalida")
+database = unquote(parsed.path.lstrip("/"))
+if not username or not database:
+    raise SystemExit("DATABASE_URL deve informar usuario e banco PostgreSQL")
+if any(char in value for value in (username, password, database) for char in ("\x00", "\n", "\r")):
+    raise SystemExit("credencial PostgreSQL invalida")
 host = parsed.hostname or ""
-host_part = f"[{host}]" if ":" in host and not host.startswith("[") else host
-user_part = quote(username, safe="") if username else ""
-netloc = f"{user_part}@" if user_part else ""
-netloc += host_part
-if port is not None:
-    netloc += f":{port}"
-safe_uri = urlunsplit((scheme, netloc, parsed.path, parsed.query, ""))
+if any(char in host for char in ("\x00", "\n", "\r")):
+    raise SystemExit("host PostgreSQL invalido")
 target = Path(sys.argv[2])
-(target / "pgdatabase").write_text(safe_uri, encoding="utf-8")
+(target / "pgconnection").write_bytes(
+    b"\0".join(value.encode("utf-8") for value in (host, str(port or ""), username, database)) + b"\0"
+)
 escaped = password.replace("\\", "\\\\").replace(":", "\\:")
 (target / "pgpass").write_text(
     f"*:*:*:*:{escaped}\n" if parsed.password is not None else "",
     encoding="utf-8",
 )
-os.chmod(target / "pgdatabase", 0o600)
+os.chmod(target / "pgconnection", 0o600)
 os.chmod(target / "pgpass", 0o600)
 PY
 }
 prepare_libpq "$INSTALL_DIR/backend/.env" "$CONNECTION_DIR"
-PGDATABASE_SAFE="$(<"$CONNECTION_DIR/pgdatabase")"
+mapfile -d '' -t PG_CONNECTION < "$CONNECTION_DIR/pgconnection"
+[[ "${#PG_CONNECTION[@]}" -eq 4 ]] || die "credenciais PostgreSQL invalidas"
+PG_HOST="${PG_CONNECTION[0]}"
+PG_PORT="${PG_CONNECTION[1]}"
+PG_USER="${PG_CONNECTION[2]}"
+PG_DATABASE="${PG_CONNECTION[3]}"
 
 RESULT_FILE="$(mktemp /tmp/telz-safety-backup.XXXXXX)"
 chmod 0600 "$RESULT_FILE"
@@ -484,7 +489,7 @@ run_recovery_step() {
 }
 
 restore_safety_database() {
-  PGPASSFILE="$CONNECTION_DIR/pgpass" PGDATABASE="$PGDATABASE_SAFE" \
+  PGPASSFILE="$CONNECTION_DIR/pgpass" PGHOST="$PG_HOST" PGPORT="$PG_PORT" PGUSER="$PG_USER" PGDATABASE="$PG_DATABASE" \
     pg_restore --clean --if-exists --no-owner --exit-on-error --single-transaction \
       < "$SAFETY_SET/database.dump"
 }
@@ -605,7 +610,7 @@ PY
 
 echo "[restore] restaurando PostgreSQL revision=$MANIFEST_REVISION"
 DB_MODIFIED=true
-PGPASSFILE="$CONNECTION_DIR/pgpass" PGDATABASE="$PGDATABASE_SAFE" \
+PGPASSFILE="$CONNECTION_DIR/pgpass" PGHOST="$PG_HOST" PGPORT="$PG_PORT" PGUSER="$PG_USER" PGDATABASE="$PG_DATABASE" \
   pg_restore --clean --if-exists --no-owner --exit-on-error --single-transaction \
     < "$BACKUP_SET/database.dump"
 validate_database_revision "$MANIFEST_REVISION" || die "dump restaurado diverge da revision do manifest"
