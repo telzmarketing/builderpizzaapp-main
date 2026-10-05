@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_TARGET_FILES = {
     "installer/config/defaults.env",
     "scripts/update-telz.sh",
+    "scripts/deploy-telz-from-origin.sh",
     ".github/workflows/deploy.yml",
     ".github/workflows/prepare-manual-deploy.yml",
     "docs/INSTALL_TELZ_VPS.md",

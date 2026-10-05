@@ -8,7 +8,7 @@ uma reconstrucao planejada; ele nao deve ser reutilizado como updater.
 
 ## 1. Caminhos suportados
 
-Existem dois caminhos aprovados. Ambos exigem CI verde no commit exato e nunca
+Existem tres caminhos aprovados. Todos exigem CI verde no commit exato e nunca
 autorizam `git pull`, instalador, `alembic upgrade` ou updater isolado.
 
 ### 1.1 Deploy remoto pelo GitHub
@@ -28,7 +28,34 @@ requer que o GitHub tenha acesso SSH verificado a VPS. O workflow:
 9. cria backup, aplica a revision explicita, troca `current`, reinicia e executa
    health local e HTTPS publico.
 
-### 1.2 Deploy manual por pacote selado
+### 1.2 Deploy direto pela VPS com Git SSH
+
+Use este caminho quando a VPS possui uma chave SSH de saida ja autorizada no
+GitHub. A VPS busca o commit aprovado, mas nao faz `git pull`: o helper exige
+o SHA completo, monta artefatos locais com hash, usa a mesma promocao imutavel
+e delega backup, migration, recuperacao e health ao updater endurecido.
+
+Antes da janela, substitua `<SHA-ALVO>` pelo SHA completo que esta verde no CI
+e execute, como `root`, exatamente nesta ordem:
+
+```bash
+TARGET=<SHA-ALVO>
+sudo -u telz -H git -C /opt/telz fetch --prune origin main
+sudo -u telz -H git -C /opt/telz status --short
+sudo -u telz -H git -C /opt/telz cat-file -e "$TARGET^{commit}"
+sudo -u telz -H git -C /opt/telz show "$TARGET:scripts/deploy-telz-from-origin.sh" \
+  | sudo install -m 0755 -o root -g root /dev/stdin /usr/local/sbin/telz-deploy-from-origin
+sudo /usr/local/sbin/telz-deploy-from-origin "$TARGET" /opt/telz
+```
+
+O segundo comando precisa retornar vazio. Se retornar qualquer arquivo, pare:
+nao use `reset`, `checkout` ou `clean` para contornar o bloqueio. O helper
+tambem recusa SHA que nao seja fast-forward da release ativa ou que nao esteja
+em `origin/main`. Ele pode baixar dependencias Python e pnpm da VPS somente
+como usuario de build isolado; por isso a VPS precisa ter acesso de saida aos
+registries durante a janela.
+
+### 1.3 Deploy manual por pacote selado
 
 Quando a VPS nao deve ser acessada pelo GitHub, use
 `.github/workflows/prepare-manual-deploy.yml`. Ele nao possui secrets, SSH ou
@@ -170,8 +197,8 @@ deploy, todos estes inputs promovidos e root-owned:
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
 remove a cadeia de promocao/verificacao e nao constitui procedimento aprovado.
-O unico caminho manual aprovado e o pacote selado e o helper descritos na secao
-1.2; nao use o instalador como fallback.
+Os unicos caminhos manuais aprovados sao o helper de origem da secao 1.2 e o
+pacote selado da secao 1.3; nao use o instalador como fallback.
 
 ## 4. Falha, recuperacao e rollback
 
