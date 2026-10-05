@@ -180,7 +180,7 @@ export default function TopNavigation({
         <button
           type="button"
           onClick={() => onMobileMenuChange(true)}
-          className="flex h-10 w-10 items-center justify-center rounded-xl border border-surface-03 text-stone transition-colors hover:bg-surface-03 hover:text-cream lg:hidden"
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-surface-03 text-stone transition-colors hover:bg-surface-03 hover:text-cream 2xl:hidden"
           aria-label="Abrir navegacao"
         >
           <Menu size={20} />
@@ -203,7 +203,7 @@ export default function TopNavigation({
           </span>
         </Link>
 
-        <nav className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto pl-2 lg:flex" aria-label="Modulos principais">
+        <nav className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto pl-2 2xl:flex" aria-label="Modulos principais">
           {navigationGroups.map((group) => {
             const Icon = group.children[0]?.icon;
             const active = activeGroup?.label === group.label;
@@ -232,7 +232,7 @@ export default function TopNavigation({
           {!supportSession && <AdminTenantSwitcher />}
         </div>
 
-        <div ref={searchRef} className="relative hidden lg:block">
+        <div ref={searchRef} className="relative hidden 2xl:block">
           <form
             onSubmit={handleSearchSubmit}
             className="flex h-10 w-44 items-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-3 transition-colors focus-within:border-gold/50 xl:w-56 2xl:w-72"
@@ -335,7 +335,7 @@ export default function TopNavigation({
       </header>
 
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-[70] flex flex-col bg-surface-00 lg:hidden">
+        <div className="fixed inset-0 z-[70] flex flex-col bg-surface-00 2xl:hidden">
           <div className="flex h-[68px] shrink-0 items-center justify-between border-b border-surface-03 bg-surface-02 px-4">
             <div>
               <p className="text-sm font-black text-cream">Navegacao do painel</p>

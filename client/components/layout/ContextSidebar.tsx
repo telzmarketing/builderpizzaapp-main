@@ -75,7 +75,7 @@ export default function ContextSidebar() {
 
   return (
     <aside
-      className={`context-sidebar admin-sidebar hidden h-full flex-shrink-0 flex-col border-r border-surface-03 bg-surface-02 transition-[width] duration-300 ease-out md:flex ${
+      className={`context-sidebar admin-sidebar hidden h-full flex-shrink-0 flex-col border-r border-surface-03 bg-surface-02 transition-[width] duration-300 ease-out 2xl:flex ${
         collapsed ? "w-[68px]" : "w-60"
       }`}
     >

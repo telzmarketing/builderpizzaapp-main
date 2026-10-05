@@ -87,6 +87,16 @@
   background: color-mix(in srgb, var(--bg-alt) 92%, #000 8%);
 }
 
+/* The tenant panel uses the full-screen navigation drawer below 2xl.  Keeping
+ * both horizontal module navigation and the contextual sidebar at notebook
+ * widths left too little room for forms and exposed a horizontal nav scrollbar.
+ * PlatformAdminLayout is outside .admin-shell .app-layout and is unaffected. */
+@media (max-width: 1535px) {
+  .admin-shell .admin-layout-content :where(.max-w-2xl) {
+    max-width: 56rem;
+  }
+}
+
 .admin-layout-content :where(.min-h-screen, .flex, .flex-col):has([data-admin-sidebar-placeholder]) {
   min-height: 0 !important;
   height: auto !important;
