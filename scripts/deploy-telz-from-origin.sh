@@ -155,10 +155,32 @@ chown -R root:root "$STAGE_DIR/target-source" "$STAGE_DIR/previous-source"
 find "$STAGE_DIR/target-source" "$STAGE_DIR/previous-source" -type d -exec chmod 0555 {} +
 find "$STAGE_DIR/target-source" "$STAGE_DIR/previous-source" -type f -exec chmod 0444 {} +
 
+# Keep the archived source immutable.  pnpm may create bookkeeping files next
+# to its lockfile even when scripts are disabled, so it receives a separate,
+# disposable tree owned by the build account.  Reject link and special-file
+# entries before copying and again after copying: the build account must never
+# be given a path that can escape this staging directory.
+for source_tree in "$STAGE_DIR/target-source" "$STAGE_DIR/previous-source"; do
+  [[ -z "$(find "$source_tree" -xdev -type l -print -quit)" ]] || die "fonte arquivada contem symlink"
+  [[ -z "$(find "$source_tree" -xdev ! -type d ! -type f -print -quit)" ]] || die "fonte arquivada contem tipo especial"
+done
+
 install -d -m 0700 -o "$BUILD_USER" -g "$BUILD_GROUP" \
   "$DEPENDENCIES" "$DEPENDENCIES/wheelhouse" "$DEPENDENCIES/pnpm-store" "$STAGE_DIR/build-home"
 install -d -m 0700 -o "$BUILD_USER" -g "$BUILD_GROUP" \
   "$STAGE_DIR/build-home/cache" "$STAGE_DIR/build-home/config"
+BUILD_TARGET_SOURCE="$STAGE_DIR/build-target-source"
+BUILD_PREVIOUS_SOURCE="$STAGE_DIR/build-previous-source"
+install -d -m 0700 -o "$BUILD_USER" -g "$BUILD_GROUP" "$BUILD_TARGET_SOURCE" "$BUILD_PREVIOUS_SOURCE"
+cp -a -- "$STAGE_DIR/target-source/." "$BUILD_TARGET_SOURCE/"
+cp -a -- "$STAGE_DIR/previous-source/." "$BUILD_PREVIOUS_SOURCE/"
+chown -R "$BUILD_USER:$BUILD_GROUP" "$BUILD_TARGET_SOURCE" "$BUILD_PREVIOUS_SOURCE"
+for source_tree in "$BUILD_TARGET_SOURCE" "$BUILD_PREVIOUS_SOURCE"; do
+  [[ -z "$(find "$source_tree" -xdev -type l -print -quit)" ]] || die "fonte de build contem symlink"
+  [[ -z "$(find "$source_tree" -xdev ! -type d ! -type f -print -quit)" ]] || die "fonte de build contem tipo especial"
+  find "$source_tree" -type d -exec chmod 0700 {} +
+  find "$source_tree" -type f -exec chmod 0600 {} +
+done
 run_as_builder() {
   sudo -u "$BUILD_USER" -H env -i \
     HOME="$STAGE_DIR/build-home" XDG_CACHE_HOME="$STAGE_DIR/build-home/cache" XDG_CONFIG_HOME="$STAGE_DIR/build-home/config" \
@@ -187,8 +209,8 @@ for report, output in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[4])):
 PY
 chown "$BUILD_USER:$BUILD_GROUP" "$STAGE_DIR"/*-freeze.txt
 run_as_builder python3.12 -m pip download --only-binary=:all: --dest "$DEPENDENCIES/wheelhouse" pip==25.1.1 pytest==8.3.5 -r "$STAGE_DIR/target-freeze.txt" -r "$STAGE_DIR/previous-freeze.txt"
-run_as_builder_in "$STAGE_DIR/target-source" pnpm fetch --frozen-lockfile --ignore-scripts --store-dir "$DEPENDENCIES/pnpm-store"
-run_as_builder_in "$STAGE_DIR/previous-source" pnpm fetch --frozen-lockfile --ignore-scripts --store-dir "$DEPENDENCIES/pnpm-store"
+run_as_builder_in "$BUILD_TARGET_SOURCE" pnpm fetch --frozen-lockfile --ignore-scripts --store-dir "$DEPENDENCIES/pnpm-store"
+run_as_builder_in "$BUILD_PREVIOUS_SOURCE" pnpm fetch --frozen-lockfile --ignore-scripts --store-dir "$DEPENDENCIES/pnpm-store"
 
 /usr/bin/python3 - "$DEPENDENCIES" "$TARGET_COMMIT" "$PREVIOUS_COMMIT" "$STAGE_DIR/target-source" "$STAGE_DIR/previous-source" "$STAGE_DIR/target-freeze.txt" "$STAGE_DIR/previous-freeze.txt" <<'PY'
 import hashlib, json, sys

@@ -32,7 +32,14 @@ def test_origin_deploy_keeps_artifacts_root_owned_and_never_runs_checkout_script
     assert 'NPM_CONFIG_GLOBALCONFIG=/dev/null' in source
     assert "cd -- \"$1\"; shift; exec \"$@\"" in source
     assert 'run_as_builder python3.12 -m pip download --only-binary=:all:' in source
-    assert 'run_as_builder_in "$STAGE_DIR/target-source" pnpm fetch --frozen-lockfile --ignore-scripts' in source
+    assert 'BUILD_TARGET_SOURCE="$STAGE_DIR/build-target-source"' in source
+    assert 'BUILD_PREVIOUS_SOURCE="$STAGE_DIR/build-previous-source"' in source
+    assert 'cp -a -- "$STAGE_DIR/target-source/." "$BUILD_TARGET_SOURCE/"' in source
+    assert 'chown -R "$BUILD_USER:$BUILD_GROUP" "$BUILD_TARGET_SOURCE" "$BUILD_PREVIOUS_SOURCE"' in source
+    assert 'fonte de build contem symlink' in source
+    assert 'fonte de build contem tipo especial' in source
+    assert 'run_as_builder_in "$BUILD_TARGET_SOURCE" pnpm fetch --frozen-lockfile --ignore-scripts' in source
+    assert 'run_as_builder_in "$BUILD_PREVIOUS_SOURCE" pnpm fetch --frozen-lockfile --ignore-scripts' in source
     assert 'alembic upgrade' not in source
     assert 'systemctl restart' not in source
     assert 'git -C "$INSTALL_DIR" merge ' not in source
