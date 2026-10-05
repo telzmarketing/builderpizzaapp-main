@@ -8,6 +8,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.exceptions import DomainError
+from backend.core.tenant_context import TenantContext, TenantContextMissing
+from backend.core.wave7_tenant_orm import wave7_orm_enabled
 from backend.models.finance import FinanceAccount, FinanceCategory, FinanceCounterparty, FinanceSettlement, FinanceTransaction
 from backend.models.gestao import GestaoModuleSettings
 from backend.models.inventory import InventoryPurchase
@@ -32,9 +34,31 @@ class FinanceInvalidReference(DomainError):
 
 
 class FinanceService:
-    def __init__(self, db: Session, tenant_id: str = TENANT_ID):
+    def __init__(
+        self,
+        db: Session,
+        tenant_id: str = TENANT_ID,
+        tenant_context: TenantContext | None = None,
+    ):
         self._db = db
-        self._tenant_id = tenant_id
+        self._tenant_context = tenant_context
+        self._tenant_id = self._resolve_tenant_id(tenant_id, tenant_context)
+
+    @staticmethod
+    def _resolve_tenant_id(tenant_id: str | None, context: TenantContext | None) -> str:
+        """Require a server-resolved context once Wave 7 is enabled.
+
+        A raw id from a route, event or provider payload is never sufficient
+        proof of ownership.  The legacy default remains only while the Wave 7
+        gate is disabled.
+        """
+        if not wave7_orm_enabled():
+            return tenant_id or TENANT_ID
+        if context is None:
+            raise TenantContextMissing("Contexto confiavel obrigatorio para financeiro da Wave 7.")
+        if tenant_id not in {None, TENANT_ID, context.tenant_id}:
+            context.assert_tenant(tenant_id)
+        return context.tenant_id
 
     def overview(self) -> dict:
         return {
@@ -299,10 +323,11 @@ class FinanceService:
         if existing and any(item.idempotency_key == f"payment-confirmed:{payment_id}" for item in existing.settlements):
             return {"created": False, "reason": "already_synced", "transaction_id": existing.id}
 
-        payment = self._db.query(Payment).filter(Payment.id == payment_id).first()
-        order = self._db.query(Order).filter(Order.id == order_id).first()
+        payment, order = self._payment_and_order(payment_id=payment_id, order_id=order_id)
+        if not payment or not order:
+            return {"created": False, "reason": "payment_or_order_not_found"}
         paid_at = payment.paid_at if payment and payment.paid_at else datetime.now(timezone.utc)
-        receivable_amount = round(float(payment.amount if payment else amount or 0.0), 2)
+        receivable_amount = round(float(payment.amount or amount or 0.0), 2)
         if receivable_amount <= 0:
             return {"created": False, "reason": "invalid_amount"}
 
@@ -313,13 +338,13 @@ class FinanceService:
         if existing:
             row = existing
         else:
-            order_label = order.order_code or order.id if order else order_id
+            order_label = order.order_code or order.id
             row = FinanceTransaction(
                 id=f"fin-trx-{uuid.uuid4().hex[:12]}",
                 tenant_id=self._tenant_id,
                 account_id=account_id,
                 category_id=self._ensure_category("Receita de pedidos", "income", "gross_revenue"),
-                cost_center=order.sales_channel if order and order.sales_channel else "delivery",
+                cost_center=order.sales_channel or "delivery",
                 entry_type="income",
                 status="paid",
                 description=f"Recebimento do pedido {order_label}",
@@ -328,8 +353,8 @@ class FinanceService:
                 competence_date=paid_at.date(),
                 due_date=paid_at.date(),
                 paid_at=paid_at,
-                payment_method=(payment.method.value if payment and hasattr(payment.method, "value") else str(payment.method)) if payment else gateway,
-                payment_reference=transaction_id or (payment.transaction_id if payment else None),
+                payment_method=(payment.method.value if hasattr(payment.method, "value") else str(payment.method)),
+                payment_reference=transaction_id or payment.transaction_id,
                 order_id=order_id,
                 payment_id=payment_id,
                 origin_type="payment_receivable",
@@ -600,6 +625,7 @@ class FinanceService:
             data["counterparty_type"] = data.get("counterparty_type") or counterparty.counterparty_type
             data["counterparty_name"] = data.get("counterparty_name") or counterparty.name
             data["counterparty_document"] = data.get("counterparty_document") or counterparty.document
+        self._validate_transaction_ownership(data)
         if int(data.get("installment_number") or 1) > int(data.get("installment_total") or 1):
             raise FinanceInvalidReference("A parcela atual nao pode ser maior que o total de parcelas.")
         if data["status"] == "paid" and not data.get("paid_at"):
@@ -639,6 +665,47 @@ class FinanceService:
             return json.loads(item.settings_json or "{}")
         except json.JSONDecodeError:
             return {}
+
+    def _payment_and_order(self, *, payment_id: str, order_id: str) -> tuple[Payment | None, Order | None]:
+        payment = (
+            self._db.query(Payment)
+            .filter(Payment.tenant_id == self._tenant_id, Payment.id == payment_id)
+            .first()
+        )
+        order = (
+            self._db.query(Order)
+            .filter(Order.tenant_id == self._tenant_id, Order.id == order_id)
+            .first()
+        )
+        if payment and order and payment.order_id != order.id:
+            return None, None
+        return payment, order
+
+    def _validate_transaction_ownership(self, data: dict) -> None:
+        """Reject cross-company links before an ORM relationship can persist them."""
+        if not wave7_orm_enabled():
+            return
+        if data.get("order_id"):
+            order = self._db.query(Order).filter(
+                Order.tenant_id == self._tenant_id, Order.id == data["order_id"]
+            ).first()
+            if not order:
+                raise FinanceInvalidReference("Pedido nao pertence a empresa atual.")
+        if data.get("payment_id"):
+            payment = self._db.query(Payment).filter(
+                Payment.tenant_id == self._tenant_id, Payment.id == data["payment_id"]
+            ).first()
+            if not payment:
+                raise FinanceInvalidReference("Pagamento nao pertence a empresa atual.")
+            if data.get("order_id") and payment.order_id != data["order_id"]:
+                raise FinanceInvalidReference("Pagamento nao pertence ao pedido informado.")
+        if data.get("inventory_purchase_id"):
+            purchase = self._db.query(InventoryPurchase).filter(
+                InventoryPurchase.tenant_id == self._tenant_id,
+                InventoryPurchase.id == data["inventory_purchase_id"],
+            ).first()
+            if not purchase:
+                raise FinanceInvalidReference("Compra de estoque nao pertence a empresa atual.")
 
     def _validate_category_refs(self, data: dict, current_id: str | None = None) -> None:
         parent_id = data.get("parent_id")

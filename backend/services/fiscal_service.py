@@ -10,6 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.exceptions import DomainError
+from backend.core.tenant_context import TenantContext, TenantContextMissing
+from backend.core.wave7_tenant_orm import wave7_orm_enabled
 from backend.models.fiscal import (
     FiscalCertificate,
     FiscalCompany,
@@ -48,9 +50,26 @@ class FiscalInvalidOperation(DomainError):
 
 
 class FiscalService:
-    def __init__(self, db: Session, tenant_id: str = TENANT_ID):
+    def __init__(
+        self,
+        db: Session,
+        tenant_id: str = TENANT_ID,
+        tenant_context: TenantContext | None = None,
+    ):
         self._db = db
-        self._tenant_id = tenant_id
+        self._tenant_context = tenant_context
+        self._tenant_id = self._resolve_tenant_id(tenant_id, tenant_context)
+
+    @staticmethod
+    def _resolve_tenant_id(tenant_id: str | None, context: TenantContext | None) -> str:
+        """Use only a trusted context after the Wave 7 ownership gate opens."""
+        if not wave7_orm_enabled():
+            return tenant_id or TENANT_ID
+        if context is None:
+            raise TenantContextMissing("Contexto confiavel obrigatorio para fiscal da Wave 7.")
+        if tenant_id not in {None, TENANT_ID, context.tenant_id}:
+            context.assert_tenant(tenant_id)
+        return context.tenant_id
 
     def overview(self) -> dict:
         documents = self.list_documents()
@@ -136,7 +155,11 @@ class FiscalService:
     def upsert_product_profile(self, product_id: str, payload: FiscalProductProfileIn) -> dict:
         if product_id != payload.product_id:
             raise FiscalInvalidOperation("Produto da URL precisa ser o mesmo do perfil fiscal.")
-        product = self._db.query(Product).filter(Product.id == product_id).first()
+        product = (
+            self._db.query(Product)
+            .filter(Product.tenant_id == self._tenant_id, Product.id == product_id)
+            .first()
+        )
         if not product:
             raise FiscalNotFound("Produto")
         row = (
@@ -177,7 +200,7 @@ class FiscalService:
         order = (
             self._db.query(Order)
             .options(joinedload(Order.items).joinedload(OrderItem.flavors))
-            .filter(Order.id == order_id)
+            .filter(Order.tenant_id == self._tenant_id, Order.id == order_id)
             .first()
         )
         if not order:
@@ -240,6 +263,7 @@ class FiscalService:
         for item in items_payload:
             self._db.add(FiscalDocumentItem(
                 id=f"fis-itm-{uuid.uuid4().hex[:12]}",
+                tenant_id=self._tenant_id,
                 document_id=row.id,
                 **item,
             ))
@@ -415,7 +439,12 @@ class FiscalService:
 
     def _order_items_snapshot(self, order: Order) -> list[dict]:
         product_ids = {item.product_id for item in order.items}
-        products = {row.id: row for row in self._db.query(Product).filter(Product.id.in_(product_ids)).all()} if product_ids else {}
+        products = {
+            row.id: row
+            for row in self._db.query(Product)
+            .filter(Product.tenant_id == self._tenant_id, Product.id.in_(product_ids))
+            .all()
+        } if product_ids else {}
         profiles = {
             row.product_id: row
             for row in self._db.query(FiscalProductProfile)

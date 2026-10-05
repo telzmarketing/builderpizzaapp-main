@@ -6,9 +6,15 @@ import re
 from pathlib import Path
 from typing import Iterator, Mapping
 from backend.core.tenant_context import TenantContext, TenantContextError, TenantContextMissing, TenantSource, trusted_process_context
+from backend.config import get_settings
 
 _current_context: ContextVar[TenantContext | None] = ContextVar("tenant_context", default=None)
 _SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def background_context_enforcement_enabled() -> bool:
+    """Whether tenant-owned asynchronous work must carry durable metadata."""
+    return bool(get_settings().TENANT_BACKGROUND_CONTEXT_ENABLED)
 
 def job_metadata(context: TenantContext) -> dict[str, str]:
     if context.source not in {TenantSource.PANEL, TenantSource.WEBHOOK, TenantSource.JOB}:

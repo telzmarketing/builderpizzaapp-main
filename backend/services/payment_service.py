@@ -39,6 +39,7 @@ from backend.core.exceptions import (
     WebhookSignatureInvalid,
 )
 from backend.core.state_machine import order_sm, payment_sm
+from backend.core.tenant_context import TenantSource, trusted_process_context
 from backend.models.order import Order, OrderStatus
 from backend.models.payment import Payment, PaymentEvent, PaymentMethod, PaymentStatus
 from backend.models.payment_config import PaymentGatewayConfig
@@ -62,10 +63,27 @@ from backend.services.payment_gateway_resolver import (
     PaymentGatewayResolver,
     normalize_payment_provider,
 )
+from backend.services.payment_webhook_tenant_resolver import (
+    PaymentWebhookTenantResolutionError,
+    PaymentWebhookTenantResolver,
+)
 
 settings = get_settings()
 MP_API_BASE = "https://api.mercadopago.com"
 _logger = logging.getLogger(__name__)
+
+
+def _public_store_base_url() -> str:
+    return (settings.PUBLIC_STORE_URL or settings.VITE_PUBLIC_STORE_URL or "https://delivery.moschettieri.com.br").strip().rstrip("/")
+
+
+def _tenant_webhook_provider_path(provider: str) -> str:
+    provider = (provider or "").strip().lower()
+    if provider == PROVIDER_MERCADO_PAGO:
+        return "mercadopago"
+    if provider in {PROVIDER_ASAAS, PROVIDER_PAGARME}:
+        return provider
+    raise PaymentWebhookTenantResolutionError("Provider de webhook nao suportado.")
 
 
 def _provider_name(value: str | None) -> str:
@@ -292,6 +310,19 @@ class PaymentService:
     def _resolver(self) -> PaymentGatewayResolver:
         return PaymentGatewayResolver(self._cfg())
 
+    def _webhook_notification_url(self, provider: str) -> str:
+        base_url = _public_store_base_url()
+        if not settings.TENANT_PAYMENT_WEBHOOKS_ENABLED:
+            return f"{base_url}/api/payments/webhook"
+        if not self._tenant_id:
+            raise PaymentWebhookTenantResolutionError("Webhook multiempresa exige tenant confiavel.")
+        endpoint_key = PaymentWebhookTenantResolver(
+            self._db,
+            settings.TENANT_PAYMENT_WEBHOOK_ENDPOINTS,
+        ).endpoint_key_for(self._tenant_id, provider)
+        provider_path = _tenant_webhook_provider_path(provider)
+        return f"{base_url}/api/webhooks/{provider_path}/{endpoint_key}"
+
     def public_key(self) -> dict[str, str]:
         cfg = self._cfg()
         return {"public_key": settings.MERCADO_PAGO_PUBLIC_KEY or cfg.mp_public_key or ""}
@@ -472,7 +503,11 @@ class PaymentService:
             self._db.commit()
 
         self._db.refresh(payment)
-        bus.publish(PaymentCreated(payment_id=payment.id, order_id=payment.order_id, method=payment.method.value, amount=payment.amount, gateway=payment.gateway))
+        bus.publish(PaymentCreated(
+            payment_id=payment.id, order_id=payment.order_id,
+            method=payment.method.value, amount=payment.amount,
+            gateway=payment.gateway, tenant_id=payment.tenant_id,
+        ))
         return PaymentOut.model_validate(payment)
 
     def _create_pagarme_payment(
@@ -519,7 +554,11 @@ class PaymentService:
             payment.status = PaymentStatus.pending
             self._db.commit()
         self._db.refresh(payment)
-        bus.publish(PaymentCreated(payment_id=payment.id, order_id=payment.order_id, method=payment.method.value, amount=payment.amount, gateway=payment.gateway))
+        bus.publish(PaymentCreated(
+            payment_id=payment.id, order_id=payment.order_id,
+            method=payment.method.value, amount=payment.amount,
+            gateway=payment.gateway, tenant_id=payment.tenant_id,
+        ))
         return PaymentOut.model_validate(payment)
 
     def _create_asaas_pix_payment(
@@ -582,7 +621,11 @@ class PaymentService:
         )
         self._db.commit()
         self._db.refresh(payment)
-        bus.publish(PaymentCreated(payment_id=payment.id, order_id=payment.order_id, method=payment.method.value, amount=payment.amount, gateway=payment.gateway))
+        bus.publish(PaymentCreated(
+            payment_id=payment.id, order_id=payment.order_id,
+            method=payment.method.value, amount=payment.amount,
+            gateway=payment.gateway, tenant_id=payment.tenant_id,
+        ))
         return PaymentOut.model_validate(payment)
 
     def create_asaas_credit_card(self, payload: AsaasCreditCardPaymentCreate, *, client_ip: str | None) -> PaymentOut:
@@ -668,7 +711,11 @@ class PaymentService:
             self._db.commit()
 
         self._db.refresh(payment)
-        bus.publish(PaymentCreated(payment_id=payment.id, order_id=payment.order_id, method=payment.method.value, amount=payment.amount, gateway=payment.gateway))
+        bus.publish(PaymentCreated(
+            payment_id=payment.id, order_id=payment.order_id,
+            method=payment.method.value, amount=payment.amount,
+            gateway=payment.gateway, tenant_id=payment.tenant_id,
+        ))
         return PaymentOut.model_validate(payment)
 
     def _build_mp_payment_body(self, order: Order, payment: Payment, form_data: dict[str, Any], amount: float) -> dict[str, Any]:
@@ -752,7 +799,11 @@ class PaymentService:
         self._db.flush()
         from backend.services.inventory_service import InventoryService
 
-        InventoryService(self._db).consume_order_sale(order.id)
+        InventoryService(
+            self._db,
+            order.tenant_id,
+            trusted_process_context(order.tenant_id, source=TenantSource.WEBHOOK),
+        ).consume_order_sale(order.id)
         sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
         self._db.commit()
         self._db.refresh(payment)
@@ -824,14 +875,22 @@ class PaymentService:
             if status == PaymentStatus.approved:
                 from backend.services.inventory_service import InventoryService
 
-                inventory_service = InventoryService(self._db)
+                inventory_service = InventoryService(
+                    self._db,
+                    order.tenant_id,
+                    trusted_process_context(order.tenant_id, source=TenantSource.WEBHOOK),
+                )
                 inventory_service.consume_order_sale(order.id)
             current_order_status = order.status.value if hasattr(order.status, "value") else str(order.status)
             if current_order_status in {"cancelled", "refunded"}:
                 if inventory_service is None:
                     from backend.services.inventory_service import InventoryService
 
-                    inventory_service = InventoryService(self._db)
+                    inventory_service = InventoryService(
+                        self._db,
+                        order.tenant_id,
+                        trusted_process_context(order.tenant_id, source=TenantSource.WEBHOOK),
+                    )
                 inventory_service.reverse_order_sale(order.id)
             sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
 
@@ -871,7 +930,12 @@ class PaymentService:
                 except Exception as exc:
                     _logger.warning("Falha ao registrar evento de tráfego pago: order_id=%s error=%s", payment.order_id, exc)
             try:
-                bus.publish(PaymentConfirmed(payment_id=payment.id, order_id=payment.order_id, amount=payment.amount, gateway=payment.gateway, transaction_id=payment.transaction_id or ""))
+                bus.publish(PaymentConfirmed(
+                    payment_id=payment.id, order_id=payment.order_id,
+                    amount=payment.amount, gateway=payment.gateway,
+                    transaction_id=payment.transaction_id or "",
+                    tenant_id=payment.tenant_id,
+                ))
             except Exception as exc:
                 _logger.warning("Falha ao publicar evento PaymentConfirmed: payment_id=%s error=%s", payment.id, exc)
         elif status in {PaymentStatus.rejected, PaymentStatus.cancelled, PaymentStatus.expired}:
@@ -880,7 +944,11 @@ class PaymentService:
                 status.value, payment.id, payment.order_id, source,
             )
             try:
-                bus.publish(PaymentFailed(payment_id=payment.id, order_id=payment.order_id, reason=f"{source}:{status.value}"))
+                bus.publish(PaymentFailed(
+                    payment_id=payment.id, order_id=payment.order_id,
+                    reason=f"{source}:{status.value}",
+                    tenant_id=payment.tenant_id,
+                ))
             except Exception as exc:
                 _logger.warning("Falha ao publicar evento PaymentFailed: payment_id=%s error=%s", payment.id, exc)
         elif status == PaymentStatus.refunded and status_changed:
@@ -896,6 +964,7 @@ class PaymentService:
                     gateway=payment.gateway,
                     transaction_id=payment.transaction_id or "",
                     reason=f"{source}:{requested_status.value}",
+                    tenant_id=payment.tenant_id,
                 ))
             except Exception as exc:
                 _logger.warning("Falha ao publicar evento PaymentReversed: payment_id=%s error=%s", payment.id, exc)
@@ -1468,7 +1537,7 @@ class PaymentService:
         if not cfg.accept_debit_card:
             excluded_payment_types.append({"id": "debit_card"})
 
-        base_url = "https://delivery.moschettieri.com.br"
+        base_url = _public_store_base_url()
         body = {
             "items": [{
                 "title": f"Moschettieri - Pedido #{order.id[:8].upper()}",
@@ -1489,7 +1558,7 @@ class PaymentService:
                 "failure": f"{base_url}/order-tracking?orderId={order.id}",
                 "pending": f"{base_url}/order-tracking?orderId={order.id}",
             },
-            "notification_url": f"{base_url}/api/payments/webhook",
+            "notification_url": self._webhook_notification_url(PROVIDER_MERCADO_PAGO),
             "external_reference": order.external_reference or order.id,
             "auto_return": "all",
             "metadata": {"order_id": order.id, "payment_id": payment.id},
@@ -1507,7 +1576,11 @@ class PaymentService:
         payment.status = PaymentStatus.pending
         self._db.commit()
         self._db.refresh(payment)
-        bus.publish(PaymentCreated(payment_id=payment.id, order_id=payment.order_id, method=payment.method.value, amount=payment.amount, gateway=payment.gateway))
+        bus.publish(PaymentCreated(
+            payment_id=payment.id, order_id=payment.order_id,
+            method=payment.method.value, amount=payment.amount,
+            gateway=payment.gateway, tenant_id=payment.tenant_id,
+        ))
 
         return {
             "preference_id": response.get("id"),

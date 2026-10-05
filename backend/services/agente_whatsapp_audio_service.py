@@ -294,6 +294,10 @@ class AgenteWhatsAppAudioService:
 
     def _read_local_upload(self, media_ref: str) -> _AudioSource:
         relative = media_ref.lstrip("/").replace("\\", "/")
+        if self._settings.TENANT_UPLOAD_NAMESPACE_ENABLED:
+            parts = Path(relative).parts
+            if len(parts) != 3 or parts[0] != "uploads" or parts[1] != self._tenant_id:
+                raise ValueError("Midia local nao pertence a empresa da mensagem.")
         path = (PROJECT_ROOT / relative).resolve()
         uploads_root = (PROJECT_ROOT / "uploads").resolve()
         if uploads_root not in path.parents and path != uploads_root:

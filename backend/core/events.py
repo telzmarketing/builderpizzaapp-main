@@ -219,6 +219,7 @@ class ShippingCalculated(DomainEvent):
     rule_name: str
     shipping_price: float
     free: bool
+    tenant_id: str | None = None
 
 
 # ── Event Bus ─────────────────────────────────────────────────────────────────

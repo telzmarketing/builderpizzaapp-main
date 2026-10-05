@@ -325,6 +325,7 @@ class KdsService:
             delivery_id=delivery.id, order_id=order.id,
             delivery_person_id=person.id, delivery_person_name=person.name,
             estimated_minutes=estimated_minutes,
+            tenant_id=self.tenant_id,
         ))
         return {
             "order": self._serialize_orders([self._load_order(order.id)], include_dispatch_details=True)[0],

@@ -8,8 +8,11 @@ from backend.database import Base
 class LogisticsSettings(Base):
     __tablename__ = "logistics_settings"
 
+    # ``default`` is the logical key *within* an establishment.  It must not
+    # remain the table-wide identity, otherwise a second tenant cannot own its
+    # own settings row.
     id                         = Column(String, primary_key=True, default="default")
-    tenant_id                  = Column(String, ForeignKey("tenants.id", name="fk_logistics_settings_tenant_id_tenants"), nullable=True)
+    tenant_id                  = Column(String, ForeignKey("tenants.id", name="fk_logistics_settings_tenant_id_tenants"), primary_key=True, nullable=False)
     auto_assign                = Column(Boolean, default=False)
     max_concurrent_deliveries  = Column(Integer, default=3)
     default_estimated_minutes  = Column(Integer, default=40)
@@ -52,7 +55,7 @@ class DeliveryPerson(Base):
     __tablename__ = "delivery_persons"
 
     id            = Column(String, primary_key=True)
-    tenant_id     = Column(String, ForeignKey("tenants.id", name="fk_delivery_persons_tenant_id_tenants"), nullable=True)
+    tenant_id     = Column(String, ForeignKey("tenants.id", name="fk_delivery_persons_tenant_id_tenants"), nullable=False)
     name          = Column(String(200), nullable=False)
     phone         = Column(String(30), nullable=False)
     vehicle_type  = Column(Enum(VehicleType), default=VehicleType.motorcycle)
@@ -60,7 +63,9 @@ class DeliveryPerson(Base):
     active        = Column(Boolean, default=True)
 
     # Driver app credentials
-    email         = Column(String(200), nullable=True, unique=True)
+    # A driver can work for more than one establishment.  Login identity is
+    # therefore unique only together with tenant_id (see table_args).
+    email         = Column(String(200), nullable=True)
     password_hash = Column(Text, nullable=True)
 
     # Documents & payment
@@ -95,8 +100,10 @@ class Delivery(Base):
     __tablename__ = "deliveries"
 
     id                 = Column(String, primary_key=True)
-    tenant_id          = Column(String, ForeignKey("tenants.id", name="fk_deliveries_tenant_id_tenants"), nullable=True)
-    order_id           = Column(String, ForeignKey("orders.id"), nullable=False, unique=True)
+    tenant_id          = Column(String, ForeignKey("tenants.id", name="fk_deliveries_tenant_id_tenants"), nullable=False)
+    # Orders are tenant-owned; the uniqueness boundary is (tenant_id,
+    # order_id), not a database-wide order_id.
+    order_id           = Column(String, ForeignKey("orders.id"), nullable=False)
     delivery_person_id = Column(String, ForeignKey("delivery_persons.id"), nullable=True)
 
     status             = Column(Enum(DeliveryStatus), default=DeliveryStatus.pending_assignment)
@@ -144,7 +151,7 @@ class DeliveryEvent(Base):
     __tablename__ = "delivery_events"
 
     id            = Column(String, primary_key=True)
-    tenant_id     = Column(String, ForeignKey("tenants.id", name="fk_delivery_events_tenant_id_tenants"), nullable=True)
+    tenant_id     = Column(String, ForeignKey("tenants.id", name="fk_delivery_events_tenant_id_tenants"), nullable=False)
     delivery_id   = Column(String, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False)
     event_type    = Column(String(80), nullable=False)
     description   = Column(Text, nullable=True)
@@ -161,7 +168,7 @@ class DeliveryEarning(Base):
     __tablename__ = "delivery_earnings"
 
     id                 = Column(String, primary_key=True)
-    tenant_id          = Column(String, ForeignKey("tenants.id", name="fk_delivery_earnings_tenant_id_tenants"), nullable=True)
+    tenant_id          = Column(String, ForeignKey("tenants.id", name="fk_delivery_earnings_tenant_id_tenants"), nullable=False)
     delivery_id        = Column(String, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False)
     delivery_person_id = Column(String, ForeignKey("delivery_persons.id", ondelete="CASCADE"), nullable=False)
     amount             = Column(Float, default=0.0, nullable=False)
@@ -181,8 +188,11 @@ class GeocodeCache(Base):
     """Address → lat/lng cache to avoid repeated Nominatim calls."""
     __tablename__ = "geocode_cache"
 
+    # Cache hash is intentionally reusable between tenants, but every cache
+    # entry remains tenant-owned.  The composite primary key prevents a cache
+    # hit from becoming a cross-tenant read.
     id         = Column(String(32), primary_key=True)  # sha256[:32] of normalised address
-    tenant_id  = Column(String, ForeignKey("tenants.id", name="fk_geocode_cache_tenant"), nullable=True)
+    tenant_id  = Column(String, ForeignKey("tenants.id", name="fk_geocode_cache_tenant"), primary_key=True, nullable=False)
     query      = Column(Text, nullable=False)
     lat        = Column(Float, nullable=True)
     lng        = Column(Float, nullable=True)

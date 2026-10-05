@@ -139,6 +139,8 @@ class PlatformRuntimeIntegrationTests(TestCase):
             patch.object(worker, "AgenteWhatsAppProcessingService", return_value=processing),
             patch.object(worker, "AgenteWhatsAppRetentionService", return_value=retention),
             patch.object(worker, "AgenteWhatsAppOutboxService", return_value=outbox),
+            patch.object(worker, "_active_tenant_ids", return_value=["tenant-a"]),
+            patch.object(worker, "bind_wave6_tenant_context", return_value=None),
             patch.object(worker, "_worker_instance_key", return_value="host:123"),
             patch.object(
                 worker,

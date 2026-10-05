@@ -7,6 +7,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from backend.config import get_settings
+from backend.core.tenant_context import TenantContextMissing
+from backend.core.tenant_execution import background_context_enforcement_enabled
 from backend.core.events import DeliveryAssigned
 from backend.models.agente_whatsapp import (
     AgenteWhatsAppChannelSettings,
@@ -35,15 +38,16 @@ class DeliveryDriverWhatsAppService:
         self._db = db
 
     def handle_delivery_assigned(self, event: DeliveryAssigned) -> dict[str, Any]:
-        person = (
-            self._db.query(DeliveryPerson)
-            .filter(
-                DeliveryPerson.id == event.delivery_person_id,
-                DeliveryPerson.active == True,  # noqa: E712
-                DeliveryPerson.deleted_at.is_(None),
-            )
-            .first()
+        if background_context_enforcement_enabled() and not event.tenant_id:
+            raise TenantContextMissing("Evento de entrega sem tenant confiavel.")
+        person_query = self._db.query(DeliveryPerson).filter(
+            DeliveryPerson.id == event.delivery_person_id,
+            DeliveryPerson.active == True,  # noqa: E712
+            DeliveryPerson.deleted_at.is_(None),
         )
+        if event.tenant_id:
+            person_query = person_query.filter(DeliveryPerson.tenant_id == event.tenant_id)
+        person = person_query.first()
         if not person:
             return {"sent": False, "status": "driver_not_found"}
 
@@ -58,13 +62,14 @@ class DeliveryDriverWhatsAppService:
             text=text,
             event_type="delivery_driver_assignment_notice",
             idempotency_key=f"delivery_driver_assignment_notice:{event.delivery_id}:{event.delivery_person_id}",
-            provider=self._active_provider(),
+            provider=self._active_provider(event.tenant_id),
             payload={
                 "delivery_id": event.delivery_id,
                 "order_id": event.order_id,
                 "delivery_person_id": event.delivery_person_id,
                 "delivery_person_name": person.name or event.delivery_person_name,
                 "estimated_minutes": event.estimated_minutes,
+                "tenant_id": event.tenant_id,
             },
         )
 
@@ -82,7 +87,13 @@ class DeliveryDriverWhatsAppService:
         if not phone:
             return None
 
-        person = self._find_driver_by_phone(phone)
+        # ``_trusted_tenant_id`` is attached by the gateway after resolving
+        # its persisted instance.  Never trust a tenant field from provider
+        # payload JSON.
+        tenant_id = str(payload.get("_trusted_tenant_id") or "").strip() or None
+        if background_context_enforcement_enabled() and not tenant_id:
+            return {"handled": False, "queued": False, "ignored": 1, "status": "tenant_context_missing"}
+        person = self._find_driver_by_phone(phone, tenant_id=tenant_id)
         if not person:
             return None
 
@@ -99,6 +110,7 @@ class DeliveryDriverWhatsAppService:
             provider="baileys",
             payload={
                 "delivery_person_id": person.id,
+                "tenant_id": person.tenant_id,
                 "provider_message_id": provider_message_id or None,
                 "instance_id": payload.get("instance_id"),
             },
@@ -113,19 +125,24 @@ class DeliveryDriverWhatsAppService:
             "outbox_id": queued.get("outbox_id"),
         }
 
-    def _find_driver_by_phone(self, phone: str) -> DeliveryPerson | None:
-        people = (
-            self._db.query(DeliveryPerson)
-            .filter(
-                DeliveryPerson.active == True,  # noqa: E712
-                DeliveryPerson.deleted_at.is_(None),
-            )
-            .all()
+    def _find_driver_by_phone(self, phone: str, *, tenant_id: str | None = None) -> DeliveryPerson | None:
+        query = self._db.query(DeliveryPerson).filter(
+            DeliveryPerson.active == True,  # noqa: E712
+            DeliveryPerson.deleted_at.is_(None),
         )
+        if tenant_id:
+            query = query.filter(DeliveryPerson.tenant_id == tenant_id)
+        people = query.all()
+        matches = []
         for person in people:
             if self._same_phone(phone, normalize_phone(person.phone)):
-                return person
-        return None
+                matches.append(person)
+        # A provider callback only identifies a phone number.  Once Wave 7 is
+        # enabled, a duplicated driver number across establishments is
+        # ambiguous and must not trigger a message for either tenant.
+        if (get_settings().MULTI_TENANT_WAVE7_ORM_ENABLED or background_context_enforcement_enabled()) and len(matches) != 1:
+            return None
+        return matches[0] if matches else None
 
     def _same_phone(self, left: str, right: str) -> bool:
         if not left or not right:
@@ -158,9 +175,13 @@ class DeliveryDriverWhatsAppService:
         provider: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        tenant_id = str(payload.get("tenant_id") or "").strip() or None
         existing = (
             self._db.query(AgenteWhatsAppOutbox)
-            .filter(AgenteWhatsAppOutbox.idempotency_key == idempotency_key)
+            .filter(
+                AgenteWhatsAppOutbox.idempotency_key == idempotency_key,
+                AgenteWhatsAppOutbox.tenant_id == tenant_id,
+            )
             .first()
         )
         if existing:
@@ -172,9 +193,10 @@ class DeliveryDriverWhatsAppService:
             }
 
         now = datetime.now(timezone.utc)
-        session = self._get_or_create_driver_session(phone=phone, provider=provider)
+        session = self._get_or_create_driver_session(phone=phone, provider=provider, tenant_id=tenant_id)
         message = AgenteWhatsAppMessage(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             session_id=session.id,
             customer_id=None,
             direction="outbound",
@@ -190,6 +212,7 @@ class DeliveryDriverWhatsAppService:
 
         outbox = AgenteWhatsAppOutbox(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             message_id=message.id,
             session_id=session.id,
             customer_id=None,
@@ -218,6 +241,7 @@ class DeliveryDriverWhatsAppService:
         self._db.add(
             AgenteWhatsAppEvent(
                 id=str(uuid.uuid4()),
+                tenant_id=tenant_id,
                 session_id=session.id,
                 customer_id=None,
                 order_id=payload.get("order_id"),
@@ -239,10 +263,11 @@ class DeliveryDriverWhatsAppService:
         self._db.flush()
         return {"queued": True, "message_id": message.id, "outbox_id": outbox.id}
 
-    def _get_or_create_driver_session(self, *, phone: str, provider: str) -> AgenteWhatsAppSession:
+    def _get_or_create_driver_session(self, *, phone: str, provider: str, tenant_id: str | None) -> AgenteWhatsAppSession:
         existing = (
             self._db.query(AgenteWhatsAppSession)
             .filter(
+                AgenteWhatsAppSession.tenant_id == tenant_id,
                 AgenteWhatsAppSession.phone == phone,
                 AgenteWhatsAppSession.origin == "delivery_driver_notice",
                 AgenteWhatsAppSession.status.in_(["open", "waiting_human", "human", "ai_paused"]),
@@ -260,13 +285,14 @@ class DeliveryDriverWhatsAppService:
         now = datetime.now(timezone.utc)
         session = AgenteWhatsAppSession(
             id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             customer_id=None,
             phone=phone,
             provider=provider if provider in {"official", "baileys"} else "official",
             origin="delivery_driver_notice",
             ai_enabled=False,
             automation_blocked=True,
-            metadata_json=_json_dump({"source": SOURCE, "audience": "delivery_person"}),
+            metadata_json=_json_dump({"source": SOURCE, "audience": "delivery_person", "tenant_id": tenant_id}),
             created_at=now,
             updated_at=now,
         )
@@ -275,16 +301,20 @@ class DeliveryDriverWhatsAppService:
         self._db.add(
             AgenteWhatsAppContext(
                 id=str(uuid.uuid4()),
+                tenant_id=tenant_id,
                 session_id=session.id,
                 customer_id=None,
             )
         )
         return session
 
-    def _active_provider(self) -> str:
+    def _active_provider(self, tenant_id: str | None) -> str:
         settings = (
             self._db.query(AgenteWhatsAppChannelSettings)
-            .filter(AgenteWhatsAppChannelSettings.id == "default")
+            .filter(
+                AgenteWhatsAppChannelSettings.id == "default",
+                AgenteWhatsAppChannelSettings.tenant_id == tenant_id,
+            )
             .first()
         )
         if settings and settings.active_provider in {"official", "baileys"}:

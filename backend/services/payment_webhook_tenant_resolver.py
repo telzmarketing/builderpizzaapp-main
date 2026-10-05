@@ -56,6 +56,13 @@ class PaymentWebhookTenantResolver:
         self._db = db
         self._catalog = parse_endpoint_catalog(raw_catalog)
 
+    def endpoint_key_for(self, tenant_id: str, provider: str) -> str:
+        provider = (provider or "").strip().lower()
+        for endpoint_key, binding in self._catalog.items():
+            if binding.tenant_id == tenant_id and binding.provider == provider:
+                return endpoint_key
+        raise PaymentWebhookTenantResolutionError("Endpoint de webhook nao configurado para o tenant.")
+
     def resolve(self, endpoint_key: str, provider: str) -> PaymentWebhookEndpoint:
         binding = self._catalog.get(endpoint_key)
         if binding is None or binding.provider != (provider or "").strip().lower():

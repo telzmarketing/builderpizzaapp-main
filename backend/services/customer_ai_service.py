@@ -5,6 +5,7 @@ import re
 import unicodedata
 import uuid
 from collections import Counter
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Any
 
@@ -24,6 +25,11 @@ from backend.models.order import Order, OrderItem, OrderItemFlavor
 from backend.models.product import Product
 from backend.core.tenant_context import TenantContextMissing
 from backend.core.tenant_ownership import customers_orders_enforcement_enabled
+from backend.core.tenant_execution import (
+    background_context_enforcement_enabled,
+    bind_tenant_context,
+    context_from_job_metadata,
+)
 
 
 PAID_STATUSES = {
@@ -562,7 +568,7 @@ def _job_to_dict(job: CustomerAIAnalysisJob | None) -> dict[str, Any] | None:
 
 
 def _require_analysis_tenant(tenant_id: str | None) -> str | None:
-    if customers_orders_enforcement_enabled() and not tenant_id:
+    if (customers_orders_enforcement_enabled() or background_context_enforcement_enabled()) and not tenant_id:
         raise TenantContextMissing("Tenant obrigatorio para analise de clientes.")
     return tenant_id
 
@@ -602,7 +608,7 @@ def create_customer_ai_analysis_job(
     return _job_to_dict(job) or {}, True
 
 
-def run_customer_ai_analysis_job(job_id: str) -> None:
+def run_customer_ai_analysis_job(job_id: str, metadata: dict[str, object] | None = None) -> None:
     from backend.database import SessionLocal
 
     db = SessionLocal()
@@ -610,47 +616,57 @@ def run_customer_ai_analysis_job(job_id: str) -> None:
         job = db.query(CustomerAIAnalysisJob).filter(CustomerAIAnalysisJob.id == job_id).first()
         if not job:
             return
-        tenant_id = _require_analysis_tenant(job.tenant_id)
+        if metadata is None:
+            if background_context_enforcement_enabled():
+                raise TenantContextMissing("Job de analise CRM sem metadata de tenant.")
+            tenant_id = _require_analysis_tenant(job.tenant_id)
+            context_manager = nullcontext()
+        else:
+            context = context_from_job_metadata(metadata)
+            context.assert_tenant(job.tenant_id)
+            tenant_id = context.tenant_id
+            context_manager = bind_tenant_context(context)
 
-        customer_query = db.query(Customer.id)
-        if tenant_id:
-            customer_query = customer_query.filter(Customer.tenant_id == tenant_id)
-        customer_ids = [row[0] for row in customer_query.order_by(Customer.created_at.asc()).all()]
-        job.status = "running"
-        job.total_customers = len(customer_ids)
-        job.processed_customers = 0
-        job.failed_customers = 0
-        job.started_at = _now()
-        job.updated_at = _now()
-        db.commit()
-
-        processed = 0
-        failed = 0
-        for customer_id in customer_ids:
-            try:
-                analyze_customer_profile(db, customer_id, tenant_id=tenant_id)
-                processed += 1
-            except Exception as exc:  # noqa: BLE001 - job must continue per customer
-                db.rollback()
-                failed += 1
-                job = db.query(CustomerAIAnalysisJob).filter(CustomerAIAnalysisJob.id == job_id).first()
-                if job:
-                    job.error_message = str(exc)[:1000]
-            job = db.query(CustomerAIAnalysisJob).filter(CustomerAIAnalysisJob.id == job_id).first()
-            if job:
-                job.processed_customers = processed
-                job.failed_customers = failed
-                job.updated_at = _now()
-                db.commit()
-
-        job = db.query(CustomerAIAnalysisJob).filter(CustomerAIAnalysisJob.id == job_id).first()
-        if job:
-            job.status = "completed" if failed == 0 else "completed_with_errors"
-            job.processed_customers = processed
-            job.failed_customers = failed
-            job.finished_at = _now()
+        with context_manager:
+            customer_query = db.query(Customer.id)
+            if tenant_id:
+                customer_query = customer_query.filter(Customer.tenant_id == tenant_id)
+            customer_ids = [row[0] for row in customer_query.order_by(Customer.created_at.asc()).all()]
+            job.status = "running"
+            job.total_customers = len(customer_ids)
+            job.processed_customers = 0
+            job.failed_customers = 0
+            job.started_at = _now()
             job.updated_at = _now()
             db.commit()
+
+            processed = 0
+            failed = 0
+            for customer_id in customer_ids:
+                try:
+                    analyze_customer_profile(db, customer_id, tenant_id=tenant_id)
+                    processed += 1
+                except Exception as exc:  # noqa: BLE001 - job must continue per customer
+                    db.rollback()
+                    failed += 1
+                    job = db.query(CustomerAIAnalysisJob).filter(CustomerAIAnalysisJob.id == job_id).first()
+                    if job:
+                        job.error_message = str(exc)[:1000]
+                job = db.query(CustomerAIAnalysisJob).filter(CustomerAIAnalysisJob.id == job_id).first()
+                if job:
+                    job.processed_customers = processed
+                    job.failed_customers = failed
+                    job.updated_at = _now()
+                    db.commit()
+
+            job = db.query(CustomerAIAnalysisJob).filter(CustomerAIAnalysisJob.id == job_id).first()
+            if job:
+                job.status = "completed" if failed == 0 else "completed_with_errors"
+                job.processed_customers = processed
+                job.failed_customers = failed
+                job.finished_at = _now()
+                job.updated_at = _now()
+                db.commit()
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         job = db.query(CustomerAIAnalysisJob).filter(CustomerAIAnalysisJob.id == job_id).first()

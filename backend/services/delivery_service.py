@@ -13,7 +13,7 @@ import uuid
 import json
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import text, case
+from sqlalchemy import text, case, func
 from passlib.context import CryptContext
 
 from backend.core.exceptions import (
@@ -26,7 +26,8 @@ from backend.core.events import (
     bus, DeliveryAssigned, DeliveryStatusChanged, DeliveryCompleted,
 )
 from backend.core.tenant_ownership import operations_enforcement_enabled
-from backend.core.tenant_context import TenantContextMissing
+from backend.core.tenant_context import TenantContext, TenantContextMismatch, TenantContextMissing
+from backend.core.wave7_tenant_orm import wave7_orm_enabled
 from backend.models.delivery import (
     Delivery, DeliveryEvent, DeliveryEarning, DeliveryPerson, DeliveryStatus,
     DeliveryPersonStatus, LogisticsSettings, GeocodeCache,
@@ -44,12 +45,26 @@ class DeliveryService:
     Both the loja REST API and the ERP use this class.
     """
 
-    def __init__(self, db: Session, tenant_id: str | None = None):
+    def __init__(
+        self,
+        db: Session,
+        tenant_id: str | None = None,
+        tenant_context: TenantContext | None = None,
+    ):
         self._db = db
         self._tenant_id = tenant_id
-        self._tenant_enabled = operations_enforcement_enabled()
+        self._tenant_context = tenant_context
+        self._wave7_enabled = wave7_orm_enabled()
+        # Logistics was first introduced under the Operations gate. Wave 7
+        # must also own every read and write when it is enabled on its own.
+        self._tenant_enabled = operations_enforcement_enabled() or self._wave7_enabled
         if self._tenant_enabled and not tenant_id:
             raise TenantContextMissing("Tenant obrigatorio para operacoes de entrega.")
+        if self._wave7_enabled:
+            if tenant_context is None:
+                raise TenantContextMissing("Contexto confiavel obrigatorio para logistica da Wave 7.")
+            if tenant_context.tenant_id != tenant_id:
+                raise TenantContextMismatch("Tenant da logistica diverge do contexto confiavel.")
 
     def _scope(self, query, model):
         if self._tenant_enabled:
@@ -128,7 +143,7 @@ class DeliveryService:
         from sqlalchemy.orm import joinedload
 
         delivery = (
-            self._db.query(Delivery)
+            self._scope(self._db.query(Delivery), Delivery)
             .options(joinedload(Delivery.order))
             .filter(
                 Delivery.id == delivery_id,
@@ -142,7 +157,7 @@ class DeliveryService:
 
     def _cancel_pending_earning(self, delivery_id: str, notes: str | None = None) -> None:
         earnings = (
-            self._db.query(DeliveryEarning)
+            self._scope(self._db.query(DeliveryEarning), DeliveryEarning)
             .filter(
                 DeliveryEarning.delivery_id == delivery_id,
                 DeliveryEarning.status == "pending",
@@ -249,6 +264,7 @@ class DeliveryService:
             delivery_person_id=delivery_person_id,
             delivery_person_name=person.name,
             estimated_minutes=estimated_minutes,
+            tenant_id=delivery.tenant_id,
         ))
 
         return delivery
@@ -342,6 +358,7 @@ class DeliveryService:
             order_id=delivery.order_id,
             from_status=old_status,
             to_status=new_status,
+            tenant_id=delivery.tenant_id,
         ))
 
         return delivery
@@ -420,6 +437,7 @@ class DeliveryService:
             order_id=delivery.order_id,
             delivery_person_id=delivery.delivery_person_id or "",
             duration_minutes=duration_minutes,
+            tenant_id=delivery.tenant_id,
         ))
 
         return delivery
@@ -581,7 +599,7 @@ class DeliveryService:
         """Soft-delete a delivery person."""
         person = self._get_any_delivery_person(person_id)
         active_delivery = (
-            self._db.query(Delivery.id)
+            self._scope(self._db.query(Delivery.id), Delivery)
             .filter(
                 Delivery.delivery_person_id == person_id,
                 Delivery.status.in_([
@@ -607,12 +625,23 @@ class DeliveryService:
     # ── Driver App ────────────────────────────────────────────────────────────
 
     def driver_login(self, email: str, password: str) -> DeliveryPerson:
-        """Authenticate a driver by email + password."""
-        person = (
+        """Authenticate a driver already bound to one trusted tenant."""
+        if not self._tenant_id:
+            raise DomainError("Tenant confiavel obrigatorio para login de motoboy.", code="DriverTenantContextRequired")
+        matches = (
             self._db.query(DeliveryPerson)
-            .filter(DeliveryPerson.email == email, DeliveryPerson.active == True)  # noqa: E712
-            .first()
+            .filter(
+                DeliveryPerson.tenant_id == self._tenant_id,
+                func.lower(DeliveryPerson.email) == email.strip().lower(),
+                DeliveryPerson.active == True,  # noqa: E712
+                DeliveryPerson.deleted_at.is_(None),
+            )
+            .limit(2)
+            .all()
         )
+        # The tenant-scoped unique index should make this impossible, but a
+        # corrupt legacy database must fail closed instead of selecting a row.
+        person = matches[0] if len(matches) == 1 else None
         if not person or not person.password_hash:
             raise DomainError("Credenciais inválidas.", code="InvalidCredentials")
         if not _pwd_ctx.verify(password, person.password_hash):
@@ -714,6 +743,7 @@ class DeliveryService:
             order_id=delivery.order_id,
             from_status=old_status,
             to_status="on_the_way",
+            tenant_id=delivery.tenant_id,
         ))
         return delivery
 
@@ -769,6 +799,7 @@ class DeliveryService:
             order_id=delivery.order_id,
             from_status=old_status,
             to_status="delivered",
+            tenant_id=delivery.tenant_id,
         ))
         return delivery
 
@@ -857,7 +888,7 @@ class DeliveryService:
             payment.status = PaymentStatus.failed
             payment.updated_at = delivery.problem_reported_at
 
-        person = self._db.query(DeliveryPerson).filter(DeliveryPerson.id == person_id).first()
+        person = self._scope(self._db.query(DeliveryPerson), DeliveryPerson).filter(DeliveryPerson.id == person_id).first()
         if person:
             person.status = DeliveryPersonStatus.available
 
@@ -878,6 +909,7 @@ class DeliveryService:
             order_id=delivery.order_id,
             from_status=old_status,
             to_status="failed",
+            tenant_id=delivery.tenant_id,
         ))
         return delivery
 
@@ -932,7 +964,7 @@ class DeliveryService:
             DeliveryStatus.on_the_way,
         ]
         active_deliveries = (
-            self._db.query(Delivery)
+            self._scope(self._db.query(Delivery), Delivery)
             .options(joinedload(Delivery.order))
             .filter(Delivery.status.in_(active_statuses))
             .all()
@@ -948,7 +980,7 @@ class DeliveryService:
 
         # Fetch all busy persons (include those with no active delivery but status=busy)
         busy_persons = (
-            self._db.query(DeliveryPerson)
+            self._scope(self._db.query(DeliveryPerson), DeliveryPerson)
             .filter(
                 DeliveryPerson.active == True,  # noqa: E712
                 DeliveryPerson.status == DeliveryPersonStatus.busy,
@@ -961,7 +993,7 @@ class DeliveryService:
         missing_ids = person_ids - set(all_persons_map.keys())
         if missing_ids:
             extra = (
-                self._db.query(DeliveryPerson)
+                self._scope(self._db.query(DeliveryPerson), DeliveryPerson)
                 .filter(DeliveryPerson.id.in_(list(missing_ids)))
                 .all()
             )
@@ -1029,9 +1061,9 @@ class DeliveryService:
     # ── Logistics Settings ────────────────────────────────────────────────────
 
     def get_logistics_settings(self) -> LogisticsSettings:
-        settings = self._db.query(LogisticsSettings).filter(LogisticsSettings.id == "default").first()
+        settings = self._scope(self._db.query(LogisticsSettings), LogisticsSettings).filter(LogisticsSettings.id == "default").first()
         if not settings:
-            settings = LogisticsSettings(id="default")
+            settings = LogisticsSettings(id="default", tenant_id=self._tenant_id if self._tenant_enabled else None)
             self._db.add(settings)
             self._db.commit()
             self._db.refresh(settings)
@@ -1095,7 +1127,7 @@ class DeliveryService:
         paid_count = 0
         for eid in earning_ids:
             earning = (
-                self._db.query(DeliveryEarning)
+                self._scope(self._db.query(DeliveryEarning), DeliveryEarning)
                 .filter(DeliveryEarning.id == eid, DeliveryEarning.status == "pending")
                 .first()
             )
@@ -1124,7 +1156,7 @@ class DeliveryService:
             if person_id and person.id != person_id:
                 continue
 
-            dq = self._db.query(Delivery).filter(Delivery.delivery_person_id == person.id)
+            dq = self._scope(self._db.query(Delivery), Delivery).filter(Delivery.delivery_person_id == person.id)
             if period_from:
                 dq = dq.filter(Delivery.delivered_at >= period_from)
             if period_to:
@@ -1150,7 +1182,7 @@ class DeliveryService:
 
             ratings = [d.rating for d in completed if d.rating is not None]
 
-            eq = self._db.query(DeliveryEarning).filter(DeliveryEarning.delivery_person_id == person.id)
+            eq = self._scope(self._db.query(DeliveryEarning), DeliveryEarning).filter(DeliveryEarning.delivery_person_id == person.id)
             if period_from:
                 eq = eq.filter(DeliveryEarning.period_date >= period_from)
             if period_to:
@@ -1180,7 +1212,7 @@ class DeliveryService:
         now = datetime.now(timezone.utc)
 
         problem_rows = (
-            self._db.query(Delivery)
+            self._scope(self._db.query(Delivery), Delivery)
             .options(joinedload(Delivery.delivery_person), joinedload(Delivery.order))
             .filter(
                 Delivery.problem_report.isnot(None),
@@ -1212,7 +1244,7 @@ class DeliveryService:
             })
 
         active = (
-            self._db.query(Delivery)
+            self._scope(self._db.query(Delivery), Delivery)
             .options(joinedload(Delivery.delivery_person), joinedload(Delivery.order))
             .filter(
                 Delivery.status.in_([
@@ -1271,7 +1303,7 @@ class DeliveryService:
 
         # Orders eligible for assignment
         eligible_orders = (
-            self._db.query(Order)
+            self._scope(self._db.query(Order), Order)
             .filter(Order.status.in_([OrderStatus.ready_for_pickup, OrderStatus.preparing]))
             .all()
         )
@@ -1280,7 +1312,7 @@ class DeliveryService:
 
         # Orders that already have an active delivery
         active_order_ids = {
-            row[0] for row in self._db.query(Delivery.order_id).filter(
+            row[0] for row in self._scope(self._db.query(Delivery.order_id), Delivery).filter(
                 Delivery.status.notin_([DeliveryStatus.failed, DeliveryStatus.cancelled])
             ).all()
         }
@@ -1290,7 +1322,7 @@ class DeliveryService:
 
         # Available drivers
         available = (
-            self._db.query(DeliveryPerson)
+            self._scope(self._db.query(DeliveryPerson), DeliveryPerson)
             .filter(
                 DeliveryPerson.active == True,  # noqa: E712
                 DeliveryPerson.status == DeliveryPersonStatus.available,
@@ -1302,7 +1334,7 @@ class DeliveryService:
 
         # Active delivery counts per driver (single query)
         counts_raw = (
-            self._db.query(Delivery.delivery_person_id, func.count(Delivery.id))
+            self._scope(self._db.query(Delivery.delivery_person_id, func.count(Delivery.id)), Delivery)
             .filter(Delivery.status.in_([
                 DeliveryStatus.assigned,
                 DeliveryStatus.picked_up,
@@ -1353,8 +1385,23 @@ class DeliveryService:
         import urllib.parse
         import json as _json
 
-        cache_key = hashlib.sha256(query.lower().strip().encode()).hexdigest()[:32]
-        cached = self._db.query(GeocodeCache).filter(GeocodeCache.id == cache_key).first()
+        if self._wave7_enabled:
+            if self._tenant_context is None:
+                raise TenantContextMissing("Contexto confiavel obrigatorio para geocoding da Wave 7.")
+            if self._tenant_id and self._tenant_id != self._tenant_context.tenant_id:
+                raise TenantContextMismatch("Tenant do geocoding diverge do contexto confiavel.")
+            tenant_id = self._tenant_context.tenant_id
+            # Address strings may contain personal data.  A tenant namespace
+            # prevents a cache hit from confirming another company's address.
+            cache_key = hashlib.sha256(f"{tenant_id}:{query.lower().strip()}".encode()).hexdigest()[:32]
+            cached = self._db.query(GeocodeCache).filter(
+                GeocodeCache.id == cache_key,
+                GeocodeCache.tenant_id == tenant_id,
+            ).first()
+        else:
+            tenant_id = None
+            cache_key = hashlib.sha256(query.lower().strip().encode()).hexdigest()[:32]
+            cached = self._db.query(GeocodeCache).filter(GeocodeCache.id == cache_key).first()
         if cached:
             return {"lat": cached.lat, "lng": cached.lng, "cached": True}
 
@@ -1377,7 +1424,7 @@ class DeliveryService:
             pass
 
         try:
-            entry = GeocodeCache(id=cache_key, query=query, lat=lat, lng=lng)
+            entry = GeocodeCache(id=cache_key, tenant_id=tenant_id, query=query, lat=lat, lng=lng)
             self._db.add(entry)
             self._db.commit()
         except Exception:

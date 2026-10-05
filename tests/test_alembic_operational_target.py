@@ -95,6 +95,11 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261003_marketing_tenant_keys:20261003_whatsapp_meta_webhook_tenant_keys",
         "20261003_whatsapp_meta_webhook_tenant_keys:20261003_email_marketing_tenant_config",
         "20261003_email_marketing_tenant_config:20261003_agente_whatsapp_tenant_foundation",
+        "20261003_agente_whatsapp_tenant_foundation:20261004_wave7_finance_contract",
+        "20261004_wave7_finance_contract:20261004_wave7_fiscal_contract",
+        "20261004_wave7_fiscal_contract:20261004_wave7_management_geocode_contract",
+        "20261004_wave7_management_geocode_contract:20261004_wave7_logistics_identity_contract",
+        "20261004_wave7_logistics_identity_contract:20261004_tenant_upload_ownership_contract",
     }
 
     sources = {

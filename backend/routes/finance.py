@@ -26,7 +26,7 @@ router = APIRouter(prefix="/gestao/finance", tags=["gestao-finance"])
 
 
 def service(db: Session, tenant_context: TenantContext | None) -> FinanceService:
-    return FinanceService(db, operation_tenant_id(tenant_context))
+    return FinanceService(db, operation_tenant_id(tenant_context), tenant_context)
 
 
 @router.get("/overview", response_model=FinanceOverviewOut)

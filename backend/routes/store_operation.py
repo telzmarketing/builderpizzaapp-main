@@ -25,7 +25,11 @@ router = APIRouter(prefix="/store-operation", tags=["store-operation"])
 
 
 def service(db: Session, tenant_context: TenantContext | None) -> StoreOperationService:
-    return StoreOperationService(db, operation_tenant_id(tenant_context))
+    # ``operation_tenant_id`` preserves the legacy default while the older
+    # Operations rollout is disabled.  Wave 7 uses the trusted context itself
+    # and rejects an absent context inside the service.
+    tenant_id = tenant_context.tenant_id if tenant_context is not None else operation_tenant_id(None)
+    return StoreOperationService(db, tenant_id, tenant_context)
 
 
 @router.get("/status", response_model=StoreOperationStatusOut)

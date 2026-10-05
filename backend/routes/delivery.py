@@ -35,12 +35,17 @@ Delivery endpoints:
 import base64
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
 from backend.core.response import ok, created, no_content, err, err_msg
+from backend.core.tenant_context import TenantContext, TenantContextMissing, TenantSource, trusted_process_context
+from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
 from backend.database import get_db
+from backend.models.admin import AdminUser
+from backend.models.delivery import Delivery, DeliveryPerson
 from backend.routes.admin_auth import get_current_admin
 from backend.routes.order_access import require_order_or_admin
 from backend.services.delivery_service import DeliveryService
@@ -66,17 +71,84 @@ from backend.schemas.delivery import (
 router = APIRouter(prefix="/delivery", tags=["delivery"])
 
 
+def _admin_service(request: Request, db: Session, admin: AdminUser) -> DeliveryService:
+    context = resolve_panel_tenant_context(request, db, admin)
+    return DeliveryService(db, tenant_id=context.tenant_id if context else None, tenant_context=context)
+
+
+def _driver_service(db: Session, person_id: str) -> DeliveryService:
+    person = db.query(DeliveryPerson).filter(
+        DeliveryPerson.id == person_id,
+        DeliveryPerson.deleted_at.is_(None),
+    ).first()
+    if person is None:
+        raise DomainError("Motoboy nao encontrado.", code="DeliveryPersonNotFound")
+    if not person.tenant_id:
+        raise TenantContextMissing("Motoboy sem tenant confiavel.")
+    # The tenant is read from the persisted authenticated driver identity,
+    # never from a client-provided tenant header.
+    context = trusted_process_context(
+        person.tenant_id, source=TenantSource.JOB, correlation_id=f"driver:{person.id}"
+    )
+    return DeliveryService(db, tenant_id=person.tenant_id, tenant_context=context)
+
+
+def _driver_login_service(
+    db: Session,
+    email: str,
+    tenant_context: TenantContext | None,
+) -> DeliveryService:
+    """Resolve tenant ownership before any password verification."""
+    query = db.query(DeliveryPerson).filter(
+        func.lower(DeliveryPerson.email) == email.strip().lower(),
+        DeliveryPerson.active.is_(True),
+        DeliveryPerson.deleted_at.is_(None),
+    )
+    if tenant_context is not None:
+        query = query.filter(DeliveryPerson.tenant_id == tenant_context.tenant_id)
+    matches = query.limit(2).all()
+    if len(matches) != 1:
+        if len(matches) > 1:
+            raise DomainError(
+                "Este e-mail esta vinculado a mais de uma empresa. Acesse pelo dominio da empresa.",
+                code="DriverTenantSelectionRequired",
+            )
+        raise DomainError("Credenciais invalidas.", code="InvalidCredentials")
+    person = matches[0]
+    if not person.tenant_id:
+        raise DomainError("Credenciais invalidas.", code="InvalidCredentials")
+    if tenant_context is not None:
+        tenant_context.assert_tenant(person.tenant_id)
+    context = trusted_process_context(
+        person.tenant_id, source=TenantSource.JOB, correlation_id=f"driver-login:{person.id}"
+    )
+    return DeliveryService(db, tenant_id=person.tenant_id, tenant_context=context)
+
+
+def _delivery_service(db: Session, delivery_id: str) -> DeliveryService:
+    delivery = db.query(Delivery).filter(Delivery.id == delivery_id).first()
+    if delivery is None:
+        raise DomainError("Entrega nao encontrada.", code="DeliveryNotFound")
+    if not delivery.tenant_id:
+        raise TenantContextMissing("Entrega sem tenant confiavel.")
+    context = trusted_process_context(
+        delivery.tenant_id, source=TenantSource.JOB, correlation_id=f"delivery:{delivery.id}"
+    )
+    return DeliveryService(db, tenant_id=delivery.tenant_id, tenant_context=context)
+
+
 # ── Delivery Persons ──────────────────────────────────────────────────────────
 
 @router.post("/persons", status_code=201)
 def create_person(
     body: DeliveryPersonCreate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """Register a new delivery person (motoboy)."""
     try:
-        person = DeliveryService(db).create_person(
+        person = _admin_service(request, db, admin).create_person(
             body.name,
             body.phone,
             body.vehicle_type.value,
@@ -93,17 +165,18 @@ def create_person(
 
 @router.get("/persons")
 def list_persons(
+    request: Request,
     available_only: bool = Query(default=False),
     include_inactive: bool = Query(default=False),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """
     List active delivery persons.
     Pass ?available_only=true to see only those ready to receive deliveries.
     """
     try:
-        persons = DeliveryService(db).list_persons(
+        persons = _admin_service(request, db, admin).list_persons(
             available_only=available_only,
             include_inactive=include_inactive,
         )
@@ -114,12 +187,13 @@ def list_persons(
 
 @router.get("/persons/available")
 def list_available_persons(
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """Shortcut: list only available (ready) delivery persons."""
     try:
-        return ok(DeliveryService(db).list_persons(available_only=True))
+        return ok(_admin_service(request, db, admin).list_persons(available_only=True))
     except DomainError as exc:
         return err(exc)
 
@@ -127,12 +201,13 @@ def list_available_persons(
 @router.get("/persons/{person_id}")
 def get_person(
     person_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """Get a single delivery person by ID."""
     try:
-        return ok(DeliveryService(db).get_person(person_id))
+        return ok(_admin_service(request, db, admin).get_person(person_id))
     except DomainError as exc:
         return err(exc)
 
@@ -141,8 +216,9 @@ def get_person(
 def update_person_status(
     person_id: str,
     body: DeliveryPersonStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """
     Set a delivery person's availability.
@@ -150,7 +226,7 @@ def update_person_status(
     Note: 'busy' is set automatically by DeliveryService.assign().
     """
     try:
-        person = DeliveryService(db).set_person_status(person_id, body.status)
+        person = _admin_service(request, db, admin).set_person_status(person_id, body.status)
         return ok(person, f"Status atualizado para '{body.status}'.")
     except DomainError as exc:
         return err(exc)
@@ -163,15 +239,16 @@ def update_person_status(
 def update_person_location(
     person_id: str,
     body: DeliveryPersonLocationUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """
     Update real-time GPS coordinates for a delivery person.
     Called by the mobile app at regular intervals while on duty.
     """
     try:
-        person = DeliveryService(db).update_location(person_id, body.lat, body.lng)
+        person = _admin_service(request, db, admin).update_location(person_id, body.lat, body.lng)
         return ok(person)
     except DomainError as exc:
         return err(exc)
@@ -181,15 +258,16 @@ def update_person_location(
 def update_person_access(
     person_id: str,
     body: DeliveryPersonAccessUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """
     Enable or disable access to the motoboy app.
     When disabled, the motoboy cannot log in or keep using driver endpoints.
     """
     try:
-        person = DeliveryService(db).set_person_access(person_id, body.active)
+        person = _admin_service(request, db, admin).set_person_access(person_id, body.active)
         message = "Acesso do motoboy ativado." if body.active else "Acesso do motoboy desativado."
         return ok(person, message)
     except DomainError as exc:
@@ -200,12 +278,13 @@ def update_person_access(
 def update_person(
     person_id: str,
     body: DeliveryPersonUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """Update motoboy details (name, phone, documents, credentials, etc.)."""
     try:
-        person = DeliveryService(db).update_person(person_id, **body.model_dump(exclude_none=True))
+        person = _admin_service(request, db, admin).update_person(person_id, **body.model_dump(exclude_none=True))
         return ok(person, "Motoboy atualizado.")
     except DomainError as exc:
         return err(exc)
@@ -214,12 +293,13 @@ def update_person(
 @router.delete("/persons/{person_id}", status_code=204)
 def deactivate_person(
     person_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """Soft-delete a delivery person (sets active=False)."""
     try:
-        DeliveryService(db).deactivate_person(person_id)
+        _admin_service(request, db, admin).deactivate_person(person_id)
         return no_content()
     except DomainError as exc:
         return err(exc)
@@ -301,10 +381,11 @@ def _driver_delivery_payload(delivery):
 
 
 @router.post("/driver/login")
-def driver_login(body: DriverLoginIn, db: Session = Depends(get_db)):
+def driver_login(body: DriverLoginIn, request: Request, db: Session = Depends(get_db)):
     """Driver app login — returns a bearer token containing the driver's ID."""
     try:
-        person = DeliveryService(db).driver_login(body.email, body.password)
+        tenant_context = resolve_public_tenant_context(request, db)
+        person = _driver_login_service(db, body.email, tenant_context).driver_login(body.email, body.password)
         token = base64.b64encode(f"driver:{person.id}".encode()).decode()
         return ok({"token": token, "person": person})
     except DomainError as exc:
@@ -319,7 +400,7 @@ def driver_me(
     """Return driver profile from bearer token."""
     try:
         person_id = _decode_driver_token(authorization)
-        person = DeliveryService(db).get_person(person_id)
+        person = _driver_service(db, person_id).get_person(person_id)
         return ok(person)
     except (ValueError, DomainError) as exc:
         return err_msg(str(exc), code="Unauthorized", status_code=401)
@@ -333,8 +414,9 @@ def driver_deliveries(
     """Return active + recent deliveries for the logged-in driver (includes order address)."""
     try:
         person_id = _decode_driver_token(authorization)
-        DeliveryService(db).get_person(person_id)
-        deliveries = DeliveryService(db).get_driver_deliveries(person_id)
+        service = _driver_service(db, person_id)
+        service.get_person(person_id)
+        deliveries = service.get_driver_deliveries(person_id)
         return ok([_driver_delivery_payload(delivery) for delivery in deliveries])
     except (ValueError, DomainError) as exc:
         return err_msg(str(exc), code="Unauthorized", status_code=401)
@@ -348,7 +430,7 @@ def driver_dashboard(
     """Return the logged-in driver's mobile dashboard, queue and finance summary."""
     try:
         person_id = _decode_driver_token(authorization)
-        dashboard = DeliveryService(db).get_driver_dashboard(person_id)
+        dashboard = _driver_service(db, person_id).get_driver_dashboard(person_id)
         queue = [_driver_delivery_payload(delivery) for delivery in dashboard["queue"]]
         active = _driver_delivery_payload(dashboard["active_delivery"]) if dashboard["active_delivery"] else None
         return ok({**dashboard, "queue": queue, "active_delivery": active})
@@ -367,7 +449,7 @@ def driver_earnings(
     """Return earnings for the logged-in driver only."""
     try:
         person_id = _decode_driver_token(authorization)
-        return ok(DeliveryService(db).list_driver_earnings(
+        return ok(_driver_service(db, person_id).list_driver_earnings(
             person_id,
             status=status,
             period_from=period_from,
@@ -387,7 +469,7 @@ def driver_start_delivery(
     """Driver starts only a delivery assigned to them."""
     try:
         person_id = _decode_driver_token(authorization)
-        delivery = DeliveryService(db).start_driver_delivery(person_id, delivery_id, notes=body.notes if body else None)
+        delivery = _driver_service(db, person_id).start_driver_delivery(person_id, delivery_id, notes=body.notes if body else None)
         return ok(_driver_delivery_payload(delivery), "Entrega iniciada.")
     except (ValueError, DomainError) as exc:
         return err_msg(str(exc), code="Unauthorized", status_code=401)
@@ -404,7 +486,7 @@ def driver_complete_delivery(
     try:
         person_id = _decode_driver_token(authorization)
         payload = body or DeliveryCompleteIn()
-        delivery = DeliveryService(db).complete_driver_delivery(
+        delivery = _driver_service(db, person_id).complete_driver_delivery(
             person_id,
             delivery_id,
             recipient_name=payload.recipient_name,
@@ -427,7 +509,7 @@ def driver_report_problem(
     """Driver reports a problem for their own delivery only."""
     try:
         person_id = _decode_driver_token(authorization)
-        delivery = DeliveryService(db).report_driver_problem(
+        delivery = _driver_service(db, person_id).report_driver_problem(
             person_id,
             delivery_id,
             reason=body.reason,
@@ -447,7 +529,7 @@ def driver_update_location(
     """Driver app updates own GPS coordinates. Uses driver bearer token (no admin required)."""
     try:
         person_id = _decode_driver_token(authorization)
-        person = DeliveryService(db).update_location(person_id, body.lat, body.lng)
+        person = _driver_service(db, person_id).update_location(person_id, body.lat, body.lng)
         return ok(person)
     except (ValueError, DomainError) as exc:
         return err_msg(str(exc), code="Unauthorized", status_code=401)
@@ -456,13 +538,17 @@ def driver_update_location(
 # ── Logistics Map Overview ────────────────────────────────────────────────────
 
 @router.get("/overview")
-def logistics_overview(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def logistics_overview(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
     """
     Returns all motoboys on duty with their active deliveries and order addresses.
     Used by the admin logistics map to show real-time positions.
     """
     try:
-        return ok(DeliveryService(db).get_logistics_overview())
+        return ok(_admin_service(request, db, admin).get_logistics_overview())
     except DomainError as exc:
         return err(exc)
 
@@ -470,10 +556,14 @@ def logistics_overview(db: Session = Depends(get_db), _=Depends(get_current_admi
 # ── Logistics Settings ────────────────────────────────────────────────────────
 
 @router.get("/settings")
-def get_logistics_settings(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def get_logistics_settings(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
     """Get logistics configuration."""
     try:
-        return ok(DeliveryService(db).get_logistics_settings())
+        return ok(_admin_service(request, db, admin).get_logistics_settings())
     except DomainError as exc:
         return err(exc)
 
@@ -481,12 +571,13 @@ def get_logistics_settings(db: Session = Depends(get_db), _=Depends(get_current_
 @router.put("/settings")
 def update_logistics_settings(
     body: LogisticsSettingsUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """Update logistics configuration."""
     try:
-        settings = DeliveryService(db).update_logistics_settings(**body.model_dump(exclude_none=True))
+        settings = _admin_service(request, db, admin).update_logistics_settings(**body.model_dump(exclude_none=True))
         return ok(settings, "Configurações salvas.")
     except DomainError as exc:
         return err(exc)
@@ -496,15 +587,16 @@ def update_logistics_settings(
 
 @router.post("/auto-assign")
 def auto_assign(
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """
     Scan for unassigned eligible orders and assign available drivers automatically.
     Only runs when auto_assign is enabled in logistics settings.
     """
     try:
-        result = DeliveryService(db).auto_assign_pending()
+        result = _admin_service(request, db, admin).auto_assign_pending()
         return ok(result, f"{len(result)} entrega(s) atribuída(s) automaticamente.")
     except DomainError as exc:
         return err(exc)
@@ -514,16 +606,17 @@ def auto_assign(
 
 @router.get("/geocode")
 def geocode_address(
+    request: Request,
     q: str = Query(..., description="Full address string to geocode"),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """
     Geocode a delivery address via Nominatim (OpenStreetMap). Results are cached
     in the DB so each unique address only hits the external API once.
     """
     try:
-        result = DeliveryService(db).geocode_address(q)
+        result = _admin_service(request, db, admin).geocode_address(q)
         return ok(result)
     except DomainError as exc:
         return err(exc)
@@ -533,16 +626,17 @@ def geocode_address(
 
 @router.get("/earnings")
 def list_earnings(
+    request: Request,
     person_id: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default=None),
     period_from: Optional[str] = Query(default=None),
     period_to: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """List delivery earnings with optional filters (person, status, period)."""
     try:
-        earnings = DeliveryService(db).list_earnings(
+        earnings = _admin_service(request, db, admin).list_earnings(
             person_id=person_id,
             status=status,
             period_from=period_from,
@@ -556,12 +650,13 @@ def list_earnings(
 @router.post("/earnings/pay")
 def pay_earnings(
     body: BulkPayIn,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """Mark a list of earnings as paid (PIX repasse)."""
     try:
-        paid = DeliveryService(db).bulk_pay_earnings(body.earning_ids, paid_by=body.paid_by)
+        paid = _admin_service(request, db, admin).bulk_pay_earnings(body.earning_ids, paid_by=body.paid_by)
         return ok({"paid": paid}, f"{paid} pagamento(s) registrado(s).")
     except DomainError as exc:
         return err(exc)
@@ -571,15 +666,16 @@ def pay_earnings(
 
 @router.get("/analytics")
 def get_analytics(
+    request: Request,
     period_from: Optional[str] = Query(default=None),
     period_to: Optional[str] = Query(default=None),
     person_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """Per-driver performance metrics: total deliveries, avg time, avg rating, completion rate, earnings."""
     try:
-        return ok(DeliveryService(db).get_analytics(
+        return ok(_admin_service(request, db, admin).get_analytics(
             period_from=period_from,
             period_to=period_to,
             person_id=person_id,
@@ -592,12 +688,13 @@ def get_analytics(
 
 @router.get("/alerts")
 def get_delivery_alerts(
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """Return active deliveries that are past their estimated ETA, sorted most-overdue first."""
     try:
-        return ok(DeliveryService(db).get_alerts())
+        return ok(_admin_service(request, db, admin).get_alerts())
     except DomainError as exc:
         return err(exc)
 
@@ -608,13 +705,14 @@ def get_delivery_alerts(
 def resolve_delivery_problem(
     delivery_id: str,
     body: DeliveryProblemResolveIn,
+    request: Request,
     db: Session = Depends(get_db),
-    admin=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """Admin resolves a driver-reported delivery problem and leaves the driver response."""
     try:
         admin_id = getattr(admin, "id", None) or getattr(admin, "email", None) or "admin"
-        delivery = DeliveryService(db).resolve_problem(
+        delivery = _admin_service(request, db, admin).resolve_problem(
             delivery_id,
             body.resolution_note,
             admin_id=str(admin_id),
@@ -627,8 +725,9 @@ def resolve_delivery_problem(
 @router.post("/assign", status_code=201)
 def assign_delivery(
     body: DeliveryAssignIn,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """
     Assign a delivery person to an order.
@@ -645,7 +744,7 @@ def assign_delivery(
       - DeliveryAssigned event published → push notification to customer
     """
     try:
-        delivery = DeliveryService(db).assign(
+        delivery = _admin_service(request, db, admin).assign(
             body.order_id,
             body.delivery_person_id,
             estimated_minutes=body.estimated_minutes,
@@ -657,12 +756,13 @@ def assign_delivery(
 
 @router.get("/active")
 def list_active_deliveries(
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """Return all deliveries currently in progress (assigned / picked_up / on_the_way)."""
     try:
-        return ok(DeliveryService(db).list_active())
+        return ok(_admin_service(request, db, admin).list_active())
     except DomainError as exc:
         return err(exc)
 
@@ -670,12 +770,13 @@ def list_active_deliveries(
 @router.get("/order/{order_id}")
 def get_delivery_by_order(
     order_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """Get the delivery record linked to a specific order."""
     try:
-        return ok(DeliveryService(db).get_by_order(order_id))
+        return ok(_admin_service(request, db, admin).get_by_order(order_id))
     except DomainError as exc:
         return err(exc)
 
@@ -683,12 +784,13 @@ def get_delivery_by_order(
 @router.get("/{delivery_id}")
 def get_delivery(
     delivery_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """Get a delivery by its own ID."""
     try:
-        return ok(DeliveryService(db).get(delivery_id))
+        return ok(_admin_service(request, db, admin).get(delivery_id))
     except DomainError as exc:
         return err(exc)
 
@@ -697,8 +799,9 @@ def get_delivery(
 def update_delivery_status(
     delivery_id: str,
     body: DeliveryStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """
     Advance a delivery through its state machine.
@@ -712,7 +815,7 @@ def update_delivery_status(
       - Loyalty points are awarded to the customer
     """
     try:
-        delivery = DeliveryService(db).update_status(delivery_id, body.status)
+        delivery = _admin_service(request, db, admin).update_status(delivery_id, body.status)
         return ok(delivery, f"Entrega atualizada para '{body.status}'.")
     except DomainError as exc:
         return err(exc)
@@ -722,8 +825,9 @@ def update_delivery_status(
 def complete_delivery(
     delivery_id: str,
     body: DeliveryCompleteIn,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     """
     Mark a delivery as completed and record proof of delivery.
@@ -734,7 +838,7 @@ def complete_delivery(
       - DeliveryCompleted event published → ERP + push notification
     """
     try:
-        delivery = DeliveryService(db).complete(
+        delivery = _admin_service(request, db, admin).complete(
             delivery_id,
             recipient_name=body.recipient_name,
             delivery_photo_url=body.delivery_photo_url,
@@ -759,7 +863,7 @@ def confirm_delivery_code(
     """
     try:
         person_id = _decode_driver_token(authorization)
-        service = DeliveryService(db)
+        service = _driver_service(db, person_id)
         service._get_driver_delivery(person_id, delivery_id)
         delivery = service.confirm_delivery_code(delivery_id, body.code)
         return ok(delivery, "Entrega confirmada com sucesso!")
@@ -783,7 +887,7 @@ def rate_delivery(
     Updates the motoboy's weighted average rating automatically.
     """
     try:
-        service = DeliveryService(db)
+        service = _delivery_service(db, delivery_id)
         existing_delivery = service.get(delivery_id)
         require_order_or_admin(
             existing_delivery.order,
@@ -791,6 +895,7 @@ def rate_delivery(
             authorization,
             x_customer_phone,
             x_customer_email,
+            expected_tenant_id=existing_delivery.tenant_id,
         )
         delivery = service.rate(delivery_id, body.rating, body.comment)
         return ok(delivery, "Avaliação registrada. Obrigado!")

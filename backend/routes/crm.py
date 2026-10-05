@@ -22,6 +22,7 @@ from backend.services.customer_ai_service import (
     get_customer_ai_analysis_status,
     run_customer_ai_analysis_job,
 )
+from backend.core.tenant_execution import job_metadata
 
 router = APIRouter(prefix="/crm", tags=["crm"])
 
@@ -1542,7 +1543,9 @@ def analyze_all_customers(
     admin_name = getattr(admin, "name", None) or getattr(admin, "email", None)
     job, created_job = create_customer_ai_analysis_job(db, created_by=admin_name, tenant_id=tenant_id)
     if created_job:
-        background_tasks.add_task(run_customer_ai_analysis_job, job["id"])
+        # Starlette BackgroundTasks runs after the HTTP response: preserve only
+        # server-resolved job metadata, never a tenant supplied by the client.
+        background_tasks.add_task(run_customer_ai_analysis_job, job["id"], job_metadata(context))
         return ok(job, "Analise em massa iniciada.")
     return ok(job, "Ja existe uma analise em massa em andamento.")
 

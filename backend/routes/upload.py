@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from backend.core.response import ok, err_msg
@@ -22,6 +22,7 @@ from backend.core.tenant_execution import tenant_upload_path
 from backend.core.tenant_context import TenantContextMissing
 from backend.core.tenant_runtime import resolve_panel_tenant_context
 from backend.database import get_db
+from backend.services.tenant_upload_service import TenantUploadService
 
 router = APIRouter(prefix="/admin", tags=["admin-upload"])
 
@@ -69,6 +70,7 @@ _EXT_MAP = {
 async def upload_image(
     request: Request,
     file: UploadFile = File(...),
+    visibility: str = Form("public"),
     admin: AdminUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
@@ -113,6 +115,9 @@ async def upload_image(
         context = resolve_panel_tenant_context(request, db, admin)
         if context is None:
             raise TenantContextMissing("Upload tenantizado exige autenticacao multiempresa ativa.")
+        visibility = visibility.strip().lower()
+        if visibility not in {"public", "private"}:
+            return err_msg("Visibilidade invalida. Use public ou private.", code="InvalidVisibility", status_code=400)
         dest_path = tenant_upload_path(upload_root, context, filename)
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         url = f"/uploads/{context.tenant_id}/{filename}"
@@ -124,5 +129,23 @@ async def upload_image(
 
     with open(dest_path, "wb") as fh:
         fh.write(data)
+
+    if get_settings().TENANT_UPLOAD_NAMESPACE_ENABLED:
+        try:
+            TenantUploadService(db).create_asset(
+                context=context,
+                admin=admin,
+                filename=filename,
+                original_filename=file.filename or filename,
+                content_type=content_type,
+                byte_size=len(data),
+                visibility=visibility,
+            )
+            db.commit()
+        except Exception:
+            # Avoid serving a file without an ownership row when the rollout is active.
+            dest_path.unlink(missing_ok=True)
+            db.rollback()
+            raise
 
     return ok({"url": url})

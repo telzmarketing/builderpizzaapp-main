@@ -29,7 +29,7 @@ router = APIRouter(prefix="/gestao/fiscal", tags=["gestao-fiscal"])
 
 
 def service(db: Session, tenant_context: TenantContext | None) -> FiscalService:
-    return FiscalService(db, operation_tenant_id(tenant_context))
+    return FiscalService(db, operation_tenant_id(tenant_context), tenant_context)
 
 
 @router.get("/overview", response_model=FiscalOverviewOut)

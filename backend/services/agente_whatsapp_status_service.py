@@ -7,6 +7,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from backend.core.tenant_context import TenantContextMissing
+from backend.core.tenant_execution import background_context_enforcement_enabled
 from backend.core.events import (
     DeliveryAssigned,
     DeliveryCompleted,
@@ -142,6 +144,10 @@ class AgenteWhatsAppStatusService:
         *,
         tenant_id: str | None = None,
     ) -> dict[str, Any]:
+        # Event handlers run outside an HTTP request.  A global order lookup
+        # would make an ambiguous event write into another establishment.
+        if background_context_enforcement_enabled() and not tenant_id:
+            raise TenantContextMissing("Evento de status sem tenant confiavel.")
         query = self._db.query(Order).filter(Order.id == order_id)
         if tenant_id:
             query = query.filter(Order.tenant_id == tenant_id)

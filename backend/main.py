@@ -132,18 +132,31 @@ async def lifespan(app: FastAPI):
         tenant_id = getattr(event, "tenant_id", None)
         if tenant_id:
             return tenant_id
-        if get_settings().TENANT_BACKGROUND_CONTEXT_ENABLED:
+        if (
+            get_settings().TENANT_BACKGROUND_CONTEXT_ENABLED
+            or get_settings().MULTI_TENANT_WAVE7_ORM_ENABLED
+        ):
             from backend.core.tenant_context import TenantContextMissing
 
             raise TenantContextMissing("Evento assíncrono sem tenant confiavel.")
         return "default"
 
+    def _finance_event_service(db, event):
+        """Bind the persisted event tenant before Wave 7 consumes financial data."""
+        from backend.core.tenant_context import TenantSource, trusted_process_context
+        from backend.services.finance_service import FinanceService
+
+        tenant_id = _event_tenant_id(event)
+        return FinanceService(
+            db,
+            tenant_id,
+            trusted_process_context(tenant_id, source=TenantSource.JOB),
+        )
+
     def _finance_payment_confirmed_handler(event: PaymentConfirmed):
         try:
             with SessionLocal() as db:
-                from backend.services.finance_service import FinanceService
-
-                FinanceService(db, _event_tenant_id(event)).sync_payment_confirmed(
+                _finance_event_service(db, event).sync_payment_confirmed(
                     payment_id=event.payment_id,
                     order_id=event.order_id,
                     amount=event.amount,
@@ -160,9 +173,7 @@ async def lifespan(app: FastAPI):
     def _finance_payment_reversed_handler(event: PaymentReversed):
         try:
             with SessionLocal() as db:
-                from backend.services.finance_service import FinanceService
-
-                FinanceService(db, _event_tenant_id(event)).sync_payment_reversed(
+                _finance_event_service(db, event).sync_payment_reversed(
                     payment_id=event.payment_id,
                     order_id=event.order_id,
                     amount=event.amount,
@@ -180,9 +191,7 @@ async def lifespan(app: FastAPI):
     def _finance_purchase_confirmed_handler(event: InventoryPurchaseConfirmed):
         try:
             with SessionLocal() as db:
-                from backend.services.finance_service import FinanceService
-
-                FinanceService(db, _event_tenant_id(event)).sync_purchase_confirmed(purchase_id=event.purchase_id)
+                _finance_event_service(db, event).sync_purchase_confirmed(purchase_id=event.purchase_id)
         except TenantContextError:
             raise
         except Exception:
@@ -587,19 +596,6 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_orders_session_id ON orders(session_id)",
         "CREATE INDEX IF NOT EXISTS ix_orders_utm_campaign ON orders(utm_campaign)",
         "INSERT INTO campaign_settings (id) VALUES ('default') ON CONFLICT DO NOTHING",
-        "CREATE TABLE IF NOT EXISTS store_operation_settings (id VARCHAR PRIMARY KEY DEFAULT 'default', tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', manual_mode VARCHAR(30) NOT NULL DEFAULT 'manual_open', closed_message TEXT NOT NULL DEFAULT 'Loja fechada no momento.', allow_scheduled_orders BOOLEAN DEFAULT FALSE, timezone VARCHAR(80) NOT NULL DEFAULT 'America/Sao_Paulo', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
-        "CREATE INDEX IF NOT EXISTS ix_store_operation_settings_tenant_id ON store_operation_settings(tenant_id)",
-        "CREATE TABLE IF NOT EXISTS store_weekly_schedules (id VARCHAR PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', weekday INTEGER NOT NULL, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
-        "CREATE INDEX IF NOT EXISTS ix_store_weekly_schedules_tenant_id ON store_weekly_schedules(tenant_id)",
-        "CREATE INDEX IF NOT EXISTS ix_store_weekly_schedules_weekday ON store_weekly_schedules(weekday)",
-        "CREATE TABLE IF NOT EXISTS store_operation_intervals (id VARCHAR PRIMARY KEY, schedule_id VARCHAR NOT NULL REFERENCES store_weekly_schedules(id) ON DELETE CASCADE, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', open_time TIME NOT NULL, close_time TIME NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())",
-        "CREATE INDEX IF NOT EXISTS ix_store_operation_intervals_schedule_id ON store_operation_intervals(schedule_id)",
-        "CREATE INDEX IF NOT EXISTS ix_store_operation_intervals_tenant_id ON store_operation_intervals(tenant_id)",
-        "CREATE TABLE IF NOT EXISTS store_operation_exceptions (id VARCHAR PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', date DATE NOT NULL, exception_type VARCHAR(30) NOT NULL, open_time TIME, close_time TIME, reason TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
-        "CREATE INDEX IF NOT EXISTS ix_store_operation_exceptions_tenant_id ON store_operation_exceptions(tenant_id)",
-        "CREATE INDEX IF NOT EXISTS ix_store_operation_exceptions_date ON store_operation_exceptions(date)",
-        "CREATE TABLE IF NOT EXISTS store_operation_logs (id VARCHAR PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', admin_id VARCHAR, admin_email VARCHAR(200), action VARCHAR(80) NOT NULL, entity VARCHAR(80) NOT NULL, entity_id VARCHAR, old_value TEXT, new_value TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
-        "CREATE INDEX IF NOT EXISTS ix_store_operation_logs_tenant_id ON store_operation_logs(tenant_id)",
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS google_id VARCHAR(200)",
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS password_hash TEXT",
         "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS active_days VARCHAR(20)",
@@ -1093,8 +1089,6 @@ def _run_migrations():
         # ══════════════════════════════════════════════════════════════════════
         # MÓDULO LOGÍSTICA — Fase 4 (Auto-atribuição + Geocodificação)
         # ══════════════════════════════════════════════════════════════════════
-        "CREATE TABLE IF NOT EXISTS geocode_cache (id VARCHAR(32) PRIMARY KEY, query TEXT NOT NULL, lat FLOAT, lng FLOAT, created_at TIMESTAMPTZ DEFAULT NOW())",
-        "CREATE INDEX IF NOT EXISTS ix_geocode_cache_created_at ON geocode_cache(created_at DESC)",
         # ── Order display code (ORDER-XXXX) ───────────────────────────────────
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_code VARCHAR(10)",
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_order_code ON orders(order_code) WHERE order_code IS NOT NULL",

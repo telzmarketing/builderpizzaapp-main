@@ -5,9 +5,14 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
 
+from backend.config import get_settings
+from backend.core.tenant_runtime import resolve_public_tenant_context
+from backend.database import get_db
+from backend.services.tenant_upload_service import TenantUploadService
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
@@ -72,12 +77,28 @@ def _build_webp(source: Path, target: Path, width: int) -> bool:
     return target.is_file() and target.stat().st_size > 0 and target.stat().st_size < source.stat().st_size
 
 
-def _file_response(path: Path, media_type: str | None = None) -> FileResponse:
-    return FileResponse(path, media_type=media_type, headers=_CACHE_HEADERS)
+def _file_response(path: Path, media_type: str | None = None, *, private: bool = False) -> FileResponse:
+    headers = {"Cache-Control": "private, no-store"} if private else _CACHE_HEADERS
+    return FileResponse(path, media_type=media_type, headers=headers)
+
+
+def _enforce_tenant_upload_read(request: Request, db: Session, path: str):
+    if not get_settings().TENANT_UPLOAD_NAMESPACE_ENABLED:
+        return None
+    clean = path.replace("\\", "/").lstrip("/")
+    if not clean or ".." in clean.split("/"):
+        raise HTTPException(status_code=404, detail="Arquivo nao encontrado.")
+    return TenantUploadService(db).require_read_access(request, clean)
 
 
 @router.get("/optimized/{width}/{path:path}")
-def optimized_upload(width: int, path: str):
+def optimized_upload(
+    width: int,
+    path: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    asset = _enforce_tenant_upload_read(request, db, path)
     width = max(64, min(width, 1280))
     source = _safe_upload_path(path)
     extension = source.suffix.lower()
@@ -86,10 +107,20 @@ def optimized_upload(width: int, path: str):
         raise HTTPException(status_code=404, detail="Arquivo nao encontrado.")
 
     if extension not in _OPTIMIZABLE_EXTENSIONS:
-        return _file_response(source)
+        return _file_response(source, private=bool(asset and asset.visibility == "private"))
 
     target = _optimized_path(source, width)
     if target.is_file() or _build_webp(source, target, width):
-        return _file_response(target, media_type="image/webp")
+        return _file_response(target, media_type="image/webp", private=bool(asset and asset.visibility == "private"))
 
-    return _file_response(source)
+    return _file_response(source, private=bool(asset and asset.visibility == "private"))
+
+
+@router.get("/{path:path}")
+def tenant_upload(
+    path: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    asset = _enforce_tenant_upload_read(request, db, path)
+    return _file_response(_safe_upload_path(path), private=bool(asset and asset.visibility == "private"))

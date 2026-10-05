@@ -367,9 +367,29 @@ class WhatsAppGatewayService:
             self._db.flush()
             return {"ok": True, "received": 0, "duplicates": 0, "ignored": 1, "message": "Evento ignorado."}
 
+        # The provider instance is the only trusted selector of a tenant for
+        # an inbound runtime callback.  Do not let an unbound callback reach
+        # driver/agent processing while background enforcement is active.
+        if get_settings().TENANT_BACKGROUND_CONTEXT_ENABLED and (not instance or not instance.tenant_id):
+            self.add_log(
+                action="runtime_event_rejected",
+                status="warning",
+                message="Evento runtime sem instancia tenant confiavel.",
+                instance_id=instance.id if instance else None,
+                tenant_id="default",
+                company_id="default",
+                metadata={"event_type": event_type, "instance_id": instance_id},
+            )
+            self._db.flush()
+            return {"ok": False, "received": 0, "duplicates": 0, "ignored": 1, "message": "Evento sem tenant confiavel."}
+
+        trusted_payload = {**payload}
+        if instance and instance.tenant_id:
+            trusted_payload["_trusted_tenant_id"] = instance.tenant_id
+
         from backend.services.delivery_driver_whatsapp_service import DeliveryDriverWhatsAppService
 
-        driver_reply = DeliveryDriverWhatsAppService(self._db).process_driver_reply(payload)
+        driver_reply = DeliveryDriverWhatsAppService(self._db).process_driver_reply(trusted_payload)
         if driver_reply is not None:
             self.add_log(
                 action="runtime_delivery_driver_reply_received",
@@ -391,7 +411,7 @@ class WhatsAppGatewayService:
 
         from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 
-        result = AgenteWhatsAppService(self._db).process_baileys_runtime_event(payload)
+        result = AgenteWhatsAppService(self._db).process_baileys_runtime_event(trusted_payload)
         self.add_log(
             action="runtime_message_received",
             status="success" if result.get("received") else "info",

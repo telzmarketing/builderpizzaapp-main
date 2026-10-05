@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
-from backend.core.tenant_context import TenantContext, TenantSource
+from backend.core.tenant_context import TenantContext, TenantContextMissing, TenantSource
 from backend.core.events import bus, ShippingCalculated
 from backend.core.exceptions import DomainError
 from backend.core.tenant_ownership import (
@@ -28,6 +28,7 @@ from backend.core.tenant_ownership import (
     operations_enforcement_enabled,
     scope_query_to_tenant,
 )
+from backend.core.wave7_tenant_orm import wave7_orm_enabled
 
 # Legacy models (kept for backward compat)
 from backend.models.shipping import (
@@ -87,10 +88,16 @@ class ShippingService:
     def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
         self._tenant_context = tenant_context
-        self._tenant_enabled = operations_enforcement_enabled() or (
+        self._wave7_enabled = wave7_orm_enabled()
+        # Freight was initially protected by the Operations rollout.  Wave 7
+        # owns this surface independently: enabling it must never leave the
+        # public calculation or backoffice rules on global data.
+        self._tenant_enabled = operations_enforcement_enabled() or self._wave7_enabled or (
             tenant_context is not None
             and tenant_context.source == TenantSource.SUPPORT
         )
+        if self._wave7_enabled and tenant_context is None:
+            raise TenantContextMissing("Contexto confiavel obrigatorio para frete da Wave 7.")
 
     def _query(self, model):
         return scope_query_to_tenant(
@@ -654,7 +661,15 @@ class ShippingService:
         try:
             from backend.services.delivery_service import DeliveryService
 
-            point = DeliveryService(self._db).geocode_address(query)
+            # DeliveryService also owns the geocode cache.  Pass the same
+            # trusted context so a Wave 7 shipping calculation cannot read or
+            # write an address cache entry from another company.
+            delivery_tenant_id = self._tenant_context.tenant_id if self._tenant_enabled and self._tenant_context else None
+            point = DeliveryService(
+                self._db,
+                tenant_id=delivery_tenant_id,
+                tenant_context=self._tenant_context,
+            ).geocode_address(query)
             lat = point.get("lat")
             lng = point.get("lng")
             if lat is None or lng is None:
@@ -724,6 +739,7 @@ class ShippingService:
                 rule_name=result.rule_name,
                 shipping_price=result.shipping_price,
                 free=result.free,
+                tenant_id=self._tenant_context.tenant_id if self._tenant_enabled and self._tenant_context else None,
             ))
         except Exception:
             pass
@@ -776,15 +792,27 @@ class ShippingService:
         self._db.delete(rule)
         self._db.commit()
 
-    @staticmethod
-    def _zone_to_out(zone: ShippingZone) -> ShippingZoneOut:
+    def _zone_to_out(self, zone: ShippingZone) -> ShippingZoneOut:
+        # Do not rely on an ORM relationship for a child collection in the
+        # tenant-enabled path.  The explicit scoped query remains safe even
+        # for legacy rows that predate the composite foreign-key contract.
+        areas = (
+            self._query(ShippingZoneArea)
+            .filter(ShippingZoneArea.zone_id == zone.id)
+            .all()
+        )
         return ShippingZoneOut(
             id=zone.id, name=zone.name, active=zone.active,
-            areas=[{"id": a.id, "area_type": a.area_type, "value": a.value} for a in zone.areas],
+            areas=[{"id": a.id, "area_type": a.area_type, "value": a.value} for a in areas],
         )
 
 
 # ── Module-level backward compat ─────────────────────────────────────────────
 
-def calculate_shipping(payload: ShippingCalculateIn, db: Session) -> ShippingCalculateOut:
-    return ShippingService(db).calculate(payload)
+def calculate_shipping(
+    payload: ShippingCalculateIn,
+    db: Session,
+    tenant_context: TenantContext | None = None,
+) -> ShippingCalculateOut:
+    """Backward-compatible helper for trusted non-HTTP callers."""
+    return ShippingService(db, tenant_context).calculate(payload)

@@ -81,8 +81,8 @@ class DeliveryPersonOut(BaseModel):
 # ── Driver App Auth ───────────────────────────────────────────────────────────
 
 class DriverLoginIn(BaseModel):
-    email: str
-    password: str
+    email: str = Field(min_length=5, max_length=200)
+    password: str = Field(min_length=1, max_length=72)
 
 
 class DriverLoginOut(BaseModel):

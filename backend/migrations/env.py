@@ -58,6 +58,7 @@ from backend.models import (  # noqa: F401
     platform_operations,
     platform_saas,
     whatsapp_gateway,
+    upload_asset,
 )
 
 config = context.config

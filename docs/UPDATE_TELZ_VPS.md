@@ -27,7 +27,7 @@ O workflow:
 O target canonico desta entrega e:
 
 ```text
-20261003_agente_whatsapp_tenant_foundation
+20261004_tenant_upload_ownership_contract
 ```
 
 O deploy fica bloqueado se o commit publicado nao possuir exatamente esse unico
@@ -44,6 +44,11 @@ A cadeia operacional que deve existir no commit publicado e linear:
   -> 20261003_whatsapp_meta_webhook_tenant_keys
   -> 20261003_email_marketing_tenant_config
   -> 20261003_agente_whatsapp_tenant_foundation
+  -> 20261004_wave7_finance_contract
+  -> 20261004_wave7_fiscal_contract
+  -> 20261004_wave7_management_geocode_contract
+  -> 20261004_wave7_logistics_identity_contract
+  -> 20261004_tenant_upload_ownership_contract
 ```
 
 ## 2. Preflight
@@ -65,7 +70,7 @@ movimentacao manual para contornar o gate.
 
 Confirme no commit alvo:
 
-- unico head Alembic `20261003_agente_whatsapp_tenant_foundation`;
+- unico head Alembic `20261004_tenant_upload_ownership_contract`;
 - workflow e updater usando o mesmo target;
 - CI verde para o mesmo SHA, incluindo o upgrade Alembic em PostgreSQL
   descartavel; CI verde nao substitui o backup nem a migration na VPS;
@@ -101,7 +106,7 @@ deploy, todos estes inputs promovidos e root-owned:
 - archive de fonte alvo e seu `TELZ_SOURCE_ARCHIVE_SHA256`;
 - archive de fonte anterior e seu `TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256`;
 - archive offline de dependencias e seu `TELZ_DEPENDENCY_ARCHIVE_SHA256`;
-- `TELZ_ALEMBIC_TARGET=20261003_agente_whatsapp_tenant_foundation`;
+- `TELZ_ALEMBIC_TARGET=20261004_tenant_upload_ownership_contract`;
 - `TELZ_PUBLIC_HEALTH_URL` quando HTTPS publico e obrigatorio.
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
@@ -142,7 +147,7 @@ sudo /usr/local/sbin/telz-health-check /opt/telz
 ```
 
 Confirme que o link `current` termina em `/releases/<SHA-ALVO>/app`, o manifest
-registra o mesmo commit e `20261003_agente_whatsapp_tenant_foundation`, e o banco possui uma unica
+registra o mesmo commit e `20261004_tenant_upload_ownership_contract`, e o banco possui uma unica
 revision igual ao target.
 
 Tambem valide HTTPS publico, login, loja, pedido, pagamentos, cozinha,

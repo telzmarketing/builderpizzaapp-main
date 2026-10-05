@@ -582,7 +582,7 @@ def test_platform_operations_is_the_single_static_head_and_master_downgrade_is_s
     }
     heads = set(revisions) - {parent for parents in revisions.values() for parent in parents}
     assert missing == set()
-    assert heads == {"20261003_agente_whatsapp_tenant_foundation"}
+    assert heads == {"20261004_tenant_upload_ownership_contract"}
 
     bridge = (versions / "20260814_merge_all_heads.py").read_text(encoding="utf-8")
     assert 'down_revision = "20260813_automation_event_core"' in bridge
@@ -620,8 +620,9 @@ def test_master_central_migrations_match_model_indexes_symmetrically():
     sources = [
         (versions / "20260815_master_central_core.py").read_text(encoding="utf-8"),
         (versions / "20260816_master_completion.py").read_text(encoding="utf-8"),
-            (versions / "20260818_platform_operations.py").read_text(encoding="utf-8"),
-            (versions / "20260920_customer_session_security.py").read_text(encoding="utf-8"),
+        (versions / "20260818_platform_operations.py").read_text(encoding="utf-8"),
+        (versions / "20260920_customer_session_security.py").read_text(encoding="utf-8"),
+        (versions / "20261004_tenant_upload_ownership_contract.py").read_text(encoding="utf-8"),
     ]
     upgrades = "\n".join(source.split("def downgrade()", 1)[0] for source in sources)
     downgrades = "\n".join(source.split("def downgrade()", 1)[1] for source in sources)
@@ -629,6 +630,16 @@ def test_master_central_migrations_match_model_indexes_symmetrically():
         for index in database.Base.metadata.tables[table_name].indexes:
             needle = f'"{index.name}"'
             assert needle in upgrades, f"missing upgrade index {index.name}"
+
+    # Upload ownership is deliberately forward-only: downgrading would erase
+    # the registry/audit trail and could re-expose media without a tenant ACL.
+    symmetric_tables = database.MASTER_CENTRAL_MIGRATION_TABLES - {
+        "tenant_upload_assets",
+        "tenant_upload_legacy_references",
+    }
+    for table_name in symmetric_tables:
+        for index in database.Base.metadata.tables[table_name].indexes:
+            needle = f'"{index.name}"'
             assert needle in downgrades, f"missing downgrade index {index.name}"
 
     core = sources[0]

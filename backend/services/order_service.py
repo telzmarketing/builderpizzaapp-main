@@ -406,7 +406,11 @@ class OrderService:
 
         from backend.services.inventory_service import ProductInventoryAvailabilityService
 
-        ProductInventoryAvailabilityService(self._db).validate_cart_item(item)
+        ProductInventoryAvailabilityService(
+            self._db,
+            tenant_id=self._tenant_context.tenant_id if self._tenant_context else None,
+            tenant_context=self._tenant_context,
+        ).validate_cart_item(item)
 
         return server_price, flavor_products, pricing, selected_size_obj, selected_crust_obj
 
@@ -846,7 +850,11 @@ class OrderService:
             self._db.flush()
             cmv_contexts.append(CmvOrderItemContext(order_item=gift_item))
 
-        OrderCmvSnapshotService(self._db).create_for_order(order, cmv_contexts)
+        OrderCmvSnapshotService(
+            self._db,
+            tenant_id=order.tenant_id,
+            tenant_context=self._tenant_context,
+        ).create_for_order(order, cmv_contexts)
         if order.status == OrderStatus.paid:
             self._consume_inventory_for_effective_sale(order.id)
 
@@ -899,6 +907,7 @@ class OrderService:
             total=order.total,
             items_count=sum(i.quantity for i in payload.items) + (gift_result.quantity if gift_result else 0),
             delivery_city=payload.delivery.city,
+            tenant_id=order.tenant_id,
         ))
 
         return order
@@ -1030,7 +1039,11 @@ class OrderService:
         session.total = total
         session.status = "pending_payment"
         session.updated_at = now
-        OrderCmvSnapshotService(self._db).create_for_order(order, cmv_contexts)
+        OrderCmvSnapshotService(
+            self._db,
+            tenant_id=order.tenant_id,
+            tenant_context=self._tenant_context,
+        ).create_for_order(order, cmv_contexts)
         sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
         from backend.services.automation_event_producer import AutomationEventProducer
         AutomationEventProducer(self._db, order.tenant_id).order_created(order)
@@ -1045,6 +1058,7 @@ class OrderService:
             total=order.total,
             items_count=items_count,
             delivery_city="Salao",
+            tenant_id=order.tenant_id,
         ))
         return order
 
@@ -1124,6 +1138,7 @@ class OrderService:
             amount=payment.amount,
             gateway=payment.gateway,
             transaction_id=payment.transaction_id or "",
+            tenant_id=payment.tenant_id,
         ))
         return order
 
@@ -1185,6 +1200,7 @@ class OrderService:
             from_status=old_status,
             to_status=new_status,
             changed_by=changed_by,
+            tenant_id=order.tenant_id,
         ))
 
         # Award loyalty points when delivered
@@ -1245,6 +1261,7 @@ class OrderService:
             from_status=current,
             to_status=OrderStatus.delivered.value,
             changed_by=changed_by,
+            tenant_id=order.tenant_id,
         ))
         if order.customer_id:
             from backend.services.loyalty_service import award_points_for_order
@@ -1262,12 +1279,14 @@ class OrderService:
     def _consume_inventory_for_effective_sale(self, order_id: str) -> None:
         from backend.services.inventory_service import InventoryService
 
-        InventoryService(self._db).consume_order_sale(order_id)
+        order = self._get_order(order_id)
+        InventoryService(self._db, order.tenant_id, self._tenant_context).consume_order_sale(order_id)
 
     def _reverse_inventory_for_cancelled_sale(self, order_id: str) -> None:
         from backend.services.inventory_service import InventoryService
 
-        InventoryService(self._db).reverse_order_sale(order_id)
+        order = self._get_order(order_id)
+        InventoryService(self._db, order.tenant_id, self._tenant_context).reverse_order_sale(order_id)
 
     def cancel(
         self,
@@ -1290,6 +1309,7 @@ class OrderService:
             order_id=order_id,
             reason=reason,
             refund_required=order.payment is not None,
+            tenant_id=order.tenant_id,
         ))
         return order
 

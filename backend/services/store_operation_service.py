@@ -7,7 +7,9 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session, joinedload
 
+from backend.config import get_settings
 from backend.core.exceptions import DomainError
+from backend.core.tenant_context import TenantContext, TenantContextMismatch, TenantContextMissing
 from backend.models.admin import AdminUser
 from backend.models.store_operation import (
     StoreOperationException,
@@ -33,9 +35,29 @@ class StoreClosed(DomainError):
 
 
 class StoreOperationService:
-    def __init__(self, db: Session, tenant_id: str = TENANT_ID):
+    def __init__(
+        self,
+        db: Session,
+        tenant_id: str = TENANT_ID,
+        tenant_context: TenantContext | None = None,
+    ):
         self._db = db
-        self._tenant_id = tenant_id
+        self._tenant_context = tenant_context
+        self._tenant_id = self._resolve_tenant_id(tenant_id, tenant_context)
+
+    @staticmethod
+    def _resolve_tenant_id(
+        tenant_id: str | None,
+        context: TenantContext | None,
+    ) -> str:
+        """Keep legacy defaults until Wave 7, then require trusted ownership."""
+        if not get_settings().MULTI_TENANT_WAVE7_ORM_ENABLED:
+            return tenant_id or TENANT_ID
+        if context is None:
+            raise TenantContextMissing("Contexto confiavel obrigatorio para gestao da Wave 7.")
+        if tenant_id and tenant_id != context.tenant_id:
+            raise TenantContextMismatch("Tenant da gestao diverge do contexto confiavel.")
+        return context.tenant_id
 
     def get_config(self) -> dict:
         settings = self._settings()

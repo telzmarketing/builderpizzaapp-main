@@ -55,7 +55,9 @@ class FreightTypeConfig(Base):
 
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_freight_type_configs_tenant_id_tenants"), nullable=True)
-    freight_type = Column(String(50), nullable=False, unique=True)
+    # Identity is (tenant_id, freight_type).  A global UNIQUE here would
+    # prevent every company from configuring its own standard freight types.
+    freight_type = Column(String(50), nullable=False)
     active = Column(Boolean, default=False)
     priority = Column(Integer, default=0)   # higher = evaluated first
     # for fixed type
