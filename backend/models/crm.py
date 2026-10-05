@@ -44,6 +44,25 @@ class CustomerTagAssignment(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class CustomerGroup(Base):
+    __tablename__ = "customer_groups"
+
+    id = Column(String, primary_key=True)
+    tenant_id = wave6_tenant_column("customer_groups")
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    group_type = Column(String(20), default="manual")
+    color = Column(String(20), default="#f97316")
+    icon = Column(String(50))
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class CustomerSegment(Base):
     __tablename__ = "customer_segments"
     __table_args__ = (

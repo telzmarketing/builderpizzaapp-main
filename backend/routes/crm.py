@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db, Base
 from backend.core.wave6_tenant_orm import wave6_tenant_column
-from backend.models.crm import CustomerSegment, CustomerTag, CustomerTagAssignment
+from backend.models.crm import CustomerGroup, CustomerSegment, CustomerTag, CustomerTagAssignment
 from backend.routes.admin_auth import get_current_admin
 from backend.core.response import ok, created
 from backend.core.tenant_context import TenantContext
@@ -92,21 +92,6 @@ class CrmTask(Base):
     priority = Column(String(20), default="medium")
     status = Column(String(20), default="pending")
     completed_at = Column(DateTime(timezone=True))
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
-
-
-class CustomerGroup(Base):
-    __tablename__ = "customer_groups"
-    tenant_id = wave6_tenant_column("customer_groups")
-    id = Column(String, primary_key=True)
-    name = Column(String(200), nullable=False)
-    description = Column(Text)
-    group_type = Column(String(20), default="manual")
-    color = Column(String(20), default="#f97316")
-    icon = Column(String(50))
-    active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
