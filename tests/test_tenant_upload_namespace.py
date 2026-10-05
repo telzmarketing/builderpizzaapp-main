@@ -29,3 +29,12 @@ def test_upload_ownership_migration_never_assigns_legacy_media_to_default():
     assert "tenant_upload_legacy_references" in source
     assert "does not create an asset" in source
     assert "tenant-legacy-default" not in source
+
+
+def test_upload_ownership_migration_does_not_render_legacy_column_as_sql_bind():
+    source = (ROOT / "backend" / "migrations" / "versions" / "20261004_tenant_upload_ownership_contract.py").read_text(encoding="utf-8")
+
+    # SQLAlchemy treats ``:logo_url`` in a textual statement as a bind parameter.
+    # The source-column label must instead be an explicit SQL string literal.
+    assert "':{url_column}'" not in source
+    assert "|| ':' || '{url_column}'" in source

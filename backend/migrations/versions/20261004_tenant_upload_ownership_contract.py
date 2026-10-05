@@ -41,7 +41,7 @@ def _record_legacy_references(bind) -> None:
             INSERT INTO tenant_upload_legacy_references
                 (id, tenant_id, source_table, source_id, source_column, legacy_url, status, created_at)
             SELECT
-                md5('{table}:' || source.{id_column}::text || ':{url_column}'),
+                md5('{table}:' || source.{id_column}::text || ':' || '{url_column}'),
                 source.{tenant_column},
                 '{table}', source.{id_column}::text, '{url_column}', source.{url_column}, 'pending', NOW()
             FROM {table} source
