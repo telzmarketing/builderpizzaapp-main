@@ -852,7 +852,13 @@ class PlatformMasterService:
             contract_value=body.contract_value,
             next_due_at=body.first_due_at,
         )
-        self.db.add_all([tenant, owner_role, owner])
+        # Persist the tenant before any tenant-owned RBAC row.  The PostgreSQL
+        # foreign key on roles.tenant_id is intentionally strict and some
+        # session configurations do not infer an insert dependency from an
+        # unassigned scalar id alone.
+        self.db.add(tenant)
+        self.db.flush()
+        self.db.add_all([owner_role, owner])
         self.db.flush()
         TenantCredentialService(self.db).create_inert_payment_gateway(tenant.id)
         for module_id, permission_id in self.db.query(RbacModule.id, RbacPermission.id).filter(

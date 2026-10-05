@@ -27,6 +27,7 @@ from backend.core.tenant_auth import get_current_tenant_context
 from backend.core.tenant_context import TenantSource
 from backend import database
 from backend.models.platform_audit import PlatformAuditLog
+from backend.models.tenant import Tenant
 from backend.models.platform_saas import (
     SaaSInvoice,
     SaaSModule,
@@ -41,11 +42,14 @@ from backend.schemas.admin import AdminLoginIn
 from backend.schemas.platform_master import (
     PlanUpdateIn,
     ModuleIn,
+    TenantOwnerIn,
     TenantInvitationCreateIn,
     TenantInvitationResendIn,
     TenantModulesUpdateIn,
     TenantSummaryOut,
+    TenantWizardIn,
 )
+from backend.schemas.platform_tenant import PlatformTenantCreate
 from backend.schemas.tenant_domain import TenantDomainVerificationChallenge
 from backend.services.platform_master_service import (
     PlatformConflict,
@@ -108,6 +112,54 @@ class QueueDB:
         return None
 
 
+class _ProvisioningQuery:
+    def filter(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, *_args, **_kwargs):
+        return self
+
+    def first(self):
+        return None
+
+    def all(self):
+        return []
+
+
+class _ForeignKeyOrderingDB:
+    """Simulates PostgreSQL's immediate FK check during a session flush."""
+
+    def __init__(self):
+        self.added = []
+        self.persisted_tenant_ids = set()
+        self.flushes = []
+        self.commits = 0
+
+    def query(self, *_args, **_kwargs):
+        return _ProvisioningQuery()
+
+    def add(self, row):
+        self.added.append(row)
+
+    def add_all(self, rows):
+        self.added.extend(rows)
+
+    def flush(self):
+        for row in self.added:
+            if isinstance(row, Role) and row.tenant_id not in self.persisted_tenant_ids:
+                raise AssertionError("role inserida antes do tenant correspondente")
+        self.persisted_tenant_ids.update(
+            row.id for row in self.added if isinstance(row, Tenant)
+        )
+        self.flushes.append(tuple(type(row) for row in self.added))
+
+    def commit(self):
+        self.commits += 1
+
+    def rollback(self):
+        return None
+
+
 def _admin(*, force_password_change=False, auth_version=0):
     return SimpleNamespace(
         id="admin-1",
@@ -119,6 +171,39 @@ def _admin(*, force_password_change=False, auth_version=0):
         auth_version=auth_version,
         password_hash="hash",
     )
+
+
+def test_provision_persists_tenant_before_owner_role_fk(monkeypatch):
+    db = _ForeignKeyOrderingDB()
+    service = PlatformMasterService(db)
+    service.audit = SimpleNamespace(record=lambda **_kwargs: None)
+    monkeypatch.setattr(
+        "backend.services.platform_master_service.hash_password", lambda _value: "hash"
+    )
+    monkeypatch.setattr(
+        "backend.services.platform_master_service.TenantCredentialService.create_inert_payment_gateway",
+        lambda _self, _tenant_id: None,
+    )
+    monkeypatch.setattr(
+        "backend.services.platform_master_service.ensure_tenant_kds_roles",
+        lambda _db, _tenant_id: {},
+    )
+    monkeypatch.setattr(service, "detail", lambda tenant_id: {"id": tenant_id})
+
+    result = service.provision(
+        TenantWizardIn(
+            tenant=PlatformTenantCreate(name="Pizzaria Nova", slug="pizzaria-nova"),
+            owner=TenantOwnerIn(
+                name="Owner Nova", email="owner@example.com", password="senha-segura"
+            ),
+        ),
+        actor=_admin(),
+    )
+
+    assert db.flushes[0] == (Tenant,)
+    assert Role in db.flushes[1]
+    assert result["tenant"]["id"] in db.persisted_tenant_ids
+    assert db.commits == 1
 
 
 def test_support_scope_is_explicit_and_denies_master_rbac_and_secrets(monkeypatch):
