@@ -362,7 +362,7 @@ Necessarias para a superficie Master existente:
 PLATFORM_RBAC_ENABLED=true
 MULTI_TENANT_AUTH_ENABLED=true
 TENANT_DOMAINS_ENABLED=true
-TENANT_DOMAINS_PLATFORM_HOSTNAMES=erp.telz.com.br
+TENANT_DOMAINS_PLATFORM_HOSTNAMES=app.telz.com.br
 ```
 
 Relacionadas ao proxy:

@@ -82,7 +82,7 @@ try:
         raise ValueError("target_commit deve diferir do previous_commit")
     if not re.fullmatch(r"[A-Za-z0-9_]+", str(data["alembic_target"])):
         raise ValueError("alembic_target invalido")
-    if data["public_health_url"] != "https://erp.telz.com.br/health":
+    if data["public_health_url"] != "https://app.telz.com.br/health":
         raise ValueError("public_health_url nao aprovada")
     for name in names:
         artifact = data["artifacts"][name]

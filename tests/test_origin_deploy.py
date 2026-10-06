@@ -17,6 +17,8 @@ def test_origin_deploy_requires_explicit_commit_and_uses_hardened_updater():
     assert 'TELZ_OPERATION_BUNDLE_DIR="$OPERATION_BUNDLE"' in source
     assert 'TELZ_DEPENDENCY_ARCHIVE_SHA256="$DEPENDENCY_SHA"' in source
     assert 'BUNDLE_UPDATE="$OPERATION_BUNDLE/scripts/update-telz.sh"' in source
+    assert 'PUBLIC_HEALTH_URL="https://app.telz.com.br/health"' in source
+    assert '"VITE_PLATFORM_HOSTNAME":"app.telz.com.br"' in source
 
 
 def test_origin_deploy_keeps_artifacts_root_owned_and_never_runs_checkout_scripts_as_root():

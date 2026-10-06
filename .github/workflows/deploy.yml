@@ -310,8 +310,8 @@ jobs:
           public = {
               "VITE_API_URL": "",
               "VITE_MULTI_TENANT_AUTH_ENABLED": "true",
-              "VITE_PLATFORM_HOSTNAME": "erp.telz.com.br",
-              "VITE_PLATFORM_HOSTNAMES": "erp.telz.com.br",
+              "VITE_PLATFORM_HOSTNAME": "app.telz.com.br",
+              "VITE_PLATFORM_HOSTNAMES": "app.telz.com.br",
           }
           public_path = root / ".telz-public-build.json"
           public_path.write_text(json.dumps(public, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
@@ -533,7 +533,7 @@ jobs:
             local source_dir="$1"
             pnpm --dir "$source_dir" install --offline --frozen-lockfile --package-import-method=copy --store-dir "$work/dependencies/pnpm-store"
             pnpm --dir "$source_dir" run typecheck
-            VITE_API_URL='' VITE_PLATFORM_HOSTNAME=erp.telz.com.br VITE_PLATFORM_HOSTNAMES=erp.telz.com.br \
+            VITE_API_URL='' VITE_PLATFORM_HOSTNAME=app.telz.com.br VITE_PLATFORM_HOSTNAMES=app.telz.com.br \
               VITE_MULTI_TENANT_AUTH_ENABLED=true pnpm --dir "$source_dir" run build
           }
           verify_node "$work/target"
@@ -637,7 +637,7 @@ jobs:
           TELZ_ALEMBIC_TARGET: 20261004_tenant_upload_ownership_contract
           EXPECTED_COMMIT: ${{ github.sha }}
           PREVIOUS_COMMIT: ${{ needs.inspect_vps.outputs.previous_commit }}
-          PUBLIC_HEALTH_URL: https://erp.telz.com.br/health
+          PUBLIC_HEALTH_URL: https://app.telz.com.br/health
           OPERATION_BUNDLE_SHA256: ${{ steps.delivery.outputs.operation_sha256 }}
           OPERATION_BUNDLE_BASE64: ${{ steps.delivery.outputs.operation_base64 }}
           TARGET_SOURCE_REMOTE: ${{ steps.artifact_upload.outputs.target_remote }}
@@ -662,7 +662,7 @@ jobs:
             [[ "$OPERATION" == "prepare_ssl" || "$OPERATION" == "deploy" ]]
             [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
             [[ "$OPERATION_BUNDLE_SHA256" =~ ^[0-9a-f]{64}$ ]]
-            test "$PUBLIC_HEALTH_URL" = "https://erp.telz.com.br/health"
+            test "$PUBLIC_HEALTH_URL" = "https://app.telz.com.br/health"
 
             sudo install -d -m 0755 -o root -g root /var/lib/telz
             BUNDLE_STAGE="$(sudo mktemp -d /var/lib/telz/operation-bundle.XXXXXX)"
@@ -725,7 +725,7 @@ jobs:
             flock -n 9
             install -m 0755 -o root -g root "$source_script" /usr/local/sbin/telz-finish-ssl
             ROOT
-              echo "[prepare_ssl] helper instalado. Execute: sudo /usr/local/sbin/telz-finish-ssl erp.telz.com.br <email>"
+              echo "[prepare_ssl] helper instalado. Execute: sudo /usr/local/sbin/telz-finish-ssl app.telz.com.br <email>"
               exit 0
             fi
 

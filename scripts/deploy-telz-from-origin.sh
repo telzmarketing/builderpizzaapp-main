@@ -53,7 +53,7 @@ SERVICE_USER="${TELZ_SERVICE_USER:-telz}"
 BUILD_USER="${TELZ_BUILD_USER:-telz-build}"
 BUILD_GROUP="${TELZ_BUILD_GROUP:-telz-build}"
 ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261004_tenant_upload_ownership_contract}"
-PUBLIC_HEALTH_URL="https://erp.telz.com.br/health"
+PUBLIC_HEALTH_URL="https://app.telz.com.br/health"
 
 [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]] || die "informe o SHA-1 completo do commit alvo"
 [[ "$INSTALL_INPUT" = /* && "$INSTALL_INPUT" != "/" && ! -L "$INSTALL_INPUT" ]] || die "INSTALL_DIR invalido"
@@ -217,7 +217,7 @@ import hashlib, json, sys
 from pathlib import Path
 root = Path(sys.argv[1])
 digest = lambda p: hashlib.sha256(Path(p).read_bytes()).hexdigest()
-public = {"VITE_API_URL":"", "VITE_MULTI_TENANT_AUTH_ENABLED":"true", "VITE_PLATFORM_HOSTNAME":"erp.telz.com.br", "VITE_PLATFORM_HOSTNAMES":"erp.telz.com.br"}
+public = {"VITE_API_URL":"", "VITE_MULTI_TENANT_AUTH_ENABLED":"true", "VITE_PLATFORM_HOSTNAME":"app.telz.com.br", "VITE_PLATFORM_HOSTNAMES":"app.telz.com.br"}
 public_path = root / '.telz-public-build.json'
 public_path.write_text(json.dumps(public, sort_keys=True, separators=(',', ':')) + '\n', encoding='utf-8')
 commits = {}

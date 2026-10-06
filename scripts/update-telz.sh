@@ -177,7 +177,7 @@ SSL_COMMAND="/usr/local/sbin/telz-finish-ssl"
 [[ "$REQUIRE_PUBLIC_HTTPS" == "true" || "$REQUIRE_PUBLIC_HTTPS" == "false" ]] || \
   die "TELZ_REQUIRE_PUBLIC_HTTPS deve ser true ou false"
 if [[ "$REQUIRE_PUBLIC_HTTPS" == "true" ]]; then
-  [[ "$PUBLIC_HEALTH_URL" == "https://erp.telz.com.br/health" ]] || \
+  [[ "$PUBLIC_HEALTH_URL" == "https://app.telz.com.br/health" ]] || \
     die "TELZ_PUBLIC_HEALTH_URL deve ser a URL canonica HTTPS aprovada"
 fi
 [[ "$OPERATION_BUNDLE_INPUT" = /* && ! -L "$OPERATION_BUNDLE_INPUT" ]] || \
@@ -275,8 +275,8 @@ from pathlib import Path
 expected = {
     "VITE_API_URL": "",
     "VITE_MULTI_TENANT_AUTH_ENABLED": "true",
-    "VITE_PLATFORM_HOSTNAME": "erp.telz.com.br",
-    "VITE_PLATFORM_HOSTNAMES": "erp.telz.com.br",
+    "VITE_PLATFORM_HOSTNAME": "app.telz.com.br",
+    "VITE_PLATFORM_HOSTNAMES": "app.telz.com.br",
 }
 if json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")) != expected:
     raise SystemExit("configuracao publica promovida diverge do contrato")
@@ -395,8 +395,8 @@ if metadata.get("node") != "22" or metadata.get("pnpm") != "10.14.0":
 expected_public = {
     "VITE_API_URL": "",
     "VITE_MULTI_TENANT_AUTH_ENABLED": "true",
-    "VITE_PLATFORM_HOSTNAME": "erp.telz.com.br",
-    "VITE_PLATFORM_HOSTNAMES": "erp.telz.com.br",
+    "VITE_PLATFORM_HOSTNAME": "app.telz.com.br",
+    "VITE_PLATFORM_HOSTNAMES": "app.telz.com.br",
 }
 if public_config is None or json.loads(public_config) != expected_public:
     raise SystemExit("configuracao publica promovida invalida")

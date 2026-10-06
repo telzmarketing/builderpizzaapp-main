@@ -188,7 +188,7 @@ Confirme no commit alvo:
 - para o caminho remoto, secrets `VPS_HOST`, `VPS_USER` (atualmente `root`),
   `VPS_PORT`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS` e `VPS_HOST_FINGERPRINT`, mais
   protecoes/aprovadores do environment `production`;
-- URL publica canonica `https://erp.telz.com.br/health` operacional.
+- URL publica canonica `https://app.telz.com.br/health` operacional.
 
 `VPS_KNOWN_HOSTS` deve conter a linha completa no formato `known_hosts` para
 `VPS_HOST:VPS_PORT`; ele e usado pelas etapas SSH com
