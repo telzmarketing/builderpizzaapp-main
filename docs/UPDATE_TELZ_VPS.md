@@ -35,8 +35,28 @@ GitHub. A VPS busca o commit aprovado, mas nao faz `git pull`: o helper exige
 o SHA completo, monta artefatos locais com hash, usa a mesma promocao imutavel
 e delega backup, migration, recuperacao e health ao updater endurecido.
 
-Antes da janela, substitua `<SHA-ALVO>` pelo SHA completo que esta verde no CI
-e execute, como `root`, exatamente nesta ordem:
+#### Comando unico para cada atualizacao
+
+Depois da instalacao unica do helper abaixo, cada atualizacao e exatamente um
+comando. Substitua `<SHA-ALVO>` pelo SHA completo do commit ja aprovado no CI:
+
+```bash
+sudo /usr/local/sbin/telz-deploy-from-origin <SHA-ALVO> /opt/telz
+```
+
+O SHA continua obrigatorio: a VPS nao deve inferir "o ultimo main", pois ela
+nao tem como comprovar que esse commit passou no CI nem que foi o commit
+revisado para a janela. O helper faz internamente o backup, `fetch`, build
+isolado, validacao e aplicacao da migration forward-only, troca atomica da
+release, restart e health local/HTTPS. Em qualquer falha, ele interrompe a
+promocao; nao use `git pull`, `reset`, `checkout` ou `clean` como atalho.
+
+#### Instalacao unica do helper
+
+Se `/usr/local/sbin/telz-deploy-from-origin` ainda nao existir, instale a copia
+root-owned a partir do mesmo commit aprovado antes da primeira atualizacao.
+Substitua `<SHA-ALVO>` pelo mesmo SHA completo e execute, como `root`, nesta
+ordem:
 
 ```bash
 TARGET=<SHA-ALVO>
@@ -45,7 +65,6 @@ sudo -u telz -H git -C /opt/telz status --short
 sudo -u telz -H git -C /opt/telz cat-file -e "$TARGET^{commit}"
 sudo -u telz -H git -C /opt/telz show "$TARGET:scripts/deploy-telz-from-origin.sh" \
   | sudo install -m 0755 -o root -g root /dev/stdin /usr/local/sbin/telz-deploy-from-origin
-sudo /usr/local/sbin/telz-deploy-from-origin "$TARGET" /opt/telz
 ```
 
 O segundo comando precisa retornar vazio. Se retornar qualquer arquivo, pare:
@@ -54,6 +73,11 @@ tambem recusa SHA que nao seja fast-forward da release ativa ou que nao esteja
 em `origin/main`. Ele pode baixar dependencias Python e pnpm da VPS somente
 como usuario de build isolado; por isso a VPS precisa ter acesso de saida aos
 registries durante a janela.
+
+O helper root-owned e mantido fora do checkout para que uma atualizacao nunca
+execute um script mutavel como root. Reinstale-o somente quando a propria
+implementacao de `deploy-telz-from-origin.sh` mudar, usando o procedimento
+acima e o SHA aprovado; para releases comuns, use apenas o comando unico.
 
 ### 1.3 Deploy manual por pacote selado
 
