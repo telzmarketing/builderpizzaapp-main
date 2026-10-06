@@ -115,9 +115,9 @@ function AppRouteFallback() {
 
   if (isAdminRoute) {
     return (
-      <div className="min-h-screen bg-[#123f39] text-[#f8f1dc]">
+      <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-primary)]">
         <div className="flex min-h-screen items-center justify-center px-6">
-          <div className="rounded-lg border border-[#315a52] bg-[#173f38] px-6 py-5 text-sm font-semibold shadow-lg">
+          <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-6 py-5 text-sm font-semibold shadow-lg">
             Carregando painel...
           </div>
         </div>
@@ -132,16 +132,16 @@ function AppRouteErrorFallback() {
   const isAdminRoute = window.location.pathname.startsWith("/painel");
 
   return (
-    <div className={isAdminRoute ? "min-h-screen bg-[#123f39] text-[#f8f1dc]" : "min-h-screen bg-white text-slate-900"}>
+    <div className={isAdminRoute ? "min-h-screen bg-[var(--bg-main)] text-[var(--text-primary)]" : "min-h-screen bg-white text-slate-900"}>
       <div className="flex min-h-screen items-center justify-center px-6">
-        <div className={isAdminRoute ? "max-w-md rounded-lg border border-[#315a52] bg-[#173f38] p-6 text-center shadow-lg" : "max-w-md rounded-lg border border-slate-200 bg-white p-6 text-center shadow-lg"}>
+        <div className={isAdminRoute ? "max-w-md rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-6 text-center shadow-lg" : "max-w-md rounded-lg border border-slate-200 bg-white p-6 text-center shadow-lg"}>
           <h1 className="text-lg font-black">Nao foi possivel carregar este modulo.</h1>
-          <p className={isAdminRoute ? "mt-2 text-sm text-[#cbbf9f]" : "mt-2 text-sm text-slate-600"}>
+          <p className={isAdminRoute ? "mt-2 text-sm text-[var(--text-secondary)]" : "mt-2 text-sm text-slate-600"}>
             Atualize a pagina para buscar a versao mais recente do painel.
           </p>
           <button
             type="button"
-            className={isAdminRoute ? "mt-5 rounded-md bg-[#c7a45d] px-4 py-2 text-sm font-black text-[#2b2118] transition hover:bg-[#d4b16b]" : "mt-5 rounded-md bg-slate-900 px-4 py-2 text-sm font-black text-white transition hover:bg-slate-700"}
+            className={isAdminRoute ? "mt-5 rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-black text-white transition hover:bg-[var(--interaction-hover)]" : "mt-5 rounded-md bg-slate-900 px-4 py-2 text-sm font-black text-white transition hover:bg-slate-700"}
             onClick={() => window.location.reload()}
           >
             Recarregar painel
