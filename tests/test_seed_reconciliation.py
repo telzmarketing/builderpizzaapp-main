@@ -1,11 +1,29 @@
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
 from backend.core import seed
 from backend.database import Base
+# Register mapped classes referenced by seed imports before the fixture creates
+# any ORM instance. This mirrors the application's model bootstrap.
+from backend.models import (  # noqa: F401
+    campaign,
+    chatbot,
+    coupon,
+    customer,
+    delivery,
+    loyalty,
+    order,
+    payment,
+    product,
+    product_promotion,
+    promotion,
+    salao,
+    shipping,
+)
 from backend.models.admin import AdminUser
 from backend.models.platform_rbac import PlatformRole, PlatformUserRole
 from backend.models.rbac import Role, RbacModule, RbacPermission, RolePermission
@@ -164,6 +182,92 @@ def test_rbac_seed_completes_partial_graph_without_overwriting_allowed(db):
     assert whatsapp_gateway.id == "existing-module-whatsapp-gateway"
     assert view.id == "existing-permission-view"
     assert set(_rbac_ids(db)["role_permissions"]) == _expected_role_permission_keys(db)
+
+
+def test_rbac_seed_allows_same_role_name_in_another_tenant_on_composite_schema(db):
+    db.add_all([
+        Tenant(
+            id="tenant-other",
+            slug="other",
+            name="Outra empresa",
+            status="active",
+            timezone="America/Sao_Paulo",
+            locale="pt-BR",
+        ),
+        Role(
+            id="other-tenant-cozinha",
+            tenant_id="tenant-other",
+            name="cozinha",
+            description="Cozinha de outra empresa",
+            is_system=True,
+        ),
+    ])
+    db.commit()
+
+    seed._seed_rbac(db)
+    db.commit()
+
+    assert db.query(Role).filter_by(
+        tenant_id=seed.LEGACY_TENANT_ID,
+        name="cozinha",
+    ).count() == 1
+    assert db.query(Role).filter_by(
+        tenant_id="tenant-other",
+        name="cozinha",
+    ).count() == 1
+    other_role = db.query(Role).filter_by(id="other-tenant-cozinha").one()
+    assert other_role.description == "Cozinha de outra empresa"
+    assert other_role.is_system is True
+
+
+def test_rbac_seed_fails_closed_when_roles_name_is_still_globally_unique(db):
+    db.add_all([
+        Tenant(
+            id="tenant-other",
+            slug="other",
+            name="Outra empresa",
+            status="active",
+            timezone="America/Sao_Paulo",
+            locale="pt-BR",
+        ),
+        Role(
+            id="other-tenant-cozinha",
+            tenant_id="tenant-other",
+            name="cozinha",
+            description="Cozinha de outra empresa",
+            is_system=True,
+        ),
+    ])
+    db.commit()
+    db.execute(text("CREATE UNIQUE INDEX roles_name_key ON roles(name)"))
+    db.commit()
+
+    with pytest.raises(RuntimeError, match="Role.name ainda e globalmente unico"):
+        seed._seed_rbac(db)
+
+
+def test_rbac_seed_fails_closed_when_composite_role_uniqueness_is_missing(db, monkeypatch):
+    class InspectorWithoutRoleUniqueness:
+        def get_unique_constraints(self, _table_name):
+            return []
+
+        def get_indexes(self, _table_name):
+            return []
+
+    monkeypatch.setattr(seed, "inspect", lambda _bind: InspectorWithoutRoleUniqueness())
+
+    with pytest.raises(RuntimeError, match="falta unicidade composta"):
+        seed._seed_rbac(db)
+
+
+def test_rbac_seed_fails_closed_when_role_schema_cannot_be_inspected(db, monkeypatch):
+    def raise_inspection_error(_bind):
+        raise SQLAlchemyError("inspection unavailable")
+
+    monkeypatch.setattr(seed, "inspect", raise_inspection_error)
+
+    with pytest.raises(RuntimeError, match="Nao foi possivel validar"):
+        seed._seed_rbac(db)
 
 
 def test_admin_seed_creates_configured_admin_when_other_user_exists(

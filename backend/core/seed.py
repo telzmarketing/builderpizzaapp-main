@@ -5,7 +5,8 @@ Run once on startup.
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import text
+from sqlalchemy import inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.models.product import Product, MultiFlavorsConfig, PricingRule
@@ -469,7 +470,12 @@ def _seed_rbac(db: Session) -> None:
         for (tenant_id, _), role in roles_by_tenant_and_name.items()
         if tenant_id != LEGACY_TENANT_ID
     ]
-    if conflicting_roles:
+    roles_name_is_globally_unique = _roles_name_is_globally_unique(db)
+    # A tenant-scoped schema intentionally allows the same system role in
+    # multiple tenants.  Looking at rows alone cannot tell it apart from the
+    # historical ``UNIQUE(roles.name)`` schema, so only block the seed when
+    # the live database still declares that unsafe global uniqueness rule.
+    if conflicting_roles and roles_name_is_globally_unique:
         conflicts = ", ".join(
             sorted(f"{role.name} (tenant={role.tenant_id!r})" for role in conflicting_roles)
         )
@@ -604,3 +610,38 @@ def _seed_rbac(db: Session) -> None:
             for row in stale:
                 db.delete(row)
     db.flush()
+
+
+def _roles_name_is_globally_unique(db: Session) -> bool:
+    """Return whether the live roles table forbids duplicate names globally.
+
+    The ORM model describes the current composite tenant/name constraint, but
+    startup can run against an older production schema. Inspect the database
+    rather than inferring its constraints from role rows: two tenants having a
+    ``cozinha`` role is valid on the current schema and must not stop startup.
+    """
+    try:
+        inspector = inspect(db.get_bind())
+        unique_column_sets = [
+            frozenset(constraint.get("column_names") or [])
+            for constraint in inspector.get_unique_constraints("roles")
+        ]
+        unique_column_sets.extend(
+            frozenset(index.get("column_names") or [])
+            for index in inspector.get_indexes("roles")
+            if index.get("unique")
+        )
+    except SQLAlchemyError as exc:
+        # With conflicting data, proceeding without knowing whether an old
+        # global constraint exists could partially mutate the RBAC graph.
+        raise RuntimeError(
+            "Nao foi possivel validar a unicidade de roles.name no banco."
+        ) from exc
+
+    if frozenset(("tenant_id", "name")) not in unique_column_sets:
+        raise RuntimeError(
+            "Contrato RBAC invalido: falta unicidade composta "
+            "roles(tenant_id, name)."
+        )
+
+    return frozenset(("name",)) in unique_column_sets
