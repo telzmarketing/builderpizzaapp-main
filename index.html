@@ -33,7 +33,14 @@
         var hostname = window.location.hostname.toLowerCase().replace(/\.+$/, "") || "unknown";
         var rawTheme;
         try {
-          rawTheme = window.localStorage.getItem("moschettieri_theme_settings:" + hostname);
+          var themeKey = "telz_theme_settings:" + hostname;
+          var legacyThemeKey = "moschettieri_theme_settings:" + hostname;
+          rawTheme = window.localStorage.getItem(themeKey);
+          var migratedLegacyTheme = false;
+          if (!rawTheme) {
+            rawTheme = window.localStorage.getItem(legacyThemeKey);
+            migratedLegacyTheme = Boolean(rawTheme);
+          }
           if (!rawTheme) return;
           var theme = JSON.parse(rawTheme);
           var required = [
@@ -46,6 +53,11 @@
           if (!required.every(function (key) {
             return typeof theme[key] === "string" && /^#[0-9a-f]{6}$/i.test(theme[key]);
           })) return;
+
+          if (migratedLegacyTheme) {
+            window.localStorage.setItem(themeKey, JSON.stringify(theme));
+            window.localStorage.removeItem(legacyThemeKey);
+          }
 
           function hexToHsl(hex) {
             var r = parseInt(hex.slice(1, 3), 16) / 255;

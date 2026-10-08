@@ -57,7 +57,8 @@ export const DEFAULT_THEME: ThemeSettings = {
   home_banner_background: "#1f2937",
 };
 
-const THEME_CACHE_KEY_PREFIX = "moschettieri_theme_settings";
+const THEME_CACHE_KEY_PREFIX = "telz_theme_settings";
+const LEGACY_THEME_CACHE_KEY_PREFIX = "moschettieri_theme_settings";
 
 export function normalizeThemeHostname(hostname: string): string {
   return hostname.trim().toLowerCase().replace(/\.+$/, "") || "unknown";
@@ -65,6 +66,10 @@ export function normalizeThemeHostname(hostname: string): string {
 
 export function getThemeCacheKey(hostname: string): string {
   return `${THEME_CACHE_KEY_PREFIX}:${normalizeThemeHostname(hostname)}`;
+}
+
+function getLegacyThemeCacheKey(hostname: string): string {
+  return `${LEGACY_THEME_CACHE_KEY_PREFIX}:${normalizeThemeHostname(hostname)}`;
 }
 
 function getCurrentThemeHostname(): string {
@@ -90,11 +95,25 @@ function isThemeSettings(value: unknown): value is ThemeSettings {
 export function readCachedTheme(hostname = getCurrentThemeHostname()): ThemeSettings | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(getThemeCacheKey(hostname));
+    const cacheKey = getThemeCacheKey(hostname);
+    let raw = window.localStorage.getItem(cacheKey);
+    let migratedLegacyKey: string | null = null;
+    if (!raw) {
+      const legacyKey = getLegacyThemeCacheKey(hostname);
+      raw = window.localStorage.getItem(legacyKey);
+      migratedLegacyKey = raw ? legacyKey : null;
+    }
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!isThemeSettings(parsed)) return null;
-    return { ...DEFAULT_THEME, ...parsed };
+    const theme = { ...DEFAULT_THEME, ...parsed };
+
+    // Migrate a pre-Telz cache only once, keeping every hostname isolated.
+    if (migratedLegacyKey) {
+      window.localStorage.setItem(cacheKey, JSON.stringify(theme));
+      window.localStorage.removeItem(migratedLegacyKey);
+    }
+    return theme;
   } catch {
     return null;
   }
