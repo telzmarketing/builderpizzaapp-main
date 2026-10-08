@@ -57,7 +57,20 @@ export const DEFAULT_THEME: ThemeSettings = {
   home_banner_background: "#1f2937",
 };
 
-const THEME_CACHE_KEY = "moschettieri_theme_settings";
+const THEME_CACHE_KEY_PREFIX = "moschettieri_theme_settings";
+
+export function normalizeThemeHostname(hostname: string): string {
+  return hostname.trim().toLowerCase().replace(/\.+$/, "") || "unknown";
+}
+
+export function getThemeCacheKey(hostname: string): string {
+  return `${THEME_CACHE_KEY_PREFIX}:${normalizeThemeHostname(hostname)}`;
+}
+
+function getCurrentThemeHostname(): string {
+  if (typeof window === "undefined") return "unknown";
+  return window.location.hostname;
+}
 
 function isThemeSettings(value: unknown): value is ThemeSettings {
   if (!value || typeof value !== "object") return false;
@@ -74,10 +87,10 @@ function isThemeSettings(value: unknown): value is ThemeSettings {
   );
 }
 
-export function readCachedTheme(): ThemeSettings | null {
+export function readCachedTheme(hostname = getCurrentThemeHostname()): ThemeSettings | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(THEME_CACHE_KEY);
+    const raw = window.localStorage.getItem(getThemeCacheKey(hostname));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!isThemeSettings(parsed)) return null;
@@ -87,10 +100,10 @@ export function readCachedTheme(): ThemeSettings | null {
   }
 }
 
-export function cacheTheme(t: ThemeSettings): void {
+export function cacheTheme(t: ThemeSettings, hostname = getCurrentThemeHostname()): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(t));
+    window.localStorage.setItem(getThemeCacheKey(hostname), JSON.stringify(t));
   } catch {
     // localStorage can be unavailable in privacy modes; theme still applies in-memory.
   }

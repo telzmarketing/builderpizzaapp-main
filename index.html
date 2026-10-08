@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#0c1220" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Motoboy" />
@@ -13,11 +13,110 @@
     <link rel="icon" sizes="512x512" href="/api/site-config/favicon?size=512" />
     <link rel="apple-touch-icon" sizes="192x192" href="/api/site-config/favicon?size=192" />
     <title>Telz</title>
+    <style>
+      html, body, #root {
+        min-height: 100%;
+        margin: 0;
+        background: #0c1220;
+        color: #f8fafc;
+      }
+
+      #root { min-height: 100vh; }
+    </style>
   </head>
 
   <body>
     <div id="root"></div>
 
+    <script>
+      (function () {
+        var hostname = window.location.hostname.toLowerCase().replace(/\.+$/, "") || "unknown";
+        var rawTheme;
+        try {
+          rawTheme = window.localStorage.getItem("moschettieri_theme_settings:" + hostname);
+          if (!rawTheme) return;
+          var theme = JSON.parse(rawTheme);
+          var required = [
+            "primary", "secondary", "background_main", "background_alt", "background_card",
+            "text_primary", "text_secondary", "text_muted", "status_success", "status_error",
+            "status_warning", "status_info", "border", "interaction_hover", "interaction_active",
+            "interaction_focus", "navbar", "footer", "sidebar", "modal", "overlay", "badge",
+            "tag", "home_banner_background"
+          ];
+          if (!required.every(function (key) {
+            return typeof theme[key] === "string" && /^#[0-9a-f]{6}$/i.test(theme[key]);
+          })) return;
+
+          function hexToHsl(hex) {
+            var r = parseInt(hex.slice(1, 3), 16) / 255;
+            var g = parseInt(hex.slice(3, 5), 16) / 255;
+            var b = parseInt(hex.slice(5, 7), 16) / 255;
+            var max = Math.max(r, g, b);
+            var min = Math.min(r, g, b);
+            var h = 0;
+            var s = 0;
+            var l = (max + min) / 2;
+            if (max !== min) {
+              var d = max - min;
+              s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+              if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+              else if (max === g) h = ((b - r) / d + 2) / 6;
+              else h = ((r - g) / d + 4) / 6;
+            }
+            return Math.round(h * 360) + " " + Math.round(s * 100) + "% " + Math.round(l * 100) + "%";
+          }
+
+          var vars = {
+            "--color-primary": theme.primary,
+            "--color-secondary": theme.secondary,
+            "--bg-main": theme.background_main,
+            "--bg-alt": theme.background_alt,
+            "--bg-card": theme.background_card,
+            "--text-primary": theme.text_primary,
+            "--text-secondary": theme.text_secondary,
+            "--text-muted": theme.text_muted,
+            "--status-success": theme.status_success,
+            "--status-error": theme.status_error,
+            "--status-warning": theme.status_warning,
+            "--status-info": theme.status_info,
+            "--border-color": theme.border,
+            "--interaction-hover": theme.interaction_hover,
+            "--interaction-active": theme.interaction_active,
+            "--interaction-focus": theme.interaction_focus,
+            "--navbar-bg": theme.navbar,
+            "--footer-bg": theme.footer,
+            "--sidebar-bg": theme.sidebar,
+            "--modal-bg": theme.modal,
+            "--overlay-bg": theme.overlay,
+            "--badge-bg": theme.badge,
+            "--tag-bg": theme.tag,
+            "--home-banner-bg": theme.home_banner_background,
+            "--primary": hexToHsl(theme.primary),
+            "--ring": hexToHsl(theme.primary),
+            "--accent": hexToHsl(theme.primary),
+            "--background": hexToHsl(theme.background_main),
+            "--card": hexToHsl(theme.background_card),
+            "--popover": hexToHsl(theme.background_card),
+            "--secondary": hexToHsl(theme.secondary),
+            "--border": hexToHsl(theme.border),
+            "--input": hexToHsl(theme.border),
+            "--sidebar-background": hexToHsl(theme.sidebar),
+            "--sidebar-primary": hexToHsl(theme.primary),
+            "--sidebar-ring": hexToHsl(theme.primary)
+          };
+          var root = document.documentElement;
+          Object.keys(vars).forEach(function (key) { root.style.setProperty(key, vars[key]); });
+          root.style.backgroundColor = theme.background_main;
+          document.body.style.backgroundColor = theme.background_main;
+          document.body.style.color = theme.text_primary;
+          document.getElementById("root").style.backgroundColor = theme.background_main;
+          var themeColor = document.querySelector('meta[name="theme-color"]');
+          if (themeColor) themeColor.setAttribute("content", theme.background_main);
+        } catch (_) {
+          // A missing or malformed cache must never delay the default theme.
+        }
+      })();
+    </script>
     <script>
       (function () {
         var hostname = window.location.hostname.toLowerCase().replace(/\.$/, "");
