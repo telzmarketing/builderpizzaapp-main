@@ -1,4 +1,10 @@
 from pathlib import Path
+import os
+import re
+import shutil
+import subprocess
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -6,6 +12,90 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
+
+
+def bash_executable() -> str:
+    candidate = shutil.which("bash")
+    if candidate and not (os.name == "nt" and "system32" in candidate.lower()):
+        return candidate
+    if os.name == "nt":
+        git_bash = Path(os.environ.get("ProgramFiles", r"C:\\Program Files")) / "Git" / "bin" / "bash.exe"
+        if git_bash.is_file():
+            return str(git_bash)
+    pytest.skip("bash compativel indisponivel")
+
+
+def extract_shell_function(source: str, name: str) -> str:
+    match = re.search(
+        rf"^{re.escape(name)}\(\) \{{.*?^\}}\r?$",
+        source,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    assert match is not None, f"funcao {name} ausente do backup"
+    return match.group(0)
+
+
+def run_backup_failure_recovery(scenario: str) -> subprocess.CompletedProcess[str]:
+    source = read("scripts/backup-telz.sh")
+    functions = "\n\n".join(
+        extract_shell_function(source, name)
+        for name in (
+            "stop_writers",
+            "restore_service_state",
+            "validate_recovered_services",
+            "run_recovery_step",
+            "on_error",
+        )
+    )
+    script = f"""
+set -u
+events="$(mktemp)"
+trap 'rm -f -- "$events"' EXIT
+(
+  set -Eeuo pipefail
+  {functions}
+
+  API_WAS_ACTIVE=active
+  WEB_WAS_ACTIVE=active
+  GATEWAY_WAS_ACTIVE=inactive
+  SERVICES_QUIESCED=false
+  RECOVERY_FAILED=false
+  ERROR_HANDLER_ARMED=true
+  INSTALL_DIR=/opt/telz
+  ALEMBIC_CURRENT=test_revision
+  HEALTH_COMMAND=health_check
+
+  unit_exists() {{ return 1; }}
+  systemctl() {{ printf '%s\n' "$*" >> "$events"; }}
+  health_check() {{
+    printf '%s\n' 'health' >> "$events"
+    [[ "{scenario}" != 'health' ]]
+  }}
+  pg_dump() {{ return 1; }}
+
+  trap 'rc=$?; on_error "$rc"' ERR
+  trap 'on_error 143' TERM HUP
+  trap 'on_error 130' INT
+
+  stop_writers
+  if [[ "{scenario}" == 'pg_dump' ]]; then
+    pg_dump --format=custom >/dev/null
+  else
+    restore_service_state
+    validate_recovered_services
+  fi
+)
+rc=$?
+printf 'rc=%s\n' "$rc"
+cat "$events"
+"""
+    return subprocess.run(
+        [bash_executable(), "-c", script],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_maintenance_lock_is_root_private_regular_and_never_truncated():
@@ -39,13 +129,30 @@ def test_backup_quiesces_before_snapshot_and_preserves_signal_recovery():
     assert backup.rindex("SERVICES_QUIESCED=false") < backup.rindex("ERROR_HANDLER_ARMED=false")
 
 
-def test_backup_normal_health_failure_reaches_one_fail_closed_err_handler():
+def test_backup_normal_health_failure_restores_original_service_state():
     backup = read("scripts/backup-telz.sh")
     normal_recovery = backup[backup.rindex("\nrestore_service_state\n") :]
     assert "\nvalidate_recovered_services\n" in normal_recovery
     assert 'run_recovery_step "health local apos snapshot"' not in normal_recovery
     assert normal_recovery.index("validate_recovered_services") < normal_recovery.index("SERVICES_QUIESCED=false")
     assert normal_recovery.index("SERVICES_QUIESCED=false") < normal_recovery.index("ERROR_HANDLER_ARMED=false")
+    assert 'run_recovery_step "parada fail-closed dos writers" stop_writers' not in backup
+    assert "writers permanecem parados" not in backup
+
+
+@pytest.mark.parametrize("scenario", ("pg_dump", "health"))
+def test_backup_failure_never_leaves_previously_active_api_or_web_stopped(scenario: str):
+    result = run_backup_failure_recovery(scenario)
+
+    assert result.returncode == 0, result.stderr
+    events = result.stdout.splitlines()
+    assert events[0] == "rc=1"
+    assert "stop telz-api telz-web" in events
+    assert events.count("start telz-api") >= 1
+    assert events.count("start telz-web") >= 1
+    last_restore = max(events.index("start telz-api"), events.index("start telz-web"))
+    assert not any(event == "stop telz-api telz-web" for event in events[last_restore + 1 :])
+    assert "parada fail-closed dos writers" not in result.stderr
 
 
 def test_database_credentials_never_enter_postgres_tool_argv():

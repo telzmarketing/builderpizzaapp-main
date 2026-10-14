@@ -329,8 +329,7 @@ on_error() {
     fi
   fi
   if [[ "$RECOVERY_FAILED" == "true" ]]; then
-    run_recovery_step "parada fail-closed dos writers" stop_writers
-    echo "[backup][erro] recuperacao incompleta; writers permanecem parados" >&2
+    echo "[backup][erro] tentativa de restauracao falhou; writers nao serao parados novamente" >&2
   fi
   exit "$rc"
 }
