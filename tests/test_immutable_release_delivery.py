@@ -65,10 +65,11 @@ def test_updater_builds_immutable_release_before_short_maintenance_window():
     armed = updater.index("RECOVERY_REQUIRED=true")
     stopped = updater.index("quiesce_services", armed)
     backup = updater.index('echo "[update] criando backup coerente com os servicos quiescidos"')
-    fast_forward = updater.index('as_service git -C "$INSTALL_DIR" merge --ff-only "$EXPECTED_COMMIT"')
     migration = updater.index('alembic_at "$FINAL_APP_DIR" upgrade "$ALEMBIC_TARGET"')
     swap = updater.index("activate_release", migration)
-    assert build < preflight < armed < stopped < backup < fast_forward < migration < swap
+    assert build < preflight < armed < stopped < backup < migration < swap
+    assert 'git -C "$INSTALL_DIR" merge --ff-only' not in updater
+    assert 'git -C "$INSTALL_DIR" checkout' not in updater
 
 
 def test_updater_validates_release_and_recovers_first_deploy_without_downgrade():
@@ -110,6 +111,21 @@ def test_forward_only_cutover_requires_explicit_approval_and_records_recovery_po
     assert forward_failure < automatic_restore
     assert 'TELZ_FORWARD_ONLY_CUTOVER="$FORWARD_ONLY_CUTOVER"' in origin_deploy
     assert 'TELZ_FORWARD_ONLY_CUTOVER_CONFIRM="$FORWARD_ONLY_CUTOVER_CONFIRM"' in origin_deploy
+
+
+def test_legacy_adoption_is_one_time_explicit_and_does_not_mutate_the_checkout():
+    updater = read("scripts/update-telz.sh")
+
+    assert 'LEGACY_ADOPTION="${TELZ_LEGACY_ADOPTION:-false}"' in updater
+    assert 'LEGACY_ADOPTION_CONFIRM="${TELZ_LEGACY_ADOPTION_CONFIRM:-}"' in updater
+    assert 'LEGACY_ADOPTION_DB_REVISION="${TELZ_LEGACY_ADOPTION_DB_REVISION:-}"' in updater
+    assert '[[ "$LEGACY_RELEASE" == "true" ]] || die "adocao legada exige uma release ativa sem current imutavel"' in updater
+    assert '[[ "$DATABASE_CURRENT" == "$LEGACY_ADOPTION_DB_REVISION" ]]' in updater
+    assert 'adocao legada exige TELZ_FORWARD_ONLY_CUTOVER=true' in updater
+    assert 'materialize_rollback_release "$PREVIOUS_ACTIVE_COMMIT" "$PREVIOUS_ACTIVE_REVISION"' in updater
+    assert 'git -C "$INSTALL_DIR" merge --ff-only' not in updater
+    assert 'git -C "$INSTALL_DIR" checkout' not in updater
+    assert 'git -C "$INSTALL_DIR" reset' not in updater
 
 
 def test_deploy_materializes_verified_root_owned_bundle_from_pinned_checkout():

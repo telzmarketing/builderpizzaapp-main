@@ -14,6 +14,9 @@ def test_origin_deploy_requires_explicit_commit_and_uses_hardened_updater():
     assert 'merge-base --is-ancestor "$TARGET_COMMIT" "$REMOTE_COMMIT"' in source
     assert 'TELZ_EXPECTED_COMMIT="$TARGET_COMMIT"' in source
     assert 'TELZ_PREVIOUS_COMMIT="$PREVIOUS_COMMIT"' in source
+    assert 'LEGACY_ADOPTION="${TELZ_LEGACY_ADOPTION:-false}"' in source
+    assert 'LEGACY_ADOPTION_CONFIRM="${TELZ_LEGACY_ADOPTION_CONFIRM:-}"' in source
+    assert 'LEGACY_ADOPTION_DB_REVISION="${TELZ_LEGACY_ADOPTION_DB_REVISION:-}"' in source
     assert 'TELZ_OPERATION_BUNDLE_DIR="$OPERATION_BUNDLE"' in source
     assert 'TELZ_DEPENDENCY_ARCHIVE_SHA256="$DEPENDENCY_SHA"' in source
     assert 'BUNDLE_UPDATE="$OPERATION_BUNDLE/scripts/update-telz.sh"' in source
@@ -45,3 +48,18 @@ def test_origin_deploy_keeps_artifacts_root_owned_and_never_runs_checkout_script
     assert 'alembic upgrade' not in source
     assert 'systemctl restart' not in source
     assert 'git -C "$INSTALL_DIR" merge ' not in source
+
+
+def test_origin_deploy_adopts_a_legacy_release_only_with_explicit_forward_only_approval():
+    source = (ROOT / "scripts/deploy-telz-from-origin.sh").read_text(encoding="utf-8")
+
+    assert '[[ "$LEGACY_ADOPTION" == "true" || "$LEGACY_ADOPTION" == "false" ]]' in source
+    assert '[[ "$LEGACY_RELEASE" == "true" ]] || die "adocao legada exige uma release ativa sem current imutavel"' in source
+    assert '[[ "$LEGACY_ADOPTION_CONFIRM" == "ADOPT_LEGACY $PREVIOUS_COMMIT $TARGET_COMMIT" ]]' in source
+    assert 'adocao legada exige cutover forward-only explicitamente confirmado' in source
+    assert 'if [[ "$LEGACY_ADOPTION" == "false" ]]; then\n  as_service git -C "$INSTALL_DIR" merge-base --is-ancestor "$PREVIOUS_COMMIT" "$TARGET_COMMIT"' in source
+    assert 'TELZ_LEGACY_ADOPTION="$LEGACY_ADOPTION"' in source
+    assert 'TELZ_LEGACY_ADOPTION_CONFIRM="$LEGACY_ADOPTION_CONFIRM"' in source
+    assert 'TELZ_LEGACY_ADOPTION_DB_REVISION="$LEGACY_ADOPTION_DB_REVISION"' in source
+    for forbidden in ('git -C "$INSTALL_DIR" pull', 'git -C "$INSTALL_DIR" checkout', 'git -C "$INSTALL_DIR" reset', 'git -C "$INSTALL_DIR" cherry-pick'):
+        assert forbidden not in source

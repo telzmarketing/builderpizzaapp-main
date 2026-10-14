@@ -140,6 +140,9 @@ EXPECTED_COMMIT="${TELZ_EXPECTED_COMMIT:-}"
 ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261004_tenant_upload_ownership_contract}"
 FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"
 FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"
+LEGACY_ADOPTION="${TELZ_LEGACY_ADOPTION:-false}"
+LEGACY_ADOPTION_CONFIRM="${TELZ_LEGACY_ADOPTION_CONFIRM:-}"
+LEGACY_ADOPTION_DB_REVISION="${TELZ_LEGACY_ADOPTION_DB_REVISION:-}"
 REQUIRE_PUBLIC_HTTPS="${TELZ_REQUIRE_PUBLIC_HTTPS:-true}"
 PUBLIC_HEALTH_URL="${TELZ_PUBLIC_HEALTH_URL:-}"
 OPERATION_BUNDLE_INPUT="${TELZ_OPERATION_BUNDLE_DIR:-}"
@@ -173,6 +176,10 @@ SSL_COMMAND="/usr/local/sbin/telz-finish-ssl"
 [[ "$ALEMBIC_TARGET" =~ ^[A-Za-z0-9_]+$ ]] || die "TELZ_ALEMBIC_TARGET invalido"
 [[ "$FORWARD_ONLY_CUTOVER" == "true" || "$FORWARD_ONLY_CUTOVER" == "false" ]] || \
   die "TELZ_FORWARD_ONLY_CUTOVER deve ser true ou false"
+[[ "$LEGACY_ADOPTION" == "true" || "$LEGACY_ADOPTION" == "false" ]] || \
+  die "TELZ_LEGACY_ADOPTION deve ser true ou false"
+[[ -z "$LEGACY_ADOPTION_DB_REVISION" || "$LEGACY_ADOPTION_DB_REVISION" =~ ^[A-Za-z0-9_]+$ ]] || \
+  die "TELZ_LEGACY_ADOPTION_DB_REVISION invalida"
 [[ "$RUN_TESTS" == "true" || "$RUN_TESTS" == "false" ]] || die "RUN_TESTS deve ser true ou false"
 [[ "$SOURCE_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "TELZ_SOURCE_ARCHIVE_SHA256 invalido"
 [[ "$PREVIOUS_SOURCE_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256 invalido"
@@ -967,7 +974,6 @@ materialize_rollback_release() {
   materialize_release "$1" "$2" "$PREVIOUS_SOURCE_ARCHIVE" "$legacy_compat" "$DATABASE_CURRENT" "rollback_safe" "$DATABASE_CURRENT"
 }
 
-SOURCE_PREVIOUS_COMMIT=""
 PREVIOUS_ACTIVE_COMMIT=""
 PREVIOUS_ACTIVE_REVISION=""
 PREVIOUS_CURRENT_TARGET=""
@@ -980,7 +986,6 @@ BUILD_RELEASE_APP=""
 BUILD_RELEASE_COMMIT=""
 UNIT_STAGE_DIR=""
 OPERATIONS_STATE_DIR=""
-CODE_CHANGED=false
 CURRENT_SWAPPED=false
 OPERATIONS_CHANGED=false
 MAINTENANCE_WINDOW=false
@@ -1146,14 +1151,6 @@ restore_previous_release() {
   CURRENT_SWAPPED=false
 }
 
-rollback_source_code() {
-  [[ "$CODE_CHANGED" == "true" ]] || return 0
-  as_service git -C "$INSTALL_DIR" checkout --detach "$SOURCE_PREVIOUS_COMMIT" || return $?
-  as_service git -C "$INSTALL_DIR" branch -f "$BRANCH" "$SOURCE_PREVIOUS_COMMIT" || return $?
-  as_service git -C "$INSTALL_DIR" checkout "$BRANCH" || return $?
-  CODE_CHANGED=false
-}
-
 health_recovered_release() {
   local recovered_code_dir="$INSTALL_DIR"
   local expected_revision
@@ -1188,7 +1185,6 @@ run_recovery_step() {
       stop_services) MAINTENANCE_WINDOW=true ;;
       restore_previous_release) CURRENT_SWAPPED=false ;;
       restore_operational_artifacts) OPERATIONS_CHANGED=false ;;
-      rollback_source_code) CODE_CHANGED=false ;;
       restore_previous_service_state) MAINTENANCE_WINDOW=false ;;
     esac
   fi
@@ -1276,9 +1272,6 @@ on_error() {
   if [[ "$OPERATIONS_CHANGED" == "true" ]]; then
     run_recovery_step "restauracao de helpers e units" restore_operational_artifacts
   fi
-  if [[ "$CODE_CHANGED" == "true" ]]; then
-    run_recovery_step "restauracao do checkout fonte" rollback_source_code
-  fi
   if [[ "$MAINTENANCE_WINDOW" == "true" && "$RECOVERY_FAILED" == "false" ]]; then
     run_recovery_step "restauracao dos servicos anteriores" restore_previous_service_state
   fi
@@ -1307,9 +1300,9 @@ cd "$INSTALL_DIR"
   die "worktree possui alteracoes ou arquivos nao rastreados"
 CURRENT_BRANCH="$(as_service git -C "$INSTALL_DIR" symbolic-ref --quiet --short HEAD)" || die "checkout destacado nao permitido"
 [[ "$CURRENT_BRANCH" == "$BRANCH" ]] || die "branch atual difere da branch aprovada"
-SOURCE_PREVIOUS_COMMIT="$(as_service git -C "$INSTALL_DIR" rev-parse HEAD)"
 
 ACTIVE_CODE_DIR="$INSTALL_DIR"
+LEGACY_RELEASE=false
 if [[ -e "$CURRENT_LINK" || -L "$CURRENT_LINK" ]]; then
   [[ -L "$CURRENT_LINK" && "$(stat -c '%U' "$CURRENT_LINK")" == "root" ]] || die "current deve ser symlink root-owned"
   PREVIOUS_CURRENT_TARGET="$(realpath -e "$CURRENT_LINK")"
@@ -1321,8 +1314,9 @@ if [[ -e "$CURRENT_LINK" || -L "$CURRENT_LINK" ]]; then
   validate_release_tree "$PREVIOUS_CURRENT_TARGET" "$PREVIOUS_ACTIVE_COMMIT" "$PREVIOUS_ACTIVE_REVISION"
   ACTIVE_CODE_DIR="$PREVIOUS_CURRENT_TARGET"
 else
+  LEGACY_RELEASE=true
   [[ -x "$INSTALL_DIR/.venv/bin/alembic" ]] || die "Alembic legado ausente para o primeiro deploy"
-  PREVIOUS_ACTIVE_COMMIT="$SOURCE_PREVIOUS_COMMIT"
+  PREVIOUS_ACTIVE_COMMIT="$(as_service git -C "$INSTALL_DIR" rev-parse HEAD)"
   mapfile -t LEGACY_HEADS < <(alembic_at "$INSTALL_DIR" heads | awk 'NF {print $1}')
   [[ "${#LEGACY_HEADS[@]}" -eq 1 ]] || die "codigo legado deve possuir exatamente um head"
   PREVIOUS_ACTIVE_REVISION="${LEGACY_HEADS[0]}"
@@ -1335,14 +1329,29 @@ echo "[update] revision atual do banco: $DATABASE_CURRENT"
 schema_is_rollback_compatible "$PREVIOUS_ACTIVE_REVISION" "$DATABASE_CURRENT" || \
   die "release ativa ($PREVIOUS_ACTIVE_REVISION) nao e compativel com o banco ($DATABASE_CURRENT)"
 [[ "$EXPECTED_PREVIOUS_COMMIT" == "$PREVIOUS_ACTIVE_COMMIT" ]] || die "commit anterior informado diverge da release ativa"
-[[ "$SOURCE_PREVIOUS_COMMIT" == "$PREVIOUS_ACTIVE_COMMIT" ]] || die "checkout fonte diverge da release ativa"
+if [[ "$LEGACY_ADOPTION" == "true" ]]; then
+  [[ "$LEGACY_RELEASE" == "true" ]] || die "adocao legada exige uma release ativa sem current imutavel"
+  [[ -n "$LEGACY_ADOPTION_DB_REVISION" ]] || die "adocao legada exige TELZ_LEGACY_ADOPTION_DB_REVISION"
+  [[ "$LEGACY_ADOPTION_CONFIRM" == "ADOPT_LEGACY $PREVIOUS_ACTIVE_COMMIT $EXPECTED_COMMIT" ]] || \
+    die "confirmacao de adocao legada invalida para os SHAs ativo e alvo"
+  [[ "$DATABASE_CURRENT" == "$LEGACY_ADOPTION_DB_REVISION" ]] || \
+    die "revision atual do banco diverge da confirmacao de adocao legada"
+  [[ ! -e "$FORWARD_CUTOVER_MARKER" && ! -L "$FORWARD_CUTOVER_MARKER" ]] || \
+    die "adocao legada bloqueada por recuperacao forward-only pendente"
+else
+  [[ "$LEGACY_RELEASE" == "false" ]] || die "primeira promocao legada exige TELZ_LEGACY_ADOPTION=true"
+  [[ -z "$LEGACY_ADOPTION_CONFIRM" && -z "$LEGACY_ADOPTION_DB_REVISION" ]] || \
+    die "parametros de adocao legada exigem TELZ_LEGACY_ADOPTION=true"
+fi
 
 as_service git -C "$INSTALL_DIR" fetch --prune origin "$BRANCH"
 REMOTE_COMMIT="$(as_service git -C "$INSTALL_DIR" rev-parse --verify "origin/$BRANCH^{commit}")"
 TARGET_COMMIT="$(as_service git -C "$INSTALL_DIR" rev-parse --verify "$EXPECTED_COMMIT^{commit}")"
 [[ "$TARGET_COMMIT" == "$EXPECTED_COMMIT" ]] || die "SHA esperado nao resolveu exatamente"
-as_service git -C "$INSTALL_DIR" merge-base --is-ancestor "$SOURCE_PREVIOUS_COMMIT" "$TARGET_COMMIT" || \
-  die "SHA esperado nao e fast-forward do checkout fonte"
+if [[ "$LEGACY_ADOPTION" == "false" ]]; then
+  as_service git -C "$INSTALL_DIR" merge-base --is-ancestor "$PREVIOUS_ACTIVE_COMMIT" "$TARGET_COMMIT" || \
+    die "SHA esperado nao e fast-forward da release ativa"
+fi
 as_service git -C "$INSTALL_DIR" merge-base --is-ancestor "$TARGET_COMMIT" "$REMOTE_COMMIT" || \
   die "SHA esperado nao pertence a origin/$BRANCH"
 
@@ -1360,7 +1369,14 @@ PREVIOUS_SOURCE_ARCHIVE="$(require_source_archive "$PREVIOUS_SOURCE_ARCHIVE_INPU
 DEPENDENCY_ARCHIVE="$(require_dependency_archive "$DEPENDENCY_ARCHIVE_INPUT" "$DEPENDENCY_ARCHIVE_SHA256")"
 ensure_build_identity
 materialize_dependencies
-if schema_is_rollback_compatible "$PREVIOUS_ACTIVE_REVISION" "$ALEMBIC_TARGET"; then
+if [[ "$LEGACY_ADOPTION" == "true" ]]; then
+  [[ "$FORWARD_ONLY_CUTOVER" == "true" ]] || \
+    die "adocao legada exige TELZ_FORWARD_ONLY_CUTOVER=true"
+  [[ "$FORWARD_ONLY_CUTOVER_CONFIRM" == "FORWARD_ONLY $EXPECTED_COMMIT" ]] || \
+    die "confirmacao de cutover forward-only invalida para a adocao legada"
+  CUTOVER_MODE="forward_only"
+  echo "[update][atencao] adocao legada forward-only aprovada; rollback automatico sera bloqueado apos a migration" >&2
+elif schema_is_rollback_compatible "$PREVIOUS_ACTIVE_REVISION" "$ALEMBIC_TARGET"; then
   CUTOVER_MODE="rollback_safe"
 else
   [[ "$FORWARD_ONLY_CUTOVER" == "true" ]] || \
@@ -1371,7 +1387,7 @@ else
   echo "[update][atencao] cutover forward-only aprovado: rollback automatico sera bloqueado apos a migration" >&2
 fi
 if [[ -z "$PREVIOUS_CURRENT_TARGET" ]]; then
-  materialize_rollback_release "$SOURCE_PREVIOUS_COMMIT" "$PREVIOUS_ACTIVE_REVISION"
+  materialize_rollback_release "$PREVIOUS_ACTIVE_COMMIT" "$PREVIOUS_ACTIVE_REVISION"
 fi
 materialize_release "$EXPECTED_COMMIT" "$ALEMBIC_TARGET" "$SOURCE_ARCHIVE" false "$DATABASE_CURRENT" "$CUTOVER_MODE" "$PREVIOUS_ACTIVE_REVISION"
 
@@ -1398,13 +1414,6 @@ TELZ_MAINTENANCE_LOCK_HELD=true \
   TELZ_HEALTH_WEB_PORT="$WEB_PORT" \
   TELZ_MONITORING_DIR="$MONITORING_DIR" \
   "$BUNDLE_BACKUP" "$INSTALL_DIR"
-
-if [[ "$SOURCE_PREVIOUS_COMMIT" != "$EXPECTED_COMMIT" ]]; then
-  CODE_CHANGED=true
-  as_service git -C "$INSTALL_DIR" merge --ff-only "$EXPECTED_COMMIT"
-fi
-[[ "$(as_service git -C "$INSTALL_DIR" rev-parse HEAD)" == "$EXPECTED_COMMIT" ]] || die "checkout fonte nao convergiu"
-[[ -z "$(as_service git -C "$INSTALL_DIR" status --porcelain --untracked-files=all)" ]] || die "checkout fonte ficou sujo"
 
 if [[ "$DATABASE_CURRENT" != "$ALEMBIC_TARGET" ]]; then
   MIGRATION_APPLIED=true
@@ -1487,7 +1496,6 @@ MAINTENANCE_WINDOW=false
 RECOVERY_REQUIRED=false
 CURRENT_SWAPPED=false
 OPERATIONS_CHANGED=false
-CODE_CHANGED=false
 ERROR_HANDLER_ARMED=false
 trap - ERR TERM INT HUP
 echo "[update] concluido release=$EXPECTED_COMMIT revision=$ALEMBIC_TARGET current=$(readlink -f "$CURRENT_LINK")"

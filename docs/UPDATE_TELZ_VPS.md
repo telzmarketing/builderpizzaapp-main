@@ -79,6 +79,26 @@ execute um script mutavel como root. Reinstale-o somente quando a propria
 implementacao de `deploy-telz-from-origin.sh` mudar, usando o procedimento
 acima e o SHA aprovado; para releases comuns, use apenas o comando unico.
 
+#### Adocao unica de instalacao legada
+
+Uma VPS que ainda executa diretamente de `/opt/telz`, sem
+`/var/lib/telz/current` imutavel, e cujo `HEAD` nao e ancestral do commit alvo,
+nao pode usar o comando comum acima. Nao use `pull`, `reset`, `checkout`,
+`merge`, `clean` ou `cherry-pick` para tentar normaliza-la.
+
+O helper possui um modo de adocao legada desligado por padrao. Ele so pode ser
+usado depois de um ensaio aprovado em clone descartavel do PostgreSQL, backup
+validado, health pre-cutover e uma janela de manutencao. O modo exige os tres
+valores explicitamente aprovados: SHA legado real, SHA alvo e revision atual do
+banco. Ele materializa a fonte legada e o alvo como releases imutaveis, nao
+modifica o checkout e exige cutover `forward-only`; uma falha apos a migration
+mantem os servicos parados e exige hotfix forward-only ou restauracao explicita
+de banco e release.
+
+Nao execute esse modo por tentativa. O procedimento operacional deve ser
+gerado para a VPS somente apos registrar o SHA legado, a revision real do banco
+e a evidencia do ensaio de restore/migration.
+
 ### 1.3 Deploy manual por pacote selado
 
 Quando a VPS nao deve ser acessada pelo GitHub, use

@@ -55,6 +55,9 @@ BUILD_GROUP="${TELZ_BUILD_GROUP:-telz-build}"
 ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261004_tenant_upload_ownership_contract}"
 FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"
 FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"
+LEGACY_ADOPTION="${TELZ_LEGACY_ADOPTION:-false}"
+LEGACY_ADOPTION_CONFIRM="${TELZ_LEGACY_ADOPTION_CONFIRM:-}"
+LEGACY_ADOPTION_DB_REVISION="${TELZ_LEGACY_ADOPTION_DB_REVISION:-}"
 PUBLIC_HEALTH_URL="https://app.telz.com.br/health"
 
 [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]] || die "informe o SHA-1 completo do commit alvo"
@@ -66,6 +69,10 @@ INSTALL_DIR="$(realpath -e -- "$INSTALL_INPUT")"
 [[ "$ALEMBIC_TARGET" =~ ^[A-Za-z0-9_]+$ ]] || die "revision Alembic invalida"
 [[ "$FORWARD_ONLY_CUTOVER" == "true" || "$FORWARD_ONLY_CUTOVER" == "false" ]] || \
   die "TELZ_FORWARD_ONLY_CUTOVER deve ser true ou false"
+[[ "$LEGACY_ADOPTION" == "true" || "$LEGACY_ADOPTION" == "false" ]] || \
+  die "TELZ_LEGACY_ADOPTION deve ser true ou false"
+[[ -z "$LEGACY_ADOPTION_DB_REVISION" || "$LEGACY_ADOPTION_DB_REVISION" =~ ^[A-Za-z0-9_]+$ ]] || \
+  die "TELZ_LEGACY_ADOPTION_DB_REVISION invalida"
 if [[ "$FORWARD_ONLY_CUTOVER" == "true" ]]; then
   [[ "$FORWARD_ONLY_CUTOVER_CONFIRM" == "FORWARD_ONLY $TARGET_COMMIT" ]] || \
     die "confirmacao de cutover forward-only invalida para o SHA alvo"
@@ -97,15 +104,33 @@ PY
   fi
 }
 
+LEGACY_RELEASE=false
+if [[ ! -e /var/lib/telz/current && ! -L /var/lib/telz/current ]]; then
+  LEGACY_RELEASE=true
+fi
+
 PREVIOUS_COMMIT="$(active_commit)"
 [[ "$PREVIOUS_COMMIT" =~ ^[0-9a-f]{40}$ ]] || die "commit ativo invalido"
-[[ "$(as_service git -C "$INSTALL_DIR" rev-parse HEAD)" == "$PREVIOUS_COMMIT" ]] || die "checkout fonte diverge da release ativa"
+
+if [[ "$LEGACY_ADOPTION" == "true" ]]; then
+  [[ "$LEGACY_RELEASE" == "true" ]] || die "adocao legada exige uma release ativa sem current imutavel"
+  [[ -n "$LEGACY_ADOPTION_DB_REVISION" ]] || die "adocao legada exige TELZ_LEGACY_ADOPTION_DB_REVISION"
+  [[ "$LEGACY_ADOPTION_CONFIRM" == "ADOPT_LEGACY $PREVIOUS_COMMIT $TARGET_COMMIT" ]] || \
+    die "confirmacao de adocao legada invalida para os SHAs ativo e alvo"
+  [[ "$FORWARD_ONLY_CUTOVER" == "true" && "$FORWARD_ONLY_CUTOVER_CONFIRM" == "FORWARD_ONLY $TARGET_COMMIT" ]] || \
+    die "adocao legada exige cutover forward-only explicitamente confirmado"
+else
+  [[ -z "$LEGACY_ADOPTION_CONFIRM" && -z "$LEGACY_ADOPTION_DB_REVISION" ]] || \
+    die "parametros de adocao legada exigem TELZ_LEGACY_ADOPTION=true"
+fi
 
 as_service git -C "$INSTALL_DIR" fetch --prune origin "$BRANCH"
 REMOTE_COMMIT="$(as_service git -C "$INSTALL_DIR" rev-parse --verify "origin/$BRANCH^{commit}")"
 RESOLVED_TARGET="$(as_service git -C "$INSTALL_DIR" rev-parse --verify "$TARGET_COMMIT^{commit}")"
 [[ "$RESOLVED_TARGET" == "$TARGET_COMMIT" ]] || die "SHA alvo nao resolveu exatamente"
-as_service git -C "$INSTALL_DIR" merge-base --is-ancestor "$PREVIOUS_COMMIT" "$TARGET_COMMIT" || die "alvo nao e fast-forward da release ativa"
+if [[ "$LEGACY_ADOPTION" == "false" ]]; then
+  as_service git -C "$INSTALL_DIR" merge-base --is-ancestor "$PREVIOUS_COMMIT" "$TARGET_COMMIT" || die "alvo nao e fast-forward da release ativa"
+fi
 as_service git -C "$INSTALL_DIR" merge-base --is-ancestor "$TARGET_COMMIT" "$REMOTE_COMMIT" || die "alvo nao pertence a origin/$BRANCH"
 
 if ! getent group "$BUILD_GROUP" >/dev/null; then groupadd --system "$BUILD_GROUP"; fi
@@ -255,6 +280,9 @@ env \
   TELZ_ALEMBIC_TARGET="$ALEMBIC_TARGET" \
   TELZ_FORWARD_ONLY_CUTOVER="$FORWARD_ONLY_CUTOVER" \
   TELZ_FORWARD_ONLY_CUTOVER_CONFIRM="$FORWARD_ONLY_CUTOVER_CONFIRM" \
+  TELZ_LEGACY_ADOPTION="$LEGACY_ADOPTION" \
+  TELZ_LEGACY_ADOPTION_CONFIRM="$LEGACY_ADOPTION_CONFIRM" \
+  TELZ_LEGACY_ADOPTION_DB_REVISION="$LEGACY_ADOPTION_DB_REVISION" \
   TELZ_OPERATION_BUNDLE_DIR="$OPERATION_BUNDLE" \
   TELZ_SOURCE_ARCHIVE="$SOURCE_TARGET" \
   TELZ_SOURCE_ARCHIVE_SHA256="$SOURCE_TARGET_SHA" \
