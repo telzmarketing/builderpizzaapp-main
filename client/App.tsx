@@ -6,7 +6,8 @@ import { themeApi, applyTheme, DEFAULT_THEME, readCachedTheme } from "./lib/them
 import { captureTrackingFromUrl, firePixelEvent, trackEvent, getTrackingData, initCampaignPixel, initStorePixels, isInternalStaffPath, requestVisitorLocation } from "./lib/tracking";
 import { customerEventsApi, isAssetUrl, resolveAssetUrl, runtimeSurfaceApi } from "./lib/api";
 import { getPublicExperience, isSalaoExperience } from "./lib/experience";
-import { isPlatformHostname } from "./lib/platformHost";
+import { isPlatformRuntimeSurface, isStoreRuntimeSurface } from "./lib/runtimeHostSurface";
+import { PlatformSurfaceProvider } from "./context/PlatformSurfaceContext";
 import {
   isPlatformSupportPanelPathAllowed,
   readPlatformSupportSession,
@@ -524,9 +525,8 @@ function FullPageRedirect({ to }: { to: string }) {
   return <AppRouteFallback />;
 }
 
-function AppSurface() {
+function AppSurface({ platformSurface }: { platformSurface: boolean }) {
   const deferredWidgetsReady = useDeferredClientMount(3200);
-  const platformSurface = isPlatformHostname(window.location.hostname);
   const orderBoardSurface = window.location.pathname === "/tv" || window.location.pathname.startsWith("/tv/");
 
   return (
@@ -704,19 +704,28 @@ function AppSurface() {
   );
 }
 
-function HostResolutionScreen({ unknown = false }: { unknown?: boolean }) {
+function HostResolutionScreen({
+  state = "loading",
+}: {
+  state?: "loading" | "unknown" | "unavailable";
+}) {
+  const unknown = state === "unknown";
+  const unavailable = state === "unavailable";
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-6 text-slate-900">
+    <div className="flex min-h-screen items-center justify-center bg-[var(--bg-main)] px-6 text-[var(--text-primary)]">
       <div className="max-w-md text-center">
-        <h1 className="text-2xl font-black">{unknown ? "Loja nao encontrada" : "Carregando..."}</h1>
-        {unknown && <p className="mt-2 text-sm text-slate-600">Este dominio nao esta associado a uma loja ativa.</p>}
+        <h1 className="text-2xl font-black">
+          {unknown ? "Loja nao encontrada" : unavailable ? "Nao foi possivel validar o dominio" : "Carregando..."}
+        </h1>
+        {unknown && <p className="mt-2 text-sm text-[var(--text-secondary)]">Este dominio nao esta associado a uma loja ativa.</p>}
+        {unavailable && <p className="mt-2 text-sm text-[var(--text-secondary)]">Tente novamente em instantes.</p>}
       </div>
     </div>
   );
 }
 
 export default function HostSurfaceGate() {
-  const isPlatform = isPlatformHostname(window.location.hostname);
   const supportSession = readPlatformSupportSession();
   const supportSessionId = supportSession?.session_id;
   const supportPathAllowed = !!supportSession
@@ -746,41 +755,51 @@ export default function HostSurfaceGate() {
       "/painel/backups-plataforma",
     ].some((path) => window.location.pathname === path || window.location.pathname.startsWith(`${path}/`))
   );
-  const [storeResolved, setStoreResolved] = useState(false);
-  const [unknownHost, setUnknownHost] = useState(false);
+  const [hostSurface, setHostSurface] = useState<"loading" | "platform" | "store" | "unknown" | "unavailable">("loading");
+  const isPlatform = hostSurface === "platform";
 
   useEffect(() => {
-    if (isPlatform) {
-      if (supportSession && !supportPathAllowed) {
-        window.location.replace("/painel/gestao/financeiro");
-      } else if (!platformPathAllowed) {
-        const target = localStorage.getItem("admin_token") ? "/painel/plataforma" : "/painel/login";
-        window.location.replace(target);
-      } else if (window.location.pathname === "/painel" && !supportSession) {
-        const target = localStorage.getItem("admin_token") ? "/painel/plataforma" : "/painel/login";
-        window.location.replace(target);
-      }
-      return;
-    }
-
     let cancelled = false;
     runtimeSurfaceApi.resolve()
       .then((surface) => {
         if (cancelled) return;
-        if (surface.surface === "store" && surface.tenant_id) setStoreResolved(true);
-        else setUnknownHost(true);
+        if (isPlatformRuntimeSurface(surface)) {
+          setHostSurface("platform");
+        } else if (isStoreRuntimeSurface(surface)) {
+          setHostSurface("store");
+        } else {
+          setHostSurface("unknown");
+        }
       })
       .catch(() => {
-        if (!cancelled) setUnknownHost(true);
+        // A runtime/API failure does not prove that a host is unbound. In
+        // particular, the platform hostname must never become a false
+        // "Loja nao encontrada" screen during an operational incident.
+        if (!cancelled) setHostSurface("unavailable");
       });
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    if (!isPlatform) return;
+
+    if (supportSession && !supportPathAllowed) {
+      window.location.replace("/painel/gestao/financeiro");
+    } else if (!platformPathAllowed) {
+      const target = localStorage.getItem("admin_token") ? "/painel/plataforma" : "/painel/login";
+      window.location.replace(target);
+    } else if (window.location.pathname === "/painel" && !supportSession) {
+      const target = localStorage.getItem("admin_token") ? "/painel/plataforma" : "/painel/login";
+      window.location.replace(target);
+    }
   }, [isPlatform, platformPathAllowed, supportPathAllowed, supportSessionId]);
 
+  if (hostSurface === "loading") return <HostResolutionScreen />;
+  if (hostSurface === "unavailable") return <HostResolutionScreen state="unavailable" />;
   if (isPlatform && (!platformPathAllowed || window.location.pathname === "/painel" && !supportSession)) return <HostResolutionScreen />;
-  if (isPlatform) return <AppSurface />;
-  if (unknownHost) return <HostResolutionScreen unknown />;
-  if (!storeResolved) return <HostResolutionScreen />;
-  return <AppSurface />;
+  if (isPlatform) return <PlatformSurfaceProvider value><AppSurface platformSurface /></PlatformSurfaceProvider>;
+  if (hostSurface === "unknown") return <HostResolutionScreen state="unknown" />;
+  return <PlatformSurfaceProvider value={false}><AppSurface platformSurface={false} /></PlatformSurfaceProvider>;
 }

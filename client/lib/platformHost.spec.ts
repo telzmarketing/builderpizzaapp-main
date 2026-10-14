@@ -15,7 +15,12 @@ describe("platform host routing", () => {
   });
 
   it("lands platform sessions in company administration", () => {
-    expect(adminLandingPath("erp.telz.com.br")).toBe("/painel/plataforma");
+    expect(adminLandingPath("app.telz.com.br")).toBe("/painel/plataforma");
     expect(adminLandingPath("loja.exemplo.com.br")).toBe("/painel");
+  });
+
+  it("uses app.telz.com.br as the production fallback", () => {
+    expect(isPlatformHostname("app.telz.com.br")).toBe(true);
+    expect(isPlatformHostname("erp.telz.com.br")).toBe(false);
   });
 });

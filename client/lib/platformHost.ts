@@ -1,4 +1,6 @@
-export const DEFAULT_PLATFORM_HOSTNAME = "erp.telz.com.br";
+// The runtime endpoint remains authoritative. This fallback only keeps the
+// login redirect coherent before a runtime surface is available.
+export const DEFAULT_PLATFORM_HOSTNAME = "app.telz.com.br";
 
 export function parsePlatformHostnames(
   value: unknown = import.meta.env.VITE_PLATFORM_HOSTNAMES

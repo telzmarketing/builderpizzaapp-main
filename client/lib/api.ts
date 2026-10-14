@@ -1,5 +1,6 @@
 import { clearAdminSession, shouldInvalidateAdminSession } from "./adminSession";
 import { buildPlatformTenantListQuery } from "./platformMaster";
+import type { RuntimeHostSurface } from "./runtimeHostSurface";
 import {
   platformRequestAccessToken,
   readPlatformSupportSession,
@@ -53,11 +54,7 @@ export function isApiRequestErrorStatus(error: unknown, status: number): boolean
   return error instanceof ApiRequestError && error.status === status;
 }
 
-export interface ApiRuntimeHostSurface {
-  surface: "store";
-  hostname: string;
-  tenant_id: string;
-}
+export type ApiRuntimeHostSurface = RuntimeHostSurface;
 
 export function isAssetUrl(value?: string | null): boolean {
   const trimmed = value?.trim().replace(/\\/g, "/");
@@ -415,24 +412,6 @@ export interface ApiProduct {
   inventory_available?: boolean;
   inventory_status?: "disabled" | "not_configured" | "available" | "unavailable" | string | null;
   inventory_unavailable_message?: string | null;
-}
-
-declare global {
-  interface Window {
-    __MOSCHETTIERI_PRODUCTS_PRELOAD__?: Promise<ApiProduct[] | null>;
-  }
-}
-
-function consumeProductsPreload(
-  activeOnly: boolean,
-  productType?: string,
-  channel?: "delivery" | "dine_in"
-): Promise<ApiProduct[] | null> | null {
-  if (!activeOnly || productType || channel || typeof window === "undefined") return null;
-  const preload = window.__MOSCHETTIERI_PRODUCTS_PRELOAD__;
-  if (!preload) return null;
-  delete window.__MOSCHETTIERI_PRODUCTS_PRELOAD__;
-  return preload;
 }
 
 export interface ApiBestSellerConfig {
@@ -5005,10 +4984,6 @@ export const productsApi = {
     if (productType) qs.set("product_type", productType);
     if (channel) qs.set("channel", channel);
     const path = `/products?${qs.toString()}`;
-    const preload = consumeProductsPreload(activeOnly, productType, channel);
-    if (preload) {
-      return preload.then((items) => Array.isArray(items) ? items : get<ApiProduct[]>(path));
-    }
     return get<ApiProduct[]>(path);
   },
 

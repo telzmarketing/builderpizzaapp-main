@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import { Loader2, RefreshCw, ShieldX } from "lucide-react";
 import { Navigate, Outlet } from "react-router-dom";
 import { adminAuthApi, isApiRequestErrorStatus, platformSessionApi } from "@/lib/api";
-import { isPlatformHostname } from "@/lib/platformHost";
+import { usePlatformSurface } from "@/context/PlatformSurfaceContext";
 import { clearPlatformPermissions, storePlatformPermissions } from "@/lib/platformCapabilities";
 import { readPlatformSupportSession } from "@/lib/platformSupportSession";
 
 type SessionState = "checking" | "authenticated" | "password_required" | "denied" | "unavailable";
 
 export default function PlatformAdminGuard() {
-  const isPlatform = isPlatformHostname(window.location.hostname);
+  const isPlatform = usePlatformSurface();
   const token = localStorage.getItem("admin_token");
   const supportSession = readPlatformSupportSession();
   const [sessionState, setSessionState] = useState<SessionState>(
