@@ -53,6 +53,8 @@ SERVICE_USER="${TELZ_SERVICE_USER:-telz}"
 BUILD_USER="${TELZ_BUILD_USER:-telz-build}"
 BUILD_GROUP="${TELZ_BUILD_GROUP:-telz-build}"
 ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261004_tenant_upload_ownership_contract}"
+FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"
+FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"
 PUBLIC_HEALTH_URL="https://app.telz.com.br/health"
 
 [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]] || die "informe o SHA-1 completo do commit alvo"
@@ -62,6 +64,12 @@ INSTALL_DIR="$(realpath -e -- "$INSTALL_INPUT")"
 [[ "$SERVICE_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$SERVICE_USER" != root ]] || die "usuario de servico invalido"
 [[ "$BUILD_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$BUILD_GROUP" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "identidade de build invalida"
 [[ "$ALEMBIC_TARGET" =~ ^[A-Za-z0-9_]+$ ]] || die "revision Alembic invalida"
+[[ "$FORWARD_ONLY_CUTOVER" == "true" || "$FORWARD_ONLY_CUTOVER" == "false" ]] || \
+  die "TELZ_FORWARD_ONLY_CUTOVER deve ser true ou false"
+if [[ "$FORWARD_ONLY_CUTOVER" == "true" ]]; then
+  [[ "$FORWARD_ONLY_CUTOVER_CONFIRM" == "FORWARD_ONLY $TARGET_COMMIT" ]] || \
+    die "confirmacao de cutover forward-only invalida para o SHA alvo"
+fi
 id "$SERVICE_USER" >/dev/null 2>&1 || die "usuario de servico inexistente"
 command -v python3.12 >/dev/null 2>&1 || die "python3.12 obrigatorio"
 command -v pnpm >/dev/null 2>&1 || die "pnpm obrigatorio"
@@ -245,6 +253,8 @@ env \
   TELZ_EXPECTED_COMMIT="$TARGET_COMMIT" \
   TELZ_PREVIOUS_COMMIT="$PREVIOUS_COMMIT" \
   TELZ_ALEMBIC_TARGET="$ALEMBIC_TARGET" \
+  TELZ_FORWARD_ONLY_CUTOVER="$FORWARD_ONLY_CUTOVER" \
+  TELZ_FORWARD_ONLY_CUTOVER_CONFIRM="$FORWARD_ONLY_CUTOVER_CONFIRM" \
   TELZ_OPERATION_BUNDLE_DIR="$OPERATION_BUNDLE" \
   TELZ_SOURCE_ARCHIVE="$SOURCE_TARGET" \
   TELZ_SOURCE_ARCHIVE_SHA256="$SOURCE_TARGET_SHA" \

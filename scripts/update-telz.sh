@@ -138,6 +138,8 @@ BRANCH="${BRANCH:-main}"
 RUN_TESTS="${RUN_TESTS:-false}"
 EXPECTED_COMMIT="${TELZ_EXPECTED_COMMIT:-}"
 ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261004_tenant_upload_ownership_contract}"
+FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"
+FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"
 REQUIRE_PUBLIC_HTTPS="${TELZ_REQUIRE_PUBLIC_HTTPS:-true}"
 PUBLIC_HEALTH_URL="${TELZ_PUBLIC_HEALTH_URL:-}"
 OPERATION_BUNDLE_INPUT="${TELZ_OPERATION_BUNDLE_DIR:-}"
@@ -169,6 +171,8 @@ SSL_COMMAND="/usr/local/sbin/telz-finish-ssl"
 [[ "$BRANCH" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] || die "branch invalida"
 [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || die "TELZ_EXPECTED_COMMIT deve ser um SHA-1 completo"
 [[ "$ALEMBIC_TARGET" =~ ^[A-Za-z0-9_]+$ ]] || die "TELZ_ALEMBIC_TARGET invalido"
+[[ "$FORWARD_ONLY_CUTOVER" == "true" || "$FORWARD_ONLY_CUTOVER" == "false" ]] || \
+  die "TELZ_FORWARD_ONLY_CUTOVER deve ser true ou false"
 [[ "$RUN_TESTS" == "true" || "$RUN_TESTS" == "false" ]] || die "RUN_TESTS deve ser true ou false"
 [[ "$SOURCE_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "TELZ_SOURCE_ARCHIVE_SHA256 invalido"
 [[ "$PREVIOUS_SOURCE_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256 invalido"
@@ -572,6 +576,8 @@ validate_release_tree() {
   local expected_revision="$3"
   local expected_dependency_sha="${4:-}"
   local allow_building="${5:-false}"
+  local expected_cutover_mode="${6:-}"
+  local expected_predecessor_revision="${7:-}"
   local release_dir
   [[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]] || die "commit esperado da release invalido"
   [[ "$app_dir" == "$RELEASES_DIR/$expected_commit/app" ]] || die "release diverge do caminho canonico"
@@ -593,7 +599,7 @@ validate_release_tree() {
     die "release imutavel possui escrita de grupo/outros"
   [[ -z "$(find "$app_dir" -xdev ! -type d ! -type f ! -type l -print -quit)" ]] || die "release contem tipo especial"
   require_root_owned_file "$app_dir/.telz-release.json"
-  /usr/bin/python3 - "$app_dir" "$expected_commit" "$expected_revision" "$expected_dependency_sha" "$SERVICE_USER" <<'PY'
+  /usr/bin/python3 - "$app_dir" "$expected_commit" "$expected_revision" "$expected_dependency_sha" "$SERVICE_USER" "$expected_cutover_mode" "$expected_predecessor_revision" <<'PY'
 import hashlib
 import json
 import os
@@ -606,6 +612,7 @@ from pathlib import Path
 root = Path(sys.argv[1]).resolve(strict=True)
 expected_commit, expected_revision = sys.argv[2], sys.argv[3]
 expected_dependency_sha, service_user = sys.argv[4], sys.argv[5]
+expected_cutover_mode, expected_predecessor_revision = sys.argv[6], sys.argv[7]
 data = json.loads((root / ".telz-release.json").read_text(encoding="utf-8"))
 if data.get("schema_version") != 2 or data.get("status") != "validated":
     raise SystemExit("manifest de release invalido")
@@ -617,6 +624,25 @@ if not re.fullmatch(r"[0-9a-f]{40}", expected_commit):
     raise SystemExit("commit de release invalido")
 if not re.fullmatch(r"[0-9a-f]{64}", str(data.get("dependency_artifact_sha256") or "")):
     raise SystemExit("digest de dependencias invalido")
+cutover = data.get("cutover")
+if cutover is not None:
+    if not isinstance(cutover, dict) or set(cutover) != {"mode", "predecessor_revision", "automatic_rollback"}:
+        raise SystemExit("metadata de cutover invalida")
+    mode = cutover.get("mode")
+    predecessor = cutover.get("predecessor_revision")
+    if mode not in {"rollback_safe", "forward_only"} or not re.fullmatch(r"[A-Za-z0-9_]+", str(predecessor or "")):
+        raise SystemExit("metadata de cutover invalida")
+    if cutover.get("automatic_rollback") is not (mode == "rollback_safe"):
+        raise SystemExit("politica de rollback do cutover invalida")
+if expected_cutover_mode:
+    if expected_cutover_mode not in {"rollback_safe", "forward_only"} or not re.fullmatch(r"[A-Za-z0-9_]+", expected_predecessor_revision):
+        raise SystemExit("expectativa de cutover invalida")
+    if cutover != {
+        "mode": expected_cutover_mode,
+        "predecessor_revision": expected_predecessor_revision,
+        "automatic_rollback": expected_cutover_mode == "rollback_safe",
+    }:
+        raise SystemExit("metadata de cutover diverge do target")
 build = json.loads((root / ".telz-build-metadata.json").read_text(encoding="utf-8"))
 if build.get("schema_version") != 1 or build.get("commit") != expected_commit:
     raise SystemExit("metadata do build invalida")
@@ -739,10 +765,15 @@ write_release_manifest() {
   local commit="$2"
   local revision="$3"
   local legacy_compat="$4"
+  local cutover_mode="$5"
+  local predecessor_revision="$6"
   local content_sha
+  [[ "$cutover_mode" == "rollback_safe" || "$cutover_mode" == "forward_only" ]] || die "modo de cutover invalido"
+  [[ "$predecessor_revision" =~ ^[A-Za-z0-9_]+$ ]] || die "revision predecessora invalida"
   content_sha="$(release_content_sha256 "$app_dir")"
   /usr/bin/python3 - "$app_dir/.telz-release.json" "$commit" "$revision" "$legacy_compat" \
-    "$DEPENDENCY_ARCHIVE_SHA256" "$content_sha" "$app_dir/.telz-build-metadata.json" <<'PY'
+    "$DEPENDENCY_ARCHIVE_SHA256" "$content_sha" "$app_dir/.telz-build-metadata.json" \
+    "$cutover_mode" "$predecessor_revision" <<'PY'
 import json
 import os
 import re
@@ -774,6 +805,11 @@ payload = {
     "pnpm_lock_sha256": build["pnpm_lock_sha256"],
     "public_build_config_sha256": build["public_build_config_sha256"],
     "toolchain": build["toolchain"],
+    "cutover": {
+        "mode": sys.argv[8],
+        "predecessor_revision": sys.argv[9],
+        "automatic_rollback": sys.argv[8] == "rollback_safe",
+    },
     "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
 }
 descriptor, temporary_name = tempfile.mkstemp(prefix=".telz-release.", suffix=".tmp", dir=target.parent)
@@ -863,6 +899,8 @@ materialize_release() {
   local source_archive="$3"
   local legacy_compat="$4"
   local expected_database_revision="$5"
+  local cutover_mode="${6:-}"
+  local predecessor_revision="${7:-}"
   local release_dir="$RELEASES_DIR/$release_commit"
   local release_app="$release_dir/app"
 
@@ -881,7 +919,7 @@ materialize_release() {
     discard_partial_release || die "release parcial nao pode ser removida"
   fi
   if [[ -d "$release_dir" ]]; then
-    validate_release_tree "$release_app" "$release_commit" "$release_revision" "$DEPENDENCY_ARCHIVE_SHA256" false
+    validate_release_tree "$release_app" "$release_commit" "$release_revision" "$DEPENDENCY_ARCHIVE_SHA256" false "$cutover_mode" "$predecessor_revision"
     validate_release_compatibility "$release_app" "$release_revision" "$expected_database_revision"
     BUILD_RELEASE_DIR=""
     BUILD_RELEASE_APP=""
@@ -911,22 +949,22 @@ materialize_release() {
     ln -s "$INSTALL_DIR/backend/.env" "$release_app/backend/.env"
     chown -h root:root "$release_app/backend/.env"
   fi
-  write_release_manifest "$release_app" "$release_commit" "$release_revision" "$legacy_compat"
+  write_release_manifest "$release_app" "$release_commit" "$release_revision" "$legacy_compat" "$cutover_mode" "$predecessor_revision"
   chmod 0555 "$release_dir"
-  validate_release_tree "$release_app" "$release_commit" "$release_revision" "$DEPENDENCY_ARCHIVE_SHA256" true
+  validate_release_tree "$release_app" "$release_commit" "$release_revision" "$DEPENDENCY_ARCHIVE_SHA256" true "$cutover_mode" "$predecessor_revision"
   validate_release_compatibility "$release_app" "$release_revision" "$expected_database_revision"
   rm -f -- "$release_dir/.building"
   BUILD_IN_PROGRESS=false
   BUILD_RELEASE_DIR=""
   BUILD_RELEASE_APP=""
   BUILD_RELEASE_COMMIT=""
-  validate_release_tree "$release_app" "$release_commit" "$release_revision" "$DEPENDENCY_ARCHIVE_SHA256" false
+  validate_release_tree "$release_app" "$release_commit" "$release_revision" "$DEPENDENCY_ARCHIVE_SHA256" false "$cutover_mode" "$predecessor_revision"
 }
 
 materialize_rollback_release() {
   local legacy_compat=false
   [[ "$1" == "2f1006860b648cf7a4734222da69879256c174e7" ]] && legacy_compat=true
-  materialize_release "$1" "$2" "$PREVIOUS_SOURCE_ARCHIVE" "$legacy_compat" "$DATABASE_CURRENT"
+  materialize_release "$1" "$2" "$PREVIOUS_SOURCE_ARCHIVE" "$legacy_compat" "$DATABASE_CURRENT" "rollback_safe" "$DATABASE_CURRENT"
 }
 
 SOURCE_PREVIOUS_COMMIT=""
@@ -947,6 +985,8 @@ CURRENT_SWAPPED=false
 OPERATIONS_CHANGED=false
 MAINTENANCE_WINDOW=false
 MIGRATION_APPLIED=false
+CUTOVER_MODE="rollback_safe"
+FORWARD_CUTOVER_MARKER="/var/lib/telz/forward-cutover-recovery.json"
 RECOVERY_FAILED=false
 RECOVERY_REQUIRED=false
 API_WAS_ACTIVE="inactive"
@@ -1155,12 +1195,76 @@ run_recovery_step() {
   return 0
 }
 
+write_forward_cutover_recovery_marker() {
+  [[ "$CUTOVER_MODE" == "forward_only" && "$MIGRATION_APPLIED" == "true" ]] || return 0
+  /usr/bin/python3 - "$FORWARD_CUTOVER_MARKER" "$EXPECTED_COMMIT" "$ALEMBIC_TARGET" \
+    "$PREVIOUS_ACTIVE_COMMIT" "$PREVIOUS_ACTIVE_REVISION" <<'PY'
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+target = Path(sys.argv[1])
+if target.parent != Path("/var/lib/telz"):
+    raise SystemExit("caminho do marcador de cutover invalido")
+payload = {
+    "schema_version": 1,
+    "status": "recovery_required",
+    "mode": "forward_only",
+    "automatic_rollback": False,
+    "target_commit": sys.argv[2],
+    "target_revision": sys.argv[3],
+    "predecessor_commit": sys.argv[4],
+    "predecessor_revision": sys.argv[5],
+    "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    "recovery": "corrija a release atual por hotfix forward-only ou restaure backup e schema em janela aprovada; rollback-telz permanece bloqueado",
+}
+fd, temporary = tempfile.mkstemp(prefix=".forward-cutover-recovery.", suffix=".tmp", dir=target.parent)
+try:
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        fd = -1
+        output.write(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n")
+        output.flush()
+        os.fsync(output.fileno())
+    os.replace(temporary, target)
+    directory_fd = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+finally:
+    if fd >= 0:
+        os.close(fd)
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+PY
+  chown root:root "$FORWARD_CUTOVER_MARKER"
+  chmod 0600 "$FORWARD_CUTOVER_MARKER"
+}
+
 on_error() {
   local rc="${1:-1}"
   [[ "$rc" =~ ^[0-9]+$ ]] || rc=1
   ERROR_HANDLER_ARMED=false
   trap - ERR TERM INT HUP
   if [[ "$RECOVERY_REQUIRED" != "true" ]]; then
+    exit "$rc"
+  fi
+  if [[ "$MIGRATION_APPLIED" == "true" && "$CUTOVER_MODE" == "forward_only" ]]; then
+    echo "[update][erro] migration forward-only aplicada; restauracao automatica da release anterior foi bloqueada" >&2
+    if ! write_forward_cutover_recovery_marker; then
+      echo "[update][erro] nao foi possivel registrar marcador de recuperacao forward-only" >&2
+    fi
+    if ! stop_services; then
+      echo "[update][erro] parada fail-closed dos servicos tambem falhou" >&2
+    fi
+    MAINTENANCE_WINDOW=true
+    echo "[update][erro] recuperacao explicita obrigatoria; consulte $FORWARD_CUTOVER_MARKER e nao execute rollback-telz" >&2
     exit "$rc"
   fi
   if [[ "$MAINTENANCE_WINDOW" == "true" ]]; then
@@ -1256,13 +1360,20 @@ PREVIOUS_SOURCE_ARCHIVE="$(require_source_archive "$PREVIOUS_SOURCE_ARCHIVE_INPU
 DEPENDENCY_ARCHIVE="$(require_dependency_archive "$DEPENDENCY_ARCHIVE_INPUT" "$DEPENDENCY_ARCHIVE_SHA256")"
 ensure_build_identity
 materialize_dependencies
+if schema_is_rollback_compatible "$PREVIOUS_ACTIVE_REVISION" "$ALEMBIC_TARGET"; then
+  CUTOVER_MODE="rollback_safe"
+else
+  [[ "$FORWARD_ONLY_CUTOVER" == "true" ]] || \
+    die "migration para $ALEMBIC_TARGET nao permite retorno seguro a $PREVIOUS_ACTIVE_REVISION; use um cutover forward-only explicitamente aprovado"
+  [[ "$FORWARD_ONLY_CUTOVER_CONFIRM" == "FORWARD_ONLY $EXPECTED_COMMIT" ]] || \
+    die "confirmacao de cutover forward-only invalida; use TELZ_FORWARD_ONLY_CUTOVER_CONFIRM='FORWARD_ONLY $EXPECTED_COMMIT'"
+  CUTOVER_MODE="forward_only"
+  echo "[update][atencao] cutover forward-only aprovado: rollback automatico sera bloqueado apos a migration" >&2
+fi
 if [[ -z "$PREVIOUS_CURRENT_TARGET" ]]; then
   materialize_rollback_release "$SOURCE_PREVIOUS_COMMIT" "$PREVIOUS_ACTIVE_REVISION"
 fi
-materialize_release "$EXPECTED_COMMIT" "$ALEMBIC_TARGET" "$SOURCE_ARCHIVE" false "$DATABASE_CURRENT"
-
-schema_is_rollback_compatible "$PREVIOUS_ACTIVE_REVISION" "$ALEMBIC_TARGET" || \
-  die "migration para $ALEMBIC_TARGET nao permite retorno seguro a $PREVIOUS_ACTIVE_REVISION"
+materialize_release "$EXPECTED_COMMIT" "$ALEMBIC_TARGET" "$SOURCE_ARCHIVE" false "$DATABASE_CURRENT" "$CUTOVER_MODE" "$PREVIOUS_ACTIVE_REVISION"
 
 echo "[update] preflight completo da release ativa antes de qualquer mutacao"
 TELZ_ALEMBIC_TARGET="$DATABASE_CURRENT" \

@@ -92,6 +92,26 @@ def test_updater_validates_release_and_recovers_first_deploy_without_downgrade()
     assert "restore_previous_release ||" not in updater
 
 
+def test_forward_only_cutover_requires_explicit_approval_and_records_recovery_policy():
+    updater = read("scripts/update-telz.sh")
+    origin_deploy = read("scripts/deploy-telz-from-origin.sh")
+
+    assert 'FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"' in updater
+    assert 'FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"' in updater
+    assert '[[ "$FORWARD_ONLY_CUTOVER_CONFIRM" == "FORWARD_ONLY $EXPECTED_COMMIT" ]]' in updater
+    assert '"mode": sys.argv[8]' in updater
+    assert '"automatic_rollback": sys.argv[8] == "rollback_safe"' in updater
+    assert 'cutover_mode="forward_only"' not in updater
+    assert 'CUTOVER_MODE="forward_only"' in updater
+    assert 'migration forward-only aplicada; restauracao automatica da release anterior foi bloqueada' in updater
+    assert 'recuperacao explicita obrigatoria; consulte $FORWARD_CUTOVER_MARKER' in updater
+    forward_failure = updater.index('if [[ "$MIGRATION_APPLIED" == "true" && "$CUTOVER_MODE" == "forward_only" ]]')
+    automatic_restore = updater.index('if [[ "$CURRENT_SWAPPED" == "true" ]]', forward_failure)
+    assert forward_failure < automatic_restore
+    assert 'TELZ_FORWARD_ONLY_CUTOVER="$FORWARD_ONLY_CUTOVER"' in origin_deploy
+    assert 'TELZ_FORWARD_ONLY_CUTOVER_CONFIRM="$FORWARD_ONLY_CUTOVER_CONFIRM"' in origin_deploy
+
+
 def test_deploy_materializes_verified_root_owned_bundle_from_pinned_checkout():
     workflow = read(".github/workflows/deploy.yml")
 

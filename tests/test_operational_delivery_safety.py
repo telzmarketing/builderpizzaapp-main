@@ -66,6 +66,10 @@ def test_rollback_requires_full_sha_and_only_swaps_validated_release():
     assert 'pnpm -C "$INSTALL_DIR"' not in rollback
     assert 'bash "$INSTALL_DIR/scripts/backup-telz.sh"' not in rollback
     assert 'bash "$INSTALL_DIR/scripts/health-check.sh"' not in rollback
+    assert 'cutover = data.get("cutover")' in rollback
+    assert 'cutover_mode = "rollback_safe"' in rollback
+    assert 'ORIGINAL_CUTOVER_MODE="${ORIGINAL_MANIFEST[2]}"' in rollback
+    assert 'release ativa foi promovida por cutover forward-only; rollback-telz e bloqueado' in rollback
 
 
 def test_restore_uses_write_ahead_flags_and_cleans_staging_directory():

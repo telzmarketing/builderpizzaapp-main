@@ -123,6 +123,18 @@ if any(not re.fullmatch(r"[0-9a-f]{64}", str(data.get(name) or "")) for name in 
 toolchain = data.get("toolchain")
 if not isinstance(toolchain, dict) or set(toolchain) != {"python", "pip", "node", "pnpm"} or not all(isinstance(value, str) and value for value in toolchain.values()):
     raise SystemExit("toolchain do manifest da release invalida")
+cutover = data.get("cutover")
+if cutover is None:
+    cutover_mode = "rollback_safe"
+else:
+    if not isinstance(cutover, dict) or set(cutover) != {"mode", "predecessor_revision", "automatic_rollback"}:
+        raise SystemExit("metadata de cutover invalida")
+    cutover_mode = cutover.get("mode")
+    predecessor_revision = cutover.get("predecessor_revision")
+    if cutover_mode not in {"rollback_safe", "forward_only"} or not re.fullmatch(r"[A-Za-z0-9_]+", str(predecessor_revision or "")):
+        raise SystemExit("metadata de cutover invalida")
+    if cutover.get("automatic_rollback") is not (cutover_mode == "rollback_safe"):
+        raise SystemExit("politica de rollback do cutover invalida")
 expected_legacy = {"backend/.env": str(Path(sys.argv[3]) / "backend" / ".env")} if commit == "2f1006860b648cf7a4734222da69879256c174e7" else {}
 if data.get("legacy_compat") != expected_legacy:
     raise SystemExit("legacy_compat do manifest invalido")
@@ -166,6 +178,7 @@ if data.get("content_sha256") != digest.hexdigest():
     raise SystemExit("digest de conteudo da release divergiu")
 print(commit)
 print(revision)
+print(cutover_mode)
 PY
 }
 
@@ -244,13 +257,16 @@ ORIGINAL_CODE_DIR="$(validate_release_path "$CURRENT_LINK")"
 TARGET_CODE_DIR="$(validate_release_path "$RELEASES_DIR/$REQUESTED_COMMIT/app")"
 readarray -t ORIGINAL_MANIFEST < <(read_release_manifest "$ORIGINAL_CODE_DIR")
 readarray -t TARGET_MANIFEST < <(read_release_manifest "$TARGET_CODE_DIR")
-[[ "${#ORIGINAL_MANIFEST[@]}" -eq 2 && "${#TARGET_MANIFEST[@]}" -eq 2 ]] || die "manifest de release invalido"
+[[ "${#ORIGINAL_MANIFEST[@]}" -eq 3 && "${#TARGET_MANIFEST[@]}" -eq 3 ]] || die "manifest de release invalido"
 ORIGINAL_COMMIT="${ORIGINAL_MANIFEST[0]}"
 ORIGINAL_REVISION="${ORIGINAL_MANIFEST[1]}"
+ORIGINAL_CUTOVER_MODE="${ORIGINAL_MANIFEST[2]}"
 TARGET_COMMIT="${TARGET_MANIFEST[0]}"
 TARGET_REVISION="${TARGET_MANIFEST[1]}"
 [[ "$TARGET_COMMIT" == "$REQUESTED_COMMIT" ]] || die "release alvo diverge do commit solicitado"
 [[ "$TARGET_COMMIT" != "$ORIGINAL_COMMIT" ]] || die "release alvo ja esta ativa"
+[[ "$ORIGINAL_CUTOVER_MODE" != "forward_only" ]] || \
+  die "release ativa foi promovida por cutover forward-only; rollback-telz e bloqueado e a recuperacao exige restauracao explicita de backup e schema"
 
 mapfile -t ORIGINAL_HEADS < <(alembic_at "$ORIGINAL_CODE_DIR" heads | awk 'NF {print $1}')
 mapfile -t TARGET_HEADS < <(alembic_at "$TARGET_CODE_DIR" heads | awk 'NF {print $1}')
