@@ -242,7 +242,8 @@ schema_pair_is_compatible() {
     "20261004_wave7_finance_contract:20261004_wave7_fiscal_contract"|\
     "20261004_wave7_fiscal_contract:20261004_wave7_management_geocode_contract"|\
     "20261004_wave7_management_geocode_contract:20261004_wave7_logistics_identity_contract"|\
-    "20261004_wave7_logistics_identity_contract:20261004_tenant_upload_ownership_contract")
+    "20261004_wave7_logistics_identity_contract:20261004_tenant_upload_ownership_contract"|\
+    "20261004_tenant_upload_ownership_contract:20261014_order_cancellation_tracking")
       return 0
       ;;
     *)

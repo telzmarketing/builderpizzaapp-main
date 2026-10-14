@@ -1,5 +1,6 @@
 -- Migration: rastreamento de cancelamento de pedidos
--- Executar na VPS: psql $DATABASE_URL -f backend/migrations/0001_order_cancellation_tracking.sql
+-- Referencia historica: substituida pela revision Alembic
+-- 20261014_order_cancellation_tracking, aplicada pelo fluxo de deploy Telz.
 
 ALTER TABLE orders
   ADD COLUMN IF NOT EXISTS cancelled_by        VARCHAR(50),

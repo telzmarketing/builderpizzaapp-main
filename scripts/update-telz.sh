@@ -137,7 +137,7 @@ validate_operational_config
 BRANCH="${BRANCH:-main}"
 RUN_TESTS="${RUN_TESTS:-false}"
 EXPECTED_COMMIT="${TELZ_EXPECTED_COMMIT:-}"
-ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261004_tenant_upload_ownership_contract}"
+ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261014_order_cancellation_tracking}"
 FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"
 FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"
 LEGACY_ADOPTION="${TELZ_LEGACY_ADOPTION:-false}"
@@ -568,7 +568,8 @@ schema_is_rollback_compatible() {
     "20261004_wave7_finance_contract:20261004_wave7_fiscal_contract"|\
     "20261004_wave7_fiscal_contract:20261004_wave7_management_geocode_contract"|\
     "20261004_wave7_management_geocode_contract:20261004_wave7_logistics_identity_contract"|\
-    "20261004_wave7_logistics_identity_contract:20261004_tenant_upload_ownership_contract")
+    "20261004_wave7_logistics_identity_contract:20261004_tenant_upload_ownership_contract"|\
+    "20261004_tenant_upload_ownership_contract:20261014_order_cancellation_tracking")
       return 0
       ;;
     *)

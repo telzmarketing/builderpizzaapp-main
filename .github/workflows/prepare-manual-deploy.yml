@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  TELZ_ALEMBIC_TARGET: 20261004_tenant_upload_ownership_contract
+  TELZ_ALEMBIC_TARGET: 20261014_order_cancellation_tracking
   TELZ_PUBLIC_HEALTH_URL: https://app.telz.com.br/health
 
 jobs:

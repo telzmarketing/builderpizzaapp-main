@@ -1,10 +1,29 @@
 # Atualizacao Telz na VPS
 
-Atualizado em: 2026-10-04
+Atualizado em: 2026-10-14
 
 Este procedimento cobre atualizacao incremental de uma instalacao existente em
 `/opt/telz`. `installer/install.sh` e exclusivo da primeira instalacao ou de
 uma reconstrucao planejada; ele nao deve ser reutilizado como updater.
+
+## Incidente: coluna de cancelamento ausente
+
+O erro `UndefinedColumn: orders.cancelled_by` indica divergencia entre o model
+ativo e o schema do banco. A migration `20261014_order_cancellation_tracking`
+adiciona os campos de auditoria de cancelamento e preserva registros existentes.
+Antes da janela, registre `alembic current` e `alembic heads` usando o ambiente
+da release ativa e confirme o backup e o ensaio de restore. Publique a correcao
+pelo fluxo incremental abaixo: o updater cria backup antes de aplicar a revision.
+Nao execute novamente o instalador, DDL manual ou alteracao de `alembic_version`.
+
+O deploy normal e permitido quando o head da release anterior e exatamente
+`20261004_tenant_upload_ownership_contract`: o par com a nova revision foi
+revisado para rollback de codigo preservando o schema aditivo e a auditoria.
+Outros predecessores continuam bloqueados sem compatibilidade explicita ou
+cutover forward-only aprovado. Nao existe downgrade de banco para esta revision.
+Depois da atualizacao, confirme a revision aplicada, `/health` e a listagem
+autenticada de pedidos, verificando os logs de `telz-api`. Certificado HTTPS
+exige validacao separada por hostname.
 
 ## 1. Caminhos suportados
 
@@ -156,7 +175,7 @@ imutavel e executa health checks.
 O target canonico desta entrega e:
 
 ```text
-20261004_tenant_upload_ownership_contract
+20261014_order_cancellation_tracking
 ```
 
 O deploy fica bloqueado se o commit publicado nao possuir exatamente esse unico
@@ -179,6 +198,7 @@ A cadeia operacional que deve existir no commit publicado e linear:
   -> 20261004_wave7_management_geocode_contract
   -> 20261004_wave7_logistics_identity_contract
   -> 20261004_tenant_upload_ownership_contract
+  -> 20261014_order_cancellation_tracking
 ```
 
 ## 2. Preflight
@@ -200,7 +220,7 @@ movimentacao manual para contornar o gate.
 
 Confirme no commit alvo:
 
-- unico head Alembic `20261004_tenant_upload_ownership_contract`;
+- unico head Alembic `20261014_order_cancellation_tracking`;
 - workflow e updater usando o mesmo target;
 - CI verde para o mesmo SHA, incluindo o upgrade Alembic em PostgreSQL
   descartavel; CI verde nao substitui o backup nem a migration na VPS;
@@ -236,7 +256,7 @@ deploy, todos estes inputs promovidos e root-owned:
 - archive de fonte alvo e seu `TELZ_SOURCE_ARCHIVE_SHA256`;
 - archive de fonte anterior e seu `TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256`;
 - archive offline de dependencias e seu `TELZ_DEPENDENCY_ARCHIVE_SHA256`;
-- `TELZ_ALEMBIC_TARGET=20261004_tenant_upload_ownership_contract`;
+- `TELZ_ALEMBIC_TARGET=20261014_order_cancellation_tracking`;
 - `TELZ_PUBLIC_HEALTH_URL` quando HTTPS publico e obrigatorio.
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
@@ -277,7 +297,7 @@ sudo /usr/local/sbin/telz-health-check /opt/telz
 ```
 
 Confirme que o link `current` termina em `/releases/<SHA-ALVO>/app`, o manifest
-registra o mesmo commit e `20261004_tenant_upload_ownership_contract`, e o banco possui uma unica
+registra o mesmo commit e `20261014_order_cancellation_tracking`, e o banco possui uma unica
 revision igual ao target.
 
 Tambem valide HTTPS publico, login, loja, pedido, pagamentos, cozinha,
