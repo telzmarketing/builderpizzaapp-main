@@ -10,6 +10,9 @@ from pydantic import ValidationError
 
 from backend.core.exceptions import DomainError
 from backend.database import SessionLocal
+# Standalone workers do not import main.py. Register the FK target used by
+# certificate requests and audit rows before SQLAlchemy flushes either model.
+from backend.models.admin import AdminUser  # noqa: F401
 from backend.schemas.tenant_domain_ssl import WorkerFailIn, WorkerLeaseIn
 from backend.services.tenant_domain_ssl_service import TenantDomainSSLService
 
