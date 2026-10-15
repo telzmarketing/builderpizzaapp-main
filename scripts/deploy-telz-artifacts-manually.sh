@@ -145,7 +145,7 @@ expected = {
     "scripts/finish-ssl.sh", "scripts/build-telz-release.sh",
     "installer/templates/telz-api.service", "installer/templates/telz-web.service",
     "installer/templates/telz-whatsapp-gateway.service", "installer/templates/telz-monitoring.service",
-    "installer/templates/telz-monitoring.timer",
+    "installer/templates/telz-monitoring.timer", "scripts/tenant-domain-ssl.py", "scripts/tenant-domain-ssl-renew-hook.py", "installer/templates/telz-domain-ssl.service", "installer/templates/telz-domain-ssl.timer",
 }
 seen = set()
 try:

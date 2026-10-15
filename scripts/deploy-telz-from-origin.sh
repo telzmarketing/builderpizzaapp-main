@@ -52,7 +52,7 @@ BRANCH="main"
 SERVICE_USER="${TELZ_SERVICE_USER:-telz}"
 BUILD_USER="${TELZ_BUILD_USER:-telz-build}"
 BUILD_GROUP="${TELZ_BUILD_GROUP:-telz-build}"
-ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261014_order_cancellation_tracking}"
+ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261014_tenant_domain_ssl}"
 FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"
 FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"
 LEGACY_ADOPTION="${TELZ_LEGACY_ADOPTION:-false}"
@@ -160,6 +160,10 @@ BUNDLE_FILES=(
   installer/templates/telz-api.service installer/templates/telz-web.service
   installer/templates/telz-whatsapp-gateway.service installer/templates/telz-monitoring.service
   installer/templates/telz-monitoring.timer
+  scripts/tenant-domain-ssl.py
+  scripts/tenant-domain-ssl-renew-hook.py
+  installer/templates/telz-domain-ssl.service
+  installer/templates/telz-domain-ssl.timer
 )
 
 # `git archive` runs as the service account; root only stores and validates the

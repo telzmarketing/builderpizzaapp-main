@@ -1,7 +1,9 @@
 """Thin HTTP adapters for tenant and Master Central administration."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Request
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
@@ -69,6 +71,8 @@ from backend.schemas.platform_master import (
 )
 from backend.schemas.platform_tenant import PlatformTenantCreate, PlatformTenantOut, PlatformTenantStatusUpdate
 from backend.schemas.tenant_domain import TenantDomainCreate, TenantDomainOut
+from backend.schemas.tenant_domain_ssl import CertificateRequestIn, CertificateSummaryOut
+from backend.services.tenant_domain_ssl_service import TenantDomainSSLService
 from backend.services.platform_master_service import PlatformMasterService, PlatformNotFound
 from backend.services.tenant_domain_service import TenantDomainService, parse_hostname_set, trusted_request_hostname
 
@@ -488,6 +492,20 @@ def all_domains(
         status=status,
         q=q,
     ))
+
+
+@master_router.get("/domains/{domain_id}/certificate", response_model=ApiEnvelope[CertificateSummaryOut])
+def domain_certificate(domain_id: str, db: Session = Depends(get_db),
+                       _admin: AdminUser = Depends(require_platform_permission("tenants.view"))):
+    return _success(TenantDomainSSLService(db).summary(domain_id))
+
+
+@master_router.post("/domains/{domain_id}/certificate", status_code=202, response_model=ApiEnvelope[CertificateSummaryOut])
+def request_domain_certificate(domain_id: str, body: CertificateRequestIn, request: Request,
+                               idempotency_key: UUID = Header(alias="Idempotency-Key"),
+                               db: Session = Depends(get_db),
+                               admin: AdminUser = Depends(require_platform_permission("tenants.manage"))):
+    return _success(TenantDomainSSLService(db).enqueue(domain_id, body, idempotency_key, actor=admin, request=request))
 
 
 @master_router.post(

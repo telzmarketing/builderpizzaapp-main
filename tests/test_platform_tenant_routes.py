@@ -24,7 +24,7 @@ def test_platform_tenant_routes_require_explicit_platform_permissions():
         "list_tenants", "tenant_detail", "list_tenant_users", "tenant_security",
         "tenant_usage", "tenant_notes", "list_tenant_modules", "tenant_license",
         "list_domains", "dashboard", "all_domains", "list_plans", "list_modules",
-        "list_invoices",
+        "list_invoices", "domain_certificate",
     )
     for function_name in view_routes:
         assert 'require_platform_permission("tenants.view")' in _function_source(route, function_name)
@@ -38,7 +38,7 @@ def test_platform_tenant_routes_require_explicit_platform_permissions():
         "transfer_tenant_ownership",
         "update_tenant_modules", "change_tenant_plan", "tenant_license_action",
         "create_domain", "verify_domain", "activate_domain", "primary_domain",
-        "suspend_domain", "remove_domain", "create_plan", "update_plan",
+        "suspend_domain", "remove_domain", "request_domain_certificate", "create_plan", "update_plan",
         "create_module", "create_invoice", "register_payment",
     )
     for function_name in manage_routes:

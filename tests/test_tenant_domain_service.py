@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import pytest
 from backend.models.tenant_domain import TenantDomain
 from backend.services.tenant_domain_service import (
@@ -22,7 +22,7 @@ def test_platform_hosts_are_normalized() -> None:
     assert parse_hostname_set("Painel.Example.com, login.example.com.") == {"painel.example.com", "login.example.com"}
 
 
-def test_verification_then_activation_is_required() -> None:
+def test_verification_and_https_then_activation_are_required(monkeypatch) -> None:
     service = TenantDomainService(db=None)
     token = "proof"
     domain = TenantDomain(id="domain-1", tenant_id="tenant-1", hostname="store.example.com",
@@ -31,6 +31,15 @@ def test_verification_then_activation_is_required() -> None:
     with pytest.raises(TenantDomainValidationError, match="verificado"):
         service.activate(domain)
     service.confirm_verification(domain, token)
+    with pytest.raises(TenantDomainValidationError, match="HTTPS"):
+        service.activate(domain)
+    now = datetime.now(timezone.utc)
+    domain.ssl_status = "active"
+    domain.ssl_expires_at = now + timedelta(days=30)
+    monkeypatch.setattr("backend.services.tenant_domain_ssl_service.TenantDomainSSLService._eligible",
+        lambda self, item: item.hostname)
+    monkeypatch.setattr("backend.services.tenant_domain_ssl_service.probe_certificate",
+        lambda hostname: {"issued_at": now, "expires_at": domain.ssl_expires_at, "fingerprint": "a" * 64})
     service.activate(domain)
     assert domain.status == "active"
     assert domain.verified_at is not None and domain.activated_at is not None

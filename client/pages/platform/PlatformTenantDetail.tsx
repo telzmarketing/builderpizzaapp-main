@@ -1,3 +1,4 @@
+import { DomainCertificateDialog, DomainCertificateStatus } from "@/components/platform/DomainCertificateDialog";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
@@ -1131,6 +1132,7 @@ function Users({
 
 function Domains({ tenantId, items, onChanged }: { tenantId: string; items: ApiPlatformTenantDomain[]; onChanged: (items: ApiPlatformTenantDomain[]) => void }) {
   const { toast } = useToast();
+  const [certificateTarget, setCertificateTarget] = useState<ApiPlatformTenantDomain | null>(null);
   const [hostname, setHostname] = useState("");
   const [kind, setKind] = useState<"subdomain" | "custom">("subdomain");
   const [saving, setSaving] = useState(false);
@@ -1222,7 +1224,7 @@ function Domains({ tenantId, items, onChanged }: { tenantId: string; items: ApiP
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3 className="font-black text-yellow-100">Prova DNS - copie agora</h3>
-              <p className="mt-1 text-xs text-yellow-100/80">O valor de verificacao e exibido somente nesta sessao.</p>
+              <p className="mt-1 text-xs text-yellow-100/80">O valor de verificacao e exibido somente nesta sessao. Abra Configurar HTTPS para consultar o apontamento, configure o TXT e os registros DNS; depois use Testar DNS e solicite HTTPS.</p>
             </div>
             <Button variant="ghost" size="sm" onClick={() => setVerification(null)}>Ocultar</Button>
           </div>
@@ -1261,11 +1263,13 @@ function Domains({ tenantId, items, onChanged }: { tenantId: string; items: ApiP
                       <span className="truncate">{dnsRecord}</span><Copy size={12} className="shrink-0" />
                     </button>
                   ) : <p className="mt-2 text-xs text-stone">Sem instrucao DNS pendente.</p>}
+                  <DomainCertificateStatus domain={domain} />
                   {domain.error_message && <p className="mt-2 text-xs text-red-300">{domain.error_message}</p>}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {canTestDns && <Button variant="outline" size="sm" disabled={busyId === domain.id} onClick={() => void act(domain, "verify")}>Testar DNS</Button>}
-                  {domain.status === "verified" && <Button size="sm" disabled={busyId === domain.id} onClick={() => void act(domain, "activate")} className="bg-green-600 text-white">Ativar</Button>}
+                  {domain.status === "verified" && <Button size="sm" title="Requer HTTPS ativo e certificado valido" disabled={busyId === domain.id || domain.ssl_status !== "active" || !domain.ssl_expires_at || !(new Date(domain.ssl_expires_at).getTime() > Date.now())} onClick={() => void act(domain, "activate")} className="bg-green-600 text-white">Ativar</Button>}
+                  {["pending", "awaiting_dns", "dns_error", "verified", "active"].includes(domain.status) && <Button variant="outline" size="sm" disabled={busyId === domain.id} onClick={() => setCertificateTarget(domain)}>Configurar HTTPS</Button>}
                   {domain.status === "active" && !domain.is_primary && <Button variant="outline" size="sm" disabled={busyId === domain.id} onClick={() => void act(domain, "primary")}>Definir principal</Button>}
                   {domain.status === "active" && <Button asChild variant="outline" size="sm"><a href={`https://${domain.hostname}`} target="_blank" rel="noreferrer">Testar acesso</a></Button>}
                   {domain.status === "active" && <Button variant="destructive" size="sm" disabled={busyId === domain.id} onClick={() => requestDestructive(domain, "suspend")}>Suspender</Button>}
@@ -1277,6 +1281,9 @@ function Domains({ tenantId, items, onChanged }: { tenantId: string; items: ApiP
         </div>
       )}
 
+      {certificateTarget && <DomainCertificateDialog domain={certificateTarget} onClose={() => setCertificateTarget(null)} onChanged={(summary) => {
+        onChanged(items.map((item) => item.id === summary.domain_id ? { ...item, ssl_status: summary.ssl_status as ApiPlatformTenantDomain["ssl_status"], ssl_issued_at: summary.ssl_issued_at, ssl_expires_at: summary.ssl_expires_at } : item));
+      }} />}
       {actionTarget && destructiveAction && (
         <ConfirmationDialog
           open

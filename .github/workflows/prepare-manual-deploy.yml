@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  TELZ_ALEMBIC_TARGET: 20261014_order_cancellation_tracking
+  TELZ_ALEMBIC_TARGET: 20261014_tenant_domain_ssl
   TELZ_PUBLIC_HEALTH_URL: https://app.telz.com.br/health
 
 jobs:
@@ -114,6 +114,10 @@ jobs:
             installer/templates/telz-api.service installer/templates/telz-web.service
             installer/templates/telz-whatsapp-gateway.service installer/templates/telz-monitoring.service
             installer/templates/telz-monitoring.timer
+            scripts/tenant-domain-ssl.py
+            scripts/tenant-domain-ssl-renew-hook.py
+            installer/templates/telz-domain-ssl.service
+            installer/templates/telz-domain-ssl.timer
           )
           for file in "${files[@]}"; do test -f "$file"; test ! -L "$file"; done
           tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
@@ -164,7 +168,7 @@ jobs:
           target, previous, alembic, health = sys.argv[2:]
           expected_operation = {
               'scripts/update-telz.sh','scripts/backup-telz.sh','scripts/health-check.sh','scripts/collect-telz-monitoring.sh','scripts/restore-telz.sh','scripts/rollback-telz.sh','scripts/finish-ssl.sh','scripts/build-telz-release.sh',
-              'installer/templates/telz-api.service','installer/templates/telz-web.service','installer/templates/telz-whatsapp-gateway.service','installer/templates/telz-monitoring.service','installer/templates/telz-monitoring.timer'}
+              'installer/templates/telz-api.service','installer/templates/telz-web.service','installer/templates/telz-whatsapp-gateway.service','installer/templates/telz-monitoring.service','installer/templates/telz-monitoring.timer','scripts/tenant-domain-ssl.py','scripts/tenant-domain-ssl-renew-hook.py','installer/templates/telz-domain-ssl.service','installer/templates/telz-domain-ssl.timer'}
           operation = root / 'operation-bundle.tar.gz'
           with tarfile.open(operation, 'r:gz') as tar:
               names = {m.name for m in tar.getmembers() if not m.isdir()}

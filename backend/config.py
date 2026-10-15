@@ -2,7 +2,7 @@ from functools import lru_cache
 import os
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     TENANT_DOMAINS_TRUST_PROXY_HEADERS: bool = False
     TENANT_DOMAINS_TRUSTED_PROXY_IPS: str = ""
     TENANT_DOMAINS_PLATFORM_HOSTNAMES: str = ""
+    TENANT_DOMAIN_SSL_ENABLED: bool = False
+    TENANT_DOMAIN_SSL_PUBLIC_IPS: str = ""
+    TENANT_DOMAIN_SSL_LEASE_SECONDS: int = Field(default=900, ge=120, le=3600)
+    TENANT_DOMAIN_SSL_COOLDOWN_SECONDS: int = Field(default=3600, ge=300, le=86400)
+    TENANT_DOMAIN_SSL_HEARTBEAT_SECONDS: int = Field(default=300, ge=60, le=900)
     TENANT_PAYMENT_WEBHOOKS_ENABLED: bool = False
     TENANT_PAYMENT_WEBHOOK_ENDPOINTS: str = "{}"
     TENANT_BACKGROUND_CONTEXT_ENABLED: bool = False

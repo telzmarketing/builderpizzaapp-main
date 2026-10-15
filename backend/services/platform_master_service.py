@@ -232,7 +232,7 @@ class PlatformMasterService:
         row = self.db.query(TenantDomain).filter(
             TenantDomain.id == domain_id,
             TenantDomain.status != "removed",
-        ).first()
+        ).with_for_update().first()
         if row is None:
             raise PlatformNotFound("Dominio nao encontrado.", code="DomainNotFound")
         return row
@@ -317,7 +317,9 @@ class PlatformMasterService:
         q: str | None = None,
     ) -> dict:
         query = self.db.query(TenantDomain).filter(TenantDomain.status != "removed")
-        if status:
+        if status == "ssl_error":
+            query = query.filter(or_(TenantDomain.status == "ssl_error", TenantDomain.ssl_status == "error"))
+        elif status:
             query = query.filter(TenantDomain.status == status)
         if q:
             needle = f"%{q.strip()}%"
@@ -480,7 +482,7 @@ class PlatformMasterService:
         ]
         domain_error_tenants = [
             row[0] for row in self.db.query(TenantDomain.tenant_id).filter(
-                TenantDomain.status.in_(("dns_error", "ssl_error"))
+                or_(TenantDomain.status.in_(("dns_error", "ssl_error")), TenantDomain.ssl_status == "error")
             ).distinct().all()
         ]
         billing_pending_tenants = [
@@ -534,7 +536,7 @@ class PlatformMasterService:
                     TenantDomain.status.in_(("pending", "awaiting_dns", "verifying"))
                 ).count(),
                 "error": self.db.query(TenantDomain).filter(
-                    TenantDomain.status.in_(("dns_error", "ssl_error"))
+                    or_(TenantDomain.status.in_(("dns_error", "ssl_error")), TenantDomain.ssl_status == "error")
                 ).count(),
             },
             "generated_at": now,

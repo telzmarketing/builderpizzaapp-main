@@ -143,8 +143,18 @@ class TenantDomainService:
         return domain
 
     def activate(self, domain: TenantDomain) -> TenantDomain:
+        # Renewal does not suspend an already published store.
+        if domain.status == "active":
+            return domain
         if domain.status != "verified" or domain.verified_at is None:
             raise TenantDomainValidationError("Dominio precisa estar verificado antes da publicacao.")
+        if domain.ssl_status != "active" or domain.ssl_expires_at is None or domain.ssl_expires_at <= datetime.now(timezone.utc):
+            raise TenantDomainValidationError("Dominio precisa de certificado HTTPS valido antes de ser ativado.")
+        from backend.services.tenant_domain_ssl_service import TenantDomainSSLService
+
+        certificate = TenantDomainSSLService(self._db).activation_certificate(domain)
+        domain.ssl_issued_at = certificate["issued_at"]
+        domain.ssl_expires_at = certificate["expires_at"]
         domain.status = "active"
         domain.activated_at = datetime.now(timezone.utc)
         domain.updated_at = domain.activated_at

@@ -27,6 +27,10 @@ TRUSTED_INSTALLER_ASSET_PATHS=(
   installer/templates/telz-api.service
   installer/templates/telz-monitoring.service
   installer/templates/telz-monitoring.timer
+  scripts/tenant-domain-ssl.py
+  scripts/tenant-domain-ssl-renew-hook.py
+  installer/templates/telz-domain-ssl.service
+  installer/templates/telz-domain-ssl.timer
   installer/templates/telz-web.service
   installer/templates/telz-whatsapp-gateway.service
 )

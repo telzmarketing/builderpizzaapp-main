@@ -1,0 +1,20 @@
+[Unit]
+Description=Telz - process verified tenant hostname HTTPS jobs
+After=network-online.target nginx.service telz-api.service
+Wants=network-online.target
+ConditionPathExists=/etc/telz/domain-ssl.json
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+TimeoutStartSec=12min
+ExecStart=/usr/bin/python3 -I /usr/local/sbin/telz-domain-ssl
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/etc/nginx/conf.d /etc/letsencrypt /var/lib/letsencrypt /var/log/letsencrypt /var/lib/telz/acme /run/lock/telz /var/log/nginx
+# nginx -t opens the pid path; it must use the existing runtime directory.
+ReadWritePaths=-/run/nginx.pid

@@ -1,0 +1,12 @@
+[Unit]
+Description=Telz - periodically reconcile and issue tenant HTTPS
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+RandomizedDelaySec=10s
+Persistent=true
+Unit=telz-domain-ssl.service
+
+[Install]
+WantedBy=timers.target

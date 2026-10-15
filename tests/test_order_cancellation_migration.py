@@ -59,9 +59,9 @@ def test_downgrade_blocks_before_emitting_any_sql():
     assert output.getvalue() == ""
 
 
-def test_cancellation_revision_is_single_head_after_upload_ownership():
+def test_cancellation_revision_follows_upload_ownership_in_canonical_history():
     script = ScriptDirectory(str(ROOT / "backend/migrations"))
-    assert script.get_heads() == [REVISION]
+    assert REVISION in {revision.revision for revision in script.walk_revisions()}
     assert script.get_revision(REVISION).down_revision == (
         "20261004_tenant_upload_ownership_contract"
     )

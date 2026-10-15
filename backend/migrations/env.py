@@ -51,6 +51,7 @@ from backend.models import (  # noqa: F401
     theme,
     tenant,
     tenant_domain,
+    tenant_domain_ssl,
     upsell,
     membership,
     platform_rbac,

@@ -175,7 +175,7 @@ imutavel e executa health checks.
 O target canonico desta entrega e:
 
 ```text
-20261014_order_cancellation_tracking
+20261014_tenant_domain_ssl
 ```
 
 O deploy fica bloqueado se o commit publicado nao possuir exatamente esse unico
@@ -199,6 +199,7 @@ A cadeia operacional que deve existir no commit publicado e linear:
   -> 20261004_wave7_logistics_identity_contract
   -> 20261004_tenant_upload_ownership_contract
   -> 20261014_order_cancellation_tracking
+  -> 20261014_tenant_domain_ssl
 ```
 
 ## 2. Preflight
@@ -220,7 +221,7 @@ movimentacao manual para contornar o gate.
 
 Confirme no commit alvo:
 
-- unico head Alembic `20261014_order_cancellation_tracking`;
+- unico head Alembic `20261014_tenant_domain_ssl`;
 - workflow e updater usando o mesmo target;
 - CI verde para o mesmo SHA, incluindo o upgrade Alembic em PostgreSQL
   descartavel; CI verde nao substitui o backup nem a migration na VPS;
@@ -256,7 +257,7 @@ deploy, todos estes inputs promovidos e root-owned:
 - archive de fonte alvo e seu `TELZ_SOURCE_ARCHIVE_SHA256`;
 - archive de fonte anterior e seu `TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256`;
 - archive offline de dependencias e seu `TELZ_DEPENDENCY_ARCHIVE_SHA256`;
-- `TELZ_ALEMBIC_TARGET=20261014_order_cancellation_tracking`;
+- `TELZ_ALEMBIC_TARGET=20261014_tenant_domain_ssl`;
 - `TELZ_PUBLIC_HEALTH_URL` quando HTTPS publico e obrigatorio.
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
@@ -297,7 +298,7 @@ sudo /usr/local/sbin/telz-health-check /opt/telz
 ```
 
 Confirme que o link `current` termina em `/releases/<SHA-ALVO>/app`, o manifest
-registra o mesmo commit e `20261014_order_cancellation_tracking`, e o banco possui uma unica
+registra o mesmo commit e `20261014_tenant_domain_ssl`, e o banco possui uma unica
 revision igual ao target.
 
 Tambem valide HTTPS publico, login, loja, pedido, pagamentos, cozinha,

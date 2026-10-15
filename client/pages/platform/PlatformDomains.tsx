@@ -1,3 +1,4 @@
+import { DomainCertificateDialog, DomainCertificateStatus } from "@/components/platform/DomainCertificateDialog";
 import { useCallback, useEffect, useState } from "react";
 import { Copy, Loader2, RefreshCw, Search, Trash2 } from "lucide-react";
 import {
@@ -23,6 +24,7 @@ const EMPTY: ApiPlatformPage<ApiPlatformTenantDomain> = {
 
 export default function PlatformDomains() {
   const { toast } = useToast();
+  const [certificateTarget, setCertificateTarget] = useState<ApiPlatformTenantDomain | null>(null);
   const [data, setData] = useState(EMPTY);
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState("");
@@ -231,9 +233,9 @@ export default function PlatformDomains() {
                     )}
                   </div>
                   <p className="mt-2 truncate text-xs text-stone">
-                    Tenant {domain.tenant_id} · SSL{" "}
-                    {domain.ssl_status || "pendente"}
+                    Tenant {domain.tenant_id}
                   </p>
+                  <DomainCertificateStatus domain={domain} />
                   {(domain.expected_txt_record || domain.expected_cname) && (
                     <button
                       type="button"
@@ -259,13 +261,15 @@ export default function PlatformDomains() {
                   {domain.status === "verified" && (
                     <Button
                       size="sm"
-                      disabled={busyId === domain.id}
+                      disabled={busyId === domain.id || domain.ssl_status !== "active" || !domain.ssl_expires_at || !(new Date(domain.ssl_expires_at).getTime() > Date.now())}
+                      title="Requer HTTPS ativo e certificado valido"
                       className="bg-green-600 text-white"
                       onClick={() => void act(domain, "activate")}
                     >
                       Ativar
                     </Button>
                   )}
+                  {["pending", "awaiting_dns", "dns_error", "verified", "active"].includes(domain.status) && <Button variant="outline" size="sm" disabled={busyId === domain.id} onClick={() => setCertificateTarget(domain)}>Configurar HTTPS</Button>}
                   {domain.status === "active" && !domain.is_primary && (
                     <Button
                       variant="outline"
@@ -329,6 +333,9 @@ export default function PlatformDomains() {
           </div>
         </div>
       </section>
+      {certificateTarget && <DomainCertificateDialog domain={certificateTarget} onClose={() => setCertificateTarget(null)} onChanged={(summary) => {
+        setData((current) => ({ ...current, items: current.items.map((item) => item.id === summary.domain_id ? { ...item, ssl_status: summary.ssl_status as ApiPlatformTenantDomain["ssl_status"], ssl_issued_at: summary.ssl_issued_at, ssl_expires_at: summary.ssl_expires_at } : item) }));
+      }} />}
       {actionTarget && destructiveAction && (
         <ConfirmationDialog
           open

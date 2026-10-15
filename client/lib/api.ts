@@ -4777,7 +4777,31 @@ export const platformModulesApi = {
   ) => patch<ApiPlatformModule>(`/admin/platform/modules/${encodeURIComponent(id)}`, data),
 };
 
+export interface ApiPlatformDomainCertificate {
+  available: boolean;
+  dns_targets: string[];
+  domain_id: string;
+  hostname: string;
+  ssl_status: string;
+  ssl_issued_at: string | null;
+  ssl_expires_at: string | null;
+  job: {
+    id: string;
+    status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+    attempts: number;
+    created_at: string;
+    started_at: string | null;
+    finished_at: string | null;
+    error_code: string | null;
+    error_message: string | null;
+  } | null;
+}
+
 export const platformDomainsApi = {
+  certificate: (domainId: string) =>
+    get<ApiPlatformDomainCertificate>(`/admin/platform/domains/${encodeURIComponent(domainId)}/certificate`),
+  requestCertificate: (domainId: string, body: { email: string; accept_terms: true }, idempotencyKey: string) =>
+    request<ApiPlatformDomainCertificate>("POST", `/admin/platform/domains/${encodeURIComponent(domainId)}/certificate`, body, { "Idempotency-Key": idempotencyKey }),
   list: (params: { page?: number; page_size?: number; q?: string; status?: string } = {}) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {

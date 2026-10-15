@@ -137,7 +137,7 @@ validate_operational_config
 BRANCH="${BRANCH:-main}"
 RUN_TESTS="${RUN_TESTS:-false}"
 EXPECTED_COMMIT="${TELZ_EXPECTED_COMMIT:-}"
-ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261014_order_cancellation_tracking}"
+ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261014_tenant_domain_ssl}"
 FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"
 FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"
 LEGACY_ADOPTION="${TELZ_LEGACY_ADOPTION:-false}"
@@ -217,6 +217,10 @@ BUNDLE_FILES=(
   installer/templates/telz-whatsapp-gateway.service
   installer/templates/telz-monitoring.service
   installer/templates/telz-monitoring.timer
+  scripts/tenant-domain-ssl.py
+  scripts/tenant-domain-ssl-renew-hook.py
+  installer/templates/telz-domain-ssl.service
+  installer/templates/telz-domain-ssl.timer
 )
 for relative_path in "${BUNDLE_FILES[@]}"; do
   require_root_owned_file "$OPERATION_BUNDLE_DIR/$relative_path"
@@ -247,6 +251,10 @@ BUNDLE_WEB_UNIT="$OPERATION_BUNDLE_DIR/installer/templates/telz-web.service"
 BUNDLE_GATEWAY_UNIT="$OPERATION_BUNDLE_DIR/installer/templates/telz-whatsapp-gateway.service"
 BUNDLE_MONITOR_UNIT="$OPERATION_BUNDLE_DIR/installer/templates/telz-monitoring.service"
 BUNDLE_MONITOR_TIMER="$OPERATION_BUNDLE_DIR/installer/templates/telz-monitoring.timer"
+BUNDLE_DOMAIN_SSL="$OPERATION_BUNDLE_DIR/scripts/tenant-domain-ssl.py"
+BUNDLE_DOMAIN_SSL_HOOK="$OPERATION_BUNDLE_DIR/scripts/tenant-domain-ssl-renew-hook.py"
+BUNDLE_DOMAIN_SSL_UNIT="$OPERATION_BUNDLE_DIR/installer/templates/telz-domain-ssl.service"
+BUNDLE_DOMAIN_SSL_TIMER="$OPERATION_BUNDLE_DIR/installer/templates/telz-domain-ssl.timer"
 
 LOCK_DIR="/run/lock/telz"
 LOCK_FILE="$LOCK_DIR/maintenance.lock"
@@ -1014,11 +1022,17 @@ OPERATIONS_PATHS=(
   /etc/systemd/system/telz-whatsapp-gateway.service
   /etc/systemd/system/telz-monitoring.service
   /etc/systemd/system/telz-monitoring.timer
+  /usr/local/sbin/telz-domain-ssl
+  /etc/letsencrypt/renewal-hooks/deploy/telz-domain-ssl
+  /etc/systemd/system/telz-domain-ssl.service
+  /etc/systemd/system/telz-domain-ssl.timer
   /etc/cron.d/telz-backup
 )
 OPERATIONS_KEYS=(
   update-telz backup-telz telz-health-check telz-monitoring-collector restore-telz rollback-telz telz-finish-ssl
-  telz-api.service telz-web.service telz-whatsapp-gateway.service telz-monitoring.service telz-monitoring.timer telz-backup.cron
+  telz-api.service telz-web.service telz-whatsapp-gateway.service telz-monitoring.service telz-monitoring.timer
+  telz-domain-ssl telz-domain-ssl-renew-hook telz-domain-ssl.service telz-domain-ssl.timer
+  telz-backup.cron
 )
 
 snapshot_operational_artifacts() {
@@ -1433,6 +1447,9 @@ install -m 0755 -o root -g root "$BUNDLE_COLLECTOR" "$COLLECTOR_COMMAND"
 install -m 0755 -o root -g root "$BUNDLE_RESTORE" "$RESTORE_COMMAND"
 install -m 0755 -o root -g root "$BUNDLE_ROLLBACK" "$ROLLBACK_COMMAND"
 install -m 0755 -o root -g root "$BUNDLE_SSL" "$SSL_COMMAND"
+install -m 0755 -o root -g root "$BUNDLE_DOMAIN_SSL" /usr/local/sbin/telz-domain-ssl
+install -d -m 0755 -o root -g root /etc/letsencrypt/renewal-hooks/deploy
+install -m 0755 -o root -g root "$BUNDLE_DOMAIN_SSL_HOOK" /etc/letsencrypt/renewal-hooks/deploy/telz-domain-ssl
 
 UNIT_STAGE_DIR="$(mktemp -d /tmp/telz-unit-stage.XXXXXX)"
 chmod 0700 "$UNIT_STAGE_DIR"
@@ -1453,9 +1470,11 @@ sed -e "s#__INSTALL_DIR__#$INSTALL_DIR#g" -e "s#__SERVICE_USER__#$SERVICE_USER#g
   -e "s#__MONITORING_DIR__#$MONITORING_DIR#g" \
   "$BUNDLE_MONITOR_UNIT" > "$UNIT_STAGE_DIR/telz-monitoring.service"
 install -m 0644 -o root -g root "$BUNDLE_MONITOR_TIMER" "$UNIT_STAGE_DIR/telz-monitoring.timer"
+install -m 0644 -o root -g root "$BUNDLE_DOMAIN_SSL_UNIT" "$UNIT_STAGE_DIR/telz-domain-ssl.service"
+install -m 0644 -o root -g root "$BUNDLE_DOMAIN_SSL_TIMER" "$UNIT_STAGE_DIR/telz-domain-ssl.timer"
 chmod 0644 "$UNIT_STAGE_DIR"/*.service
-systemd-analyze verify "$UNIT_STAGE_DIR"/*.service "$UNIT_STAGE_DIR/telz-monitoring.timer"
-for unit_file in "$UNIT_STAGE_DIR"/*.service "$UNIT_STAGE_DIR/telz-monitoring.timer"; do
+systemd-analyze verify "$UNIT_STAGE_DIR"/*.service "$UNIT_STAGE_DIR"/*.timer
+for unit_file in "$UNIT_STAGE_DIR"/*.service "$UNIT_STAGE_DIR"/*.timer; do
   install -m 0644 -o root -g root "$unit_file" "/etc/systemd/system/$(basename "$unit_file")"
 done
 if [[ "$GATEWAY_ENABLED" == "false" ]]; then

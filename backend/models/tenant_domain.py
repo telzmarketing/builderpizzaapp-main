@@ -1,12 +1,13 @@
 """Public hostname bindings for tenant storefront experiences."""
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, String, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, text
 from backend.database import Base
 
 
 class TenantDomain(Base):
     __tablename__ = "tenant_domains"
     __table_args__ = (
+        UniqueConstraint("id", "tenant_id", name="uq_tenant_domains_id_tenant"),
         CheckConstraint("kind IN ('subdomain', 'custom')", name="ck_tenant_domains_kind"),
         CheckConstraint(
             "status IN ('pending', 'awaiting_dns', 'verifying', 'verified', 'active', "

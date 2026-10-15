@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildApiBases, platformTenantsApi } from "./api";
+import { buildApiBases, platformDomainsApi, platformTenantsApi } from "./api";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -85,5 +85,23 @@ describe("platform tenant mutations", () => {
       message: "Plano informado nao existe ou esta inativo.",
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps certificate issuance on the canonical route with the caller's idempotency key", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      detail: "DNS ainda nao aponta para a plataforma.",
+    }), { status: 409, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(platformDomainsApi.requestCertificate("domain-1", {
+      email: "admin@example.com", accept_terms: true,
+    }, "attempt-1")).rejects.toMatchObject({ status: 409, message: "DNS ainda nao aponta para a plataforma." });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/admin\/platform\/domains\/domain-1\/certificate$/);
+    expect(init.method).toBe("POST");
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBe("attempt-1");
+    expect(JSON.parse(init.body as string)).toEqual({ email: "admin@example.com", accept_terms: true });
   });
 });

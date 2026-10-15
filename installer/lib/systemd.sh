@@ -16,6 +16,9 @@ install_systemd_units() {
   timer_template="$(trusted_installer_asset installer/templates/telz-monitoring.timer)"
   install -m 0755 -o root -g root "$collector_source" /usr/local/sbin/telz-monitoring-collector
   install -m 0755 -o root -g root "$health_source" /usr/local/sbin/telz-health-check
+  install -m 0755 -o root -g root "$(trusted_installer_asset scripts/tenant-domain-ssl.py)" /usr/local/sbin/telz-domain-ssl
+  install -d -m 0755 -o root -g root /etc/letsencrypt/renewal-hooks/deploy
+  install -m 0755 -o root -g root "$(trusted_installer_asset scripts/tenant-domain-ssl-renew-hook.py)" /etc/letsencrypt/renewal-hooks/deploy/telz-domain-ssl
   install -d -m 0750 -o root -g "$SERVICE_USER" "$PLATFORM_MONITORING_SNAPSHOT_DIR"
   command -v systemd-analyze >/dev/null 2>&1 || fail "systemd-analyze obrigatorio para validar units"
   unit_stage="$(mktemp -d /tmp/telz-installer-units.XXXXXX)"
@@ -49,8 +52,10 @@ install_systemd_units() {
     -e "s#__MONITORING_DIR__#${PLATFORM_MONITORING_SNAPSHOT_DIR}#g" \
     "$monitoring_template" > "$unit_stage/telz-monitoring.service"
   install -m 0644 -o root -g root "$timer_template" "$unit_stage/telz-monitoring.timer"
+  install -m 0644 -o root -g root "$(trusted_installer_asset installer/templates/telz-domain-ssl.service)" "$unit_stage/telz-domain-ssl.service"
+  install -m 0644 -o root -g root "$(trusted_installer_asset installer/templates/telz-domain-ssl.timer)" "$unit_stage/telz-domain-ssl.timer"
   chmod 0644 "$unit_stage"/*.service
-  staged_units=("$unit_stage"/*.service "$unit_stage/telz-monitoring.timer")
+  staged_units=("$unit_stage"/*.service "$unit_stage"/*.timer)
   systemd-analyze verify "${staged_units[@]}"
   for unit_file in "${staged_units[@]}"; do
     install -m 0644 -o root -g root "$unit_file" "/etc/systemd/system/$(basename "$unit_file")"

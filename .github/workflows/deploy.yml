@@ -43,7 +43,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci
       JWT_SECRET_KEY: ci-only-not-for-production
-      TELZ_ALEMBIC_TARGET: 20261014_order_cancellation_tracking
+      TELZ_ALEMBIC_TARGET: 20261014_tenant_domain_ssl
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -180,6 +180,10 @@ jobs:
             installer/templates/telz-whatsapp-gateway.service
             installer/templates/telz-monitoring.service
             installer/templates/telz-monitoring.timer
+            scripts/tenant-domain-ssl.py
+            scripts/tenant-domain-ssl-renew-hook.py
+            installer/templates/telz-domain-ssl.service
+            installer/templates/telz-domain-ssl.timer
           )
           for file in "${files[@]}"; do
             test -f "$file"
@@ -415,7 +419,7 @@ jobs:
               "scripts/finish-ssl.sh", "scripts/build-telz-release.sh",
               "installer/templates/telz-api.service", "installer/templates/telz-web.service",
               "installer/templates/telz-whatsapp-gateway.service", "installer/templates/telz-monitoring.service",
-              "installer/templates/telz-monitoring.timer",
+              "installer/templates/telz-monitoring.timer", "scripts/tenant-domain-ssl.py", "scripts/tenant-domain-ssl-renew-hook.py", "installer/templates/telz-domain-ssl.service", "installer/templates/telz-domain-ssl.timer",
           }
           seen = set()
           with tarfile.open(sys.argv[1], "r:gz") as archive:
@@ -441,7 +445,7 @@ jobs:
         shell: bash
         env:
           PREVIOUS_COMMIT: ${{ needs.inspect_vps.outputs.previous_commit }}
-          ALEMBIC_TARGET: 20261014_order_cancellation_tracking
+          ALEMBIC_TARGET: 20261014_tenant_domain_ssl
         run: |
           set -Eeuo pipefail
           source_delivery="$RUNNER_TEMP/promoted-source"
@@ -634,7 +638,7 @@ jobs:
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         env:
           OPERATION: ${{ inputs.operation }}
-          TELZ_ALEMBIC_TARGET: 20261014_order_cancellation_tracking
+          TELZ_ALEMBIC_TARGET: 20261014_tenant_domain_ssl
           EXPECTED_COMMIT: ${{ github.sha }}
           PREVIOUS_COMMIT: ${{ needs.inspect_vps.outputs.previous_commit }}
           PUBLIC_HEALTH_URL: https://app.telz.com.br/health
@@ -686,7 +690,7 @@ jobs:
                 "scripts/finish-ssl.sh", "scripts/build-telz-release.sh",
                 "installer/templates/telz-api.service", "installer/templates/telz-web.service",
                 "installer/templates/telz-whatsapp-gateway.service", "installer/templates/telz-monitoring.service",
-                "installer/templates/telz-monitoring.timer",
+                "installer/templates/telz-monitoring.timer", "scripts/tenant-domain-ssl.py", "scripts/tenant-domain-ssl-renew-hook.py", "installer/templates/telz-domain-ssl.service", "installer/templates/telz-domain-ssl.timer",
             }
             seen = set()
             with tarfile.open(sys.argv[1], "r:gz") as archive:
