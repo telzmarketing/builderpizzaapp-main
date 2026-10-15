@@ -245,7 +245,7 @@ for report, output in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[4])):
     Path(output).write_text('\n'.join(rows) + '\n', encoding='utf-8')
 PY
 chown "$BUILD_USER:$BUILD_GROUP" "$STAGE_DIR"/*-freeze.txt
-run_as_builder python3.12 -m pip download --only-binary=:all: --dest "$DEPENDENCIES/wheelhouse" pip==25.1.1 pytest==8.3.5 -r "$STAGE_DIR/target-freeze.txt" -r "$STAGE_DIR/previous-freeze.txt"
+run_as_builder python3.12 -m pip download --only-binary=:all: --dest "$DEPENDENCIES/wheelhouse" pip==25.1.1 pytest==8.3.5 httpx==0.28.1 -r "$STAGE_DIR/target-freeze.txt" -r "$STAGE_DIR/previous-freeze.txt"
 run_as_builder_in "$BUILD_TARGET_SOURCE" pnpm fetch --frozen-lockfile --ignore-scripts --store-dir "$DEPENDENCIES/pnpm-store"
 run_as_builder_in "$BUILD_PREVIOUS_SOURCE" pnpm fetch --frozen-lockfile --ignore-scripts --store-dir "$DEPENDENCIES/pnpm-store"
 
