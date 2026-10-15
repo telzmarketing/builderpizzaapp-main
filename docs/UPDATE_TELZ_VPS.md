@@ -70,6 +70,20 @@ isolado, validacao e aplicacao da migration forward-only, troca atomica da
 release, restart e health local/HTTPS. Em qualquer falha, ele interrompe a
 promocao; nao use `git pull`, `reset`, `checkout` ou `clean` como atalho.
 
+#### Repeticao de deploy e cache
+
+Uma release ja selada conserva o digest do artefato usado em seu build original.
+Ao reutiliza-la, o updater valida toda a arvore e o cutover, compara por commit os
+hashes de requirements, lock e freeze, a configuracao publica e a toolchain. Um
+pacote de transporte diferente, por exemplo por conter outro predecessor, nao
+reescreve a proveniencia. Mudancas no contrato de build continuam bloqueadas;
+builds novos continuam vinculados ao digest exato solicitado.
+
+Helpers anteriores podem conservar o pos-check antigo de igualdade do pacote.
+Quando atualizar o proprio helper, instale a copia do mesmo SHA aprovado usando
+o procedimento abaixo antes de executar o deploy. Nao apague releases nem edite
+manifests para contornar um bloqueio.
+
 #### HTTPS das empresas
 
 Depois de ativar e validar a release, o updater prepara automaticamente o executor

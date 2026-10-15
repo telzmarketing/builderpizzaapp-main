@@ -909,6 +909,41 @@ validate_release_compatibility() {
     bash "$release_app"
 }
 
+validate_cached_release_dependencies() {
+  local release_app="$1"
+  local release_commit="$2"
+  require_root_owned_file "$DEPENDENCY_DIR/.telz-dependencies.json"
+  require_root_owned_file "$DEPENDENCY_DIR/.telz-public-build.json"
+  /usr/bin/python3 -I - "$release_app/.telz-release.json" "$DEPENDENCY_DIR/.telz-dependencies.json" \
+    "$DEPENDENCY_DIR/.telz-public-build.json" "$release_commit" <<'PY'
+import hashlib, json, re, sys
+from pathlib import Path
+
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+metadata = json.loads(Path(sys.argv[2]).read_text(encoding='utf-8'))
+commit = sys.argv[4]
+expected = (metadata.get('commits') or {}).get(commit)
+keys = {'python_freeze_sha256', 'requirements_sha256', 'pnpm_lock_sha256'}
+if not isinstance(expected, dict) or set(expected) != keys:
+    raise SystemExit('contrato de dependencias do commit ausente ou invalido')
+if manifest.get('git_commit') != commit or not re.fullmatch(r'[0-9a-f]{64}', str(manifest.get('dependency_artifact_sha256') or '')):
+    raise SystemExit('proveniencia original da release cache invalida')
+for key in keys:
+    if not re.fullmatch(r'[0-9a-f]{64}', str(expected[key])) or manifest.get(key) != expected[key]:
+        raise SystemExit('contrato de dependencias da release cache divergiu: ' + key)
+public_digest = hashlib.sha256(Path(sys.argv[3]).read_bytes()).hexdigest()
+if manifest.get('public_build_config_sha256') != public_digest or metadata.get('public_build_config_sha256') != public_digest:
+    raise SystemExit('configuracao publica da release cache divergiu')
+toolchain = manifest.get('toolchain')
+if (metadata.get('schema_version') != 1 or metadata.get('python') != '3.12'
+        or metadata.get('pip') != '25.1.1' or metadata.get('node') != '22' or metadata.get('pnpm') != '10.14.0'
+        or not isinstance(toolchain, dict) or not str(toolchain.get('python', '')).startswith('Python 3.12.')
+        or toolchain.get('pip') != metadata['pip'] or not str(toolchain.get('node', '')).startswith('v22.')
+        or toolchain.get('pnpm') != metadata['pnpm']):
+    raise SystemExit('toolchain da release cache divergiu')
+PY
+}
+
 materialize_release() {
   local release_commit="$1"
   local release_revision="$2"
@@ -935,7 +970,11 @@ materialize_release() {
     discard_partial_release || die "release parcial nao pode ser removida"
   fi
   if [[ -d "$release_dir" ]]; then
-    validate_release_tree "$release_app" "$release_commit" "$release_revision" "$DEPENDENCY_ARCHIVE_SHA256" false "$cutover_mode" "$predecessor_revision"
+    # A cached build keeps its original artifact provenance. New transport bytes
+    # may include a different target/predecessor pair; require the same per-commit
+    # build contract, in addition to the complete sealed-tree validation.
+    validate_release_tree "$release_app" "$release_commit" "$release_revision" "" false "$cutover_mode" "$predecessor_revision"
+    validate_cached_release_dependencies "$release_app" "$release_commit"
     validate_release_compatibility "$release_app" "$release_revision" "$expected_database_revision"
     BUILD_RELEASE_DIR=""
     BUILD_RELEASE_APP=""

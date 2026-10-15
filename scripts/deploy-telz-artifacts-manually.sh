@@ -216,12 +216,26 @@ env \
 ACTIVE_APP="$(readlink -f /var/lib/telz/current)"
 [[ "$ACTIVE_APP" == "/var/lib/telz/releases/$TARGET_COMMIT/app" ]] || die "release promovida divergiu do target_commit"
 /usr/bin/python3 - "$ACTIVE_APP/.telz-release.json" "$TARGET_COMMIT" "$ALEMBIC_TARGET" "$DEPENDENCY_SHA" <<'PY'
-import json, sys
+import json, re, sys
 from pathlib import Path
-data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-if not (data.get("schema_version") == 2 and data.get("status") == "validated" and
-        data.get("git_commit") == sys.argv[2] and data.get("alembic_revision") == sys.argv[3] and
-        data.get("dependency_artifact_sha256") == sys.argv[4]):
-    raise SystemExit("manifest da release promovida invalido")
+data = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+if not (data.get('schema_version') == 2 and data.get('status') == 'validated' and data.get('git_commit') == sys.argv[2] and data.get('alembic_revision') == sys.argv[3] and re.fullmatch(r'[0-9a-f]{64}', str(data.get('dependency_artifact_sha256') or ''))):
+    raise SystemExit('manifest da release promovida invalido')
+if not re.fullmatch(r'[0-9a-f]{64}', sys.argv[4]):
+    raise SystemExit('digest do artefato solicitado invalido')
+metadata = json.loads((Path('/var/lib/telz/dependency-bundles') / sys.argv[4] / '.telz-dependencies.json').read_text(encoding='utf-8'))
+expected = (metadata.get('commits') or {}).get(sys.argv[2])
+keys = {'python_freeze_sha256', 'requirements_sha256', 'pnpm_lock_sha256'}
+if not isinstance(expected, dict) or set(expected) != keys or any(data.get(key) != expected[key] for key in keys):
+    raise SystemExit('contrato de dependencias da release promovida divergiu')
+if data.get('public_build_config_sha256') != metadata.get('public_build_config_sha256'):
+    raise SystemExit('configuracao publica da release promovida divergiu')
+toolchain = data.get('toolchain') or {}
+if (metadata.get('schema_version') != 1 or metadata.get('python') != '3.12'
+        or metadata.get('pip') != '25.1.1' or metadata.get('node') != '22' or metadata.get('pnpm') != '10.14.0'
+        or not str(toolchain.get('python', '')).startswith('Python 3.12.')
+        or toolchain.get('pip') != metadata['pip'] or not str(toolchain.get('node', '')).startswith('v22.')
+        or toolchain.get('pnpm') != metadata['pnpm']):
+    raise SystemExit('toolchain da release promovida divergiu')
 PY
 echo "[manual-deploy] concluido release=$TARGET_COMMIT revision=$ALEMBIC_TARGET"
