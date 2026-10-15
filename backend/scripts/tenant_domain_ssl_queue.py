@@ -16,7 +16,7 @@ from backend.services.tenant_domain_ssl_service import TenantDomainSSLService
 
 def execute(operation, payload, db):
     service = TenantDomainSSLService(db)
-    if operation in ("claim", "reconcile"):
+    if operation in ("claim", "reconcile", "heartbeat"):
         if payload != {}:
             raise ValueError("Unexpected worker payload")
         return getattr(service, operation)()
@@ -34,7 +34,7 @@ def main():
     code = 0
     db = None
     try:
-        if len(sys.argv) != 2 or sys.argv[1] not in {"claim", "validate", "complete", "fail", "reconcile"}:
+        if len(sys.argv) != 2 or sys.argv[1] not in {"claim", "validate", "complete", "fail", "reconcile", "heartbeat"}:
             raise ValueError("Invalid operation")
         raw = sys.stdin.read(8193)
         if len(raw) > 8192:

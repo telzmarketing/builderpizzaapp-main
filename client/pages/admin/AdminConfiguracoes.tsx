@@ -1,5 +1,6 @@
+import TenantDomainsPanel from "@/components/admin/TenantDomainsPanel";
 import { useEffect, useRef, useState } from "react";
-import { Bell, BellOff, Check, Monitor, Printer, Eye, Settings2, Tags, Volume2 } from "lucide-react";
+import { Bell, BellOff, Check, Monitor, Printer, Eye, Settings2, Tags, Volume2, Globe } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import LabelSettingsPanel from "@/components/admin/LabelSettingsPanel";
@@ -17,7 +18,7 @@ import {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-type Tab = "impressora" | "etiquetas" | "painel-tv" | "som";
+type Tab = "impressora" | "etiquetas" | "painel-tv" | "som" | "dominio-https";
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -158,7 +159,8 @@ export default function AdminConfiguracoes() {
           </div>
 
           {/* Tabs */}
-          <div className="px-8 pt-4 flex gap-2">
+          <div className="px-4 sm:px-8 pt-4 flex flex-wrap gap-2">
+            <button type="button" onClick={() => setActiveTab("dominio-https")} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "dominio-https" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}><Globe size={14} /> Dominio e HTTPS</button>
             <button
               onClick={() => setActiveTab("impressora")}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "impressora" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
@@ -193,6 +195,7 @@ export default function AdminConfiguracoes() {
 
           <div className="p-8 space-y-8 max-w-5xl">
 
+            {activeTab === "dominio-https" && <TenantDomainsPanel />}
             {activeTab === "etiquetas" && <LabelSettingsPanel />}
             {activeTab === "painel-tv" && <OrderBoardSettingsPanel />}
 

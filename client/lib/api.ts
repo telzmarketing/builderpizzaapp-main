@@ -4779,6 +4779,7 @@ export const platformModulesApi = {
 
 export interface ApiPlatformDomainCertificate {
   available: boolean;
+  unavailable_reason?: string | null;
   dns_targets: string[];
   domain_id: string;
   hostname: string;
@@ -4796,6 +4797,17 @@ export interface ApiPlatformDomainCertificate {
     error_message: string | null;
   } | null;
 }
+
+export const companyDomainsApi = {
+  list: () => get<ApiPlatformTenantDomain[]>("/admin/company/domains"),
+  create: (data: { hostname: string; kind: "subdomain" | "custom" }) =>
+    post<ApiPlatformDomainCreation>("/admin/company/domains", { hostname: data.hostname, kind: data.kind }),
+  verify: (domainId: string) => post<ApiPlatformTenantDomain>(`/admin/company/domains/${encodeURIComponent(domainId)}/verify`, {}),
+  activate: (domainId: string) => post<ApiPlatformTenantDomain>(`/admin/company/domains/${encodeURIComponent(domainId)}/activate`, {}),
+  certificate: (domainId: string) => get<ApiPlatformDomainCertificate>(`/admin/company/domains/${encodeURIComponent(domainId)}/certificate`),
+  requestCertificate: (domainId: string, body: { email: string; accept_terms: true }, idempotencyKey: string) =>
+    request<ApiPlatformDomainCertificate>("POST", `/admin/company/domains/${encodeURIComponent(domainId)}/certificate`, { email: body.email, accept_terms: body.accept_terms }, { "Idempotency-Key": idempotencyKey }),
+};
 
 export const platformDomainsApi = {
   certificate: (domainId: string) =>

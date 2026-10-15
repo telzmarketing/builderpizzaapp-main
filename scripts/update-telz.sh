@@ -1008,6 +1008,8 @@ WEB_WAS_ACTIVE="inactive"
 GATEWAY_WAS_ACTIVE="inactive"
 MONITOR_TIMER_WAS_ENABLED="disabled"
 MONITOR_TIMER_WAS_ACTIVE="inactive"
+SSL_TIMERS=(telz-domain-ssl.timer certbot.timer)
+declare -A SSL_TIMER_WAS_ENABLED=() SSL_TIMER_WAS_ACTIVE=()
 
 OPERATIONS_PATHS=(
   "$UPDATE_COMMAND"
@@ -1026,17 +1028,37 @@ OPERATIONS_PATHS=(
   /etc/letsencrypt/renewal-hooks/deploy/telz-domain-ssl
   /etc/systemd/system/telz-domain-ssl.service
   /etc/systemd/system/telz-domain-ssl.timer
+  /etc/telz/domain-ssl.json
+  /var/lib/telz/domain-ssl/runtime.json
   /etc/cron.d/telz-backup
 )
 OPERATIONS_KEYS=(
   update-telz backup-telz telz-health-check telz-monitoring-collector restore-telz rollback-telz telz-finish-ssl
   telz-api.service telz-web.service telz-whatsapp-gateway.service telz-monitoring.service telz-monitoring.timer
   telz-domain-ssl telz-domain-ssl-renew-hook telz-domain-ssl.service telz-domain-ssl.timer
+  telz-domain-ssl.config telz-domain-ssl.runtime
   telz-backup.cron
 )
 
 snapshot_operational_artifacts() {
-  local index target key
+  local index target key timer
+  # These new data files must never turn snapshot/restore into a link traversal.
+  /usr/bin/python3 -I - <<'PY'
+import stat
+from pathlib import Path
+for target in (Path('/etc/telz/domain-ssl.json'), Path('/var/lib/telz/domain-ssl/runtime.json')):
+    for path in [*reversed(target.parents), target]:
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise SystemExit('caminho SSL operacional inseguro')
+        if path != target and not stat.S_ISDIR(info.st_mode):
+            raise SystemExit('diretorio SSL operacional invalido')
+        if path == target and (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1):
+            raise SystemExit('arquivo SSL operacional invalido')
+PY
   OPERATIONS_STATE_DIR="$(mktemp -d /tmp/telz-operations-state.XXXXXX)"
   chmod 0700 "$OPERATIONS_STATE_DIR"
   for index in "${!OPERATIONS_PATHS[@]}"; do
@@ -1052,11 +1074,20 @@ snapshot_operational_artifacts() {
   done
   MONITOR_TIMER_WAS_ENABLED="$(systemctl is-enabled telz-monitoring.timer 2>/dev/null || true)"
   MONITOR_TIMER_WAS_ACTIVE="$(systemctl is-active telz-monitoring.timer 2>/dev/null || true)"
+  for timer in "${SSL_TIMERS[@]}"; do
+    SSL_TIMER_WAS_ENABLED["$timer"]="$(systemctl is-enabled "$timer" 2>/dev/null || true)"
+    SSL_TIMER_WAS_ACTIVE["$timer"]="$(systemctl is-active "$timer" 2>/dev/null || true)"
+  done
 }
 
 restore_operational_artifacts() {
-  local index target key state temporary
+  local index target key state temporary timer enabled
   [[ -d "$OPERATIONS_STATE_DIR" ]] || return 0
+  for timer in "${SSL_TIMERS[@]}"; do
+    if systemctl list-unit-files "$timer" --no-legend 2>/dev/null | grep -q "^$timer[[:space:]]"; then
+      systemctl stop "$timer" || return $?
+    fi
+  done
   for index in "${!OPERATIONS_PATHS[@]}"; do
     target="${OPERATIONS_PATHS[$index]}"
     key="${OPERATIONS_KEYS[$index]}"
@@ -1070,6 +1101,24 @@ restore_operational_artifacts() {
     fi
   done
   systemctl daemon-reload || return $?
+  for timer in "${SSL_TIMERS[@]}"; do
+    if ! systemctl list-unit-files "$timer" --no-legend 2>/dev/null | grep -q "^$timer[[:space:]]"; then
+      continue
+    fi
+    enabled="${SSL_TIMER_WAS_ENABLED[$timer]}"
+    case "$enabled" in
+      enabled) systemctl enable "$timer" >/dev/null || return $? ;;
+      enabled-runtime) systemctl enable --runtime "$timer" >/dev/null || return $? ;;
+      masked) systemctl mask "$timer" >/dev/null || return $? ;;
+      masked-runtime) systemctl mask --runtime "$timer" >/dev/null || return $? ;;
+      *) systemctl disable "$timer" >/dev/null || return $? ;;
+    esac
+    if [[ "${SSL_TIMER_WAS_ACTIVE[$timer]}" == "active" ]]; then
+      systemctl start "$timer" || return $?
+    else
+      systemctl stop "$timer" || return $?
+    fi
+  done
   if [[ "$(<"$OPERATIONS_STATE_DIR/telz-monitoring.timer.state")" == "present" ]]; then
     if [[ "$MONITOR_TIMER_WAS_ENABLED" == "enabled" ]]; then
       systemctl enable telz-monitoring.timer >/dev/null || return $?
@@ -1401,7 +1450,7 @@ else
   CUTOVER_MODE="forward_only"
   echo "[update][atencao] cutover forward-only aprovado: rollback automatico sera bloqueado apos a migration" >&2
 fi
-if [[ -z "$PREVIOUS_CURRENT_TARGET" ]]; then
+if [[ -z "$PREVIOUS_CURRENT_TARGET" && "$PREVIOUS_ACTIVE_COMMIT" != "$EXPECTED_COMMIT" ]]; then
   materialize_rollback_release "$PREVIOUS_ACTIVE_COMMIT" "$PREVIOUS_ACTIVE_REVISION"
 fi
 materialize_release "$EXPECTED_COMMIT" "$ALEMBIC_TARGET" "$SOURCE_ARCHIVE" false "$DATABASE_CURRENT" "$CUTOVER_MODE" "$PREVIOUS_ACTIVE_REVISION"
@@ -1511,6 +1560,27 @@ TELZ_ALEMBIC_TARGET="$ALEMBIC_TARGET" \
   TELZ_HEALTH_WEB_PORT="$WEB_PORT" \
   TELZ_MONITORING_DIR="$MONITORING_DIR" \
   "$HEALTH_COMMAND" "$INSTALL_DIR"
+
+# Only the installed, sealed helper can provision issuance. Never source .env.
+DOMAIN_SSL_PLATFORM_HOST="$(/usr/bin/python3 -I - "$PUBLIC_HEALTH_URL" <<'PY'
+import sys
+from urllib.parse import urlsplit
+url = urlsplit(sys.argv[1])
+if url.scheme not in ('http', 'https') or not url.hostname or url.username or url.password:
+    print('')  # HTTP-first installations stay explicitly unavailable, not falsely ready.
+else:
+    print(url.hostname.lower().rstrip('.'))
+PY
+)"
+require_root_owned_executable /usr/local/sbin/telz-domain-ssl
+if TELZ_MAINTENANCE_LOCK_HELD=true /usr/bin/python3 -I /usr/local/sbin/telz-domain-ssl \
+    --bootstrap --service-user "$SERVICE_USER" --install-dir "$INSTALL_DIR" \
+    --api-port "$API_PORT" --web-port "$WEB_PORT" \
+    --platform-hostnames "$DOMAIN_SSL_PLATFORM_HOST"; then
+  echo "[update] executor HTTPS automatico configurado e validado"
+else
+  echo "[update][atencao] aplicacao validada; executor HTTPS indisponivel. Consulte o estado de disponibilidade no painel e logs telz-domain-ssl." >&2
+fi
 
 MAINTENANCE_WINDOW=false
 RECOVERY_REQUIRED=false

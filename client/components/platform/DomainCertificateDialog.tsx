@@ -55,10 +55,14 @@ export function DomainCertificateDialog({
   domain,
   onClose,
   onChanged,
+  api = platformDomainsApi,
+  canRequest = true,
 }: {
   domain: ApiPlatformTenantDomain;
   onClose: () => void;
   onChanged: (summary: ApiPlatformDomainCertificate) => void;
+  api?: Pick<typeof platformDomainsApi, "certificate" | "requestCertificate">;
+  canRequest?: boolean;
 }) {
   const [summary, setSummary] = useState<ApiPlatformDomainCertificate | null>(
     null,
@@ -78,7 +82,7 @@ export function DomainCertificateDialog({
 
   const load = useCallback(async () => {
     try {
-      const result = await platformDomainsApi.certificate(domain.id);
+      const result = await api.certificate(domain.id);
       if (!alive.current) return;
       setSummary(result);
       setError("");
@@ -94,7 +98,7 @@ export function DomainCertificateDialog({
     } finally {
       if (alive.current) setLoading(false);
     }
-  }, [domain.id]);
+  }, [domain.id, api]);
 
   useEffect(() => {
     alive.current = true;
@@ -121,7 +125,8 @@ export function DomainCertificateDialog({
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!accepted || !summary?.available || pending || saving) return;
+    if (!canRequest || !accepted || !summary?.available || pending || saving)
+      return;
     setSaving(true);
     setError("");
     try {
@@ -129,7 +134,7 @@ export function DomainCertificateDialog({
       if (!attempt.current || attempt.current.email !== normalizedEmail) {
         attempt.current = { email: normalizedEmail, key: crypto.randomUUID() };
       }
-      const result = await platformDomainsApi.requestCertificate(
+      const result = await api.requestCertificate(
         domain.id,
         { email: normalizedEmail, accept_terms: true },
         attempt.current.key,
@@ -250,8 +255,8 @@ export function DomainCertificateDialog({
             </div>
             {!summary.available && (
               <p role="status" className="text-sm text-yellow-200">
-                A emissao automatica ainda nao esta disponivel nesta plataforma.
-                Solicite ao administrador a preparacao do servico HTTPS.
+                {summary.unavailable_reason ||
+                  "A emissao automatica esta temporariamente indisponivel. Tente novamente mais tarde ou contate o suporte."}
               </p>
             )}
             {!["verified", "active"].includes(domain.status) && (
@@ -260,7 +265,8 @@ export function DomainCertificateDialog({
                 Testar DNS antes de solicitar HTTPS.
               </p>
             )}
-            {summary.available &&
+            {canRequest &&
+              summary.available &&
               ["verified", "active"].includes(domain.status) &&
               !pending && (
                 <form
@@ -321,6 +327,16 @@ export function DomainCertificateDialog({
                 </form>
               )}
           </>
+        )}
+        {summary && !error && (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={saving || loading}
+            onClick={() => { setLoading(true); void load(); }}
+          >
+            Atualizar estado HTTPS
+          </Button>
         )}
         <Button
           type="button"

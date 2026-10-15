@@ -6,6 +6,8 @@ import stat
 from types import SimpleNamespace
 
 import pytest
+import json
+import contextlib
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +20,141 @@ spec.loader.exec_module(worker)
 def config():
     return {'public_ips': ['8.8.8.8'], 'service_user': 'telz', 'install_dir': '/opt/telz',
             'api_port': 8000, 'web_port': 3000}
+
+
+def bootstrap_args(**patch):
+    return SimpleNamespace(service_user='telz', install_dir='/opt/telz', api_port=8000,
+                           web_port=3000, platform_hostnames='app.example.com', public_ips='', **patch)
+
+
+def test_ip_discovery_filters_private_temporary_down_and_virtual_interfaces():
+    def interface(name, addresses, flags=('UP',), **extra):
+        return {'ifname': name, 'flags': list(flags), 'addr_info': addresses, **extra}
+    def address(ip, **extra):
+        return {'local': ip, 'scope': 'global', **extra}
+    rows = [interface('eth0', [address('8.8.8.8'), address('10.0.0.1'),
+            address('1.1.1.1', temporary=True), address('9.9.9.9', flags=['tentative']),
+            address('208.67.222.222', preferred_life_time=0)]),
+            interface('eth1', [address('1.0.0.1')], flags=()),
+            interface('docker0', [address('1.0.0.1')]),
+            interface('custombridge', [address('1.0.0.1')], linkinfo={'info_kind': 'bridge'})]
+    calls = []
+    def execute(argv):
+        calls.append(argv)
+        return json.dumps(rows)
+    assert worker.discover_public_ips(execute) == ['8.8.8.8']
+    assert calls == [['/usr/sbin/ip', '-j', 'address', 'show', 'scope', 'global']]
+
+
+def test_nat_without_global_address_does_not_fake_readiness(tmp_path, monkeypatch):
+    monkeypatch.setattr(worker, 'CONFIG', tmp_path / 'missing')
+    config, reason = worker.bootstrap_config(bootstrap_args(), discover=lambda: [])
+    assert reason == 'missing_public_ip' and config['public_ips'] == []
+
+
+def test_existing_root_configuration_wins_and_unions_reserved_hosts(tmp_path, monkeypatch, config):
+    path = tmp_path / 'config'
+    path.touch()
+    monkeypatch.setattr(worker, 'CONFIG', path)
+    monkeypatch.setattr(worker, 'read_config', lambda: {**config, 'platform_hostnames': ['old.example.com']})
+    args = bootstrap_args()
+    args.public_ips = '1.1.1.1'
+    value, reason = worker.bootstrap_config(args, discover=lambda: pytest.fail('no discovery for existing config'))
+    assert reason is None and value['public_ips'] == ['8.8.8.8']
+    assert value['platform_hostnames'] == ['app.example.com', 'old.example.com']
+    args.api_port = 9000
+    with pytest.raises(worker.WorkerError):
+        worker.bootstrap_config(args)
+
+
+@pytest.fixture
+def bootstrap_seams(monkeypatch, config):
+    import sys
+    monkeypatch.setitem(sys.modules, 'pwd', SimpleNamespace(getpwnam=lambda user: SimpleNamespace(pw_uid=1000)))
+    events = []
+    monkeypatch.setattr(worker, 'ensure_directory', lambda *args: None)
+    monkeypatch.setattr(worker, 'maintenance_lock', lambda: contextlib.nullcontext(True))
+    monkeypatch.setattr(worker, 'bootstrap_config', lambda args: ({**config, 'platform_hostnames': ['app.example.com']}, None))
+    monkeypatch.setattr(worker, 'active_release', lambda: ('release', 'python'))
+    monkeypatch.setattr(worker, 'trusted', lambda *args, **kwargs: None)
+    monkeypatch.setattr(worker, 'ensure_certbot', lambda: None)
+    monkeypatch.setattr(worker, 'atomic_write', lambda *args: events.append(('write', args)))
+    monkeypatch.setattr(worker, 'publish_runtime', lambda config=None, **kwargs: events.append(('runtime', kwargs)))
+    monkeypatch.setattr(worker, 'command', lambda argv, **kwargs: events.append(('command', argv)))
+    monkeypatch.setattr(worker, 'queue', lambda config, operation: events.append(('queue', operation)) or {'status': 'ready'})
+    return events
+
+
+def test_bootstrap_enables_timers_and_requires_heartbeat_before_ready(bootstrap_seams):
+    assert worker.bootstrap(bootstrap_args()) == {'status': 'ready'}
+    assert ('command', ['/usr/bin/systemctl', 'enable', '--now', 'certbot.timer', 'telz-domain-ssl.timer']) in bootstrap_seams
+    assert bootstrap_seams[0] == ('runtime', {'reason': 'setup_required'})
+    assert bootstrap_seams[-2:] == [('queue', 'heartbeat'), ('runtime', {'ready': True, 'reason': None})]
+
+
+def test_bootstrap_failure_publishes_unavailable_projection(bootstrap_seams, monkeypatch):
+    def unavailable():
+        raise worker.WorkerError()
+    monkeypatch.setattr(worker, 'active_release', unavailable)
+    with pytest.raises(worker.WorkerError):
+        worker.bootstrap(bootstrap_args())
+    assert bootstrap_seams[-1] == ('runtime', {'reason': 'release_unavailable'})
+    assert not any(kind == 'runtime' and value.get('ready') for kind, value in bootstrap_seams)
+
+
+def test_bootstrap_never_publishes_ready_when_heartbeat_fails(bootstrap_seams, monkeypatch):
+    monkeypatch.setattr(worker, 'queue', lambda *args: {'status': 'unexpected'})
+    with pytest.raises(worker.WorkerError):
+        worker.bootstrap(bootstrap_args())
+    assert bootstrap_seams[-1] == ('runtime', {'reason': 'worker_unavailable'})
+
+
+def test_bootstrap_empty_platform_hosts_cannot_be_ready(tmp_path, monkeypatch):
+    monkeypatch.setattr(worker, 'CONFIG', tmp_path / 'missing')
+    args = bootstrap_args()
+    args.platform_hostnames = ''
+    config, reason = worker.bootstrap_config(args, discover=lambda: ['8.8.8.8'])
+    assert reason == 'missing_platform_hosts'
+
+
+def test_runtime_projection_has_only_sanitized_contract(tmp_path, monkeypatch, config):
+    monkeypatch.setattr(worker, 'RUNTIME', tmp_path / 'runtime.json')
+    monkeypatch.setattr(worker, 'ensure_directory', lambda path: None)
+    writes = []
+    monkeypatch.setattr(worker, 'atomic_write', lambda path, data, mode: writes.append((json.loads(data), mode)))
+    worker.publish_runtime({**config, 'platform_hostnames': ['app.example.com']}, ready=True, reason=None)
+    value, mode = writes[0]
+    assert mode == 0o644
+    assert set(value) == {'schema_version', 'ready', 'public_ips', 'platform_hostnames', 'reason', 'updated_at'}
+    assert value['ready'] is True and value['reason'] is None and value['updated_at'].endswith('+00:00')
+
+
+@pytest.mark.parametrize('case', ['unheld', 'different_inode', 'third_party', 'valid'])
+def test_inherited_lock_requires_exact_descriptor_and_actual_ownership(monkeypatch, case):
+    import sys
+    info = SimpleNamespace(st_uid=0, st_mode=stat.S_IFREG | 0o600, st_nlink=1, st_dev=1, st_ino=2)
+    monkeypatch.setenv('TELZ_MAINTENANCE_LOCK_HELD', 'true')
+    monkeypatch.setattr(worker, 'trusted', lambda *args, **kwargs: None)
+    monkeypatch.setattr(worker, 'LOCK', SimpleNamespace(parent=SimpleNamespace(stat=lambda: SimpleNamespace(st_mode=0o700))))
+    def fstat(fd):
+        if case == 'different_inode' and fd == 9:
+            return SimpleNamespace(**{**vars(info), 'st_ino': 3})
+        return info
+    monkeypatch.setattr(worker, 'os', SimpleNamespace(environ=worker.os.environ, open=lambda *args: 77,
+                        close=lambda fd: None, fstat=fstat, O_RDWR=2, O_CREAT=64, O_NOFOLLOW=128))
+    def flock(fd, flags):
+        if fd == 77 and case != 'unheld':
+            raise BlockingIOError()
+        if fd == 9 and case == 'third_party':
+            raise BlockingIOError()
+    monkeypatch.setitem(sys.modules, 'fcntl', SimpleNamespace(flock=flock, LOCK_EX=2, LOCK_NB=4))
+    if case == 'valid':
+        with worker.maintenance_lock() as acquired:
+            assert acquired is True
+    else:
+        with pytest.raises((worker.WorkerError, BlockingIOError)):
+            with worker.maintenance_lock():
+                pytest.fail('forged inherited lock was accepted')
 
 
 @pytest.fixture

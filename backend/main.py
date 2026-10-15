@@ -56,6 +56,7 @@ from backend.routes import cmv as cmv_routes
 from backend.routes import finance as finance_routes
 from backend.routes import fiscal as fiscal_routes
 from backend.routes import platform_tenants as platform_tenants_routes
+from backend.routes import company_domains as company_domains_routes
 from backend.routes import platform_users as platform_users_routes
 from backend.routes import platform_settings as platform_settings_routes
 from backend.routes import platform_session as platform_session_routes
@@ -1420,6 +1421,7 @@ app.include_router(fiscal_routes.router, prefix="/api")
 app.include_router(platform_tenants_routes.router, prefix="/api")
 app.include_router(platform_tenants_routes.master_router, prefix="/api")
 app.include_router(platform_tenants_routes.host_router, prefix="/api")
+app.include_router(company_domains_routes.router, prefix="/api")
 app.include_router(platform_users_routes.router, prefix="/api")
 app.include_router(platform_settings_routes.router, prefix="/api")
 app.include_router(platform_session_routes.router, prefix="/api")

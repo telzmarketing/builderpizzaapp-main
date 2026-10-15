@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildApiBases, platformDomainsApi, platformTenantsApi } from "./api";
+import { buildApiBases, companyDomainsApi, platformDomainsApi, platformTenantsApi } from "./api";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -103,5 +103,28 @@ describe("platform tenant mutations", () => {
     expect(init.method).toBe("POST");
     expect(new Headers(init.headers).get("Idempotency-Key")).toBe("attempt-1");
     expect(JSON.parse(init.body as string)).toEqual({ email: "admin@example.com", accept_terms: true });
+  });
+
+  it("uses the company endpoint without accepting a tenant override in domain creation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: { domain: { id: "d1" }, verification: {} } }), { status: 201, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await companyDomainsApi.create({ hostname: "loja.example.com", kind: "custom", tenant_id: "other-tenant" } as never);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/admin\/company\/domains$/);
+    expect(JSON.parse(init.body as string)).toEqual({ hostname: "loja.example.com", kind: "custom" });
+    expect(new Headers(init.headers).has("X-Tenant-Id")).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves company certificate permission errors and does not retry the mutation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: "Sem permissao para configurar dominios." }), { status: 403 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(companyDomainsApi.requestCertificate("other/domain", { email: "admin@example.com", accept_terms: true, tenant_id: "other-tenant" } as never, "company-attempt")).rejects.toMatchObject({ status: 403 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/admin\/company\/domains\/other%2Fdomain\/certificate$/);
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBe("company-attempt");
+    expect(JSON.parse(init.body as string)).toEqual({ email: "admin@example.com", accept_terms: true });
+    expect(new Headers(init.headers).has("X-Tenant-Id")).toBe(false);
   });
 });

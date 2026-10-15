@@ -332,6 +332,115 @@ TELZ_ALEMBIC_TARGET="$HEALTH_ALEMBIC_TARGET" \
   TELZ_HEALTH_WEB_PORT="$WEB_PORT" \
   TELZ_MONITORING_DIR="$PLATFORM_MONITORING_SNAPSHOT_DIR" \
   /usr/local/sbin/telz-health-check "$INSTALL_DIR"
+# The certificate worker may execute only sealed immutable application releases.
+# Promote the freshly built production checkout through the existing release pipeline.
+validate_initial_active_release() {
+  /usr/bin/python3 -I - "$1" "$ALEMBIC_TARGET" <<'PY'
+import json, os, re, stat, sys
+from pathlib import Path
+
+sha, revision = sys.argv[1:]
+if not re.fullmatch(r'[0-9a-f]{40}', sha):
+    raise SystemExit('SHA inicial invalido')
+root = Path('/var/lib/telz')
+current = root / 'current'
+expected = root / 'releases' / sha / 'app'
+
+def trusted(path, directory=False):
+    info = path.lstat()
+    if (info.st_uid != 0 or info.st_mode & 0o022
+            or not (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode))
+            or (not directory and info.st_nlink != 1)):
+        raise SystemExit('Release inicial possui arquivo ou diretorio mutavel')
+    for parent in path.parents:
+        item = parent.lstat()
+        if not stat.S_ISDIR(item.st_mode) or item.st_uid != 0 or item.st_mode & 0o022:
+            raise SystemExit('Parent da release inicial nao e confiavel')
+    return info
+
+trusted(root, directory=True)
+link = current.lstat()
+if not stat.S_ISLNK(link.st_mode) or link.st_uid != 0 or link.st_nlink != 1:
+    raise SystemExit('Current inicial nao e symlink root-owned')
+if current.resolve(strict=True) != expected:
+    raise SystemExit('Resume nao pode substituir outra release ativa')
+trusted(expected, directory=True)
+manifest = expected / '.telz-release.json'
+trusted(manifest)
+with os.fdopen(os.open(manifest, os.O_RDONLY | os.O_NOFOLLOW), 'r', encoding='utf-8') as stream:
+    opened = os.fstat(stream.fileno())
+    visible = manifest.lstat()
+    if (not stat.S_ISREG(opened.st_mode) or opened.st_uid != 0 or opened.st_mode & 0o022
+            or opened.st_nlink != 1 or opened.st_size > 8192
+            or (opened.st_dev, opened.st_ino) != (visible.st_dev, visible.st_ino)):
+        raise SystemExit('Manifest inicial nao e confiavel')
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError('Manifest com chave duplicada')
+            result[key] = value
+        return result
+    data = json.loads(stream.read(8193), object_pairs_hook=pairs,
+        parse_constant=lambda value: (_ for _ in ()).throw(ValueError('Constante invalida')))
+if (not isinstance(data, dict) or type(data.get('schema_version')) is not int
+        or data.get('schema_version') != 2 or data.get('status') != 'validated'
+        or data.get('git_commit') != sha or data.get('alembic_revision') != revision):
+    raise SystemExit('Manifest inicial nao corresponde ao SHA e schema validados')
+trusted(expected / 'backend/scripts/tenant_domain_ssl_queue.py')
+interpreter = expected / '.venv/bin/python'
+trusted(interpreter.parent, directory=True)
+trusted(interpreter.resolve(strict=True))
+PY
+}
+
+promote_initial_release() {
+  local initial_commit
+  if ! is_true "$INSTALL_SSL" || [[ "$PLATFORM_DOMAIN" != "app.telz.com.br" ]] || ! is_true "$RUN_ALEMBIC"; then
+    warn "HTTPS das empresas aguarda promocao para release imutavel de producao; instalacao base preservada."
+    return 0
+  fi
+  [[ "$GIT_BRANCH" == "main" ]] || {
+    fail "Promocao imutavel inicial exige GIT_BRANCH=main; instalacao base preservada"
+    return 1
+  }
+  initial_commit="$(sudo -u "$SERVICE_USER" -H git -C "$INSTALL_DIR" rev-parse --verify 'HEAD^{commit}')"
+  [[ "$initial_commit" =~ ^[0-9a-f]{40}$ ]] || return 1
+  if [[ -e /var/lib/telz/current || -L /var/lib/telz/current ]]; then
+    is_true "$RESUME" || {
+      fail "Instalador inicial nao substitui release ativa; utilize a atualizacao incremental"
+      return 1
+    }
+    validate_initial_active_release "$initial_commit" || return 1
+    TELZ_ALEMBIC_TARGET="$ALEMBIC_TARGET" TELZ_REQUIRE_PUBLIC_HTTPS=true \
+      TELZ_PUBLIC_HEALTH_URL="https://${PLATFORM_DOMAIN}/health" \
+      TELZ_SERVICE_USER="$SERVICE_USER" TELZ_HEALTH_API_PORT="$API_PORT" \
+      TELZ_HEALTH_WEB_PORT="$WEB_PORT" TELZ_MONITORING_DIR="$PLATFORM_MONITORING_SNAPSHOT_DIR" \
+      /usr/local/sbin/telz-health-check "$INSTALL_DIR" || return 1
+    info "Retomando HTTPS da release imutavel inicial ja validada"
+    /usr/bin/python3 -I /usr/local/sbin/telz-domain-ssl --bootstrap \
+      --service-user "$SERVICE_USER" --install-dir "$INSTALL_DIR" \
+      --api-port "$API_PORT" --web-port "$WEB_PORT" \
+      --platform-hostnames "$PLATFORM_DOMAIN,${TENANT_DOMAINS_PLATFORM_HOSTNAMES:-}" \
+      --public-ips "${PLATFORM_PUBLIC_IP:-}"
+    return $?
+  fi
+  info "Promovendo instalacao validada para release imutavel e preparando HTTPS das empresas"
+  TELZ_SERVICE_USER="$SERVICE_USER" TELZ_ALEMBIC_TARGET="$ALEMBIC_TARGET" \
+    TELZ_LEGACY_ADOPTION=true \
+    TELZ_LEGACY_ADOPTION_CONFIRM="ADOPT_LEGACY $initial_commit $initial_commit" \
+    TELZ_LEGACY_ADOPTION_DB_REVISION="$ALEMBIC_TARGET" \
+    TELZ_FORWARD_ONLY_CUTOVER=true \
+    TELZ_FORWARD_ONLY_CUTOVER_CONFIRM="FORWARD_ONLY $initial_commit" \
+    /usr/local/sbin/telz-deploy-from-origin "$initial_commit" "$INSTALL_DIR" || return $?
+  # The updater has released its lock. Preserve explicit installer inputs, including NAT.
+  /usr/bin/python3 -I /usr/local/sbin/telz-domain-ssl --bootstrap \
+    --service-user "$SERVICE_USER" --install-dir "$INSTALL_DIR" \
+    --api-port "$API_PORT" --web-port "$WEB_PORT" \
+    --platform-hostnames "$PLATFORM_DOMAIN,${TENANT_DOMAINS_PLATFORM_HOSTNAMES:-}" \
+    --public-ips "${PLATFORM_PUBLIC_IP:-}"
+}
+run_phase 17_immutable_release promote_initial_release
 write_summary
 cleanup_trusted_installer_assets
 ok "Instalacao concluida. Log: $LOG_FILE"

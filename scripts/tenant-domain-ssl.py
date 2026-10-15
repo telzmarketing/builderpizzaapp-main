@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import contextlib
+import argparse
+from datetime import datetime, timezone
 import hashlib
 import ipaddress
 import json
@@ -21,6 +23,7 @@ import time
 
 
 CONFIG = Path('/etc/telz/domain-ssl.json')
+RUNTIME = Path('/var/lib/telz/domain-ssl/runtime.json')
 CURRENT = Path('/var/lib/telz/current')
 RELEASES = Path('/var/lib/telz/releases')
 VHOSTS = Path('/etc/nginx/conf.d')
@@ -83,7 +86,7 @@ def email_address(value):
     return value
 
 
-def strict_json(raw):
+def strict_json(raw, limit=8192):
     def object_pairs(pairs):
         result = {}
         for key, value in pairs:
@@ -91,7 +94,7 @@ def strict_json(raw):
                 raise WorkerError()
             result[key] = value
         return result
-    if len(raw.encode('utf-8')) > 8192:
+    if len(raw.encode('utf-8')) > limit:
         raise WorkerError()
     return json.loads(raw, object_pairs_hook=object_pairs,
                       parse_constant=lambda value: (_ for _ in ()).throw(WorkerError()))
@@ -99,7 +102,8 @@ def strict_json(raw):
 
 def validate_config(config):
     """Shared by setup and the worker; reject all unknown configuration keys."""
-    if not isinstance(config, dict) or set(config) != {'public_ips', 'service_user', 'install_dir', 'api_port', 'web_port'}:
+    required = {'public_ips', 'service_user', 'install_dir', 'api_port', 'web_port'}
+    if not isinstance(config, dict) or not required <= set(config) or set(config) - required - {'platform_hostnames'}:
         raise WorkerError()
     if not isinstance(config['public_ips'], list) or not 1 <= len(config['public_ips']) <= 32:
         raise WorkerError('DNS_INVALID')
@@ -121,6 +125,10 @@ def validate_config(config):
             raise WorkerError()
     if config['api_port'] == config['web_port']:
         raise WorkerError()
+    if 'platform_hostnames' in config:
+        if not isinstance(config['platform_hostnames'], list) or len(config['platform_hostnames']) > 100:
+            raise WorkerError()
+        config['platform_hostnames'] = sorted({hostname(value) for value in config['platform_hostnames']})
     return config
 
 
@@ -239,20 +247,25 @@ def active_release():
 
 
 def queue(config, operation, data=None):
-    if operation not in {'claim', 'validate', 'complete', 'fail', 'reconcile'}:
+    if operation not in {'claim', 'validate', 'complete', 'fail', 'reconcile', 'heartbeat'}:
         raise WorkerError()
     release, interpreter = active_release()
     argv = ['/usr/sbin/runuser', '-u', config['service_user'], '--', '/usr/bin/env', '-i',
             'PATH=/usr/sbin:/usr/bin:/sbin:/bin', 'HOME=/nonexistent',
             f'TELZ_PROJECT_ROOT={config["install_dir"]}', 'PYTHONNOUSERSITE=1',
             'PYTHONDONTWRITEBYTECODE=1', 'TENANT_DOMAIN_SSL_ENABLED=true',
-            'TENANT_DOMAIN_SSL_PUBLIC_IPS=' + ','.join(config['public_ips']),
-            str(interpreter), '-m', 'backend.scripts.tenant_domain_ssl_queue', operation]
+            'TENANT_DOMAIN_SSL_MODE=manual',
+            'TENANT_DOMAIN_SSL_PUBLIC_IPS=' + ','.join(config['public_ips'])]
+    if 'platform_hostnames' in config:
+        argv.append('TENANT_DOMAINS_PLATFORM_HOSTNAMES=' + ','.join(config['platform_hostnames']))
+    argv.extend([str(interpreter), '-m', 'backend.scripts.tenant_domain_ssl_queue', operation])
     raw = command(argv, input=json.dumps(data or {}), cwd=release, timeout=120, allow_failure=True)
     try:
         value = strict_json(raw)
         if isinstance(value, dict) and ('error' in value or 'error_code' in value):
             raise WorkerError(value.get('error_code', 'WORKER_ERROR'))
+        if operation == 'heartbeat' and value != {'status': 'ready'}:
+            raise WorkerError()
         if operation in {'claim', 'validate'} and not (operation == 'claim' and value is None):
             payload(value)
         elif operation == 'reconcile':
@@ -278,6 +291,18 @@ def maintenance_lock():
         info = os.fstat(fd)
         if info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1:
             raise WorkerError()
+        if os.environ.get('TELZ_MAINTENANCE_LOCK_HELD') == 'true':
+            inherited = os.fstat(9)
+            if (inherited.st_dev, inherited.st_ino) != (info.st_dev, info.st_ino) or inherited.st_uid != 0 or stat.S_IMODE(inherited.st_mode) != 0o600 or inherited.st_nlink != 1:
+                raise WorkerError()
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                # Also prove descriptor 9 owns it, rather than a third process.
+                fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                yield True
+                return
+            raise WorkerError()  # Environment alone can never bypass the lock.
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -428,6 +453,8 @@ def process_job(config, job, *, q=queue, dns=validate_dns, reload=nginx_reload,
     mode = 0o644
     mutated = False
     try:
+        if job['hostname'] in config.get('platform_hostnames', []):
+            raise WorkerError('DOMAIN_INELIGIBLE')
         if payload(q(config, 'validate', identity)) != job:
             raise WorkerError('DOMAIN_INELIGIBLE')
         dns(job['hostname'], config['public_ips'])
@@ -478,11 +505,131 @@ def process_job(config, job, *, q=queue, dns=validate_dns, reload=nginx_reload,
         return {'status': 'failed', 'error_code': code}
 
 
+def discover_public_ips(execute=command):
+    raw = execute(['/usr/sbin/ip', '-j', 'address', 'show', 'scope', 'global'])
+    rows = strict_json(raw, limit=65536)
+    if not isinstance(rows, list) or len(rows) > 1024:
+        raise WorkerError('DNS_INVALID')
+    addresses = set()
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get('ifname'), str):
+            raise WorkerError('DNS_INVALID')
+        name = row['ifname']
+        if not isinstance(row.get('flags'), list) or 'UP' not in row['flags']:
+            continue
+        kind = row.get('linkinfo', {}).get('info_kind', '')
+        if name.startswith(('lo', 'docker', 'veth', 'virbr', 'br-', 'tun', 'tap', 'wg')) or kind in {'bridge', 'veth', 'tun', 'wireguard', 'dummy'}:
+            continue
+        for item in row.get('addr_info', []):
+            if not isinstance(item, dict) or item.get('scope') != 'global':
+                continue
+            rejected = {'temporary', 'deprecated', 'tentative', 'dadfailed'}
+            flags = item.get('flags', [])
+            if not isinstance(flags, list) or rejected.intersection(flags) or any(item.get(flag) for flag in rejected) or item.get('preferred_life_time') == 0:
+                continue
+            try:
+                ip = ipaddress.ip_address(item['local'])
+            except (KeyError, ValueError, TypeError):
+                raise WorkerError('DNS_INVALID') from None
+            if ip.is_global and not ip.is_multicast and not ip.is_reserved:
+                addresses.add(str(ip))
+    return sorted(addresses)
+
+
+def publish_runtime(config=None, *, ready=False, reason='setup_required'):
+    reasons = {'setup_required', 'disabled', 'invalid_runtime', 'missing_public_ip',
+               'missing_platform_hosts', 'preflight_failed', 'release_unavailable', 'worker_unavailable'}
+    if type(ready) is not bool or (ready and reason is not None) or (not ready and reason not in reasons):
+        raise WorkerError()
+    ensure_directory(RUNTIME.parent)
+    value = {'schema_version': 1, 'ready': ready, 'public_ips': (config or {}).get('public_ips', []),
+             'platform_hostnames': (config or {}).get('platform_hostnames', []), 'reason': reason,
+             'updated_at': datetime.now(timezone.utc).isoformat()}
+    atomic_write(RUNTIME, (json.dumps(value, sort_keys=True) + '\n').encode(), 0o644)
+
+
+def bootstrap_config(args, *, discover=discover_public_ips):
+    hosts = sorted({hostname(value.strip()) for value in args.platform_hostnames.split(',') if value.strip()})
+    identity = {'service_user': args.service_user, 'install_dir': args.install_dir,
+                'api_port': args.api_port, 'web_port': args.web_port}
+    if CONFIG.exists() or CONFIG.is_symlink():
+        config = read_config()
+        if any(config[key] != value for key, value in identity.items()):
+            raise WorkerError()
+        hosts = sorted(set(hosts) | set(config.get('platform_hostnames', [])))
+    else:
+        ips = [value.strip() for value in args.public_ips.split(',') if value.strip()] if args.public_ips else discover()
+        if not ips:
+            return {**identity, 'public_ips': [], 'platform_hostnames': hosts}, 'missing_public_ip'
+        config = {**identity, 'public_ips': ips}
+    config['platform_hostnames'] = hosts
+    config = validate_config(config)
+    return config, None if hosts else 'missing_platform_hosts'
+
+
+def bootstrap(args):
+    config = None
+    reason = 'preflight_failed'
+    ensure_directory(LOCK.parent, 0o700)
+    with maintenance_lock() as acquired:
+        if not acquired:
+            raise WorkerError()
+        publish_runtime(reason='setup_required')
+        try:
+            config, problem = bootstrap_config(args)
+            if problem:
+                reason = problem
+                raise WorkerError()
+            import pwd
+            if pwd.getpwnam(config['service_user']).pw_uid == 0:
+                raise WorkerError()
+            reason = 'release_unavailable'
+            active_release()
+            reason = 'preflight_failed'
+            for directory in (CONFIG.parent, VHOSTS, ACME, Path('/etc/letsencrypt'),
+                              Path('/var/lib/letsencrypt'), Path('/var/log/letsencrypt'), Path('/var/log/nginx')):
+                ensure_directory(directory)
+            ensure_certbot()
+            atomic_write(CONFIG, (json.dumps(config, sort_keys=True) + '\n').encode(), 0o600)
+            command(['/usr/sbin/nginx', '-t'], code='NGINX_FAILED')
+            command(['/usr/bin/systemctl', 'enable', '--now', 'certbot.timer', 'telz-domain-ssl.timer'])
+            reason = 'worker_unavailable'
+            if queue(config, 'heartbeat') != {'status': 'ready'}:
+                raise WorkerError()
+            publish_runtime(config, ready=True, reason=None)
+            return {'status': 'ready'}
+        except Exception:
+            publish_runtime(config, reason=reason)
+            raise
+
+
+def ensure_certbot():
+    if not Path('/usr/bin/certbot').exists():
+        command(['/usr/bin/apt-get', 'install', '-y', '--no-install-recommends', 'certbot'], timeout=600)
+    trusted(Path('/usr/bin/certbot').resolve(strict=True))
+
+
+def bootstrap_arguments(argv):
+    parser = argparse.ArgumentParser(allow_abbrev=False)
+    parser.add_argument('--bootstrap', action='store_true', required=True)
+    parser.add_argument('--service-user', required=True)
+    parser.add_argument('--install-dir', required=True)
+    parser.add_argument('--api-port', type=int, required=True)
+    parser.add_argument('--web-port', type=int, required=True)
+    parser.add_argument('--platform-hostnames', required=True)
+    parser.add_argument('--public-ips', default='')
+    return parser.parse_args(argv)
+
+
 def main():
     try:
         if os.geteuid() != 0:
             raise WorkerError()
         trusted(Path(__file__).absolute())
+        if '--bootstrap' in sys.argv[1:]:
+            result = bootstrap(bootstrap_arguments(sys.argv[1:]))
+            print(json.dumps(result))
+            return 0
         configuring = sys.argv[1:] == ['--configure']
         config = validate_config(strict_json(sys.stdin.read(8193))) if configuring else read_config()
         import pwd

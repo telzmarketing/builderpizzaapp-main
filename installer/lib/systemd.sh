@@ -16,6 +16,7 @@ install_systemd_units() {
   timer_template="$(trusted_installer_asset installer/templates/telz-monitoring.timer)"
   install -m 0755 -o root -g root "$collector_source" /usr/local/sbin/telz-monitoring-collector
   install -m 0755 -o root -g root "$health_source" /usr/local/sbin/telz-health-check
+  install -m 0755 -o root -g root "$(trusted_installer_asset scripts/deploy-telz-from-origin.sh)" /usr/local/sbin/telz-deploy-from-origin
   install -m 0755 -o root -g root "$(trusted_installer_asset scripts/tenant-domain-ssl.py)" /usr/local/sbin/telz-domain-ssl
   install -d -m 0755 -o root -g root /etc/letsencrypt/renewal-hooks/deploy
   install -m 0755 -o root -g root "$(trusted_installer_asset scripts/tenant-domain-ssl-renew-hook.py)" /etc/letsencrypt/renewal-hooks/deploy/telz-domain-ssl

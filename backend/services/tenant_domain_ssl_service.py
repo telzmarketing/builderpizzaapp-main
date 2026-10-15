@@ -17,6 +17,7 @@ import dns.resolver
 from sqlalchemy import or_
 
 from backend.config import get_settings
+from backend.core.domain_ssl_runtime import REASONS, ssl_runtime
 from backend.core.exceptions import DomainError
 from backend.core.tenant_context import normalize_hostname
 from backend.models.platform_operations import PlatformWorkerHeartbeat
@@ -72,7 +73,7 @@ def remaining(deadline, maximum):
 def public_ips(settings=None):
     settings = settings or get_settings()
     try:
-        addresses = frozenset(ipaddress.ip_address(x.strip()) for x in settings.TENANT_DOMAIN_SSL_PUBLIC_IPS.split(",") if x.strip())
+        addresses = frozenset(ipaddress.ip_address(value) for value in ssl_runtime(settings).public_ips)
     except ValueError as exc:
         raise CertificateError("DNS_INVALID", 503) from exc
     if not addresses or any(not x.is_global for x in addresses):
@@ -81,10 +82,7 @@ def public_ips(settings=None):
 
 
 def platform_hosts():
-    try:
-        hosts = frozenset(normalize_hostname(item) for item in get_settings().TENANT_DOMAINS_PLATFORM_HOSTNAMES.split(",") if item.strip())
-    except ValueError as exc:
-        raise CertificateError("CertificateWorkerUnavailable", 503) from exc
+    hosts = frozenset(ssl_runtime(get_settings()).platform_hostnames)
     if not hosts:
         raise CertificateError("CertificateWorkerUnavailable", 503)
     return hosts
@@ -145,7 +143,7 @@ class TenantDomainSSLService:
         self.db = db
 
     def _configured(self):
-        if not get_settings().TENANT_DOMAIN_SSL_ENABLED:
+        if not ssl_runtime(get_settings()).ready:
             raise CertificateError("CertificateWorkerUnavailable", 503)
         platform_hosts()
         public_ips()
@@ -162,6 +160,12 @@ class TenantDomainSSLService:
             PlatformWorkerHeartbeat.status.in_(("idle", "running")),
             PlatformWorkerHeartbeat.last_heartbeat_at >= recent,
         ).first() is not None
+
+    def unavailable_reason(self):
+        runtime = ssl_runtime(get_settings())
+        if not runtime.ready:
+            return REASONS.get(runtime.reason, REASONS["invalid_runtime"])
+        return None if self.available() else REASONS["worker_unavailable"]
 
     def _domain(self, domain_id, *, lock=False):
         query = self.db.query(TenantDomain).filter(TenantDomain.id == str(domain_id))
@@ -197,6 +201,7 @@ class TenantDomainSSLService:
         except CertificateError:
             dns_targets = []
         return {"available": self.available(), "domain_id": domain.id, "hostname": domain.hostname,
+                "unavailable_reason": self.unavailable_reason(),
                 "dns_targets": dns_targets,
                 "ssl_status": domain.ssl_status, "ssl_issued_at": domain.ssl_issued_at,
                 "ssl_expires_at": domain.ssl_expires_at, "job": public_job}
@@ -302,6 +307,12 @@ class TenantDomainSSLService:
             return self._payload(job, token)
         self.db.commit()
         return None
+
+    def heartbeat(self):
+        self._configured()
+        self._heartbeat()
+        self.db.commit()
+        return {"status": "ready"}
 
     def _lease(self, job_id, token, *, expired=False):
         snapshot = self.db.query(Job).filter(Job.id == str(job_id)).first()

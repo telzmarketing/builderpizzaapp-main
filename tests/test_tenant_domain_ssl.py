@@ -96,6 +96,26 @@ def test_readiness_requires_config_and_recent_worker(scenario):
     assert error.value.http_status == 503
 
 
+def test_auto_projection_drives_api_targets_with_default_flag_false(scenario, monkeypatch):
+    from backend.core import domain_ssl_runtime
+    s = scenario
+    s.settings.TENANT_DOMAIN_SSL_MODE = "auto"
+    s.settings.TENANT_DOMAIN_SSL_ENABLED = False
+    projection = domain_ssl_runtime.DomainSSLRuntime(True, ("1.1.1.1",), ("master.example.com",))
+    monkeypatch.setattr(domain_ssl_runtime, "read_runtime", lambda: projection)
+    assert s.service.available()
+    assert s.service.summary(s.domain.id)["dns_targets"] == ["1.1.1.1"]
+    assert ssl_service.platform_hosts() == frozenset(["master.example.com"])
+    s.settings.TENANT_DOMAIN_SSL_MODE = "disabled"
+    assert not s.service.available()
+
+
+def test_cli_heartbeat_does_not_claim_or_create_jobs(scenario):
+    from backend.scripts.tenant_domain_ssl_queue import execute
+    assert execute("heartbeat", {}, scenario.db) == {"status": "ready"}
+    assert scenario.db.query(Job).count() == 0
+
+
 def test_summary_exposes_only_approved_public_dns_targets_and_reserves_platform_host(scenario):
     s = scenario
     assert s.service.summary(s.domain.id)["dns_targets"] == ["8.8.8.8"]
@@ -274,7 +294,8 @@ def test_forward_migration_has_composite_fk_partial_unique_and_safe_downgrade():
     {"A": [], "AAAA": []},
 ])
 def test_dns_rejects_any_private_or_unconfigured_address(monkeypatch, records):
-    monkeypatch.setattr(ssl_service, "get_settings", lambda: SimpleNamespace(TENANT_DOMAIN_SSL_PUBLIC_IPS="8.8.8.8"))
+    monkeypatch.setattr(ssl_service, "get_settings", lambda: SimpleNamespace(TENANT_DOMAIN_SSL_MODE="manual",
+        TENANT_DOMAIN_SSL_ENABLED=True, TENANT_DOMAIN_SSL_PUBLIC_IPS="8.8.8.8", TENANT_DOMAINS_PLATFORM_HOSTNAMES="app.example.com"))
     resolver = SimpleNamespace(resolve=lambda hostname, kind: records[kind])
     monkeypatch.setattr(ssl_service.dns.resolver, "Resolver", lambda: resolver)
     with pytest.raises(ssl_service.CertificateError) as error:

@@ -40,6 +40,7 @@ class CertificateJobOut(BaseModel):
 
 class CertificateSummaryOut(BaseModel):
     available: bool
+    unavailable_reason: str | None = None
     dns_targets: list[str] = Field(default_factory=list)
     domain_id: str
     hostname: str

@@ -70,6 +70,18 @@ isolado, validacao e aplicacao da migration forward-only, troca atomica da
 release, restart e health local/HTTPS. Em qualquer falha, ele interrompe a
 promocao; nao use `git pull`, `reset`, `checkout` ou `clean` como atalho.
 
+#### HTTPS das empresas
+
+Depois de ativar e validar a release, o updater prepara automaticamente o executor
+HTTPS, conserva configuracoes root-owned existentes, habilita emissao/renovacao e
+publica disponibilidade para o painel. Empresa e Master podem solicitar o certificado
+sem executar comandos por dominio. A empresa usa Configuracoes > Dominio e HTTPS.
+
+DNS/TXT corretos e porta 80 publica continuam obrigatorios. Falha da preparacao
+mostra aviso no deploy e motivo no painel; health da aplicacao sozinho nao comprova
+emissor pronto. VPS sem IP publico local, por exemplo atras de NAT, exige aprovacao
+operacional explicita dos destinos. Consulte [o fluxo e os gates](tenant-domain-ssl.md).
+
 #### Instalacao unica do helper
 
 Se `/usr/local/sbin/telz-deploy-from-origin` ainda nao existir, instale a copia

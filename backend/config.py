@@ -1,6 +1,7 @@
 from functools import lru_cache
 import os
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
@@ -82,6 +83,7 @@ class Settings(BaseSettings):
     TENANT_DOMAINS_TRUSTED_PROXY_IPS: str = ""
     TENANT_DOMAINS_PLATFORM_HOSTNAMES: str = ""
     TENANT_DOMAIN_SSL_ENABLED: bool = False
+    TENANT_DOMAIN_SSL_MODE: Literal["auto", "manual", "disabled"] = "auto"
     TENANT_DOMAIN_SSL_PUBLIC_IPS: str = ""
     TENANT_DOMAIN_SSL_LEASE_SECONDS: int = Field(default=900, ge=120, le=3600)
     TENANT_DOMAIN_SSL_COOLDOWN_SECONDS: int = Field(default=3600, ge=300, le=86400)

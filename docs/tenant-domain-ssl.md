@@ -1,17 +1,17 @@
 # HTTPS dos dominios das empresas
 
-Data: 2026-10-14.
+Data: 2026-10-15.
 
 Status: arquitetura HTTP-01 aprovada; implementacao validada localmente. Este documento nao comprova emissao,
 instalacao, renovacao ou deploy em producao.
 
 ## Objetivo e fluxo
 
-Permitir ao administrador Master preparar HTTPS depois de cadastrar um dominio
+Permitir a propria empresa e ao administrador Master solicitar HTTPS depois de cadastrar um dominio
 de empresa, acompanhando verificacao, emissao e validade no cadastro existente.
 Nao criar um segundo cadastro ou uma gestao paralela de dominios.
 
-O fluxo usa a aba Dominios da empresa e a lista global de dominios:
+O fluxo usa Configuracoes > Dominio e HTTPS no painel da empresa e as telas de dominios da Central Master:
 
 1. Cadastrar hostname e tipo, como ocorre atualmente.
 2. Exibir a prova TXT existente e as instrucoes de apontamento DNS.
@@ -23,7 +23,9 @@ O fluxo usa a aba Dominios da empresa e a lista global de dominios:
 
 ## Regras de negocio
 
-- A operacao e exclusiva do Master com permissao de gestao de dominios.
+- A empresa precisa de membership PANEL ativa e permissao configuracoes.view/edit.
+  O Master conserva tenants.view/manage. A API sempre limita a empresa ao seu
+  tenant autenticado; suporte e contextos legados nao acessam este autoatendimento.
 - O hostname vem do registro cadastrado e aparece como leitura no formulario.
   A solicitacao usa o identificador desse registro, sem aceitar um hostname livre.
 - Os dados solicitados sao email de contato e aceite dos termos aplicaveis da
@@ -39,7 +41,7 @@ O fluxo usa a aba Dominios da empresa e a lista global de dominios:
   Certificado existente valido pode ser reutilizado apos comprovacao de cobertura.
 - Falha preserva cadastro e diagnostico, sem marcar HTTPS ativo. A nova tentativa
   deve ser controlada e ocorrer depois de corrigir a causa.
-- A validade e os erros de renovacao devem ficar visiveis ao Master.
+- A validade e os erros de renovacao devem ficar visiveis a empresa e ao Master.
 - Dominios ativos existentes exigem transicao deliberada: nao suspender todas as
   lojas automaticamente ao implantar uma exigencia nova. Exibir pendencia TLS e
   permitir sua regularizacao, conforme estrategia aprovada pelo Arquiteto.
@@ -90,7 +92,7 @@ e integracao de credenciais de provedor DNS ficam fora desta entrega.
 
 ## Criterios de aceite
 
-1. Depois do cadastro, o Master ve o proximo passo DNS/HTTPS sem recadastrar o
+1. Depois do cadastro, a empresa e o Master veem o proximo passo DNS/HTTPS sem recadastrar o
    endereco; a lista global e o detalhe da empresa mostram o mesmo estado.
 2. Sem TXT correto ou apontamento autorizado, o servidor recusa a emissao mesmo
    se a interface for alterada pelo cliente.
@@ -103,18 +105,17 @@ e integracao de credenciais de provedor DNS ficam fora desta entrega.
    nenhuma falha pode produzir estado HTTPS ativo.
 7. Certificado vencido, para outro nome ou com cadeia invalida nao aprova HTTPS.
 8. Novo dominio so e ativavel apos verificacao DNS e TLS reais.
-9. Renovacao atualiza validade e estado; falha fica visivel ao Master.
+9. Renovacao atualiza validade e estado; falha fica visivel a empresa e ao Master.
 10. Emissao, instalacao e recarga de uma loja preservam o funcionamento das outras.
 
 ## Gates de validacao e entrega
 
-Validacao local registrada em 2026-10-14: suite integrada com 495 testes aprovados,
-8 ignorados e 3 avisos; testes de contrato frontend com 12 aprovados; typecheck e
-build client/PWA aprovados. YAML dos workflows e sintaxe dos 25 scripts Bash
-validados; SQL da nova revision renderizado com dialeto PostgreSQL sem conexao
-ao banco. Testes locais de DNS/TLS/ACME usam dependencias controladas. Nao houve
-emissao, renovacao, migration PostgreSQL real ou deploy desta funcionalidade.
-Publicacao Git e CI devem ser conferidos no commit exato da entrega.
+Validacao local da correcao automatica em 2026-10-15: suite integrada com 536
+aprovados e 8 ignorados; testes frontend de API e telas Master com 17 aprovados;
+typecheck e build client/PWA aprovados. Promocao inicial: 15 testes novos
+aprovados; regressao operacional focada: 45 aprovados e 8 ignorados. DNS/TLS/ACME usam dependencias controladas.
+A release anterior e47c793 ja foi atualizada na VPS pelo operador, mas nao preparava
+a emissao automaticamente. Esta correcao exige sua propria publicacao e deploy.
 
 Validacao local deve cobrir autorizacao, isolamento entre empresas, validacao de
 entrada, pre-requisitos DNS, transicoes, duplicacao, falhas operacionais e estados
@@ -138,52 +139,45 @@ Compra de dominios; alteracao automatica de DNS em provedores variados; coleta d
 credenciais DNS ou senhas no painel; emissao wildcard pelo formulario da empresa;
 acesso operacional da empresa a VPS; reescrita do cadastro ou resolucao de tenant.
 
-## Preparacao operacional unica
+## Preparacao automatica na atualizacao
 
-Esta secao e um runbook de preparacao, nao evidencia de execucao. Use somente a
-release imutavel publicada e aprovada no CI. A revision alvo passa a ser
-`20261014_tenant_domain_ssl`. Nao ha par de rollback automatico aprovado para a
-nova revision: preparar backup/restore e cutover forward-only explicito pelo
-procedimento incremental, sem executar o instalador novamente.
+O updater instala os executaveis e unidades root-owned, ativa a release imutavel,
+valida a aplicacao e executa o bootstrap do emissor sob o lock de manutencao.
+O bootstrap conserva IPs explicitamente aprovados existentes; caso contrario,
+descobre enderecos publicos globais das interfaces locais da VPS. Valida a release,
+prepara Certbot, testa Nginx, habilita os timers de emissao e renovacao e grava um
+heartbeat. Somente depois publica disponibilidade para a API.
 
-O instalador/updater entrega o runner, o hook e as unidades root-owned, mas nao
-habilita a emissao. Antes de configurar, confira DNS publico, porta 80 acessivel,
-Nginx, Certbot e o backup externo de `/etc/letsencrypt`, dos vhosts de dominio e
-de `/etc/telz/domain-ssl.json`. A chave privada nunca pertence ao banco ou API.
+O modo padrao `TENANT_DOMAIN_SSL_MODE=auto` usa a projecao sanitizada root-owned
+`/var/lib/telz/domain-ssl/runtime.json`. Nao exige editar `.env`, ativar flags ou
+habilitar timers manualmente para cada empresa. A API nao executa sudo nem le
+chaves privadas. `manual` preserva o fluxo legado; `disabled` bloqueia solicitacoes.
 
-Como root, apos instalar Certbot pelo gerenciador de pacotes da VPS, configure
-uma vez o runner. Substitua todos os placeholders antes de executar:
+Na instalacao inicial padrao de producao (`app.telz.com.br`, HTTPS e Alembic
+habilitados), o instalador promove o checkout validado pelo pipeline existente
+para uma release realmente imutavel e executa a mesma preparacao. Perfis HTTP-first
+ou outros hosts principais permanecem instalacoes base, com aviso explicito de
+promocao pendente; nao recebem disponibilidade artificial.
 
-```bash
-sudo /usr/local/sbin/telz-domain-ssl --configure <<'JSON'
-{"public_ips":["SUBSTITUIR_PELO_IP_PUBLICO"],"service_user":"telz","install_dir":"/opt/telz","api_port":8000,"web_port":3000}
-JSON
-```
+Se a VPS estiver atras de NAT/balanceador e nao possuir endereco publico local,
+a preparacao fica indisponivel com diagnostico. Nesse caso excepcional, a operacao
+aprova os destinos em `/etc/telz/domain-ssl.json` pelo comando `--configure`
+existente e repete a atualizacao/bootstrap. Nao usar IPs obtidos de DNS de um
+dominio de empresa como autorizacao de destino. A configuracao operacional e
+root-owned `0600` e preservada nas atualizacoes; a projecao nao contem segredos.
 
-Inclua tambem o IPv6 autorizado se houver registros AAAA publicados. O comando
-valida a estrutura e grava configuracao root-owned `0600`; nao habilita servicos
-nem altera `backend/.env`. Preserve os hosts reservados da plataforma em
-`TENANT_DOMAINS_PLATFORM_HOSTNAMES`. No arquivo persistente `backend/.env`,
-configure os mesmos IPs publicos autorizados, separados por virgula:
-
-```dotenv
-TENANT_DOMAIN_SSL_ENABLED=true
-TENANT_DOMAIN_SSL_PUBLIC_IPS=SUBSTITUIR_PELOS_IPS_PUBLICOS
-```
-
-Depois da revisao da configuracao, habilite `certbot.timer` e
-`telz-domain-ssl.timer`, execute `telz-domain-ssl.service` e reinicie a API para
-carregar as configuracoes. Confira heartbeat recente e disponibilidade no
-painel antes de solicitar emissao. Configuracao inconsistente ou worker ausente
-mantem a solicitacao indisponivel.
+Depois de atualizar, a empresa cadastra o hostname no painel, publica o TXT e os
+registros DNS mostrados, verifica a propriedade e solicita HTTPS com email e aceite
+dos termos. O worker emite, instala o vhost, testa/recarrega Nginx e comprova o
+certificado servido antes de marcar HTTPS ativo. O mesmo fluxo existe no Master.
+Nao ha comando de VPS por dominio. DNS externo continua sob controle do titular.
 
 A emissao usa webroot HTTP-01 e preserva o challenge ao redirecionar HTTP para
 HTTPS. A renovacao e feita pelo Certbot; o hook valida/recarrega Nginx sob o lock
-de manutencao, e o worker reconcilia o certificado servido e as datas. Referencia:
-[guia oficial do Certbot](https://eff-certbot.readthedocs.io/en/stable/using.html).
+de manutencao, e o worker reconcilia o certificado servido e as datas.
 
-Valide `certbot renew --dry-run --run-deploy-hooks` e o acesso HTTPS externo em
-janela controlada. Uma falha deve ser investigada antes de habilitar novos
-dominios. Restaurar vhost nao reverte a lineage do Certbot: os certificados
-anteriores permanecem em `archive`, e recuperacao de material criptografico deve
-seguir o backup especifico de certificados.
+Validacao operacional ainda exige emissao real, certificado correto servido e
+`certbot renew --dry-run --run-deploy-hooks` em janela controlada. Testes locais
+nao comprovam essas etapas. Falha de bootstrap mantem a aplicacao saudavel e
+mostra indisponibilidade; nao declara o emissor pronto. Restaurar vhost nao
+reverte a lineage Certbot: material criptografico segue o backup de certificados.

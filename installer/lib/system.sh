@@ -20,6 +20,7 @@ TRUSTED_INSTALLER_ASSET_PATHS=(
   installer/lib/systemd.sh
   installer/lib/validation.sh
   scripts/backup-telz.sh
+  scripts/deploy-telz-from-origin.sh
   scripts/collect-telz-monitoring.sh
   scripts/finish-ssl.sh
   scripts/health-check.sh
@@ -292,7 +293,7 @@ install_system_packages() {
   fi
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ca-certificates curl wget git unzip build-essential software-properties-common \
-    gnupg ufw nginx "${python_packages[@]}" postgresql postgresql-contrib
+    gnupg ufw nginx certbot "${python_packages[@]}" postgresql postgresql-contrib
   command -v python3.12 >/dev/null 2>&1 || {
     fail "Python 3.12 e obrigatorio. No Ubuntu 22.04, provisione python3.12 + venv previamente por uma fonte aprovada."
     return 1
