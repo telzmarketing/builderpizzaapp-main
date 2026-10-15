@@ -170,6 +170,12 @@ Depois de atualizar, a empresa cadastra o hostname no painel, publica o TXT e os
 registros DNS mostrados, verifica a propriedade e solicita HTTPS com email e aceite
 dos termos. O worker emite, instala o vhost, testa/recarrega Nginx e comprova o
 certificado servido antes de marcar HTTPS ativo. O mesmo fluxo existe no Master.
+
+A recarga do Nginx nao comprova que os novos workers ja servem TLS. O executor
+aguarda prontidao por ate 45 segundos totais, repetindo a verificacao de todos os
+IPs com cadeia e hostname validos. A lease e o DNS continuam validados antes e
+depois dessa etapa; falha persistente preserva o rollback e nao ativa HTTPS.
+
 Nao ha comando de VPS por dominio. DNS externo continua sob controle do titular.
 
 A emissao usa webroot HTTP-01 e preserva o challenge ao redirecionar HTTP para

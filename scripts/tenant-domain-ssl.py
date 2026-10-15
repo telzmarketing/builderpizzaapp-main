@@ -420,27 +420,34 @@ def nginx_reload():
 
 
 def probe_tls(host, addresses):
-    # Validate every advertised destination with the actual hostname/SNI.
+    # Reload sends a signal; new workers may not serve the certificate yet.
+    # Every retry must approve all advertised destinations within one budget.
+    addresses = tuple(addresses)
     if not addresses:
         raise WorkerError('TLS_INVALID')
     context = ssl.create_default_context()
     deadline = time.monotonic() + 45
-    for address in addresses:
+    while True:
         try:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise WorkerError('TLS_INVALID')
-            with socket.create_connection((str(address), 443), timeout=min(10, remaining)) as connection:
+            for address in addresses:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise WorkerError('TLS_INVALID')
-                connection.settimeout(min(10, remaining))
-                with context.wrap_socket(connection, server_hostname=host):
-                    pass
-            if time.monotonic() >= deadline:
-                raise WorkerError('TLS_INVALID')
+                with socket.create_connection((str(address), 443), timeout=min(10, remaining)) as connection:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise WorkerError('TLS_INVALID')
+                    connection.settimeout(min(10, remaining))
+                    with context.wrap_socket(connection, server_hostname=host):
+                        pass
+                if time.monotonic() >= deadline:
+                    raise WorkerError('TLS_INVALID')
+            return
         except (OSError, ssl.SSLError):
-            raise WorkerError('TLS_INVALID') from None
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise WorkerError('TLS_INVALID') from None
+            time.sleep(min(1, remaining))
 
 
 def process_job(config, job, *, q=queue, dns=validate_dns, reload=nginx_reload,

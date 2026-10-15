@@ -488,3 +488,72 @@ def test_tls_probes_all_ips_with_remaining_budget_and_hostname(monkeypatch):
     assert connections == [(('8.8.8.8', 443), 10), (('1.1.1.1', 443), 1)]
     assert timeouts == [10, 0.5]
     assert names == ['pizza.example.com', 'pizza.example.com']
+
+
+@pytest.fixture
+def tls_readiness_clock(monkeypatch):
+    from contextlib import nullcontext
+    clock = SimpleNamespace(now=0.0, connections=[], timeouts=[], names=[], sleeps=[])
+    monkeypatch.setattr(worker.time, 'monotonic', lambda: clock.now)
+    def sleep(seconds):
+        clock.sleeps.append(seconds)
+        clock.now += seconds
+    monkeypatch.setattr(worker.time, 'sleep', sleep)
+    def connect(address, timeout):
+        clock.connections.append((address, timeout))
+        clock.now += min(0.1, timeout)
+        connection = SimpleNamespace(address=address, settimeout=lambda value: clock.timeouts.append(value))
+        return nullcontext(connection)
+    monkeypatch.setattr(worker.socket, 'create_connection', connect)
+    return clock
+
+
+def test_tls_waits_for_reloaded_certificate_with_same_hostname_and_ca_checks(monkeypatch, tls_readiness_clock):
+    from contextlib import nullcontext
+    clock = tls_readiness_clock
+    def wrap(connection, server_hostname):
+        clock.names.append(server_hostname)
+        if len(clock.names) == 1:
+            raise worker.ssl.SSLCertVerificationError('old certificate hostname mismatch')
+        return nullcontext()
+    contexts = []
+    def context():
+        contexts.append(True)
+        return SimpleNamespace(wrap_socket=wrap)
+    monkeypatch.setattr(worker.ssl, 'create_default_context', context)
+    worker.probe_tls('pizza.example.com', ['8.8.8.8'])
+    assert len(contexts) == 1
+    assert clock.names == ['pizza.example.com', 'pizza.example.com']
+    assert clock.sleeps == [1] and clock.now < 45
+
+
+def test_tls_persistently_invalid_certificate_exhausts_one_total_budget(monkeypatch, tls_readiness_clock):
+    clock = tls_readiness_clock
+    def wrap(connection, server_hostname):
+        clock.names.append(server_hostname)
+        raise worker.ssl.SSLCertVerificationError('permanent wrong certificate')
+    monkeypatch.setattr(worker.ssl, 'create_default_context', lambda: SimpleNamespace(wrap_socket=wrap))
+    with pytest.raises(worker.WorkerError, match='TLS_INVALID'):
+        worker.probe_tls('pizza.example.com', ['8.8.8.8'])
+    assert clock.now == pytest.approx(45)
+    assert len(clock.names) > 1
+    assert all(0 < value <= 1 for value in clock.sleeps)
+    assert all(0 < timeout <= 10 for _, timeout in clock.connections)
+    assert all(0 < timeout <= 10 for timeout in clock.timeouts)
+
+
+def test_tls_retry_rechecks_all_ips_after_one_destination_is_not_ready(monkeypatch, tls_readiness_clock):
+    from contextlib import nullcontext
+    clock = tls_readiness_clock
+    second_attempts = []
+    def wrap(connection, server_hostname):
+        clock.names.append(server_hostname)
+        if connection.address[0] == '1.1.1.1':
+            second_attempts.append(True)
+            if len(second_attempts) == 1:
+                raise worker.ssl.SSLCertVerificationError('second address has old certificate')
+        return nullcontext()
+    monkeypatch.setattr(worker.ssl, 'create_default_context', lambda: SimpleNamespace(wrap_socket=wrap))
+    worker.probe_tls('pizza.example.com', ['8.8.8.8', '1.1.1.1'])
+    assert [address[0] for address, _ in clock.connections] == ['8.8.8.8', '1.1.1.1', '8.8.8.8', '1.1.1.1']
+    assert clock.sleeps == [1]
