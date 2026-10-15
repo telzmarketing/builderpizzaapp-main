@@ -267,7 +267,8 @@ def test_failed_nginx_test_in_renewal_hook_never_reloads(monkeypatch):
     assert calls == [['/usr/sbin/nginx', '-t']]
 
 
-@pytest.mark.parametrize('state', ['valid', 'building', 'wrong_commit', 'missing', 'missing_adapter'])
+@pytest.mark.parametrize('state', ['valid', 'building', 'wrong_commit', 'missing', 'missing_adapter',
+                                 'descriptor_owner_nonroot'])
 def test_queue_accepts_only_matching_validated_release(monkeypatch, tmp_path, state):
     import json
     releases = tmp_path / 'releases'
@@ -298,6 +299,12 @@ def test_queue_accepts_only_matching_validated_release(monkeypatch, tmp_path, st
     monkeypatch.setattr(worker, 'RELEASES', releases)
     monkeypatch.setattr(worker, 'trusted', trust)
     monkeypatch.setattr(worker.os, 'O_NOFOLLOW', 0, raising=False)
+    original_fstat = worker.os.fstat
+    def manifest_fstat(fd):
+        info = original_fstat(fd)
+        return SimpleNamespace(st_mode=info.st_mode, st_nlink=info.st_nlink, st_size=info.st_size,
+                               st_uid=1000 if state == 'descriptor_owner_nonroot' else 0)
+    monkeypatch.setattr(worker.os, 'fstat', manifest_fstat)
     try:
         if state == 'valid':
             assert worker.active_release()[0] == release
