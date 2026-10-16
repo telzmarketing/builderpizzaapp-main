@@ -41,7 +41,7 @@ JOB_STAGES = {'validate_initial', 'dns_initial', 'check_paths', 'write_http_vhos
 
 
 def public_destination(value):
-    if not isinstance(value, str) or len(value) > 45:
+    if not isinstance(value, str) or len(value) > 45 or '%' in value:
         return None
     try:
         address = ipaddress.ip_address(value)

@@ -627,7 +627,7 @@ def test_successful_job_emits_no_failure_diagnostics(sandbox, config, job, capsy
 
 
 @pytest.mark.parametrize('destination', ['127.0.0.1', '10.0.0.1', '224.0.0.1', 'ops@example.com',
-                                       'secret-lease', '8.8.8.8\nPRIVATE KEY', None])
+                                       'secret-lease', '8.8.8.8\nPRIVATE KEY', '2606:4700::1111%secret', None])
 def test_failure_destination_never_exposes_private_or_untrusted_values(capsys, destination):
     error = worker.WorkerError('TLS_INVALID', destination=destination)
     worker.log_job_failure('job-safe', 'probe_tls', error.code, 'restored', error)
