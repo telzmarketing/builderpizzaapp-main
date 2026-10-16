@@ -557,3 +557,106 @@ def test_tls_retry_rechecks_all_ips_after_one_destination_is_not_ready(monkeypat
     worker.probe_tls('pizza.example.com', ['8.8.8.8', '1.1.1.1'])
     assert [address[0] for address, _ in clock.connections] == ['8.8.8.8', '1.1.1.1', '8.8.8.8', '1.1.1.1']
     assert clock.sleeps == [1]
+
+
+@pytest.mark.parametrize('stage', ['write_tls_vhost', 'probe_tls', 'complete'])
+def test_job_failure_records_exact_stage_once_without_sensitive_fields(sandbox, config, job, monkeypatch, capsys, stage):
+    secret = job['email'] + ' ' + job['lease_token'] + ' PRIVATE KEY DATABASE_URL'
+    _, base_queue = callbacks(job)
+    original_vhost = worker.vhost
+    def vhost(*args, **kwargs):
+        if stage == 'write_tls_vhost' and kwargs.get('tls'):
+            raise worker.WorkerError('TLS_INVALID')
+        return original_vhost(*args, **kwargs)
+    monkeypatch.setattr(worker, 'vhost', vhost)
+    def queue(config, operation, data):
+        if operation == 'complete' and stage == 'complete':
+            raise RuntimeError(secret)
+        return base_queue(config, operation, data)
+    def probe(*args):
+        if stage == 'probe_tls':
+            raise worker.WorkerError('TLS_INVALID', diagnostic='hostname_mismatch', verify_code=62)
+    result = worker.process_job(config, job, q=queue, dns=lambda *args: {'8.8.8.8'},
+                                reload=lambda: None, probe=probe, execute=lambda *args, **kwargs: None)
+    captured = capsys.readouterr()
+    assert captured.out == ''
+    assert len(captured.err.splitlines()) == 1
+    event = json.loads(captured.err)
+    assert event['event'] == 'domain_ssl_failed' and event['job_id'] == job['job_id']
+    assert event['stage'] == stage and event['rollback_status'] == 'restored'
+    assert event['error_code'] == result['error_code']
+    assert job['email'] not in captured.err and job['lease_token'] not in captured.err
+    assert 'PRIVATE KEY' not in captured.err and 'DATABASE_URL' not in captured.err
+    assert job['hostname'] not in captured.err
+    if stage == 'probe_tls':
+        assert event['tls_diagnostic'] == 'hostname_mismatch' and event['verify_code'] == 62
+    else:
+        assert 'tls_diagnostic' not in event and 'verify_code' not in event
+
+
+@pytest.mark.parametrize('verify_code,diagnostic', [(62, 'hostname_mismatch'), (20, 'untrusted_chain'),
+                                                  (10, 'expired'), (9, 'not_yet_valid')])
+def test_tls_diagnostic_classifies_verification_code_without_exception_text(monkeypatch, tls_readiness_clock, verify_code, diagnostic):
+    def wrap(connection, server_hostname):
+        error = worker.ssl.SSLCertVerificationError('SECRET_EMAIL secret_lease PRIVATE KEY')
+        error.verify_code = verify_code
+        raise error
+    monkeypatch.setattr(worker.ssl, 'create_default_context', lambda: SimpleNamespace(wrap_socket=wrap))
+    with pytest.raises(worker.WorkerError) as raised:
+        worker.probe_tls('pizza.example.com', ['8.8.8.8'])
+    assert str(raised.value) == 'TLS_INVALID'
+    assert raised.value.diagnostic == diagnostic and raised.value.verify_code == verify_code
+    assert raised.value.destination == '8.8.8.8'
+    assert tls_readiness_clock.now == pytest.approx(45)
+
+
+def test_failure_logger_rejects_untrusted_diagnostic_fields_and_preserves_error_abi(capsys):
+    error = worker.WorkerError('secret-code', diagnostic='secret-lease ops@example.com', verify_code='secret-key')
+    assert error.code == 'WORKER_ERROR' and str(error) == 'WORKER_ERROR'
+    worker.log_job_failure('job-safe', 'probe_tls', error.code, 'restored', error)
+    event = json.loads(capsys.readouterr().err)
+    assert set(event) == {'event', 'job_id', 'stage', 'error_code', 'rollback_status'}
+
+
+def test_successful_job_emits_no_failure_diagnostics(sandbox, config, job, capsys):
+    _, queue = callbacks(job)
+    result = worker.process_job(config, job, q=queue, dns=lambda *args: {'8.8.8.8'},
+                                reload=lambda: None, probe=lambda *args: None, execute=lambda *args, **kwargs: None)
+    assert result == {'status': 'completed'}
+    assert capsys.readouterr().err == ''
+
+
+@pytest.mark.parametrize('destination', ['127.0.0.1', '10.0.0.1', '224.0.0.1', 'ops@example.com',
+                                       'secret-lease', '8.8.8.8\nPRIVATE KEY', None])
+def test_failure_destination_never_exposes_private_or_untrusted_values(capsys, destination):
+    error = worker.WorkerError('TLS_INVALID', destination=destination)
+    worker.log_job_failure('job-safe', 'probe_tls', error.code, 'restored', error)
+    assert 'destination_ip' not in json.loads(capsys.readouterr().err)
+
+
+def test_failure_destination_is_normalized_public_ip_only(capsys):
+    error = worker.WorkerError('TLS_INVALID', destination='2606:4700:4700:0000:0000:0000:0000:1111')
+    worker.log_job_failure('job-safe', 'probe_tls', error.code, 'restored', error)
+    assert json.loads(capsys.readouterr().err)['destination_ip'] == '2606:4700:4700::1111'
+
+
+@pytest.mark.parametrize('exception', [ValueError, RuntimeError])
+def test_failure_logging_broken_stream_never_masks_recovery(sandbox, config, job, monkeypatch, exception):
+    _, queue = callbacks(job)
+    def broken_write(*args):
+        raise exception('closed or broken diagnostic stream')
+    def failed_probe(*args):
+        raise worker.WorkerError('TLS_INVALID')
+    with monkeypatch.context() as isolated:
+        isolated.setattr(worker.sys, 'stderr', SimpleNamespace(write=broken_write, flush=lambda: None))
+        result = worker.process_job(config, job, q=queue, dns=lambda *args: {'8.8.8.8'},
+                                    reload=lambda: None, probe=failed_probe, execute=lambda *args, **kwargs: None)
+    assert result == {'status': 'failed', 'error_code': 'TLS_INVALID'}
+    assert not list(sandbox.iterdir())
+
+
+def test_failure_event_construction_error_is_also_nonfatal(monkeypatch):
+    def broken_event(*args):
+        raise RuntimeError('unexpected diagnostic serializer')
+    monkeypatch.setattr(worker, 'failure_event', broken_event)
+    worker.log_job_failure('job-safe', 'probe_tls', 'TLS_INVALID', 'restored', worker.WorkerError('TLS_INVALID'))

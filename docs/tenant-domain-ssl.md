@@ -187,3 +187,25 @@ Validacao operacional ainda exige emissao real, certificado correto servido e
 nao comprovam essas etapas. Falha de bootstrap mantem a aplicacao saudavel e
 mostra indisponibilidade; nao declara o emissor pronto. Restaurar vhost nao
 reverte a lineage Certbot: material criptografico segue o backup de certificados.
+
+
+## Diagnostico de falhas do executor
+
+Falhas por pedido geram uma linha JSON sanitizada no journal com evento
+`domain_ssl_failed`, `job_id`, `stage`, `error_code` e `rollback_status`.
+Falhas da probe TLS tambem podem incluir `tls_diagnostic`, `verify_code` e
+`destination_ip` publico normalizado. Nenhum email, lease, comando, mensagem bruta,
+chave ou conteudo de ambiente e registrado. A falha do logger nao altera a recuperacao.
+
+```bash
+sudo journalctl -u telz-domain-ssl.service --since '30 minutes ago' --no-pager -o cat | grep domain_ssl_failed | tail -n 1
+```
+
+`write_tls_vhost` localiza falha ao preparar certificado/configuracao;
+`probe_tls` e a verificacao do executor depois da recarga;
+`complete` e a confirmacao adicional do backend. Um resultado posterior ao rollback
+nao comprova qual dessas etapas falhou. Correlacione a linha com a tentativa nova.
+O codigo de verificacao segue os [valores oficiais do OpenSSL](https://raw.githubusercontent.com/openssl/openssl/openssl-3.0/include/openssl/x509_vfy.h.in).
+
+O diagnostico preserva deadline de 45 segundos, validacao de todos os IPs, cadeia,
+hostname, lease e DNS. Nao altera schema nem aprova HTTPS com verificacao falha.

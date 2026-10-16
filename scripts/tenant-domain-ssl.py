@@ -33,12 +33,56 @@ LOCK = Path('/run/lock/telz/maintenance.lock')
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/root', 'LANG': 'C.UTF-8'}
 ERRORS = {'DNS_INVALID', 'DOMAIN_INELIGIBLE', 'CERTBOT_FAILED', 'NGINX_FAILED',
           'TLS_INVALID', 'WORKER_ERROR', 'LEASE_EXPIRED'}
+TLS_DIAGNOSTICS = {'deadline', 'no_addresses', 'hostname_mismatch', 'expired', 'not_yet_valid',
+                   'untrusted_chain', 'certificate_invalid', 'network_timeout', 'network_error', 'tls_error'}
+JOB_STAGES = {'validate_initial', 'dns_initial', 'check_paths', 'write_http_vhost', 'reload_http',
+              'certbot', 'validate_after_issue', 'dns_after_issue', 'write_tls_vhost', 'reload_tls',
+              'probe_tls', 'validate_after_probe', 'dns_final', 'complete'}
+
+
+def public_destination(value):
+    if not isinstance(value, str) or len(value) > 45:
+        return None
+    try:
+        address = ipaddress.ip_address(value)
+        return str(address) if address.is_global and not address.is_multicast and not address.is_reserved else None
+    except ValueError:
+        return None
 
 
 class WorkerError(Exception):
-    def __init__(self, code='WORKER_ERROR'):
+    def __init__(self, code='WORKER_ERROR', *, diagnostic=None, verify_code=None, destination=None):
         self.code = code if code in ERRORS else 'WORKER_ERROR'
+        self.diagnostic = diagnostic if isinstance(diagnostic, str) and diagnostic in TLS_DIAGNOSTICS else None
+        self.verify_code = verify_code if type(verify_code) is int and 0 <= verify_code <= 65535 else None
+        self.destination = public_destination(destination)
         super().__init__(self.code)
+
+
+def failure_event(job_id, stage, code, rollback_status, error):
+    # Deliberately exclude exception messages, email, hostname, lease and argv.
+    event = {'event': 'domain_ssl_failed',
+             'job_id': job_id if isinstance(job_id, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,128}', job_id) else 'invalid',
+             'stage': stage if stage in JOB_STAGES else 'check_paths',
+             'error_code': code if code in ERRORS else 'WORKER_ERROR',
+             'rollback_status': rollback_status if rollback_status in {'not_needed', 'restored', 'failed'} else 'failed'}
+    if isinstance(error, WorkerError):
+        if isinstance(error.diagnostic, str) and error.diagnostic in TLS_DIAGNOSTICS:
+            event['tls_diagnostic'] = error.diagnostic
+        if type(error.verify_code) is int and 0 <= error.verify_code <= 65535:
+            event['verify_code'] = error.verify_code
+        destination = public_destination(error.destination)
+        if destination is not None:
+            event['destination_ip'] = destination
+    return event
+
+
+def log_job_failure(job_id, stage, code, rollback_status, error):
+    try:
+        event = failure_event(job_id, stage, code, rollback_status, error)
+        print(json.dumps(event, sort_keys=True), file=sys.stderr, flush=True)
+    except Exception:
+        pass  # A logging failure must never alter recovery or its API result.
 
 
 def trusted(path: Path, *, directory=False, private=False):
@@ -424,29 +468,44 @@ def probe_tls(host, addresses):
     # Every retry must approve all advertised destinations within one budget.
     addresses = tuple(addresses)
     if not addresses:
-        raise WorkerError('TLS_INVALID')
+        raise WorkerError('TLS_INVALID', diagnostic='no_addresses')
     context = ssl.create_default_context()
     deadline = time.monotonic() + 45
+    last_reason, last_code, last_destination = 'deadline', None, None
     while True:
         try:
             for address in addresses:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise WorkerError('TLS_INVALID')
+                    raise WorkerError('TLS_INVALID', diagnostic=last_reason, verify_code=last_code, destination=last_destination)
+                attempted_destination = str(address)
                 with socket.create_connection((str(address), 443), timeout=min(10, remaining)) as connection:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
-                        raise WorkerError('TLS_INVALID')
+                        raise WorkerError('TLS_INVALID', diagnostic=last_reason, verify_code=last_code, destination=last_destination)
                     connection.settimeout(min(10, remaining))
                     with context.wrap_socket(connection, server_hostname=host):
                         pass
                 if time.monotonic() >= deadline:
-                    raise WorkerError('TLS_INVALID')
+                    raise WorkerError('TLS_INVALID', diagnostic=last_reason, verify_code=last_code, destination=last_destination)
             return
-        except (OSError, ssl.SSLError):
+        except (OSError, ssl.SSLError) as exc:
+            last_destination = attempted_destination
+            last_code = None
+            if isinstance(exc, ssl.SSLCertVerificationError):
+                value = getattr(exc, 'verify_code', None)
+                last_code = value if type(value) is int and 0 <= value <= 65535 else None
+                last_reason = {9: 'not_yet_valid', 10: 'expired', 18: 'untrusted_chain', 19: 'untrusted_chain',
+                               20: 'untrusted_chain', 21: 'untrusted_chain', 62: 'hostname_mismatch'}.get(last_code, 'certificate_invalid')
+            elif isinstance(exc, TimeoutError):
+                last_reason = 'network_timeout'
+            elif isinstance(exc, ssl.SSLError):
+                last_reason = 'tls_error'
+            else:
+                last_reason = 'network_error'
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise WorkerError('TLS_INVALID') from None
+                raise WorkerError('TLS_INVALID', diagnostic=last_reason, verify_code=last_code, destination=last_destination) from None
             time.sleep(min(1, remaining))
 
 
@@ -459,12 +518,15 @@ def process_job(config, job, *, q=queue, dns=validate_dns, reload=nginx_reload,
     previous = None
     mode = 0o644
     mutated = False
+    stage = 'validate_initial'
     try:
         if job['hostname'] in config.get('platform_hostnames', []):
             raise WorkerError('DOMAIN_INELIGIBLE')
         if payload(q(config, 'validate', identity)) != job:
             raise WorkerError('DOMAIN_INELIGIBLE')
+        stage = 'dns_initial'
         dns(job['hostname'], config['public_ips'])
+        stage = 'check_paths'
         trusted(VHOSTS, directory=True)
         trusted(ACME, directory=True)
         if path.exists() or path.is_symlink():
@@ -472,29 +534,41 @@ def process_job(config, job, *, q=queue, dns=validate_dns, reload=nginx_reload,
             previous, mode = path.read_bytes(), stat.S_IMODE(info.st_mode)
         # Keep an existing dedicated TLS block serving during issuance.
         if previous is None:
+            stage = 'write_http_vhost'
             atomic_write(path, vhost(config, job['hostname'], name))
             mutated = True
+            stage = 'reload_http'
             reload()
+        stage = 'certbot'
         execute(['/usr/bin/certbot', 'certonly', '--webroot', '-w', str(ACME),
                  '--cert-name', name, '--non-interactive', '--agree-tos',
                  '--no-directory-hooks', '--email', job['email'], '-d', job['hostname']],
                 timeout=240, code='CERTBOT_FAILED')
+        stage = 'validate_after_issue'
         if payload(q(config, 'validate', identity)) != job:
             raise WorkerError('DOMAIN_INELIGIBLE')
+        stage = 'dns_after_issue'
         addresses = dns(job['hostname'], config['public_ips'])
+        stage = 'write_tls_vhost'
         atomic_write(path, vhost(config, job['hostname'], name, tls=True))
         mutated = True
+        stage = 'reload_tls'
         reload()
+        stage = 'probe_tls'
         probe(job['hostname'], addresses)
+        stage = 'validate_after_probe'
         if payload(q(config, 'validate', identity)) != job:
             raise WorkerError('DOMAIN_INELIGIBLE')
+        stage = 'dns_final'
         dns(job['hostname'], config['public_ips'])
+        stage = 'complete'
         result = q(config, 'complete', identity)
         if not isinstance(result, dict) or result.get('domain_id') != job['domain_id'] or result.get('hostname') != job['hostname'] or result.get('ssl_status') != 'active':
             raise WorkerError()
         return {'status': 'completed'}
     except Exception as exc:
         code = exc.code if isinstance(exc, WorkerError) else 'WORKER_ERROR'
+        rollback_status = 'not_needed'
         if mutated:
             try:
                 if previous is None:
@@ -503,12 +577,15 @@ def process_job(config, job, *, q=queue, dns=validate_dns, reload=nginx_reload,
                 else:
                     atomic_write(path, previous, mode)
                 reload()
+                rollback_status = 'restored'
             except Exception:
                 code = 'NGINX_FAILED'
+                rollback_status = 'failed'
         try:
             q(config, 'fail', {**identity, 'error_code': code})
         except Exception:
             pass
+        log_job_failure(job['job_id'], stage, code, rollback_status, exc)
         return {'status': 'failed', 'error_code': code}
 
 
