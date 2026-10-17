@@ -11,8 +11,9 @@ def test_exit_popup_is_tenant_scoped_and_not_wave6_guarded():
     assert "public_wave6_context" in source
     assert "panel_wave6_context" in source
     assert "wave6_tenant_id(context)" in source
-    assert "ExitPopupConfig.tenant_id == tenant_id" in source
-    assert "cfg = ExitPopupConfig(id=config_id, tenant_id=tenant_id)" in source
+    service = (ROOT / "backend/services/exit_popup_service.py").read_text(encoding="utf-8")
+    assert "ExitPopupConfig.tenant_id == tenant_id" in service
+    assert "cfg = ExitPopupConfig(id=config_id, tenant_id=tenant_id)" in service
 
 
 def test_wave6_context_helper_fails_closed_when_enabled():

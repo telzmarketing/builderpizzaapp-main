@@ -51,9 +51,9 @@ def test_downgrade_refuses_to_destroy_settings():
     assert output.getvalue() == ""
 
 
-def test_revision_is_the_single_head_after_domain_ssl():
+def test_revision_follows_domain_ssl_in_canonical_history():
     scripts = ScriptDirectory(str(ROOT / "backend/migrations"))
-    assert scripts.get_heads() == [REVISION]
+    assert REVISION in {revision.revision for revision in scripts.walk_revisions()}
     assert scripts.get_revision(REVISION).down_revision == "20261014_tenant_domain_ssl"
 
 

@@ -244,7 +244,8 @@ schema_pair_is_compatible() {
     "20261004_wave7_management_geocode_contract:20261004_wave7_logistics_identity_contract"|\
     "20261004_wave7_logistics_identity_contract:20261004_tenant_upload_ownership_contract"|\
     "20261004_tenant_upload_ownership_contract:20261014_order_cancellation_tracking"|\
-    "20261014_tenant_domain_ssl:20261017_site_config")
+    "20261014_tenant_domain_ssl:20261017_site_config"|\
+    "20261017_site_config:20261017_delivery_schema")
       return 0
       ;;
     *)

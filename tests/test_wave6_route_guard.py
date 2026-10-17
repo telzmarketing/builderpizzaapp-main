@@ -67,6 +67,9 @@ def test_migrated_wave6_surfaces_use_trusted_tenant_context():
             "public_wave6_context",
             "panel_wave6_context",
             "wave6_tenant_id(context)",
+            "ExitPopupService(db)",
+        ),
+        "backend/services/exit_popup_service.py": (
             "ExitPopupConfig.tenant_id == tenant_id",
         ),
         "backend/routes/crm.py": (

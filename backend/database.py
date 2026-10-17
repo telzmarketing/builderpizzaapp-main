@@ -65,7 +65,7 @@ def create_all_tables():
         promotion_landing_page, salao, salao_page, whatsapp_gateway, marketing_intelligence, gestao, inventory, cmv, finance,
         tenant, tenant_domain, membership, platform_rbac, platform_audit, order_board,
         platform_saas, platform_operations, idempotency, label, upload_asset,
-        tenant_domain_ssl,
+        tenant_domain_ssl, exit_popup,
     )
     from backend.routes import whatsapp_marketing as whatsapp_marketing_routes  # noqa: F401
     from backend.routes import automations as automations_routes  # noqa: F401

@@ -23,6 +23,7 @@ from backend.models import (  # noqa: F401
     customer_event,
     customer_identity,
     delivery,
+    exit_popup,
     finance,
     fiscal,
     gestao,
