@@ -1,10 +1,25 @@
 # Atualizacao Telz na VPS
 
-Atualizado em: 2026-10-14
+Atualizado em: 2026-10-17
 
 Este procedimento cobre atualizacao incremental de uma instalacao existente em
 `/opt/telz`. `installer/install.sh` e exclusivo da primeira instalacao ou de
 uma reconstrucao planejada; ele nao deve ser reutilizado como updater.
+
+## Incidente: tabela de configuracao ausente
+
+O erro `UndefinedTable: relation "site_config" does not exist` pode ocorrer mesmo
+com banco e codigo em `20261014_tenant_domain_ssl`: a tabela esperada pela API
+nao fazia parte das migrations. A revision `20261017_site_config` restaura esse
+contrato de forma aditiva e preserva configuracoes ja existentes. Nao crie a
+tabela manualmente nem habilite bootstrap como alternativa a migration.
+
+O par exato `20261014_tenant_domain_ssl:20261017_site_config` permite rollback
+de codigo: a release anterior ja esperava a tabela, que permanece no schema.
+Isso nao autoriza downgrade do banco nem libera outros predecessores. Valide
+em PostgreSQL descartavel e publique pelo fluxo imutavel com backup; depois
+confirme a revision, o registro inicial e `/api/site-config` e o favicon pelo
+hostname da loja. O erro do BI requer evidencia propria nos logs.
 
 ## Incidente: coluna de cancelamento ausente
 
@@ -218,7 +233,7 @@ imutavel e executa health checks.
 O target canonico desta entrega e:
 
 ```text
-20261014_tenant_domain_ssl
+20261017_site_config
 ```
 
 O deploy fica bloqueado se o commit publicado nao possuir exatamente esse unico
@@ -243,6 +258,7 @@ A cadeia operacional que deve existir no commit publicado e linear:
   -> 20261004_tenant_upload_ownership_contract
   -> 20261014_order_cancellation_tracking
   -> 20261014_tenant_domain_ssl
+  -> 20261017_site_config
 ```
 
 ## 2. Preflight
@@ -264,7 +280,7 @@ movimentacao manual para contornar o gate.
 
 Confirme no commit alvo:
 
-- unico head Alembic `20261014_tenant_domain_ssl`;
+- unico head Alembic `20261017_site_config`;
 - workflow e updater usando o mesmo target;
 - CI verde para o mesmo SHA, incluindo o upgrade Alembic em PostgreSQL
   descartavel; CI verde nao substitui o backup nem a migration na VPS;
@@ -300,7 +316,7 @@ deploy, todos estes inputs promovidos e root-owned:
 - archive de fonte alvo e seu `TELZ_SOURCE_ARCHIVE_SHA256`;
 - archive de fonte anterior e seu `TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256`;
 - archive offline de dependencias e seu `TELZ_DEPENDENCY_ARCHIVE_SHA256`;
-- `TELZ_ALEMBIC_TARGET=20261014_tenant_domain_ssl`;
+- `TELZ_ALEMBIC_TARGET=20261017_site_config`;
 - `TELZ_PUBLIC_HEALTH_URL` quando HTTPS publico e obrigatorio.
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
@@ -341,7 +357,7 @@ sudo /usr/local/sbin/telz-health-check /opt/telz
 ```
 
 Confirme que o link `current` termina em `/releases/<SHA-ALVO>/app`, o manifest
-registra o mesmo commit e `20261014_tenant_domain_ssl`, e o banco possui uma unica
+registra o mesmo commit e `20261017_site_config`, e o banco possui uma unica
 revision igual ao target.
 
 Tambem valide HTTPS publico, login, loja, pedido, pagamentos, cozinha,

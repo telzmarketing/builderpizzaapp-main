@@ -4,7 +4,7 @@ import { Menu, Search, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, T
 
 import { useApp } from "@/context/AppContext";
 import { categoriesApi, homeCatalogApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl, type ApiProductCategory } from "@/lib/api";
-import { sortCategoryNamesByCatalogOrder } from "@/lib/catalogOrdering";
+import { ALL_PRODUCTS_CATEGORY, PROMO_LABEL, getHomeCatalogCategories, normalizeHomeCategory, productMatchesHomeCategory, type HomeCatalogCategory } from "@/lib/homeCatalog";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import StoreStatusBanner from "@/components/StoreStatusBanner";
@@ -12,35 +12,6 @@ import CategorySeal from "@/components/CategorySeal";
 import BestSellerSeal from "@/components/BestSellerSeal";
 
 const PIZZA_FALLBACKS = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🍖", "🍄", "🫒", "🔥", "🥩", "🌿", "🫑"];
-
-const PROMO_LABEL = "Promoções";
-
-type HomeCatalogCategory = string;
-type HomeCatalogProduct = {
-  category?: string | null;
-  subcategory?: string | null;
-  promotion_applied?: boolean;
-};
-
-function normalizeHomeCategory(value?: string | null) {
-  return (value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
-}
-
-function productMatchesHomeCategory(product: HomeCatalogProduct, category: HomeCatalogCategory) {
-  const normalizedCategory = normalizeHomeCategory(category);
-  const productCategories = [
-    normalizeHomeCategory(product.subcategory),
-    normalizeHomeCategory(product.category),
-  ].filter(Boolean);
-
-  if (category === PROMO_LABEL) return !!product.promotion_applied;
-
-  return productCategories.includes(normalizedCategory);
-}
 
 export default function Home() {
   const navigate = useNavigate();
@@ -130,23 +101,9 @@ export default function Home() {
     return products;
   }, [products, homeConfig]);
 
-  const productCats = useMemo(() => {
-    const categoryNames = [...new Set(
-      catalogProducts
-        .filter((p) => p.active && (p.subcategory || p.category))
-        .map((p) => (p.subcategory || p.category) as string)
-    )];
-    return sortCategoryNamesByCatalogOrder(categoryNames, catalogCategories);
-  }, [catalogProducts, catalogCategories]);
-
-  const hasPromos = useMemo(
-    () => catalogProducts.some((p) => p.active && p.promotion_applied),
-    [catalogProducts]
-  );
-
   const effectiveCategories = useMemo(
-    () => [...(hasPromos ? [PROMO_LABEL] : []), ...productCats],
-    [hasPromos, productCats]
+    () => getHomeCatalogCategories(catalogProducts, catalogCategories),
+    [catalogProducts, catalogCategories]
   );
 
   useEffect(() => {
@@ -168,7 +125,7 @@ export default function Home() {
       : [];
 
   const categoryCounts = useMemo(() => (
-    effectiveCategories.map((category) => ({
+    effectiveCategories.map<{ category: HomeCatalogCategory; count: number }>((category) => ({
       category,
       count: catalogProducts.filter((p) => p.active && productMatchesHomeCategory(p, category)).length,
     }))
@@ -467,7 +424,7 @@ export default function Home() {
         <div className="flex gap-2 mb-5 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4 lg:mx-0 lg:px-0 lg:flex-wrap">
           {effectiveCategories.map((category) => (
             <button
-              key={category}
+              key={category === ALL_PRODUCTS_CATEGORY ? "home-all-products" : `category-${category}`}
               onClick={() => setActiveCategory(category)}
               className={`px-3.5 py-1.5 lg:px-5 lg:py-2 rounded-full text-sm lg:text-base font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                 activeCategory === category
@@ -475,7 +432,7 @@ export default function Home() {
                   : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
               }`}
             >
-              {category}
+              {category === ALL_PRODUCTS_CATEGORY ? "Todos" : category}
             </button>
           ))}
         </div>
