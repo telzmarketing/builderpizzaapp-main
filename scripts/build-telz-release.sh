@@ -34,9 +34,74 @@ DEPENDENCIES_DIR="${5:?diretorio de dependencias obrigatorio}"
 }
 
 cd "$CODE_DIR"
+# Each commit uses its own promoted pins, even when the shared wheelhouse
+# contains different versions needed by the previous release.
+PYTHON_FREEZE_FILE="$("$PYTHON_BOOTSTRAP" -I - "$CODE_DIR" "$DEPENDENCIES_DIR" <<'PY'
+import hashlib, json, re, stat, sys
+from pathlib import Path
+
+code, dependencies = map(Path, sys.argv[1:])
+if dependencies.resolve(strict=True) != dependencies or any(char in str(dependencies) for char in '\r\n'):
+    raise SystemExit('diretorio de dependencias nao e canonico')
+
+def read_regular(path, limit):
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > limit:
+        raise SystemExit('arquivo de dependencias invalido')
+    value = path.read_bytes()
+    if len(value) > limit:
+        raise SystemExit('arquivo de dependencias excedeu o limite')
+    return value
+
+def pairs(items):
+    result = {}
+    for key, value in items:
+        if key in result:
+            raise ValueError('chave de dependencias duplicada')
+        result[key] = value
+    return result
+
+commit = read_regular(code / '.telz-source-commit', 128).decode('ascii').strip()
+if not re.fullmatch(r'[0-9a-f]{40}', commit):
+    raise SystemExit('marcador do commit invalido')
+metadata = json.loads(read_regular(dependencies / '.telz-dependencies.json', 1048576), object_pairs_hook=pairs,
+    parse_constant=lambda value: (_ for _ in ()).throw(ValueError('constante invalida')))
+if not isinstance(metadata, dict) or type(metadata.get('schema_version')) is not int or metadata['schema_version'] != 1:
+    raise SystemExit('metadata de dependencias invalida')
+expected = (metadata.get('commits') or {}).get(commit)
+keys = {'python_freeze_sha256', 'requirements_sha256', 'pnpm_lock_sha256'}
+if not isinstance(expected, dict) or set(expected) != keys or any(not re.fullmatch(r'[0-9a-f]{64}', str(value)) for value in expected.values()):
+    raise SystemExit('dependencias nao contemplam o commit')
+directory = dependencies / 'python-freezes'
+if not stat.S_ISDIR(directory.lstat().st_mode) or directory.resolve(strict=True) != directory:
+    raise SystemExit('diretorio de freezes invalido')
+freeze = directory / (commit + '.txt')
+raw = read_regular(freeze, 262144)
+rows = raw.decode('ascii').splitlines()
+if not rows or len(rows) > 4096 or raw != ('\n'.join(rows) + '\n').encode('ascii') or rows != sorted(rows, key=str.casefold):
+    raise SystemExit('freeze Python ausente ou excedeu o limite')
+names = set()
+for row in rows:
+    match = re.fullmatch(r'([A-Za-z0-9][A-Za-z0-9._-]*)==([A-Za-z0-9][A-Za-z0-9.!+_-]{0,127})', row)
+    if not match:
+        raise SystemExit('freeze Python deve conter apenas pacotes com versao exata')
+    name = re.sub(r'[-_.]+', '-', match[1]).lower()
+    if name in names:
+        raise SystemExit('freeze Python possui pacote duplicado')
+    names.add(name)
+actual = {
+    'python_freeze_sha256': hashlib.sha256(raw).hexdigest(),
+    'requirements_sha256': hashlib.sha256(read_regular(code / 'backend/requirements.txt', 1048576)).hexdigest(),
+    'pnpm_lock_sha256': hashlib.sha256(read_regular(code / 'pnpm-lock.yaml', 16777216)).hexdigest(),
+}
+if actual != expected:
+    raise SystemExit('pins Python ou fonte divergem das dependencias promovidas')
+print(freeze)
+PY
+)"
 "$PYTHON_BOOTSTRAP" -m venv --copies .venv
 .venv/bin/python -m pip install --no-index --find-links "$DEPENDENCIES_DIR/wheelhouse" pip==25.1.1 --quiet
-.venv/bin/python -m pip install --no-index --find-links "$DEPENDENCIES_DIR/wheelhouse" -r backend/requirements.txt --quiet
+.venv/bin/python -m pip install --no-index --find-links "$DEPENDENCIES_DIR/wheelhouse" -r backend/requirements.txt -c "$PYTHON_FREEZE_FILE" --quiet
 .venv/bin/python -m pip check
 .venv/bin/python - .telz-python-freeze.txt <<'PY'
 import importlib.metadata

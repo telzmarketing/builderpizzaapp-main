@@ -72,6 +72,23 @@ promocao; nao use `git pull`, `reset`, `checkout` ou `clean` como atalho.
 
 #### Repeticao de deploy e cache
 
+O helper reutiliza o freeze Python de cada release em cache somente depois de
+validar os manifests, a fonte Git e a integridade do conteudo selado. Cache
+invalido interrompe a operacao; ele nao e substituido por uma nova resolucao.
+Releases novas resolvem suas dependencias normalmente. O pacote offline inclui
+`python-freezes/<SHA>.txt` para cada commit, e o build usa essas versoes como
+constraints. Os downloads de ferramentas, runtime alvo e runtime anterior sao
+separados, permitindo versoes diferentes no mesmo wheelhouse.
+
+Ao adotar este formato, atualize primeiro o helper instalado com a copia do
+commit alvo, conforme o procedimento abaixo. Nao apague releases nem altere
+manifests para contornar divergencias de `python_freeze_sha256`.
+
+Os workflows GitHub selam os pins de cada pacote produzido, mas ainda resolvem
+requirements novamente em outra execucao. Ao reutilizar uma release ja presente
+na VPS, prefira o helper de origem atualizado: ele consulta o freeze selado local.
+Um pacote CI divergente continua sendo rejeitado pelo updater.
+
 Uma release ja selada conserva o digest do artefato usado em seu build original.
 Ao reutiliza-la, o updater valida toda a arvore e o cutover, compara por commit os
 hashes de requirements, lock e freeze, a configuracao publica e a toolchain. Um

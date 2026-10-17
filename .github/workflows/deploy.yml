@@ -295,8 +295,9 @@ jobs:
                   raise SystemExit("resolver Python nao produziu dependencias")
               Path(output_name).write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
-          python -m pip download --only-binary=:all: --dest "$dependencies/wheelhouse" \
-            pip==25.1.1 pytest==8.3.5 httpx==0.28.1 -r "$work/target-freeze.txt" -r "$work/previous-freeze.txt"
+          python -m pip download --only-binary=:all: --dest "$dependencies/wheelhouse" pip==25.1.1 pytest==8.3.5 httpx==0.28.1
+          python -m pip download --only-binary=:all: --dest "$dependencies/wheelhouse" -r "$work/target-freeze.txt"
+          python -m pip download --only-binary=:all: --dest "$dependencies/wheelhouse" -r "$work/previous-freeze.txt"
 
           test "$(pnpm --version)" = "10.14.0"
           [[ "$(node --version)" == v22.* ]]
@@ -307,6 +308,7 @@ jobs:
             "$target_source" "$previous_source" "$work/target-freeze.txt" "$work/previous-freeze.txt" <<'PY'
           import hashlib
           import json
+          import re
           import sys
           from pathlib import Path
 
@@ -322,13 +324,38 @@ jobs:
           def digest(path):
               return hashlib.sha256(Path(path).read_bytes()).hexdigest()
           commits = {}
+          freeze_directory = root / "python-freezes"
+          freeze_directory.mkdir()
           for commit, source, freeze in ((sys.argv[2], sys.argv[4], sys.argv[6]), (sys.argv[3], sys.argv[5], sys.argv[7])):
+              if not re.fullmatch(r"[0-9a-f]{40}", commit):
+                  raise SystemExit("commit de dependencias invalido")
+              raw = Path(freeze).read_bytes()
+              rows = raw.decode("ascii").splitlines()
+              if (not rows or len(raw) > 262144 or raw != ("\n".join(rows) + "\n").encode("ascii")
+                      or rows != sorted(rows, key=str.casefold)):
+                  raise SystemExit("freeze Python nao e canonico")
+              names = set()
+              for row in rows:
+                  match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]*)==([A-Za-z0-9][A-Za-z0-9.!+_-]*)", row)
+                  if not match:
+                      raise SystemExit("freeze Python deve conter apenas pins exatos")
+                  name = re.sub(r"[-_.]+", "-", match[1]).lower()
+                  if name in names:
+                      raise SystemExit("freeze Python possui pacote duplicado")
+                  names.add(name)
+              frozen = freeze_directory / (commit + ".txt")
+              if frozen.exists() and frozen.read_bytes() != raw:
+                  raise SystemExit("mesmo commit resolveu freezes diferentes")
+              frozen.write_bytes(raw)
               source_path = Path(source)
-              commits[commit] = {
+              contract = {
                   "python_freeze_sha256": digest(freeze),
                   "requirements_sha256": digest(source_path / "backend" / "requirements.txt"),
                   "pnpm_lock_sha256": digest(source_path / "pnpm-lock.yaml"),
               }
+              if commit in commits and commits[commit] != contract:
+                  raise SystemExit("mesmo commit resolveu dependencias diferentes")
+              commits[commit] = contract
           metadata = {
               "schema_version": 1,
               "target_commit": sys.argv[2],
@@ -347,7 +374,7 @@ jobs:
 
           dependency_archive="$RUNNER_TEMP/dependency-bundle.tar.gz"
           tar --dereference --hard-dereference --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
-            -C "$dependencies" -czf "$dependency_archive" -- wheelhouse pnpm-store .telz-dependencies.json .telz-public-build.json
+            -C "$dependencies" -czf "$dependency_archive" -- wheelhouse pnpm-store python-freezes .telz-dependencies.json .telz-public-build.json
           echo "dependencies_path=$dependency_archive" >> "$GITHUB_OUTPUT"
           echo "dependencies_sha256=$(sha256sum "$dependency_archive" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
@@ -455,7 +482,7 @@ jobs:
           work="$RUNNER_TEMP/verified-release"
           mkdir -p "$work/target" "$work/previous" "$work/dependencies"
           /usr/bin/python3 - "$target_archive" "$GITHUB_SHA" "$previous_archive" "$PREVIOUS_COMMIT" "$dependency_archive" <<'PY'
-          import json, sys, tarfile
+          import hashlib, json, re, sys, tarfile
           from pathlib import PurePosixPath
           def validate_source(path, commit):
               marker = None
@@ -472,17 +499,58 @@ jobs:
           validate_source(sys.argv[3], sys.argv[4])
           with tarfile.open(sys.argv[5], "r:gz") as archive:
               names = set()
+              freezes = {}
+              dependency_metadata = None
+              expected_freezes = {f"python-freezes/{commit}.txt" for commit in {sys.argv[2], sys.argv[4]}}
               for member in archive.getmembers():
                   path = PurePosixPath(member.name)
-                  if path.is_absolute() or ".." in path.parts or not (member.isdir() or member.isreg()):
+                  if not member.name or path.is_absolute() or ".." in path.parts or not (member.isdir() or member.isreg()):
                       raise SystemExit("archive de dependencias inseguro")
                   if member.name in names:
                       raise SystemExit("archive de dependencias duplicado")
                   names.add(member.name)
-                  if member.name not in {".telz-dependencies.json", ".telz-public-build.json"} and path.parts[0] not in {"wheelhouse", "pnpm-store"}:
+                  if member.name not in {".telz-dependencies.json", ".telz-public-build.json"} and path.parts[0] not in {"wheelhouse", "pnpm-store", "python-freezes"}:
                       raise SystemExit("caminho de dependencia inesperado")
+                  if path.parts[0] == "python-freezes":
+                      if member.name == "python-freezes" and member.isdir():
+                          continue
+                      if member.name not in expected_freezes or not member.isreg() or member.size > 262144:
+                          raise SystemExit("freeze Python inesperado")
+                      raw = archive.extractfile(member).read(262145)
+                      rows = raw.decode("ascii").splitlines()
+                      if not rows or raw != ("\n".join(rows) + "\n").encode("ascii") or rows != sorted(rows, key=str.casefold):
+                          raise SystemExit("freeze Python nao e canonico")
+                      packages = set()
+                      for row in rows:
+                          match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]*)==([A-Za-z0-9][A-Za-z0-9.!+_-]*)", row)
+                          if not match:
+                              raise SystemExit("freeze Python deve conter pins exatos")
+                          package = re.sub(r"[-_.]+", "-", match[1]).lower()
+                          if package in packages:
+                              raise SystemExit("freeze Python possui pacote duplicado")
+                          packages.add(package)
+                      freezes[member.name] = raw
+                  elif member.name == ".telz-dependencies.json":
+                      if not member.isreg() or member.size > 1048576:
+                          raise SystemExit("metadata de dependencias invalida")
+                      dependency_metadata = json.load(archive.extractfile(member))
               if not {".telz-dependencies.json", ".telz-public-build.json"}.issubset(names):
                   raise SystemExit("archive de dependencias incompleto")
+              if (set(freezes) != expected_freezes or not isinstance(dependency_metadata, dict)
+                      or type(dependency_metadata.get("schema_version")) is not int or dependency_metadata.get("schema_version") != 1):
+                  raise SystemExit("archive de dependencias nao possui freezes por commit")
+              if dependency_metadata.get("target_commit") != sys.argv[2] or dependency_metadata.get("previous_commit") != sys.argv[4]:
+                  raise SystemExit("metadata de dependencias aponta para outros commits")
+              contracts = dependency_metadata.get("commits")
+              if not isinstance(contracts, dict) or set(contracts) != {sys.argv[2], sys.argv[4]}:
+                  raise SystemExit("contratos de dependencias incompletos")
+              for commit, contract in contracts.items():
+                  if not isinstance(contract, dict) or set(contract) != {"python_freeze_sha256", "requirements_sha256", "pnpm_lock_sha256"}:
+                      raise SystemExit("contrato de dependencias invalido")
+                  if any(not re.fullmatch(r"[0-9a-f]{64}", str(value)) for value in contract.values()):
+                      raise SystemExit("digest de dependencias invalido")
+                  if hashlib.sha256(freezes[f"python-freezes/{commit}.txt"]).hexdigest() != contract["python_freeze_sha256"]:
+                      raise SystemExit("digest do freeze Python divergiu")
           PY
           tar -xzf "$target_archive" -C "$work/target"
           tar -xzf "$previous_archive" -C "$work/previous"
@@ -491,9 +559,20 @@ jobs:
 
           verify_python() {
             local source_dir="$1" venv_dir="$2" commit="$3" freeze_file="$4"
+            local constraints="$work/dependencies/python-freezes/$commit.txt"
+            /usr/bin/python3 - "$metadata" "$commit" "$constraints" "$source_dir" <<'PY'
+          import hashlib, json, sys
+          from pathlib import Path
+          data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["commits"][sys.argv[2]]
+          digest = lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest()
+          actual = {"python_freeze_sha256": digest(sys.argv[3]),
+                    "requirements_sha256": digest(Path(sys.argv[4]) / "backend/requirements.txt"),
+                    "pnpm_lock_sha256": digest(Path(sys.argv[4]) / "pnpm-lock.yaml")}
+          if actual != data: raise SystemExit("freeze promovido nao corresponde a fonte do commit")
+          PY
             python -m venv "$venv_dir"
             "$venv_dir/bin/python" -m pip install --no-index --find-links "$work/dependencies/wheelhouse" pip==25.1.1
-            "$venv_dir/bin/python" -m pip install --no-index --find-links "$work/dependencies/wheelhouse" -r "$source_dir/backend/requirements.txt"
+            "$venv_dir/bin/python" -m pip install --no-index --find-links "$work/dependencies/wheelhouse" -r "$source_dir/backend/requirements.txt" -c "$constraints"
             "$venv_dir/bin/python" -m pip check
             "$venv_dir/bin/python" - "$freeze_file" <<'PY'
           import importlib.metadata, sys
@@ -520,7 +599,7 @@ jobs:
           }
           verify_python "$work/target" "$work/target-venv" "$GITHUB_SHA" "$work/target-freeze.txt"
           verify_python "$work/previous" "$work/previous-venv" "$PREVIOUS_COMMIT" "$work/previous-freeze.txt"
-          "$work/target-venv/bin/python" -m pip install --no-index --find-links "$work/dependencies/wheelhouse" pytest==8.3.5 httpx==0.28.1
+          "$work/target-venv/bin/python" -m pip install --no-index --find-links "$work/dependencies/wheelhouse" -c "$work/dependencies/python-freezes/$GITHUB_SHA.txt" pytest==8.3.5 httpx==0.28.1
           (
             cd "$work/target"
             DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci JWT_SECRET_KEY=ci-only-not-for-production \

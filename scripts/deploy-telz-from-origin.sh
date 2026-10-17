@@ -233,19 +233,119 @@ run_as_builder_in() {
     NPM_CONFIG_USERCONFIG=/dev/null NPM_CONFIG_GLOBALCONFIG=/dev/null \
     /usr/bin/bash -c 'cd -- "$1"; shift; exec "$@"' bash "$working_dir" "$@"
 }
-run_as_builder python3.12 -m pip install --dry-run --ignore-installed --only-binary=:all: --report "$DEPENDENCIES/target-report.json" -r "$STAGE_DIR/target-source/backend/requirements.txt"
-run_as_builder python3.12 -m pip install --dry-run --ignore-installed --only-binary=:all: --report "$DEPENDENCIES/previous-report.json" -r "$STAGE_DIR/previous-source/backend/requirements.txt"
-/usr/bin/python3 - "$DEPENDENCIES/target-report.json" "$STAGE_DIR/target-freeze.txt" "$DEPENDENCIES/previous-report.json" "$STAGE_DIR/previous-freeze.txt" <<'PY'
+prepare_cached_freeze() {
+  /usr/bin/python3 -I - "$1" "$2" "$3" <<'PY'
+import hashlib, json, os, re, stat, sys
+from pathlib import Path
+
+commit, source, output = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
+if not re.fullmatch(r'[0-9a-f]{40}', commit):
+    raise SystemExit('commit do freeze invalido')
+release = Path('/var/lib/telz/releases') / commit
+root = release / 'app'
+if not release.exists() and not release.is_symlink():
+    raise SystemExit(0)  # A genuinely new release resolves from requirements.
+def trusted(path, directory=False):
+    for candidate in [*reversed(path.parents), path]:
+        info = candidate.lstat()
+        if stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise SystemExit('cache do freeze possui caminho inseguro')
+        if candidate != path and not stat.S_ISDIR(info.st_mode):
+            raise SystemExit('parent do freeze invalido')
+    info = path.lstat()
+    if not (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)):
+        raise SystemExit('tipo do cache de freeze invalido')
+trusted(root, True)
+if (release / '.building').exists() or (release / '.building').is_symlink():
+    raise SystemExit('cache de freeze ainda esta em build')
+for name in ('.telz-release.json', '.telz-build-metadata.json', '.telz-python-freeze.txt', 'backend/requirements.txt', 'pnpm-lock.yaml'):
+    trusted(root / name)
+manifest = json.loads((root / '.telz-release.json').read_text())
+build = json.loads((root / '.telz-build-metadata.json').read_text())
+if (manifest.get('schema_version') != 2 or manifest.get('status') != 'validated'
+        or manifest.get('git_commit') != commit or build.get('schema_version') != 1 or build.get('commit') != commit
+        or not re.fullmatch(r'[0-9a-f]{64}', str(manifest.get('dependency_artifact_sha256') or ''))):
+    raise SystemExit('manifest do freeze invalido')
+digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+for key, relative in (('python_freeze_sha256', '.telz-python-freeze.txt'), ('requirements_sha256', 'backend/requirements.txt'), ('pnpm_lock_sha256', 'pnpm-lock.yaml')):
+    actual = digest(root / relative)
+    if manifest.get(key) != actual or build.get(key) != actual:
+        raise SystemExit('digest do freeze cache divergiu')
+    if key != 'python_freeze_sha256' and digest(source / relative) != actual:
+        raise SystemExit('freeze cache nao corresponde a fonte Git aprovada')
+tree = hashlib.sha256()
+for candidate in sorted(root.rglob('*'), key=lambda item: item.relative_to(root).as_posix()):
+    relative = candidate.relative_to(root).as_posix()
+    info = candidate.lstat()
+    if info.st_uid != 0 or (not stat.S_ISLNK(info.st_mode) and info.st_mode & 0o022):
+        raise SystemExit('conteudo do cache freeze mutavel')
+    if relative == '.telz-release.json':
+        continue
+    if stat.S_ISDIR(info.st_mode):
+        kind, data = 'd', b''
+    elif stat.S_ISREG(info.st_mode):
+        kind, data = 'f', candidate.read_bytes()
+    elif stat.S_ISLNK(info.st_mode):
+        resolved = candidate.resolve(strict=True)
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            if not (commit == '2f1006860b648cf7a4734222da69879256c174e7' and relative == 'backend/.env'
+                    and manifest.get('legacy_compat') == {'backend/.env': '/opt/telz/backend/.env'}
+                    and os.readlink(candidate) == '/opt/telz/backend/.env'):
+                raise SystemExit('link escapa do cache freeze')
+        kind, data = 'l', os.readlink(candidate).encode()
+    else:
+        raise SystemExit('cache freeze contem tipo especial')
+    tree.update(f'{kind}\0{relative}\0{stat.S_IMODE(info.st_mode):04o}\0'.encode())
+    tree.update(hashlib.sha256(data).digest())
+if tree.hexdigest() != manifest.get('content_sha256'):
+    raise SystemExit('conteudo do cache freeze divergiu')
+freeze = (root / '.telz-python-freeze.txt').read_bytes()
+lines = freeze.decode('utf-8').splitlines()
+if not lines or len(freeze) > 262144 or any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*==[A-Za-z0-9][A-Za-z0-9.!+_-]*', line) for line in lines):
+    raise SystemExit('freeze cache nao contem somente pins de pacote')
+names = [re.sub(r'[-_.]+', '-', line.split('==', 1)[0]).lower() for line in lines]
+if len(names) != len(set(names)):
+    raise SystemExit('freeze cache contem pacote duplicado')
+if freeze != ('\n'.join(sorted(set(lines), key=str.casefold)) + '\n').encode():
+    raise SystemExit('freeze cache nao e canonico')
+output.write_bytes(freeze)  # Data only; never import or execute the cached app.
+PY
+}
+prepare_cached_freeze "$TARGET_COMMIT" "$STAGE_DIR/target-source" "$STAGE_DIR/target-cached-freeze.txt"
+prepare_cached_freeze "$PREVIOUS_COMMIT" "$STAGE_DIR/previous-source" "$STAGE_DIR/previous-cached-freeze.txt"
+TARGET_CONSTRAINTS=()
+PREVIOUS_CONSTRAINTS=()
+if [[ -f "$STAGE_DIR/target-cached-freeze.txt" ]]; then
+  chmod 0444 "$STAGE_DIR/target-cached-freeze.txt"
+  TARGET_CONSTRAINTS=(-c "$STAGE_DIR/target-cached-freeze.txt")
+fi
+if [[ -f "$STAGE_DIR/previous-cached-freeze.txt" ]]; then
+  chmod 0444 "$STAGE_DIR/previous-cached-freeze.txt"
+  PREVIOUS_CONSTRAINTS=(-c "$STAGE_DIR/previous-cached-freeze.txt")
+fi
+run_as_builder python3.12 -m pip install --dry-run --ignore-installed --only-binary=:all: --report "$DEPENDENCIES/target-report.json" -r "$STAGE_DIR/target-source/backend/requirements.txt" "${TARGET_CONSTRAINTS[@]}"
+run_as_builder python3.12 -m pip install --dry-run --ignore-installed --only-binary=:all: --report "$DEPENDENCIES/previous-report.json" -r "$STAGE_DIR/previous-source/backend/requirements.txt" "${PREVIOUS_CONSTRAINTS[@]}"
+/usr/bin/python3 - "$DEPENDENCIES/target-report.json" "$STAGE_DIR/target-freeze.txt" "$DEPENDENCIES/previous-report.json" "$STAGE_DIR/previous-freeze.txt" "$STAGE_DIR/target-cached-freeze.txt" "$STAGE_DIR/previous-cached-freeze.txt" <<'PY'
 import json, sys
 from pathlib import Path
-for report, output in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[4])):
+for report, output, cached in ((sys.argv[1], sys.argv[2], sys.argv[5]), (sys.argv[3], sys.argv[4], sys.argv[6])):
     rows = sorted({f"{item['metadata']['name']}=={item['metadata']['version']}" for item in json.loads(Path(report).read_text(encoding='utf-8')).get('install', [])}, key=str.casefold)
     if not rows:
         raise SystemExit('resolver Python nao produziu dependencias')
-    Path(output).write_text('\n'.join(rows) + '\n', encoding='utf-8')
+    resolved = ('\n'.join(rows) + '\n').encode('utf-8')
+    if Path(cached).exists() and Path(cached).read_bytes() != resolved:
+        raise SystemExit('resolver Python divergiu do freeze selado')
+    Path(output).write_bytes(resolved)
 PY
-chown "$BUILD_USER:$BUILD_GROUP" "$STAGE_DIR"/*-freeze.txt
-run_as_builder python3.12 -m pip download --only-binary=:all: --dest "$DEPENDENCIES/wheelhouse" pip==25.1.1 pytest==8.3.5 httpx==0.28.1 -r "$STAGE_DIR/target-freeze.txt" -r "$STAGE_DIR/previous-freeze.txt"
+chmod 0444 "$STAGE_DIR/target-freeze.txt" "$STAGE_DIR/previous-freeze.txt"
+if [[ "$TARGET_COMMIT" == "$PREVIOUS_COMMIT" ]]; then
+  cmp -s -- "$STAGE_DIR/target-freeze.txt" "$STAGE_DIR/previous-freeze.txt" || die "mesmo commit produziu freezes diferentes"
+fi
+run_as_builder python3.12 -m pip download --only-binary=:all: --dest "$DEPENDENCIES/wheelhouse" pip==25.1.1 pytest==8.3.5 httpx==0.28.1
+run_as_builder python3.12 -m pip download --only-binary=:all: --dest "$DEPENDENCIES/wheelhouse" -r "$STAGE_DIR/target-freeze.txt"
+run_as_builder python3.12 -m pip download --only-binary=:all: --dest "$DEPENDENCIES/wheelhouse" -r "$STAGE_DIR/previous-freeze.txt"
 run_as_builder_in "$BUILD_TARGET_SOURCE" pnpm fetch --frozen-lockfile --ignore-scripts --store-dir "$DEPENDENCIES/pnpm-store"
 run_as_builder_in "$BUILD_PREVIOUS_SOURCE" pnpm fetch --frozen-lockfile --ignore-scripts --store-dir "$DEPENDENCIES/pnpm-store"
 
@@ -263,12 +363,15 @@ for commit, source, freeze in ((sys.argv[2], sys.argv[4], sys.argv[6]), (sys.arg
 (root / '.telz-dependencies.json').write_text(json.dumps({"schema_version":1,"target_commit":sys.argv[2],"previous_commit":sys.argv[3],"python":"3.12","pip":"25.1.1","node":"22","pnpm":"10.14.0","public_build_config_sha256":digest(public_path),"commits":commits}, sort_keys=True, separators=(',', ':')) + '\n', encoding='utf-8')
 PY
 chown -R root:root "$DEPENDENCIES" "$STAGE_DIR/build-home"
+install -d -m 0755 -o root -g root "$DEPENDENCIES/python-freezes"
+install -m 0444 -o root -g root "$STAGE_DIR/target-freeze.txt" "$DEPENDENCIES/python-freezes/$TARGET_COMMIT.txt"
+install -m 0444 -o root -g root "$STAGE_DIR/previous-freeze.txt" "$DEPENDENCIES/python-freezes/$PREVIOUS_COMMIT.txt"
 find "$DEPENDENCIES" -xdev -type l -print -quit | grep -q . && die "dependencias contem symlink"
 find "$DEPENDENCIES" -xdev ! -type d ! -type f -print -quit | grep -q . && die "dependencias contem tipo especial"
 find "$DEPENDENCIES" -type d -exec chmod 0555 {} +
 find "$DEPENDENCIES" -type f -exec chmod 0444 {} +
 DEPENDENCY_ARCHIVE="$STAGE_DIR/dependency-bundle.tar.gz"
-tar --dereference --hard-dereference --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$DEPENDENCIES" -czf "$DEPENDENCY_ARCHIVE" -- wheelhouse pnpm-store .telz-dependencies.json .telz-public-build.json
+tar --dereference --hard-dereference --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$DEPENDENCIES" -czf "$DEPENDENCY_ARCHIVE" -- wheelhouse pnpm-store python-freezes .telz-dependencies.json .telz-public-build.json
 
 for artifact in "$SOURCE_TARGET" "$SOURCE_PREVIOUS" "$DEPENDENCY_ARCHIVE"; do
   require_root_owned_file "$artifact"

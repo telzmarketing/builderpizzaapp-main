@@ -380,6 +380,7 @@ require_dependency_archive() {
   [[ "$(sha256sum "$archive" | awk '{print $1}')" == "$expected_sha256" ]] || die "SHA-256 das dependencias divergiu"
   /usr/bin/python3 - "$archive" "$EXPECTED_COMMIT" "$EXPECTED_PREVIOUS_COMMIT" <<'PY'
 import json
+import re
 import sys
 import tarfile
 from pathlib import PurePosixPath
@@ -387,6 +388,8 @@ from pathlib import PurePosixPath
 seen = set()
 metadata = None
 public_config = None
+freezes = {}
+expected_commits = {sys.argv[2], sys.argv[3]}
 with tarfile.open(sys.argv[1], "r:gz") as archive:
     for member in archive.getmembers():
         path = PurePosixPath(member.name)
@@ -394,9 +397,22 @@ with tarfile.open(sys.argv[1], "r:gz") as archive:
             raise SystemExit("archive de dependencias contem caminho inseguro")
         if member.name in seen or not (member.isdir() or member.isreg()):
             raise SystemExit("archive de dependencias contem entrada invalida")
-        if member.name not in {".telz-dependencies.json", ".telz-public-build.json"} and path.parts[0] not in {"wheelhouse", "pnpm-store"}:
+        if member.name not in {".telz-dependencies.json", ".telz-public-build.json"} and path.parts[0] not in {"wheelhouse", "pnpm-store", "python-freezes"}:
             raise SystemExit("archive de dependencias contem caminho inesperado")
         seen.add(member.name)
+        if path.parts[0] == "python-freezes":
+            if len(path.parts) == 1:
+                if not member.isdir() or member.name.rstrip('/') != 'python-freezes':
+                    raise SystemExit("diretorio de freezes invalido")
+            else:
+                if (len(path.parts) != 2 or not member.isreg() or member.name != path.as_posix()
+                        or not 0 < member.size <= 262144
+                        or path.name not in {commit + '.txt' for commit in expected_commits}):
+                    raise SystemExit("freeze por commit invalido")
+                source = archive.extractfile(member)
+                if source is None:
+                    raise SystemExit("freeze por commit ilegivel")
+                freezes[path.stem] = source.read()
         if member.name == ".telz-dependencies.json":
             source = archive.extractfile(member)
             metadata = json.load(source) if source else None
@@ -422,6 +438,35 @@ if public_config is None or json.loads(public_config) != expected_public:
 import hashlib
 if metadata.get("public_build_config_sha256") != hashlib.sha256(public_config).hexdigest():
     raise SystemExit("digest da configuracao publica promovida divergiu")
+if set(freezes) != expected_commits:
+    raise SystemExit("freezes dos commits aprovados ausentes")
+contracts = metadata.get('commits')
+if not isinstance(contracts, dict) or set(contracts) != expected_commits:
+    raise SystemExit("contratos dos commits aprovados invalidos")
+for commit, raw in freezes.items():
+    contract = contracts[commit]
+    keys = {'python_freeze_sha256', 'requirements_sha256', 'pnpm_lock_sha256'}
+    if (not isinstance(contract, dict) or set(contract) != keys
+            or any(not re.fullmatch(r'[0-9a-f]{64}', str(contract[key])) for key in keys)
+            or hashlib.sha256(raw).hexdigest() != contract['python_freeze_sha256']):
+        raise SystemExit("digest do freeze por commit divergiu")
+    try:
+        text = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        raise SystemExit("freeze por commit nao e UTF-8") from None
+    rows = text.splitlines()
+    if (not rows or text != '\n'.join(rows) + '\n' or '\r' in text
+            or rows != sorted(rows, key=str.casefold)):
+        raise SystemExit("freeze por commit nao e canonico")
+    packages = set()
+    for row in rows:
+        match = re.fullmatch(r'([A-Za-z0-9][A-Za-z0-9._-]{0,199})==([A-Za-z0-9][A-Za-z0-9.!+_-]{0,199})', row)
+        if not match:
+            raise SystemExit("freeze por commit contem entrada nao permitida")
+        package = re.sub(r'[-_.]+', '-', match[1]).lower()
+        if package in packages:
+            raise SystemExit("freeze por commit contem pacote duplicado")
+        packages.add(package)
 PY
   printf '%s\n' "$archive"
 }

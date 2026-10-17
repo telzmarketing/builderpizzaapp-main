@@ -140,13 +140,15 @@ jobs:
               if not rows: raise SystemExit('resolver Python nao produziu dependencias')
               Path(output).write_text('\n'.join(rows) + '\n', encoding='utf-8')
           PY
-          python -m pip download --only-binary=:all: --dest "$dependencies/wheelhouse" pip==25.1.1 pytest==8.3.5 httpx==0.28.1 -r "$work/target-freeze.txt" -r "$work/previous-freeze.txt"
+          python -m pip download --only-binary=:all: --dest "$dependencies/wheelhouse" pip==25.1.1 pytest==8.3.5 httpx==0.28.1
+          python -m pip download --only-binary=:all: --dest "$dependencies/wheelhouse" -r "$work/target-freeze.txt"
+          python -m pip download --only-binary=:all: --dest "$dependencies/wheelhouse" -r "$work/previous-freeze.txt"
           test "$(pnpm --version)" = "10.14.0"
           [[ "$(node --version)" == v22.* ]]
           pnpm --dir "$target_source" fetch --frozen-lockfile --store-dir "$dependencies/pnpm-store"
           pnpm --dir "$previous_source" fetch --frozen-lockfile --store-dir "$dependencies/pnpm-store"
           /usr/bin/python3 - "$dependencies" "$target_commit" "$PREVIOUS_COMMIT" "$target_source" "$previous_source" "$work/target-freeze.txt" "$work/previous-freeze.txt" <<'PY'
-          import hashlib, json, sys
+          import hashlib, json, re, sys
           from pathlib import Path
           root = Path(sys.argv[1])
           digest = lambda p: hashlib.sha256(Path(p).read_bytes()).hexdigest()
@@ -154,12 +156,37 @@ jobs:
           public_path = root / '.telz-public-build.json'
           public_path.write_text(json.dumps(public, sort_keys=True, separators=(',', ':')) + '\n', encoding='utf-8')
           commits = {}
+          freeze_directory = root / 'python-freezes'
+          freeze_directory.mkdir()
           for commit, source, freeze in ((sys.argv[2], sys.argv[4], sys.argv[6]), (sys.argv[3], sys.argv[5], sys.argv[7])):
-              commits[commit] = {"python_freeze_sha256": digest(freeze), "requirements_sha256": digest(Path(source) / 'backend' / 'requirements.txt'), "pnpm_lock_sha256": digest(Path(source) / 'pnpm-lock.yaml')}
+              if not re.fullmatch(r'[0-9a-f]{40}', commit):
+                  raise SystemExit('commit de dependencias invalido')
+              raw = Path(freeze).read_bytes()
+              rows = raw.decode('ascii').splitlines()
+              if (not rows or len(raw) > 262144 or raw != ('\n'.join(rows) + '\n').encode('ascii')
+                      or rows != sorted(rows, key=str.casefold)):
+                  raise SystemExit('freeze Python nao e canonico')
+              names = set()
+              for row in rows:
+                  match = re.fullmatch(r'([A-Za-z0-9][A-Za-z0-9._-]*)==([A-Za-z0-9][A-Za-z0-9.!+_-]*)', row)
+                  if not match:
+                      raise SystemExit('freeze Python deve conter apenas pins exatos')
+                  name = re.sub(r'[-_.]+', '-', match[1]).lower()
+                  if name in names:
+                      raise SystemExit('freeze Python possui pacote duplicado')
+                  names.add(name)
+              frozen = freeze_directory / (commit + '.txt')
+              if frozen.exists() and frozen.read_bytes() != raw:
+                  raise SystemExit('mesmo commit resolveu freezes diferentes')
+              frozen.write_bytes(raw)
+              contract = {"python_freeze_sha256": digest(freeze), "requirements_sha256": digest(Path(source) / 'backend' / 'requirements.txt'), "pnpm_lock_sha256": digest(Path(source) / 'pnpm-lock.yaml')}
+              if commit in commits and commits[commit] != contract:
+                  raise SystemExit('mesmo commit resolveu dependencias diferentes')
+              commits[commit] = contract
           (root / '.telz-dependencies.json').write_text(json.dumps({"schema_version":1,"target_commit":sys.argv[2],"previous_commit":sys.argv[3],"python":"3.12","pip":"25.1.1","node":"22","pnpm":"10.14.0","public_build_config_sha256":digest(public_path),"commits":commits}, sort_keys=True, separators=(',', ':')) + '\n', encoding='utf-8')
           PY
           tar --dereference --hard-dereference --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
-            -C "$dependencies" -czf "$delivery/dependency-bundle.tar.gz" -- wheelhouse pnpm-store .telz-dependencies.json .telz-public-build.json
+            -C "$dependencies" -czf "$delivery/dependency-bundle.tar.gz" -- wheelhouse pnpm-store python-freezes .telz-dependencies.json .telz-public-build.json
 
           /usr/bin/python3 - "$delivery" "$target_commit" "$PREVIOUS_COMMIT" "$TELZ_ALEMBIC_TARGET" "$TELZ_PUBLIC_HEALTH_URL" <<'PY'
           import hashlib, json, sys, tarfile
