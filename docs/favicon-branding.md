@@ -1,8 +1,30 @@
 # Favicon do gestor e das empresas
 
 O host `app.telz.com.br` e os hosts reservados em
-`TENANT_DOMAINS_PLATFORM_HOSTNAMES` usam o icone Telz de
-`public/icons/telz.svg`, independentemente da empresa selecionada.
+`TENANT_DOMAINS_PLATFORM_HOSTNAMES` usam a marca do gestor, independentemente da
+empresa selecionada. O padrao do favicon e `public/icons/telz.svg`.
+
+## Marca do gestor
+
+Em Configuracoes da plataforma > Marca do gestor, operadores com a permissao
+`platform_settings.manage` podem enviar, visualizar, remover e salvar o logo e
+o favicon. O logo aparece no login e na navegacao da plataforma. Remover uma
+imagem e salvar restaura o respectivo padrao Telz. Permissao somente de consulta
+nao permite alterar a marca.
+
+As imagens aceitas sao PNG, JPEG e WebP, ate 5 MB. O backend valida e converte
+as imagens para PNG com nomes unicos. Os arquivos ficam em
+`uploads/platform-branding`, incluidos no backup e na preservacao de uploads;
+sao servidos pela rota publica dedicada `/api/platform/branding/assets/`, sem
+alterar as regras de acesso aos uploads das empresas.
+
+As duas URLs sao persistidas exclusivamente em `site_config.id =
+'platform:branding'`. Os endpoints administrativos sao GET/PUT
+`/api/admin/platform/settings/branding` e POST
+`/api/admin/platform/settings/branding/upload`. A consulta operacional existente
+de configuracoes continua somente leitura. Nao ha alteracao de schema.
+
+## Marca das empresas
 
 Cada empresa configura seu favicon no painel de Conteudo, em Marca e Midia.
 Com a resolucao multitenant ativa, a API le e grava o conteudo na chave

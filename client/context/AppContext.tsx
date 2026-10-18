@@ -369,6 +369,7 @@ interface AppContextType {
   setLoyaltySettings: (settings: LoyaltySettings) => void;
 
   siteContent: SiteContent;
+  refreshSiteContent: () => Promise<void>;
   updateSiteContent: (update: DeepPartial<SiteContent>) => Promise<void>;
 
   // Multi-Flavors Config
@@ -1074,7 +1075,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     fidelidadeRewards, setFidelidadeRewards,
     earnRules, setEarnRules,
     loyaltySettings, setLoyaltySettings,
-    siteContent, updateSiteContent,
+    siteContent, updateSiteContent, refreshSiteContent: loadSiteContent,
     multiFlavorsConfig, updateMultiFlavorsConfig,
     loadRouteData,
   };

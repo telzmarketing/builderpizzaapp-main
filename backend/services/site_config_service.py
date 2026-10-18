@@ -9,6 +9,7 @@ from backend.core.tenant_auth import get_current_tenant_context
 from backend.core.tenant_context import TenantContextMissing
 from backend.models.tenant import Tenant
 from backend.services.tenant_domain_service import TenantDomainService, parse_hostname_set, trusted_request_hostname
+from backend.services.platform_branding_service import PlatformBrandingService
 
 
 class SiteConfigNotFound(DomainError):
@@ -72,7 +73,11 @@ class SiteConfigService:
     def read(self, request):
         identity = self.identity(request)
         if identity.platform:
-            return {"brand": {"name": "Telz", "pageTitle": "Telz", "faviconUrl": "/icons/telz.svg"}}, None, identity
+            branding, updated_at = PlatformBrandingService(self.db).read_with_version()
+            return {"brand": {
+                "name": "Telz", "pageTitle": "Telz", "logo": branding.logo_url,
+                "faviconUrl": branding.favicon_url or "/icons/telz.svg",
+            }}, updated_at, identity
         stored = self._read(self.key(identity.tenant_id))
         if stored is None and identity.tenant_id and identity.legacy:
             stored = self._read("default")
@@ -100,7 +105,8 @@ class SiteConfigService:
     @staticmethod
     def favicon(content, size, identity):
         if identity.platform:
-            return "/icons/telz.svg"
+            brand = content.get("brand", {})
+            return brand.get("faviconUrl") or "/icons/telz.svg"
         brand = content.get("brand")
         raw = str(brand.get("faviconUrl") or "").strip().replace("\\", "/") if isinstance(brand, dict) else ""
         extensions = (".apng", ".avif", ".gif", ".ico", ".jpeg", ".jpg", ".jfif", ".pjpeg", ".pjp", ".png", ".svg", ".webp")

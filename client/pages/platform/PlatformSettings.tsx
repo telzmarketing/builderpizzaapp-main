@@ -14,6 +14,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
+import PlatformBrandingEditor from "@/components/platform/PlatformBrandingEditor";
 import { Button } from "@/components/ui/button";
 import {
   platformSettingsApi,
@@ -173,6 +174,7 @@ export default function PlatformSettings() {
 
   return (
     <div className="space-y-5">
+      <PlatformBrandingEditor />
       <section className="flex flex-col gap-4 rounded-2xl border border-surface-03 bg-surface-02 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <div className="rounded-xl border border-gold/25 bg-gold/10 p-2.5 text-gold">
@@ -206,9 +208,9 @@ export default function PlatformSettings() {
         <div className="flex items-start gap-3">
           <LockKeyhole size={19} className="mt-0.5 shrink-0 text-yellow-100" />
           <div>
-            <h2 className="font-black text-yellow-50">Consulta somente leitura</h2>
+            <h2 className="font-black text-yellow-50">Configuracao operacional: somente leitura</h2>
             <p className="mt-1 text-sm leading-relaxed text-yellow-50/75">
-              Nenhuma alteracao e executada nesta tela. As configuracoes sao carregadas do ambiente do backend;
+              As configuracoes operacionais abaixo sao carregadas do ambiente do backend;
               ajustes devem passar pelo processo de deploy{settings.restart_required ? " e exigem reinicio do servico" : ""}.
             </p>
           </div>

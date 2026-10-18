@@ -179,8 +179,12 @@ def test_platform_settings_route_is_read_only_protected_and_registered():
     assert 'prefix="/admin/platform/settings"' in route
     assert '@router.get("", response_model=ApiEnvelope[PlatformSettingsOut])' in route
     assert 'require_platform_permission("platform_settings.view")' in route
-    assert "@router.post" not in route
-    assert "@router.put" not in route
+    # Runtime settings remain read-only; only the isolated identity is editable.
+    assert '@router.post("",' not in route
+    assert '@router.put("",' not in route
+    assert '@router.put("/branding",' in route
+    assert '@router.post("/branding/upload",' in route
+    assert 'require_platform_permission("platform_settings.manage")' in route
     assert "@router.patch" not in route
     assert "@router.delete" not in route
     assert "from backend.routes import platform_settings as platform_settings_routes" in main

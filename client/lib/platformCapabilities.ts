@@ -6,6 +6,7 @@ export type PlatformCapability =
   | "support.impersonate"
   | "audit.view"
   | "platform_settings.view"
+  | "platform_settings.manage"
   | "monitoring.view"
   | "integrations.view"
   | "jobs.view"

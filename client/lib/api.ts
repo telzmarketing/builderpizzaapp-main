@@ -4459,6 +4459,22 @@ export const platformUsersApi = {
   },
 };
 
+export interface ApiPlatformBranding {
+  logo_url: string;
+  favicon_url: string;
+}
+
+export const platformBrandingApi = {
+  get: () => get<ApiPlatformBranding>("/admin/platform/settings/branding"),
+  save: (branding: ApiPlatformBranding) => put<ApiPlatformBranding>("/admin/platform/settings/branding", branding),
+  upload: async (file: File): Promise<string> => {
+    const form = new FormData();
+    form.append("file", file);
+    const result = await postForm<{ url: string }>("/admin/platform/settings/branding/upload", form);
+    return result.url;
+  },
+};
+
 export const platformSettingsApi = {
   get: () => get<ApiPlatformSettings>("/admin/platform/settings"),
 };

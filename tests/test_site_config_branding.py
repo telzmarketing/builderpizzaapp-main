@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -124,12 +124,22 @@ def test_manager_does_not_query_tenant_or_legacy_settings(branding, monkeypatch,
     monkeypatch.setenv("TENANT_DOMAINS_ENABLED", str(enabled).lower())
     monkeypatch.setenv("MULTI_TENANT_AUTH_ENABLED", str(enabled).lower())
     get_settings.cache_clear()
-    def forbidden_query(*args, **kwargs):
-        raise AssertionError("Manager branding must be available without tenant/legacy data")
-    monkeypatch.setattr(branding.db, "query", forbidden_query)
-    monkeypatch.setattr(branding.db, "execute", forbidden_query)
-    response = branding.client.get(path, headers={"host": "app.telz.com.br"}, follow_redirects=False)
+    statements = []
+    def capture(_connection, _cursor, statement, parameters, _context, _many):
+        statements.append((statement, parameters))
+    engine = branding.db.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        response = branding.client.get(path, headers={"host": "app.telz.com.br"}, follow_redirects=False)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
     assert response.status_code in (200, 307)
+    assert statements, "Manager branding must read its persisted configuration"
+    for statement, parameters in statements:
+        assert "site_config" in statement
+        assert "platform:branding" in str(parameters)
+        assert "tenant:" not in str(parameters)
+        assert "default" not in str(parameters)
 
 
 @pytest.mark.parametrize("path", READ_PATHS)

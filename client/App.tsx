@@ -356,7 +356,7 @@ function DocumentHead() {
   const safeName = toSafeText(name);
   // The backend resolves the public host. Cached CMS content must never select
   // another company's icon, including during Master support sessions.
-  const faviconVersion = platformSurface ? "telz" : Array.from(toSafeText(faviconUrl))
+  const faviconVersion = Array.from(`${platformSurface ? "telz:" : ""}${toSafeText(faviconUrl)}`)
     .reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 0).toString(36);
 
   useEffect(() => {
