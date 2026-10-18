@@ -7,6 +7,7 @@ import { useApp, SiteContent, defaultSiteContent } from "@/context/AppContext";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import ImageUpload from "@/components/admin/ImageUpload";
+import { useToast } from "@/hooks/use-toast";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -99,6 +100,8 @@ export default function AdminConteudo() {
   const [draft, setDraft] = useState<SiteContent>(JSON.parse(JSON.stringify(siteContent)));
   const [activeTab, setActiveTab] = useState<Tab>("marca_midia");
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
   const set = (path: string[], value: unknown) => {
     setDraft((prev) => {
       const next = JSON.parse(JSON.stringify(prev)) as Record<string, unknown>;
@@ -129,10 +132,23 @@ export default function AdminConteudo() {
     }));
   };
 
-  const handleSave = () => {
-    updateSiteContent(draft);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    setSaved(false);
+    try {
+      await updateSiteContent(draft);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (error) {
+      toast({
+        title: "Nao foi possivel salvar o conteudo",
+        description: error instanceof Error ? error.message : "Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleReset = () => {
@@ -186,12 +202,14 @@ export default function AdminConteudo() {
               </button>
               <button
                 onClick={handleSave}
+                disabled={saving}
+                aria-busy={saving}
                 className={`flex items-center gap-2 px-5 py-2 rounded-lg font-bold text-sm transition-colors ${
                   saved ? "bg-green-500 text-cream" : "bg-gold hover:bg-gold/90 text-cream"
                 }`}
               >
                 <Save size={16} />
-                {saved ? "Salvo!" : "Salvar alterações"}
+                {saving ? "Salvando..." : saved ? "Salvo!" : "Salvar alterações"}
               </button>
               <AdminTopActions />
             </div>

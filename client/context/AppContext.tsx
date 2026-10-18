@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { firePixelEvent, getTrackingData } from "@/lib/tracking";
+import { readPlatformSupportSession } from "@/lib/platformSupportSession";
 import {
   productsApi,
   promotionsApi,
@@ -368,7 +369,7 @@ interface AppContextType {
   setLoyaltySettings: (settings: LoyaltySettings) => void;
 
   siteContent: SiteContent;
-  updateSiteContent: (update: DeepPartial<SiteContent>) => void;
+  updateSiteContent: (update: DeepPartial<SiteContent>) => Promise<void>;
 
   // Multi-Flavors Config
   multiFlavorsConfig: MultiFlavorsConfig;
@@ -548,6 +549,12 @@ function needsCouponsBootstrap(pathname: string) {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+function siteContentCacheKey(): string {
+  const host = window.location.hostname.toLowerCase().replace(/\.+$/, "") || "unknown";
+  const supportTenant = readPlatformSupportSession()?.tenant_id;
+  return `telz:site-content:v2:${host}:${supportTenant || "host"}`;
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [customer, setCustomer] = useState<ApiCustomer | null>(() => {
@@ -591,7 +598,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
   const [siteContent, setSiteContent] = useState<SiteContent>(() => {
     try {
-      const stored = localStorage.getItem("siteContent");
+      // Shared legacy data has no trustworthy host/tenant provenance.
+      localStorage.removeItem("siteContent");
+      const stored = localStorage.getItem(siteContentCacheKey());
       if (stored) return deepMerge(defaultSiteContent, JSON.parse(stored)) as SiteContent;
     } catch { /* ignore corrupt data */ }
     return defaultSiteContent;
@@ -657,10 +666,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   async function loadSiteContent() {
+    const cacheKey = siteContentCacheKey();
     const data = await siteConfigApi.get();
-    if (data && Object.keys(data).length > 0) {
-      setSiteContent((prev) => deepMerge(prev, data) as SiteContent);
-    }
+    const next = deepMerge(defaultSiteContent, data || {}) as SiteContent;
+    setSiteContent(next);
+    try { localStorage.setItem(cacheKey, JSON.stringify(next)); } catch { /* storage full */ }
   }
 
   async function loadLoyaltySettings() {
@@ -1040,13 +1050,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Site Content (CMS — persisted in backend) ────────────────────────────
 
-  const updateSiteContent = (update: DeepPartial<SiteContent>) => {
-    setSiteContent((prev) => {
-      const next = deepMerge(prev, update) as SiteContent;
-      try { localStorage.setItem("siteContent", JSON.stringify(next)); } catch { /* storage full */ }
-      siteConfigApi.save(next).catch(() => {});
-      return next;
-    });
+  const updateSiteContent = async (update: DeepPartial<SiteContent>) => {
+    const cacheKey = siteContentCacheKey();
+    const next = deepMerge(siteContent, update) as SiteContent;
+    await siteConfigApi.save(next);
+    setSiteContent(next);
+    try { localStorage.setItem(cacheKey, JSON.stringify(next)); } catch { /* storage full */ }
   };
 
   // ── Context value ─────────────────────────────────────────────────────────

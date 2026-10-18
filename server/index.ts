@@ -11,6 +11,12 @@ export function createServer() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  // Browsers may request this independently of the document's explicit icons.
+  app.get("/favicon.ico", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.redirect(307, "/api/site-config/favicon?size=32");
+  });
+
   // Example API routes
   app.get("/api/ping", (_req, res) => {
     const ping = process.env.PING_MESSAGE ?? "ping";

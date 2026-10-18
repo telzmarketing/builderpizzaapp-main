@@ -34,8 +34,8 @@ export default defineConfig(({ mode }) => ({
       injectRegister: "script-defer",
       includeManifestIcons: true,
       includeAssets: [
-        "favicon.ico",
-        "icons/favicon-moschettieri-32.png",
+        "icons/telz.svg",
+        "icons/store-default.svg",
         "icons/icon-192.png",
         "icons/icon-512.png",
       ],
@@ -66,6 +66,8 @@ export default defineConfig(({ mode }) => ({
       injectManifest: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest}"],
         globIgnores: [
+          "favicon.ico",
+          "icons/favicon-moschettieri-32.png",
           "salao-site/**",
           "salao/**",
           // O PWA offline é do Motoboy. Chunks administrativos continuam

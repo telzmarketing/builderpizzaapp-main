@@ -10,9 +10,9 @@ declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<{ url: string; revision?: string | null }>;
 };
 
-const LEGACY_RUNTIME_CACHES = ["motoboy-static-v1", "motoboy-runtime-v1"];
+const LEGACY_RUNTIME_CACHES = ["motoboy-static-v1", "motoboy-runtime-v1", "motoboy-media-v2"];
 const RUNTIME_STATIC_CACHE = "motoboy-static-v2";
-const RUNTIME_MEDIA_CACHE = "motoboy-media-v2";
+const RUNTIME_MEDIA_CACHE = "motoboy-media-v3";
 const GLOBAL_FAVICON_URL = "/api/site-config/favicon?size=192";
 
 type PushPayload = {
@@ -56,8 +56,9 @@ registerRoute(
 );
 
 registerRoute(
-  ({ request }) =>
+  ({ request, url }) =>
     request.method === "GET" &&
+    url.pathname !== "/api/site-config/favicon" &&
     ["font", "image"].includes(request.destination),
   new StaleWhileRevalidate({
     cacheName: RUNTIME_MEDIA_CACHE,

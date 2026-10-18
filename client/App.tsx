@@ -4,10 +4,10 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { themeApi, applyTheme, DEFAULT_THEME, readCachedTheme } from "./lib/themeApi";
 import { captureTrackingFromUrl, firePixelEvent, trackEvent, getTrackingData, initCampaignPixel, initStorePixels, isInternalStaffPath, requestVisitorLocation } from "./lib/tracking";
-import { customerEventsApi, isAssetUrl, resolveAssetUrl, runtimeSurfaceApi } from "./lib/api";
+import { customerEventsApi, runtimeSurfaceApi } from "./lib/api";
 import { getPublicExperience, isSalaoExperience } from "./lib/experience";
 import { isPlatformRuntimeSurface, isStoreRuntimeSurface } from "./lib/runtimeHostSurface";
-import { PlatformSurfaceProvider } from "./context/PlatformSurfaceContext";
+import { PlatformSurfaceProvider, usePlatformSurface } from "./context/PlatformSurfaceContext";
 import {
   isPlatformSupportPanelPathAllowed,
   readPlatformSupportSession,
@@ -348,69 +348,55 @@ function TrackingInjector() {
 
 function DocumentHead() {
   const { siteContent } = useApp();
+  const platformSurface = usePlatformSurface();
   const isSalao = isSalaoExperience();
   const { pageTitle, faviconUrl, name } = siteContent.brand;
-  const defaultSmallIcon = "/api/site-config/favicon?size=32";
-  const defaultFavicon = "/api/site-config/favicon?size=192";
-  const defaultLargeIcon = "/api/site-config/favicon?size=512";
 
   const safePageTitle = toSafeText(pageTitle);
   const safeName = toSafeText(name);
-  const safeFaviconUrl = toSafeText(faviconUrl);
-  const resolvedFavicon = safeFaviconUrl && isAssetUrl(safeFaviconUrl) ? resolveAssetUrl(safeFaviconUrl) : defaultFavicon;
+  // The backend resolves the public host. Cached CMS content must never select
+  // another company's icon, including during Master support sessions.
+  const faviconVersion = platformSurface ? "telz" : Array.from(toSafeText(faviconUrl))
+    .reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 0).toString(36);
 
   useEffect(() => {
+    if (platformSurface) {
+      document.title = "Telz";
+      return;
+    }
     if (isSalao) {
       document.title = safePageTitle || safeName || "Restaurante";
       return;
     }
     document.title = safePageTitle || safeName || "Sua Loja";
-  }, [isSalao, safePageTitle, safeName]);
+  }, [platformSurface, isSalao, safePageTitle, safeName]);
 
   useEffect(() => {
-    const favicon = resolvedFavicon || defaultFavicon;
-
     document
       .querySelectorAll<HTMLLinkElement>("link[rel~='icon'], link[rel='apple-touch-icon']")
       .forEach((link) => link.remove());
 
-    const separator = favicon.includes("?") ? "&" : "?";
-    const href = favicon.startsWith("data:")
-      ? favicon
-      : `${favicon}${separator}v=${Date.now()}`;
-
-    if (favicon === defaultFavicon) {
-      const smallIcon = document.createElement("link");
-      smallIcon.rel = "icon";
-      smallIcon.sizes = "32x32";
-      smallIcon.href = defaultSmallIcon;
-      document.head.appendChild(smallIcon);
+    const iconUrl = (size: number) =>
+      `/api/site-config/favicon?size=${size}&v=${encodeURIComponent(faviconVersion)}`;
+    for (const size of [32, 192, 512]) {
+      const icon = document.createElement("link");
+      icon.rel = "icon";
+      icon.sizes = `${size}x${size}`;
+      icon.href = iconUrl(size);
+      document.head.appendChild(icon);
     }
-
-    const icon = document.createElement("link");
-    icon.rel = "icon";
-    if (favicon.endsWith(".ico")) icon.type = "image/x-icon";
-    icon.sizes = "192x192";
-    icon.href = href;
-    document.head.appendChild(icon);
-
-    const largeIcon = document.createElement("link");
-    largeIcon.rel = "icon";
-    largeIcon.sizes = "512x512";
-    largeIcon.href = favicon === defaultFavicon ? defaultLargeIcon : href;
-    document.head.appendChild(largeIcon);
 
     const shortcut = document.createElement("link");
     shortcut.rel = "shortcut icon";
-    shortcut.href = href;
+    shortcut.href = iconUrl(32);
     document.head.appendChild(shortcut);
 
     const apple = document.createElement("link");
     apple.rel = "apple-touch-icon";
     apple.sizes = "192x192";
-    apple.href = favicon === defaultFavicon ? defaultFavicon : href;
+    apple.href = iconUrl(192);
     document.head.appendChild(apple);
-  }, [resolvedFavicon]);
+  }, [faviconVersion]);
   return null;
 }
 const AdminGuard = lazy(() => import("./components/AdminGuard"));
