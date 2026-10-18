@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ChevronDown, LogOut, Menu, Search, User, X } from "lucide-react";
+import { ArrowLeft, LogOut, Menu, Search, User, X } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import TelzLogo from "@/components/TelzLogo";
 import AdminTopActions from "@/components/admin/AdminTopActions";
@@ -293,14 +293,13 @@ export default function TopNavigation({
           <button
             type="button"
             onClick={() => setProfileOpen((open) => !open)}
-            className="flex h-10 items-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-2 text-left transition-colors hover:bg-surface-03"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-surface-03 bg-surface-01 transition-colors hover:bg-surface-03"
             aria-label="Abrir perfil"
+            aria-expanded={profileOpen}
           >
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gold/20 text-[11px] font-black text-gold">
               {initials || <User size={14} />}
             </span>
-            <span className="hidden max-w-28 truncate text-xs font-bold text-cream 2xl:block">{adminName}</span>
-            <ChevronDown size={13} className="hidden text-stone 2xl:block" />
           </button>
           {profileOpen && (
             <div className="absolute right-0 top-12 z-50 w-64 overflow-hidden rounded-2xl border border-surface-03 bg-surface-02 shadow-2xl">
