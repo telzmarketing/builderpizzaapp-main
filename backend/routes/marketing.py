@@ -372,7 +372,7 @@ def _normalize_unofficial_whatsapp_provider(value: str | None) -> str:
 
 def _sync_unofficial_whatsapp_config(db: Session, creds: dict, now: datetime, tenant_id: str) -> None:
     provider = _normalize_unofficial_whatsapp_provider(creds.get("provider"))
-    db.execute(text("INSERT INTO whatsapp_config (id, tenant_id) VALUES (:id, :tenant_id) ON CONFLICT (tenant_id) DO NOTHING"), {"id": f"whatsapp-config-{tenant_id}", "tenant_id": tenant_id})
+    db.execute(text("INSERT INTO whatsapp_config (id, tenant_id) VALUES (:id, :tenant_id) ON CONFLICT (tenant_id) WHERE tenant_id IS NOT NULL DO NOTHING"), {"id": f"whatsapp-config-{tenant_id}", "tenant_id": tenant_id})
     if provider == "uazapi":
         db.execute(
             text(
@@ -428,7 +428,7 @@ def _sync_unofficial_whatsapp_config(db: Session, creds: dict, now: datetime, te
 
 def _set_whatsapp_config_status(db: Session, tenant_id: str, status: str, now: datetime, *, official: bool = False) -> None:
     db.execute(
-        text("INSERT INTO whatsapp_config (id, tenant_id) VALUES (:id, :tenant_id) ON CONFLICT (tenant_id) DO NOTHING"),
+        text("INSERT INTO whatsapp_config (id, tenant_id) VALUES (:id, :tenant_id) ON CONFLICT (tenant_id) WHERE tenant_id IS NOT NULL DO NOTHING"),
         {"id": f"whatsapp-config-{tenant_id}", "tenant_id": tenant_id},
     )
     db.execute(

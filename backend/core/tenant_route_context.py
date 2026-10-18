@@ -26,7 +26,9 @@ def operation_tenant_id(context: TenantContext | None) -> str:
     if context is not None and context.source == TenantSource.SUPPORT:
         return context.tenant_id
     if not operations_enforcement_enabled():
-        return "default"
+        # The operations backfill canonicalized ownership, while preserving
+        # historical row IDs. Compatibility mode must use that same owner.
+        return "tenant-legacy-default"
     trusted = require_context_when_enabled(context, enabled=True)
     assert trusted is not None
     return trusted.tenant_id

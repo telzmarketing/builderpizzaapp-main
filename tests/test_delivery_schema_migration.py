@@ -55,9 +55,9 @@ def test_downgrade_preserves_credentials_and_documents():
         load_migration().downgrade()
 
 
-def test_revision_follows_site_config_and_keeps_single_head():
+def test_revision_follows_site_config_in_canonical_history():
     scripts = ScriptDirectory(str(ROOT / "backend/migrations"))
-    assert scripts.get_heads() == [REVISION]
+    assert REVISION in {revision.revision for revision in scripts.walk_revisions()}
     assert scripts.get_revision(REVISION).down_revision == "20261017_site_config"
 
 

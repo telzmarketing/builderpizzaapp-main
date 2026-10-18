@@ -6,6 +6,35 @@ Este procedimento cobre atualizacao incremental de uma instalacao existente em
 `/opt/telz`. `installer/install.sh` e exclusivo da primeira instalacao ou de
 uma reconstrucao planejada; ele nao deve ser reutilizado como updater.
 
+## Incidente: lacunas restantes de schema e singleton de Gestao
+
+Revision igual ao head e `SELECT 1` nao comprovam compatibilidade de todos os
+modulos. O ensaio de todas as migrations com PostgreSQL vazio identificou cinco
+colunas adicionais ausentes: `email_templates.category`,
+`marketing_automations.trigger_delay_hours` e tres campos de `traffic_campaigns`.
+A revision `20261017_runtime_schema`, apos `20261017_delivery_schema`, restaura
+esse contrato sem substituir dados existentes. O par exato entre essas duas
+revisions permite rollback de codigo; downgrade de dados permanece bloqueado.
+Tambem foi revisado o par direto
+`20261017_site_config:20261017_runtime_schema`: uma VPS ainda nessa revision
+pode receber o pacote consolidado em um unico deploy, aplicando as duas
+migrations aditivas. Isso nao autoriza transitividade geral, outros saltos de
+schema nem downgrade; a release anterior conserva acesso ao schema expandido.
+
+A falha `gestao_module_settings_pkey` e um problema diferente: procurar o
+singleton legado pelo tenant e tentar cria-lo com o mesmo ID global pode causar
+conflito. O reparo de runtime precisa respeitar o contexto confiavel, o registro
+ja existente e a concorrencia, sem atribuir configuracoes de outro tenant.
+
+Antes de publicar, o gate de schema deve comparar todas as tabelas e colunas
+esperadas pelos models com um PostgreSQL migrado do zero e testar queries reais
+de BI e dos singletons operacionais. Tipos JSON/JSONB compativeis e ownership
+nullable durante expansao exigem criterio explicito; nao force NOT NULL ou
+backfill global para igualar metadados. Na VPS, valide primeiro o SHA ativo,
+revision e logs correlacionados ao request_id. Nao ligue bootstrap e nao desligue
+isolamento para contornar falhas. O health operacional preserva somente os pares
+de schema explicitamente revisados nos scripts de update e rollback.
+
 ## Incidente: schema de entregas incompleto
 
 `UndefinedColumn: delivery_persons.password_hash` e
@@ -133,6 +162,52 @@ Quando atualizar o proprio helper, instale a copia do mesmo SHA aprovado usando
 o procedimento abaixo antes de executar o deploy. Nao apague releases nem edite
 manifests para contornar um bloqueio.
 
+#### Disputa transitoria com o timer HTTPS
+
+Se o updater informar outra manutencao em execucao, primeiro consulte `lslocks`,
+`fuser`, jobs systemd e logs para identificar o responsavel. Um arquivo de lock
+existente nao prova manutencao ativa; nao o apague, nao encerre processos e nao
+adquira um lock externo antes do helper. O executor HTTPS compartilha o lock.
+
+Somente quando o timer HTTPS foi confirmado ativo e seus logs identificaram a
+atividade concorrente, a janela pode pausa-lo temporariamente. Pare apenas
+`telz-domain-ssl.timer`; aguarde o servico concluir naturalmente. Por ser oneshot,
+`activating` tambem significa execucao em andamento. Use um subshell com restauracao
+obrigatoria e SHA completo aprovado no CI:
+
+```bash
+(
+  set -Eeuo pipefail
+  TARGET='<SHA-ALVO>'
+  restore_ssl_timer() {
+    rc=$?
+    trap - EXIT
+    if ! systemctl start telz-domain-ssl.timer; then
+      echo 'Falha ao reativar timer HTTPS' >&2
+      rc=1
+    fi
+    exit "$rc"
+  }
+  trap restore_ssl_timer EXIT
+  systemctl stop telz-domain-ssl.timer
+  for attempt in $(seq 1 30); do
+    state=$(systemctl show telz-domain-ssl.service -p ActiveState --value)
+    case "$state" in
+      inactive) break ;;
+      activating|active|deactivating|reloading) sleep 2 ;;
+      *) echo "Servico HTTPS requer diagnostico: $state" >&2; exit 1 ;;
+    esac
+  done
+  test "$(systemctl show telz-domain-ssl.service -p ActiveState --value)" = inactive
+  TELZ_ALEMBIC_TARGET=20261017_runtime_schema \
+    /usr/local/sbin/telz-deploy-from-origin "$TARGET" /opt/telz
+)
+```
+
+Se o servico nao terminar em 60 segundos, o bloco aborta e restaura o timer;
+nao interrompe uma emissao real. A pausa nao altera o estado enabled nem dispensa
+backup, helper atualizado, CI verde, schema validado e health HTTPS canonico.
+
 #### HTTPS das empresas
 
 Depois de ativar e validar a release, o updater prepara automaticamente o executor
@@ -250,7 +325,7 @@ imutavel e executa health checks.
 O target canonico desta entrega e:
 
 ```text
-20261017_delivery_schema
+20261017_runtime_schema
 ```
 
 O deploy fica bloqueado se o commit publicado nao possuir exatamente esse unico
@@ -277,6 +352,7 @@ A cadeia operacional que deve existir no commit publicado e linear:
   -> 20261014_tenant_domain_ssl
   -> 20261017_site_config
   -> 20261017_delivery_schema
+  -> 20261017_runtime_schema
 ```
 
 ## 2. Preflight
@@ -298,7 +374,7 @@ movimentacao manual para contornar o gate.
 
 Confirme no commit alvo:
 
-- unico head Alembic `20261017_delivery_schema`;
+- unico head Alembic `20261017_runtime_schema`;
 - workflow e updater usando o mesmo target;
 - CI verde para o mesmo SHA, incluindo o upgrade Alembic em PostgreSQL
   descartavel; CI verde nao substitui o backup nem a migration na VPS;
@@ -334,7 +410,7 @@ deploy, todos estes inputs promovidos e root-owned:
 - archive de fonte alvo e seu `TELZ_SOURCE_ARCHIVE_SHA256`;
 - archive de fonte anterior e seu `TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256`;
 - archive offline de dependencias e seu `TELZ_DEPENDENCY_ARCHIVE_SHA256`;
-- `TELZ_ALEMBIC_TARGET=20261017_delivery_schema`;
+- `TELZ_ALEMBIC_TARGET=20261017_runtime_schema`;
 - `TELZ_PUBLIC_HEALTH_URL` quando HTTPS publico e obrigatorio.
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
@@ -375,7 +451,7 @@ sudo /usr/local/sbin/telz-health-check /opt/telz
 ```
 
 Confirme que o link `current` termina em `/releases/<SHA-ALVO>/app`, o manifest
-registra o mesmo commit e `20261017_delivery_schema`, e o banco possui uma unica
+registra o mesmo commit e `20261017_runtime_schema`, e o banco possui uma unica
 revision igual ao target.
 
 Tambem valide HTTPS publico, login, loja, pedido, pagamentos, cozinha,

@@ -106,9 +106,16 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261004_tenant_upload_ownership_contract:20261014_order_cancellation_tracking",
         "20261014_tenant_domain_ssl:20261017_site_config",
         "20261017_site_config:20261017_delivery_schema",
+        "20261017_delivery_schema:20261017_runtime_schema",
+        "20261017_site_config:20261017_runtime_schema",
     }
 
     sources = {
+        "health": (
+            ROOT / "scripts/health-check.sh",
+            "schema_pair_is_compatible() {",
+            "\n}\n\nvalidate_release_path()",
+        ),
         "update": (
             ROOT / "scripts/update-telz.sh",
             "schema_is_rollback_compatible() {",
@@ -128,3 +135,48 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         assert set(re.findall(r'"(202\d{5}_[a-z0-9_]+:202\d{5}_[a-z0-9_]+)"', function)) == reviewed_pairs, label
         assert "&& return 0" in function
         assert "*)\n      return 1" in function
+
+
+def test_health_uses_the_reviewed_schema_predicate_for_the_active_release():
+    source = (ROOT / "scripts/health-check.sh").read_text(encoding="utf-8")
+    assert 'schema_pair_is_compatible "$RELEASE_REVISION" "${DB_CURRENTS[0]}" ||' in source
+
+
+def test_schema_predicates_allow_reviewed_recovery_and_reject_unknown_pairs():
+    import os
+    import shutil
+    import subprocess
+    import pytest
+
+    bash = shutil.which("bash")
+    if os.name == "nt":
+        git_bash = Path("C:/Program Files/Git/bin/bash.exe")
+        if git_bash.is_file():
+            bash = str(git_bash)
+        elif bash and "system32" in bash.lower():
+            pytest.skip("WSL bash nao e usado nos testes de shell Windows")
+    if not bash:
+        pytest.skip("bash indisponivel")
+    sources = (
+        ("scripts/update-telz.sh", "schema_is_rollback_compatible"),
+        ("scripts/rollback-telz.sh", "schema_pair_is_compatible"),
+        ("scripts/health-check.sh", "schema_pair_is_compatible"),
+    )
+    for relative, name in sources:
+        source = (ROOT / relative).read_text(encoding="utf-8")
+        start = source.index(name + "() {")
+        function = source[start:source.index("\n}\n", start) + 2]
+        cases = (
+            ("20261017_runtime_schema", "20261017_runtime_schema", 0),
+            ("20261017_delivery_schema", "20261017_runtime_schema", 0),
+            ("20261017_runtime_schema", "20261017_delivery_schema", 1),
+            ("20261017_site_config", "20261017_runtime_schema", 0),
+            ("20261014_tenant_domain_ssl", "20261017_runtime_schema", 1),
+            ("unknown", "20261017_runtime_schema", 1),
+        )
+        for code, database, expected in cases:
+            result = subprocess.run(
+                [bash, "-c", function + f'\n{name} "$1" "$2"', "bash", code, database],
+                capture_output=True, text=True, timeout=10,
+            )
+            assert result.returncode == expected, (relative, code, database, result.stderr)

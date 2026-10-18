@@ -622,17 +622,18 @@ class WhatsAppGatewayService:
         }
 
     def get_scheduler_settings(self) -> WhatsAppGatewaySchedulerSettings:
+        query = self._scope(self._db.query(WhatsAppGatewaySchedulerSettings), WhatsAppGatewaySchedulerSettings)
+        tenant_id = self._tenant_context.tenant_id if self._tenant_enabled else "tenant-legacy-default"
         settings = (
-            self._scope(self._db.query(WhatsAppGatewaySchedulerSettings), WhatsAppGatewaySchedulerSettings)
-            .filter(WhatsAppGatewaySchedulerSettings.id == (self._tenant_context.tenant_id if self._tenant_enabled else "default"))
-            .first()
+            query.filter(WhatsAppGatewaySchedulerSettings.tenant_id == tenant_id)
+            .one_or_none()
         )
         if settings:
             return settings
         now = _now_utc()
         settings = WhatsAppGatewaySchedulerSettings(
             id=self._tenant_context.tenant_id if self._tenant_enabled else "default",
-            tenant_id=None if self._tenant_enabled else "default",
+            tenant_id=tenant_id,
             company_id="default",
             auto_health_check_enabled=True,
             morning_check_time="06:00",

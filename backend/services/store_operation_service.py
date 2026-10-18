@@ -24,7 +24,7 @@ from backend.schemas.store_operation import (
     StoreWeeklyScheduleIn,
 )
 
-TENANT_ID = "default"
+TENANT_ID = "tenant-legacy-default"
 
 
 class StoreClosed(DomainError):
@@ -38,7 +38,7 @@ class StoreOperationService:
     def __init__(
         self,
         db: Session,
-        tenant_id: str = TENANT_ID,
+        tenant_id: str | None = None,
         tenant_context: TenantContext | None = None,
     ):
         self._db = db
@@ -50,7 +50,8 @@ class StoreOperationService:
         tenant_id: str | None,
         context: TenantContext | None,
     ) -> str:
-        """Keep legacy defaults until Wave 7, then require trusted ownership."""
+        """Use the backfilled legacy owner; Wave 7 requires trusted ownership."""
+        tenant_id = TENANT_ID if tenant_id == "default" else tenant_id
         if not get_settings().MULTI_TENANT_WAVE7_ORM_ENABLED:
             return tenant_id or TENANT_ID
         if context is None:
@@ -202,7 +203,9 @@ class StoreOperationService:
         )
         if settings:
             return settings
-        settings = StoreOperationSettings(id="default", tenant_id=self._tenant_id)
+        settings = StoreOperationSettings(
+            id=f"store-operation-settings-{self._tenant_id}", tenant_id=self._tenant_id,
+        )
         self._db.add(settings)
         self._db.flush()
         for weekday in range(7):

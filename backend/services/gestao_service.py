@@ -9,7 +9,7 @@ from backend.core.exceptions import DomainError
 from backend.models.gestao import GestaoModuleSettings
 from backend.schemas.gestao import GestaoModuleSettingsUpdate
 
-TENANT_ID = "default"
+TENANT_ID = "tenant-legacy-default"
 
 MODULE_DEFAULTS: dict[str, dict] = {
     "inventory": {
@@ -73,7 +73,7 @@ class GestaoModuleNotFound(DomainError):
 class GestaoService:
     def __init__(self, db: Session, tenant_id: str = TENANT_ID):
         self._db = db
-        self._tenant_id = tenant_id
+        self._tenant_id = TENANT_ID if tenant_id == "default" else tenant_id
 
     def list_settings(self) -> list[dict]:
         self._ensure_defaults()

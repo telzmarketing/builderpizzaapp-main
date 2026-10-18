@@ -28,6 +28,51 @@ CURRENT_LINK="${TELZ_CURRENT_RELEASE_LINK:-/var/lib/telz/current}"
 id "$SERVICE_USER" >/dev/null 2>&1 || die "usuario de servico inexistente: $SERVICE_USER"
 [[ -x /usr/bin/python3 ]] || die "/usr/bin/python3 nao encontrado"
 
+schema_pair_is_compatible() {
+  local code_revision="$1"
+  local database_revision="$2"
+  [[ "$code_revision" == "$database_revision" ]] && return 0
+  case "$code_revision:$database_revision" in
+    "20260816_master_completion:20260818_platform_operations" | \
+    "20260817_platform_wave0:20260818_platform_operations" | \
+    "20260924_kds_kitchen_dispatch:20260926_dispatch_labels" | \
+    "20260924_kds_kitchen_dispatch:20260927_order_board_mvp" | \
+    "20260926_dispatch_labels:20260927_order_board_mvp" | \
+    "20260930_tenant_runtime_uniqueness:20261002_marketing_workflow_foundation" | \
+    "20261002_marketing_workflow_foundation:20261003_marketing_workflow_tenant_isolation")
+      return 0
+      ;;
+    "20261003_marketing_workflow_tenant_isolation:20261003_chatbot_tenant_keys")
+      return 0
+      ;;
+    "20261003_chatbot_tenant_keys:20261003_marketing_tenant_keys")
+      return 0
+      ;;
+    "20261003_marketing_tenant_keys:20261003_whatsapp_meta_webhook_tenant_keys")
+      return 0
+      ;;
+    "20261003_whatsapp_meta_webhook_tenant_keys:20261003_email_marketing_tenant_config")
+      return 0
+      ;;
+    "20261003_email_marketing_tenant_config:20261003_agente_whatsapp_tenant_foundation"|\
+    "20261003_agente_whatsapp_tenant_foundation:20261004_wave7_finance_contract"|\
+    "20261004_wave7_finance_contract:20261004_wave7_fiscal_contract"|\
+    "20261004_wave7_fiscal_contract:20261004_wave7_management_geocode_contract"|\
+    "20261004_wave7_management_geocode_contract:20261004_wave7_logistics_identity_contract"|\
+    "20261004_wave7_logistics_identity_contract:20261004_tenant_upload_ownership_contract"|\
+    "20261004_tenant_upload_ownership_contract:20261014_order_cancellation_tracking"|\
+    "20261014_tenant_domain_ssl:20261017_site_config"|\
+    "20261017_site_config:20261017_delivery_schema"|\
+    "20261017_delivery_schema:20261017_runtime_schema"|\
+    "20261017_site_config:20261017_runtime_schema")
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 validate_release_path() {
   local release_app="$1"
   local releases_real release_real release_root release_id manifest candidate
@@ -469,9 +514,7 @@ if [[ -n "${TELZ_ALEMBIC_TARGET:-}" || -n "$RELEASE_REVISION" ]]; then
     )
     [[ "${#CODE_HEADS[@]}" -eq 1 && "${CODE_HEADS[0]}" == "$RELEASE_REVISION" ]] || \
       die "head Alembic da release diverge do manifest"
-    [[ "$RELEASE_REVISION" == "${DB_CURRENTS[0]}" || \
-       "$RELEASE_REVISION:${DB_CURRENTS[0]}" == "20260816_master_completion:20260818_platform_operations" || \
-       "$RELEASE_REVISION:${DB_CURRENTS[0]}" == "20260817_platform_wave0:20260818_platform_operations" ]] || \
+    schema_pair_is_compatible "$RELEASE_REVISION" "${DB_CURRENTS[0]}" || \
       die "release ativa nao e compativel com o schema do banco"
   fi
 fi

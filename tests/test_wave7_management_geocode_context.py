@@ -21,7 +21,7 @@ def _clear_settings_cache():
 
 def test_management_keeps_legacy_default_while_wave7_is_disabled(monkeypatch):
     monkeypatch.delenv("MULTI_TENANT_WAVE7_ORM_ENABLED", raising=False)
-    assert StoreOperationService(SimpleNamespace())._tenant_id == "default"
+    assert StoreOperationService(SimpleNamespace())._tenant_id == "tenant-legacy-default"
 
 
 def test_management_requires_trusted_context_when_wave7_is_enabled(monkeypatch):

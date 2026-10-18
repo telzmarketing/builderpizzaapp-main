@@ -119,9 +119,14 @@ class ShippingService:
     # ─── Config ──────────────────────────────────────────────────────────────
 
     def get_config(self) -> ShippingConfig:
-        cfg = self._query(ShippingConfig).filter(ShippingConfig.id == self._singleton_id("shipping-config")).first()
+        query = self._query(ShippingConfig)
+        tenant_id = self._tenant_context.tenant_id if self._tenant_enabled else "tenant-legacy-default"
+        # Backfills preserve the historic ID. Ownership identifies a singleton.
+        cfg = query.filter(ShippingConfig.tenant_id == tenant_id).one_or_none()
         if not cfg:
-            cfg = self._own(ShippingConfig(id=self._singleton_id("shipping-config")))
+            cfg = self._own(ShippingConfig(
+                id=self._singleton_id("shipping-config"), tenant_id=tenant_id,
+            ))
             self._db.add(cfg)
             self._db.commit()
             self._db.refresh(cfg)
