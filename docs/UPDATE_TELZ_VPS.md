@@ -12,11 +12,11 @@ Revision igual ao head e `SELECT 1` nao comprovam compatibilidade de todos os
 modulos. O ensaio de todas as migrations com PostgreSQL vazio identificou cinco
 colunas adicionais ausentes: `email_templates.category`,
 `marketing_automations.trigger_delay_hours` e tres campos de `traffic_campaigns`.
-A revision `20261017_runtime_schema`, apos `20261017_delivery_schema`, restaura
+A revision `20261020_inventory_recipe_fractions`, apos `20261017_runtime_schema`, restaura
 esse contrato sem substituir dados existentes. O par exato entre essas duas
 revisions permite rollback de codigo; downgrade de dados permanece bloqueado.
 Tambem foi revisado o par direto
-`20261017_site_config:20261017_runtime_schema`: uma VPS ainda nessa revision
+`20261017_site_config:20261020_inventory_recipe_fractions`: uma VPS ainda nessa revision
 pode receber o pacote consolidado em um unico deploy, aplicando as duas
 migrations aditivas. Isso nao autoriza transitividade geral, outros saltos de
 schema nem downgrade; a release anterior conserva acesso ao schema expandido.
@@ -199,7 +199,7 @@ obrigatoria e SHA completo aprovado no CI:
     esac
   done
   test "$(systemctl show telz-domain-ssl.service -p ActiveState --value)" = inactive
-  TELZ_ALEMBIC_TARGET=20261017_runtime_schema \
+  TELZ_ALEMBIC_TARGET=20261020_inventory_recipe_fractions \
     /usr/local/sbin/telz-deploy-from-origin "$TARGET" /opt/telz
 )
 ```
@@ -325,7 +325,7 @@ imutavel e executa health checks.
 O target canonico desta entrega e:
 
 ```text
-20261017_runtime_schema
+20261020_inventory_recipe_fractions
 ```
 
 O deploy fica bloqueado se o commit publicado nao possuir exatamente esse unico
@@ -352,7 +352,7 @@ A cadeia operacional que deve existir no commit publicado e linear:
   -> 20261014_tenant_domain_ssl
   -> 20261017_site_config
   -> 20261017_delivery_schema
-  -> 20261017_runtime_schema
+  -> 20261020_inventory_recipe_fractions
 ```
 
 ## 2. Preflight
@@ -374,7 +374,7 @@ movimentacao manual para contornar o gate.
 
 Confirme no commit alvo:
 
-- unico head Alembic `20261017_runtime_schema`;
+- unico head Alembic `20261020_inventory_recipe_fractions`;
 - workflow e updater usando o mesmo target;
 - CI verde para o mesmo SHA, incluindo o upgrade Alembic em PostgreSQL
   descartavel; CI verde nao substitui o backup nem a migration na VPS;
@@ -410,7 +410,7 @@ deploy, todos estes inputs promovidos e root-owned:
 - archive de fonte alvo e seu `TELZ_SOURCE_ARCHIVE_SHA256`;
 - archive de fonte anterior e seu `TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256`;
 - archive offline de dependencias e seu `TELZ_DEPENDENCY_ARCHIVE_SHA256`;
-- `TELZ_ALEMBIC_TARGET=20261017_runtime_schema`;
+- `TELZ_ALEMBIC_TARGET=20261020_inventory_recipe_fractions`;
 - `TELZ_PUBLIC_HEALTH_URL` quando HTTPS publico e obrigatorio.
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
@@ -451,7 +451,7 @@ sudo /usr/local/sbin/telz-health-check /opt/telz
 ```
 
 Confirme que o link `current` termina em `/releases/<SHA-ALVO>/app`, o manifest
-registra o mesmo commit e `20261017_runtime_schema`, e o banco possui uma unica
+registra o mesmo commit e `20261020_inventory_recipe_fractions`, e o banco possui uma unica
 revision igual ao target.
 
 Tambem valide HTTPS publico, login, loja, pedido, pagamentos, cozinha,

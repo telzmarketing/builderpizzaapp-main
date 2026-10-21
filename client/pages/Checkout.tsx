@@ -137,6 +137,8 @@ export default function Checkout() {
   const [errors, setErrors] = useState<Partial<typeof form>>({});
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
+  const [reviewedQuote, setReviewedQuote] = useState<{ key: string; total: number; items: Array<{ unit_price: number }> } | null>(null);
+  useEffect(() => { setReviewedQuote(null); }, [cart, deliveryMode, form, couponCode]);
   const [createdOrder, setCreatedOrder] = useState<ApiOrder | null>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<SelectedPaymentMethod>("pix");
   const [deliveryPaymentMethod, setDeliveryPaymentMethod] = useState<DeliveryPaymentMethod>("card");
@@ -535,7 +537,7 @@ export default function Checkout() {
   const deliveryFee = shippingResult?.shipping_price ?? 10.0;
   const shippingAvailable = shippingResult?.available !== false;
   const deliveryFeeFinal = couponFreeShipping || promotionFreeShipping || deliveryMode === "pickup" || shippingResult?.free ? 0 : deliveryFee;
-  const total = cartSubtotal + deliveryFeeFinal - couponDiscount;
+  const total = reviewedQuote?.total ?? cartSubtotal + deliveryFeeFinal - couponDiscount;
 
   const handleChange = (field: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -658,6 +660,8 @@ export default function Checkout() {
         add_ons: item.selectedAddOns,
         selected_crust_type_id: item.selectedCrustType?.id ?? null,
         selected_crust_type_name: item.selectedCrustType?.name ?? null,
+        selected_border_id: item.selectedBorder?.id ?? null,
+        selected_border_name: item.selectedBorder?.name ?? null,
         selected_drink_variant_id: item.selectedDrinkVariant?.id ?? null,
         selected_drink_variant_name: item.selectedDrinkVariant?.name ?? null,
         notes: item.notes ?? null,
@@ -691,7 +695,15 @@ export default function Checkout() {
     };
 
     try {
-      const order = await ordersApi.checkout(payload);
+      const quote = await ordersApi.quoteCheckout(payload);
+      const quoteKey = JSON.stringify({ payload, total: quote.total, prices: quote.items.map((item) => item.unit_price) });
+      const changed = Math.abs(quote.total - (cartSubtotal + deliveryFeeFinal - couponDiscount)) > 0.01 || quote.items.some((item, index) => Math.abs(item.unit_price - cart[index].finalPrice) > 0.01);
+      if (changed && reviewedQuote?.key !== quoteKey) {
+        setReviewedQuote({ key: quoteKey, total: quote.total, items: quote.items });
+        setApiError(`Os valores foram atualizados. Novo total: R$ ${quote.total.toFixed(2)}. Revise os valores abaixo e confirme novamente para continuar.`);
+        return;
+      }
+      const order = await ordersApi.checkout({ ...payload, expected_total: quote.total });
       trackEvent("order_created", order.total, { order_id: order.id });
       const _td = getTrackingData();
       customerEventsApi.register({
@@ -1271,7 +1283,7 @@ export default function Checkout() {
         <section>
           <h2 className="text-cream font-bold text-lg mb-4">{c.summaryTitle}</h2>
           <div className="space-y-3">
-            {cart.map((item) => {
+            {cart.map((item, index) => {
               const isMulti = item.flavorDivision > 1;
               const displayName = isMulti ? item.flavors.map((f) => f.name).join(" + ") : item.productData.name;
               const iconSrc = item.flavors[0]?.icon ?? item.productData.icon;
@@ -1291,7 +1303,7 @@ export default function Checkout() {
                       <p className="text-emerald-300 text-[11px] font-semibold mt-0.5">{item.promotionName} aplicada</p>
                     )}
                   </div>
-                  <p className="text-gold font-bold text-sm flex-shrink-0">R$ {(item.finalPrice * item.quantity).toFixed(2)}</p>
+                  <p className="text-gold font-bold text-sm flex-shrink-0">R$ {((reviewedQuote?.items[index]?.unit_price ?? item.finalPrice) * item.quantity).toFixed(2)}</p>
                 </div>
               );
             })}

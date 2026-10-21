@@ -15,6 +15,7 @@ from backend.models.inventory import InventoryItem, InventoryRecipeItem, Invento
 from backend.models.order import Order, OrderItem
 from backend.models.product import Product
 from backend.schemas.order import CartItemIn
+from backend.services.recipe_resolution import resolve_recipes
 
 TENANT_ID = "default"
 
@@ -58,7 +59,16 @@ class OrderCmvSnapshotService:
             )
             .first()
         )
-        return bool(settings and settings.enabled and settings.status != "disabled")
+        if settings and settings.enabled and settings.status != "disabled":
+            return True
+        # Freeze production quantities even when the CMV dashboard is disabled.
+        inventory = self._db.query(GestaoModuleSettings).filter(GestaoModuleSettings.tenant_id == self._tenant_id, GestaoModuleSettings.module_key == "inventory").first()
+        if not inventory or not inventory.enabled or inventory.status == "disabled":
+            return False
+        try:
+            return bool(json.loads(inventory.settings_json or "{}").get("sales_control_enabled"))
+        except (ValueError, TypeError):
+            return False
 
     def create_for_order(self, order: Order, contexts: list[CmvOrderItemContext] | None = None) -> OrderCmvSnapshot | None:
         if not self.module_enabled():
@@ -128,6 +138,8 @@ class OrderCmvSnapshotService:
                 ids.append(context.order_item.product_id)
             if context.cart_item:
                 ids.extend(flavor.product_id for flavor in context.cart_item.flavors)
+            else:
+                ids.extend(flavor.product_id for flavor in context.order_item.flavors)
         return list(dict.fromkeys(ids))
 
     def _product_map(self, product_ids: list[str]) -> dict[str, Product]:
@@ -224,7 +236,7 @@ class OrderCmvSnapshotService:
                     missing_cost=item_missing_cost,
                 ))
 
-        missing_recipe = not recipe_uses
+        missing_recipe = bool(resolve_recipes(context.cart_item or order_item, recipes).missing)
         cmv_percent = round((cost_total / sale_total) * 100, 2) if sale_total > 0 else None
         item_snapshot = OrderItemCmvSnapshot(
             id=str(uuid.uuid4()),
@@ -248,28 +260,7 @@ class OrderCmvSnapshotService:
         context: CmvOrderItemContext,
         recipes: dict[str, list[InventoryRecipeVersion]],
     ) -> list[_RecipeUse]:
-        order_item = context.order_item
-        cart_item = context.cart_item
-        quantity = float(order_item.quantity or 0.0)
-        uses = [
-            _RecipeUse(recipe=recipe, multiplier=quantity)
-            for recipe in self._matching_recipes(
-                recipes.get(order_item.product_id, []),
-                order_item.selected_size_id,
-                order_item.selected_crust_type_id,
-                cart_item.selected_drink_variant_id if cart_item else None,
-            )
-        ]
-        if cart_item:
-            flavor_multiplier = quantity / max(1, int(cart_item.flavor_division or 1))
-            for flavor in cart_item.flavors:
-                if flavor.product_id == order_item.product_id:
-                    continue
-                uses.extend(
-                    _RecipeUse(recipe=recipe, multiplier=flavor_multiplier)
-                    for recipe in self._matching_recipes(recipes.get(flavor.product_id, []), None, None, None)
-                )
-        return uses
+        return resolve_recipes(context.cart_item or context.order_item, recipes).uses
 
     def _matching_recipes(
         self,

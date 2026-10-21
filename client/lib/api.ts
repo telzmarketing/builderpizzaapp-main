@@ -229,6 +229,7 @@ async function request<T>(
     throw new ApiRequestError(message, res.status);
   }
 
+  if (method !== "GET" && path.startsWith("/products") && typeof window !== "undefined") window.dispatchEvent?.(new Event("catalog-products-changed"));
   // 204 No Content
   if (res.status === 204) return undefined as unknown as T;
 
@@ -991,6 +992,9 @@ export interface ApiPromotionalKit {
 }
 
 export interface ApiOrderItem {
+  selected_border_id?: string | null;
+  selected_border_name?: string | null;
+  selected_drink_variant_id?: string | null;
   id: string;
   product_id: string;
   product_name: string;
@@ -1061,6 +1065,7 @@ export interface ApiOrder {
   scheduled_for?: string | null;
   coupon_id: string | null;
   sales_channel?: string;
+  fulfillment_type?: "delivery" | "dine_in" | string | null;
   table_id?: string | null;
   table_session_id?: string | null;
   pedido_status?: OrderStatus;
@@ -1363,6 +1368,7 @@ export type KdsLabelVolumeRuleInput = Pick<KdsLabelVolumeRule, "scope_type" | "s
 
 /** Endpoints operacionais mínimos usados pelas estações KDS touch. */
 export const kdsApi = {
+  serveKitchenOrder: (orderId: string) => post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/serve`, {}),
   overview: () => get<KdsOverview>("/kds/overview"),
   listKitchenOrders: () => get<KdsKitchenOrder[]>("/kds/kitchen/orders"),
   startKitchenOrder: (orderId: string) =>
@@ -1587,6 +1593,8 @@ export const adminOrderBoardApi = {
 };
 
 export interface CheckoutItemIn {
+  selected_border_id?: string | null;
+  selected_border_name?: string | null;
   product_id: string;
   quantity: number;
   selected_size: string;
@@ -1603,6 +1611,7 @@ export interface CheckoutItemIn {
 }
 
 export interface CheckoutIn {
+  expected_total?: number;
   items: CheckoutItemIn[];
   delivery: {
     name: string;
@@ -1879,6 +1888,8 @@ export interface InventoryRecipeItem {
 }
 
 export interface InventoryRecipeVersion {
+  component_role?: "flavor" | "base" | "crust" | "addon" | "packaging";
+  reference_fraction?: number;
   id: string;
   tenant_id?: string;
   product_id: string;
@@ -1924,6 +1935,8 @@ export interface CmvIngredientCost {
 }
 
 export interface CmvRecipeCost {
+  component_role?: "flavor" | "base" | "crust" | "addon" | "packaging";
+  reference_fraction?: number;
   recipe_id: string;
   version_number: number;
   scope_label: string;
@@ -5125,10 +5138,13 @@ export const productPromotionsApi = {
   remove: (productId: string, promotionId: string) =>
     del<void>(`/products/${productId}/promotions/${promotionId}`),
 
-  quote: (productId: string, params?: { size_id?: string | null; crust_id?: string | null; flavor_count?: number; flavor_ids?: string[] }) => {
+  quote: (productId: string, params?: { size_id?: string | null; crust_id?: string | null; border_id?: string | null; drink_variant_id?: string | null; channel?: "delivery" | "dine_in"; flavor_count?: number; flavor_ids?: string[] }) => {
     const search = new URLSearchParams();
     if (params?.size_id) search.set("size_id", params.size_id);
     if (params?.crust_id) search.set("crust_id", params.crust_id);
+    if (params?.border_id) search.set("border_id", params.border_id);
+    if (params?.drink_variant_id) search.set("drink_variant_id", params.drink_variant_id);
+    if (params?.channel) search.set("channel", params.channel);
     if (params?.flavor_count) search.set("flavor_count", String(params.flavor_count));
     params?.flavor_ids?.forEach((id) => search.append("flavor_ids", id));
     const suffix = search.toString() ? `?${search.toString()}` : "";
@@ -5228,6 +5244,7 @@ export interface ApiOrderWhatsappNotificationConfig {
 }
 
 export const ordersApi = {
+  quoteCheckout: (data: CheckoutIn) => request<{ total: number; subtotal: number; items: Array<{ unit_price: number; total_price: number }> }>("POST", "/orders/quote", data, data.customer_id ? customerAccessHeaders(data.customer_id) : undefined),
   checkout: async (data: CheckoutIn) => {
     const order = await request<ApiOrder>(
       "POST",
@@ -5336,6 +5353,16 @@ export interface ApiTableSession {
 }
 
 export interface ApiTableSessionItem {
+  selected_size_id?: string | null;
+  selected_crust_type_id?: string | null;
+  selected_border_id?: string | null;
+  selected_drink_variant_id?: string | null;
+  selected_size?: string | null;
+  selected_crust_type_name?: string | null;
+  selected_border_name?: string | null;
+  selected_drink_variant_name?: string | null;
+  flavor_division?: number;
+  flavors?: Array<{ product_id: string; name: string; price: number; icon: string }>;
   id: string;
   table_session_id: string;
   product_id: string;
@@ -5439,6 +5466,7 @@ export const salaoApi = {
     }) => post<ApiReservation>("/salao/reservations/public", data),
   },
   sessions: {
+    serveOrder: (id: string) => post<{ order_id: string }>(`/salao/table-sessions/${id}/serve`, {}),
     list: (params?: { status?: ApiTableSessionStatus }) =>
       get<ApiTableSession[]>(`/salao/table-sessions${params?.status ? `?status=${params.status}` : ""}`),
     open: (data: Omit<ApiTableSession, "id" | "opened_at" | "closed_at" | "created_at" | "updated_at">) =>
@@ -5447,7 +5475,7 @@ export const salaoApi = {
       patch<ApiTableSession>(`/salao/table-sessions/${id}`, data),
     close: (id: string, data: { subtotal?: number; service_fee?: number; discount?: number; total?: number; status?: "paid" | "closed"; notes?: string | null }) =>
       post<ApiTableSession>(`/salao/table-sessions/${id}/close`, data),
-    addItem: (id: string, data: { product_id: string; quantity: number; unit_price?: number | null; notes?: string | null }) =>
+    addItem: (id: string, data: { product_id: string; quantity: number; unit_price?: number | null; notes?: string | null; selected_size_id?: string | null; selected_crust_type_id?: string | null; selected_border_id?: string | null; selected_drink_variant_id?: string | null; flavor_division?: number; flavors?: Array<{ product_id: string; name?: string; price?: number; icon?: string }> }) =>
       post<ApiTableSession>(`/salao/table-sessions/${id}/items`, data),
     updateItem: (id: string, itemId: string, data: { quantity?: number; unit_price?: number | null; notes?: string | null }) =>
       patch<ApiTableSession>(`/salao/table-sessions/${id}/items/${itemId}`, data),

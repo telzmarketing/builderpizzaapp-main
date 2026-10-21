@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import json
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from backend.core.exceptions import NapolitanaMultiFlavorNotAllowed
-from backend.core.tenant_context import TenantContext
+from backend.core.exceptions import DomainError, NapolitanaMultiFlavorNotAllowed
+from backend.core.tenant_context import TenantContext, TenantSource
 from backend.core.tenant_ownership import identity_catalog_enforcement_enabled, scope_query_to_tenant
-from backend.models.product import Product, ProductCrustType, ProductSize
+from backend.models.product import Product, ProductCrustType, ProductSize, ProductDrinkVariant, PricingRule
 from backend.models.product_promotion import ProductPromotion, ProductPromotionCombination
 
 
@@ -60,12 +60,8 @@ class ProductPricingService:
         self._tenant_context = tenant_context
 
     def _query(self, model):
-        return scope_query_to_tenant(
-            self._db.query(model),
-            model,
-            self._tenant_context,
-            enabled=identity_catalog_enforcement_enabled(),
-        )
+        from backend.core.catalog_context import catalog_query
+        return catalog_query(self._db, model, self._tenant_context)
 
     def calculate(
         self,
@@ -77,7 +73,21 @@ class ProductPricingService:
         standard_price_override: float | None = None,
         flavor_count: int = 1,
         flavor_product_ids: list[str] | None = None,
+        channel: str = "delivery",
+        border: ProductCrustType | None = None,
+        drink_variant: ProductDrinkVariant | None = None,
+        pricing_rule: PricingRule | None = None,
     ) -> ProductPriceResult:
+        if channel not in {"delivery", "dine_in"}:
+            raise DomainError("Canal de venda invalido.", code="InvalidSalesChannel")
+        if border and crust and border.id == crust.id:
+            raise DomainError("Massa e borda devem ser opcoes distintas.", code="DuplicateProductOption")
+        if border and crust and is_napolitana_crust(crust.name):
+            raise DomainError("Massa napolitana nao permite borda adicional.", code="NapolitanaBorderNotAllowed")
+        additions = round(float(border.price_addition if border else 0) + float(drink_variant.price_addition if drink_variant else 0), 2)
+        def finish(result):
+            return replace(result, standard_price=round(result.standard_price + additions, 2), final_price=round(result.final_price + additions, 2))
+
         if crust and flavor_count > 1 and is_napolitana_crust(crust.name):
             raise NapolitanaMultiFlavorNotAllowed()
 
@@ -86,9 +96,11 @@ class ProductPricingService:
             size=size,
             crust=crust,
             flavor_product_ids=flavor_product_ids,
+            channel=channel,
+            pricing_rule=pricing_rule,
         )
         if standard_price is None:
-            standard_price = self._standard_price(product, size, crust, standard_price_override)
+            standard_price = self._standard_price(product, size, crust, standard_price_override, channel)
         current_dt = self._localized_now(now)
 
         promotions = sorted(
@@ -99,16 +111,16 @@ class ProductPricingService:
 
         if flavor_count > 1:
             blocked_promotion = next(
-                (promotion for promotion in promotions if self._matching_combination(promotion, size, crust)),
+                (promotion for promotion in promotions if self._promotion_is_valid(promotion, current_dt) and self._matching_combination(promotion, size, crust)),
                 None,
             )
             if blocked_promotion:
-                return ProductPriceResult(
+                return finish(ProductPriceResult(
                     standard_price=round(standard_price, 2),
                     final_price=round(standard_price, 2),
                     promotion_blocked=True,
                     promotion_block_reason="Promoção válida apenas para pizza de 1 sabor",
-                )
+                ))
 
         for promotion in promotions:
             if not self._promotion_is_valid(promotion, current_dt):
@@ -127,7 +139,7 @@ class ProductPricingService:
             final_price = self._apply_discount(standard_price, promotion.discount_type, float(value))
             discount = max(0.0, round(standard_price - final_price, 2))
             gift = self._resolve_gift(promotion)
-            return ProductPriceResult(
+            return finish(ProductPriceResult(
                 standard_price=round(standard_price, 2),
                 final_price=round(final_price, 2),
                 promotion_id=promotion.id,
@@ -142,12 +154,12 @@ class ProductPricingService:
                 gift_icon=gift.icon if gift else None,
                 gift_original_price=round(float(gift.price), 2) if gift else None,
                 blocks_other_coupons=bool(promotion.blocks_other_coupons),
-            )
+            ))
 
-        return ProductPriceResult(
+        return finish(ProductPriceResult(
             standard_price=round(standard_price, 2),
             final_price=round(standard_price, 2),
-        )
+        ))
 
     def _standard_price(
         self,
@@ -155,13 +167,19 @@ class ProductPricingService:
         size: ProductSize | None,
         crust: ProductCrustType | None,
         override: float | None,
+        channel: str = "delivery",
     ) -> float:
         if override is not None:
             return round(float(override), 2)
-        base_price = float(size.price if size else product.price)
+        base_price = float(size.price if size else self.product_channel_price(product, channel))
         if crust:
             base_price += normalize_crust_price_addition(crust.price_addition, product.price)
         return round(base_price, 2)
+
+    @staticmethod
+    def product_channel_price(product: Product, channel: str = "delivery") -> float:
+        override = getattr(product, "dine_in_price" if channel == "dine_in" else "delivery_price", None)
+        return float(override if override is not None else product.price)
 
     def _multi_flavor_standard_price(
         self,
@@ -170,6 +188,8 @@ class ProductPricingService:
         size: ProductSize | None,
         crust: ProductCrustType | None,
         flavor_product_ids: list[str] | None,
+        channel: str = "delivery",
+        pricing_rule: PricingRule | None = None,
     ) -> float | None:
         if not flavor_product_ids or len(flavor_product_ids) <= 1:
             return None
@@ -183,8 +203,10 @@ class ProductPricingService:
                 .first()
             )
             if not flavor_product:
-                return None
-            prices.append(self._flavor_product_price(flavor_product, selected_size_label, size))
+                raise DomainError("Sabor nao encontrado ou inativo.", code="InvalidFlavor")
+            if not getattr(flavor_product, "visible_dine_in" if channel == "dine_in" else "visible_delivery", True):
+                raise DomainError("Sabor indisponivel neste canal.", code="InvalidFlavorChannel")
+            prices.append(self._flavor_product_price(flavor_product, selected_size_label, size, channel))
 
         if not prices:
             return None
@@ -199,6 +221,7 @@ class ProductPricingService:
         product: Product,
         selected_size_label: str | None,
         selected_size: ProductSize | None,
+        channel: str = "delivery",
     ) -> float:
         if selected_size_label:
             matching_size = next(
@@ -213,7 +236,7 @@ class ProductPricingService:
                 return float(matching_size.price)
             if selected_size and selected_size.product_id == product.id:
                 return float(selected_size.price)
-        return float(product.price)
+        return self.product_channel_price(product, channel)
 
     def _normalize_size_label(self, value: str | None) -> str | None:
         text = str(value or "").strip()

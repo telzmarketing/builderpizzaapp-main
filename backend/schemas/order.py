@@ -25,6 +25,8 @@ class CartItemIn(BaseModel):
     # Pizza crust selection
     selected_crust_type_id: Optional[str] = None
     selected_crust_type_name: Optional[str] = None
+    selected_border_id: Optional[str] = None
+    selected_border_name: Optional[str] = None
     # Drink variant selection
     selected_drink_variant_id: Optional[str] = None
     selected_drink_variant_name: Optional[str] = None
@@ -46,6 +48,7 @@ class DeliveryAddressIn(BaseModel):
 
 
 class CheckoutIn(BaseModel):
+    expected_total: Optional[float] = Field(default=None, ge=0)
     items: list[CartItemIn]
     delivery: DeliveryAddressIn
     coupon_code: Optional[str] = None
@@ -85,6 +88,9 @@ class OrderItemOut(BaseModel):
     flavor_count: int = 1
     selected_crust_type_id: Optional[str] = None
     selected_crust_type: Optional[str] = None
+    selected_border_id: Optional[str] = None
+    selected_border_name: Optional[str] = None
+    selected_drink_variant_id: Optional[str] = None
     selected_drink_variant: Optional[str] = None
     notes: Optional[str] = None
     add_ons: list[str] = []

@@ -159,6 +159,8 @@ type RecipeIngredientForm = {
   notes: string;
 };
 type RecipeFormState = {
+  component_role: NonNullable<InventoryRecipeVersion["component_role"]>;
+  reference_fraction: number;
   product_size_id: string;
   product_crust_type_id: string;
   product_drink_variant_id: string;
@@ -179,6 +181,8 @@ const PRODUCT_CATEGORY_ALL = "__all__";
 const PRODUCT_CATEGORY_UNCATEGORIZED = "__uncategorized__";
 const PRODUCT_CATEGORY_LEGACY_PREFIX = "legacy:";
 const emptyRecipeForm = (): RecipeFormState => ({
+  component_role: "flavor",
+  reference_fraction: 0.5,
   product_size_id: "",
   product_crust_type_id: "",
   product_drink_variant_id: "",
@@ -191,7 +195,32 @@ const emptyRecipeForm = (): RecipeFormState => ({
 
 export default function AdminProducts() {
   const navigate = useNavigate();
-  const { products, addProduct, updateProduct, deleteProduct, multiFlavorsConfig, updateMultiFlavorsConfig } = useApp();
+  const { multiFlavorsConfig, updateMultiFlavorsConfig } = useApp();
+  const [products, setProducts] = useState<Pizza[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState("");
+  const [productStatus, setProductStatus] = useState("active");
+  const loadProducts = useCallback(async () => {
+    setCatalogLoading(true);
+    setCatalogError("");
+    try { setProducts((await productsApi.list(false)).filter((product) => product.product_type !== "brinde")); }
+    catch (error) { setCatalogError(error instanceof Error ? error.message : "Erro ao carregar produtos."); }
+    finally { setCatalogLoading(false); }
+  }, []);
+  useEffect(() => { void loadProducts(); }, [loadProducts]);
+  const notifyCatalogChange = () => window.dispatchEvent(new Event("catalog-products-changed"));
+  const addProduct = async (data: Parameters<typeof productsApi.create>[0]) => {
+    const created = await productsApi.create(data);
+    setProducts((current) => [...current, created]); notifyCatalogChange(); return created;
+  };
+  const updateProduct = async (id: string, data: Parameters<typeof productsApi.update>[1]) => {
+    const updated = await productsApi.update(id, data);
+    setProducts((current) => current.map((product) => product.id === id ? updated : product)); notifyCatalogChange(); return updated;
+  };
+  const deleteProduct = async (id: string) => {
+    await productsApi.remove(id);
+    setProducts((current) => current.map((product) => product.id === id ? { ...product, active: false } : product)); notifyCatalogChange();
+  };
   const [activeTab, setActiveTab] = useState<PTab>("produtos");
   const [tabSearch, setTabSearch] = useState("");
   const [productSort, setProductSort] = useState<ProductSortMode>("recent");
@@ -595,6 +624,8 @@ export default function AdminProducts() {
   const handleEditRecipe = (recipe: InventoryRecipeVersion) => {
     setEditingRecipeId(recipe.id);
     setRecipeForm({
+      component_role: recipe.component_role ?? "flavor",
+      reference_fraction: recipe.reference_fraction ?? 1,
       product_size_id: recipe.product_size_id || "",
       product_crust_type_id: recipe.product_crust_type_id || "",
       product_drink_variant_id: recipe.product_drink_variant_id || "",
@@ -653,6 +684,8 @@ export default function AdminProducts() {
       return;
     }
     const payload = {
+      component_role: recipeForm.component_role,
+      reference_fraction: recipeForm.reference_fraction,
       product_size_id: recipeForm.product_size_id || null,
       product_crust_type_id: recipeForm.product_crust_type_id || null,
       product_drink_variant_id: recipeForm.product_drink_variant_id || null,
@@ -668,12 +701,11 @@ export default function AdminProducts() {
         ? await inventoryApi.updateProductRecipe(recipeModalProduct.id, editingRecipeId, payload)
         : await inventoryApi.createProductRecipe(recipeModalProduct.id, payload);
       setProductRecipes((prev) => {
-        const next = editingRecipeId
-          ? prev.map((recipe) => (recipe.id === saved.id ? saved : recipe))
-          : [saved, ...prev];
+        const next = [saved, ...prev.filter((recipe) => recipe.id !== saved.id).map((recipe) => recipe.id === editingRecipeId ? { ...recipe, active: false } : recipe)];
         return next.map((recipe) => {
           const sameScope =
             recipe.id !== saved.id &&
+            (recipe.component_role ?? "flavor") === (saved.component_role ?? "flavor") &&
             recipe.product_size_id === saved.product_size_id &&
             recipe.product_crust_type_id === saved.product_crust_type_id &&
             recipe.product_drink_variant_id === saved.product_drink_variant_id &&
@@ -1430,6 +1462,7 @@ export default function AdminProducts() {
     return true;
   };
   const filteredProducts = products
+    .filter((product) => productStatus === "all" || (productStatus === "active" ? product.active : !product.active))
     .filter((product) =>
       productMatchesCategoryFilter(product) &&
       matchesSearch(
@@ -1540,6 +1573,7 @@ export default function AdminProducts() {
             </div>
             {activeTab === "produtos" && (
               <div className="flex flex-wrap items-center gap-2">
+                <select aria-label="Status dos produtos" className="rounded-lg bg-surface-02 p-2 text-parchment" value={productStatus} onChange={(event) => setProductStatus(event.target.value)}><option value="active">Ativos</option><option value="inactive">Inativos</option><option value="all">Todos</option></select>
                 <select
                   value={productSort}
                   onChange={(event) => setProductSort(event.target.value as ProductSortMode)}
@@ -1575,6 +1609,8 @@ export default function AdminProducts() {
             {/* ── TAB: PRODUTOS ── */}
             {activeTab === "produtos" && (
               <>
+                {catalogLoading && <p role="status" className="mb-4 text-stone">Carregando produtos...</p>}
+                {catalogError && <p role="alert" className="mb-4 text-red-300">{catalogError} <button className="underline" onClick={() => { void loadProducts(); }}>Tentar novamente</button></p>}
                 <div className="mb-5 space-y-3 rounded-xl border border-surface-03 bg-surface-02/70 p-3">
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -1665,6 +1701,7 @@ export default function AdminProducts() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <h3 className="text-lg font-bold text-cream leading-tight">{product.name}</h3>
+                            <button className="mt-2 text-xs font-bold text-gold underline" onClick={() => { void updateProduct(product.id, { active: !product.active }).catch((error) => alert(error instanceof Error ? error.message : "Erro ao alterar status.")); }}>{product.active ? "Ativo - inativar" : "Inativo - reativar"}</button>
                             <div className="flex flex-wrap gap-1 mt-1">
                               {(product as any).category && (
                                 <span className="inline-flex items-center gap-1 text-xs bg-gold/20 text-gold border border-gold/30 px-2 py-0.5 rounded-full">
@@ -2181,16 +2218,17 @@ export default function AdminProducts() {
                   </div>
 
                   <div>
-                    <label className="block text-parchment text-sm font-medium mb-3">Regra de precificação</label>
+                    <label className="block text-parchment text-sm font-medium mb-3">Regra cadastrada</label>
+                    <p className="mb-3 text-sm text-stone">Pizzas com 2 ou 3 sabores usam sempre a media dos precos. A configuracao legada abaixo e preservada para vendas inteiras.</p>
                     <div className="space-y-2">
                       {PRICING_OPTIONS.map((opt) => (
                         <button
                           key={opt.value}
-                          onClick={() => updateMultiFlavorsConfig({ ...multiFlavorsConfig, pricingRule: opt.value })}
+                          disabled
                           className={`w-full text-left p-3 rounded-xl border-2 transition-all ${multiFlavorsConfig.pricingRule === opt.value ? "border-gold bg-gold/10" : "border-surface-03 hover:border-gold/50"}`}
                         >
                           <p className={`font-bold text-sm ${multiFlavorsConfig.pricingRule === opt.value ? "text-gold" : "text-cream"}`}>{opt.label}</p>
-                          <p className="text-stone text-xs mt-0.5">{opt.description}</p>
+                          <p className="text-stone text-xs mt-0.5">Configuracao legada preservada</p>
                         </button>
                       ))}
                     </div>
@@ -2498,7 +2536,11 @@ export default function AdminProducts() {
 
                     <div className="grid gap-3 md:grid-cols-3">
                       <div>
-                        <label className="mb-1.5 block text-xs font-bold text-parchment">Tamanho</label>
+                        <label className="mb-1.5 block text-xs font-bold text-parchment">Papel da ficha</label>
+                        <select className={cls} value={recipeForm.component_role} onChange={(event) => setRecipeForm((form) => ({ ...form, component_role: event.target.value as RecipeFormState["component_role"], reference_fraction: event.target.value === "flavor" ? 0.5 : 1 }))}><option value="flavor">Sabor</option><option value="base">Base inteira</option><option value="crust">Massa/borda</option><option value="addon">Complemento</option><option value="packaging">Embalagem</option></select>
+                        <label className="mb-1.5 mt-3 block text-xs font-bold text-parchment">Quantidades referentes a</label>
+                        <select className={cls} value={recipeForm.reference_fraction} onChange={(event) => setRecipeForm((form) => ({ ...form, reference_fraction: Number(event.target.value) }))}><option value={0.5}>Meia pizza (1/2)</option><option value={1}>Uma unidade inteira</option>{![0.5, 1].includes(recipeForm.reference_fraction) && <option value={recipeForm.reference_fraction}>{recipeForm.reference_fraction} da unidade</option>}</select>
+                        <label className="mb-1.5 mt-3 block text-xs font-bold text-parchment">Tamanho</label>
                         <select value={recipeForm.product_size_id} onChange={(e) => setRecipeForm((form) => ({ ...form, product_size_id: e.target.value }))} className={cls}>
                           <option value="">Produto base</option>
                           {sizeOptions.map((size) => (

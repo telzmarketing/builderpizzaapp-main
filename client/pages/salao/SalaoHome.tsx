@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { externalFetch, salaoPageApi } from "@/lib/api";
 import { applySalaoSiteOverrides, type SalaoRenderPageKey } from "@/lib/salaoSiteCms";
+import SalaoCatalog from "@/components/SalaoCatalog";
 
 const SALAO_SITE_URL = "/salao-site/index.html";
 
@@ -27,6 +28,7 @@ export default function SalaoHome() {
   const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
+    if (pageKey === "menu") return;
     document.title = "Moschettieri";
     document.documentElement.style.background = "#0b0b0b";
     document.body.style.margin = "0";
@@ -69,6 +71,8 @@ export default function SalaoHome() {
       active = false;
     };
   }, [pageKey]);
+
+  if (pageKey === "menu") return <SalaoCatalog />;
 
   if (unavailable) {
     return (

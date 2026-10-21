@@ -1,17 +1,49 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List
-from datetime import date, datetime
+from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import Optional, List, Literal, ClassVar
+from datetime import date, datetime, time
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from backend.models.product import PricingRule
 
 
-class ProductCategoryCreate(BaseModel):
+class CatalogInput(BaseModel):
+    """Validate supplied values without confusing omission with explicit null."""
+
+    model_config = {"allow_inf_nan": False}
+
+    nullable_fields: ClassVar[frozenset[str]] = frozenset({
+        "parent_id", "description", "category", "subcategory", "product_type",
+        "delivery_price", "dine_in_price", "start_time", "end_time",
+        "start_date", "end_date", "default_value", "gift_product_id",
+        "product_size_id", "product_crust_type_id", "promotional_value",
+    })
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_explicit_nulls(cls, values):
+        if isinstance(values, dict):
+            for key, value in values.items():
+                if value is None and key in cls.model_fields and key not in cls.nullable_fields:
+                    raise ValueError(f"{key} nao pode ser nulo.")
+        return values
+
+    @field_validator("name", "label", check_fields=False)
+    @classmethod
+    def nonblank_name(cls, value):
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise ValueError("Nome/rotulo deve conter texto.")
+        return value
+
+
+class ProductCategoryCreate(CatalogInput):
     parent_id: Optional[str] = None
     name: str = Field(min_length=1, max_length=100)
     active: bool = True
     sort_order: int = 0
 
 
-class ProductCategoryUpdate(BaseModel):
+class ProductCategoryUpdate(CatalogInput):
     parent_id: Optional[str] = None
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     active: Optional[bool] = None
@@ -29,8 +61,8 @@ class ProductCategoryOut(BaseModel):
     updated_at: datetime
 
 
-class ProductSizeCreate(BaseModel):
-    label: str
+class ProductSizeCreate(CatalogInput):
+    label: str = Field(min_length=1, max_length=50)
     description: Optional[str] = None
     price: float = Field(gt=0)
     is_default: bool = False
@@ -38,8 +70,8 @@ class ProductSizeCreate(BaseModel):
     active: bool = True
 
 
-class ProductSizeUpdate(BaseModel):
-    label: Optional[str] = None
+class ProductSizeUpdate(CatalogInput):
+    label: Optional[str] = Field(default=None, min_length=1, max_length=50)
     description: Optional[str] = None
     price: Optional[float] = Field(default=None, ge=0)
     is_default: Optional[bool] = None
@@ -62,15 +94,15 @@ class ProductSizeOut(BaseModel):
 
 # ── Crust Types ───────────────────────────────────────────────────────────────
 
-class ProductCrustTypeCreate(BaseModel):
-    name: str
+class ProductCrustTypeCreate(CatalogInput):
+    name: str = Field(min_length=1, max_length=100)
     price_addition: float = Field(default=0.0, ge=0)
     active: bool = True
     sort_order: int = 0
 
 
-class ProductCrustTypeUpdate(BaseModel):
-    name: Optional[str] = None
+class ProductCrustTypeUpdate(CatalogInput):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     price_addition: Optional[float] = Field(default=None, ge=0)
     active: Optional[bool] = None
     sort_order: Optional[int] = None
@@ -89,15 +121,15 @@ class ProductCrustTypeOut(BaseModel):
 
 # ── Drink Variants ────────────────────────────────────────────────────────────
 
-class ProductDrinkVariantCreate(BaseModel):
-    name: str
+class ProductDrinkVariantCreate(CatalogInput):
+    name: str = Field(min_length=1, max_length=100)
     price_addition: float = Field(default=0.0, ge=0)
     active: bool = True
     sort_order: int = 0
 
 
-class ProductDrinkVariantUpdate(BaseModel):
-    name: Optional[str] = None
+class ProductDrinkVariantUpdate(CatalogInput):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     price_addition: Optional[float] = Field(default=None, ge=0)
     active: Optional[bool] = None
     sort_order: Optional[int] = None
@@ -133,25 +165,36 @@ class ProductBase(BaseModel):
     dine_in_price: Optional[float] = Field(default=None, ge=0)
 
 
-class ProductCreate(ProductBase):
-    pass
+class ProductCreate(ProductBase, CatalogInput):
+    nullable_fields: ClassVar[frozenset[str]] = CatalogInput.nullable_fields - {"description"}
+    name: str = Field(min_length=1, max_length=200)
+    product_type: Optional[Literal["pizza", "drink", "other", "brinde"]] = None
+    best_seller_badge_mode: Literal["off", "manual", "auto"] = "off"
+
+    @field_validator("category", "subcategory")
+    @classmethod
+    def trim_category(cls, value):
+        return value.strip() or None if value is not None else None
 
 
-class ProductUpdate(BaseModel):
-    name: Optional[str] = None
+class ProductUpdate(CatalogInput):
+    nullable_fields: ClassVar[frozenset[str]] = CatalogInput.nullable_fields - {"description"}
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     description: Optional[str] = None
     price: Optional[float] = Field(default=None, ge=0)
     icon: Optional[str] = None
     category: Optional[str] = None
     subcategory: Optional[str] = None
-    product_type: Optional[str] = None
+    product_type: Optional[Literal["pizza", "drink", "other", "brinde"]] = None
     rating: Optional[float] = Field(default=None, ge=1.0, le=5.0)
     active: Optional[bool] = None
-    best_seller_badge_mode: Optional[str] = None
+    best_seller_badge_mode: Optional[Literal["off", "manual", "auto"]] = None
     visible_delivery: Optional[bool] = None
     visible_dine_in: Optional[bool] = None
     delivery_price: Optional[float] = Field(default=None, ge=0)
     dine_in_price: Optional[float] = Field(default=None, ge=0)
+
+    _trim_category = field_validator("category", "subcategory")(ProductCreate.trim_category.__func__)
 
 
 class ProductOut(ProductBase):
@@ -193,7 +236,7 @@ class BestSellerConfigOut(BaseModel):
     updated_at: datetime
 
 
-class BestSellerConfigUpdate(BaseModel):
+class BestSellerConfigUpdate(CatalogInput):
     period_days: Optional[int] = Field(default=None, ge=0)
     top_count: Optional[int] = Field(default=None, ge=1, le=20)
 
@@ -205,7 +248,7 @@ class ProductPromotionCombinationBase(BaseModel):
     promotional_value: Optional[float] = Field(default=None, ge=0)
 
 
-class ProductPromotionCombinationCreate(ProductPromotionCombinationBase):
+class ProductPromotionCombinationCreate(ProductPromotionCombinationBase, CatalogInput):
     pass
 
 
@@ -236,11 +279,48 @@ class ProductPromotionBase(BaseModel):
     timezone: str = "America/Sao_Paulo"
 
 
-class ProductPromotionCreate(ProductPromotionBase):
+class PromotionInput(CatalogInput):
+    @field_validator("start_time", "end_time", check_fields=False)
+    @classmethod
+    def valid_clock_time(cls, value):
+        if value is not None:
+            try:
+                time.fromisoformat(value)
+            except ValueError as exc:
+                raise ValueError("Horario deve ser valido em HH:MM.") from exc
+        return value
+
+    @field_validator("timezone", check_fields=False)
+    @classmethod
+    def valid_timezone(cls, value):
+        if value is not None:
+            try:
+                ZoneInfo(value)
+            except (ZoneInfoNotFoundError, ValueError) as exc:
+                raise ValueError("Fuso horario invalido.") from exc
+        return value
+
+    @field_validator("valid_weekdays", check_fields=False)
+    @classmethod
+    def valid_weekdays_list(cls, value):
+        if value is not None and any(day < 0 or day > 6 for day in value):
+            raise ValueError("Dias da semana devem estar entre 0 e 6.")
+        return sorted(set(value)) if value is not None else value
+
+    @model_validator(mode="after")
+    def valid_date_window(self):
+        start = getattr(self, "start_date", None)
+        end = getattr(self, "end_date", None)
+        if start is not None and end is not None and end < start:
+            raise ValueError("Fim da promocao deve ser igual ou posterior ao inicio.")
+        return self
+
+
+class ProductPromotionCreate(ProductPromotionBase, PromotionInput):
     combinations: List[ProductPromotionCombinationCreate] = Field(default_factory=list)
 
 
-class ProductPromotionUpdate(BaseModel):
+class ProductPromotionUpdate(PromotionInput):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     active: Optional[bool] = None
     valid_weekdays: Optional[List[int]] = None
@@ -290,7 +370,7 @@ class ProductPriceQuoteOut(BaseModel):
 
 # ── Multi-flavor config ───────────────────────────────────────────────────────
 
-class MultiFlavorsConfigUpdate(BaseModel):
+class MultiFlavorsConfigUpdate(CatalogInput):
     max_flavors: Optional[int] = Field(default=None, ge=2, le=3)
     pricing_rule: Optional[PricingRule] = None
     flavor_category_filters: Optional[list[str]] = None

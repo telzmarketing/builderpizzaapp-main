@@ -7,11 +7,11 @@ from sqlalchemy.orm import Session
 from backend.models.product import Product, ProductCategory
 from backend.schemas.product import ProductCategoryCreate, ProductCategoryUpdate
 from backend.core.tenant_context import TenantContext
-from backend.core.tenant_ownership import assign_tenant_on_create, identity_catalog_enforcement_enabled, scope_query_to_tenant
+from backend.core.catalog_context import catalog_query, assign_catalog_tenant
 
 
 def _query(db: Session, model, context: TenantContext | None):
-    return scope_query_to_tenant(db.query(model), model, context, enabled=identity_catalog_enforcement_enabled())
+    return catalog_query(db, model, context)
 
 
 def list_categories(db: Session, active_only: bool = False, tenant_context: TenantContext | None = None) -> list[ProductCategory]:
@@ -42,7 +42,7 @@ def create_category(db: Session, body: ProductCategoryCreate, tenant_context: Te
         active=body.active,
         sort_order=body.sort_order,
     )
-    assign_tenant_on_create(category, tenant_context, enabled=identity_catalog_enforcement_enabled())
+    assign_catalog_tenant(category, tenant_context)
     db.add(category)
     db.commit()
     db.refresh(category)
@@ -55,7 +55,8 @@ def update_category(db: Session, category_id: str, body: ProductCategoryUpdate, 
         raise HTTPException(404, "Categoria nao encontrada.")
 
     old_name = category.name
-    changes = body.model_dump(exclude_none=True)
+    old_parent_id = category.parent_id
+    changes = body.model_dump(exclude_unset=True)
     if "parent_id" in changes and changes["parent_id"]:
         if changes["parent_id"] == category_id:
             raise HTTPException(400, "Categoria nao pode ser filha dela mesma.")
@@ -91,6 +92,22 @@ def update_category(db: Session, category_id: str, body: ProductCategoryUpdate, 
             {Product.subcategory: changes["name"]},
             synchronize_session=False,
         )
+    if "parent_id" in changes and changes["parent_id"] != old_parent_id:
+        name = category.name
+        if category.parent_id is None:
+            _query(db, Product, tenant_context).filter(Product.subcategory == name).update(
+                {Product.category: name, Product.subcategory: None}, synchronize_session=False,
+            )
+        else:
+            parent = _query(db, ProductCategory, tenant_context).filter(ProductCategory.id == category.parent_id).first()
+            if old_parent_id is None:
+                _query(db, Product, tenant_context).filter(Product.category == name).update(
+                    {Product.category: parent.name, Product.subcategory: name}, synchronize_session=False,
+                )
+            else:
+                _query(db, Product, tenant_context).filter(Product.subcategory == name).update(
+                    {Product.category: parent.name}, synchronize_session=False,
+                )
     db.commit()
     db.refresh(category)
     return category

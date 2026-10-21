@@ -3,7 +3,7 @@ import type { KdsDispatchOrder, KdsKitchenOrder, KdsOverviewOrder, KdsOverviewSt
 const KITCHEN_ACTIVE_STATUSES = new Set(["paid", "pago", "preparing"]);
 
 export function activeKitchenOrders(orders: KdsKitchenOrder[]): KdsKitchenOrder[] {
-  return orders.filter((order) => KITCHEN_ACTIVE_STATUSES.has(order.status));
+  return orders.filter((order) => KITCHEN_ACTIVE_STATUSES.has(order.status) || (order.status === "ready_for_pickup" && (order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in")));
 }
 
 export function clearAssignedDriverSelections(

@@ -60,6 +60,7 @@ function CartItemRow({ item, onRemove, onUpdate }: {
               {SIZE_LABEL[item.selectedSize] ?? pizzaSizeLabel(item.selectedSize)}
               {isMulti && ` · ${divisionLabel(item.flavorDivision)}`}
               {item.selectedCrustType && ` · ${item.selectedCrustType.name}`}
+              {item.selectedBorder && ` · ${item.selectedBorder.name}`}
               {item.selectedDrinkVariant && ` · ${item.selectedDrinkVariant.name}`}
             </span>
           </div>

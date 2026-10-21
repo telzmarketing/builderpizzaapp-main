@@ -10,6 +10,7 @@ from backend.models.gestao import GestaoModuleSettings
 from backend.models.inventory import InventoryItem, InventoryRecipeItem, InventoryRecipeVersion, InventoryStockMovement
 from backend.models.order import Order, OrderStatus
 from backend.models.product import Product
+from backend.models.payment import Payment, PaymentStatus
 
 TENANT_ID = "default"
 
@@ -146,7 +147,9 @@ class CmvService:
         rows = (
             self._db.query(OrderCmvSnapshot)
             .join(Order, Order.id == OrderCmvSnapshot.order_id)
+            .join(Payment, Payment.order_id == Order.id)
             .filter(OrderCmvSnapshot.tenant_id == self._tenant_id)
+            .filter(Payment.tenant_id == self._tenant_id, Payment.status.in_([PaymentStatus.approved, PaymentStatus.paid]))
             .filter(Order.status.in_(effective_statuses))
             .all()
         )
@@ -206,7 +209,8 @@ class CmvService:
             cost = unit_costs.get(item.inventory_item_id, {"unit_cost": 0.0, "source": "missing"})
             unit_cost = float(cost["unit_cost"] or 0.0)
             waste_multiplier = 1 + (float(item.waste_percent or 0.0) / 100)
-            total = float(item.quantity or 0.0) * waste_multiplier * unit_cost
+            # Cost overview expresses one complete sale unit, not half-reference.
+            total = float(item.quantity or 0.0) / float(recipe.reference_fraction or 1.0) * waste_multiplier * unit_cost
             item_missing = unit_cost <= 0
             missing_cost = missing_cost or item_missing
             cost_total += total
@@ -225,6 +229,8 @@ class CmvService:
         return {
             "recipe_id": recipe.id,
             "version_number": recipe.version_number,
+            "component_role": recipe.component_role,
+            "reference_fraction": recipe.reference_fraction,
             "scope_label": self._scope_label(recipe),
             "product_size_id": recipe.product_size_id,
             "product_crust_type_id": recipe.product_crust_type_id,

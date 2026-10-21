@@ -366,6 +366,11 @@ export default function Product() {
   const [productCrusts, setProductCrusts] = useState<ApiProductCrustType[]>([]);
   const [selectedCrust, setSelectedCrust] = useState<ApiProductCrustType | null>(null);
   const [selectedBorder, setSelectedBorder] = useState<ApiProductCrustType | null>(null);
+  const [selectedDrinkVariantId, setSelectedDrinkVariantId] = useState("");
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [optionsError, setOptionsError] = useState("");
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState("");
   const [priceQuote, setPriceQuote] = useState<ApiProductPriceQuote | null>(null);
 
   const [imageZoomOpen, setImageZoomOpen] = useState(false);
@@ -401,6 +406,7 @@ export default function Product() {
     setCartError(false);
     setSelectedCrust(null);
     setSelectedBorder(null);
+    setSelectedDrinkVariantId((product.drink_variants ?? []).find((variant) => variant.active)?.id ?? "");
     setImageZoomOpen(false);
     setImageZoomScale(1);
     setImageZoomPosition({ x: 50, y: 50 });
@@ -417,10 +423,12 @@ export default function Product() {
     setSelectedSizeObj(null);
     setProductCrusts([]);
 
-    if (isDrink) {
-      setSelectedSizeFallback("");
-    } else {
-      sizesApi.list(product.id).then((sizes) => {
+    let cancelled = false;
+    setOptionsLoading(true);
+    setOptionsError("");
+    setSelectedSizeFallback(isPizza ? "Pizza Grande" : "");
+    const sizesRequest = sizesApi.list(product.id).then((sizes) => {
+        if (cancelled) return;
         const activeSizes = sizes.filter((s) => s.active && (!isPizza || isAllowedPizzaSize(s.label)));
         setProductSizes(activeSizes);
         if (activeSizes.length > 0) {
@@ -431,27 +439,25 @@ export default function Product() {
           setSelectedSizeFallback(isPizza ? "Pizza Grande" : "");
         }
       }).catch(() => {
-        setProductSizes([]);
-        setSelectedSizeObj(null);
-        setSelectedSizeFallback(isPizza ? "Pizza Grande" : "");
+        if (!cancelled) setOptionsError("Nao foi possivel carregar as opcoes. Recarregue para tentar novamente.");
       });
-    }
 
     // Load crust types for pizza
-    if (isPizza) {
-      crustApi.list(product.id).then((crusts) => {
+    const crustRequest = isPizza ? crustApi.list(product.id).then((crusts) => {
+        if (cancelled) return;
         const activeCrusts = crusts.filter((c) => c.active);
         setProductCrusts(activeCrusts);
         const firstRegular = activeCrusts.find((c) => !isCatupiryCrust(c.name));
         setSelectedCrust(firstRegular ?? activeCrusts[0] ?? null);
         setSelectedBorder(null);
-      }).catch(() => setProductCrusts([]));
-    }
+      }).catch(() => { if (!cancelled) setOptionsError("Nao foi possivel carregar as massas e bordas."); }) : Promise.resolve();
+    Promise.all([sizesRequest, crustRequest]).finally(() => { if (!cancelled) setOptionsLoading(false); });
+    return () => { cancelled = true; };
   }, [product?.id, isPizza, isDrink]);
 
   const selectedSize = selectedSizeObj ? selectedSizeObj.label : selectedSizeFallback;
   const isPizzaBrotoSelected = isPizza && isPizzaBroto(selectedSize);
-  const productPrice = product?.price ?? 0;
+  const productPrice = product?.delivery_price ?? product?.price ?? 0;
   const effectiveDivision: FlavorDivision = isFixedFlavorCombination ? 1 : division;
 
   // Separar crusts regulares de bordas (catupiry)
@@ -493,31 +499,40 @@ export default function Product() {
   }, [effectiveDivision, productCrusts, selectedCrust?.id]);
 
   useEffect(() => {
-    if (!product || !isPizza) {
+    if (!product || optionsLoading || optionsError) {
       setPriceQuote(null);
       return;
     }
 
     let cancelled = false;
+    setQuoteLoading(true);
+    setQuoteError("");
+    setPriceQuote(null);
     const selectedFlavorIds = flavorSlots
       .slice(0, division)
       .map((flavor) => flavor?.id)
       .filter((id): id is string => Boolean(id));
+    if (selectedFlavorIds.length !== effectiveDivision) { setQuoteLoading(false); return; }
     productPromotionsApi.quote(product.id, {
       size_id: selectedSizeObj?.id ?? null,
       crust_id: selectedCrust?.id ?? null,
+      border_id: selectedBorder?.id ?? null,
+      drink_variant_id: selectedDrinkVariantId || null,
+      channel: "delivery",
       flavor_count: isDrink ? 1 : effectiveDivision,
       flavor_ids: selectedFlavorIds,
     }).then((quote) => {
       if (!cancelled) setPriceQuote(quote);
     }).catch(() => {
-      if (!cancelled) setPriceQuote(null);
+      if (!cancelled) { setPriceQuote(null); setQuoteError("Nao foi possivel confirmar o preco. Tente novamente."); }
+    }).finally(() => {
+      if (!cancelled) setQuoteLoading(false);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [product?.id, isPizza, isDrink, selectedSizeObj?.id, selectedCrust?.id, effectiveDivision, selectedFlavorIdsKey]);
+  }, [product?.id, isPizza, isDrink, selectedSizeObj?.id, selectedCrust?.id, selectedBorder?.id, selectedDrinkVariantId, effectiveDivision, selectedFlavorIdsKey, optionsLoading, optionsError]);
 
   // ── Computed values ──────────────────────────────────────────────────────────
 
@@ -539,7 +554,7 @@ export default function Product() {
       if (flavor.id === product?.id && selectedSizeObj) return selectedSizeObj.price;
     }
 
-    return flavor.price;
+    return flavor.delivery_price ?? flavor.price;
   };
 
   const flavorPrice = useMemo(() => {
@@ -561,7 +576,7 @@ export default function Product() {
 
   const borderAddition = isPizza && selectedBorder ? (selectedBorder.price_addition ?? 0) : 0;
   const localPricePerUnit = flavorPrice + variantPriceAddition;
-  const pricePerUnit = (isPizza && priceQuote ? priceQuote.final_price : localPricePerUnit) + borderAddition;
+  const pricePerUnit = priceQuote ? priceQuote.final_price : localPricePerUnit + borderAddition;
   const totalPrice = pricePerUnit * quantity;
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -624,6 +639,7 @@ export default function Product() {
 
   const handleAddToCart = () => {
     if (!product) return;
+    if (optionsLoading || optionsError || quoteLoading || quoteError || !priceQuote) return;
     if (product.inventory_available === false) return;
     if (!isFixedFlavorCombination && isPizzaBrotoSelected && division > 1) {
       setDivision(1);
@@ -658,13 +674,13 @@ export default function Product() {
     const crustVariation: CartItemVariation | null = isPizza && selectedCrust
       ? {
           id: selectedCrust.id,
-          name: selectedBorder ? `${selectedCrust.name} + ${selectedBorder.name}` : selectedCrust.name,
-          priceAddition: crustAddition + borderAddition,
+          name: selectedCrust.name,
+          priceAddition: crustAddition,
         }
       : null;
 
     addToCart(
-      isFixedFlavorCombination ? product : flavorSlots[0]!,
+      product,
       quantity,
       selectedSize,
       [],
@@ -673,7 +689,7 @@ export default function Product() {
       pricePerUnit,
       notes || undefined,
       crustVariation,
-      null,
+      selectedDrinkVariantId ? { id: selectedDrinkVariantId, name: product.drink_variants?.find((variant) => variant.id === selectedDrinkVariantId)?.name ?? "", priceAddition: product.drink_variants?.find((variant) => variant.id === selectedDrinkVariantId)?.price_addition ?? 0 } : null,
       selectedSizeObj?.id,
       priceQuote?.promotion_applied ? {
         applied: true,
@@ -688,6 +704,7 @@ export default function Product() {
         giftIcon: priceQuote.gift_icon,
         blocksOtherCoupons: priceQuote.blocks_other_coupons,
       } : undefined,
+      selectedBorder ? { id: selectedBorder.id, name: selectedBorder.name, priceAddition: borderAddition } : null,
     );
     trackEvent("add_to_cart", totalPrice, { product_id: product.id, quantity, selected_size: selectedSize });
     navigate("/cart");
@@ -701,11 +718,12 @@ export default function Product() {
 
   const availableForSlot = (slotIndex: number) =>
     products.filter((p) => {
+      if (slotIndex === 0) return p.id === product?.id;
       return p.inventory_available !== false && isPizzaFlavorCandidate(p, { allowSweet: division === 1, categoryFilters: flavorCategoryFilters }) && !flavorSlots.some((f, fi) => fi !== slotIndex && f?.id === p.id);
     });
 
-  const productInventoryAvailable = product.inventory_available !== false;
-  const canAddToCart = productInventoryAvailable && (isDrink ? true : (allFilled && (regularCrusts.length === 0 || selectedCrust !== null)));
+  const productInventoryAvailable = !!product && product.inventory_available !== false;
+  const canAddToCart = productInventoryAvailable && !optionsLoading && !optionsError && !quoteLoading && !quoteError && !!priceQuote && (isDrink ? true : (allFilled && (regularCrusts.length === 0 || selectedCrust !== null)));
 
   if (appLoading && !product) {
     return (
@@ -877,7 +895,9 @@ export default function Product() {
         )}
 
         {/* ── Size Selector ───────────────────────────────────────────────── */}
-        {!isDrink && (
+        {(optionsLoading || optionsError || quoteError) && <div role="status" className="mb-4 rounded-xl bg-surface-02 p-4 text-sm text-amber-300">{optionsError || quoteError || "Carregando opcoes..."}{(optionsError || quoteError) && <button className="ml-3 underline" onClick={() => window.location.reload()}>Tentar novamente</button>}</div>}
+        {isDrink && (product.drink_variants ?? []).some((variant) => variant.active) && <label className="mb-6 block text-cream">Variante<select className="mt-2 block w-full rounded-xl bg-surface-02 p-3" value={selectedDrinkVariantId} onChange={(event) => setSelectedDrinkVariantId(event.target.value)}>{(product.drink_variants ?? []).filter((variant) => variant.active).map((variant) => <option key={variant.id} value={variant.id}>{variant.name}{variant.price_addition > 0 ? ` (+ R$ ${variant.price_addition.toFixed(2)})` : ""}</option>)}</select></label>}
+        {(!isDrink || productSizes.length > 0) && (
         <div className="mb-6">
           <h3 className="text-cream font-bold mb-3">
             {p.sizeLabel}
@@ -1281,6 +1301,8 @@ export default function Product() {
             ? `${p.addToCartButton} · R$ ${totalPrice.toFixed(2)}`
             : !productInventoryAvailable
             ? "Indisponivel no momento"
+            : optionsLoading || quoteLoading ? "Confirmando opcoes e preco..."
+            : optionsError || quoteError ? "Preco indisponivel - tente novamente"
             : `Escolha ${activeFlavors.filter((f) => !f).length} sabor(es) restante(s)`}
         </button>
       </div>

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
+from backend.core.rbac_authorization import AuthorizedTenantActor, require_rbac_permission
 from backend.core.tenant_context import TenantContext
 from backend.core.tenant_route_context import panel_operation_context, public_operation_context
 from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
@@ -218,3 +219,9 @@ def delete_table_session_item(
     tenant_context: TenantContext | None = Depends(panel_operation_context),
 ):
     return TableSessionService(db, tenant_context).delete_item(session_id, item_id)
+
+
+@router.post("/table-sessions/{session_id}/serve", response_model=TableSessionOrderOut)
+def serve_table_session_order(session_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("mesas", "edit"))):
+    order = OrderService(db, actor.tenant_context).serve_table_session(session_id, changed_by=actor.user_id)
+    return {"order_id": order.id}

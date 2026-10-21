@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, Time
+from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Float, ForeignKey, ForeignKeyConstraint, Index, Integer, String, Text, Time
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -98,6 +98,16 @@ class TableSessionItem(Base):
     table_session_id = Column(String, ForeignKey("table_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="RESTRICT"), nullable=False, index=True)
     product_name = Column(String(200), nullable=False)
+    selected_size_id = Column(String, nullable=True)
+    selected_size = Column(String(50), nullable=True)
+    selected_crust_type_id = Column(String, nullable=True)
+    selected_crust_type_name = Column(String(100), nullable=True)
+    selected_border_id = Column(String, nullable=True)
+    selected_border_name = Column(String(100), nullable=True)
+    selected_drink_variant_id = Column(String, nullable=True)
+    selected_drink_variant_name = Column(String(100), nullable=True)
+    flavor_division = Column(Integer, nullable=False, default=1)
+    flavors = Column(JSON, nullable=False, default=list)
     quantity = Column(Integer, nullable=False, default=1)
     unit_price = Column(Float, nullable=False, default=0.0)
     total_price = Column(Float, nullable=False, default=0.0)
@@ -111,4 +121,10 @@ class TableSessionItem(Base):
 
     session = relationship("TableSession", back_populates="items")
     product = relationship("Product")
-    __table_args__ = (Index("uq_table_session_items_tenant_id_id", "tenant_id", "id", unique=True),)
+    __table_args__ = (
+        Index("uq_table_session_items_tenant_id_id", "tenant_id", "id", unique=True),
+        ForeignKeyConstraint(["tenant_id", "selected_size_id"], ["product_sizes.tenant_id", "product_sizes.id"], name="fk_table_session_items_tenant_size"),
+        ForeignKeyConstraint(["tenant_id", "selected_crust_type_id"], ["product_crust_types.tenant_id", "product_crust_types.id"], name="fk_table_session_items_tenant_crust"),
+        ForeignKeyConstraint(["tenant_id", "selected_border_id"], ["product_crust_types.tenant_id", "product_crust_types.id"], name="fk_table_session_items_tenant_border"),
+        ForeignKeyConstraint(["tenant_id", "selected_drink_variant_id"], ["product_drink_variants.tenant_id", "product_drink_variants.id"], name="fk_table_session_items_tenant_drink_variant"),
+    )

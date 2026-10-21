@@ -9,12 +9,13 @@ import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import CategorySeal from "@/components/CategorySeal";
 import BestSellerSeal from "@/components/BestSellerSeal";
+import { ALL_PRODUCTS_CATEGORY, getHomeCatalogCategories, productMatchesHomeCategory, type HomeCatalogCategory } from "@/lib/homeCatalog";
 
 export default function Cardapio() {
   const navigate = useNavigate();
-  const { products, productsLoaded, addToCart } = useApp();
+  const { products, productsLoaded, productsError, retryProducts, addToCart } = useApp();
   const PROMO_LABEL = "Promoções";
-  const [activeCategory, setActiveCategory] = useState("");
+  const [activeCategory, setActiveCategory] = useState<HomeCatalogCategory>("");
   const [search, setSearch] = useState("");
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
@@ -37,8 +38,8 @@ export default function Cardapio() {
     [products]
   );
   const effectiveCategories = useMemo(
-    () => [...(hasPromos ? [PROMO_LABEL] : []), ...productCats],
-    [hasPromos, productCats]
+    () => getHomeCatalogCategories(products, catalogCategories),
+    [products, catalogCategories]
   );
 
   useEffect(() => {
@@ -56,10 +57,10 @@ export default function Cardapio() {
 
   const filtered = products.filter((p) => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.description.toLowerCase().includes(search.toLowerCase());
+      (p.description ?? "").toLowerCase().includes(search.toLowerCase());
     const matchCat =
       activeCategory !== "" &&
-      (activeCategory === PROMO_LABEL ? p.promotion_applied : ((p.subcategory || p.category) ?? "").toLowerCase() === activeCategory.toLowerCase());
+      productMatchesHomeCategory(p, activeCategory);
     return matchSearch && matchCat && p.active;
   });
   const isCatalogLoading = !productsLoaded && products.length === 0;
@@ -72,7 +73,7 @@ export default function Cardapio() {
     if (product.inventory_available === false) return;
     const productType = (product as any).product_type as string | null | undefined;
     const isPizza = !productType || productType === "pizza";
-    if (isPizza) {
+    if (isPizza || product.sizes?.some((size) => size.active) || product.drink_variants?.some((variant) => variant.active) || product.crust_types?.some((crust) => crust.active) || product.promotion_applied) {
       navigate(productTarget(product));
       return;
     }
@@ -80,7 +81,7 @@ export default function Cardapio() {
     addToCart(
       product,
       1,
-      "M",
+      "",
       [],
       [{ productId: product.id, name: product.name, price: unitPrice, icon: product.icon || "🍕" }],
       1,
@@ -136,7 +137,7 @@ export default function Cardapio() {
       <div className="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-hide max-w-2xl mx-auto">
         {effectiveCategories.map((cat) => (
           <button
-            key={cat}
+            key={cat === ALL_PRODUCTS_CATEGORY ? "all" : cat}
             onClick={() => setActiveCategory(cat)}
             className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
               activeCategory === cat
@@ -144,16 +145,17 @@ export default function Cardapio() {
                 : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
             }`}
           >
-            {cat}
+            {cat === ALL_PRODUCTS_CATEGORY ? "Todos" : cat}
           </button>
         ))}
       </div>
 
       {/* Products Grid */}
       <div className="px-4 pb-32 max-w-2xl mx-auto w-full">
+        {productsError && <div role="alert" className="mb-4 rounded-xl bg-surface-02 p-4 text-amber-300">Nao foi possivel atualizar o cardapio. <button className="underline" onClick={() => { void retryProducts().catch(() => {}); }}>Tentar novamente</button></div>}
         {isCatalogLoading ? (
           <CatalogGridSkeleton />
-        ) : filtered.length === 0 ? (
+        ) : filtered.length === 0 && !productsError ? (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">🍕</div>
             <p className="text-stone">Nenhum produto encontrado</p>

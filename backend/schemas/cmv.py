@@ -18,6 +18,8 @@ class CmvIngredientCostOut(BaseModel):
 class CmvRecipeCostOut(BaseModel):
     recipe_id: str
     version_number: int
+    component_role: str = "flavor"
+    reference_fraction: float = 1.0
     scope_label: str
     product_size_id: str | None = None
     product_crust_type_id: str | None = None

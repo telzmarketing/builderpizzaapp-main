@@ -117,3 +117,11 @@ def dispatch_assign(
         return ok(result, "Motoboy atribuido; pedido aguarda inicio da rota.")
     except DomainError as exc:
         return err(exc)
+
+
+@router.post("/kitchen/orders/{order_id}/serve")
+def kitchen_serve(order_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "edit"))):
+    try:
+        return ok(KdsService(db, actor.tenant_context).serve_dine_in(order_id, actor_id=actor.user_id), "Pedido servido.")
+    except DomainError as exc:
+        return err(exc)

@@ -43,12 +43,18 @@ class _SalaoTenantMixin:
         return scope_query_to_tenant(
             self._db.query(model),
             model,
-            self._tenant_context,
-            enabled=self._tenant_enabled,
+            self._effective_context(),
+            enabled=True,
         )
 
     def _own(self, resource):
-        return assign_tenant_on_create(resource, self._tenant_context, enabled=self._tenant_enabled)
+        return assign_tenant_on_create(resource, self._effective_context(), enabled=True)
+
+    def _effective_context(self):
+        if self._tenant_enabled and self._tenant_context is None:
+            from backend.core.tenant_context import TenantContextMissing
+            raise TenantContextMissing("Contexto de tenant obrigatorio.")
+        return self._tenant_context or TenantContext(tenant_id="tenant-legacy-default", source=TenantSource.JOB)
 
 
 class RestaurantTableService(_SalaoTenantMixin):
@@ -223,24 +229,36 @@ class TableSessionService(_SalaoTenantMixin):
         self._db.refresh(session)
         return session
 
+    def _configuration(self, data: dict):
+        from backend.services.order_service import OrderService
+        from backend.schemas.order import CartItemIn
+        product = self._get_dine_in_product(data["product_id"])
+        flavors = data.get("flavors") or [{"product_id": product.id, "name": product.name, "price": product.price, "icon": product.icon or ""}]
+        cart = CartItemIn(
+            product_id=product.id, quantity=data.get("quantity", 1), selected_size="Unico",
+            selected_size_id=data.get("selected_size_id"), selected_crust_type_id=data.get("selected_crust_type_id"),
+            selected_border_id=data.get("selected_border_id"), selected_drink_variant_id=data.get("selected_drink_variant_id"),
+            flavor_division=data.get("flavor_division", 1), flavors=flavors, final_price=0,
+        )
+        orders = OrderService(self._db, self._tenant_context)
+        price, products, _, _, _ = orders._validate_item(cart, orders._get_config(), channel="dine_in")
+        values = {key: getattr(cart, key) for key in (
+            "selected_size_id", "selected_size", "selected_crust_type_id", "selected_crust_type_name",
+            "selected_border_id", "selected_border_name", "selected_drink_variant_id", "selected_drink_variant_name", "flavor_division",
+        )}
+        values["flavors"] = [{"product_id": row.id, "name": row.name, "price": row.price, "icon": row.icon or ""} for row in products]
+        return product, price, values
+
     def add_item(self, session_id: str, data: dict) -> TableSession:
         session = self.get(session_id)
         self._ensure_open(session)
-        product = self._get_dine_in_product(data["product_id"])
+        product, unit_price, configuration = self._configuration(data)
         quantity = max(1, int(data.get("quantity") or 1))
-        unit_price = data.get("unit_price")
-        if unit_price is None:
-            unit_price = product.dine_in_price if product.dine_in_price is not None else product.price
-        unit_price = round(float(unit_price), 2)
         item = self._own(TableSessionItem(
-            id=f"tsi-{uuid.uuid4().hex[:10]}",
-            table_session_id=session.id,
-            product_id=product.id,
-            product_name=product.name,
-            quantity=quantity,
-            unit_price=unit_price,
-            total_price=round(unit_price * quantity, 2),
-            notes=data.get("notes"),
+            id=f"tsi-{uuid.uuid4().hex[:10]}", table_session_id=session.id,
+            product_id=product.id, product_name=product.name, quantity=quantity,
+            unit_price=unit_price, total_price=round(unit_price * quantity, 2),
+            notes=data.get("notes"), **configuration,
         ))
         self._db.add(item)
         self._db.flush()
@@ -253,10 +271,15 @@ class TableSessionService(_SalaoTenantMixin):
         session = self.get(session_id)
         self._ensure_open(session)
         item = self._get_item(session_id, item_id)
-        if "quantity" in data and data["quantity"] is not None:
-            item.quantity = max(1, int(data["quantity"]))
-        if "unit_price" in data and data["unit_price"] is not None:
-            item.unit_price = round(float(data["unit_price"]), 2)
+        values = {key: getattr(item, key) for key in (
+            "product_id", "quantity", "selected_size_id", "selected_crust_type_id", "selected_border_id",
+            "selected_drink_variant_id", "flavor_division", "flavors",
+        )}
+        values.update({key: value for key, value in data.items() if key != "unit_price"})
+        _, item.unit_price, configuration = self._configuration(values)
+        item.quantity = values["quantity"]
+        for key, value in configuration.items():
+            setattr(item, key, value)
         if "notes" in data:
             item.notes = data["notes"]
         item.total_price = round(item.unit_price * item.quantity, 2)

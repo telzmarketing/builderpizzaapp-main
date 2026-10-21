@@ -24,6 +24,7 @@ from backend.models.admin import AdminUser
 from backend.models.product import Product
 from backend.models.rbac import Role
 from backend.schemas.order import CheckoutIn, OrderStatusUpdate, OrderWhatsAppNotificationSettingsIn
+from backend.schemas.checkout_quote import CheckoutQuoteOut
 from backend.services.payment_service import PaymentService
 from backend.services.order_service import OrderService
 from backend.services.order_whatsapp_notification_service import OrderWhatsAppNotificationService
@@ -230,6 +231,23 @@ def create_order(body: CheckoutIn, request: Request, db: Session = Depends(get_d
 @router.post("/checkout", status_code=201, include_in_schema=False)
 def checkout_alias(body: CheckoutIn, request: Request, db: Session = Depends(get_db)):
     return create_order(body, request, db)
+
+
+@router.post("/quote")
+def quote_checkout(body: CheckoutIn, request: Request, db: Session = Depends(get_db)):
+    if not body.customer_id:
+        return err_msg("Entre na sua conta para revisar o pedido.", code="CustomerRequired", status_code=401)
+    tenant_context = resolve_public_tenant_context(request, db)
+    require_customer_id_or_admin(
+        body.customer_id, db, request.headers.get("authorization"),
+        request.headers.get("x-customer-phone"), request.headers.get("x-customer-email"),
+        expected_tenant_id=tenant_context.tenant_id if tenant_context else None,
+    )
+    try:
+        result = OrderService(db, tenant_context).quote_checkout(body)
+        return ok(CheckoutQuoteOut.model_validate(result).model_dump())
+    except DomainError as exc:
+        return err(exc)
 
 
 @router.get("")

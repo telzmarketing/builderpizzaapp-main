@@ -59,7 +59,8 @@ def test_downgrade_refuses_to_discard_marketing_configuration():
 
 def test_runtime_revision_is_the_single_head_after_delivery_schema():
     scripts = ScriptDirectory(str(ROOT / "backend/migrations"))
-    assert scripts.get_heads() == [REVISION]
+    assert scripts.get_heads() == ["20261020_inventory_recipe_fractions"]
+    assert scripts.get_revision("20261020_product_order_options").down_revision == REVISION
     assert scripts.get_revision(REVISION).down_revision == "20261017_delivery_schema"
 
 

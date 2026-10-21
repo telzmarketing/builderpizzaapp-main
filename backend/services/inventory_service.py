@@ -37,6 +37,7 @@ from backend.schemas.inventory import (
     InventorySupplierIn,
     InventoryUnitIn,
 )
+from backend.services.recipe_resolution import resolve_recipes, required_ingredients
 
 TENANT_ID = "default"
 
@@ -334,6 +335,13 @@ class InventoryService:
     def consume_order_sale(self, order_id: str) -> dict:
         if not self.automatic_deduction_enabled():
             return {"deducted": False, "reason": "disabled", "movements": 0}
+        # Serialize retries and concurrent starts for the same tenant order.
+        order = self._db.query(Order).filter(Order.id == order_id, Order.tenant_id == self._tenant_id).with_for_update().first()
+        if not order:
+            raise InventoryInvalidReference("Pedido nao encontrado para baixa de estoque.")
+        status = getattr(order.status, "value", order.status)
+        if status != "preparing":
+            return {"deducted": False, "reason": "not_preparing", "movements": 0}
         existing = (
             self._db.query(InventoryStockMovement.id)
             .filter(
@@ -352,21 +360,27 @@ class InventoryService:
                 joinedload(Order.items)
                 .joinedload(OrderItem.flavors),
             )
-            .filter(Order.id == order_id)
+            .filter(Order.id == order_id, Order.tenant_id == self._tenant_id)
             .first()
         )
         if not order:
             raise InventoryInvalidReference("Pedido nao encontrado para baixa de estoque.")
 
-        required = self._required_items_from_cmv_snapshot(order.id) or self._required_items_for_order(order)
+        snapshot = self._db.query(OrderCmvSnapshot).filter(OrderCmvSnapshot.order_id == order.id, OrderCmvSnapshot.tenant_id == self._tenant_id).first()
+        required = self._required_items_from_cmv_snapshot(order.id) if snapshot else self._required_items_for_order(order)
+        if snapshot and snapshot.missing_recipe and required:
+            raise InventoryInvalidReference("Ficha tecnica incompleta para a composicao do pedido.")
         if not required:
             return {"deducted": False, "reason": "no_recipe", "movements": 0}
 
         unit_costs = self._average_unit_cost_map()
         inventory_items = {
             item.id: item
-            for item in self._db.query(InventoryItem).filter(InventoryItem.id.in_(required.keys())).all()
+            for item in self._db.query(InventoryItem).filter(InventoryItem.tenant_id == self._tenant_id, InventoryItem.id.in_(required.keys())).order_by(InventoryItem.id).with_for_update().all()
         }
+        balances = self._stock_balance_map()
+        if any(quantity > balances.get(item_id, 0.0) + 0.000001 for item_id, quantity in required.items()):
+            raise InventoryUnavailable()
         movements = 0
         for item_id, quantity in required.items():
             if quantity <= 0:
@@ -386,9 +400,13 @@ class InventoryService:
                 notes=f"Baixa automatica do pedido {order.order_code or order.id}",
             ))
             movements += 1
+        self._db.flush()
         return {"deducted": movements > 0, "reason": "ok", "movements": movements}
 
     def reverse_order_sale(self, order_id: str) -> dict:
+        order = self._db.query(Order).filter(Order.id == order_id, Order.tenant_id == self._tenant_id).with_for_update().first()
+        if not order:
+            raise InventoryInvalidReference("Pedido nao encontrado para registrar cancelamento.")
         sale_movements = (
             self._db.query(InventoryStockMovement)
             .filter(
@@ -401,6 +419,27 @@ class InventoryService:
         )
         if not sale_movements:
             return {"reversed": False, "reason": "no_sale_movements", "movements": 0}
+
+        # Production already consumed the ingredients. Cancellation records
+        # an audit event with zero delta, never an automatic stock return.
+        if order.preparation_started_at:
+            existing = self._db.query(InventoryStockMovement.id).filter(
+                InventoryStockMovement.tenant_id == self._tenant_id,
+                InventoryStockMovement.source_type == "order_sale_loss",
+                InventoryStockMovement.source_id == order_id,
+            ).first()
+            if existing:
+                return {"reversed": False, "reason": "loss_already_recorded", "movements": 0}
+            for movement in sale_movements:
+                self._db.add(InventoryStockMovement(
+                    id=f"inv-loss-{uuid.uuid4().hex[:12]}", tenant_id=self._tenant_id,
+                    item_id=movement.item_id, location_id=movement.location_id,
+                    source_type="order_sale_loss", source_id=order_id, movement_type="out",
+                    quantity_delta=0.0, unit_cost=movement.unit_cost, reason="production_loss",
+                    notes=json.dumps({"order_id": order_id, "consumed_quantity": abs(float(movement.quantity_delta)), "consumption_movement_id": movement.id}),
+                ))
+            self._db.flush()
+            return {"reversed": False, "reason": "production_loss_recorded", "movements": len(sale_movements)}
 
         existing_reversal = (
             self._db.query(InventoryStockMovement.id)
@@ -453,6 +492,7 @@ class InventoryService:
         return [self._serialize_recipe(row) for row in rows]
 
     def create_product_recipe(self, product_id: str, payload: InventoryRecipeVersionIn) -> dict:
+        self._db.query(Product).filter(Product.id == product_id, Product.tenant_id == self._tenant_id).with_for_update().first()
         data = payload.model_dump()
         items = data.pop("items", [])
         self._validate_recipe_refs(product_id, data, items)
@@ -483,18 +523,10 @@ class InventoryService:
 
     def update_product_recipe(self, product_id: str, recipe_id: str, payload: InventoryRecipeVersionIn) -> dict:
         recipe = self._get_recipe(product_id, recipe_id)
-        data = payload.model_dump()
-        items = data.pop("items", [])
-        self._validate_recipe_refs(product_id, data, items)
-        for key, value in data.items():
-            setattr(recipe, key, value)
-        if recipe.active:
-            self._deactivate_matching_recipe_scope(product_id, data, exclude_recipe_id=recipe.id)
-        self._db.query(InventoryRecipeItem).filter(InventoryRecipeItem.recipe_id == recipe.id).delete(synchronize_session=False)
-        self._replace_recipe_items(recipe, items)
-        self._db.commit()
-        self._db.refresh(recipe)
-        return self._serialize_recipe(recipe)
+        # A published version and its items remain immutable for old snapshots.
+        self._validate_recipe_refs(product_id, payload.model_dump(exclude={"items"}), [i.model_dump() for i in payload.items])
+        recipe.active = False
+        return self.create_product_recipe(product_id, payload)
 
     def delete_product_recipe(self, product_id: str, recipe_id: str) -> None:
         recipe = self._get_recipe(product_id, recipe_id)
@@ -607,23 +639,16 @@ class InventoryService:
         return result
 
     def _required_items_for_order(self, order: Order) -> dict[str, float]:
+        items = list(order.items)
+        ids = list({pid for item in items for pid in [item.product_id, *[f.product_id for f in item.flavors]]})
+        recipes = ProductInventoryAvailabilityService(self._db, self._tenant_id, self._tenant_context)._active_recipes(ids)
         required: dict[str, float] = {}
-        for item in order.items:
-            quantity = float(item.quantity or 0.0)
-            recipes = self._matching_recipes_for_product(
-                item.product_id,
-                item.selected_size_id,
-                item.selected_crust_type_id,
-                None,
-            )
-            self._accumulate_required(required, recipes, quantity)
-
-            flavor_multiplier = quantity / max(1, int(item.flavor_division or 1))
-            for flavor in item.flavors:
-                if flavor.product_id == item.product_id:
-                    continue
-                flavor_recipes = self._matching_recipes_for_product(flavor.product_id, None, None, None)
-                self._accumulate_required(required, flavor_recipes, flavor_multiplier)
+        for item in items:
+            resolution = resolve_recipes(item, recipes)
+            if resolution.missing and resolution.uses:
+                raise InventoryInvalidReference("Ficha tecnica incompleta para a composicao do pedido.")
+            for key, amount in required_ingredients(resolution).items():
+                required[key] = required.get(key, 0.0) + amount
         return required
 
     def _required_items_from_cmv_snapshot(self, order_id: str) -> dict[str, float]:
@@ -684,7 +709,8 @@ class InventoryService:
         for recipe in recipes:
             for item in recipe.items:
                 waste_multiplier = 1 + (float(item.waste_percent or 0.0) / 100)
-                target[item.inventory_item_id] = target.get(item.inventory_item_id, 0.0) + (float(item.quantity or 0.0) * waste_multiplier * multiplier)
+                reference = float(getattr(recipe, "reference_fraction", None) or 1.0)
+                target[item.inventory_item_id] = target.get(item.inventory_item_id, 0.0) + (float(item.quantity or 0.0) * waste_multiplier * multiplier / reference)
 
     def _ensure_product(self, product_id: str) -> Product:
         product = self._db.query(Product).filter(
@@ -713,7 +739,7 @@ class InventoryService:
     def _ensure_product_child(self, model, row_id: str, product_id: str, label: str):
         row = (
             self._db.query(model)
-            .filter(model.id == row_id, model.product_id == product_id)
+            .filter(model.id == row_id, model.product_id == product_id, model.tenant_id == self._tenant_id)
             .first()
         )
         if not row:
@@ -739,6 +765,7 @@ class InventoryService:
             InventoryRecipeVersion.tenant_id == self._tenant_id,
             InventoryRecipeVersion.product_id == product_id,
             InventoryRecipeVersion.active == True,  # noqa: E712
+            InventoryRecipeVersion.component_role == data.get("component_role", "flavor"),
         )
         if exclude_recipe_id:
             query = query.filter(InventoryRecipeVersion.id != exclude_recipe_id)
@@ -899,6 +926,8 @@ class InventoryService:
             "complement_key": recipe.complement_key,
             "complement_name": recipe.complement_name,
             "version_number": recipe.version_number,
+            "component_role": recipe.component_role,
+            "reference_fraction": recipe.reference_fraction,
             "active": recipe.active,
             "notes": recipe.notes,
             "items": [
@@ -967,32 +996,28 @@ class ProductInventoryAvailabilityService:
         }
 
     def validate_cart_item(self, item) -> None:
+        self.validate_cart_items([item])
+
+    def validate_cart_items(self, items) -> None:
         if not self.sales_control_enabled():
             return
-        product_ids = [item.product_id, *[flavor.product_id for flavor in item.flavors]]
-        availability = self.product_payloads(list(dict.fromkeys(product_ids)))
-        for product_id, payload in availability.items():
-            if not payload["inventory_available"]:
-                raise InventoryUnavailable(payload.get("product_name"))
-
-        balances = InventoryService(self._db, self._tenant_id, self._tenant_context)._stock_balance_map()
+        items = list(items)
+        product_ids = list({pid for item in items for pid in [item.product_id, *[f.product_id for f in item.flavors]]})
+        recipes = self._active_recipes(product_ids)
         required: dict[str, float] = {}
-        primary_recipes = self._matching_recipes(
-            item.product_id,
-            item.selected_size_id,
-            item.selected_crust_type_id,
-            item.selected_drink_variant_id,
-        )
-        self._accumulate_required(required, primary_recipes, float(item.quantity))
-
-        flavor_multiplier = float(item.quantity) / max(1, int(item.flavor_division or 1))
-        for flavor in item.flavors:
-            if flavor.product_id == item.product_id:
-                continue
-            flavor_recipes = self._matching_recipes(flavor.product_id, None, None, None)
-            self._accumulate_required(required, flavor_recipes, flavor_multiplier)
-
-        if any(required_qty > balances.get(item_id, 0.0) + 0.000001 for item_id, required_qty in required.items()):
+        for item in items:
+            resolution = resolve_recipes(item, recipes)
+            if resolution.missing and resolution.uses:
+                raise InventoryInvalidReference("Ficha tecnica incompleta para a composicao do pedido.")
+            for key, amount in required_ingredients(resolution).items():
+                required[key] = required.get(key, 0.0) + amount
+        # Use the same inventory row lock order as production consumption.
+        self._db.query(InventoryItem).filter(
+            InventoryItem.tenant_id == self._tenant_id,
+            InventoryItem.id.in_(required),
+        ).order_by(InventoryItem.id).with_for_update().all()
+        balances = InventoryService(self._db, self._tenant_id, self._tenant_context)._stock_balance_map()
+        if any(amount > balances.get(key, 0.0) + 0.000001 for key, amount in required.items()):
             raise InventoryUnavailable()
 
     def _active_recipes(self, product_ids: list[str]) -> dict[str, list[InventoryRecipeVersion]]:
@@ -1057,7 +1082,8 @@ class ProductInventoryAvailabilityService:
         for recipe in recipes:
             for item in recipe.items:
                 waste_multiplier = 1 + (float(item.waste_percent or 0.0) / 100)
-                target[item.inventory_item_id] = target.get(item.inventory_item_id, 0.0) + (float(item.quantity or 0.0) * waste_multiplier * multiplier)
+                reference = float(getattr(recipe, "reference_fraction", None) or 1.0)
+                target[item.inventory_item_id] = target.get(item.inventory_item_id, 0.0) + (float(item.quantity or 0.0) * waste_multiplier * multiplier / reference)
 
     def _is_base_recipe(self, recipe: InventoryRecipeVersion) -> bool:
         return not recipe.product_size_id and not recipe.product_crust_type_id and not recipe.product_drink_variant_id and not recipe.complement_key

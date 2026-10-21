@@ -23,6 +23,7 @@ import {
 import {
   ordersApi,
   productsApi,
+  productPromotionsApi,
   salaoApi,
   type ApiOrder,
   type ApiProduct,
@@ -134,7 +135,27 @@ export default function AdminSalao() {
     notes: "",
   });
   const [sessionForm, setSessionForm] = useState({ table_id: "", waiter_name: "", notes: "" });
-  const [sessionItemForm, setSessionItemForm] = useState({ session_id: "", product_id: "", quantity: 1, notes: "" });
+  const emptyOptions = { selected_size_id: "", selected_crust_type_id: "", selected_border_id: "", selected_drink_variant_id: "", flavor_division: 1, flavor2: "", flavor3: "" };
+  const [sessionItemForm, setSessionItemForm] = useState({ session_id: "", product_id: "", quantity: 1, notes: "", ...emptyOptions });
+  const selectedSessionProduct = products.find((product) => product.id === sessionItemForm.product_id);
+  const [sessionItemPrice, setSessionItemPrice] = useState<number | null>(null);
+  const [itemQuoteError, setItemQuoteError] = useState("");
+  useEffect(() => {
+    setSessionItemForm((form) => ({ ...form, ...emptyOptions,
+      selected_size_id: selectedSessionProduct?.sizes?.find((size) => size.active && size.is_default)?.id ?? selectedSessionProduct?.sizes?.find((size) => size.active)?.id ?? "",
+      selected_crust_type_id: selectedSessionProduct?.crust_types?.find((crust) => crust.active && !crust.name.toLowerCase().includes("catupiry"))?.id ?? "",
+      selected_drink_variant_id: selectedSessionProduct?.drink_variants?.find((variant) => variant.active)?.id ?? "",
+    }));
+  }, [sessionItemForm.product_id]);
+  useEffect(() => {
+    setSessionItemPrice(null);
+    setItemQuoteError("");
+    if (!selectedSessionProduct) return;
+    if ((sessionItemForm.flavor_division >= 2 && !sessionItemForm.flavor2) || (sessionItemForm.flavor_division >= 3 && !sessionItemForm.flavor3)) return;
+    let cancelled = false;
+    productPromotionsApi.quote(selectedSessionProduct.id, { channel: "dine_in", size_id: sessionItemForm.selected_size_id || null, crust_id: sessionItemForm.selected_crust_type_id || null, border_id: sessionItemForm.selected_border_id || null, drink_variant_id: sessionItemForm.selected_drink_variant_id || null, flavor_count: sessionItemForm.flavor_division, flavor_ids: [selectedSessionProduct.id, ...(sessionItemForm.flavor_division >= 2 ? [sessionItemForm.flavor2] : []), ...(sessionItemForm.flavor_division >= 3 ? [sessionItemForm.flavor3] : [])] }).then((quote) => { if (!cancelled) setSessionItemPrice(quote.final_price); }).catch((error) => { if (!cancelled) setItemQuoteError(error instanceof Error ? error.message : "Erro ao confirmar preco."); });
+    return () => { cancelled = true; };
+  }, [sessionItemForm.product_id, sessionItemForm.selected_size_id, sessionItemForm.selected_crust_type_id, sessionItemForm.selected_border_id, sessionItemForm.selected_drink_variant_id, sessionItemForm.flavor_division, sessionItemForm.flavor2, sessionItemForm.flavor3]);
 
   const load = async () => {
     setLoading(true);
@@ -287,9 +308,17 @@ export default function AdminSalao() {
         product_id: sessionItemForm.product_id,
         quantity: Number(sessionItemForm.quantity) || 1,
         notes: sessionItemForm.notes.trim() || null,
+        selected_size_id: sessionItemForm.selected_size_id || null,
+        selected_crust_type_id: sessionItemForm.selected_crust_type_id || null,
+        selected_border_id: sessionItemForm.selected_border_id || null,
+        selected_drink_variant_id: sessionItemForm.selected_drink_variant_id || null,
+        flavor_division: sessionItemForm.flavor_division,
+        flavors: [sessionItemForm.product_id, ...(sessionItemForm.flavor_division >= 2 ? [sessionItemForm.flavor2] : []), ...(sessionItemForm.flavor_division >= 3 ? [sessionItemForm.flavor3] : [])].map((id) => ({ product_id: id })),
       });
-      setSessionItemForm({ session_id: sessionItemForm.session_id, product_id: "", quantity: 1, notes: "" });
+      setSessionItemForm({ session_id: sessionItemForm.session_id, product_id: "", quantity: 1, notes: "", ...emptyOptions });
       await load();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Nao foi possivel adicionar o item.");
     } finally {
       setSaving(false);
     }
@@ -352,7 +381,7 @@ export default function AdminSalao() {
                     <ReservationList reservations={reservations.slice(0, 6)} tables={tables} onStatus={updateReservationStatus} />
                   </Panel>
                   <Panel title="Comandas abertas">
-                    <SessionList sessions={activeSessions} tables={tables} orders={orders} onClose={closeSession} onCreateOrder={createSessionOrder} onConfirmPayment={confirmSessionPayment} onDeleteItem={deleteSessionItem} />
+                    <SessionList sessions={activeSessions} tables={tables} orders={orders} onClose={closeSession} onCreateOrder={createSessionOrder} onConfirmPayment={confirmSessionPayment} onDeleteItem={deleteSessionItem} onServe={async (session) => { try { await salaoApi.sessions.serveOrder(session.id); await load(); } catch (error) { setError(error instanceof Error ? error.message : "Erro ao concluir servico."); } }} />
                   </Panel>
                 </div>
               </div>
@@ -482,12 +511,25 @@ export default function AdminSalao() {
                       </Select>
                       <Input label="Qtd" type="number" value={String(sessionItemForm.quantity)} onChange={(value) => setSessionItemForm((f) => ({ ...f, quantity: Number(value) || 1 }))} />
                     </div>
+                    {selectedSessionProduct && <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      {(selectedSessionProduct.sizes ?? []).some((option) => option.active) && <Select label="Tamanho" value={sessionItemForm.selected_size_id} onChange={(value) => setSessionItemForm((form) => ({ ...form, selected_size_id: value }))}>{(selectedSessionProduct.sizes ?? []).filter((option) => option.active).map((option) => <option value={option.id} key={option.id}>{option.label}</option>)}</Select>}
+                      {(selectedSessionProduct.crust_types ?? []).some((option) => option.active) && <>
+                        <Select label="Massa" value={sessionItemForm.selected_crust_type_id} onChange={(value) => setSessionItemForm((form) => ({ ...form, selected_crust_type_id: value, selected_border_id: "" }))}><option value="">Sem massa adicional</option>{(selectedSessionProduct.crust_types ?? []).filter((option) => option.active && !option.name.toLowerCase().includes("catupiry")).map((option) => <option value={option.id} key={option.id}>{option.name}</option>)}</Select>
+                        <Select label="Borda" value={sessionItemForm.selected_border_id} onChange={(value) => setSessionItemForm((form) => ({ ...form, selected_border_id: value }))}><option value="">Sem borda adicional</option>{(selectedSessionProduct.crust_types ?? []).filter((option) => option.active && option.name.toLowerCase().includes("catupiry")).map((option) => <option value={option.id} key={option.id}>{option.name}</option>)}</Select>
+                      </>}
+                      {(selectedSessionProduct.drink_variants ?? []).some((option) => option.active) && <Select label="Variante" value={sessionItemForm.selected_drink_variant_id} onChange={(value) => setSessionItemForm((form) => ({ ...form, selected_drink_variant_id: value }))}>{(selectedSessionProduct.drink_variants ?? []).filter((option) => option.active).map((option) => <option value={option.id} key={option.id}>{option.name}</option>)}</Select>}
+                      {(!selectedSessionProduct.product_type || selectedSessionProduct.product_type === "pizza") && <>
+                        <Select label="Divisao" value={String(sessionItemForm.flavor_division)} onChange={(value) => setSessionItemForm((form) => ({ ...form, flavor_division: Number(value) }))}><option value="1">Inteira</option><option value="2">2 sabores</option><option value="3">3 sabores</option></Select>
+                        {[2, 3].filter((slot) => slot <= sessionItemForm.flavor_division).map((slot) => <Select key={slot} label={`Sabor ${slot}`} value={slot === 2 ? sessionItemForm.flavor2 : sessionItemForm.flavor3} onChange={(value) => setSessionItemForm((form) => ({ ...form, [slot === 2 ? "flavor2" : "flavor3"]: value }))}><option value="">Selecione</option>{products.filter((option) => option.id !== selectedSessionProduct.id && (!option.product_type || option.product_type === "pizza") && option.inventory_available !== false).map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</Select>)}
+                      </>}
+                      <p role="status" className="text-sm text-gold">{itemQuoteError || (sessionItemPrice === null ? "Selecione as opcoes para confirmar o preco." : `Preco unitario: ${formatCurrency(sessionItemPrice)}`)}</p>
+                    </div>}
                     <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
                       <Input label="Observacoes" value={sessionItemForm.notes} onChange={(value) => setSessionItemForm((f) => ({ ...f, notes: value }))} />
-                      <PrimaryButton onClick={addSessionItem} disabled={saving || !sessionItemForm.session_id || !sessionItemForm.product_id}>Adicionar item</PrimaryButton>
+                      <PrimaryButton onClick={addSessionItem} disabled={saving || !sessionItemForm.session_id || !sessionItemForm.product_id || sessionItemPrice === null || sessionItemForm.quantity < 1}>Adicionar item</PrimaryButton>
                     </div>
                   </div>
-                  <SessionList sessions={sessions} tables={tables} orders={orders} onClose={closeSession} onCreateOrder={createSessionOrder} onConfirmPayment={confirmSessionPayment} onDeleteItem={deleteSessionItem} />
+                  <SessionList sessions={sessions} tables={tables} orders={orders} onClose={closeSession} onCreateOrder={createSessionOrder} onConfirmPayment={confirmSessionPayment} onDeleteItem={deleteSessionItem} onServe={async (session) => { try { await salaoApi.sessions.serveOrder(session.id); await load(); } catch (error) { setError(error instanceof Error ? error.message : "Erro ao concluir servico."); } }} />
                 </Panel>
               </div>
             )}
@@ -621,6 +663,7 @@ function SessionList({
   onCreateOrder,
   onConfirmPayment,
   onDeleteItem,
+  onServe,
 }: {
   sessions: ApiTableSession[];
   tables: ApiRestaurantTable[];
@@ -629,6 +672,7 @@ function SessionList({
   onCreateOrder: (session: ApiTableSession) => void;
   onConfirmPayment: (session: ApiTableSession) => void;
   onDeleteItem: (sessionId: string, itemId: string) => void;
+  onServe: (session: ApiTableSession) => void;
 }) {
   if (sessions.length === 0) return <Empty text="Nenhuma comanda encontrada." />;
   const tableById = new Map(tables.map((table) => [table.id, table]));
@@ -666,6 +710,8 @@ function SessionList({
                         </p>
                         <p className="text-xs text-stone">
                           {formatCurrency(item.unit_price)}
+                          {[item.selected_size, item.selected_crust_type_name, item.selected_border_name, item.selected_drink_variant_name].filter(Boolean).join(" - ") && ` - ${[item.selected_size, item.selected_crust_type_name, item.selected_border_name, item.selected_drink_variant_name].filter(Boolean).join(" - ")}`}
+                          {(item.flavors?.length ?? 0) > 1 && ` - ${item.flavors!.map((flavor) => flavor.name).join(" + ")}`}
                           {item.notes ? ` - ${item.notes}` : ""}
                         </p>
                       </div>
@@ -686,6 +732,8 @@ function SessionList({
                 </div>
               )}
             </div>
+            {linkedOrder?.status === "ready_for_pickup" && <button className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white" onClick={() => onServe(session)}>Marcar como servido</button>}
+            {linkedOrder?.status === "delivered" && <p className="mt-3 text-emerald-300">Servido</p>}
             {["open", "pending_payment"].includes(session.status) && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {paymentConfirmed ? (

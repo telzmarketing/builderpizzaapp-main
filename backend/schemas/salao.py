@@ -1,3 +1,4 @@
+from backend.schemas.order import FlavorIn
 from datetime import date, datetime, time
 from typing import Literal, Optional
 
@@ -145,7 +146,16 @@ class TableSessionPaymentConfirm(BaseModel):
     payment_method: Literal["cash", "debit_card", "credit_card", "pix"] = "cash"
 
 
-class TableSessionItemBase(BaseModel):
+class TableSessionItemOptions(BaseModel):
+    selected_size_id: Optional[str] = None
+    selected_crust_type_id: Optional[str] = None
+    selected_border_id: Optional[str] = None
+    selected_drink_variant_id: Optional[str] = None
+    flavor_division: int = Field(default=1, ge=1, le=3)
+    flavors: list[FlavorIn] = Field(default_factory=list)
+
+
+class TableSessionItemBase(TableSessionItemOptions):
     product_id: str
     quantity: int = Field(default=1, ge=1, le=100)
     unit_price: Optional[float] = Field(default=None, ge=0)
@@ -156,19 +166,23 @@ class TableSessionItemCreate(TableSessionItemBase):
     pass
 
 
-class TableSessionItemUpdate(BaseModel):
+class TableSessionItemUpdate(TableSessionItemOptions):
     quantity: Optional[int] = Field(default=None, ge=1, le=100)
     unit_price: Optional[float] = Field(default=None, ge=0)
     notes: Optional[str] = None
 
 
-class TableSessionItemOut(BaseModel):
+class TableSessionItemOut(TableSessionItemOptions):
     model_config = {"from_attributes": True}
 
     id: str
     table_session_id: str
     product_id: str
     product_name: str
+    selected_size: Optional[str] = None
+    selected_crust_type_name: Optional[str] = None
+    selected_border_name: Optional[str] = None
+    selected_drink_variant_name: Optional[str] = None
     quantity: int
     unit_price: float
     total_price: float

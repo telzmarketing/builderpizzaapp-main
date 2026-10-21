@@ -143,25 +143,22 @@ class OrderService:
         self._catalog_tenant_enabled = identity_catalog_enforcement_enabled() or support_scoped
         self._operations_tenant_enabled = operations_enforcement_enabled() or support_scoped
 
+    def _resource_context(self, enabled: bool):
+        if self._tenant_context is None and enabled:
+            from backend.core.tenant_context import TenantContextMissing
+            raise TenantContextMissing("Contexto de tenant obrigatorio.")
+        return self._tenant_context or TenantContext(tenant_id="tenant-legacy-default", source=TenantSource.JOB)
+
     def _tenant_query(self, model, *, catalog: bool = False):
-        return scope_query_to_tenant(
-            self._db.query(model), model, self._tenant_context,
-            enabled=self._catalog_tenant_enabled if catalog else self._orders_tenant_enabled,
-        )
+        enabled = self._catalog_tenant_enabled if catalog else self._orders_tenant_enabled
+        return scope_query_to_tenant(self._db.query(model), model, self._resource_context(enabled), enabled=True)
 
     def _own(self, resource, *, catalog: bool = False):
-        return assign_tenant_on_create(
-            resource, self._tenant_context,
-            enabled=self._catalog_tenant_enabled if catalog else self._orders_tenant_enabled,
-        )
+        enabled = self._catalog_tenant_enabled if catalog else self._orders_tenant_enabled
+        return assign_tenant_on_create(resource, self._resource_context(enabled), enabled=True)
 
     def _operation_query(self, model):
-        return scope_query_to_tenant(
-            self._db.query(model),
-            model,
-            self._tenant_context,
-            enabled=self._operations_tenant_enabled,
-        )
+        return scope_query_to_tenant(self._db.query(model), model, self._resource_context(self._operations_tenant_enabled), enabled=True)
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -189,7 +186,7 @@ class OrderService:
     def _get_config(self) -> MultiFlavorsConfig:
         config_id = (
             f"multi-flavors-{self._tenant_context.tenant_id}"
-            if self._catalog_tenant_enabled and self._tenant_context
+            if self._tenant_context and (self._catalog_tenant_enabled or self._tenant_context.tenant_id != "tenant-legacy-default")
             else "default"
         )
         config = (
@@ -268,151 +265,86 @@ class OrderService:
         self._own(address)
         self._db.add(address)
 
-    def _validate_item(
-        self,
-        item: CartItemIn,
-        config: MultiFlavorsConfig,
-    ) -> tuple[float, list[Product], ProductPriceResult, ProductSize | None, ProductCrustType | None]:
-        """
-        Returns (server_unit_price, [Product per flavor]).
-        Raises domain exceptions on any inconsistency.
-
-        Pricing: size_price (authoritative from DB) + crust/drink variant additions.
-        Falls back to product.price when no size is configured for this product.
-        """
+    def _validate_item(self, item: CartItemIn, config: MultiFlavorsConfig, *, channel: str = "delivery"):
+        """Resolve selections and prices from the tenant catalog; client labels are hints only."""
         if len(item.flavors) != item.flavor_division:
             raise FlavorDivisionMismatch(item.product_id, item.flavor_division, len(item.flavors))
-
         if item.flavor_division > config.max_flavors:
             raise MaxFlavorsExceeded(item.flavor_division, config.max_flavors)
-
-        # Fetch size price server-side (authoritative — client-submitted prices are ignored when size found)
-        primary_product = (
-            self._tenant_query(Product, catalog=True)
-            .filter(Product.id == item.product_id, Product.active == True)  # noqa: E712
-            .first()
-        )
-        if not primary_product:
+        product = self._tenant_query(Product, catalog=True).filter(Product.id == item.product_id, Product.active == True).first()
+        if not product or product.product_type == "brinde":
             raise ProductNotFound(item.product_id)
+        visible = "visible_dine_in" if channel == "dine_in" else "visible_delivery"
+        if not getattr(product, visible, True):
+            raise DomainError("Produto indisponivel neste canal.", code="ProductChannelUnavailable")
+        if item.flavor_division > 1 and product.product_type not in {None, "pizza"}:
+            raise DomainError("Este produto nao aceita multiplos sabores.", code="InvalidFlavorProductType")
+        if _is_fixed_flavor_combination(product) and (item.flavor_division != 1 or item.flavors[0].product_id != product.id):
+            raise FixedFlavorCombinationNotAllowed(product.name)
 
-        if _is_fixed_flavor_combination(primary_product):
-            has_single_primary_flavor = (
-                item.flavor_division == 1
-                and len(item.flavors) == 1
-                and item.flavors[0].product_id == item.product_id
-            )
-            if not has_single_primary_flavor:
-                raise FixedFlavorCombinationNotAllowed(primary_product.name)
+        def option(model, option_id, label):
+            if not option_id:
+                return None
+            row = self._tenant_query(model, catalog=True).filter(model.id == option_id, model.product_id == product.id, model.active == True).first()
+            if row is None:
+                raise DomainError(f"{label} inexistente, inativo ou de outro produto.", code="InvalidProductOption")
+            return row
 
-        selected_size_obj: ProductSize | None = None
-        if item.selected_size_id:
-            selected_size_obj = (
-                self._tenant_query(ProductSize, catalog=True)
-                .filter(ProductSize.id == item.selected_size_id,
-                        ProductSize.product_id == item.product_id,
-                        ProductSize.active == True)  # noqa: E712
-                .first()
-            )
-
-        flavor_products: list[Product] = []
-        slot_prices: list[float] = []
-
-        for f in item.flavors:
-            product = (
-                self._tenant_query(Product, catalog=True)
-                .filter(Product.id == f.product_id, Product.active == True)  # noqa: E712
-                .first()
-            )
-            if not product:
-                raise ProductNotFound(f.product_id)
-
-            if _is_fixed_flavor_combination(product):
-                raises_for_fixed_flavor = (
-                    item.flavor_division != 1
-                    or len(item.flavors) != 1
-                    or product.id != item.product_id
-                )
-                if raises_for_fixed_flavor:
-                    raise FixedFlavorCombinationNotAllowed(product.name)
-
-            if selected_size_obj is not None:
-                # Size-based: each flavor uses the matching size label from its own product.
-                slot_prices.append(_product_price_for_selected_size(product, selected_size_obj))
+        size = option(ProductSize, item.selected_size_id, "Tamanho")
+        if size is None and any(candidate.active for candidate in product.sizes):
+            raise DomainError("Selecione um tamanho valido.", code="ProductSizeRequired")
+        crust = option(ProductCrustType, item.selected_crust_type_id, "Massa")
+        border = option(ProductCrustType, item.selected_border_id, "Borda")
+        variant = option(ProductDrinkVariant, item.selected_drink_variant_id, "Variante")
+        flavors = []
+        prices = []
+        filters = {_normalize_category_text(value) for value in (config.flavor_category_filters or [])}
+        for flavor in item.flavors:
+            row = self._tenant_query(Product, catalog=True).filter(Product.id == flavor.product_id, Product.active == True).first()
+            if row is None or row.product_type == "brinde" or not getattr(row, visible, True):
+                raise ProductNotFound(flavor.product_id)
+            if item.flavor_division == 1 and row.id != product.id:
+                raise DomainError("Sabor unico deve corresponder ao produto.", code="InvalidPrimaryFlavor")
+            if item.flavor_division > 1:
+                if row.product_type not in {None, "pizza"} or _is_fixed_flavor_combination(row):
+                    raise DomainError("Produto invalido como sabor.", code="InvalidFlavorProductType")
+                if filters and not ({_normalize_category_text(row.category), _normalize_category_text(row.subcategory)} & filters):
+                    raise DomainError("Sabor fora das categorias permitidas.", code="FlavorCategoryUnavailable")
+            flavors.append(row)
+            if size:
+                matching = next((candidate for candidate in row.sizes if candidate.active and _normalize_size_label(candidate.label) == _normalize_size_label(size.label)), None)
+                if matching is None:
+                    raise DomainError("Tamanho indisponivel para um dos sabores.", code="FlavorSizeUnavailable")
+                prices.append(float(matching.price))
             else:
-                # No size configured: validate submitted price against product base price
-                if abs(product.price - f.price) > 0.01:
-                    raise PriceConflict(product.name, f.price, product.price)
-                slot_prices.append(product.price)
+                prices.append(ProductPricingService.product_channel_price(row, channel))
+        if product.id not in [row.id for row in flavors]:
+            raise DomainError("O produto principal deve integrar a composicao.", code="InvalidPrimaryFlavor")
+        rule = PricingRule.average if item.flavor_division > 1 else config.pricing_rule
+        server_price = max(prices) if rule == PricingRule.most_expensive else sum(prices) / len(prices)
+        if crust:
+            server_price += normalize_crust_price_addition(crust.price_addition, product.price)
+        pricing = ProductPricingService(self._db, self._tenant_context).calculate(
+            product=product, size=size, crust=crust, border=border, drink_variant=variant,
+            channel=channel, standard_price_override=round(server_price, 2), flavor_count=item.flavor_division,
+        )
+        item.selected_size = size.label if size else "Unico"
+        item.selected_crust_type_name = crust.name if crust else None
+        item.selected_border_name = border.name if border else None
+        item.selected_drink_variant_name = variant.name if variant else None
+        return pricing.final_price, flavors, pricing, size, crust
 
-            flavor_products.append(product)
+    @staticmethod
+    def _validate_expected_total(expected_total: float | None, total: float) -> None:
+        if expected_total is not None and abs(round(expected_total, 2) - round(total, 2)) > 0.009:
+            raise DomainError(f"O total mudou para R$ {total:.2f}. Revise o pedido antes de confirmar.", code="CheckoutPriceChanged")
 
-        # Apply pricing rule across slots
-        division = item.flavor_division
-        rule = PricingRule.average if division > 1 else config.pricing_rule
-        if not slot_prices:
-            server_price = 0.0
-        elif rule == PricingRule.most_expensive:
-            server_price = max(slot_prices)
-        elif rule == PricingRule.average:
-            server_price = sum(slot_prices) / len(slot_prices)
-        else:  # proportional
-            server_price = sum(p / division for p in slot_prices)
-        server_price = round(server_price, 2)
-
-        # Add crust type price addition if provided
-        selected_crust_obj: ProductCrustType | None = None
-        if item.selected_crust_type_id:
-            selected_crust_obj = (
-                self._tenant_query(ProductCrustType, catalog=True)
-                .filter(ProductCrustType.id == item.selected_crust_type_id,
-                        ProductCrustType.product_id == item.product_id,
-                        ProductCrustType.active == True)  # noqa: E712
-                .first()
-            )
-            if selected_crust_obj:
-                primary_product = next((p for p in flavor_products if p.id == item.product_id), flavor_products[0] if flavor_products else None)
-                crust_addition = _normalize_crust_price_addition(
-                    selected_crust_obj.price_addition,
-                    primary_product.price if primary_product else None,
-                )
-                if crust_addition > 0:
-                    server_price = round(server_price + crust_addition, 2)
-
-        # Add drink variant price addition if provided
-        if item.selected_drink_variant_id:
-            variant = (
-                self._tenant_query(ProductDrinkVariant, catalog=True)
-                .filter(ProductDrinkVariant.id == item.selected_drink_variant_id,
-                        ProductDrinkVariant.product_id == item.product_id,
-                        ProductDrinkVariant.active == True)  # noqa: E712
-                .first()
-            )
-            if variant and variant.price_addition > 0:
-                server_price = round(server_price + variant.price_addition, 2)
-
-        primary_product = next((p for p in flavor_products if p.id == item.product_id), flavor_products[0] if flavor_products else None)
-        if primary_product:
-            pricing = ProductPricingService(self._db, self._tenant_context).calculate(
-                product=primary_product,
-                size=selected_size_obj,
-                crust=selected_crust_obj,
-                standard_price_override=server_price,
-                flavor_count=item.flavor_division,
-                flavor_product_ids=[flavor.product_id for flavor in item.flavors],
-            )
-            server_price = pricing.final_price
-        else:
-            pricing = ProductPriceResult(standard_price=server_price, final_price=server_price)
-
+    def _validate_inventory_items(self, items: list[CartItemIn]) -> None:
         from backend.services.inventory_service import ProductInventoryAvailabilityService
-
         ProductInventoryAvailabilityService(
-            self._db,
-            tenant_id=self._tenant_context.tenant_id if self._tenant_context else None,
+            self._db, tenant_id=self._tenant_context.tenant_id if self._tenant_context else None,
             tenant_context=self._tenant_context,
-        ).validate_cart_item(item)
-
-        return server_price, flavor_products, pricing, selected_size_obj, selected_crust_obj
+        ).validate_cart_items(items)
 
     def _collect_promotion_gifts(
         self,
@@ -477,6 +409,9 @@ class OrderService:
                 "selected_size_id": size_obj.id if size_obj else item.selected_size_id,
                 "selected_crust_type_id": crust_obj.id if crust_obj else item.selected_crust_type_id,
                 "selected_crust_type": item.selected_crust_type_name,
+                "selected_border_id": item.selected_border_id,
+                "selected_border_name": item.selected_border_name,
+                "selected_drink_variant_id": item.selected_drink_variant_id,
                 "selected_drink_variant": item.selected_drink_variant_name,
                 "unit_price": unit_price,
                 "line_total": line_total,
@@ -499,6 +434,7 @@ class OrderService:
                     for product in flavor_products
                 ],
             })
+        self._validate_inventory_items(payload.items)
         subtotal = round(subtotal, 2)
 
         from backend.services.shipping_service import ShippingService
@@ -595,6 +531,7 @@ class OrderService:
             unit_price, flavor_products, pricing, size_obj, crust_obj = self._validate_item(item, config)
             subtotal += unit_price * item.quantity
             item_data.append((item, unit_price, flavor_products, pricing, size_obj, crust_obj))
+        self._validate_inventory_items(payload.items)
         subtotal = round(subtotal, 2)
         coupon_blocker = next((pricing for _, _, _, pricing, _, _ in item_data if pricing.blocks_other_coupons), None)
         promotion_free_shipping = any(pricing.free_shipping for _, _, _, pricing, _, _ in item_data)
@@ -661,14 +598,13 @@ class OrderService:
             free_shipping_applied = True
 
         total = round(subtotal + delivery_fee_final - discount, 2)
+        self._validate_expected_total(payload.expected_total, total)
         is_pay_on_delivery = payload.payment_method == "pay_on_delivery"
         delivery_payment_method = (payload.delivery_payment_method or "").strip().lower() if is_pay_on_delivery else None
         if is_pay_on_delivery:
-            payment_config_query = self._db.query(PaymentGatewayConfig)
-            if self._tenant_context:
-                payment_config_query = payment_config_query.filter(
-                    PaymentGatewayConfig.tenant_id == self._tenant_context.tenant_id
-                )
+            payment_config_query = self._db.query(PaymentGatewayConfig).filter(
+                PaymentGatewayConfig.tenant_id == self._resource_context(self._orders_tenant_enabled).tenant_id
+            )
             payment_config = payment_config_query.first()
             if payment_config and not payment_config.accept_cash:
                 raise DomainError("Pagamento na entrega esta indisponivel no momento.", code="PaymentMethodDisabled")
@@ -765,6 +701,9 @@ class OrderService:
                 flavor_count=item.flavor_division,
                 selected_crust_type_id=crust_obj.id if crust_obj else item.selected_crust_type_id,
                 selected_crust_type=_clip_text(item.selected_crust_type_name, 100),
+                selected_border_id=item.selected_border_id,
+                selected_border_name=_clip_text(item.selected_border_name, 100),
+                selected_drink_variant_id=item.selected_drink_variant_id,
                 selected_drink_variant=_clip_text(item.selected_drink_variant_name, 100),
                 notes=item.notes,
                 add_ons=list(item.add_ons),
@@ -855,8 +794,6 @@ class OrderService:
             tenant_id=order.tenant_id,
             tenant_context=self._tenant_context,
         ).create_for_order(order, cmv_contexts)
-        if order.status == OrderStatus.paid:
-            self._consume_inventory_for_effective_sale(order.id)
 
         # 6. Record coupon usage
         if resolved_coupon_id:
@@ -935,9 +872,10 @@ class OrderService:
         from backend.models.salao import TableSession
 
         session = (
-            self._db.query(TableSession)
+            self._operation_query(TableSession)
             .options(joinedload(TableSession.items), joinedload(TableSession.table))
             .filter(TableSession.id == table_session_id)
+            .with_for_update(of=TableSession)
             .first()
         )
         if not session:
@@ -946,6 +884,24 @@ class OrderService:
             raise DomainError("Esta comanda ja gerou um pedido do salao.", code="TableSessionOrderAlreadyExists")
         if not session.items:
             raise DomainError("Adicione itens na comanda antes de gerar o pedido.", code="TableSessionEmpty")
+        from backend.services.salao_service import TableSessionService
+        table_service = TableSessionService(self._db, self._tenant_context)
+        carts = []
+        for row in session.items:
+            values = {key: getattr(row, key) for key in (
+                "product_id", "quantity", "selected_size_id", "selected_crust_type_id", "selected_border_id",
+                "selected_drink_variant_id", "flavor_division", "flavors",
+            )}
+            _, row.unit_price, configuration = table_service._configuration(values)
+            for key, value in configuration.items():
+                setattr(row, key, value)
+            row.total_price = round(row.unit_price * row.quantity, 2)
+            carts.append(CartItemIn(product_id=row.product_id, quantity=row.quantity, selected_size=row.selected_size or "Unico",
+                selected_size_id=row.selected_size_id, selected_crust_type_id=row.selected_crust_type_id,
+                selected_border_id=row.selected_border_id, selected_drink_variant_id=row.selected_drink_variant_id,
+                flavor_division=row.flavor_division, flavors=row.flavors, final_price=row.unit_price))
+        self._validate_inventory_items(carts)
+
 
         method = PaymentMethod(payment_method) if payment_method in PaymentMethod._value2member_map_ else PaymentMethod.cash
         subtotal = round(sum((item.total_price or 0.0) for item in session.items), 2)
@@ -1000,13 +956,16 @@ class OrderService:
                 product_id=item.product_id,
                 position=item_position,
                 quantity=item.quantity,
-                selected_size="Salao",
-                selected_size_id=None,
-                flavor_division=1,
-                flavor_count=1,
-                selected_crust_type_id=None,
-                selected_crust_type=None,
-                selected_drink_variant=None,
+                selected_size=item.selected_size or "Salao",
+                selected_size_id=item.selected_size_id,
+                flavor_division=item.flavor_division,
+                flavor_count=item.flavor_division,
+                selected_crust_type_id=item.selected_crust_type_id,
+                selected_crust_type=item.selected_crust_type_name,
+                selected_border_id=item.selected_border_id,
+                selected_border_name=item.selected_border_name,
+                selected_drink_variant_id=item.selected_drink_variant_id,
+                selected_drink_variant=item.selected_drink_variant_name,
                 notes=item.notes,
                 unit_price=item.unit_price,
                 total_price=item.total_price,
@@ -1018,6 +977,12 @@ class OrderService:
             self._own(order_item)
             self._db.add(order_item)
             self._db.flush()
+            for position, flavor in enumerate(item.flavors or []):
+                self._db.add(self._own(OrderItemFlavor(
+                    id=str(uuid.uuid4()), order_item_id=order_item.id,
+                    product_id=flavor["product_id"], flavor_name=flavor["name"],
+                    flavor_price=flavor["price"], position=position,
+                )))
             cmv_contexts.append(CmvOrderItemContext(order_item=order_item))
 
         payment = Payment(
@@ -1044,6 +1009,8 @@ class OrderService:
             tenant_id=order.tenant_id,
             tenant_context=self._tenant_context,
         ).create_for_order(order, cmv_contexts)
+        self._db.flush()
+        self._consume_inventory_for_effective_sale(order.id)
         sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
         from backend.services.automation_event_producer import AutomationEventProducer
         AutomationEventProducer(self._db, order.tenant_id).order_created(order)
@@ -1080,7 +1047,7 @@ class OrderService:
                 .filter(Order.id == order.id)
                 .first()
             )
-        session = self._db.query(TableSession).filter(TableSession.id == table_session_id).first()
+        session = self._operation_query(TableSession).filter(TableSession.id == table_session_id).with_for_update().first()
         if not order or not session:
             raise DomainError("Comanda ou pedido do salao nao encontrado.", code="DineInOrderNotFound")
 
@@ -1123,7 +1090,6 @@ class OrderService:
             session.table.status = "cleaning"
 
         self._db.flush()
-        self._consume_inventory_for_effective_sale(order.id)
         sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
         from backend.services.automation_event_producer import AutomationEventProducer
         AutomationEventProducer(self._db, order.tenant_id).payment_confirmed(
@@ -1156,6 +1122,9 @@ class OrderService:
         order = self._get_order(order_id)
         current = order.status.value if hasattr(order.status, "value") else str(order.status)
 
+        if order.fulfillment_type == "dine_in" and new_status == "on_the_way":
+            raise DomainError("Pedido do salao deve ser servido sem rota de entrega.", code="DineInDeliveryNotAllowed")
+
         # State machine validates transition (raises InvalidStatusTransition if invalid)
         order_sm.transition(order_id, current, new_status)
 
@@ -1184,7 +1153,7 @@ class OrderService:
                 order.preparation_time_minutes = int((order.out_for_delivery_at - order.preparation_started_at).total_seconds() / 60)
 
         self._db.flush()
-        if new_status in {"paid", "pago", "preparing"}:
+        if new_status == "preparing":
             self._consume_inventory_for_effective_sale(order.id)
         if new_status in {"cancelled", "refunded"}:
             self._reverse_inventory_for_cancelled_sale(order.id)
@@ -1242,6 +1211,7 @@ class OrderService:
                 code="KdsPickupNotReady",
             )
 
+        order_sm.complete_local_fulfillment(order.id, current, fulfillment_type=order.fulfillment_type)
         now = datetime.now(timezone.utc)
         order.status = OrderStatus.delivered
         order.updated_at = now
@@ -1273,6 +1243,31 @@ class OrderService:
             sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
             self._db.commit()
 
+        self._db.refresh(order)
+        return order
+
+    def serve_table_session(self, session_id: str, *, changed_by: str = "system") -> Order:
+        order = self._tenant_query(Order).filter(Order.table_session_id == session_id, Order.fulfillment_type == "dine_in").first()
+        if not order:
+            raise DomainError("Pedido do salao nao encontrado.", code="DineInOrderNotFound")
+        return self.serve_dine_in(order.id, changed_by=changed_by)
+
+    def serve_dine_in(self, order_id: str, *, changed_by: str = "system") -> Order:
+        order = self._get_order(order_id)
+        if order.fulfillment_type != "dine_in":
+            raise DomainError("Somente pedidos do salao podem ser servidos.", code="DineInOnly")
+        current = order.status.value if hasattr(order.status, "value") else str(order.status)
+        order_sm.complete_local_fulfillment(order.id, current, fulfillment_type="dine_in")
+        now = datetime.now(timezone.utc)
+        order.status = OrderStatus.delivered
+        order.delivered_at = now
+        order.updated_at = now
+        self._db.flush()
+        sync_customer_order_metrics(self._db, order.customer_id, tenant_id=order.tenant_id)
+        from backend.services.automation_event_producer import AutomationEventProducer
+        AutomationEventProducer(self._db, order.tenant_id).order_status_changed(order, current, "delivered")
+        self._db.commit()
+        bus.publish(OrderStatusChanged(order_id=order.id, from_status=current, to_status="delivered", changed_by=changed_by, tenant_id=order.tenant_id))
         self._db.refresh(order)
         return order
 

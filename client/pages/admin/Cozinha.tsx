@@ -96,11 +96,12 @@ export default function AdminCozinha() {
     setUpdating(order.id);
     try {
       if (order.status === "ready_for_pickup") {
-        await kdsApi.completeKitchenPickup(order.id);
+        if (order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in") await kdsApi.serveKitchenOrder(order.id);
+        else await kdsApi.completeKitchenPickup(order.id);
         setOrders((current) => current.filter((item) => item.id !== order.id));
       } else if (order.status === "preparing") {
         const updated = await kdsApi.markKitchenOrderReady(order.id);
-        setOrders((current) => order.fulfillment_type === "pickup"
+        setOrders((current) => order.fulfillment_type === "pickup" || order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in"
           ? current.map((item) => item.id === order.id ? updated : item)
           : current.filter((item) => item.id !== order.id));
       } else {
@@ -109,9 +110,9 @@ export default function AdminCozinha() {
       }
       toast({
         title: order.status === "ready_for_pickup"
-          ? "Retirada concluída"
+          ? (order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in" ? "Pedido servido" : "Retirada concluída")
           : order.status === "preparing"
-            ? (order.fulfillment_type === "pickup" ? "Pedido pronto para retirada" : "Pedido enviado para expedição")
+            ? (order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in" ? "Pedido pronto para servir" : order.fulfillment_type === "pickup" ? "Pedido pronto para retirada" : "Pedido enviado para expedição")
             : "Preparo iniciado",
         description: `Pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()}`,
       });
@@ -130,7 +131,7 @@ export default function AdminCozinha() {
   const columns = [
     { key: "waiting", label: "Aguardando preparo", statuses: ["paid", "pago"], accent: "text-amber-300", action: "Iniciar preparo", button: "bg-orange-500 active:bg-orange-700" },
     { key: "preparing", label: "Em preparo", statuses: ["preparing"], accent: "text-orange-300", action: "Finalizar preparo", button: "bg-emerald-600 active:bg-emerald-800" },
-    { key: "pickup", label: "Aguardando retirada", statuses: ["ready_for_pickup"], accent: "text-sky-300", action: "Concluir retirada", button: "bg-sky-600 active:bg-sky-800" },
+    { key: "pickup", label: "Aguardando retirada / servico", statuses: ["ready_for_pickup"], accent: "text-sky-300", action: "Concluir retirada", button: "bg-sky-600 active:bg-sky-800" },
   ];
 
   return (
@@ -159,9 +160,9 @@ export default function AdminCozinha() {
               <div className="grid flex-1 auto-rows-max gap-4 overflow-y-auto p-4 xl:grid-cols-2">
                 {items.length === 0 && <div className="col-span-full flex min-h-52 flex-col items-center justify-center gap-3 text-center text-stone"><UtensilsCrossed size={42} /><strong>Nenhum pedido nesta etapa</strong></div>}
                 {items.map((order) => <article key={order.id} className="flex flex-col gap-4 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft">
-                  <div className="flex items-start justify-between gap-3"><div><strong className="text-xl">#{(order.order_code || order.id.slice(0, 8)).toUpperCase()}</strong><p className="text-sm text-stone">{order.fulfillment_type === "pickup" ? "Retirada no balcão" : "Entrega"}</p>{order.delivery?.delivery_person_name && <p className="mt-2 flex items-center gap-1.5 text-sm font-bold text-emerald-300"><Bike size={16} /> Motoboy: {order.delivery.delivery_person_name}</p>}</div><span className="flex items-center gap-1 rounded-lg bg-surface-01 px-2 py-1 text-sm font-bold text-amber-300"><Clock3 size={16} />{elapsed(order.created_at)}</span></div>
+                  <div className="flex items-start justify-between gap-3"><div><strong className="text-xl">#{(order.order_code || order.id.slice(0, 8)).toUpperCase()}</strong><p className="text-sm text-stone">{order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in" ? "Salao" : order.fulfillment_type === "pickup" ? "Retirada no balcão" : "Entrega"}</p>{order.delivery?.delivery_person_name && <p className="mt-2 flex items-center gap-1.5 text-sm font-bold text-emerald-300"><Bike size={16} /> Motoboy: {order.delivery.delivery_person_name}</p>}</div><span className="flex items-center gap-1 rounded-lg bg-surface-01 px-2 py-1 text-sm font-bold text-amber-300"><Clock3 size={16} />{elapsed(order.created_at)}</span></div>
                   <div className="space-y-3 border-y border-surface-03 py-4">{order.items.map((item) => <div key={item.id}><p className="font-bold"><span className="mr-2 text-lg text-gold">{item.quantity}x</span>{itemDescription(item)}</p>{item.notes && <p className="mt-1 rounded-lg bg-amber-500/10 p-2 text-sm font-semibold text-amber-200">Obs.: {item.notes}</p>}</div>)}</div>
-                  <button type="button" disabled={Boolean(updating)} onClick={() => void advanceOrder(order)} className={`mt-auto flex min-h-16 w-full items-center justify-center gap-2 rounded-xl px-4 text-lg font-black text-white transition-transform active:scale-[0.98] disabled:opacity-50 ${column.button}`}>{updating === order.id ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}{updating === order.id ? "Processando..." : order.status === "preparing" && order.fulfillment_type === "pickup" ? "Pronto para retirada" : column.action}</button>
+                  <button type="button" disabled={Boolean(updating)} onClick={() => void advanceOrder(order)} className={`mt-auto flex min-h-16 w-full items-center justify-center gap-2 rounded-xl px-4 text-lg font-black text-white transition-transform active:scale-[0.98] disabled:opacity-50 ${column.button}`}>{updating === order.id ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}{updating === order.id ? "Processando..." : order.status === "ready_for_pickup" && (order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in") ? "Marcar servido" : order.status === "preparing" && order.fulfillment_type === "pickup" ? "Pronto para retirada" : column.action}</button>
                 </article>)}
               </div>
             </div>;

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, String, Float, Integer, Enum, DateTime, ForeignKey, Index, JSON, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Column, String, Float, Integer, Enum, DateTime, ForeignKey, ForeignKeyConstraint, Index, JSON, Text, text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -112,7 +112,11 @@ class Order(Base):
 
 class OrderItem(Base):
     __tablename__ = "order_items"
-    __table_args__ = (Index("uq_order_items_tenant_id_id", "tenant_id", "id", unique=True),)
+    __table_args__ = (
+        Index("uq_order_items_tenant_id_id", "tenant_id", "id", unique=True),
+        ForeignKeyConstraint(["tenant_id", "selected_border_id"], ["product_crust_types.tenant_id", "product_crust_types.id"], name="fk_order_items_tenant_border"),
+        ForeignKeyConstraint(["tenant_id", "selected_drink_variant_id"], ["product_drink_variants.tenant_id", "product_drink_variants.id"], name="fk_order_items_tenant_drink_variant"),
+    )
 
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_order_items_tenant_id_tenants"), nullable=True)
@@ -127,6 +131,9 @@ class OrderItem(Base):
     flavor_count = Column(Integer, default=1)
     selected_crust_type_id = Column(String, nullable=True)
     selected_crust_type = Column(String(100), nullable=True)
+    selected_border_id = Column(String, nullable=True)
+    selected_border_name = Column(String(100), nullable=True)
+    selected_drink_variant_id = Column(String, nullable=True)
     selected_drink_variant = Column(String(100), nullable=True)
     notes = Column(Text, nullable=True)
     add_ons = Column(JSON, nullable=False, default=list)

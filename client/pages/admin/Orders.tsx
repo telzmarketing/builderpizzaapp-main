@@ -9,7 +9,7 @@ import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import LabelPrintDialog from "@/components/kds/LabelPrintDialog";
 import {
-  ordersApi, paymentsApi, deliveryApi, marketingVisitorsApi,
+  ordersApi, paymentsApi, deliveryApi, marketingVisitorsApi, kdsApi,
   type ApiEffectivePermissions, type ApiOrder, type OrderStatus, type DeliveryPerson,
 } from "@/lib/api";
 import { loadPrinterSettings, printConfirmedOrder, printOrder, type PrintTemplate } from "@/lib/printing";
@@ -382,14 +382,16 @@ export default function AdminOrders() {
   const handleStatusChange = useCallback(async (orderId: string, newStatus: OrderStatus) => {
     setUpdatingId(orderId);
     try {
-      const updated = await ordersApi.updateStatus(orderId, newStatus);
+      const current = orders.find((order) => order.id === orderId);
+      if (newStatus === "delivered" && current?.sales_channel === "dine_in") await kdsApi.serveKitchenOrder(orderId);
+      const updated = newStatus === "delivered" && current?.sales_channel === "dine_in" ? await ordersApi.get(orderId) : await ordersApi.updateStatus(orderId, newStatus);
       setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
     } catch {
       alert("Erro ao atualizar status.");
     } finally {
       setUpdatingId(null);
     }
-  }, []);
+  }, [orders]);
 
   const handleApprovePayment = useCallback(async (orderId: string) => {
     setUpdatingId(orderId);
@@ -741,7 +743,7 @@ export default function AdminOrders() {
                                 order={order}
                                 updating={updatingId === order.id || deletingId === order.id}
                                 onAdvance={() => {
-                                  const next = NEXT_STATUS[order.status];
+                                  const next = order.sales_channel === "dine_in" && order.status === "ready_for_pickup" ? "delivered" : NEXT_STATUS[order.status];
                                   if (WAITING_PAYMENT_STATUSES.has(order.status)) {
                                     handleApprovePayment(order.id);
                                   } else if (next) {
@@ -948,7 +950,7 @@ function OrderCard({
   const isReadyForPickup = order.status === "ready_for_pickup";
   const canPrintLabels = ["ready_for_pickup", "on_the_way", "delivered"].includes(order.status);
   const isWaitingPayment = WAITING_PAYMENT_STATUSES.has(order.status);
-  const nextLabel = isReadyForPickup ? null : NEXT_LABEL[order.status];
+  const nextLabel = isReadyForPickup ? (order.sales_channel === "dine_in" ? "Marcar servido" : null) : NEXT_LABEL[order.status];
   const unresolvedDeliveryProblem = Boolean(order.delivery?.problem_report && !order.delivery.problem_resolved_at);
   const payOnDeliveryPaymentProblem = Boolean(
     order.pay_on_delivery &&
@@ -983,7 +985,7 @@ function OrderCard({
           <p className="mt-1 text-[10px] text-stone">{formatDateTime(order.created_at)} · {orderTimeLabel(order)}</p>
         </div>
         <span className={`max-w-full shrink-0 truncate rounded-full px-1.5 py-1 text-[9px] font-bold ${statusColor(order.status)}`}>
-          {STATUS_LABELS[order.status] ?? order.status}
+          {order.sales_channel === "dine_in" && order.status === "delivered" ? "Servido" : STATUS_LABELS[order.status] ?? order.status}
         </span>
       </div>
 
@@ -1143,7 +1145,7 @@ function OrderCard({
       {/* Action buttons */}
       <div className="mt-2 flex flex-wrap gap-1.5">
         {/* Assign motoboy — for ready_for_pickup orders */}
-        {isReadyForPickup && !order.delivery && (
+        {isReadyForPickup && order.sales_channel !== "dine_in" && order.fulfillment_type !== "pickup" && !order.delivery && (
           <button
             onClick={onAssignMotoboy}
             disabled={updating}

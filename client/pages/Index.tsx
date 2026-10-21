@@ -15,7 +15,7 @@ const PIZZA_FALLBACKS = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🍖", "�
 
 export default function Home() {
   const navigate = useNavigate();
-  const { products, productsLoaded, campaignBanners, siteContent, loyaltySettings } = useApp();
+  const { products, productsLoaded, productsError, retryProducts, campaignBanners, siteContent, loyaltySettings } = useApp();
   const { sectionSubtitle, sectionTitle, bannerRotationInterval } = siteContent.home;
   const rotationInterval = (bannerRotationInterval ?? 5) * 1000;
   const [activeCategory, setActiveCategory] = useState<HomeCatalogCategory>("");
@@ -440,7 +440,8 @@ export default function Home() {
         {isCatalogLoading && <CatalogSkeleton />}
 
         {/* Empty state */}
-        {!isCatalogLoading && categoryProducts.length === 0 && (
+        {productsError && <div role="alert" className="rounded-xl bg-surface-02 p-4 text-center text-amber-300">Nao foi possivel atualizar o cardapio. <button className="underline" onClick={() => { void retryProducts().catch(() => {}); }}>Tentar novamente</button></div>}
+        {!isCatalogLoading && !productsError && categoryProducts.length === 0 && (
           <div className="text-center py-10">
             <p className="text-4xl mb-3">🍕</p>
             <p className="text-stone text-sm">Nenhum produto nesta categoria.</p>

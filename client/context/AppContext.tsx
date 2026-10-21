@@ -62,6 +62,7 @@ export interface CartItem {
   finalPrice: number;
   notes?: string;
   selectedCrustType?: CartItemVariation | null;
+  selectedBorder?: CartItemVariation | null;
   selectedDrinkVariant?: CartItemVariation | null;
   promotionApplied?: boolean;
   promotionId?: string | null;
@@ -107,38 +108,14 @@ const isFixedFlavorCombinationProduct = (product?: Pizza | null) =>
 export type { ApiOrder as Order };
 export type { OrderStatus };
 
-const PRODUCTS_CACHE_KEY = "moschettieri:store-products:v1";
-const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000;
-
-function readCachedProducts(): Pizza[] {
-  try {
-    const raw = localStorage.getItem(PRODUCTS_CACHE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as { updatedAt?: number; items?: Pizza[] };
-    if (!parsed.updatedAt || !Array.isArray(parsed.items)) return [];
-    if (Date.now() - parsed.updatedAt > PRODUCTS_CACHE_TTL_MS) return [];
-    return parsed.items;
-  } catch {
-    return [];
-  }
+function productsScopeKey() {
+  return `${window.location.host.toLowerCase()}:${readPlatformSupportSession()?.tenant_id || "public"}`;
 }
-
-function writeCachedProducts(items: Pizza[]) {
-  try {
-    localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({
-      updatedAt: Date.now(),
-      items,
-    }));
-  } catch {
-    // Best-effort cache only.
-  }
-}
-
 function getInitialProductsState() {
-  const cached = readCachedProducts();
+  // Always resolve the public host again; never rehydrate another tenant from localStorage.
   return {
-    products: cached,
-    loaded: cached.length > 0,
+    products: [] as Pizza[],
+    loaded: false,
   };
 }
 
@@ -313,6 +290,8 @@ interface AppContextType {
   // Products
   products: Pizza[];
   productsLoaded: boolean;
+  productsError: string;
+  retryProducts: () => Promise<void>;
   addProduct: (product: Omit<Pizza, "id" | "created_at" | "updated_at">) => Promise<Pizza>;
   updateProduct: (id: string, data: Partial<Pizza>) => Promise<Pizza>;
   deleteProduct: (id: string) => Promise<void>;
@@ -332,6 +311,7 @@ interface AppContextType {
     drinkVariant?: CartItemVariation | null,
     sizeId?: string,
     promotion?: CartPromotionMeta
+    , border?: CartItemVariation | null
   ) => void;
   updateCartItem: (cartItemId: string, quantity: number, size: string, addOns: string[]) => void;
   removeFromCart: (cartItemId: string) => void;
@@ -522,9 +502,8 @@ function getCatalogBootstrapPlan(pathname: string): CatalogBootstrapPlan {
   return {
     products:
       pathname === "/" ||
-      pathname === "/cardapio" ||
+      pathname === "/cardapio" || pathname === "/menu" ||
       productDetail ||
-      adminProducts ||
       pathname.startsWith("/painel/home-config"),
     multiFlavorsConfig: productDetail || adminProducts,
     campaignBanners: pathname === "/",
@@ -533,7 +512,7 @@ function getCatalogBootstrapPlan(pathname: string): CatalogBootstrapPlan {
 
 function getStoreRefreshPlan(pathname: string): CatalogBootstrapPlan {
   return {
-    products: pathname === "/" || pathname === "/cardapio" || pathname.startsWith("/product/"),
+    products: pathname === "/" || pathname === "/cardapio" || pathname === "/menu" || pathname.startsWith("/product/"),
     campaignBanners: pathname === "/",
   };
 }
@@ -585,6 +564,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [initialProducts] = useState(getInitialProductsState);
   const [products, setProducts] = useState<Pizza[]>(initialProducts.products);
   const [productsLoaded, setProductsLoaded] = useState(initialProducts.loaded);
+  const [productsError, setProductsError] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [campaignBanners, setCampaignBanners] = useState<ApiCampaign[]>([]);
@@ -612,20 +592,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
     flavorCategoryFilters: [],
   });
   const loadedDataRef = useRef<Set<string>>(new Set());
+  const catalogScope = productsScopeKey();
+  const previousCatalogScope = useRef(catalogScope);
+  useEffect(() => {
+    if (previousCatalogScope.current === catalogScope) return;
+    previousCatalogScope.current = catalogScope;
+    loadedDataRef.current.clear();
+    setProducts([]);
+    setProductsLoaded(false);
+    setCart([]);
+    void loadCatalogData(getStoreRefreshPlan(window.location.pathname)).catch(() => {});
+  }, [catalogScope]);
+  useEffect(() => {
+    const invalidate = () => { loadedDataRef.current.delete("products"); };
+    window.addEventListener("catalog-products-changed", invalidate);
+    return () => window.removeEventListener("catalog-products-changed", invalidate);
+  }, []);
 
   async function loadCatalogData(plan: CatalogBootstrapPlan) {
     const tasks: Promise<unknown>[] = [];
 
     if (plan.products) {
       tasks.push(
-        productsApi.list(true)
+        productsApi.list(true, undefined, "delivery")
           .then((items) => {
             setProducts(items);
+            setProductsError("");
             setProductsLoaded(true);
-            writeCachedProducts(items);
             loadedDataRef.current.add("products");
           })
           .catch((error) => {
+            setProductsError(error instanceof Error ? error.message : "Nao foi possivel carregar o cardapio.");
             setProductsLoaded(true);
             throw error;
           })
@@ -870,6 +867,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     drinkVariant?: CartItemVariation | null,
     sizeId?: string,
     promotion?: CartPromotionMeta
+    , border?: CartItemVariation | null
   ) => {
     const cartItemId = `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const isFixedFlavorCombination = isFixedFlavorCombinationProduct(primaryProduct);
@@ -898,6 +896,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         finalPrice,
         notes,
         selectedCrustType: crustType ?? null,
+        selectedBorder: border ?? null,
         selectedDrinkVariant: drinkVariant ?? null,
         promotionApplied: !!promotion?.applied,
         promotionId: promotion?.id ?? null,
@@ -1064,7 +1063,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value: AppContextType = {
     loading,
     customer, customerLogin, googleLogin, emailLogin, registerCustomer, customerLogout, updateCustomer, addCustomerAddress,
-    products, productsLoaded, addProduct, updateProduct, deleteProduct,
+    products: catalogScope === previousCatalogScope.current ? products : [], productsLoaded, productsError, retryProducts: () => loadCatalogData({ products: true }), addProduct, updateProduct, deleteProduct,
     cart, addToCart, updateCartItem, removeFromCart, clearCart,
     cartSubtotal, cartDeliveryFee, cartTotal,
     promotions, loadAdminPromotions, addPromotion, updatePromotion, deletePromotion,

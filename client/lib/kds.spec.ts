@@ -21,6 +21,10 @@ function order(
 }
 
 describe("KDS state", () => {
+  it("keeps a dine-in order ready until the service action completes it", () => {
+    const ready = { ...order("dine-in-ready", "ready_for_pickup", "dine_in"), sales_channel: "dine_in" };
+    expect(activeKitchenOrders([ready, { ...ready, id: "served", status: "delivered" }])).toEqual([ready]);
+  });
   it("moves every ready order out of the kitchen, including pickup", () => {
     expect(activeKitchenOrders([
       order("waiting", "paid"),

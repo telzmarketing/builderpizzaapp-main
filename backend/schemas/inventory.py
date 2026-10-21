@@ -198,6 +198,8 @@ class InventoryRecipeItemIn(BaseModel):
 
 
 class InventoryRecipeVersionIn(BaseModel):
+    component_role: Literal["flavor", "base", "crust", "addon", "packaging"] = "flavor"
+    reference_fraction: float = Field(default=1.0, gt=0, le=1)
     product_size_id: str | None = None
     product_crust_type_id: str | None = None
     product_drink_variant_id: str | None = None
@@ -220,6 +222,8 @@ class InventoryRecipeItemOut(BaseModel):
 
 
 class InventoryRecipeVersionOut(BaseModel):
+    component_role: Literal["flavor", "base", "crust", "addon", "packaging"] = "flavor"
+    reference_fraction: float = 1.0
     id: str
     tenant_id: str
     product_id: str

@@ -228,6 +228,14 @@ class KdsService:
         ).complete_customer_pickup(order.id, changed_by=f"kds:{actor_id}")
         return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=False)[0]
 
+    def serve_dine_in(self, order_id: str, *, actor_id: str) -> dict:
+        order = self._load_order(order_id, lock=True)
+        if order.fulfillment_type != "dine_in":
+            raise DomainError("Somente pedidos do salao podem ser servidos.", code="DineInOnly")
+        self._audit_order_transition(order, self._status(order), OrderStatus.delivered.value, actor_id)
+        OrderService(self.db, self.tenant_context).serve_dine_in(order.id, changed_by=f"kds:{actor_id}")
+        return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=False)[0]
+
     def dispatch_orders(self) -> list[dict]:
         orders = self._order_query().options(
             joinedload(Order.items), joinedload(Order.payment),
@@ -394,6 +402,7 @@ class KdsService:
                     "product_name": products[item.product_id].name if item.product_id in products else "Item",
                     "quantity": item.quantity, "selected_size": item.selected_size,
                     "selected_crust_type": item.selected_crust_type,
+                    "selected_border_name": item.selected_border_name,
                     "selected_drink_variant": item.selected_drink_variant,
                     "notes": item.notes,
                     "add_ons": list(item.add_ons or []),

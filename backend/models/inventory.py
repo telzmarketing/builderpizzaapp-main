@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -169,7 +169,11 @@ class InventoryRecipeVersion(Base):
 
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_inventory_recipe_versions_tenant"), nullable=True)
-    __table_args__ = (Index("uq_inventory_recipe_versions_tenant_id_id", "tenant_id", "id", unique=True),)
+    __table_args__ = (
+        Index("uq_inventory_recipe_versions_tenant_id_id", "tenant_id", "id", unique=True),
+        CheckConstraint("component_role IN ('flavor','base','crust','addon','packaging')", name="ck_inventory_recipe_role"),
+        CheckConstraint("reference_fraction > 0 AND reference_fraction <= 1", name="ck_inventory_recipe_fraction"),
+    )
     product_id = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
     product_size_id = Column(String, ForeignKey("product_sizes.id", ondelete="SET NULL"), nullable=True, index=True)
     product_crust_type_id = Column(String, ForeignKey("product_crust_types.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -177,6 +181,8 @@ class InventoryRecipeVersion(Base):
     complement_key = Column(String(120), nullable=True, index=True)
     complement_name = Column(String(180), nullable=True)
     version_number = Column(Integer, nullable=False, default=1)
+    component_role = Column(String(20), nullable=False, default="flavor", server_default="flavor")
+    reference_fraction = Column(Float, nullable=False, default=1.0, server_default="1")
     active = Column(Boolean, nullable=False, default=True, index=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)

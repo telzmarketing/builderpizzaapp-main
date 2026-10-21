@@ -165,6 +165,15 @@ class StateMachine:
 
     # ── Introspection ─────────────────────────────────────────────────────────
 
+    def complete_local_fulfillment(self, entity_id: str, from_status: str, *, fulfillment_type: str) -> TransitionResult:
+        """Complete a local handoff without opening a delivery shortcut."""
+        if self._name != "Order" or fulfillment_type not in {"pickup", "dine_in"} or from_status != "ready_for_pickup":
+            raise InvalidStatusTransition(entity=self._name, from_status=from_status, to_status="delivered", allowed=self.allowed_transitions(from_status))
+        result = TransitionResult(success=True, from_status=from_status, to_status="delivered")
+        for hook in self._hooks.get("delivered", []):
+            hook(entity_id, "delivered")
+        return result
+
     def is_terminal(self, status: str) -> bool:
         return self._graph.get(status) == []
 
