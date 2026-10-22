@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, BellOff, Bike, CheckCircle2, ChefHat, Clock3, Loader2, Maximize2, Minimize2, RefreshCw, UtensilsCrossed, WifiOff } from "lucide-react";
 import KdsSessionActions from "@/components/kds/KdsSessionActions";
+import KdsRecipeDetails from "@/components/kds/KdsRecipeDetails";
+import KdsMultiOperatorBoard from "@/components/kds/KdsMultiOperatorBoard";
 import { useToast } from "@/hooks/use-toast";
 import { kdsApi, type KdsKitchenOrder, type KdsOrderItem } from "@/lib/api";
 import { loadSoundType, playOrderAlert } from "@/lib/orderSound";
@@ -151,6 +153,8 @@ export default function AdminCozinha() {
 
       {error && <div role="alert" className="m-3 flex items-center justify-between gap-3 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-red-200"><span className="flex items-center gap-2"><WifiOff /> {error}</span><button type="button" onClick={() => void loadOrders(true)} className="min-h-12 rounded-lg bg-red-500 px-5 font-bold text-white active:bg-red-700">Tentar novamente</button></div>}
 
+      <div className="p-3 pb-0"><KdsMultiOperatorBoard /></div>
+
       {loading ? <div className="flex flex-1 items-center justify-center gap-3 text-lg text-stone"><Loader2 className="animate-spin text-gold" /> Carregando pedidos...</div> : (
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-3 lg:overflow-hidden">
           {columns.map((column) => {
@@ -161,7 +165,7 @@ export default function AdminCozinha() {
                 {items.length === 0 && <div className="col-span-full flex min-h-52 flex-col items-center justify-center gap-3 text-center text-stone"><UtensilsCrossed size={42} /><strong>Nenhum pedido nesta etapa</strong></div>}
                 {items.map((order) => <article key={order.id} className="flex flex-col gap-4 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft">
                   <div className="flex items-start justify-between gap-3"><div><strong className="text-xl">#{(order.order_code || order.id.slice(0, 8)).toUpperCase()}</strong><p className="text-sm text-stone">{order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in" ? "Salao" : order.fulfillment_type === "pickup" ? "Retirada no balcão" : "Entrega"}</p>{order.delivery?.delivery_person_name && <p className="mt-2 flex items-center gap-1.5 text-sm font-bold text-emerald-300"><Bike size={16} /> Motoboy: {order.delivery.delivery_person_name}</p>}</div><span className="flex items-center gap-1 rounded-lg bg-surface-01 px-2 py-1 text-sm font-bold text-amber-300"><Clock3 size={16} />{elapsed(order.created_at)}</span></div>
-                  <div className="space-y-3 border-y border-surface-03 py-4">{order.items.map((item) => <div key={item.id}><p className="font-bold"><span className="mr-2 text-lg text-gold">{item.quantity}x</span>{itemDescription(item)}</p>{item.notes && <p className="mt-1 rounded-lg bg-amber-500/10 p-2 text-sm font-semibold text-amber-200">Obs.: {item.notes}</p>}</div>)}</div>
+                  <div className="space-y-3 border-y border-surface-03 py-4">{order.items.map((item) => <div key={item.id} className="space-y-2"><p className="font-bold"><span className="mr-2 text-lg text-gold">{item.quantity}x</span>{itemDescription(item)}</p>{item.add_ons?.length > 0 && <p className="text-xs text-stone">Adicionais: {item.add_ons.join(", ")}</p>}{item.notes && <p className="mt-1 rounded-lg bg-amber-500/10 p-2 text-sm font-semibold text-amber-200">Obs.: {item.notes}</p>}<KdsRecipeDetails recipe={item.recipe} /></div>)}</div>
                   <button type="button" disabled={Boolean(updating)} onClick={() => void advanceOrder(order)} className={`mt-auto flex min-h-16 w-full items-center justify-center gap-2 rounded-xl px-4 text-lg font-black text-white transition-transform active:scale-[0.98] disabled:opacity-50 ${column.button}`}>{updating === order.id ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}{updating === order.id ? "Processando..." : order.status === "ready_for_pickup" && (order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in") ? "Marcar servido" : order.status === "preparing" && order.fulfillment_type === "pickup" ? "Pronto para retirada" : column.action}</button>
                 </article>)}
               </div>

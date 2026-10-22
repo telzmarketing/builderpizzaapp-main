@@ -52,6 +52,12 @@ from backend.routes import salao as salao_routes
 from backend.routes import salao_page as salao_page_routes
 from backend.routes import gestao as gestao_routes
 from backend.routes import inventory as inventory_routes
+from backend.routes import inventory_foundation as inventory_foundation_routes
+from backend.routes import inventory_receipts as inventory_receipts_routes
+from backend.routes import inventory_traceability as inventory_traceability_routes
+from backend.routes import preparation as preparation_routes
+from backend.routes import recipe_images as recipe_image_routes
+from backend.routes import recipe_composition as recipe_composition_routes
 from backend.routes import cmv as cmv_routes
 from backend.routes import finance as finance_routes
 from backend.routes import fiscal as fiscal_routes
@@ -91,6 +97,8 @@ def _request_state_identifier(request: Request, name: str) -> str | None:
 
 class CachedStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope):
+        if ".recipe-private" in path.replace("\\", "/").split("/"):
+            return JSONResponse(status_code=404, content={"detail": "Arquivo nao encontrado."})
         response = await super().get_response(path, scope)
         response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
         return response
@@ -1416,6 +1424,13 @@ app.include_router(salao_routes.router, prefix="/api")
 app.include_router(salao_page_routes.router, prefix="/api")
 app.include_router(gestao_routes.router, prefix="/api")
 app.include_router(inventory_routes.router, prefix="/api")
+app.include_router(inventory_foundation_routes.router, prefix="/api")
+app.include_router(inventory_receipts_routes.router, prefix="/api")
+app.include_router(inventory_traceability_routes.router, prefix="/api")
+app.include_router(preparation_routes.router, prefix="/api")
+app.include_router(recipe_image_routes.router, prefix="/api")
+app.include_router(recipe_composition_routes.router, prefix="/api")
+app.include_router(recipe_composition_routes.public_router, prefix="/api")
 app.include_router(cmv_routes.router, prefix="/api")
 app.include_router(finance_routes.router, prefix="/api")
 app.include_router(fiscal_routes.router, prefix="/api")

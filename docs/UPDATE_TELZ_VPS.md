@@ -6,6 +6,24 @@ Este procedimento cobre atualizacao incremental de uma instalacao existente em
 `/opt/telz`. `installer/install.sh` e exclusivo da primeira instalacao ou de
 uma reconstrucao planejada; ele nao deve ser reutilizado como updater.
 
+## Fundacao de estoque ? schema com Decimal e novas operacoes
+
+O head atual da fonte e `20261022_kds_production`, filho de
+`20261020_inventory_recipe_fractions`. A migration verifica finitude, amplitude e
+escala antes de converter quantidades/custos de estoque; residuos incompat?veis
+bloqueiam a atualizacao em vez de arredondar historico silenciosamente. Nao ha
+preenchimento ficticio de lotes, validade ou ownership legado.
+
+Esta mudanca NAO adiciona par de rollback compativel com a release anterior.
+Codigo antigo desconhece reservas, lotes e novas origens de movimento. O helper
+continua recusando pares nao revisados. Antes de uma futura publicacao, ensaiar
+clone, reconciliar escritores e aprovar cutover forward-only pelo fluxo ja
+suportado; nao liberar a whitelist por conveniencia. A existencia de testes
+locais da Fase 1 nao constitui aprovacao de deploy nem validacao da VPS.
+
+Os pares historicos nas secoes seguintes permanecem restritos as respectivas
+revisions: nao autorizam salto ou rollback para a nova fundacao.
+
 ## Incidente: lacunas restantes de schema e singleton de Gestao
 
 Revision igual ao head e `SELECT 1` nao comprovam compatibilidade de todos os
@@ -199,7 +217,7 @@ obrigatoria e SHA completo aprovado no CI:
     esac
   done
   test "$(systemctl show telz-domain-ssl.service -p ActiveState --value)" = inactive
-  TELZ_ALEMBIC_TARGET=20261020_inventory_recipe_fractions \
+  TELZ_ALEMBIC_TARGET=20261022_kds_production \
     /usr/local/sbin/telz-deploy-from-origin "$TARGET" /opt/telz
 )
 ```
@@ -325,7 +343,7 @@ imutavel e executa health checks.
 O target canonico desta entrega e:
 
 ```text
-20261020_inventory_recipe_fractions
+20261021_inventory_foundation
 ```
 
 O deploy fica bloqueado se o commit publicado nao possuir exatamente esse unico
@@ -352,7 +370,7 @@ A cadeia operacional que deve existir no commit publicado e linear:
   -> 20261014_tenant_domain_ssl
   -> 20261017_site_config
   -> 20261017_delivery_schema
-  -> 20261020_inventory_recipe_fractions
+  -> 20261021_inventory_foundation
 ```
 
 ## 2. Preflight
@@ -374,7 +392,7 @@ movimentacao manual para contornar o gate.
 
 Confirme no commit alvo:
 
-- unico head Alembic `20261020_inventory_recipe_fractions`;
+- unico head Alembic `20261021_inventory_foundation`;
 - workflow e updater usando o mesmo target;
 - CI verde para o mesmo SHA, incluindo o upgrade Alembic em PostgreSQL
   descartavel; CI verde nao substitui o backup nem a migration na VPS;
@@ -410,7 +428,7 @@ deploy, todos estes inputs promovidos e root-owned:
 - archive de fonte alvo e seu `TELZ_SOURCE_ARCHIVE_SHA256`;
 - archive de fonte anterior e seu `TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256`;
 - archive offline de dependencias e seu `TELZ_DEPENDENCY_ARCHIVE_SHA256`;
-- `TELZ_ALEMBIC_TARGET=20261020_inventory_recipe_fractions`;
+- `TELZ_ALEMBIC_TARGET=20261022_kds_production`;
 - `TELZ_PUBLIC_HEALTH_URL` quando HTTPS publico e obrigatorio.
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
@@ -451,7 +469,7 @@ sudo /usr/local/sbin/telz-health-check /opt/telz
 ```
 
 Confirme que o link `current` termina em `/releases/<SHA-ALVO>/app`, o manifest
-registra o mesmo commit e `20261020_inventory_recipe_fractions`, e o banco possui uma unica
+registra o mesmo commit e `20261021_inventory_foundation`, e o banco possui uma unica
 revision igual ao target.
 
 Tambem valide HTTPS publico, login, loja, pedido, pagamentos, cozinha,

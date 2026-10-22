@@ -173,6 +173,27 @@ def recommendations(
     return ok(_service(db).dashboard(period=period, date_from=date_from, date_to=date_to)["recommendations"])
 
 
+@router.get("/forecast")
+def forecast(
+    period: PeriodKey = Query(default="30d"),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    horizon_days: int = Query(default=7, ge=1, le=31),
+    db: Session = Depends(get_db),
+):
+    return ok(_service(db).forecast(period=period, date_from=date_from, date_to=date_to, horizon_days=horizon_days))
+
+
+@router.get("/alerts")
+def alerts(
+    period: PeriodKey = Query(default="30d"),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    return ok(_service(db).alerts(period=period, date_from=date_from, date_to=date_to))
+
+
 @router.post("/run-analysis")
 def run_analysis(
     period: PeriodKey = Query(default="30d"),

@@ -23,7 +23,7 @@ _PASSTHROUGH_EXTENSIONS = _OPTIMIZABLE_EXTENSIONS | {".gif", ".svg", ".avif"}
 
 def _safe_upload_path(path: str) -> Path:
     clean = path.replace("\\", "/").lstrip("/")
-    if not clean or ".." in clean.split("/"):
+    if not clean or ".." in clean.split("/") or ".recipe-private" in clean.split("/"):
         raise HTTPException(status_code=404, detail="Arquivo nao encontrado.")
     source = Path("uploads", clean).resolve()
     uploads_root = Path("uploads").resolve()
@@ -83,6 +83,9 @@ def _file_response(path: Path, media_type: str | None = None, *, private: bool =
 
 
 def _enforce_tenant_upload_read(request: Request, db: Session, path: str):
+    # Recipe images have their own RBAC route, even while legacy uploads are public.
+    if ".recipe-private" in path.replace("\\", "/").split("/"):
+        raise HTTPException(status_code=404, detail="Arquivo nao encontrado.")
     if not get_settings().TENANT_UPLOAD_NAMESPACE_ENABLED:
         return None
     clean = path.replace("\\", "/").lstrip("/")

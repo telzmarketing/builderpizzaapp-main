@@ -38,6 +38,7 @@ def test_dispatch_payload_is_bounded_and_uses_delivery_person_contract():
 def test_kds_routes_are_registered_under_api_prefix():
     paths = {route.path for route in app.routes}
     assert "/api/kds/kitchen/orders" in paths
+    assert "/api/kds/kitchen/orders/{order_id}/composition" in paths
     assert "/api/kds/kitchen/orders/{order_id}/start" in paths
     assert "/api/kds/kitchen/orders/{order_id}/ready" in paths
     assert "/api/kds/kitchen/orders/{order_id}/pickup-complete" in paths
@@ -45,6 +46,15 @@ def test_kds_routes_are_registered_under_api_prefix():
     assert "/api/kds/dispatch/drivers" in paths
     assert "/api/kds/dispatch/orders/{order_id}/pickup-complete" in paths
     assert "/api/kds/dispatch/orders/{order_id}/assign" in paths
+
+
+def test_kds_composition_contract_is_snapshot_based_and_cost_free():
+    source = (ROOT / "backend/services/kds_service.py").read_text(encoding="utf-8")
+    method = source[source.index("    def kitchen_order_composition("):source.index("    def overview(")]
+    assert "OrderCmvSnapshot.tenant_id == self.tenant_id" in method
+    assert "composition_json" in method
+    assert "cost_total" not in method
+    assert "CompositionSnapshotMissing" in method
 
 
 def test_kds_service_accepts_a_trusted_legacy_job_context():

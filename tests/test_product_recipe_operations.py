@@ -200,7 +200,7 @@ def test_pg_concurrent_preparation_serializes_idempotence_and_shared_stock(same_
 
     engine = create_engine(url, connect_args={"connect_timeout": 5})
     schema = "recipe_lock_" + uuid.uuid4().hex
-    tables = ("orders", "order_items", "order_item_flavors", "inventory_items", "inventory_recipe_versions", "inventory_recipe_items", "inventory_stock_movements", "gestao_module_settings", "order_cmv_snapshots")
+    tables = ("orders", "order_items", "order_item_flavors", "inventory_items", "inventory_recipe_versions", "inventory_recipe_items", "inventory_stock_movements", "gestao_module_settings", "order_cmv_snapshots", "inventory_lots", "inventory_operations", "inventory_reservations")
     try:
         with engine.begin() as conn:
             conn.execute(text(f'CREATE SCHEMA "{schema}"'))

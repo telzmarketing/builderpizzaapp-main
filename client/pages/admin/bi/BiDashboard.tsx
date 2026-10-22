@@ -60,6 +60,25 @@ function number(value: number) {
   return (value ?? 0).toLocaleString("pt-BR");
 }
 
+function downloadReport(data: ApiBIDashboard) {
+  const rows = [
+    ["Secao", "Indicador", "Valor"],
+    ...data.kpis.map((item) => ["KPI", item.label, String(item.value)]),
+    ...data.sales.map((item) => ["Vendas", item.label, String(item.revenue)]),
+    ...data.products.map((item) => ["Produto", item.name, String(item.total_revenue)]),
+  ];
+  const csv = rows
+    .map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(","))
+    .join("\n");
+  const blob = new Blob([`\\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `relatorio-bi-${data.date_from}-${data.date_to}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function formatKpi(kpi: ApiBIKpi) {
   if (kpi.unit === "currency") return money(kpi.value);
   if (kpi.unit === "percent") return `${(kpi.value ?? 0).toFixed(1)}%`;
@@ -311,6 +330,15 @@ export default function BiDashboard() {
             {running ? <Loader2 size={16} className="animate-spin" /> : <Brain size={16} />}
             Rodar analise
           </button>
+          {data && (
+            <button
+              type="button"
+              onClick={() => downloadReport(data)}
+              className="inline-flex items-center gap-2 rounded-full border border-surface-03 bg-surface-01 px-4 py-2 text-sm font-semibold text-cream hover:border-gold/50"
+            >
+              Exportar relatorio
+            </button>
+          )}
         </div>
       </div>
 
@@ -327,6 +355,33 @@ export default function BiDashboard() {
               <KpiCard key={kpi.key} kpi={kpi} />
             ))}
           </div>
+
+          <Section
+            title="Alertas prioritarios"
+            action={<span className="text-xs text-stone">Derivados dos insights atuais</span>}
+          >
+            {(() => {
+              const alerts = data.insights.filter((item) =>
+                item.actionable && (item.impact_level === "critical" || item.impact_level === "high"),
+              );
+              return alerts.length ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {alerts.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-red-500/35 bg-red-500/10 p-4">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="mt-0.5 shrink-0 text-red-300" size={18} />
+                        <div>
+                          <p className="font-bold text-cream">{item.title}</p>
+                          <p className="mt-1 text-sm text-stone">{item.description}</p>
+                          <p className="mt-2 text-sm font-semibold text-red-200">{item.recommendation}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : <EmptyState label="Nenhum alerta prioritario no periodo." />;
+            })()}
+          </Section>
 
           <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
             <Section title="Vendas por dia">

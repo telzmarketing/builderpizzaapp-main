@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import date, datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
@@ -10,13 +11,20 @@ from sqlalchemy.orm import Session, joinedload
 from backend.core.exceptions import DomainError
 from backend.core.tenant_context import TenantContext, TenantContextMissing
 from backend.core.wave7_tenant_orm import wave7_orm_enabled
-from backend.models.finance import FinanceAccount, FinanceCategory, FinanceCounterparty, FinanceSettlement, FinanceTransaction
+from backend.models.finance import (
+    FinanceAccount, FinanceCategory, FinanceCounterparty, FinanceObligation,
+    FinanceObligationInstallment, FinanceSettlement, FinanceTransaction,
+)
 from backend.models.gestao import GestaoModuleSettings
 from backend.models.inventory import InventoryPurchase
+from backend.models.fiscal import FiscalDocument
 from backend.models.cmv import OrderCmvSnapshot
 from backend.models.order import Order
 from backend.models.payment import Payment
-from backend.schemas.finance import FinanceAccountIn, FinanceCategoryIn, FinanceCounterpartyIn, FinanceSettlementIn, FinanceTransactionIn
+from backend.schemas.finance import (
+    FinanceAccountIn, FinanceCategoryIn, FinanceCounterpartyIn,
+    FinanceObligationFromFiscalIn, FinanceSettlementIn, FinanceTransactionIn,
+)
 
 TENANT_ID = "default"
 
@@ -212,6 +220,114 @@ class FinanceService:
             .all()
         )
         return [self._serialize_transaction(row) for row in rows]
+
+    def list_obligations(self) -> list[dict]:
+        rows = (
+            self._db.query(FinanceObligation)
+            .options(joinedload(FinanceObligation.installments))
+            .filter(FinanceObligation.tenant_id == self._tenant_id)
+            .order_by(FinanceObligation.created_at.desc())
+            .limit(300)
+            .all()
+        )
+        return [self._serialize_obligation(row) for row in rows]
+
+    def create_obligation_from_fiscal_document(
+        self,
+        document_id: str,
+        payload: FinanceObligationFromFiscalIn,
+        idempotency_key: str,
+        admin_id: str | None = None,
+    ) -> dict:
+        """Record a payable source without guessing payment terms.
+
+        Explicit installment rows are mirrored into legacy finance transactions
+        so existing reports continue to work.  With no rows, only the source
+        obligation is recorded; no synthetic due date or installment is made.
+        """
+        key = (idempotency_key or "").strip()
+        if not key or len(key) > 160:
+            raise FinanceInvalidReference("Idempotency-Key obrigatoria para criar obrigacao fiscal.")
+        existing = (
+            self._db.query(FinanceObligation)
+            .options(joinedload(FinanceObligation.installments))
+            .filter(FinanceObligation.tenant_id == self._tenant_id, FinanceObligation.idempotency_key == key)
+            .first()
+        )
+        if existing:
+            return self._serialize_obligation(existing)
+        document = (
+            self._db.query(FiscalDocument)
+            .filter(FiscalDocument.tenant_id == self._tenant_id, FiscalDocument.id == document_id)
+            .first()
+        )
+        if not document:
+            raise FinanceNotFound("Documento fiscal")
+        existing_document = (
+            self._db.query(FinanceObligation)
+            .filter(FinanceObligation.tenant_id == self._tenant_id, FinanceObligation.fiscal_document_id == document_id)
+            .first()
+        )
+        if existing_document:
+            raise FinanceInvalidReference("Documento fiscal ja possui obrigacao financeira vinculada.")
+        total = self._money(document.total_document)
+        if total <= 0:
+            raise FinanceInvalidReference("Documento fiscal sem valor total positivo.")
+        installments = self._validated_obligation_installments(payload, total)
+        snapshot = self._json_snapshot(document.snapshot_json)
+        supplier = snapshot.get("supplier") if isinstance(snapshot.get("supplier"), dict) else {}
+        row = FinanceObligation(
+            id=f"fin-obg-{uuid.uuid4().hex[:12]}", tenant_id=self._tenant_id,
+            fiscal_document_id=document.id, idempotency_key=key, status="pending",
+            total_amount=total, product_amount=self._money(document.total_products),
+            freight_amount=self._money(document.total_shipping), discount_amount=self._money(document.total_discount),
+            tax_amount=self._money(snapshot.get("taxes_total")),
+            supplier_name=supplier.get("name") or snapshot.get("supplier_name"),
+            supplier_document=supplier.get("document") or snapshot.get("supplier_document"),
+            notes=payload.notes, created_by_admin_id=admin_id,
+        )
+        self._db.add(row)
+        self._db.flush()
+        for item in installments:
+            transaction = self._transaction_for_obligation(row, document, item, admin_id)
+            self._db.add(transaction)
+            self._db.flush()
+            self._db.add(FinanceObligationInstallment(
+                id=f"fin-obg-itm-{uuid.uuid4().hex[:12]}", tenant_id=self._tenant_id,
+                obligation_id=row.id, finance_transaction_id=transaction.id,
+                installment_number=item["installment_number"], amount=item["amount"], due_date=item["due_date"],
+            ))
+        try:
+            self._db.commit()
+        except IntegrityError:
+            self._db.rollback()
+            existing = self._db.query(FinanceObligation).filter(
+                FinanceObligation.tenant_id == self._tenant_id, FinanceObligation.idempotency_key == key,
+            ).first()
+            if existing:
+                return self._serialize_obligation(existing)
+            raise
+        self._db.refresh(row)
+        return self._serialize_obligation(row)
+
+    def reconcile_obligation(self, obligation_id: str) -> dict:
+        row = self._get_obligation(obligation_id)
+        for item in row.installments:
+            tx = item.transaction
+            if tx is not None:
+                item.paid_amount = self._money(tx.paid_amount)
+                item.status = tx.status if tx.status in {"pending", "partial", "paid", "cancelled"} else item.status
+        if row.installments and all(item.status == "paid" for item in row.installments):
+            row.status = "paid"
+        elif any(item.status == "partial" for item in row.installments) or any(item.paid_amount > 0 for item in row.installments):
+            row.status = "partial"
+        elif all(item.status == "cancelled" for item in row.installments):
+            row.status = "cancelled"
+        else:
+            row.status = "pending"
+        self._db.commit()
+        self._db.refresh(row)
+        return self._serialize_obligation(row)
 
     def management_summary(self) -> dict:
         transactions = (
@@ -726,6 +842,76 @@ class FinanceService:
         if not row:
             raise FinanceNotFound("Conta")
         return row
+
+    @staticmethod
+    def _money(value) -> Decimal:
+        if value is None:
+            return Decimal("0.00")
+        return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    @staticmethod
+    def _json_snapshot(value) -> dict:
+        if not value:
+            return {}
+        try:
+            parsed = json.loads(value) if isinstance(value, str) else value
+            return parsed if isinstance(parsed, dict) else {}
+        except (TypeError, json.JSONDecodeError):
+            return {}
+
+    def _validated_obligation_installments(self, payload: FinanceObligationFromFiscalIn, total: Decimal) -> list[dict]:
+        rows = sorted(payload.installments, key=lambda item: item.installment_number)
+        if not rows:
+            return []
+        expected = list(range(1, len(rows) + 1))
+        if [item.installment_number for item in rows] != expected:
+            raise FinanceInvalidReference("Parcelas devem ser numeradas sequencialmente a partir de 1.")
+        amounts = [self._money(item.amount) for item in rows]
+        if sum(amounts, Decimal("0.00")) != total:
+            raise FinanceInvalidReference("A soma das parcelas precisa corresponder ao total do documento fiscal.")
+        return [{"installment_number": item.installment_number, "amount": amount, "due_date": item.due_date} for item, amount in zip(rows, amounts)]
+
+    def _transaction_for_obligation(self, obligation: FinanceObligation, document: FiscalDocument, item: dict, admin_id: str | None) -> FinanceTransaction:
+        due_date = item["due_date"]
+        return FinanceTransaction(
+            id=f"fin-trx-{uuid.uuid4().hex[:12]}", tenant_id=self._tenant_id,
+            category_id=self._ensure_category("Compras de estoque", "expense", "inventory_purchases"),
+            counterparty_type="supplier", counterparty_name=obligation.supplier_name or "Fornecedor nao informado",
+            counterparty_document=obligation.supplier_document, entry_type="expense", status="pending",
+            description=f"Obrigacao fiscal {document.access_key or document.id}",
+            amount=float(item["amount"]), competence_date=due_date or date.today(), due_date=due_date,
+            document_number=document.number and str(document.number), document_date=document.issue_date.date() if document.issue_date else None,
+            obligation_id=obligation.id, origin_type="fiscal_document_payable", origin_id=document.id,
+            created_by_admin_id=admin_id, notes="Gerado por obrigacao fiscal explicita; termos ausentes permanecem sem vencimento.",
+        )
+
+    def _get_obligation(self, obligation_id: str) -> FinanceObligation:
+        row = (
+            self._db.query(FinanceObligation)
+            .options(joinedload(FinanceObligation.installments).joinedload(FinanceObligationInstallment.transaction))
+            .filter(FinanceObligation.tenant_id == self._tenant_id, FinanceObligation.id == obligation_id)
+            .first()
+        )
+        if not row:
+            raise FinanceNotFound("Obrigacao financeira")
+        return row
+
+    def _serialize_obligation(self, row: FinanceObligation) -> dict:
+        return {
+            "id": row.id, "tenant_id": row.tenant_id, "fiscal_document_id": row.fiscal_document_id,
+            "idempotency_key": row.idempotency_key, "status": row.status, "currency": row.currency,
+            "total_amount": self._money(row.total_amount), "product_amount": self._money(row.product_amount),
+            "freight_amount": self._money(row.freight_amount), "discount_amount": self._money(row.discount_amount),
+            "tax_amount": self._money(row.tax_amount), "supplier_name": row.supplier_name,
+            "supplier_document": row.supplier_document, "notes": row.notes,
+            "created_by_admin_id": row.created_by_admin_id, "created_at": row.created_at, "updated_at": row.updated_at,
+            "installments": [{
+                "id": item.id, "tenant_id": item.tenant_id, "obligation_id": item.obligation_id,
+                "finance_transaction_id": item.finance_transaction_id, "installment_number": item.installment_number,
+                "amount": self._money(item.amount), "due_date": item.due_date, "status": item.status,
+                "paid_amount": self._money(item.paid_amount), "created_at": item.created_at,
+            } for item in row.installments],
+        }
 
     def _get_category(self, category_id: str) -> FinanceCategory:
         row = (

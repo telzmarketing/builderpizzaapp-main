@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, String, Text
+from sqlalchemy import CheckConstraint, JSON, Boolean, Column, DateTime, Float, ForeignKey, Index, String, Text
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import JSONB
 
 from backend.database import Base
 
@@ -50,13 +51,17 @@ class OrderItemCmvSnapshot(Base):
     missing_recipe = Column(Boolean, nullable=False, default=False)
     missing_cost = Column(Boolean, nullable=False, default=False)
     recipe_version_ids = Column(Text, nullable=True)
+    composition_json = Column(JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     snapshot = relationship("OrderCmvSnapshot", back_populates="items")
     order_item = relationship("OrderItem")
     product = relationship("Product")
     ingredients = relationship("OrderItemCmvIngredientSnapshot", cascade="all, delete-orphan", back_populates="item_snapshot")
-    __table_args__ = (Index("uq_order_item_cmv_snapshots_tenant_id_id", "tenant_id", "id", unique=True),)
+    __table_args__ = (
+        Index("uq_order_item_cmv_snapshots_tenant_id_id", "tenant_id", "id", unique=True),
+        CheckConstraint("composition_json IS NULL OR jsonb_typeof(composition_json) = 'object'", name="ck_order_item_cmv_composition_object"),
+    )
 
 
 class OrderItemCmvIngredientSnapshot(Base):

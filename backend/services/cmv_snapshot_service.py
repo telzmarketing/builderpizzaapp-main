@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
+import json
 from dataclasses import dataclass
 
 from sqlalchemy import func
@@ -252,8 +253,19 @@ class OrderCmvSnapshotService:
             missing_recipe=missing_recipe,
             missing_cost=missing_cost,
             recipe_version_ids=json.dumps([recipe_use.recipe.id for recipe_use in recipe_uses]),
+            composition_json=self._composition_json(context, recipes, products),
         )
         return item_snapshot, ingredients
+
+    def _composition_json(self, context, recipes, products):
+        """Freeze the same technical composition used by preview/consumption."""
+        from backend.services.recipe_composition_service import composition_for_item
+        try:
+            return composition_for_item(context.cart_item or context.order_item, recipes, products)
+        except Exception:
+            # Existing legacy orders may lack the additive customization shape;
+            # their numeric snapshot remains the compatibility source of truth.
+            return None
 
     def _recipe_uses(
         self,

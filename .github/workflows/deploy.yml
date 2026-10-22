@@ -47,8 +47,10 @@ jobs:
       RUNTIME_SCHEMA_TEST_DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci
       OPS_SINGLETON_TEST_DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci
       POPUP_TEST_DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci
+      PRODUCT_AUDIT_DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_product_ci
+      INVENTORY_FOUNDATION_TEST_DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_inventory_ci
       JWT_SECRET_KEY: ci-only-not-for-production
-      TELZ_ALEMBIC_TARGET: 20261020_inventory_recipe_fractions
+      TELZ_ALEMBIC_TARGET: 20261022_kds_production
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -92,7 +94,22 @@ jobs:
           test "${current[0]}" = "$TELZ_ALEMBIC_TARGET"
 
       - name: Testar backend
-        run: python -m pytest -q
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          engine = create_engine(os.environ['DATABASE_URL'], isolation_level='AUTOCOMMIT')
+          with engine.connect() as connection:
+              for name in ('telz_product_ci', 'telz_inventory_ci'):
+                  connection.execute(text('CREATE DATABASE ' + name))
+          engine.dispose()
+          PY
+          DATABASE_URL="$PRODUCT_AUDIT_DATABASE_URL" alembic -c backend/alembic.ini upgrade "$TELZ_ALEMBIC_TARGET"
+          DATABASE_URL="$INVENTORY_FOUNDATION_TEST_DATABASE_URL" alembic -c backend/alembic.ini upgrade "$TELZ_ALEMBIC_TARGET"
+          python -m pytest -q --junitxml=backend-tests.xml
+          python tests/test_inventory_foundation_postgresql.py --verify-pg-report backend-tests.xml
 
       - name: Validar frontend
         run: |
@@ -477,7 +494,7 @@ jobs:
         shell: bash
         env:
           PREVIOUS_COMMIT: ${{ needs.inspect_vps.outputs.previous_commit }}
-          ALEMBIC_TARGET: 20261020_inventory_recipe_fractions
+          ALEMBIC_TARGET: 20261022_kds_production
         run: |
           set -Eeuo pipefail
           source_delivery="$RUNNER_TEMP/promoted-source"
@@ -609,13 +626,29 @@ jobs:
             cd "$work/target"
             DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci JWT_SECRET_KEY=ci-only-not-for-production \
               "$work/target-venv/bin/alembic" -c backend/alembic.ini upgrade "$ALEMBIC_TARGET"
+            DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci "$work/target-venv/bin/python" - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          engine = create_engine(os.environ['DATABASE_URL'], isolation_level='AUTOCOMMIT')
+          with engine.connect() as connection:
+              for name in ('telz_product_ci', 'telz_inventory_ci'):
+                  connection.execute(text('CREATE DATABASE ' + name))
+          engine.dispose()
+          PY
+            for database in telz_product_ci telz_inventory_ci; do
+              DATABASE_URL="postgresql://telz_ci:telz_ci@127.0.0.1:5432/$database" JWT_SECRET_KEY=ci-only-not-for-production \
+                "$work/target-venv/bin/alembic" -c backend/alembic.ini upgrade "$ALEMBIC_TARGET"
+            done
             SITE_CONFIG_TEST_DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci \
             DRIVER_SCHEMA_TEST_DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci \
             RUNTIME_SCHEMA_TEST_DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci \
             OPS_SINGLETON_TEST_DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci \
             POPUP_TEST_DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci \
+            PRODUCT_AUDIT_DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_product_ci \
+            INVENTORY_FOUNDATION_TEST_DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_inventory_ci \
             DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci JWT_SECRET_KEY=ci-only-not-for-production \
-              "$work/target-venv/bin/python" -m pytest -q
+              "$work/target-venv/bin/python" -m pytest -q --junitxml=backend-tests.xml
+            "$work/target-venv/bin/python" tests/test_inventory_foundation_postgresql.py --verify-pg-report backend-tests.xml
           )
           (
             cd "$work/previous"
@@ -727,7 +760,7 @@ jobs:
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         env:
           OPERATION: ${{ inputs.operation }}
-          TELZ_ALEMBIC_TARGET: 20261020_inventory_recipe_fractions
+          TELZ_ALEMBIC_TARGET: 20261022_kds_production
           EXPECTED_COMMIT: ${{ github.sha }}
           PREVIOUS_COMMIT: ${{ needs.inspect_vps.outputs.previous_commit }}
           PUBLIC_HEALTH_URL: https://app.telz.com.br/health

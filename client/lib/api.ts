@@ -163,11 +163,12 @@ export function externalFetch(url: string, init: RequestInit = {}): Promise<Resp
   return fetch(url, init);
 }
 
-async function requestForm<T>(method: string, path: string, body: FormData): Promise<T> {
+async function requestForm<T>(method: string, path: string, body: FormData, extraHeaders?: HeadersInit): Promise<T> {
   const res = await fetchApi(path, {
     method,
     headers: {
       ...authHeaders(),
+      ...extraHeaders,
     },
     body,
   });
@@ -253,7 +254,7 @@ export const runtimeSurfaceApi = {
 
 const get = <T>(path: string) => request<T>("GET", path);
 const post = <T>(path: string, body: unknown) => request<T>("POST", path, body);
-const postForm = <T>(path: string, body: FormData) => requestForm<T>("POST", path, body);
+const postForm = <T>(path: string, body: FormData, extraHeaders?: HeadersInit) => requestForm<T>("POST", path, body, extraHeaders);
 const put = <T>(path: string, body: unknown) => request<T>("PUT", path, body);
 const patch = <T>(path: string, body: unknown) => request<T>("PATCH", path, body);
 const del = <T>(path: string) => request<T>("DELETE", path);
@@ -1117,7 +1118,10 @@ export interface KdsOrderItem {
   selected_crust_type?: string | null;
   selected_drink_variant?: string | null;
   notes?: string | null;
+  add_ons?: string[];
   flavors: Array<{ name: string }>;
+  /** Frozen server-side composition used by the kitchen; never calculate gramagens in the UI. */
+  recipe?: RecipeCompositionPreview | null;
 }
 
 export interface KdsDeliverySummary {
@@ -1210,6 +1214,59 @@ export interface KdsOverview {
   generated_at: string;
   counters: KdsOverviewCounters;
   orders: KdsOverviewOrder[];
+}
+
+/** Contratos da estação multioperador. A identidade do operador é sempre
+ * derivada da sessão autenticada pelo backend; o cliente só envia comandos
+ * versionados e idempotentes. */
+export type KdsPresenceState = "offline" | "available" | "in_production" | "paused";
+
+export interface KdsOperatorPresence {
+  operator_id: string;
+  operator_name: string;
+  state: KdsPresenceState;
+  station_id?: string | null;
+  queue_count: number;
+  active_task_id?: string | null;
+  updated_at: string;
+  version: number;
+}
+
+export interface KdsProductionTask {
+  id: string;
+  order_id: string;
+  order_code?: string | null;
+  order_item_id: string;
+  unit_index: number;
+  state: string;
+  version: number;
+  priority: number;
+  created_at: string;
+  started_at?: string | null;
+  estimated_seconds?: number | null;
+  operator_id?: string | null;
+  operator_name?: string | null;
+  composition_revision_id?: string | null;
+  executable?: boolean;
+  product_name?: string | null;
+  quantity?: string | null;
+  /** Fase 8: cobertura de consumo da tentativa, derivada pelo backend. */
+  consumption_mode?: "attempts" | "legacy_covered" | "not_required" | string | null;
+  consumption_operation_id?: string | null;
+  composition_revision_id?: string | null;
+  server_time?: string | null;
+}
+
+export interface KdsMyQueue {
+  generated_at: string;
+  presence: KdsOperatorPresence;
+  tasks: KdsProductionTask[];
+  available_operators?: KdsOperatorPresence[];
+}
+
+export interface KdsHeartbeat {
+  server_time: string;
+  presence: KdsOperatorPresence;
 }
 
 // Label dispatch contracts stay grouped here so the browser-first UI can be
@@ -1386,6 +1443,15 @@ export const kdsApi = {
     }),
   completeDispatchPickup: (orderId: string) =>
     post<KdsDispatchOrder>(`/kds/dispatch/orders/${orderId}/pickup-complete`, {}),
+  myQueue: () => get<KdsMyQueue>("/kds/kitchen/my-queue"),
+  setPresence: (body: { state: KdsPresenceState; expected_version: number }, key: string) =>
+    request<KdsOperatorPresence>("POST", "/kds/kitchen/presence", body, { "Idempotency-Key": key }),
+  heartbeat: (body: { operational_session_id?: string; station_id?: string | null; expected_version?: number }, key: string) =>
+    request<KdsHeartbeat>("POST", "/kds/kitchen/heartbeat", body, { "Idempotency-Key": key }),
+  commandTask: (taskId: string, command: "start" | "finish-assembly" | "start-oven" | "complete-oven" | "check" | "remake", body: Record<string, unknown>, key: string) =>
+    request<KdsProductionTask>("POST", `/kds/kitchen/tasks/${encodeURIComponent(taskId)}/${command}`, body, { "Idempotency-Key": key }),
+  redistribute: (body: { task_ids: string[]; from_operator_id?: string | null; to_operator_id: string; reason: string; expected_versions: Record<string, number> }, key: string) =>
+    request<KdsMyQueue>("POST", "/kds/management/redistributions", body, { "Idempotency-Key": key }),
 };
 
 const labelDispatchBase = "/kds/dispatch";
@@ -1834,7 +1900,84 @@ export interface InventoryPurchase {
   updated_at?: string | null;
 }
 
+export type InventoryReceiptDocumentStatus = "pending_review" | "ready" | "approved" | "rejected" | "cancelled";
+
+export interface InventoryReceiptDocumentLine {
+  id: string;
+  line_number: number;
+  supplier_code?: string | null;
+  gtin?: string | null;
+  description: string;
+  commercial_quantity?: string | null;
+  commercial_unit?: string | null;
+  taxable_quantity?: string | null;
+  taxable_unit?: string | null;
+  unit_price?: string | null;
+  total_price?: string | null;
+  inventory_item_id?: string | null;
+  pending_fields: string[];
+  association_status: "pending" | "confirmed" | "unmatched" | string;
+}
+
+export interface InventoryReceiptDocument {
+  id: string;
+  tenant_id: string;
+  purchase_id?: string | null;
+  supplier_id?: string | null;
+  supplier_name?: string | null;
+  access_key?: string | null;
+  supplier_document?: string | null;
+  document_number?: string | null;
+  series?: string | null;
+  issue_date?: string | null;
+  entry_date?: string | null;
+  total_products?: string | null;
+  total_document?: string | null;
+  status: InventoryReceiptDocumentStatus | string;
+  version: number;
+  pending_fields: string[];
+  source_filename?: string | null;
+  extraction_method?: "xml" | "manual" | string;
+  extraction_error?: string | null;
+  financial_status: "not_requested" | "pending" | "linked" | "error" | string;
+  financial_transaction_ids: string[];
+  lines: InventoryReceiptDocumentLine[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface InventoryReceiptDocumentUpdate {
+  expected_version: number;
+  purchase_id?: string | null;
+  lines?: Array<{
+    id: string;
+    inventory_item_id?: string | null;
+    association_status?: "pending" | "confirmed" | "unmatched";
+  }>;
+}
+
+export interface InventoryPayableInstallmentInput {
+  number: number;
+  due_date: string;
+  amount: string;
+}
+
+export interface InventoryPayablesReconcileInput {
+  expected_version: number;
+  installments: InventoryPayableInstallmentInput[];
+  existing_transaction_ids?: string[];
+}
+
+export interface InventoryPayablesReconcileResult {
+  document_id: string;
+  status: "not_requested" | "pending" | "linked" | "error" | string;
+  transaction_ids: string[];
+  obligation_total: string;
+  paid_total: string;
+}
+
 export interface InventoryManualEntry {
+  reversed?: boolean;
   id: string;
   tenant_id?: string;
   item_id: string;
@@ -5561,6 +5704,37 @@ export const inventoryApi = {
     del<void>(`/gestao/inventory/products/${productId}/recipes/${recipeId}`),
 };
 
+export const inventoryReceiptApi = {
+  list: () => get<InventoryReceiptDocument[]>("/gestao/inventory/v1/documents"),
+  get: (id: string) => get<InventoryReceiptDocument>(`/gestao/inventory/v1/documents/${encodeURIComponent(id)}`),
+  uploadXml: (file: File, purchaseId?: string | null, idempotencyKey?: string) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    if (purchaseId) form.append("purchase_id", purchaseId);
+    return postForm<InventoryReceiptDocument>(
+      "/gestao/inventory/v1/documents",
+      form,
+      idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+    );
+  },
+  update: (id: string, data: InventoryReceiptDocumentUpdate) =>
+    request<InventoryReceiptDocument>("PATCH", `/gestao/inventory/v1/documents/${encodeURIComponent(id)}`, data),
+  approve: (id: string, expectedVersion: number, idempotencyKey: string) =>
+    request<InventoryReceiptDocument>(
+      "POST",
+      `/gestao/inventory/v1/documents/${encodeURIComponent(id)}/approve`,
+      { expected_version: expectedVersion },
+      { "Idempotency-Key": idempotencyKey },
+    ),
+  reconcilePayables: (id: string, data: InventoryPayablesReconcileInput, idempotencyKey: string) =>
+    request<InventoryPayablesReconcileResult>(
+      "POST",
+      `/gestao/inventory/v1/documents/${encodeURIComponent(id)}/payables/reconcile`,
+      data,
+      { "Idempotency-Key": idempotencyKey },
+    ),
+};
+
 export const cmvApi = {
   overview: () => get<CmvOverview>("/gestao/cmv/overview"),
 };
@@ -7995,4 +8169,246 @@ export const upsellsApi = {
   toggle: (id: string) => patch<ApiUpsell>(`/upsells/${id}/toggle`, {}),
   remove: (id: string) => del<void>(`/upsells/${id}`),
   reorder: (ids: string[]) => post<void>("/upsells/reorder", ids),
+};
+
+
+// Inventory foundation uses versioned Decimal-string contracts. Commands never retry automatically.
+export interface FoundationUnit {
+  id: string; name: string; symbol: string; code: string | null;
+  dimension: "mass" | "volume" | "count" | null;
+  conversion_factor: string | null; active: boolean; version: number;
+}
+export interface FoundationBalance {
+  item_id: string; location_id: string | null; lot_id: string | null;
+  physical: string; usable: string; reserved: string; available: string;
+  legacy_without_lot: boolean; unit_id: string | null; issues?: string[];
+}
+export interface FoundationLot {
+  id: string; item_id: string; location_id: string; lot_code: string;
+  status: "available" | "blocked" | "quarantine" | "consumed" | "discarded"; version: number;
+  received_at: string; expires_on: string | null; effective_expires_at: string | null;
+  opened_at?: string | null;
+  opening_rule?: string | null;
+  container_code?: string | null;
+}
+export interface FoundationReservation {
+  id: string; item_id: string; location_id: string; lot_id: string | null;
+  quantity: string; status: string; version: number; source_id: string;
+}
+export interface FoundationPackaging { id: string; item_id: string; name: string; factor: string | null; variable_weight: boolean; version: number }
+type FoundationPage<T> = { items: T[]; next_cursor: string | null };
+const FOUNDATION_PATH = "/gestao/inventory/v1";
+async function foundationList<T>(resource: string): Promise<FoundationPage<T>> {
+  const items: T[] = [];
+  const seen = new Set<string>();
+  let cursor: string | null = null;
+  do {
+    const page: FoundationPage<T> = await get(`${FOUNDATION_PATH}/${resource}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+    items.push(...page.items);
+    cursor = page.next_cursor;
+    if (cursor && seen.has(cursor)) throw new Error("A consulta de estoque nao avancou. Atualize novamente.");
+    if (cursor) seen.add(cursor);
+  } while (cursor);
+  return { items, next_cursor: null };
+}
+
+export const inventoryFoundationApi = {
+  units: () => foundationList<FoundationUnit>("units"),
+  balances: () => get<FoundationPage<FoundationBalance>>(`${FOUNDATION_PATH}/balances`),
+  reconciliation: () => get<FoundationPage<FoundationBalance>>(`${FOUNDATION_PATH}/reconciliation`),
+  lots: () => foundationList<FoundationLot>("lots"),
+  openLot: (lotId: string, body: { expected_version: number; opened_at: string; opening_rule: string; container_code?: string | null }, key: string) =>
+    request<FoundationLot>("POST", `${FOUNDATION_PATH}/lots/${encodeURIComponent(lotId)}/open`, body, { "Idempotency-Key": key }),
+  setLotState: (lotId: string, body: { expected_version: number; status: "available" | "blocked" | "quarantine"; reason: string }, key: string) =>
+    request<FoundationLot>("POST", `${FOUNDATION_PATH}/lots/${encodeURIComponent(lotId)}/state`, body, { "Idempotency-Key": key }),
+  reservations: () => foundationList<FoundationReservation>("reservations"),
+  packagings: () => foundationList<FoundationPackaging>("packagings"),
+  preview: (body: Record<string, unknown>) => post<{ quantity: string; unit_id: string; rounding: string }>(`${FOUNDATION_PATH}/conversions/preview`, body),
+  command: <T = Record<string, unknown>>(resource: string, body: Record<string, unknown>, key: string, method = "POST") =>
+    request<T>(method, `${FOUNDATION_PATH}/${resource}`, body, { "Idempotency-Key": key }),
+};
+
+// Fase 5: preparo e PCP usam contratos versionados e comandos idempotentes.
+// A tela nunca altera status comercial diretamente; o backend coordena a
+// transicao, o consumo e a transformacao em uma unica operacao autorizada.
+export interface PreparationOrder {
+  id: string;
+  preparation_id?: string | null;
+  name: string;
+  state: "draft" | "approved" | "scheduled" | "in_progress" | "partially_completed" | "completed" | "paused" | "blocked" | "cancelled" | string;
+  version: number;
+  target_quantity: string;
+  produced_total: string;
+  approved_total: string;
+  discarded_total: string;
+  remaining_quantity: string;
+  output_unit_id: string;
+  output_unit_name?: string | null;
+  source_item_id?: string | null;
+  source_item_name?: string | null;
+  planned_for?: string | null;
+  scheduled_for?: string | null;
+  assigned_operator_id?: string | null;
+  assigned_operator_name?: string | null;
+  pending_fields?: string[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface PreparationRecipe {
+  preparation_order_id: string;
+  recipe_version_id: string | null;
+  executable: boolean;
+  output_item_id?: string | null;
+  output_item_name?: string | null;
+  target_quantity: string;
+  output_unit_id: string;
+  instructions?: string | null;
+  preparation_steps: string[];
+  ingredients: Array<{
+    inventory_item_id: string;
+    inventory_item_name?: string | null;
+    quantity: string;
+    unit_id: string;
+    unit_symbol?: string | null;
+    lot_id?: string | null;
+  }>;
+  warnings: Array<{ code: string; message: string }>;
+}
+
+export interface PreparationReportResult {
+  preparation_order_id: string;
+  execution_id: string;
+  version: number;
+  state: string;
+  planned_quantity: string;
+  produced_total: string;
+  approved_total: string;
+  discarded_total: string;
+  remaining_quantity: string;
+  output_unit_id: string;
+  lot_id?: string | null;
+  expires_at?: string | null;
+  stock_operation_id?: string | null;
+  completed_at?: string | null;
+}
+
+export interface ProductionPlanSimulation {
+  id?: string;
+  horizon_start: string;
+  horizon_end: string;
+  demand_source: string;
+  generated_at?: string;
+  requirements: Array<{ inventory_item_id: string; inventory_item_name?: string | null; quantity: string; unit_id: string; available?: string; shortage?: string }>;
+  conflicts: Array<{ code: string; message: string; inventory_item_id?: string | null }>;
+  proposed_orders: PreparationOrder[];
+}
+
+export const preparationApi = {
+  listOrders: (query = "") => get<PreparationOrder[] | { items: PreparationOrder[] }>(`/preparation/orders${query ? `?${query.replace(/^\?/, "")}` : ""}`),
+  getOrder: (id: string) => get<PreparationOrder>(`/preparation/orders/${encodeURIComponent(id)}`),
+  recipe: (id: string) => get<PreparationRecipe>(`/preparation/orders/${encodeURIComponent(id)}/recipe`),
+  start: (id: string, expectedVersion: number, key: string) =>
+    request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/start`, { expected_version: expectedVersion }, { "Idempotency-Key": key }),
+  report: (id: string, body: Record<string, unknown>, key: string) =>
+    request<PreparationReportResult>("POST", `/preparation/orders/${encodeURIComponent(id)}/reports`, body, { "Idempotency-Key": key }),
+  complete: (id: string, expectedVersion: number, key: string) =>
+    request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/complete`, { expected_version: expectedVersion }, { "Idempotency-Key": key }),
+  command: (id: string, command: "pause" | "resume" | "block", body: { expected_version: number; reason?: string | null }, key: string) =>
+    request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/${command}`, body, { "Idempotency-Key": key }),
+  create: (body: Record<string, unknown>, key: string) =>
+    request<PreparationOrder>("POST", "/gestao/preparation/orders", body, { "Idempotency-Key": key }),
+  manage: (id: string, command: "approve" | "schedule" | "reschedule" | "unblock" | "cancel", body: Record<string, unknown>, key: string) =>
+    request<PreparationOrder>("POST", `/gestao/preparation/orders/${encodeURIComponent(id)}/${command}`, body, { "Idempotency-Key": key }),
+  simulate: (body: Record<string, unknown>, key: string) =>
+    request<ProductionPlanSimulation>("POST", "/gestao/production-plans/simulations", body, { "Idempotency-Key": key }),
+  approvePlan: (id: string, body: { expected_version: number; reason: string }, key: string) =>
+    request<ProductionPlanSimulation>("POST", `/gestao/production-plans/${encodeURIComponent(id)}/approve`, body, { "Idempotency-Key": key }),
+};
+
+export interface OperationalRecipeIngredient {
+  id?: string;
+  inventory_item_id: string;
+  inventory_item_name?: string | null;
+  quantity: string;
+  unit_id: string | null;
+  unit_symbol?: string | null;
+  entered_quantity?: string | null;
+  entered_unit_id?: string | null;
+  conversion_factor_snapshot?: string | null;
+  waste_percent: string;
+  position: number;
+  notes?: string | null;
+  public_name?: string | null;
+  show_public: boolean;
+  allow_removal: boolean;
+}
+export interface OperationalRecipeVersion {
+  id: string;
+  product_id: string;
+  component_role: "flavor" | "base" | "crust" | "addon" | "packaging";
+  reference_fraction: string;
+  product_size_id?: string | null;
+  product_size_label?: string | null;
+  product_crust_type_id?: string | null;
+  product_crust_type_name?: string | null;
+  product_drink_variant_id?: string | null;
+  product_drink_variant_name?: string | null;
+  complement_key?: string | null;
+  complement_name?: string | null;
+  version_number: number;
+  active: boolean;
+  notes?: string | null;
+  instructions?: string | null;
+  preparation_steps: string[];
+  reference_image_url?: string | null;
+  items: OperationalRecipeIngredient[];
+}
+export type OperationalRecipeInput = Omit<OperationalRecipeVersion, "id" | "product_id" | "version_number" | "product_size_label" | "product_crust_type_name" | "product_drink_variant_name" | "items"> & {
+  expected_version: number;
+  items: (Omit<OperationalRecipeIngredient, "id" | "quantity" | "inventory_item_name" | "unit_symbol" | "conversion_factor_snapshot"> & { quantity?: string })[];
+};
+export interface RecipeCompositionIngredient {
+  inventory_item_id: string; name: string; quantity: string; unit_id: string | null;
+  unit_symbol: string | null; recipe_version_id?: string | null; component_role: string;
+  scope_product_id?: string | null; position: number; waste_percent: string;
+}
+export interface RecipeCompositionPreview {
+  product_id: string; quantity: number; complete: boolean; missing: string[];
+  recipe_version_ids: string[]; common_components: RecipeCompositionIngredient[];
+  flavors: { product_id: string; name: string; fraction: string; ingredients: RecipeCompositionIngredient[] }[];
+  ingredients: RecipeCompositionIngredient[]; removed_ingredients: RecipeCompositionIngredient[]; substitutions: RecipeCompositionCustomization[];
+  methods: { recipe_version_id: string; instructions: string | null; preparation_steps: string[]; reference_image_url: string | null }[];
+  notes: string | null;
+}
+export interface RecipeCompositionCustomization {
+  action: "remove" | "substitute"; inventory_item_id: string;
+  scope_product_id?: string | null; scope_component_role?: OperationalRecipeVersion["component_role"] | null;
+  replacement_recipe_id?: string | null;
+}
+
+const recipePath = (productId: string) => `${FOUNDATION_PATH}/products/${encodeURIComponent(productId)}/recipes`;
+export const productRecipesApi = {
+  list: (productId: string) => get<{ items: OperationalRecipeVersion[]; latest_version: number; next_cursor: string | null }>(recipePath(productId)),
+  create: (productId: string, body: OperationalRecipeInput, key: string) =>
+    request<OperationalRecipeVersion>("POST", recipePath(productId), body, { "Idempotency-Key": key }),
+  update: (productId: string, recipeId: string, body: OperationalRecipeInput, key: string) =>
+    request<OperationalRecipeVersion>("PUT", `${recipePath(productId)}/${encodeURIComponent(recipeId)}`, body, { "Idempotency-Key": key }),
+  archive: (productId: string, recipeId: string, expectedVersion: number, key: string) =>
+    request<OperationalRecipeVersion>("POST", `${recipePath(productId)}/${encodeURIComponent(recipeId)}/archive`, { expected_version: expectedVersion }, { "Idempotency-Key": key }),
+  preview: (body: Record<string, unknown>) => post<RecipeCompositionPreview>(`${FOUNDATION_PATH}/composition/preview`, body),
+  uploadImage: async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return requestForm<{ url: string }>("POST", "/gestao/inventory/recipe-images", form);
+  },
+  imageBlob: async (url: string): Promise<Blob> => {
+    // Never send an authenticated request to an arbitrary URL from stored content.
+    if (!/^\/api\/gestao\/inventory\/recipe-images\/[a-zA-Z0-9_-]+$/.test(url)) throw new Error("Referencia de imagem privada invalida.");
+    const path = url.replace(/^\/api/, "");
+    const response = await fetch(`${API_BASES[0]}${path}`, { headers: authHeaders(), cache: "no-store" });
+    if (!response.ok) throw new ApiRequestError("Imagem de referencia indisponivel.", response.status);
+    if (!(response.headers.get("content-type") ?? "").startsWith("image/")) throw new Error("Imagem de referencia invalida.");
+    return response.blob();
+  },
 };

@@ -1,5 +1,6 @@
 from sqlalchemy import Boolean, CheckConstraint, Column, String, Float, Integer, Enum, DateTime, ForeignKey, ForeignKeyConstraint, Index, JSON, Text, text
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime, timezone
 import enum
 from backend.database import Base
@@ -13,7 +14,7 @@ class OrderStatus(str, enum.Enum):
     pago             = "pago"
     pagamento_recusado = "pagamento_recusado"
     pagamento_expirado = "pagamento_expirado"
-    preparing        = "preparing"         # cozinha em produção
+    preparing        = "preparing"         # cozinha em produÃ§Ã£o
     ready_for_pickup = "ready_for_pickup"  # pronto, aguardando motoboy (opcional)
     on_the_way       = "on_the_way"        # motoboy a caminho
     delivered        = "delivered"         # entregue
@@ -113,6 +114,7 @@ class Order(Base):
 class OrderItem(Base):
     __tablename__ = "order_items"
     __table_args__ = (
+        CheckConstraint("jsonb_typeof(customizations) = 'array'", name="ck_order_items_customizations_array"),
         Index("uq_order_items_tenant_id_id", "tenant_id", "id", unique=True),
         ForeignKeyConstraint(["tenant_id", "selected_border_id"], ["product_crust_types.tenant_id", "product_crust_types.id"], name="fk_order_items_tenant_border"),
         ForeignKeyConstraint(["tenant_id", "selected_drink_variant_id"], ["product_drink_variants.tenant_id", "product_drink_variants.id"], name="fk_order_items_tenant_drink_variant"),
@@ -137,6 +139,7 @@ class OrderItem(Base):
     selected_drink_variant = Column(String(100), nullable=True)
     notes = Column(Text, nullable=True)
     add_ons = Column(JSON, nullable=False, default=list)
+    customizations = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list, server_default="[]")
     unit_price = Column(Float, nullable=False)
     total_price = Column(Float, nullable=False)
     standard_unit_price = Column(Float, nullable=True)

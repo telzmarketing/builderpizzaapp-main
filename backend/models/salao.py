@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Float, ForeignKey, ForeignKeyConstraint, Index, Integer, String, Text, Time
+from sqlalchemy import CheckConstraint, JSON, Boolean, Column, Date, DateTime, Float, ForeignKey, ForeignKeyConstraint, Index, Integer, String, Text, Time
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import JSONB
 
 from backend.database import Base
 
@@ -112,6 +113,7 @@ class TableSessionItem(Base):
     unit_price = Column(Float, nullable=False, default=0.0)
     total_price = Column(Float, nullable=False, default=0.0)
     notes = Column(Text, nullable=True)
+    customizations = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list, server_default="[]")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
         DateTime(timezone=True),
@@ -122,6 +124,7 @@ class TableSessionItem(Base):
     session = relationship("TableSession", back_populates="items")
     product = relationship("Product")
     __table_args__ = (
+        CheckConstraint("jsonb_typeof(customizations) = 'array'", name="ck_table_session_items_customizations_array"),
         Index("uq_table_session_items_tenant_id_id", "tenant_id", "id", unique=True),
         ForeignKeyConstraint(["tenant_id", "selected_size_id"], ["product_sizes.tenant_id", "product_sizes.id"], name="fk_table_session_items_tenant_size"),
         ForeignKeyConstraint(["tenant_id", "selected_crust_type_id"], ["product_crust_types.tenant_id", "product_crust_types.id"], name="fk_table_session_items_tenant_crust"),

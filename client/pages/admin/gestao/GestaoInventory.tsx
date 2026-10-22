@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Database, Layers3, Loader2, Package, Plus, RefreshCw, Settings, ShoppingCart, Trash2, Truck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChefHat, Database, FileText, Layers3, Loader2, Package, Plus, RefreshCw, Settings, ShoppingCart, Trash2, Truck } from "lucide-react";
 import { AdminPageTabs, type AdminPageTab } from "@/components/admin/AdminPageChrome";
 import AdminGestao from "./AdminGestao";
+import InventoryFoundationPanel from "@/components/admin/InventoryFoundationPanel";
+import InventoryReceiptDocumentsPanel from "@/components/admin/InventoryReceiptDocumentsPanel";
+import PreparationOperationsPanel from "@/components/admin/PreparationOperationsPanel";
 import {
   inventoryApi,
   type InventoryCategory,
@@ -15,7 +18,7 @@ import {
   type InventoryUnit,
 } from "@/lib/api";
 
-type Section = "settings" | "items" | "base" | "suppliers" | "purchases" | "entries";
+type Section = "settings" | "items" | "base" | "suppliers" | "purchases" | "replenishment" | "entries" | "foundation" | "documents" | "preparation";
 
 const sections: AdminPageTab<Section>[] = [
   { id: "settings", label: "Configuracoes", icon: Settings },
@@ -23,7 +26,11 @@ const sections: AdminPageTab<Section>[] = [
   { id: "base", label: "Base", icon: Layers3 },
   { id: "suppliers", label: "Fornecedores", icon: Truck },
   { id: "purchases", label: "Compras", icon: ShoppingCart },
+  { id: "replenishment", label: "Reposicao", icon: AlertTriangle },
   { id: "entries", label: "Entradas", icon: Database },
+  { id: "foundation", label: "Saldos e conversoes", icon: Layers3 },
+  { id: "documents", label: "NF-e recebidas", icon: FileText },
+  { id: "preparation", label: "Preparo", icon: ChefHat },
 ];
 
 const emptyOverview: InventoryOverview = {
@@ -55,12 +62,12 @@ export default function GestaoInventory() {
       showSettings={section === "settings"}
       moduleTabs={<AdminPageTabs<Section> tabs={sections} active={section} onChange={setSection} />}
     >
-      {section !== "settings" && <InventoryBase section={section} />}
+      {section === "foundation" ? <InventoryFoundationPanel /> : section === "documents" ? <InventoryReceiptDocumentsPanel /> : section === "preparation" ? <PreparationOperationsPanel /> : section !== "settings" && <InventoryBase section={section} />}
     </AdminGestao>
   );
 }
 
-function InventoryBase({ section }: { section: Exclude<Section, "settings"> }) {
+function InventoryBase({ section }: { section: Exclude<Section, "settings" | "foundation" | "documents" | "preparation"> }) {
   const [data, setData] = useState<InventoryOverview>(emptyOverview);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -121,6 +128,7 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings"> }) {
           {section === "base" && <BaseSection data={data} saving={saving} run={run} />}
           {section === "suppliers" && <SuppliersSection data={data} saving={saving} run={run} />}
           {section === "purchases" && <PurchasesSection data={data} saving={saving} run={run} />}
+          {section === "replenishment" && <ReplenishmentSection data={data} />}
           {section === "entries" && <EntriesSection data={data} saving={saving} run={run} />}
         </>
       )}
@@ -128,6 +136,53 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings"> }) {
       {message && <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-200">{message}</p>}
       {error && <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-200">{error}</p>}
     </section>
+  );
+}
+
+function ReplenishmentSection({ data }: { data: InventoryOverview }) {
+  const needs = useMemo(
+    () => data.items
+      .filter((item) => item.active && item.current_stock !== undefined && item.current_stock < item.min_stock)
+      .map((item) => ({ ...item, shortage: Math.max(item.min_stock - (item.current_stock ?? 0), 0) }))
+      .sort((a, b) => b.shortage - a.shortage),
+    [data.items],
+  );
+
+  const estimated = needs.reduce((total, item) => {
+    const latestCost = data.purchases
+      .flatMap((purchase) => purchase.items)
+      .filter((line) => line.item_id === item.id)
+      .sort((a, b) => (b.total_cost ?? b.quantity * b.unit_cost) - (a.total_cost ?? a.quantity * a.unit_cost))[0]?.unit_cost ?? 0;
+    return total + item.shortage * latestCost;
+  }, 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-amber-200">Itens abaixo do minimo</p>
+          <p className="mt-1 text-2xl font-black text-amber-100">{needs.length}</p>
+        </div>
+        <div className="rounded-lg border border-surface-03 bg-surface-01 p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-stone">Estimativa com ultimo custo</p>
+          <p className="mt-1 text-2xl font-black text-cream">{currency(estimated)}</p>
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-lg border border-surface-03">
+        <TableHeader columns={["Insumo", "Estoque atual", "Minimo", "Necessidade", "Unidade"]} />
+        {needs.map((item) => (
+          <div key={item.id} className="grid grid-cols-[1.5fr_1fr_1fr_1fr_.8fr] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
+            <span className="font-bold text-cream">{item.name}<small className="block text-stone">{item.sku || item.category_name || "Sem categoria"}</small></span>
+            <span className="text-red-200">{item.current_stock ?? 0}</span>
+            <span className="text-stone">{item.min_stock}</span>
+            <span className="font-bold text-amber-200">{item.shortage}</span>
+            <span className="text-stone">{item.unit_symbol || item.unit_name || "-"}</span>
+          </div>
+        ))}
+        {!needs.length && <EmptyRow text="Nenhum item abaixo do estoque minimo." />}
+      </div>
+      <p className="text-xs text-stone">A necessidade e calculada a partir do estoque atual e do minimo cadastrado. A compra precisa ser criada e confirmada na aba Compras.</p>
+    </div>
   );
 }
 
@@ -520,7 +575,7 @@ function EntriesSection({
             <span className="text-stone">{item.location_name || "-"}</span>
             <span className="text-stone">{item.quantity}</span>
             <span className="text-stone">{currency(item.unit_cost)}</span>
-            <DeleteButton disabled={saving} onClick={() => run(() => inventoryApi.removeManualEntry(item.id), "Entrada manual removida.")} />
+            {item.reversed ? <span className="text-stone">Estornada</span> : <button type="button" disabled={saving} onClick={() => run(() => inventoryApi.removeManualEntry(item.id), "Entrada estornada; historico preservado.")} className={ghostButtonClass}>Estornar</button>}
           </div>
         ))}
         {!data.manual_entries.length && <EmptyRow text="Nenhuma entrada manual registrada." />}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -37,9 +38,22 @@ from backend.schemas.inventory import (
     InventorySupplierIn,
     InventoryUnitIn,
 )
-from backend.services.recipe_resolution import resolve_recipes, required_ingredients
+from backend.services.recipe_resolution import resolve_recipes, required_ingredients, required_decimal_ingredients
 
 TENANT_ID = "default"
+ZERO = Decimal("0")
+QUANTITY_SCALE = Decimal("0.000001")
+
+
+def decimal_value(value) -> Decimal:
+    return Decimal(str(value)) if value is not None else ZERO
+
+
+def required_decimal(resolution) -> dict[str, Decimal]:
+    """One selected/customized composition, rounded only after consolidation."""
+    return {key: value.quantize(QUANTITY_SCALE, rounding=ROUND_HALF_UP)
+            for key, value in required_decimal_ingredients(resolution).items()}
+
 
 
 class InventoryNotFound(DomainError):
@@ -70,7 +84,9 @@ class InventoryService:
         db: Session,
         tenant_id: str = TENANT_ID,
         tenant_context: TenantContext | None = None,
+        actor_id: str | None = None,
     ):
+        self._actor_id = actor_id or "system:legacy-order"
         self._db = db
         self._tenant_context = tenant_context
         self._tenant_id = self._resolve_tenant_id(tenant_id, tenant_context)
@@ -112,6 +128,9 @@ class InventoryService:
         return self._create(InventoryUnit, payload.model_dump(), "unit")
 
     def update_unit(self, item_id: str, payload: InventoryUnitIn) -> InventoryUnit:
+        row = self._get(InventoryUnit, item_id, "Unidade")
+        if row.dimension is not None and (row.symbol != payload.symbol or row.unit_type != payload.unit_type):
+            raise InventoryInvalidReference("Unidade classificada deve ser revisada pelo cadastro de conversoes.")
         return self._update(self._get(InventoryUnit, item_id, "Unidade"), payload.model_dump())
 
     def delete_unit(self, item_id: str) -> None:
@@ -180,7 +199,15 @@ class InventoryService:
     def update_item(self, item_id: str, payload: InventoryItemIn) -> dict:
         data = payload.model_dump()
         self._validate_item_refs(data)
-        row = self._get(InventoryItem, item_id, "Item")
+        row = self._db.query(InventoryItem).filter(InventoryItem.tenant_id == self._tenant_id, InventoryItem.id == item_id).populate_existing().with_for_update().first()
+        if row is None:
+            raise InventoryNotFound("Item")
+        if row.unit_id != data.get("unit_id"):
+            has_history = self._db.query(InventoryStockMovement.id).filter(InventoryStockMovement.tenant_id == self._tenant_id, InventoryStockMovement.item_id == row.id).first()
+            from backend.models.inventory_foundation import InventoryItemPackaging, InventoryLot, InventoryReservation
+            has_foundation = any(self._db.query(model.id).filter(model.tenant_id == self._tenant_id, model.item_id == row.id).first() is not None for model in (InventoryItemPackaging, InventoryLot, InventoryReservation))
+            if has_history or has_foundation:
+                raise InventoryInvalidReference("Unidade de insumo movimentado/configurado exige conversao e reconciliacao explicitas.")
         for key, value in data.items():
             setattr(row, key, value)
         self._db.commit()
@@ -269,6 +296,11 @@ class InventoryService:
     def create_manual_entry(self, payload: InventoryManualEntryIn) -> dict:
         data = payload.model_dump()
         self._ensure(InventoryItem, data["item_id"], "Item")
+        self._db.query(InventoryItem).filter(InventoryItem.tenant_id == self._tenant_id, InventoryItem.id == data["item_id"]).with_for_update().one()
+        from backend.services.inventory_foundation_service import InventoryFoundationService
+        foundation = InventoryFoundationService(self._db, self._tenant_id, self._actor_id, self._tenant_context)
+        if data["movement_type"] == "out":
+            foundation.validate_legacy_out(data["item_id"], data.get("location_id"), decimal_value(data["quantity"]))
         if data.get("location_id"):
             self._ensure(InventoryLocation, data["location_id"], "Local")
         row = InventoryManualEntry(
@@ -285,12 +317,36 @@ class InventoryService:
 
     def delete_manual_entry(self, entry_id: str) -> None:
         row = self._get(InventoryManualEntry, entry_id, "Entrada manual")
-        self._db.query(InventoryStockMovement).filter(
+        self._db.query(InventoryItem).filter(InventoryItem.tenant_id == self._tenant_id, InventoryItem.id == row.item_id).with_for_update().one()
+        existing = self._db.query(InventoryStockMovement.id).filter(
+            InventoryStockMovement.tenant_id == self._tenant_id,
+            InventoryStockMovement.source_type == "manual_entry_reversal",
+            InventoryStockMovement.source_id == row.id,
+        ).first()
+        if existing:
+            return
+        original = self._db.query(InventoryStockMovement).filter(
+            InventoryStockMovement.tenant_id == self._tenant_id,
             InventoryStockMovement.source_type == "manual_entry",
             InventoryStockMovement.source_id == row.id,
-            InventoryStockMovement.tenant_id == self._tenant_id,
-        ).delete(synchronize_session=False)
-        self._delete(row)
+        ).all()
+        from backend.services.inventory_foundation_service import InventoryFoundationService
+        foundation = InventoryFoundationService(self._db, self._tenant_id, self._actor_id, self._tenant_context)
+        for movement in original:
+            if movement.operation_id or movement.lot_id:
+                raise InventoryInvalidReference("Movimento rastreado exige compensacao pela operacao de origem.")
+            delta = -decimal_value(movement.quantity_delta)
+            if delta < 0:
+                foundation.validate_legacy_out(row.item_id, row.location_id, -delta)
+            self._db.add(InventoryStockMovement(
+                id=f"inv-rev-{uuid.uuid4().hex[:12]}", tenant_id=self._tenant_id,
+                item_id=row.item_id, location_id=row.location_id,
+                source_type="manual_entry_reversal", source_id=row.id,
+                movement_type="in" if delta > 0 else "out", quantity_delta=delta,
+                unit_cost=movement.unit_cost, reason="manual_entry_reversal",
+                notes=json.dumps({"actor_id":self._actor_id,"compensated_entry_id":row.id,"reason":"manual_entry_reversal"}),
+            ))
+        self._db.commit()
 
     def list_movements(self) -> list[dict]:
         rows = (
@@ -346,7 +402,7 @@ class InventoryService:
             self._db.query(InventoryStockMovement.id)
             .filter(
                 InventoryStockMovement.tenant_id == self._tenant_id,
-                InventoryStockMovement.source_type == "order_sale",
+                InventoryStockMovement.source_type.in_(["order_sale", "foundation_order_sale"]),
                 InventoryStockMovement.source_id == order_id,
             )
             .first()
@@ -379,10 +435,14 @@ class InventoryService:
             for item in self._db.query(InventoryItem).filter(InventoryItem.tenant_id == self._tenant_id, InventoryItem.id.in_(required.keys())).order_by(InventoryItem.id).with_for_update().all()
         }
         balances = self._stock_balance_map()
-        if any(quantity > balances.get(item_id, 0.0) + 0.000001 for item_id, quantity in required.items()):
+        if any(quantity > balances.get(item_id, ZERO) for item_id, quantity in required.items()):
             raise InventoryUnavailable()
-        movements = 0
+        from backend.services.inventory_foundation_service import InventoryFoundationService
+        handled = InventoryFoundationService(self._db, self._tenant_id, self._actor_id, self._tenant_context).consume_legacy_sale(order.id, required, unit_costs)
+        movements = len(handled)
         for item_id, quantity in required.items():
+            if item_id in handled:
+                continue
             if quantity <= 0:
                 continue
             inventory_item = inventory_items.get(item_id)
@@ -407,11 +467,13 @@ class InventoryService:
         order = self._db.query(Order).filter(Order.id == order_id, Order.tenant_id == self._tenant_id).with_for_update().first()
         if not order:
             raise InventoryInvalidReference("Pedido nao encontrado para registrar cancelamento.")
+        from backend.services.inventory_foundation_service import InventoryFoundationService
+        InventoryFoundationService(self._db, self._tenant_id, self._actor_id, self._tenant_context).release_order_reservations(order_id)
         sale_movements = (
             self._db.query(InventoryStockMovement)
             .filter(
                 InventoryStockMovement.tenant_id == self._tenant_id,
-                InventoryStockMovement.source_type == "order_sale",
+                InventoryStockMovement.source_type.in_(["order_sale", "foundation_order_sale"]),
                 InventoryStockMovement.source_id == order_id,
                 InventoryStockMovement.quantity_delta < 0,
             )
@@ -422,7 +484,7 @@ class InventoryService:
 
         # Production already consumed the ingredients. Cancellation records
         # an audit event with zero delta, never an automatic stock return.
-        if order.preparation_started_at:
+        if order.preparation_started_at or any(m.source_type == "foundation_order_sale" for m in sale_movements):
             existing = self._db.query(InventoryStockMovement.id).filter(
                 InventoryStockMovement.tenant_id == self._tenant_id,
                 InventoryStockMovement.source_type == "order_sale_loss",
@@ -430,16 +492,20 @@ class InventoryService:
             ).first()
             if existing:
                 return {"reversed": False, "reason": "loss_already_recorded", "movements": 0}
+            losses = {}
             for movement in sale_movements:
+                losses.setdefault(movement.item_id, []).append(movement)
+            for item_id, rows in losses.items():
+                movement = rows[0]
                 self._db.add(InventoryStockMovement(
                     id=f"inv-loss-{uuid.uuid4().hex[:12]}", tenant_id=self._tenant_id,
                     item_id=movement.item_id, location_id=movement.location_id,
                     source_type="order_sale_loss", source_id=order_id, movement_type="out",
                     quantity_delta=0.0, unit_cost=movement.unit_cost, reason="production_loss",
-                    notes=json.dumps({"order_id": order_id, "consumed_quantity": abs(float(movement.quantity_delta)), "consumption_movement_id": movement.id}),
+                    notes=json.dumps({"order_id": order_id, "consumed_quantity": float(sum((-decimal_value(row.quantity_delta) for row in rows), ZERO)), "consumed_quantity_decimal": str(sum((-decimal_value(row.quantity_delta) for row in rows), ZERO)), "consumption_movement_id": movement.id, "consumption_movement_ids": [row.id for row in rows]}),
                 ))
             self._db.flush()
-            return {"reversed": False, "reason": "production_loss_recorded", "movements": len(sale_movements)}
+            return {"reversed": False, "reason": "production_loss_recorded", "movements": len(losses)}
 
         existing_reversal = (
             self._db.query(InventoryStockMovement.id)
@@ -463,7 +529,7 @@ class InventoryService:
                 source_type="order_sale_reversal",
                 source_id=order_id,
                 movement_type="in",
-                quantity_delta=round(abs(float(movement.quantity_delta or 0.0)), 6),
+                quantity_delta=round(abs(decimal_value(movement.quantity_delta)), 6),
                 unit_cost=movement.unit_cost,
                 reason="order_sale_reversal",
                 notes=f"Estorno automatico da baixa do pedido {order_id}",
@@ -599,7 +665,7 @@ class InventoryService:
             .group_by(InventoryStockMovement.item_id)
             .all()
         )
-        return {item_id: float(total or 0.0) for item_id, total in rows}
+        return {item_id: decimal_value(total) for item_id, total in rows}
 
     def _module_settings(self) -> dict:
         item = (
@@ -634,8 +700,8 @@ class InventoryService:
         )
         result: dict[str, float] = {}
         for item_id, quantity, cost in rows:
-            quantity_float = float(quantity or 0.0)
-            result[item_id] = round(float(cost or 0.0) / quantity_float, 6) if quantity_float > 0 else 0.0
+            quantity_decimal = decimal_value(quantity)
+            result[item_id] = round(decimal_value(cost) / quantity_decimal, 8) if quantity_decimal > 0 else ZERO
         return result
 
     def _required_items_for_order(self, order: Order) -> dict[str, float]:
@@ -647,8 +713,8 @@ class InventoryService:
             resolution = resolve_recipes(item, recipes)
             if resolution.missing and resolution.uses:
                 raise InventoryInvalidReference("Ficha tecnica incompleta para a composicao do pedido.")
-            for key, amount in required_ingredients(resolution).items():
-                required[key] = required.get(key, 0.0) + amount
+            for key, amount in required_decimal(resolution).items():
+                required[key] = required.get(key, ZERO) + amount
         return required
 
     def _required_items_from_cmv_snapshot(self, order_id: str) -> dict[str, float]:
@@ -669,12 +735,22 @@ class InventoryService:
 
         required: dict[str, float] = {}
         for item_snapshot in snapshot.items:
+            frozen = getattr(item_snapshot, "composition_json", None)
+            if frozen is not None:
+                if not isinstance(frozen, dict) or not isinstance(frozen.get("ingredients"), list):
+                    raise InventoryInvalidReference("Composicao congelada invalida; reconciliacao necessaria.")
+                for ingredient in frozen["ingredients"]:
+                    ingredient_id = ingredient["inventory_item_id"]
+                    required[ingredient_id] = required.get(ingredient_id, ZERO) + decimal_value(ingredient["quantity"])
+                continue
+            # Explicit historical fallback: old CMV ingredient rows are frozen,
+            # never recompute an old order from currently active recipes.
             for ingredient in item_snapshot.ingredients:
                 if not ingredient.inventory_item_id:
                     continue
                 required[ingredient.inventory_item_id] = (
-                    required.get(ingredient.inventory_item_id, 0.0)
-                    + float(ingredient.quantity or 0.0)
+                    required.get(ingredient.inventory_item_id, ZERO)
+                    + decimal_value(ingredient.quantity)
                 )
         return required
 
@@ -708,9 +784,9 @@ class InventoryService:
     def _accumulate_required(self, target: dict[str, float], recipes: list[InventoryRecipeVersion], multiplier: float) -> None:
         for recipe in recipes:
             for item in recipe.items:
-                waste_multiplier = 1 + (float(item.waste_percent or 0.0) / 100)
-                reference = float(getattr(recipe, "reference_fraction", None) or 1.0)
-                target[item.inventory_item_id] = target.get(item.inventory_item_id, 0.0) + (float(item.quantity or 0.0) * waste_multiplier * multiplier / reference)
+                waste_multiplier = 1 + (decimal_value(item.waste_percent) / 100)
+                reference = decimal_value(getattr(recipe, "reference_fraction", None) or 1)
+                target[item.inventory_item_id] = target.get(item.inventory_item_id, ZERO) + (decimal_value(item.quantity) * waste_multiplier * decimal_value(multiplier) / reference)
 
     def _ensure_product(self, product_id: str) -> Product:
         product = self._db.query(Product).filter(
@@ -722,6 +798,10 @@ class InventoryService:
         return product
 
     def _validate_recipe_refs(self, product_id: str, data: dict, items: list[dict]) -> None:
+        from backend.services.recipe_details import normalize_recipe_line
+        if data.get("reference_image_url"):
+            from backend.services.recipe_image_service import RecipeImageService
+            data["reference_image_url"] = RecipeImageService(self._db, self._tenant_id, self._actor_id).validate_reference(data["reference_image_url"])
         self._ensure_product(product_id)
         if data.get("product_size_id"):
             self._ensure_product_child(ProductSize, data["product_size_id"], product_id, "Tamanho")
@@ -731,10 +811,11 @@ class InventoryService:
             self._ensure_product_child(ProductDrinkVariant, data["product_drink_variant_id"], product_id, "Variante")
         if data.get("complement_key") and not data.get("complement_name"):
             raise InventoryInvalidReference("Informe o nome do complemento interno.")
-        for item in items:
+        for index, item in enumerate(items):
             inventory_item = self._ensure(InventoryItem, item["inventory_item_id"], "Insumo")
             if not inventory_item.active:
                 raise InventoryInvalidReference(f"Insumo inativo: {inventory_item.name}.")
+            items[index] = normalize_recipe_line(self._db, self._tenant_id, item)
 
     def _ensure_product_child(self, model, row_id: str, product_id: str, label: str):
         row = (
@@ -781,10 +862,10 @@ class InventoryService:
             recipe.active = False
 
     def _replace_purchase_items(self, purchase: InventoryPurchase, items: list[dict]) -> None:
-        total = 0.0
+        total = ZERO
         for item in items:
             self._ensure(InventoryItem, item["item_id"], "Item")
-            total_cost = round(float(item["quantity"]) * float(item["unit_cost"]), 4)
+            total_cost = round(decimal_value(item["quantity"]) * decimal_value(item["unit_cost"]), 8)
             total += total_cost
             self._db.add(InventoryPurchaseItem(
                 id=f"inv-pit-{uuid.uuid4().hex[:12]}",
@@ -795,7 +876,7 @@ class InventoryService:
                 unit_cost=item["unit_cost"],
                 total_cost=total_cost,
             ))
-        purchase.total_amount = round(total, 4)
+        purchase.total_amount = round(total, 8)
 
     def _replace_recipe_items(self, recipe: InventoryRecipeVersion, items: list[dict]) -> None:
         for item in items:
@@ -804,13 +885,17 @@ class InventoryService:
                 tenant_id=self._tenant_id,
                 recipe_id=recipe.id,
                 inventory_item_id=item["inventory_item_id"],
-                quantity=round(float(item["quantity"]), 6),
-                waste_percent=round(float(item.get("waste_percent") or 0.0), 4),
+                quantity=round(decimal_value(item["quantity"]), 6),
+                waste_percent=decimal_value(item.get("waste_percent")),
                 notes=item.get("notes"),
+                unit_id=item.get("unit_id"), entered_unit_id=item.get("entered_unit_id"),
+                entered_quantity=item.get("entered_quantity"), conversion_factor_snapshot=item.get("conversion_factor_snapshot"),
+                position=item.get("position", 0), public_name=item.get("public_name"), show_public=item.get("show_public", False),
+                allow_removal=item.get("allow_removal", False),
             ))
 
     def _create_stock_movement_from_manual_entry(self, entry: InventoryManualEntry) -> None:
-        quantity = float(entry.quantity or 0.0)
+        quantity = decimal_value(entry.quantity)
         quantity_delta = -quantity if entry.movement_type == "out" else quantity
         self._db.add(InventoryStockMovement(
             id=f"inv-mov-{uuid.uuid4().hex[:12]}",
@@ -823,7 +908,7 @@ class InventoryService:
             quantity_delta=round(quantity_delta, 6),
             unit_cost=entry.unit_cost,
             reason=entry.reason,
-            notes=entry.notes,
+            notes=json.dumps({"actor_id": self._actor_id, "notes": entry.notes}),
         ))
 
     def _serialize_item(self, item: InventoryItem, balances: dict[str, float] | None = None) -> dict:
@@ -885,6 +970,11 @@ class InventoryService:
             "item_name": entry.item.name if entry.item else None,
             "location_id": entry.location_id,
             "location_name": entry.location.name if entry.location else None,
+            "reversed": self._db.query(InventoryStockMovement.id).filter(
+                InventoryStockMovement.tenant_id == self._tenant_id,
+                InventoryStockMovement.source_type == "manual_entry_reversal",
+                InventoryStockMovement.source_id == entry.id,
+            ).first() is not None,
             "movement_type": entry.movement_type,
             "quantity": entry.quantity,
             "unit_cost": entry.unit_cost,
@@ -930,6 +1020,8 @@ class InventoryService:
             "reference_fraction": recipe.reference_fraction,
             "active": recipe.active,
             "notes": recipe.notes,
+            "instructions": recipe.instructions, "preparation_steps": recipe.preparation_steps or [],
+            "reference_image_url": recipe.reference_image_url,
             "items": [
                 {
                     "id": item.id,
@@ -940,6 +1032,10 @@ class InventoryService:
                     "quantity": item.quantity,
                     "waste_percent": item.waste_percent,
                     "notes": item.notes,
+                    "unit_id": item.unit_id, "entered_unit_id": item.entered_unit_id,
+                    "entered_quantity": item.entered_quantity, "conversion_factor_snapshot": item.conversion_factor_snapshot,
+                    "position": item.position, "public_name": item.public_name, "show_public": item.show_public,
+                    "allow_removal": item.allow_removal,
                 }
                 for item in recipe.items
             ],
@@ -988,7 +1084,11 @@ class ProductInventoryAvailabilityService:
                 }
                 for product_id in product_ids
             }
-        balances = InventoryService(self._db, self._tenant_id, self._tenant_context)._stock_balance_map()
+        from backend.services.inventory_foundation_service import InventoryFoundationService
+        balance_rows = InventoryFoundationService(self._db, self._tenant_id, "system:availability", self._tenant_context).balances()["items"]
+        balances = {}
+        for row in balance_rows:
+            balances[row["item_id"]] = balances.get(row["item_id"], ZERO) + decimal_value(row["available"])
         recipes = self._active_recipes(product_ids)
         return {
             product_id: self._availability_for_product(product_id, recipes.get(product_id, []), balances)
@@ -1009,15 +1109,19 @@ class ProductInventoryAvailabilityService:
             resolution = resolve_recipes(item, recipes)
             if resolution.missing and resolution.uses:
                 raise InventoryInvalidReference("Ficha tecnica incompleta para a composicao do pedido.")
-            for key, amount in required_ingredients(resolution).items():
-                required[key] = required.get(key, 0.0) + amount
+            for key, amount in required_decimal(resolution).items():
+                required[key] = required.get(key, ZERO) + amount
         # Use the same inventory row lock order as production consumption.
         self._db.query(InventoryItem).filter(
             InventoryItem.tenant_id == self._tenant_id,
             InventoryItem.id.in_(required),
         ).order_by(InventoryItem.id).with_for_update().all()
-        balances = InventoryService(self._db, self._tenant_id, self._tenant_context)._stock_balance_map()
-        if any(amount > balances.get(key, 0.0) + 0.000001 for key, amount in required.items()):
+        from backend.services.inventory_foundation_service import InventoryFoundationService
+        balance_rows = InventoryFoundationService(self._db, self._tenant_id, "system:availability", self._tenant_context).balances()["items"]
+        balances = {}
+        for row in balance_rows:
+            balances[row["item_id"]] = balances.get(row["item_id"], ZERO) + decimal_value(row["available"])
+        if any(amount > balances.get(key, ZERO) for key, amount in required.items()):
             raise InventoryUnavailable()
 
     def _active_recipes(self, product_ids: list[str]) -> dict[str, list[InventoryRecipeVersion]]:
@@ -1076,14 +1180,14 @@ class ProductInventoryAvailabilityService:
     def _recipe_has_stock(self, recipe: InventoryRecipeVersion, balances: dict[str, float]) -> bool:
         required: dict[str, float] = {}
         self._accumulate_required(required, [recipe], 1.0)
-        return all(required_qty <= balances.get(item_id, 0.0) + 0.000001 for item_id, required_qty in required.items())
+        return all(required_qty <= balances.get(item_id, ZERO) for item_id, required_qty in required.items())
 
     def _accumulate_required(self, target: dict[str, float], recipes: list[InventoryRecipeVersion], multiplier: float) -> None:
         for recipe in recipes:
             for item in recipe.items:
-                waste_multiplier = 1 + (float(item.waste_percent or 0.0) / 100)
-                reference = float(getattr(recipe, "reference_fraction", None) or 1.0)
-                target[item.inventory_item_id] = target.get(item.inventory_item_id, 0.0) + (float(item.quantity or 0.0) * waste_multiplier * multiplier / reference)
+                waste_multiplier = 1 + (decimal_value(item.waste_percent) / 100)
+                reference = decimal_value(getattr(recipe, "reference_fraction", None) or 1)
+                target[item.inventory_item_id] = target.get(item.inventory_item_id, ZERO) + (decimal_value(item.quantity) * waste_multiplier * decimal_value(multiplier) / reference)
 
     def _is_base_recipe(self, recipe: InventoryRecipeVersion) -> bool:
         return not recipe.product_size_id and not recipe.product_crust_type_id and not recipe.product_drink_variant_id and not recipe.complement_key

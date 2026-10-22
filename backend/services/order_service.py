@@ -1352,7 +1352,8 @@ class OrderService:
         has_inventory_movements = (
             self._db.query(InventoryStockMovement.id)
             .filter(
-                InventoryStockMovement.source_type.in_(["order_sale", "order_sale_reversal"]),
+                InventoryStockMovement.source_type.in_(["order_sale", "foundation_order_sale", "order_sale_reversal", "order_sale_loss"]),
+                InventoryStockMovement.tenant_id == order.tenant_id,
                 InventoryStockMovement.source_id == order_id,
             )
             .first()

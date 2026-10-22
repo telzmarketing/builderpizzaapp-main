@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -176,3 +177,48 @@ class FinanceOverviewOut(BaseModel):
     categories: list[FinanceCategoryOut]
     counterparties: list[FinanceCounterpartyOut]
     transactions: list[FinanceTransactionOut]
+
+
+class FinanceObligationInstallmentIn(BaseModel):
+    installment_number: int = Field(ge=1)
+    amount: Decimal = Field(gt=0, max_digits=20, decimal_places=2)
+    due_date: date | None = None
+
+
+class FinanceObligationFromFiscalIn(BaseModel):
+    installments: list[FinanceObligationInstallmentIn] = Field(default_factory=list, max_length=120)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class FinanceObligationInstallmentOut(BaseModel):
+    id: str
+    tenant_id: str
+    obligation_id: str
+    finance_transaction_id: str | None = None
+    installment_number: int
+    amount: Decimal
+    due_date: date | None = None
+    status: FinanceTransactionStatus
+    paid_amount: Decimal
+    created_at: datetime | None = None
+
+
+class FinanceObligationOut(BaseModel):
+    id: str
+    tenant_id: str
+    fiscal_document_id: str
+    idempotency_key: str
+    status: FinanceTransactionStatus
+    currency: str
+    total_amount: Decimal
+    product_amount: Decimal
+    freight_amount: Decimal
+    discount_amount: Decimal
+    tax_amount: Decimal
+    supplier_name: str | None = None
+    supplier_document: str | None = None
+    notes: str | None = None
+    created_by_admin_id: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    installments: list[FinanceObligationInstallmentOut] = Field(default_factory=list)

@@ -8,9 +8,65 @@ from backend.core.response import err, ok
 from backend.database import get_db
 from backend.schemas.kds import DispatchAssignIn, KdsOverviewEnvelope, KdsOverviewOut
 from backend.services.kds_service import KdsService
+from backend.services.kds_production_service import KdsProductionService
+from backend.schemas.kds_production import KdsCommandIn, KdsCheckIn, KdsPresenceIn, KdsHeartbeatIn, KdsRedistributionIn
 
 
 router = APIRouter(prefix="/kds", tags=["kds"])
+
+def production(db, actor):
+    return KdsProductionService(db, actor.tenant_context)
+
+@router.get("/kitchen/my-queue")
+def kitchen_my_queue(db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "view"))):
+    service = production(db, actor)
+    state = service.db.query(__import__('backend.models.kds_production', fromlist=['KdsOperatorState']).KdsOperatorState).filter_by(tenant_id=actor.tenant_id, user_id=actor.user_id, station_id="cozinha").first()
+    tasks = service.queue(actor.user_id)
+    presence = {"operator_id": actor.user_id, "operator_name": getattr(actor, "user_name", None) or actor.user_id, "state": state.requested_state if state else "offline", "station_id": "cozinha", "queue_count": len(tasks), "active_task_id": next((x["task_id"] for x in tasks if x["state"] == "assembling"), None), "updated_at": state.updated_at if state else service._now(), "version": state.version if state else 0}
+    return ok({"generated_at": service._now(), "presence": presence, "tasks": tasks, "available_operators": []})
+
+@router.get("/kitchen/queue")
+def kitchen_queue(db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "view"))):
+    return ok(production(db, actor).all_queued())
+
+@router.post("/kitchen/orders/{order_id}/initialize")
+def kitchen_initialize(order_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "edit"))):
+    try: return ok(production(db, actor).initialize_order(order_id, actor.user_id), status_code=201)
+    except DomainError as exc: return err(exc)
+
+@router.post("/kitchen/presence")
+def kitchen_presence(body: KdsPresenceIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "edit"))):
+    try: return ok(production(db, actor).presence(actor.user_id, body))
+    except DomainError as exc: return err(exc)
+
+@router.post("/kitchen/heartbeat")
+def kitchen_heartbeat(body: KdsHeartbeatIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "edit"))):
+    try: return ok(production(db, actor).heartbeat(actor.user_id, body))
+    except DomainError as exc: return err(exc)
+
+def _production_command(task_id, body, db, actor, command):
+    try: return ok(production(db, actor).command(task_id, actor.user_id, body, command))
+    except DomainError as exc: return err(exc)
+
+@router.post("/kitchen/tasks/{task_id}/start")
+def production_start(task_id: str, body: KdsCommandIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "edit"))): return _production_command(task_id, body, db, actor, "start")
+@router.post("/kitchen/tasks/{task_id}/finish-assembly")
+def production_finish(task_id: str, body: KdsCommandIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "edit"))): return _production_command(task_id, body, db, actor, "finish-assembly")
+@router.post("/kitchen/tasks/{task_id}/start-oven")
+def production_start_oven(task_id: str, body: KdsCommandIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "edit"))): return _production_command(task_id, body, db, actor, "start-oven")
+@router.post("/kitchen/tasks/{task_id}/complete-oven")
+def production_complete_oven(task_id: str, body: KdsCommandIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "edit"))): return _production_command(task_id, body, db, actor, "complete-oven")
+@router.post("/kitchen/tasks/{task_id}/check")
+def production_check(task_id: str, body: KdsCheckIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "edit"))): return _production_command(task_id, body, db, actor, "check")
+@router.post("/kitchen/tasks/{task_id}/remake")
+def production_remake(task_id: str, body: KdsCommandIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "edit"))):
+    try: return ok(production(db, actor).remake(task_id, actor.user_id, body), status_code=201)
+    except DomainError as exc: return err(exc)
+
+@router.post("/management/redistributions")
+def production_redistribute(body: KdsRedistributionIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "manage"))):
+    try: return ok(production(db, actor).redistribute(body, actor.user_id))
+    except DomainError as exc: return err(exc)
 
 
 @router.get("/overview", response_model=KdsOverviewEnvelope)
@@ -30,6 +86,18 @@ def kitchen_orders(
     actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "view")),
 ):
     return ok(KdsService(db, actor.tenant_context).kitchen_orders())
+
+
+@router.get("/kitchen/orders/{order_id}/composition")
+def kitchen_order_composition(
+    order_id: str,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "view")),
+):
+    try:
+        return ok(KdsService(db, actor.tenant_context).kitchen_order_composition(order_id))
+    except DomainError as exc:
+        return err(exc)
 
 
 @router.post("/kitchen/orders/{order_id}/start")

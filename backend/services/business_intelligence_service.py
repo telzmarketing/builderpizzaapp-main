@@ -780,6 +780,49 @@ class BusinessIntelligenceService:
         rows = q.order_by(BusinessInsight.created_at.desc()).limit(limit).all()
         return [self._insight_row_to_dict(row) for row in rows]
 
+    def forecast(self, period: str = "30d", date_from: date | None = None, date_to: date | None = None,
+                 horizon_days: int = 7) -> dict:
+        """Project near-term sales from the canonical paid-order series.
+
+        This is intentionally a transparent baseline (mean of observed active
+        days), so the panel can distinguish a forecast from realized revenue.
+        """
+        horizon_days = max(1, min(int(horizon_days), 31))
+        bounds = self.resolve_bounds(period, date_from, date_to)
+        sales = self.get_sales(**bounds, granularity="day")["by_day"]
+        active = [row for row in sales if row.get("orders", 0) > 0]
+        avg_revenue = self._round(sum(float(row.get("revenue", 0) or 0) for row in active) / len(active)) if active else 0
+        avg_orders = self._round(sum(int(row.get("orders", 0) or 0) for row in active) / len(active)) if active else 0
+        anchor = bounds["end_dt"].date()
+        points = []
+        for offset in range(1, horizon_days + 1):
+            target = anchor + timedelta(days=offset)
+            points.append({"date": target.isoformat(), "orders": avg_orders, "revenue": avg_revenue})
+        return {
+            **self._period_payload(bounds),
+            "horizon_days": horizon_days,
+            "method": "active_day_mean",
+            "observed_days": len(active),
+            "average_daily_orders": avg_orders,
+            "average_daily_revenue": avg_revenue,
+            "points": points,
+        }
+
+    def alerts(self, period: str = "30d", date_from: date | None = None, date_to: date | None = None) -> list[dict]:
+        """Return tenant-scoped operational alerts derived by the BI rules."""
+        bounds = self.resolve_bounds(period, date_from, date_to)
+        overview = self.get_overview(**bounds)
+        products = self.get_products(**bounds, limit=100)
+        customers = self.get_customers(**bounds)
+        marketing = self.get_marketing(**bounds)
+        insights = self.get_insights(overview, products, customers, marketing)
+        return [
+            {"id": item["id"], "type": item["insight_type"], "severity": item["impact_level"],
+             "title": item["title"], "message": item["description"],
+             "recommendation": item["recommendation"], "actionable": item.get("actionable", True)}
+            for item in insights
+        ]
+
     def update_insight_status(self, insight_id: str, status: str) -> dict:
         row = self._db.query(BusinessInsight).filter(
             BusinessInsight.id == insight_id,

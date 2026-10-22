@@ -1,0 +1,186 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, ChevronRight, CirclePause, CirclePlay, Clock3, Database, Loader2, RefreshCw, UserRound, Users, Wifi, WifiOff } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { kdsApi, type KdsMyQueue, type KdsPresenceState, type KdsProductionTask } from "@/lib/api";
+
+const POLL_INTERVAL_MS = 10_000;
+const PRESENCE_LABELS: Record<KdsPresenceState, string> = {
+  offline: "Offline",
+  available: "Disponível",
+  in_production: "Em produção",
+  paused: "Pausa",
+};
+
+function keyFor(scope: string, id: string) {
+  const random = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+  return `kds:${scope}:${id}:${random}`;
+}
+
+function elapsedSeconds(value?: string | null) {
+  if (!value) return 0;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? Math.max(0, Math.floor((Date.now() - time) / 1000)) : 0;
+}
+
+function formatTimer(task: KdsProductionTask) {
+  const elapsed = elapsedSeconds(task.started_at);
+  const total = Math.max(0, task.estimated_seconds ?? 0);
+  const remaining = total ? Math.max(0, total - elapsed) : elapsed;
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Não foi possível atualizar a fila KDS.";
+}
+
+function consumptionLabel(task: KdsProductionTask) {
+  if (task.consumption_mode === "attempts") return "Consumo desta tentativa confirmado";
+  if (task.consumption_mode === "legacy_covered") return "Consumo coberto pelo regime legado";
+  if (task.consumption_mode === "not_required") return "Sem consumo de estoque nesta unidade";
+  return "Consumo aguardando confirmação do servidor";
+}
+
+export default function KdsMultiOperatorBoard() {
+  const { toast } = useToast();
+  const [queue, setQueue] = useState<KdsMyQueue | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [targetOperator, setTargetOperator] = useState("");
+  const [, setTick] = useState(0);
+
+  const load = useCallback(async (manual = false) => {
+    if (manual) setRefreshing(true);
+    try {
+      setQueue(await kdsApi.myQueue());
+      setError(null);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const interval = window.setInterval(() => void load(), POLL_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [load]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setTick((value) => value + 1), 1_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const presence = queue?.presence;
+  const operators = useMemo(() => queue?.available_operators ?? [], [queue?.available_operators]);
+
+  useEffect(() => {
+    if (!presence) return;
+    const heartbeat = window.setInterval(() => {
+      void kdsApi.heartbeat({ operational_session_id: `kds:${presence.operator_id}`, station_id: presence.station_id, expected_version: presence.version }, keyFor("heartbeat", presence.operator_id)).catch(() => {
+        // A transient heartbeat failure is surfaced by the next queue poll;
+        // it must not change presence locally or retry a command implicitly.
+      });
+    }, 30_000);
+    return () => window.clearInterval(heartbeat);
+  }, [presence?.operator_id, presence?.version]);
+  const updatePresence = async (state: KdsPresenceState) => {
+    if (!presence) return;
+    setBusy("presence");
+    try {
+      const updated = await kdsApi.setPresence({ state, expected_version: presence.version }, keyFor("presence", state));
+      setQueue((current) => current ? { ...current, presence: updated } : current);
+      toast({ title: `Presença: ${PRESENCE_LABELS[state]}` });
+    } catch (caught) {
+      const message = errorMessage(caught);
+      setError(message);
+      toast({ title: "Presença não atualizada", description: message, variant: "destructive" });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const command = async (task: KdsProductionTask, action: "start" | "finish-assembly") => {
+    setBusy(task.id);
+    try {
+      const updated = await kdsApi.commandTask(task.id, action, { expected_version: task.version }, keyFor(action, task.id));
+      setQueue((current) => current ? { ...current, tasks: current.tasks.map((item) => item.id === task.id ? updated : item) } : current);
+      toast({ title: action === "start" ? "Preparo iniciado" : "Montagem concluída" });
+    } catch (caught) {
+      const message = errorMessage(caught);
+      setError(message);
+      toast({ title: "Comando não concluído", description: message, variant: "destructive" });
+      void load(true);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const redistribute = async () => {
+    if (!targetOperator || selected.length === 0) return;
+    const selectedTasks = (queue?.tasks ?? []).filter((task) => selected.includes(task.id));
+    setBusy("redistribute");
+    try {
+      const result = await kdsApi.redistribute({
+        task_ids: selected,
+        to_operator_id: targetOperator,
+        from_operator_id: presence?.operator_id ?? null,
+        reason: "Redistribuição operacional pelo painel KDS",
+        expected_versions: Object.fromEntries(selectedTasks.map((task) => [task.id, task.version])),
+      }, keyFor("redistribute", selected.join(",")));
+      setQueue(result);
+      setSelected([]);
+      toast({ title: "Fila redistribuída" });
+    } catch (caught) {
+      const message = errorMessage(caught);
+      setError(message);
+      toast({ title: "Redistribuição não concluída", description: message, variant: "destructive" });
+      void load(true);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (loading && !queue) return <div className="flex items-center gap-2 rounded-2xl border border-surface-03 bg-surface-02 p-5 text-stone"><Loader2 className="animate-spin text-gold" /> Carregando fila multioperador...</div>;
+
+  return (
+    <section className="space-y-4 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft" aria-label="KDS multioperador">
+      <header className="flex flex-col gap-3 border-b border-surface-03 pb-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gold/10 text-gold"><Users /></span><div><h2 className="text-lg font-black">Fila multioperador</h2><p className="text-sm text-stone">Atribuição, presença e tempo derivados do servidor</p></div></div>
+        <div className="flex flex-wrap gap-2">
+          {presence && <span className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-3 text-sm font-bold"><span className={`h-2.5 w-2.5 rounded-full ${presence.state === "offline" ? "bg-stone" : presence.state === "paused" ? "bg-amber-300" : "bg-emerald-300"}`} />{PRESENCE_LABELS[presence.state]}</span>}
+          <button type="button" onClick={() => void updatePresence(presence?.state === "available" ? "paused" : "available")} disabled={!presence || busy === "presence"} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-3 font-bold disabled:opacity-50">{busy === "presence" ? <Loader2 className="animate-spin" size={16} /> : presence?.state === "available" ? <CirclePause size={16} /> : <CirclePlay size={16} />}{presence?.state === "available" ? "Pausar" : "Ficar disponível"}</button>
+          <button type="button" aria-label="Atualizar fila multioperador" onClick={() => void load(true)} disabled={refreshing} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-3 font-bold disabled:opacity-50"><RefreshCw size={16} className={refreshing ? "animate-spin" : ""} /> Atualizar</button>
+        </div>
+      </header>
+
+      {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200"><span className="flex items-center gap-2"><WifiOff size={16} />{error}</span><button type="button" onClick={() => void load(true)} className="rounded-lg bg-red-500 px-3 py-2 font-bold text-white">Tentar novamente</button></div>}
+
+      <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-surface-03 bg-surface-01 p-3"><p className="text-xs font-bold uppercase text-stone">Minha fila</p><strong className="text-2xl">{presence?.queue_count ?? 0}</strong></div><div className="rounded-xl border border-surface-03 bg-surface-01 p-3"><p className="text-xs font-bold uppercase text-stone">Operadores ativos</p><strong className="text-2xl">{operators.filter((operator) => operator.state !== "offline").length}</strong></div><div className="rounded-xl border border-surface-03 bg-surface-01 p-3"><p className="text-xs font-bold uppercase text-stone">Sessão</p><strong className="flex items-center gap-2 text-sm text-emerald-300"><Wifi size={16} /> Heartbeat ativo</strong></div></div>
+
+      {(queue?.tasks ?? []).length === 0 ? <div className="rounded-xl border border-dashed border-surface-03 p-8 text-center text-stone">Nenhuma tarefa atribuída a esta estação.</div> : <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{(queue?.tasks ?? []).map((task) => {
+        const isSelected = selected.includes(task.id);
+        const isBusy = busy === task.id;
+        return <article key={task.id} className={`rounded-xl border bg-surface-01 p-4 ${isSelected ? "border-gold" : "border-surface-03"}`}>
+          <div className="flex items-start justify-between gap-2"><label className="flex items-center gap-2"><input type="checkbox" checked={isSelected} onChange={(event) => setSelected((current) => event.target.checked ? [...current, task.id] : current.filter((id) => id !== task.id))} aria-label={`Selecionar tarefa ${task.order_code || task.id}`} className="h-5 w-5 accent-gold" /><strong className="text-lg">#{(task.order_code || task.order_id.slice(0, 8)).toUpperCase()}</strong></label><span className="flex items-center gap-1 rounded-lg bg-surface-02 px-2 py-1 text-sm font-bold text-amber-300"><Clock3 size={14} />{formatTimer(task)}</span></div>
+          <p className="mt-2 text-sm font-semibold text-stone">{task.product_name || "Unidade de produção"} · unidade {task.unit_index}</p>
+          <p className="mt-1 text-xs uppercase tracking-wide text-stone">{task.state} · prioridade {task.priority}</p>
+          <div className="mt-3 rounded-lg border border-surface-03 bg-surface-02 px-3 py-2 text-xs text-stone">
+            <p className="flex items-center gap-2 font-bold text-cream"><Database size={14} className="text-gold" /> {consumptionLabel(task)}</p>
+            {task.consumption_operation_id && <p className="mt-1 truncate" title={task.consumption_operation_id}>Operação: {task.consumption_operation_id}</p>}
+            {task.composition_revision_id && <p className="mt-1 truncate" title={task.composition_revision_id}>Composição congelada: {task.composition_revision_id}</p>}
+          </div>
+          <div className="mt-4 flex gap-2">{task.state === "queued" || task.state === "unassigned" ? <button type="button" onClick={() => void command(task, "start")} disabled={Boolean(busy)} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-orange-500 px-3 font-black text-white disabled:opacity-50">{isBusy ? <Loader2 className="animate-spin" size={16} /> : <ChevronRight size={16} />} Iniciar</button> : task.state === "assembling" ? <button type="button" onClick={() => void command(task, "finish-assembly")} disabled={Boolean(busy)} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 font-black text-white disabled:opacity-50">{isBusy ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />} Concluir montagem</button> : <span className="flex min-h-11 flex-1 items-center justify-center rounded-lg bg-surface-02 px-3 text-sm font-bold text-stone">Aguardando próxima etapa</span>}</div>
+        </article>;
+      })}</div>}
+
+      {selected.length > 0 && <div className="flex flex-col gap-3 rounded-xl border border-gold/40 bg-gold/5 p-3 sm:flex-row sm:items-center"><span className="text-sm font-bold">{selected.length} tarefa(s) selecionada(s)</span><select value={targetOperator} onChange={(event) => setTargetOperator(event.target.value)} className="min-h-11 flex-1 rounded-lg border border-surface-03 bg-surface-01 px-3 text-sm" aria-label="Operador de destino"><option value="">Escolha o operador de destino</option>{operators.filter((operator) => operator.operator_id !== presence?.operator_id && operator.state !== "offline").map((operator) => <option key={operator.operator_id} value={operator.operator_id}>{operator.operator_name} · {PRESENCE_LABELS[operator.state]}</option>)}</select><button type="button" onClick={() => void redistribute()} disabled={!targetOperator || busy === "redistribute"} className="min-h-11 rounded-lg bg-gold px-4 font-black text-surface-00 disabled:opacity-50">{busy === "redistribute" ? <Loader2 className="animate-spin" size={16} /> : <UserRound size={16} />} Redistribuir</button></div>}
+    </section>
+  );
+}

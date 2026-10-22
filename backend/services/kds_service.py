@@ -17,6 +17,7 @@ from backend.models.delivery import (
     Delivery, DeliveryEvent, DeliveryPerson, DeliveryPersonStatus, DeliveryStatus,
 )
 from backend.models.order import Order, OrderStatus
+from backend.models.cmv import OrderCmvSnapshot, OrderItemCmvSnapshot
 from backend.models.product import Product
 from backend.services.order_service import OrderService
 
@@ -78,7 +79,110 @@ class KdsService:
         ).filter(
             Order.status.in_(self.KITCHEN_STATUSES),
         ).order_by(Order.created_at).all()
-        return self._serialize_orders(orders, include_dispatch_details=False)
+        item_ids = [item.id for order in orders for item in order.items]
+        frozen = {}
+        if item_ids:
+            rows = self.db.query(OrderItemCmvSnapshot).filter(
+                OrderItemCmvSnapshot.tenant_id == self.tenant_id,
+                OrderItemCmvSnapshot.order_item_id.in_(item_ids),
+            ).all()
+            frozen = {
+                row.order_item_id: self._operational_composition(row.composition_json)
+                for row in rows
+            }
+        return self._serialize_orders(
+            orders, include_dispatch_details=False, composition_by_item=frozen,
+        )
+
+    def kitchen_order_composition(self, order_id: str) -> dict:
+        """Return the immutable technical composition for a kitchen order.
+
+        KDS must render the same revision that was frozen when the order was
+        created.  Resolving active recipes here would make an already paid
+        order silently change when a manager publishes a new recipe.  CMV
+        snapshots are the existing canonical frozen projection and contain no
+        costs in this response.
+        """
+        order = self._load_order(order_id)
+        snapshot = (
+            self.db.query(OrderCmvSnapshot)
+            .options(joinedload(OrderCmvSnapshot.items))
+            .filter(
+                OrderCmvSnapshot.tenant_id == self.tenant_id,
+                OrderCmvSnapshot.order_id == order.id,
+            )
+            .first()
+        )
+        if snapshot is None:
+            return {
+                "order_id": order.id,
+                "snapshot_id": None,
+                "status": "missing_snapshot",
+                "executable": False,
+                "warnings": [{
+                    "code": "CompositionSnapshotMissing",
+                    "message": "Este pedido nao possui composicao tecnica congelada.",
+                }],
+                "items": [],
+            }
+
+        item_snapshots = {
+            row.order_item_id: row for row in snapshot.items
+            if row.tenant_id == self.tenant_id
+        }
+        items = []
+        warnings = []
+        for item in sorted(order.items, key=lambda row: (row.position or 0, row.id)):
+            frozen = item_snapshots.get(item.id)
+            composition = frozen.composition_json if frozen else None
+            if not isinstance(composition, dict):
+                warnings.append({
+                    "code": "CompositionSnapshotMissingForItem",
+                    "message": f"Item {item.id} nao possui composicao tecnica congelada.",
+                })
+                composition = {
+                    "product_id": item.product_id,
+                    "quantity": item.quantity,
+                    "complete": False,
+                    "missing": ["composition_snapshot"],
+                    "common_components": [], "flavors": [],
+                    "ingredients": [], "removed_ingredients": [],
+                    "substitutions": [], "methods": [], "notes": item.notes,
+                    "recipe_version_ids": [],
+                }
+            # Do not forward any future financial fields if the persisted
+            # projection gains them; KDS receives only operational keys.
+            safe = self._operational_composition(composition)
+            items.append({
+                "order_item_id": item.id,
+                "position": item.position,
+                "product_id": item.product_id,
+                "composition": safe,
+            })
+        return {
+            "order_id": order.id,
+            "snapshot_id": snapshot.id,
+            "status": snapshot.status,
+            "executable": not warnings and all(
+                row["composition"].get("complete") is True for row in items
+            ),
+            "warnings": warnings,
+            "items": items,
+        }
+
+    @staticmethod
+    def _operational_composition(composition: dict | None) -> dict | None:
+        if not isinstance(composition, dict):
+            return composition
+        return {
+            key: composition.get(key)
+            for key in (
+                "product_id", "quantity", "complete", "missing",
+                "recipe_version_ids", "common_components", "flavors",
+                "ingredients", "removed_ingredients", "substitutions",
+                "methods", "notes",
+            )
+        }
 
     def overview(self) -> dict:
         """Return the tenant's bounded operational snapshot for the general KDS."""
@@ -364,7 +468,10 @@ class KdsService:
         value = getattr(value, "status", value)
         return value.value if hasattr(value, "value") else str(value)
 
-    def _serialize_orders(self, orders: list[Order], *, include_dispatch_details: bool) -> list[dict]:
+    def _serialize_orders(
+        self, orders: list[Order], *, include_dispatch_details: bool,
+        composition_by_item: dict[str, dict | None] | None = None,
+    ) -> list[dict]:
         product_ids = {item.product_id for order in orders for item in order.items}
         products = {
             row.id: row for row in self.db.query(Product).filter(
@@ -407,6 +514,7 @@ class KdsService:
                     "notes": item.notes,
                     "add_ons": list(item.add_ons or []),
                     "flavors": [{"name": flavor.flavor_name} for flavor in item.flavors],
+                    **({"composition": composition_by_item[item.id]} if composition_by_item is not None and item.id in composition_by_item else {}),
                 } for item in order.items],
             }
             if include_dispatch_details:

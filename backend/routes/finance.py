@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
+from backend.core.rbac_authorization import AuthorizedTenantActor, require_rbac_permission
 from backend.core.response import err, no_content
 from backend.core.tenant_context import TenantContext
 from backend.core.tenant_route_context import operation_tenant_id, panel_operation_context
@@ -16,6 +17,8 @@ from backend.schemas.finance import (
     FinanceCounterpartyIn,
     FinanceCounterpartyOut,
     FinanceOverviewOut,
+    FinanceObligationFromFiscalIn,
+    FinanceObligationOut,
     FinanceSettlementIn,
     FinanceTransactionIn,
     FinanceTransactionOut,
@@ -121,6 +124,42 @@ def delete_counterparty(counterparty_id: str, db: Session = Depends(get_db), _ad
 @router.get("/transactions", response_model=list[FinanceTransactionOut])
 def list_transactions(db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin), tenant_context: TenantContext | None = Depends(panel_operation_context)):
     return service(db, tenant_context).list_transactions()
+
+
+@router.get("/obligations", response_model=list[FinanceObligationOut])
+def list_obligations(
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("finance", "view")),
+):
+    return FinanceService(db, actor.tenant_id, actor.tenant_context).list_obligations()
+
+
+@router.post("/fiscal-documents/{document_id}/obligation", response_model=FinanceObligationOut, status_code=201)
+def create_fiscal_obligation(
+    document_id: str,
+    body: FinanceObligationFromFiscalIn,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=160),
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("finance", "create")),
+):
+    try:
+        return FinanceService(db, actor.tenant_id, actor.tenant_context).create_obligation_from_fiscal_document(
+            document_id, body, idempotency_key, actor.user_id,
+        )
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/obligations/{obligation_id}/reconcile", response_model=FinanceObligationOut)
+def reconcile_obligation(
+    obligation_id: str,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("finance", "edit")),
+):
+    try:
+        return FinanceService(db, actor.tenant_id, actor.tenant_context).reconcile_obligation(obligation_id)
+    except DomainError as exc:
+        return err(exc)
 
 
 @router.post("/transactions", response_model=FinanceTransactionOut, status_code=201)

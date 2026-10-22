@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -80,12 +81,13 @@ class InventoryItemIn(BaseModel):
     category_id: str | None = None
     unit_id: str | None = None
     default_location_id: str | None = None
-    min_stock: float = Field(default=0.0, ge=0)
+    min_stock: Decimal = Field(default=Decimal("0"), ge=0, max_digits=20, decimal_places=6)
     notes: str | None = None
     active: bool = True
 
 
 class InventoryItemOut(InventoryItemIn):
+    min_stock: float = 0.0
     id: str
     tenant_id: str
     category_name: str | None = None
@@ -100,8 +102,8 @@ class InventoryItemOut(InventoryItemIn):
 
 class InventoryPurchaseItemIn(BaseModel):
     item_id: str
-    quantity: float = Field(gt=0)
-    unit_cost: float = Field(default=0.0, ge=0)
+    quantity: Decimal = Field(gt=0, max_digits=20, decimal_places=6)
+    unit_cost: Decimal = Field(default=Decimal("0"), ge=0, max_digits=20, decimal_places=8)
 
 
 class InventoryPurchaseIn(BaseModel):
@@ -142,13 +144,14 @@ class InventoryManualEntryIn(BaseModel):
     item_id: str
     location_id: str | None = None
     movement_type: InventoryMovementType = "in"
-    quantity: float = Field(gt=0)
-    unit_cost: float = Field(default=0.0, ge=0)
+    quantity: Decimal = Field(gt=0, max_digits=20, decimal_places=6)
+    unit_cost: Decimal = Field(default=Decimal("0"), ge=0, max_digits=20, decimal_places=8)
     reason: str = Field(default="initial_stock", min_length=1, max_length=120)
     notes: str | None = None
 
 
 class InventoryManualEntryOut(BaseModel):
+    reversed: bool = False
     id: str
     tenant_id: str
     item_id: str
@@ -192,14 +195,21 @@ class InventoryStockBalanceOut(BaseModel):
 
 class InventoryRecipeItemIn(BaseModel):
     inventory_item_id: str
-    quantity: float = Field(gt=0)
-    waste_percent: float = Field(default=0.0, ge=0, le=100)
+    quantity: Decimal = Field(gt=0, max_digits=20, decimal_places=6)
+    waste_percent: Decimal = Field(default=Decimal("0"), ge=0, le=100, max_digits=20, decimal_places=12)
     notes: str | None = None
+    unit_id: str | None = None
+    entered_unit_id: str | None = None
+    entered_quantity: Decimal | None = Field(default=None, gt=0, max_digits=20, decimal_places=6)
+    position: int = Field(default=0, ge=0)
+    public_name: str | None = Field(default=None, max_length=180)
+    show_public: bool = False
+    allow_removal: bool = False
 
 
 class InventoryRecipeVersionIn(BaseModel):
     component_role: Literal["flavor", "base", "crust", "addon", "packaging"] = "flavor"
-    reference_fraction: float = Field(default=1.0, gt=0, le=1)
+    reference_fraction: Decimal = Field(default=Decimal("1"), gt=0, le=1, max_digits=20, decimal_places=12)
     product_size_id: str | None = None
     product_crust_type_id: str | None = None
     product_drink_variant_id: str | None = None
@@ -207,6 +217,9 @@ class InventoryRecipeVersionIn(BaseModel):
     complement_name: str | None = Field(default=None, max_length=180)
     active: bool = True
     notes: str | None = None
+    instructions: str | None = Field(default=None, max_length=16000)
+    preparation_steps: list[str] = Field(default_factory=list, max_length=100)
+    reference_image_url: str | None = Field(default=None, max_length=700)
     items: list[InventoryRecipeItemIn] = Field(default_factory=list)
 
 
@@ -219,6 +232,14 @@ class InventoryRecipeItemOut(BaseModel):
     quantity: float
     waste_percent: float
     notes: str | None = None
+    unit_id: str | None = None
+    entered_unit_id: str | None = None
+    entered_quantity: float | None = None
+    conversion_factor_snapshot: float | None = None
+    position: int = 0
+    public_name: str | None = None
+    show_public: bool = False
+    allow_removal: bool = False
 
 
 class InventoryRecipeVersionOut(BaseModel):
@@ -239,6 +260,9 @@ class InventoryRecipeVersionOut(BaseModel):
     version_number: int
     active: bool
     notes: str | None = None
+    instructions: str | None = None
+    preparation_steps: list[str] = Field(default_factory=list)
+    reference_image_url: str | None = None
     items: list[InventoryRecipeItemOut] = []
     created_at: datetime | None = None
     updated_at: datetime | None = None
