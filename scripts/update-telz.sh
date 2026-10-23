@@ -763,24 +763,32 @@ for current, directories, files in os.walk(root, followlinks=False):
             if target_stat.st_uid != pwd.getpwnam(service_user).pw_uid or target_stat.st_mode & 0o022:
                 raise SystemExit("destino persistente legado possui ownership ou modo inseguro")
 
-digest = hashlib.sha256()
-for candidate in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
-    relative = candidate.relative_to(root).as_posix()
-    if relative == ".telz-release.json":
-        continue
-    metadata = candidate.lstat()
-    if stat.S_ISDIR(metadata.st_mode):
-        kind, payload = "d", b""
-    elif stat.S_ISREG(metadata.st_mode):
-        kind, payload = "f", candidate.read_bytes()
-    elif stat.S_ISLNK(metadata.st_mode):
-        kind, payload = "l", os.readlink(candidate).encode("utf-8")
-    else:
-        raise SystemExit("tipo inesperado durante digest")
-    digest.update(f"{kind}\0{relative}\0{stat.S_IMODE(metadata.st_mode):04o}\0".encode("utf-8"))
-    digest.update(hashlib.sha256(payload).digest())
-if data.get("content_sha256") != digest.hexdigest():
-    raise SystemExit("digest de conteudo da release divergiu")
+def tree_digest(mode_policy=None):
+    digest = hashlib.sha256()
+    for candidate in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
+        relative = candidate.relative_to(root).as_posix()
+        if relative == ".telz-release.json":
+            continue
+        metadata = candidate.lstat()
+        if stat.S_ISDIR(metadata.st_mode):
+            kind, payload = "d", b""
+            mode = mode_policy[0] if mode_policy else stat.S_IMODE(metadata.st_mode)
+        elif stat.S_ISREG(metadata.st_mode):
+            kind, payload = "f", candidate.read_bytes()
+            mode = mode_policy[1] if mode_policy else stat.S_IMODE(metadata.st_mode)
+        elif stat.S_ISLNK(metadata.st_mode):
+            kind, payload = "l", os.readlink(candidate).encode("utf-8")
+            mode = stat.S_IMODE(metadata.st_mode)
+        else:
+            raise SystemExit("tipo inesperado durante digest")
+        digest.update(f"{kind}\0{relative}\0{mode:04o}\0".encode("utf-8"))
+        digest.update(hashlib.sha256(payload).digest())
+    return digest.hexdigest()
+
+expected_content = data.get("content_sha256")
+if tree_digest() != expected_content:
+    if tree_digest((0o755, 0o644)) != expected_content and tree_digest((0o555, 0o444)) != expected_content:
+        raise SystemExit("digest de conteudo da release divergiu")
 PY
 }
 

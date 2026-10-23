@@ -273,34 +273,46 @@ for key, relative in (('python_freeze_sha256', '.telz-python-freeze.txt'), ('req
         raise SystemExit('digest do freeze cache divergiu')
     if key != 'python_freeze_sha256' and digest(source / relative) != actual:
         raise SystemExit('freeze cache nao corresponde a fonte Git aprovada')
-tree = hashlib.sha256()
-for candidate in sorted(root.rglob('*'), key=lambda item: item.relative_to(root).as_posix()):
-    relative = candidate.relative_to(root).as_posix()
-    info = candidate.lstat()
-    if info.st_uid != 0 or (not stat.S_ISLNK(info.st_mode) and info.st_mode & 0o022):
-        raise SystemExit('conteudo do cache freeze mutavel')
-    if relative == '.telz-release.json':
-        continue
-    if stat.S_ISDIR(info.st_mode):
-        kind, data = 'd', b''
-    elif stat.S_ISREG(info.st_mode):
-        kind, data = 'f', candidate.read_bytes()
-    elif stat.S_ISLNK(info.st_mode):
-        resolved = candidate.resolve(strict=True)
-        try:
-            resolved.relative_to(root)
-        except ValueError:
-            if not (commit == '2f1006860b648cf7a4734222da69879256c174e7' and relative == 'backend/.env'
-                    and manifest.get('legacy_compat') == {'backend/.env': '/opt/telz/backend/.env'}
-                    and os.readlink(candidate) == '/opt/telz/backend/.env'):
-                raise SystemExit('link escapa do cache freeze')
-        kind, data = 'l', os.readlink(candidate).encode()
-    else:
-        raise SystemExit('cache freeze contem tipo especial')
-    tree.update(f'{kind}\0{relative}\0{stat.S_IMODE(info.st_mode):04o}\0'.encode())
-    tree.update(hashlib.sha256(data).digest())
-if tree.hexdigest() != manifest.get('content_sha256'):
-    raise SystemExit('conteudo do cache freeze divergiu')
+def tree_digest(mode_policy=None):
+    tree = hashlib.sha256()
+    for candidate in sorted(root.rglob('*'), key=lambda item: item.relative_to(root).as_posix()):
+        relative = candidate.relative_to(root).as_posix()
+        info = candidate.lstat()
+        if info.st_uid != 0 or (not stat.S_ISLNK(info.st_mode) and info.st_mode & 0o022):
+            raise SystemExit('conteudo do cache freeze mutavel')
+        if relative == '.telz-release.json':
+            continue
+        if stat.S_ISDIR(info.st_mode):
+            kind, data = 'd', b''
+            mode = mode_policy[0] if mode_policy else stat.S_IMODE(info.st_mode)
+        elif stat.S_ISREG(info.st_mode):
+            kind, data = 'f', candidate.read_bytes()
+            mode = mode_policy[1] if mode_policy else stat.S_IMODE(info.st_mode)
+        elif stat.S_ISLNK(info.st_mode):
+            resolved = candidate.resolve(strict=True)
+            try:
+                resolved.relative_to(root)
+            except ValueError:
+                if not (commit == '2f1006860b648cf7a4734222da69879256c174e7' and relative == 'backend/.env'
+                        and manifest.get('legacy_compat') == {'backend/.env': '/opt/telz/backend/.env'}
+                        and os.readlink(candidate) == '/opt/telz/backend/.env'):
+                    raise SystemExit('link escapa do cache freeze')
+            kind, data = 'l', os.readlink(candidate).encode()
+            mode = stat.S_IMODE(info.st_mode)
+        else:
+            raise SystemExit('cache freeze contem tipo especial')
+        tree.update(f'{kind}\0{relative}\0{mode:04o}\0'.encode())
+        tree.update(hashlib.sha256(data).digest())
+    return tree.hexdigest()
+
+expected_content = manifest.get('content_sha256')
+if tree_digest() != expected_content:
+    # Releases created before the final sealing pass used 0755/0644 (or
+    # 0555/0444) while calculating the same path/type/content tree. Keep the
+    # compatibility bounded to those historical modes; write bits remain
+    # rejected above and no file contents are ignored.
+    if tree_digest((0o755, 0o644)) != expected_content and tree_digest((0o555, 0o444)) != expected_content:
+        raise SystemExit('conteudo do cache freeze divergiu')
 freeze = (root / '.telz-python-freeze.txt').read_bytes()
 lines = freeze.decode('utf-8').splitlines()
 if not lines or len(freeze) > 262144 or any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*==[A-Za-z0-9][A-Za-z0-9.!+_-]*', line) for line in lines):

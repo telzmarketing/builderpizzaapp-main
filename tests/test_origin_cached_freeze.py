@@ -64,6 +64,26 @@ def reader(monkeypatch, sealed, *, wrong_owner=None):
     exec(compile(code, 'prepare_cached_freeze', 'exec'), {'Path': TestPath})
 
 
+def content_digest_with_modes(root, directory_mode, file_mode):
+    digest = hashlib.sha256()
+    for candidate in sorted(root.rglob('*'), key=lambda item: item.relative_to(root).as_posix()):
+        relative = candidate.relative_to(root).as_posix()
+        if relative == '.telz-release.json':
+            continue
+        info = candidate.lstat()
+        if stat.S_ISDIR(info.st_mode):
+            kind, payload, mode = 'd', b'', directory_mode
+        elif stat.S_ISREG(info.st_mode):
+            kind, payload, mode = 'f', candidate.read_bytes(), file_mode
+        elif stat.S_ISLNK(info.st_mode):
+            kind, payload, mode = 'l', os.readlink(candidate).encode(), stat.S_IMODE(info.st_mode)
+        else:
+            raise AssertionError('unexpected fixture type')
+        digest.update(f'{kind}\0{relative}\0{mode:04o}\0'.encode())
+        digest.update(hashlib.sha256(payload).digest())
+    return digest.hexdigest()
+
+
 def test_cached_freeze_is_copied_byte_exact_without_importing_app(monkeypatch, sealed):
     reader(monkeypatch, sealed)
     assert sealed.output.read_bytes() == sealed.freeze
@@ -111,6 +131,16 @@ def test_cached_freeze_rejects_other_content_tampering(monkeypatch, sealed):
     path.chmod(0o444)
     with pytest.raises(SystemExit, match='conteudo do cache freeze divergiu'):
         reader(monkeypatch, sealed)
+
+
+def test_cached_freeze_accepts_historical_seal_modes(monkeypatch, sealed):
+    manifest_path = sealed.app / '.telz-release.json'
+    manifest = json.loads(manifest_path.read_text())
+    manifest['content_sha256'] = content_digest_with_modes(sealed.app, 0o755, 0o644)
+    manifest_path.chmod(0o644)
+    manifest_path.write_text(json.dumps(manifest))
+    manifest_path.chmod(0o444)
+    reader(monkeypatch, sealed)
 
 
 def test_even_self_consistent_cache_cannot_supply_pip_options(monkeypatch, sealed):
