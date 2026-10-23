@@ -82,7 +82,7 @@ def foundation():
     tenant_id, other_id, actor_id = f"foundation-{token}", f"other-{token}", f"actor-{token}"
     context = TenantContext(tenant_id, TenantSource.JOB)
     with Session(engine) as db:
-        assert db.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "20261022_kds_production"
+        assert db.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "20261022_receipt_pdf_camera_evidence"
         db.add_all([Tenant(id=tenant_id, slug=tenant_id, name="Synthetic foundation", timezone="America/Sao_Paulo"),
                     Tenant(id=other_id, slug=other_id, name="Synthetic isolation", timezone="America/Sao_Paulo")])
         db.flush()

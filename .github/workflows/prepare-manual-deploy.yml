@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  TELZ_ALEMBIC_TARGET: 20261022_kds_production
+  TELZ_ALEMBIC_TARGET: 20261022_receipt_pdf_camera_evidence
   TELZ_PUBLIC_HEALTH_URL: https://app.telz.com.br/health
 
 jobs:

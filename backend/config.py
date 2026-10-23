@@ -11,6 +11,32 @@ BACKEND_DIR = Path(__file__).resolve().parent
 SOURCE_PROJECT_ROOT = BACKEND_DIR.parent
 PROJECT_ROOT = Path(os.environ.get("TELZ_PROJECT_ROOT", SOURCE_PROJECT_ROOT)).resolve()
 PERSISTENT_BACKEND_DIR = PROJECT_ROOT / "backend"
+# Releases normally receive the persistent environment through a symlink at
+# ``backend/.env``.  During a failed/partial cutover that link may not exist
+# yet, while the operational configuration is still available at the legacy
+# persistent location.  Keep this fallback explicit and deployment-specific;
+# it is never used when a real process environment variable is present.
+EXTERNAL_PERSISTENT_BACKEND_DIR = Path(
+    os.environ.get("TELZ_PERSISTENT_BACKEND_DIR", "/opt/telz/backend")
+).resolve()
+
+
+def _environment_file_paths() -> tuple[Path, ...]:
+    """Return the ordered persistent env files used by API and Alembic.
+
+    The release-local file remains first so normal immutable releases keep
+    their existing behavior.  The external Telz location is a compatibility
+    fallback for migration commands run against a release before its env link
+    has been materialized.
+    """
+    paths = (
+        PROJECT_ROOT / ".env",
+        PERSISTENT_BACKEND_DIR / ".env",
+        EXTERNAL_PERSISTENT_BACKEND_DIR / ".env",
+    )
+    return tuple(dict.fromkeys(path for path in paths if path.exists()))
+
+
 DEFAULT_JWT_SECRET_KEY = "troque-esta-chave-secreta-em-producao"
 
 
@@ -157,10 +183,7 @@ class Settings(BaseSettings):
     WHATSAPP_GATEWAY_EVENT_TOKEN: str = ""
 
     class Config:
-        env_file = (
-            PROJECT_ROOT / ".env",
-            PERSISTENT_BACKEND_DIR / ".env",
-        )
+        env_file = _environment_file_paths()
         env_file_encoding = "utf-8"
         extra = "ignore"    # ignore Node/Vite env vars present in the root .env
 
@@ -241,16 +264,13 @@ def save_ai_api_keys(*, openai_api_key: str | None = None, anthropic_api_key: st
 
 
 def _read_backend_env_value(name: str) -> str:
-    env_path = PERSISTENT_BACKEND_DIR / ".env"
-    if not env_path.exists():
-        return ""
-
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, value = stripped.split("=", 1)
-        if key.strip() != name:
-            continue
-        return value.strip().strip('"').strip("'")
+    for env_path in _environment_file_paths():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, value = stripped.split("=", 1)
+            if key.strip() != name:
+                continue
+            return value.strip().strip('"').strip("'")
     return ""

@@ -38,7 +38,9 @@ def test_backend_and_gateway_resolve_persistent_project_root_from_environment():
 
     assert 'os.environ.get("TELZ_PROJECT_ROOT", SOURCE_PROJECT_ROOT)' in config
     assert 'PERSISTENT_BACKEND_DIR = PROJECT_ROOT / "backend"' in config
-    assert config.count('env_path = PERSISTENT_BACKEND_DIR / ".env"') == 2
+    assert 'os.environ.get("TELZ_PERSISTENT_BACKEND_DIR", "/opt/telz/backend")' in config
+    assert 'PERSISTENT_BACKEND_DIR / ".env"' in config
+    assert 'EXTERNAL_PERSISTENT_BACKEND_DIR / ".env"' in config
     assert "process.env.TELZ_PROJECT_ROOT" in gateway
     assert 'path.resolve(process.env.TELZ_PROJECT_ROOT)' in gateway
 
