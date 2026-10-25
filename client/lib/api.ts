@@ -1246,7 +1246,6 @@ export interface KdsProductionTask {
   estimated_seconds?: number | null;
   operator_id?: string | null;
   operator_name?: string | null;
-  composition_revision_id?: string | null;
   executable?: boolean;
   product_name?: string | null;
   quantity?: string | null;
