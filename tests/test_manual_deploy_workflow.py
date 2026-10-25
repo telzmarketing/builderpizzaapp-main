@@ -11,6 +11,7 @@ def test_manual_deploy_workflow_packages_only_verified_non_secret_artifacts():
     assert "previous_commit:" in workflow
     assert "git merge-base --is-ancestor" in workflow
     assert "operation-bundle.tar.gz" in workflow
+    assert "scripts/deploy-telz-artifacts-manually.sh" in workflow
     assert "target-source.tar.gz" in workflow
     assert "previous-source.tar.gz" in workflow
     assert "dependency-bundle.tar.gz" in workflow
