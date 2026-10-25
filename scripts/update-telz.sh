@@ -212,6 +212,7 @@ BUNDLE_FILES=(
   scripts/rollback-telz.sh
   scripts/finish-ssl.sh
   scripts/build-telz-release.sh
+  scripts/deploy-telz-artifacts-manually.sh
   installer/templates/telz-api.service
   installer/templates/telz-web.service
   installer/templates/telz-whatsapp-gateway.service
