@@ -114,7 +114,7 @@ class Order(Base):
 class OrderItem(Base):
     __tablename__ = "order_items"
     __table_args__ = (
-        CheckConstraint("jsonb_typeof(customizations) = 'array'", name="ck_order_items_customizations_array"),
+        CheckConstraint("jsonb_typeof(customizations) = 'array'", name="ck_order_items_customizations_array").ddl_if(dialect="postgresql"),
         Index("uq_order_items_tenant_id_id", "tenant_id", "id", unique=True),
         ForeignKeyConstraint(["tenant_id", "selected_border_id"], ["product_crust_types.tenant_id", "product_crust_types.id"], name="fk_order_items_tenant_border"),
         ForeignKeyConstraint(["tenant_id", "selected_drink_variant_id"], ["product_drink_variants.tenant_id", "product_drink_variants.id"], name="fk_order_items_tenant_drink_variant"),

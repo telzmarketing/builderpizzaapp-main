@@ -197,7 +197,7 @@ class InventoryRecipeVersion(Base):
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_inventory_recipe_versions_tenant"), nullable=True)
     __table_args__ = (
         Index("uq_inventory_recipe_versions_tenant_id_id", "tenant_id", "id", unique=True),
-        CheckConstraint("jsonb_typeof(preparation_steps) = 'array'", name="ck_inventory_recipe_steps_array"),
+        CheckConstraint("jsonb_typeof(preparation_steps) = 'array'", name="ck_inventory_recipe_steps_array").ddl_if(dialect="postgresql"),
         CheckConstraint("component_role IN ('flavor','base','crust','addon','packaging')", name="ck_inventory_recipe_role"),
         CheckConstraint("reference_fraction > 0 AND reference_fraction <= 1", name="ck_inventory_recipe_fraction"),
     )

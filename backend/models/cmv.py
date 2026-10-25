@@ -60,7 +60,7 @@ class OrderItemCmvSnapshot(Base):
     ingredients = relationship("OrderItemCmvIngredientSnapshot", cascade="all, delete-orphan", back_populates="item_snapshot")
     __table_args__ = (
         Index("uq_order_item_cmv_snapshots_tenant_id_id", "tenant_id", "id", unique=True),
-        CheckConstraint("composition_json IS NULL OR jsonb_typeof(composition_json) = 'object'", name="ck_order_item_cmv_composition_object"),
+        CheckConstraint("composition_json IS NULL OR jsonb_typeof(composition_json) = 'object'", name="ck_order_item_cmv_composition_object").ddl_if(dialect="postgresql"),
     )
 
 

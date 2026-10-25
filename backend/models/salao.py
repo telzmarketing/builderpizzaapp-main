@@ -124,7 +124,7 @@ class TableSessionItem(Base):
     session = relationship("TableSession", back_populates="items")
     product = relationship("Product")
     __table_args__ = (
-        CheckConstraint("jsonb_typeof(customizations) = 'array'", name="ck_table_session_items_customizations_array"),
+        CheckConstraint("jsonb_typeof(customizations) = 'array'", name="ck_table_session_items_customizations_array").ddl_if(dialect="postgresql"),
         Index("uq_table_session_items_tenant_id_id", "tenant_id", "id", unique=True),
         ForeignKeyConstraint(["tenant_id", "selected_size_id"], ["product_sizes.tenant_id", "product_sizes.id"], name="fk_table_session_items_tenant_size"),
         ForeignKeyConstraint(["tenant_id", "selected_crust_type_id"], ["product_crust_types.tenant_id", "product_crust_types.id"], name="fk_table_session_items_tenant_crust"),
