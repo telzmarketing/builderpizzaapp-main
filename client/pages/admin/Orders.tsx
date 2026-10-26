@@ -843,8 +843,8 @@ export default function AdminOrders() {
       )}
 
       <Dialog open={manualOrderOpen} onOpenChange={setManualOrderOpen}>
-        <DialogContent className="max-w-5xl gap-0 overflow-y-auto bg-surface-00 p-0 text-cream sm:p-0">
-          <DialogHeader className="border-b border-surface-03 p-5 pr-12"><DialogTitle>Fazer Pedido</DialogTitle><DialogDescription>Atendimento completo sem sair de Operações.</DialogDescription></DialogHeader>
+        <DialogContent className="max-h-[calc(100vh-2rem)] max-w-6xl gap-0 overflow-y-auto rounded-2xl border border-surface-03 bg-surface-00 p-0 text-cream shadow-2xl sm:p-0">
+          <DialogHeader className="border-b border-surface-03 bg-surface-02 p-5 pr-12"><DialogTitle className="text-xl font-black">Fazer Pedido</DialogTitle><DialogDescription>Atendimento completo sem sair de Operações.</DialogDescription></DialogHeader>
           <ManualOrderComposer onCreated={() => { void fetchOrders(true); }} />
         </DialogContent>
       </Dialog>
