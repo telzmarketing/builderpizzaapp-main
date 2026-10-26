@@ -403,7 +403,7 @@ export default function AdminConfiguracoes() {
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                     <TemplateCard
                       id="completo"
-                      title="Pedido Completo"
+                      title="Comprovante do pedido (cliente)"
                       description="Cupom com todos os dados: cliente, endereço, itens, totais e frete. Ideal para arquivo ou entrega ao motoboy."
                       selected={settings.defaultTemplate === "completo"}
                       onSelect={() => update({ defaultTemplate: "completo" })}
@@ -411,7 +411,7 @@ export default function AdminConfiguracoes() {
                     />
                     <TemplateCard
                       id="cozinha"
-                      title="Comanda Cozinha"
+                      title="Comanda do KDS Pizzaiolo"
                       description="Foco nos itens em letras grandes para facilitar a leitura na produção. Sem dados financeiros."
                       selected={settings.defaultTemplate === "cozinha"}
                       onSelect={() => update({ defaultTemplate: "cozinha" })}
@@ -419,7 +419,7 @@ export default function AdminConfiguracoes() {
                     />
                     <TemplateCard
                       id="entrega"
-                      title="Via Entrega"
+                      title="Etiqueta da caixa / expedi??o"
                       description="Via focada em entrega: número do pedido, endereço completo, itens e total. Ideal para o motoboy."
                       selected={settings.defaultTemplate === "entrega"}
                       onSelect={() => update({ defaultTemplate: "entrega" })}
