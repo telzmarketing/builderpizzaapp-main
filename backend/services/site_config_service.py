@@ -155,7 +155,7 @@ class SiteConfigService:
             brand = content.get("brand", {})
             return brand.get("faviconUrl") or "/icons/telz.svg"
         brand = content.get("brand")
-        raw = str(brand.get("faviconUrl") or "").strip().replace("\\", "/") if isinstance(brand, dict) else ""
+        raw = str((brand.get("faviconUrl") or brand.get("favicon_url") or brand.get("favicon") or "")).strip().replace("\\", "/") if isinstance(brand, dict) else ""
         extensions = (".apng", ".avif", ".gif", ".ico", ".jpeg", ".jpg", ".jfif", ".pjpeg", ".pjp", ".png", ".svg", ".webp")
         if raw and not raw.startswith("data:") and raw.lower().endswith(extensions):
             if raw.startswith(("http://", "https://", "/")):

@@ -275,7 +275,7 @@ export default function Home() {
           <div className="relative w-72 bg-brand-dark h-full flex flex-col shadow-2xl">
             <div className="flex items-center justify-between px-6 py-5 border-b border-surface-02">
               <button onClick={() => { setMenuOpen(false); navigate("/"); }} aria-label="Ir para a home da loja">
-                <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />
+                <MoschettieriLogo className="text-cream text-base scale-[1.31] origin-center" />
               </button>
               <button onClick={() => setMenuOpen(false)} className="text-stone hover:text-cream transition-colors">
                 <X size={24} />
@@ -310,7 +310,7 @@ export default function Home() {
           <Menu size={24} />
         </button>
         <button onClick={() => navigate("/")} aria-label="Ir para a home da loja">
-          <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />
+          <MoschettieriLogo className="text-cream text-base scale-[1.31] origin-center" />
         </button>
         <button onClick={() => setSearchOpen(true)} className="text-parchment hover:text-cream transition-colors">
           <Search size={24} />

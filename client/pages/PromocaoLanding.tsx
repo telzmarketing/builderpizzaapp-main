@@ -261,7 +261,7 @@ export default function PromocaoLanding() {
             <ChevronLeft size={22} />
           </button>
           <button onClick={() => navigate("/")} aria-label="Ir para a home da loja">
-            <MoschettieriLogo className="text-cream text-base scale-[1.12] origin-center drop-shadow" />
+            <MoschettieriLogo className="text-cream text-base scale-[1.29] origin-center drop-shadow" />
           </button>
           <div className="h-10 w-10" />
         </header>

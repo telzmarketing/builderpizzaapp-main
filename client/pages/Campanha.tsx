@@ -98,7 +98,7 @@ export default function Campanha() {
           <ChevronLeft size={24} />
         </button>
         <button onClick={() => navigate("/")} aria-label="Ir para a home da loja">
-          <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />
+          <MoschettieriLogo className="text-cream text-base scale-[1.31] origin-center" />
         </button>
         <div className="w-6" />
       </div>
