@@ -164,8 +164,17 @@ class SiteConfigService:
         extensions = (".apng", ".avif", ".gif", ".ico", ".jpeg", ".jpg", ".jfif", ".pjpeg", ".pjp", ".png", ".svg", ".webp")
         if raw and not raw.startswith("data:") and raw.lower().endswith(extensions):
             if raw.startswith(("http://", "https://", "/")):
+                # Public storefront HTML is served by the SPA fallback. Local
+                # media must use the backend upload route so the browser gets
+                # the image bytes instead of index.html.
+                if raw.startswith("/uploads/"):
+                    return f"/api{raw}"
                 return raw
-            return f"/{raw}" if raw.startswith(("uploads/", "api/uploads/")) else f"/uploads/{raw}"
+            if raw.startswith("api/uploads/"):
+                return f"/{raw}"
+            if raw.startswith("uploads/"):
+                return f"/api/{raw}"
+            return f"/uploads/{raw}"
         if identity.legacy:
             return "/icons/favicon-moschettieri-32.png" if size <= 64 else "/icons/icon-512.png" if size >= 512 else "/icons/icon-192.png"
         return "/icons/store-default.svg"
