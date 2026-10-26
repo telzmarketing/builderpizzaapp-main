@@ -140,6 +140,8 @@ EXPECTED_COMMIT="${TELZ_EXPECTED_COMMIT:-}"
 ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261022_receipt_pdf_camera_evidence}"
 FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"
 FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"
+EXPLICIT_RECOVERY="${TELZ_EXPLICIT_RECOVERY:-false}"
+EXPLICIT_RECOVERY_CONFIRM="${TELZ_EXPLICIT_RECOVERY_CONFIRM:-}"
 LEGACY_ADOPTION="${TELZ_LEGACY_ADOPTION:-false}"
 LEGACY_ADOPTION_CONFIRM="${TELZ_LEGACY_ADOPTION_CONFIRM:-}"
 LEGACY_ADOPTION_DB_REVISION="${TELZ_LEGACY_ADOPTION_DB_REVISION:-}"
@@ -176,6 +178,11 @@ SSL_COMMAND="/usr/local/sbin/telz-finish-ssl"
 [[ "$ALEMBIC_TARGET" =~ ^[A-Za-z0-9_]+$ ]] || die "TELZ_ALEMBIC_TARGET invalido"
 [[ "$FORWARD_ONLY_CUTOVER" == "true" || "$FORWARD_ONLY_CUTOVER" == "false" ]] || \
   die "TELZ_FORWARD_ONLY_CUTOVER deve ser true ou false"
+[[ "$EXPLICIT_RECOVERY" == "true" || "$EXPLICIT_RECOVERY" == "false" ]] || \
+  die "TELZ_EXPLICIT_RECOVERY deve ser true ou false"
+if [[ "$EXPLICIT_RECOVERY" == "false" ]]; then
+  [[ -z "$EXPLICIT_RECOVERY_CONFIRM" ]] || die "TELZ_EXPLICIT_RECOVERY_CONFIRM exige TELZ_EXPLICIT_RECOVERY=true"
+fi
 [[ "$LEGACY_ADOPTION" == "true" || "$LEGACY_ADOPTION" == "false" ]] || \
   die "TELZ_LEGACY_ADOPTION deve ser true ou false"
 [[ -z "$LEGACY_ADOPTION_DB_REVISION" || "$LEGACY_ADOPTION_DB_REVISION" =~ ^[A-Za-z0-9_]+$ ]] || \
@@ -644,10 +651,12 @@ validate_release_tree() {
   local allow_building="${5:-false}"
   local expected_cutover_mode="${6:-}"
   local expected_predecessor_revision="${7:-}"
+  local allow_content_drift="${8:-false}"
   local release_dir
   [[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]] || die "commit esperado da release invalido"
   [[ "$app_dir" == "$RELEASES_DIR/$expected_commit/app" ]] || die "release diverge do caminho canonico"
   [[ "$allow_building" == "true" || "$allow_building" == "false" ]] || die "estado building invalido"
+  [[ "$allow_content_drift" == "true" || "$allow_content_drift" == "false" ]] || die "politica de drift invalida"
   release_dir="$(dirname "$app_dir")"
   if [[ "$allow_building" == "true" ]]; then
     require_root_owned_file "$release_dir/.building"
@@ -665,7 +674,7 @@ validate_release_tree() {
     die "release imutavel possui escrita de grupo/outros"
   [[ -z "$(find "$app_dir" -xdev ! -type d ! -type f ! -type l -print -quit)" ]] || die "release contem tipo especial"
   require_root_owned_file "$app_dir/.telz-release.json"
-  /usr/bin/python3 - "$app_dir" "$expected_commit" "$expected_revision" "$expected_dependency_sha" "$SERVICE_USER" "$expected_cutover_mode" "$expected_predecessor_revision" <<'PY'
+  /usr/bin/python3 - "$app_dir" "$expected_commit" "$expected_revision" "$expected_dependency_sha" "$SERVICE_USER" "$expected_cutover_mode" "$expected_predecessor_revision" "$allow_content_drift" <<'PY'
 import hashlib
 import json
 import os
@@ -679,6 +688,7 @@ root = Path(sys.argv[1]).resolve(strict=True)
 expected_commit, expected_revision = sys.argv[2], sys.argv[3]
 expected_dependency_sha, service_user = sys.argv[4], sys.argv[5]
 expected_cutover_mode, expected_predecessor_revision = sys.argv[6], sys.argv[7]
+allow_content_drift = sys.argv[8] == "true"
 data = json.loads((root / ".telz-release.json").read_text(encoding="utf-8"))
 if data.get("schema_version") != 2 or data.get("status") != "validated":
     raise SystemExit("manifest de release invalido")
@@ -787,9 +797,13 @@ def tree_digest(mode_policy=None):
     return digest.hexdigest()
 
 expected_content = data.get("content_sha256")
-if tree_digest() != expected_content:
-    if tree_digest((0o755, 0o644)) != expected_content and tree_digest((0o555, 0o444)) != expected_content:
-        raise SystemExit("digest de conteudo da release divergiu")
+if allow_content_drift:
+    if tree_digest() == expected_content or tree_digest((0o755, 0o644)) == expected_content or tree_digest((0o555, 0o444)) == expected_content:
+        raise SystemExit("recuperacao explicita exige drift real no conteudo da release ativa")
+else:
+    if tree_digest() != expected_content:
+        if tree_digest((0o755, 0o644)) != expected_content and tree_digest((0o555, 0o444)) != expected_content:
+            raise SystemExit("digest de conteudo da release divergiu")
 PY
 }
 
@@ -1472,7 +1486,16 @@ if [[ -e "$CURRENT_LINK" || -L "$CURRENT_LINK" ]]; then
   [[ "${#ACTIVE_MANIFEST[@]}" -eq 2 ]] || die "manifest ativo invalido"
   PREVIOUS_ACTIVE_COMMIT="${ACTIVE_MANIFEST[0]}"
   PREVIOUS_ACTIVE_REVISION="${ACTIVE_MANIFEST[1]}"
-  validate_release_tree "$PREVIOUS_CURRENT_TARGET" "$PREVIOUS_ACTIVE_COMMIT" "$PREVIOUS_ACTIVE_REVISION"
+  if [[ "$EXPLICIT_RECOVERY" == "true" ]]; then
+    [[ "$PREVIOUS_ACTIVE_COMMIT" != "$EXPECTED_COMMIT" ]] || \
+      die "recuperacao explicita exige um commit alvo diferente da release divergente"
+    [[ "$EXPLICIT_RECOVERY_CONFIRM" == "RECOVER $PREVIOUS_ACTIVE_COMMIT $EXPECTED_COMMIT" ]] || \
+      die "confirmacao de recuperacao invalida; use 'RECOVER $PREVIOUS_ACTIVE_COMMIT $EXPECTED_COMMIT'"
+    echo "[update][atencao] recuperacao explicita autorizada; digest de conteudo da release ativa sera preservado para pericia" >&2
+    validate_release_tree "$PREVIOUS_CURRENT_TARGET" "$PREVIOUS_ACTIVE_COMMIT" "$PREVIOUS_ACTIVE_REVISION" "" false "" "" true
+  else
+    validate_release_tree "$PREVIOUS_CURRENT_TARGET" "$PREVIOUS_ACTIVE_COMMIT" "$PREVIOUS_ACTIVE_REVISION"
+  fi
   ACTIVE_CODE_DIR="$PREVIOUS_CURRENT_TARGET"
 else
   LEGACY_RELEASE=true

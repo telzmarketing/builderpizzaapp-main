@@ -79,7 +79,7 @@ def release(tmp_path):
 
 def validate_cache(monkeypatch, release):
     app, manifest, metadata, public, _ = release
-    execute(monkeypatch, 'validate_release_tree', [app, COMMIT, REVISION, '', 'telz', 'rollback_safe', REVISION])
+    execute(monkeypatch, 'validate_release_tree', [app, COMMIT, REVISION, '', 'telz', 'rollback_safe', REVISION, 'false'])
     execute(monkeypatch, 'validate_cached_release_dependencies', [manifest, metadata, public, COMMIT])
 
 
@@ -125,12 +125,12 @@ def test_tampered_tree_still_rejected_before_dependency_contract(monkeypatch, re
 
 def test_cutover_policy_is_not_relaxed_for_cached_release(monkeypatch, release):
     with pytest.raises(SystemExit, match='metadata de cutover diverge do target'):
-        execute(monkeypatch, 'validate_release_tree', [release[0], COMMIT, REVISION, '', 'telz', 'forward_only', REVISION])
+        execute(monkeypatch, 'validate_release_tree', [release[0], COMMIT, REVISION, '', 'telz', 'forward_only', REVISION, 'false'])
 
 
 def test_new_builds_still_require_exact_requested_artifact(monkeypatch, release):
     with pytest.raises(SystemExit, match='artefato de dependencias diferente'):
-        execute(monkeypatch, 'validate_release_tree', [release[0], COMMIT, REVISION, 'b' * 64, 'telz', 'rollback_safe', REVISION])
+        execute(monkeypatch, 'validate_release_tree', [release[0], COMMIT, REVISION, 'b' * 64, 'telz', 'rollback_safe', REVISION, 'false'])
     source = (ROOT / 'scripts/update-telz.sh').read_text(encoding='utf-8')
     assert 'validate_cached_release_dependencies "$release_app" "$release_commit"' in source
     assert source.count('"$DEPENDENCY_ARCHIVE_SHA256" true "$cutover_mode" "$predecessor_revision"') == 1

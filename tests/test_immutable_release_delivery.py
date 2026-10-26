@@ -113,6 +113,9 @@ def test_forward_only_cutover_requires_explicit_approval_and_records_recovery_po
     assert forward_failure < automatic_restore
     assert 'TELZ_FORWARD_ONLY_CUTOVER="$FORWARD_ONLY_CUTOVER"' in origin_deploy
     assert 'TELZ_FORWARD_ONLY_CUTOVER_CONFIRM="$FORWARD_ONLY_CUTOVER_CONFIRM"' in origin_deploy
+    assert 'EXPLICIT_RECOVERY="${TELZ_EXPLICIT_RECOVERY:-false}"' in updater
+    assert 'RECOVER $PREVIOUS_ACTIVE_COMMIT $EXPECTED_COMMIT' in updater
+    assert 'TELZ_EXPLICIT_RECOVERY="$EXPLICIT_RECOVERY"' in origin_deploy
 
 
 def test_legacy_adoption_is_one_time_explicit_and_does_not_mutate_the_checkout():

@@ -28,4 +28,6 @@ def test_manual_deploy_rejects_unsafe_bundle_and_uses_hardened_updater_contract(
     assert 'TELZ_PREVIOUS_COMMIT="$PREVIOUS_COMMIT"' in source
     assert 'TELZ_OPERATION_BUNDLE_DIR="$BUNDLE_STAGE"' in source
     assert 'TELZ_DEPENDENCY_ARCHIVE_SHA256="$DEPENDENCY_SHA"' in source
+    assert 'TELZ_EXPLICIT_RECOVERY="$EXPLICIT_RECOVERY"' in source
+    assert 'TELZ_EXPLICIT_RECOVERY_CONFIRM="$EXPLICIT_RECOVERY_CONFIRM"' in source
     assert 'data["public_health_url"] != "https://app.telz.com.br/health"' in source
