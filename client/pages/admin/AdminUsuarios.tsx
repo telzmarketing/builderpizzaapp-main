@@ -430,6 +430,7 @@ export default function AdminUsuarios() {
   const [auditLogs, setAuditLogs]     = useState<ApiAuditLog[]>([]);
   const [auditTotal, setAuditTotal]   = useState(0);
   const [loading, setLoading]         = useState(true);
+  const [loadError, setLoadError]     = useState<string | null>(null);
 
   const [userModal, setUserModal]         = useState<"new" | ApiAdminUser | null>(null);
   const [roleModal, setRoleModal]         = useState<"new" | ApiRole | null>(null);
@@ -448,17 +449,30 @@ export default function AdminUsuarios() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const [u, r, m, p] = await Promise.all([
+      const results = await Promise.allSettled([
         adminUsersApi.list(),
         rbacApi.listRoles(),
         rbacApi.listModules(),
         rbacApi.listPermissions(),
       ]);
-      setUsers(u); setRoles(r); setModules(m); setPermissions(p);
-      if (!selectedRole && r.length > 0) setSelectedRole(r[0].id);
+      const [usersResult, rolesResult, modulesResult, permissionsResult] = results;
+      const errors: string[] = [];
+      const reason = (value: PromiseRejectedResult) => value.reason instanceof Error ? value.reason.message : "falha desconhecida";
+      if (usersResult.status === "fulfilled") setUsers(usersResult.value);
+      else errors.push(`usuários: ${reason(usersResult)}`);
+      if (rolesResult.status === "fulfilled") {
+        setRoles(rolesResult.value);
+        setSelectedRole(current => current ?? rolesResult.value[0]?.id ?? null);
+      } else errors.push(`perfis: ${reason(rolesResult)}`);
+      if (modulesResult.status === "fulfilled") setModules(modulesResult.value);
+      else errors.push(`módulos: ${reason(modulesResult)}`);
+      if (permissionsResult.status === "fulfilled") setPermissions(permissionsResult.value);
+      else errors.push(`permissões: ${reason(permissionsResult)}`);
+      if (errors.length > 0) setLoadError(`Não foi possível carregar ${errors.join("; ")}`);
     } finally { setLoading(false); }
-  }, [selectedRole]);
+  }, []);
 
   const loadAudit = useCallback(async (offset = 0) => {
     try {
@@ -467,7 +481,7 @@ export default function AdminUsuarios() {
     } catch { /* noop */ }
   }, []);
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); }, [loadAll]);
   useEffect(() => { if (tab === "auditoria") loadAudit(0); }, [tab]);
 
   const filteredUsers = users.filter(u => {
@@ -558,6 +572,14 @@ export default function AdminUsuarios() {
             </div>
           ) : (
             <>
+              {loadError && (
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                  <span className="flex items-center gap-2"><AlertTriangle size={15} /> {loadError}</span>
+                  <button onClick={loadAll} className="rounded-lg border border-red-400/40 px-3 py-1.5 text-xs font-semibold text-red-200 hover:bg-red-500/10">
+                    Tentar novamente
+                  </button>
+                </div>
+              )}
               {/* ── USUÁRIOS ── */}
               {tab === "usuarios" && (
                 <div className="space-y-4">
@@ -682,6 +704,11 @@ export default function AdminUsuarios() {
               {/* ── PERFIS ── */}
               {tab === "perfis" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {roles.length === 0 && !loadError && (
+                    <div className="col-span-full rounded-2xl border border-surface-03 bg-surface-02 px-6 py-12 text-center text-sm text-stone">
+                      Nenhum perfil cadastrado para esta empresa.
+                    </div>
+                  )}
                   {roles.map(r => (
                     <div key={r.id} className="bg-surface-02 rounded-2xl border border-surface-03 p-5 space-y-3">
                       <div>
