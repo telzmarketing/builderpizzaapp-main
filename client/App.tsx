@@ -1,6 +1,6 @@
 import { Component, lazy, Suspense, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/toaster";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { themeApi, applyTheme, DEFAULT_THEME, readCachedTheme } from "./lib/themeApi";
 import { captureTrackingFromUrl, firePixelEvent, trackEvent, getTrackingData, initCampaignPixel, initStorePixels, isPublicSalesPath, requestVisitorLocation } from "./lib/tracking";
@@ -687,6 +687,9 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/gestao/fiscal" element={<GestaoFiscal />} />
                 {/* ── Logistics routes ── */}
                 <Route path="/painel/logistica" element={<AdminLogistica />} />
+                {/* Legacy aliases kept so saved links open the canonical logistics screen. */}
+                <Route path="/painel/gestao/logistica" element={<Navigate to="/painel/logistica" replace />} />
+                <Route path="/painel//painel/gestao/logistica" element={<Navigate to="/painel/logistica" replace />} />
                 </Route>
               </Route>
 
