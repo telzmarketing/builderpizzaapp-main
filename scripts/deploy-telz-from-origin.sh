@@ -163,7 +163,7 @@ chown -R root:root "$STAGE_DIR"
 BUNDLE_FILES=(
   scripts/update-telz.sh scripts/backup-telz.sh scripts/health-check.sh
   scripts/collect-telz-monitoring.sh scripts/restore-telz.sh scripts/rollback-telz.sh
-  scripts/finish-ssl.sh scripts/build-telz-release.sh
+  scripts/finish-ssl.sh scripts/build-telz-release.sh scripts/deploy-telz-artifacts-manually.sh
   installer/templates/telz-api.service installer/templates/telz-web.service
   installer/templates/telz-whatsapp-gateway.service installer/templates/telz-monitoring.service
   installer/templates/telz-monitoring.timer
