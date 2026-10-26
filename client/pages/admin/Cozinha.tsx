@@ -141,7 +141,7 @@ export default function AdminCozinha() {
       <header className="flex flex-col gap-4 border-b border-surface-03 bg-surface-02 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-gold/15 text-gold"><ChefHat size={28} /></span>
-          <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-gold">KDS touch</p><h1 className="text-2xl font-black">Cozinha</h1><p className="text-sm text-stone">{lastRefresh ? `Atualizado às ${lastRefresh.toLocaleTimeString("pt-BR")}` : "Sincronizando"}</p></div>
+          <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-gold">KDS touch</p><h1 className="text-2xl font-black">Pizzaiolo</h1><p className="text-sm text-stone">{lastRefresh ? `Atualizado às ${lastRefresh.toLocaleTimeString("pt-BR")}` : "Sincronizando"}</p></div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" aria-label={soundOn ? "Silenciar alertas" : "Ativar alertas"} onClick={() => setSoundOn((value) => !value)} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl border border-surface-03 bg-surface-01 text-gold active:scale-95">{soundOn ? <Bell /> : <BellOff />}</button>

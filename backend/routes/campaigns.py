@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
+from backend.core.tenant_context import TenantContext, TenantContextMissing
 from backend.routes.admin_auth import get_current_admin
 from backend.models.admin import AdminUser
 from backend.services.campaign_service import CampaignService
@@ -25,6 +26,20 @@ def _require_admin(request: Request, db: Session) -> AdminUser:
     )
 
 
+def _panel_context(request: Request, db: Session, admin: AdminUser) -> TenantContext:
+    """Campaigns are tenant-owned after the catalog contract migration.
+
+    Never allow a legacy/global admin token to reach a write path with a
+    missing context: that would produce a NULL tenant_id and a database 500.
+    """
+    context = resolve_panel_tenant_context(request, db, admin)
+    if context is None:
+        raise TenantContextMissing(
+            "Selecione uma empresa antes de gerenciar campanhas."
+        )
+    return context
+
+
 # ── Campaigns ─────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=list[CampaignOut])
@@ -36,7 +51,7 @@ def list_campaigns(
     context = (
         resolve_public_tenant_context(request, db)
         if published_only
-        else resolve_panel_tenant_context(request, db, _require_admin(request, db))
+        else _panel_context(request, db, _require_admin(request, db))
     )
     return CampaignService(db, context).list_campaigns(published_only=published_only)
 
@@ -56,7 +71,7 @@ def get_campaign(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
-    campaign = CampaignService(db, resolve_panel_tenant_context(request, db, admin)).get_campaign(campaign_id)
+    campaign = CampaignService(db, _panel_context(request, db, admin)).get_campaign(campaign_id)
     if not campaign:
         raise HTTPException(404, "Campanha não encontrada.")
     return campaign
@@ -69,7 +84,7 @@ def create_campaign(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
-    return CampaignService(db, resolve_panel_tenant_context(request, db, admin)).create_campaign(body)
+    return CampaignService(db, _panel_context(request, db, admin)).create_campaign(body)
 
 
 @router.put("/{campaign_id}", response_model=CampaignOut)
@@ -80,7 +95,7 @@ def update_campaign(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
-    return CampaignService(db, resolve_panel_tenant_context(request, db, admin)).update_campaign(campaign_id, body)
+    return CampaignService(db, _panel_context(request, db, admin)).update_campaign(campaign_id, body)
 
 
 @router.delete("/{campaign_id}", status_code=204)
@@ -90,7 +105,7 @@ def delete_campaign(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
-    CampaignService(db, resolve_panel_tenant_context(request, db, admin)).delete_campaign(campaign_id)
+    CampaignService(db, _panel_context(request, db, admin)).delete_campaign(campaign_id)
 
 
 # ── Campaign Products ─────────────────────────────────────────────────────────
@@ -108,7 +123,7 @@ def add_campaign_product(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
-    return CampaignService(db, resolve_panel_tenant_context(request, db, admin)).add_campaign_product(campaign_id, body)
+    return CampaignService(db, _panel_context(request, db, admin)).add_campaign_product(campaign_id, body)
 
 
 @router.put("/products/{cp_id}", response_model=CampaignProductOut)
@@ -119,7 +134,7 @@ def update_campaign_product(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
-    return CampaignService(db, resolve_panel_tenant_context(request, db, admin)).update_campaign_product(cp_id, body)
+    return CampaignService(db, _panel_context(request, db, admin)).update_campaign_product(cp_id, body)
 
 
 @router.delete("/products/{cp_id}", status_code=204)
@@ -129,7 +144,7 @@ def remove_campaign_product(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
-    CampaignService(db, resolve_panel_tenant_context(request, db, admin)).remove_campaign_product(cp_id)
+    CampaignService(db, _panel_context(request, db, admin)).remove_campaign_product(cp_id)
 
 
 # ── Promotional Kits ──────────────────────────────────────────────────────────
@@ -143,7 +158,7 @@ def list_kits(
     context = (
         resolve_public_tenant_context(request, db)
         if active_only
-        else resolve_panel_tenant_context(request, db, _require_admin(request, db))
+        else _panel_context(request, db, _require_admin(request, db))
     )
     return CampaignService(db, context).list_kits(active_only=active_only)
 
@@ -155,7 +170,7 @@ def create_kit(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
-    return CampaignService(db, resolve_panel_tenant_context(request, db, admin)).create_kit(body)
+    return CampaignService(db, _panel_context(request, db, admin)).create_kit(body)
 
 
 @router.put("/kits/{kit_id}", response_model=PromotionalKitOut)
@@ -166,7 +181,7 @@ def update_kit(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
-    return CampaignService(db, resolve_panel_tenant_context(request, db, admin)).update_kit(kit_id, body)
+    return CampaignService(db, _panel_context(request, db, admin)).update_kit(kit_id, body)
 
 
 @router.delete("/kits/{kit_id}", status_code=204)
@@ -176,7 +191,7 @@ def delete_kit(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
-    CampaignService(db, resolve_panel_tenant_context(request, db, admin)).delete_kit(kit_id)
+    CampaignService(db, _panel_context(request, db, admin)).delete_kit(kit_id)
 
 
 @router.post("/kits/{kit_id}/items", response_model=KitItemOut, status_code=201)
@@ -187,7 +202,7 @@ def add_kit_item(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
-    return CampaignService(db, resolve_panel_tenant_context(request, db, admin)).add_kit_item(kit_id, body)
+    return CampaignService(db, _panel_context(request, db, admin)).add_kit_item(kit_id, body)
 
 
 @router.delete("/kits/items/{item_id}", status_code=204)
@@ -197,4 +212,4 @@ def remove_kit_item(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
-    CampaignService(db, resolve_panel_tenant_context(request, db, admin)).remove_kit_item(item_id)
+    CampaignService(db, _panel_context(request, db, admin)).remove_kit_item(item_id)

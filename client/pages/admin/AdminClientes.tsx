@@ -17,7 +17,7 @@ function ConsentBadge({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
-function CustomerRow({ customer }: { customer: ApiCustomer }) {
+function CustomerRow({ customer, onEdit }: { customer: ApiCustomer; onEdit: (customer: ApiCustomer) => void }) {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const defaultAddr = customer.addresses.find((a) => a.is_default) ?? customer.addresses[0];
@@ -69,6 +69,7 @@ function CustomerRow({ customer }: { customer: ApiCustomer }) {
         >
           <ExternalLink size={12} /> Ver Perfil
         </button>
+        <button type="button" onClick={(e) => { e.stopPropagation(); onEdit(customer); }} className="flex-shrink-0 rounded-lg border border-gold/40 px-2 py-1 text-xs font-bold text-gold hover:bg-gold/10">Editar</button>
         <div className="flex-shrink-0 text-stone">
           {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </div>
@@ -121,7 +122,8 @@ export default function AdminClientes() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: "", phone: "", email: "" });
+  const [form, setForm] = useState({ name: "", phone: "", email: "", street: "", number: "", complement: "", neighborhood: "", city: "", state: "", zip_code: "" });
+  const [editingCustomer, setEditingCustomer] = useState<ApiCustomer | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [phoneConflict, setPhoneConflict] = useState<ApiCustomer | null>(null);
@@ -147,13 +149,18 @@ export default function AdminClientes() {
     }
     setSaving(true);
     try {
-      const created = await customersApi.createAdmin({
+      const payload = {
         name: form.name.trim(),
         phone: form.phone.trim(),
         email: form.email.trim() || undefined,
-      });
-      setCustomers((current) => [created, ...current]);
-      setForm({ name: "", phone: "", email: "" });
+        ...(form.street.trim() && form.city.trim() ? { address: { street: form.street.trim(), number: form.number.trim() || undefined, complement: form.complement.trim() || undefined, neighborhood: form.neighborhood.trim() || undefined, city: form.city.trim(), state: form.state.trim() || undefined, zip_code: form.zip_code.trim() || undefined, is_default: true } } : {}),
+      };
+      const created = editingCustomer
+        ? await customersApi.updateAdmin(editingCustomer.id, payload)
+        : await customersApi.createAdmin(payload);
+      setCustomers((current) => editingCustomer ? current.map((item) => item.id === created.id ? created : item) : [created, ...current]);
+      setForm({ name: "", phone: "", email: "", street: "", number: "", complement: "", neighborhood: "", city: "", state: "", zip_code: "" });
+      setEditingCustomer(null);
       setShowCreate(false);
     } catch (err) {
       if (err instanceof ApiRequestError && err.code === "CustomerPhoneConflict") {
@@ -243,7 +250,7 @@ export default function AdminClientes() {
             </div>
             <button
               type="button"
-              onClick={() => { setShowCreate(true); setFormError(""); setPhoneConflict(null); }}
+              onClick={() => { setEditingCustomer(null); setForm({ name: "", phone: "", email: "", street: "", number: "", complement: "", neighborhood: "", city: "", state: "", zip_code: "" }); setShowCreate(true); setFormError(""); setPhoneConflict(null); }}
               className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-gold px-4 py-2.5 text-sm font-black text-surface-00 hover:bg-gold/90"
             >
               <Plus size={16} /> Cadastrar cliente
@@ -264,7 +271,7 @@ export default function AdminClientes() {
               <div className="mb-5 flex items-center justify-between">
                 <div>
                   <p className="text-gold text-xs font-bold uppercase tracking-[0.2em]">CRM</p>
-                  <h2 id="create-customer-title" className="text-xl font-black text-cream">Cadastrar cliente</h2>
+                  <h2 id="create-customer-title" className="text-xl font-black text-cream">{editingCustomer ? "Editar cliente" : "Cadastrar cliente"}</h2>
                 </div>
                 <button type="button" onClick={() => setShowCreate(false)} className="rounded-lg p-2 text-stone hover:bg-surface-03 hover:text-cream" aria-label="Fechar"><X size={18} /></button>
               </div>
@@ -272,6 +279,8 @@ export default function AdminClientes() {
                 <label className="grid gap-1 text-sm text-stone">Nome completo<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="rounded-xl border border-surface-03 bg-surface-02 px-3 py-3 text-cream outline-none focus:border-gold" /></label>
                 <label className="grid gap-1 text-sm text-stone">Telefone / WhatsApp<input required inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="rounded-xl border border-surface-03 bg-surface-02 px-3 py-3 text-cream outline-none focus:border-gold" /></label>
                 <label className="grid gap-1 text-sm text-stone">E-mail (opcional)<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="rounded-xl border border-surface-03 bg-surface-02 px-3 py-3 text-cream outline-none focus:border-gold" /></label>
+                <p className="pt-2 text-xs font-bold uppercase tracking-wider text-gold">Endereço (opcional)</p>
+                {([['street','Rua / Avenida'],['number','Número'],['complement','Complemento'],['neighborhood','Bairro'],['city','Cidade'],['state','Estado'],['zip_code','CEP']] as const).map(([field,label]) => <label key={field} className="grid gap-1 text-sm text-stone">{label}<input value={form[field]} onChange={(e) => setForm({ ...form, [field]: e.target.value })} className="rounded-xl border border-surface-03 bg-surface-02 px-3 py-3 text-cream outline-none focus:border-gold" /></label>)}
               </div>
               {phoneConflict && (
                 <div className="mt-4 rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100">
@@ -282,7 +291,7 @@ export default function AdminClientes() {
               )}
               {formError && <p className="mt-4 text-sm text-red-300">{formError}</p>}
               <div className="mt-6 flex justify-end gap-3">
-                <button type="button" onClick={() => setShowCreate(false)} className="rounded-xl border border-surface-03 px-4 py-3 text-sm font-bold text-stone hover:text-cream">Cancelar</button>
+                <button type="button" onClick={() => { setShowCreate(false); setEditingCustomer(null); }} className="rounded-xl border border-surface-03 px-4 py-3 text-sm font-bold text-stone hover:text-cream">Cancelar</button>
                 <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-gold px-4 py-3 text-sm font-black text-surface-00 disabled:opacity-50">{saving && <Loader2 size={16} className="animate-spin" />} Salvar cliente</button>
               </div>
             </form>
@@ -320,7 +329,7 @@ export default function AdminClientes() {
           ) : (
             <div className="space-y-3">
               {filtered.map((c) => (
-                <CustomerRow key={c.id} customer={c} />
+                <CustomerRow key={c.id} customer={c} onEdit={(item) => { const address = item.addresses?.find((value) => value.is_default) ?? item.addresses?.[0]; setEditingCustomer(item); setForm({ name: item.name || "", phone: item.phone || "", email: item.email || "", street: address?.street || "", number: address?.number || "", complement: address?.complement || "", neighborhood: address?.neighborhood || "", city: address?.city || "", state: address?.state || "", zip_code: address?.zip_code || "" }); setShowCreate(true); setFormError(""); }} />
               ))}
             </div>
           )}

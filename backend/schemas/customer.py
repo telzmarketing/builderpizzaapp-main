@@ -42,11 +42,14 @@ class AdminCustomerCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     email: Optional[EmailStr] = None
     phone: Optional[str] = Field(default=None, min_length=8, max_length=30)
+    address: Optional[AddressCreate] = None
 
 
 class CustomerUpdate(BaseModel):
     name: Optional[str] = None
+    email: Optional[EmailStr] = None
     phone: Optional[str] = None
+    address: Optional[AddressCreate] = None
 
 
 class CustomerOut(BaseModel):

@@ -88,6 +88,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     children: [
       { path: "/painel/kds", icon: Gauge, label: "Painel Geral", exact: true, permissions: ["pedidos"] },
       { path: "/painel/cozinha", icon: ChefHat, label: "KDS Pizzaiolo", permissions: ["cozinha"] },
+      { path: "/painel/preparo", icon: ChefHat, label: "KDS Cozinha Preparo", permissions: ["inventory"] },
       { path: "/painel/expedicao", icon: Truck, label: "KDS Expedição", permissions: ["expedicao"] },
       { path: "/painel/kds/sala-motoboy", icon: Monitor, label: "Painel Sala Motoboy", permissions: ["pedidos"] },
     ],
@@ -96,7 +97,6 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     label: "Gestão",
     children: [
       { path: "/painel/gestao/estoque", icon: Package, label: "Estoque", permissions: ["inventory"] },
-      { path: "/painel/preparo", icon: ChefHat, label: "KDS Cozinha Preparo", permissions: ["inventory"] },
       { path: "/painel/gestao/cmv", icon: BarChart3, label: "CMV", permissions: ["cmv"] },
       { path: "/painel/gestao/financeiro", icon: CreditCard, label: "Financeiro", permissions: ["finance"] },
       { path: "/painel/gestao/fiscal", icon: FileText, label: "Fiscal SEFAZ", permissions: ["fiscal"] },

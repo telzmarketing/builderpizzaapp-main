@@ -6592,8 +6592,10 @@ export const marketingAutomationsApi = {
 
 export const customersApi = {
   list: () => get<ApiCustomer[]>("/customers"),
-  createAdmin: (data: { name: string; phone?: string; email?: string }) =>
+  createAdmin: (data: { name: string; phone?: string; email?: string; address?: { label?: string; street: string; number?: string; complement?: string; neighborhood?: string; city: string; state?: string; zip_code?: string; is_default?: boolean } }) =>
     post<ApiCustomer>("/admin/customers", data),
+  updateAdmin: (id: string, data: { name?: string; phone?: string; email?: string; address?: { label?: string; street: string; number?: string; complement?: string; neighborhood?: string; city: string; state?: string; zip_code?: string; is_default?: boolean } }) =>
+    put<ApiCustomer>(`/admin/customers/${id}`, data),
   importTemplate: () => get<{ filename: string; content: string }>("/admin/customers/import-template"),
   importFile: (file: File, commit = false) => {
     const form = new FormData();

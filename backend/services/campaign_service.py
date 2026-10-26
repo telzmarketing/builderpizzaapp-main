@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.tenant_context import TenantContext
-from backend.core.tenant_ownership import assign_tenant_on_create, identity_catalog_enforcement_enabled, scope_query_to_tenant
+from backend.core.tenant_context import TenantContextMissing
+from backend.core.tenant_ownership import assign_tenant_on_create, scope_query_to_tenant
 from backend.models.campaign import Campaign, CampaignProduct, PromotionalKit, PromotionalKitItem, CampaignStatus
 from backend.models.product import Product
 from backend.schemas.campaign import (
@@ -18,7 +19,11 @@ class CampaignService:
     def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
         self._tenant_context = tenant_context
-        self._tenant_enabled = identity_catalog_enforcement_enabled()
+        # Campaign tables are covered by the tenant catalog contract and have
+        # a NOT NULL tenant_id in production. A service instance used by an
+        # administrative route must therefore always carry trusted context;
+        # the route layer rejects legacy/global tokens before reaching here.
+        self._tenant_enabled = tenant_context is not None
 
     def _query(self, model):
         return scope_query_to_tenant(
@@ -26,8 +31,12 @@ class CampaignService:
         )
 
     def _own(self, resource):
+        if self._tenant_context is None:
+            raise TenantContextMissing(
+                "Contexto de tenant obrigatorio para campanhas."
+            )
         return assign_tenant_on_create(
-            resource, self._tenant_context, enabled=self._tenant_enabled
+            resource, self._tenant_context, enabled=True
         )
 
     def _require_product(self, product_id: str | None) -> None:

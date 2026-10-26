@@ -43,6 +43,12 @@ def public_wave6_context(
 def wave6_tenant_id(context: TenantContext | None) -> str:
     if context is not None and context.source == TenantSource.SUPPORT:
         return context.tenant_id
+    # A trusted panel/public context is authoritative even while the optional
+    # Wave 6 ORM event hook remains disabled. The old compatibility branch
+    # incorrectly collapsed every authenticated tenant to the legacy tenant,
+    # making CRM counts appear as zero for newly selected companies.
+    if context is not None:
+        return context.tenant_id
     if not wave6_tenant_orm_enabled():
         # Compatibility mode still points at the seeded tenant.  The historic
         # literal ``default`` is not an ownership authority and was normalized

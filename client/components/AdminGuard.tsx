@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { findAdminNavigationItem, firstAllowedAdminPath, canAccessAdminItem } from "@/lib/adminAccess";
-import { adminAuthApi, rbacApi, type ApiEffectivePermissions } from "@/lib/api";
+import { adminAuthApi, ApiRequestError, rbacApi, type ApiEffectivePermissions } from "@/lib/api";
 import { clearAdminSession } from "@/lib/adminSession";
 import {
   PLATFORM_SUPPORT_PERMISSIONS,
@@ -25,11 +25,13 @@ export default function AdminGuard() {
   const [permissions, setPermissions] = useState<ApiEffectivePermissions | null>(null);
   const [loading, setLoading] = useState(!!token);
   const [passwordRequired, setPasswordRequired] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
     setLoading(true);
+    setAccessError(null);
     if (supportSession && !isPlatformSupportSessionActive(supportSession)) {
       restorePlatformMasterSession();
       window.location.replace("/painel/plataforma");
@@ -55,15 +57,22 @@ export default function AdminGuard() {
         setPermissions(data);
         localStorage.setItem("admin_permissions", JSON.stringify(data));
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (cancelled) return;
         if (supportSession) {
           restorePlatformMasterSession();
           window.location.replace("/painel/plataforma");
           return;
         }
-        clearAdminSession();
-        setPermissions(null);
+        // A backend 5xx/contract failure must not be mistaken for an expired
+        // session. Preserve the token so the operator can retry after the
+        // service/schema is repaired and expose the real diagnostic state.
+        if (error instanceof ApiRequestError && error.status === 401) {
+          clearAdminSession();
+          setPermissions(null);
+          return;
+        }
+        setAccessError(error instanceof Error ? error.message : "Não foi possível validar as permissões do painel.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -81,6 +90,21 @@ export default function AdminGuard() {
     return (
       <div className="min-h-screen bg-surface-00 flex items-center justify-center">
         <Loader2 size={36} className="animate-spin text-gold" />
+      </div>
+    );
+  }
+
+  if (accessError) {
+    return (
+      <div className="min-h-screen bg-surface-00 flex items-center justify-center px-4">
+        <div className="w-full max-w-lg rounded-2xl border border-red-400/30 bg-surface-02 p-6 text-cream">
+          <h1 className="text-lg font-bold">Não foi possível validar o acesso</h1>
+          <p className="mt-2 text-sm text-red-200">{accessError}</p>
+          <p className="mt-2 text-xs text-stone">A sessão foi preservada. Tente novamente após verificar a API e o banco de dados.</p>
+          <button type="button" className="mt-5 min-h-12 rounded-xl bg-gold px-4 font-bold text-black" onClick={() => window.location.reload()}>
+            Tentar novamente
+          </button>
+        </div>
       </div>
     );
   }

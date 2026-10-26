@@ -299,6 +299,12 @@ def create_admin_customer(
     db.add(customer)
     try:
         db.flush()
+        if body.address is not None:
+            address = Address(
+                id=str(uuid.uuid4()), tenant_id=actor.tenant_id,
+                customer_id=customer.id, **body.address.model_dump(),
+            )
+            db.add(address)
         CustomerIdentityService(db).sync_registered_customer(customer, auth_provider="none")
         db.commit()
     except IntegrityError as exc:
@@ -307,6 +313,61 @@ def create_admin_customer(
         if existing_phone:
             _raise_phone_conflict(existing_phone)
         raise exc
+    db.refresh(customer)
+    return customer
+
+
+@admin_router.put("/{customer_id}", response_model=CustomerOut)
+def update_admin_customer(
+    customer_id: str,
+    body: CustomerUpdate,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("clientes", "edit")),
+):
+    """Update customer identity fields inside the authenticated tenant."""
+    customer = db.query(Customer).filter(
+        Customer.id == customer_id, Customer.tenant_id == actor.tenant_id,
+    ).first()
+    if customer is None:
+        raise HTTPException(404, "Cliente não encontrado.")
+    updates = body.model_dump(exclude_none=True)
+    address_payload = updates.pop("address", None)
+    if "phone" in updates:
+        normalized = normalize_phone(updates["phone"])
+        existing = _phone_conflict(db, actor.tenant_id, normalized)
+        if existing and existing.id != customer.id:
+            _raise_phone_conflict(existing)
+        updates["normalized_phone"] = normalized or None
+    if "email" in updates and updates["email"]:
+        email = str(updates["email"]).strip().lower()
+        existing = db.query(Customer).filter(
+            Customer.tenant_id == actor.tenant_id,
+            Customer.email == email,
+            Customer.id != customer.id,
+        ).first()
+        if existing:
+            raise HTTPException(status_code=409, detail={"code": "CustomerEmailConflict", "message": "Já existe um cliente com este e-mail."})
+        updates["email"] = email
+    for key, value in updates.items():
+        setattr(customer, key, value)
+    if address_payload is not None:
+        existing_address = db.query(Address).filter(
+            Address.customer_id == customer.id,
+            Address.tenant_id == actor.tenant_id,
+            Address.is_default.is_(True),
+        ).first()
+        if existing_address is None:
+            existing_address = db.query(Address).filter(
+                Address.customer_id == customer.id,
+                Address.tenant_id == actor.tenant_id,
+            ).first()
+        if existing_address is None:
+            existing_address = Address(id=str(uuid.uuid4()), tenant_id=actor.tenant_id, customer_id=customer.id, **address_payload)
+            db.add(existing_address)
+        else:
+            for key, value in address_payload.items():
+                setattr(existing_address, key, value)
+    db.commit()
     db.refresh(customer)
     return customer
 

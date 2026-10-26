@@ -42,6 +42,8 @@ export default function AdminExpedicao() {
   const initialLoad = useRef(true);
   const actionLock = useRef(false);
   const loadSequence = useRef(0);
+  const pickupCount = orders.filter((order) => order.fulfillment_type === "pickup").length;
+  const deliveryCount = orders.filter((order) => order.fulfillment_type !== "pickup").length;
 
   const loadData = useCallback(async (manual = false) => {
     if (actionLock.current) return;
@@ -150,6 +152,13 @@ export default function AdminExpedicao() {
       </header>
 
       {error && <div role="alert" className="m-3 flex items-center justify-between gap-3 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-red-200"><span className="flex items-center gap-2"><WifiOff /> {error}</span><button type="button" onClick={() => void loadData(true)} className="min-h-12 rounded-lg bg-red-500 px-5 font-bold text-white active:bg-red-700">Tentar novamente</button></div>}
+
+      {!loading && <div className="grid grid-cols-2 gap-3 border-b border-surface-03 bg-surface-01/80 p-3 sm:grid-cols-4">
+        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3"><p className="text-[11px] font-bold uppercase tracking-wider text-emerald-300">Na fila</p><p className="mt-1 text-2xl font-black">{orders.length}</p></div>
+        <div className="rounded-xl border border-sky-500/25 bg-sky-500/10 p-3"><p className="text-[11px] font-bold uppercase tracking-wider text-sky-300">Retiradas</p><p className="mt-1 text-2xl font-black">{pickupCount}</p></div>
+        <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3"><p className="text-[11px] font-bold uppercase tracking-wider text-amber-300">Entregas</p><p className="mt-1 text-2xl font-black">{deliveryCount}</p></div>
+        <div className="rounded-xl border border-violet-500/25 bg-violet-500/10 p-3"><p className="text-[11px] font-bold uppercase tracking-wider text-violet-300">Motoboys livres</p><p className="mt-1 text-2xl font-black">{drivers.length}</p></div>
+      </div>}
 
       {loading ? <div className="flex flex-1 items-center justify-center gap-3 text-lg text-stone"><Loader2 className="animate-spin text-emerald-300" /> Carregando expedição...</div> : orders.length === 0 ? <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center text-stone"><PackageCheck size={64} className="text-emerald-400" /><h2 className="text-2xl font-black text-cream">Expedição em dia</h2><p>Nenhum pedido aguarda conferência e motoboy.</p></div> : (
         <div className="grid flex-1 auto-rows-max gap-4 overflow-y-auto p-4 xl:grid-cols-2 2xl:grid-cols-3">
