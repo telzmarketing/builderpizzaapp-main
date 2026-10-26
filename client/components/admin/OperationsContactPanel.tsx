@@ -11,7 +11,7 @@ export default function OperationsContactPanel() {
   const [chatbot, setChatbot] = useState<ChatbotConversation[]>([]);
   const [whatsapp, setWhatsapp] = useState<ApiAgenteWhatsAppConversation[]>([]);
   const [selected, setSelected] = useState<ChatbotConversation | ApiAgenteWhatsAppConversation | null>(null);
-  const [messages, setMessages] = useState<ChatbotMessage[] | ApiAgenteWhatsAppMessage[]>([]);
+  const [messages, setMessages] = useState<Array<ChatbotMessage | ApiAgenteWhatsAppMessage>>([]);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
 
