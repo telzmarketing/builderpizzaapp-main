@@ -78,6 +78,7 @@ class InventoryItemIn(BaseModel):
     name: str = Field(min_length=1, max_length=180)
     sku: str | None = None
     item_type: InventoryItemType = "ingredient"
+    portionable: bool = False
     category_id: str | None = None
     unit_id: str | None = None
     default_location_id: str | None = None

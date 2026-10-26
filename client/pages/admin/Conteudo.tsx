@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Save, RefreshCw, Plus, Trash2, ChevronDown, ChevronRight,
   Palette, Home, Navigation, FileText, Image, Activity,
@@ -98,6 +98,12 @@ const TABS: { id: Tab; icon: React.ReactNode; label: string }[] = [
 export default function AdminConteudo() {
   const { siteContent, updateSiteContent } = useApp();
   const [draft, setDraft] = useState<SiteContent>(JSON.parse(JSON.stringify(siteContent)));
+  const previousContent = useRef(siteContent);
+  useEffect(() => {
+    const previous = previousContent.current;
+    setDraft((current) => JSON.stringify(current) === JSON.stringify(previous) ? JSON.parse(JSON.stringify(siteContent)) : current);
+    previousContent.current = siteContent;
+  }, [siteContent]);
   const [activeTab, setActiveTab] = useState<Tab>("marca_midia");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -289,9 +295,8 @@ export default function AdminConteudo() {
                     onChange={(v) => set(["brand", "logo"], v)}
                     label="Logo da marca"
                     sizeGuide="Recomendado para rapidez: 200x200px, PNG/WebP com fundo transparente, ideal ate 100KB e max. 200KB."
-                    hint="Exibido no painel admin e no cabeçalho da loja."
+                    hint="Logo principal do cabeçalho da loja, painel, etiquetas e comprovantes. Salve as alterações após o upload."
                     maxKB={200}
-                    previewRounded
                   />
                 </div>
 
@@ -308,9 +313,9 @@ export default function AdminConteudo() {
                   <ImageUpload
                     value={draft.media.logoUrl}
                     onChange={(v) => set(["media", "logoUrl"], v)}
-                    label="Logo Branco"
+                    label="Logo alternativo (opcional)"
                     sizeGuide="Recomendado para rapidez: 300x120px, PNG/WebP transparente, ideal ate 100KB e max. 200KB."
-                    hint="Exibido no cabeçalho da loja. Use PNG transparente para melhor resultado."
+                    hint="Usado quando o logo principal não estiver configurado. Use PNG transparente para preservar o fundo."
                     maxKB={200}
                   />
 

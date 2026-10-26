@@ -92,6 +92,38 @@ def save(branding, suffix, name=None):
     return payload
 
 
+def test_operational_labels_read_configured_tenant_store_logo_without_global_fallback(branding):
+    from backend.services.site_config_service import SiteConfigService
+    payload = {"brand": {"name": "Gran Torino", "logo": "/uploads/tenant-a/logo.png"},
+               "media": {"logoUrl": "/uploads/tenant-a/white.png"}}
+    response = branding.client.put("/api/admin/site-config", headers=branding.headers("a"), json=payload)
+    assert response.status_code == 200, response.text
+    service = SiteConfigService(branding.db)
+    assert service.operational_identity("tenant-a") == {"name": "Gran Torino", "logo_url": "/uploads/tenant-a/logo.png"}
+    assert service.operational_identity("tenant-b") == {"name": "Shop b", "logo_url": "/uploads/b-logo.png"}
+
+
+def test_operational_labels_support_existing_white_logo_field(branding):
+    from backend.services.site_config_service import SiteConfigService
+    response = branding.client.put("/api/admin/site-config", headers=branding.headers("a"),
+        json={"brand": {"name": "Loja A"}, "media": {"logoUrl": "uploads/tenant-a/white.png"}})
+    assert response.status_code == 200, response.text
+    assert SiteConfigService(branding.db).operational_identity("tenant-a")["logo_url"] == "/uploads/tenant-a/white.png"
+
+
+def test_admin_read_selects_authenticated_tenant_on_manager_host_and_rejects_other_domain(branding):
+    save(branding, "a", "Tenant A")
+    save(branding, "b", "Tenant B")
+    for suffix in ("a", "b"):
+        response = branding.client.get("/api/admin/site-config", headers=branding.headers(suffix))
+        assert response.status_code == 200, response.text
+        assert response.json()["data"]["brand"]["name"] == f"Tenant {suffix.upper()}"
+    response = branding.client.get("/api/admin/site-config", headers={**branding.headers("a"), "host": "b.example.com"})
+    assert response.status_code == 403, response.text
+    response = branding.client.get("/api/admin/site-config", headers={"host": "app.telz.com.br"})
+    assert response.status_code == 401, response.text
+
+
 def test_config_favicon_and_manifest_keep_two_tenants_and_manager_separate(branding):
     for suffix in ("a", "b"):
         payload = save(branding, suffix)

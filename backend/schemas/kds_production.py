@@ -53,3 +53,8 @@ class KdsTaskOut(BaseModel):
     version: int; operator_id: str | None = None; requires_oven: bool
     assigned_at: datetime | None = None; started_at: datetime | None = None
     assembly_finished_at: datetime | None = None; completed_at: datetime | None = None
+    id: str | None = None
+    stock_requested_at: datetime | None = None
+    stock_check_after: datetime | None = None
+    blocked_reason: str | None = None
+    consumption_mode: str | None = None

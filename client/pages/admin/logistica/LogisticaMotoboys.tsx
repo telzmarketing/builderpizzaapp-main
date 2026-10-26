@@ -55,7 +55,7 @@ const VEHICLE_LABELS: Record<string, string> = {
 
 const STATUS_CONFIG: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
   available: { label: "Disponivel", cls: "bg-green-500/15 text-green-300", icon: <CheckCircle size={12} /> },
-  busy: { label: "Em rota", cls: "bg-gold/15 text-gold", icon: <Clock size={12} /> },
+  busy: { label: "Com entrega atribuída", cls: "bg-gold/15 text-gold", icon: <Clock size={12} /> },
   offline: { label: "Offline", cls: "bg-stone/20 text-stone", icon: <XCircle size={12} /> },
 };
 

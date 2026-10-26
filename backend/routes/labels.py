@@ -118,6 +118,24 @@ def request_reprint(order_id: str, body: LabelReprintIn, db: Session = Depends(g
     except DomainError as exc: return err(exc)
 
 
+@router.get("/preparation-executions/{execution_id}/labels/preview")
+def preview_preparation_execution_label(execution_id: str, printer_id: str | None = Query(default=None), template_id: str | None = Query(default=None), db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "view"))):
+    try: return ok(_service(db, actor).preview_execution(execution_id, printer_id=printer_id, template_id=template_id))
+    except DomainError as exc: return err(exc)
+
+
+@router.post("/preparation-executions/{execution_id}/labels/print")
+def print_preparation_execution_label(execution_id: str, body: LabelPrintIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "edit"))):
+    try: return created(_service(db, actor).request_execution_print(execution_id, body, actor_id=actor.user_id, reprint=False))
+    except DomainError as exc: return err(exc)
+
+
+@router.post("/preparation-executions/{execution_id}/labels/reprint")
+def reprint_preparation_execution_label(execution_id: str, body: LabelReprintIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "edit"))):
+    try: return created(_service(db, actor).request_execution_print(execution_id, body, actor_id=actor.user_id, reprint=True))
+    except DomainError as exc: return err(exc)
+
+
 @router.get("/orders/{order_id}/labels/history")
 def history(order_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("expedicao", "view"))):
     try: return ok(_service(db, actor).history(order_id))

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -125,6 +125,8 @@ def test_preview_versions_idempotency_reprint_test_print_and_tenant_isolation():
         LabelVolumeRule.__table__, LabelVersion.__table__, LabelVolume.__table__, LabelPrintJob.__table__,
     ]
     Base.metadata.create_all(engine, tables=tables)
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE site_config (id VARCHAR PRIMARY KEY, content TEXT, updated_at TIMESTAMP)"))
     session = sessionmaker(bind=engine)()
     session.add_all([
         Tenant(id="tenant-a", slug="a", name="Loja A"),

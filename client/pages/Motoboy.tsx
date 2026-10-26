@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import MotoboyInstallButton from "@/components/MotoboyInstallButton";
+import { driverPaymentLines } from "@/lib/deliveryPresentation";
 import {
   deliveryApi,
   type DeliveryEarning,
@@ -101,12 +102,6 @@ function isPayOnDelivery(delivery: DeliveryRecord) {
 function isDeliveryPaymentConfirmed(delivery: DeliveryRecord) {
   const status = delivery.order?.payment?.status || delivery.order?.payment_status;
   return status === "approved" || status === "paid";
-}
-
-function paymentLine(delivery: DeliveryRecord) {
-  if (isPayOnDelivery(delivery)) return "Pagamento na entrega";
-  if (isDeliveryPaymentConfirmed(delivery)) return "Pagamento online efetuado";
-  return "Pagamento online";
 }
 
 function effectiveDate(delivery: DeliveryRecord): string | undefined {
@@ -261,7 +256,7 @@ function DeliveryCard({
         </div>
 
         <div className="rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-xs">
-          <p className="font-bold text-parchment">{paymentLine(delivery)}</p>
+          {driverPaymentLines(delivery).map((line) => <p key={line} className="font-bold text-parchment">{line}</p>)}
         </div>
       </div>
 
@@ -657,12 +652,12 @@ export default function Motoboy() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className={resolved ? "text-sm font-black text-green-200" : "text-sm font-black text-red-200"}>
-                          {resolved ? "Resolvido pela administraÃ§Ã£o" : "Aguardando administraÃ§Ã£o"}
+                          {resolved ? "Resolvido pela administração" : "Aguardando administração"}
                         </p>
                         <p className="mt-1 font-mono text-xs font-bold text-gold">{shortOrder(delivery.order_id)}</p>
                         <p className="mt-1 line-clamp-2 text-xs text-parchment">
                           {resolved
-                            ? delivery.admin_resolution_note || "Problema resolvido. Verifique a orientaÃ§Ã£o da loja."
+                            ? delivery.admin_resolution_note || "Problema resolvido. Verifique a orientação da loja."
                             : delivery.problem_report}
                         </p>
                       </div>
@@ -858,7 +853,7 @@ export default function Motoboy() {
               {[
                 ["Cliente",     maskCustomerName(detail.order?.delivery_name)],
                 ["Endereço",    deliveryAddress(detail) || "—"],
-                ["Pagamento",   detail.order?.payment?.method || detail.order?.payment_status || "—"],
+                ["Pagamento",   driverPaymentLines(detail).join(" · ")],
                 ["Valor",       money(detail.order?.total)],
                 ["Taxa entrega",money(detail.order?.shipping_fee)],
                 ["Status",      detail.order?.status || "—"],

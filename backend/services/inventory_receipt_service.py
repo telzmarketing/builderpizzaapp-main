@@ -10,6 +10,8 @@ from backend.models.inventory_receipts import InventoryReceiptDocument, Inventor
 from backend.models.finance import FinanceObligation, FinanceObligationInstallment, FinanceTransaction
 from backend.services.fiscal_receipt_xml import parse_receipt_xml, ReceiptXmlError
 from backend.services.finance_service import FinanceService
+from backend.models.inventory import InventoryItem
+from backend.models.preparation import InventoryOperationRecipe, PreparationOrder
 
 class ReceiptDocumentError(DomainError):
     http_status = 422
@@ -34,7 +36,8 @@ class InventoryReceiptService:
                 "taxable_quantity": None, "taxable_unit": None, "unit_price": str(l.unit_price) if l.unit_price is not None else None,
                 "total_price": str(l.total_price) if l.total_price is not None else None, "inventory_item_id": l.inventory_item_id,
                 "pending_fields": ["inventory_item_id"] if l.association_status == "pending" else [],
-                "association_status": "confirmed" if l.association_status == "matched" else ("unmatched" if l.association_status == "ignored" else "pending")} for l in row.lines],
+                "association_status": "confirmed" if l.association_status == "matched" else ("unmatched" if l.association_status == "ignored" else "pending"),
+                "portionable": l.portionable} for l in row.lines],
                 "created_at": row.created_at, "updated_at": row.updated_at}
 
     def list(self):
@@ -84,15 +87,64 @@ class InventoryReceiptService:
         if not row: raise ReceiptDocumentError("Documento de entrada nao encontrado.")
         for item in body.get("lines", []):
             line = next((x for x in row.lines if x.id == item.get("id")), None)
-            if line and item.get("inventory_item_id") is not None: line.inventory_item_id, line.association_status = item["inventory_item_id"], item.get("association_status", "matched")
+            if line:
+                if item.get("inventory_item_id") is not None:
+                    line.inventory_item_id, line.association_status = item["inventory_item_id"], item.get("association_status", "matched")
+                if "portionable" in item:
+                    line.portionable = bool(item["portionable"])
         if body.get("purchase_id") is not None: row.purchase_id = body["purchase_id"]
         self.db.commit(); return self._out(row)
 
     def approve(self, document_id):
-        row = self.db.query(InventoryReceiptDocument).filter(InventoryReceiptDocument.tenant_id == self.tenant_id, InventoryReceiptDocument.id == document_id).first()
+        row = self.db.query(InventoryReceiptDocument).options(joinedload(InventoryReceiptDocument.lines)).filter(InventoryReceiptDocument.tenant_id == self.tenant_id, InventoryReceiptDocument.id == document_id).first()
         if not row: raise ReceiptDocumentError("Documento de entrada nao encontrado.")
         if self.db.query(InventoryReceiptDocumentLine).filter(InventoryReceiptDocumentLine.document_id == row.id, InventoryReceiptDocumentLine.association_status == "pending").first(): raise ReceiptDocumentError("Associe todas as linhas antes da aprovacao.")
-        row.status = "validated"; self.db.commit(); return self.get(document_id)
+        row.status = "validated"
+        self._enqueue_portioning_tasks(row)
+        self.db.commit(); return self.get(document_id)
+
+    def _enqueue_portioning_tasks(self, document):
+        """Create at most one waiting preparation order per received line.
+
+        This only schedules work. Stock transformation remains in the
+        preparation execution transaction and label printing never calls this.
+        """
+        # PreparationOrder.actor_id is an audited admin FK. Automated callers
+        # without an authenticated actor cannot create an operational task.
+        if not self.admin_id:
+            return
+        for line in document.lines:
+            if not line.inventory_item_id:
+                continue
+            if line.portionable is not True:
+                continue
+            item = self.db.query(InventoryItem).filter(
+                InventoryItem.tenant_id == self.tenant_id,
+                InventoryItem.id == line.inventory_item_id,
+                InventoryItem.portionable.is_(True),
+            ).first()
+            if not item:
+                continue
+            recipe = self.db.query(InventoryOperationRecipe).filter(
+                InventoryOperationRecipe.tenant_id == self.tenant_id,
+                InventoryOperationRecipe.output_item_id == item.id,
+                InventoryOperationRecipe.active.is_(True),
+            ).order_by(InventoryOperationRecipe.version_number.desc()).first()
+            if not recipe:
+                continue
+            key = f"receipt:{document.id}:line:{line.id}"
+            if self.db.query(PreparationOrder.id).filter(
+                PreparationOrder.tenant_id == self.tenant_id,
+                PreparationOrder.idempotency_key == key,
+            ).first():
+                continue
+            self.db.add(PreparationOrder(
+                id=f"prep-{uuid.uuid4().hex[:14]}", tenant_id=self.tenant_id,
+                recipe_id=recipe.id, target_quantity=line.quantity,
+                status="waiting", version=1, idempotency_key=key,
+                actor_id=self.admin_id,
+                notes=f"Criado automaticamente pela entrada {document.id} / linha {line.line_number}",
+            ))
 
     def reconcile(self, document_id, body, key):
         row = self.db.query(InventoryReceiptDocument).filter(InventoryReceiptDocument.tenant_id == self.tenant_id, InventoryReceiptDocument.id == document_id).first()

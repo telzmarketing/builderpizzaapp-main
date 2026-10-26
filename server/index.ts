@@ -17,6 +17,12 @@ export function createServer() {
     res.redirect(307, "/api/site-config/favicon?size=32");
   });
 
+  // Preserve the manifest URL used by already installed Motoboy applications.
+  app.get("/manifest.webmanifest", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.redirect(307, "/api/site-config/manifest.webmanifest");
+  });
+
   // Example API routes
   app.get("/api/ping", (_req, res) => {
     const ping = process.env.PING_MESSAGE ?? "ping";

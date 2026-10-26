@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle, Bell, BellOff, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2,
   PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Trash2, Truck,
-  Undo2, UserCheck, Users, Utensils,
+  Undo2, UserCheck, Users, Utensils, Plus,
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import LabelPrintDialog from "@/components/kds/LabelPrintDialog";
+import ManualOrderComposer from "@/components/admin/ManualOrderComposer";
+import OperationsContactPanel from "@/components/admin/OperationsContactPanel";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { canCreateManualOrder } from "@/lib/manualOrder";
 import {
   ordersApi, paymentsApi, deliveryApi, marketingVisitorsApi, kdsApi,
   type ApiEffectivePermissions, type ApiOrder, type OrderStatus, type DeliveryPerson,
@@ -299,6 +303,8 @@ export default function AdminOrders() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [labelOrder, setLabelOrder] = useState<ApiOrder | null>(null);
   const adminPermissions = useMemo(() => loadStoredAdminPermissions(), []);
+  const navigate = useNavigate();
+  const [manualOrderOpen, setManualOrderOpen] = useState(false);
   const canDeleteOrders = useMemo(() => canDeleteOrdersFromPermissions(adminPermissions), [adminPermissions]);
   const orderSearchQuery = searchParams.get("q")?.trim().toLowerCase() ?? "";
 
@@ -551,6 +557,8 @@ export default function AdminOrders() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            {canCreateManualOrder(adminPermissions) && <button type="button" onClick={() => window.matchMedia("(max-width: 767px)").matches ? navigate("/operacoes/novo-pedido") : setManualOrderOpen(true)} className="flex min-h-12 items-center gap-2 rounded-xl bg-gold px-5 py-3 font-black text-black"><Plus size={20} /> Fazer Pedido</button>}
+            <OperationsContactPanel />
             <AdminTopActions />
           </div>
         </header>
@@ -834,6 +842,12 @@ export default function AdminOrders() {
         </div>
       )}
 
+      <Dialog open={manualOrderOpen} onOpenChange={setManualOrderOpen}>
+        <DialogContent className="max-w-5xl gap-0 overflow-y-auto bg-surface-00 p-0 text-cream sm:p-0">
+          <DialogHeader className="border-b border-surface-03 p-5 pr-12"><DialogTitle>Fazer Pedido</DialogTitle><DialogDescription>Atendimento completo sem sair de Operações.</DialogDescription></DialogHeader>
+          <ManualOrderComposer onCreated={() => { void fetchOrders(true); }} />
+        </DialogContent>
+      </Dialog>
       <LabelPrintDialog
         orderId={labelOrder?.id ?? null}
         orderCode={labelOrder?.order_code}

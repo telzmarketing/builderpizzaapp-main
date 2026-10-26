@@ -32,6 +32,7 @@ class Product(Base):
     product_type = Column(String(20), nullable=True)  # "pizza" | "drink" | "other"
     visible_delivery = Column(Boolean, nullable=False, default=True)
     visible_dine_in = Column(Boolean, nullable=False, default=True)
+    show_crust_options = Column(Boolean, nullable=False, default=True, server_default="true")
     delivery_price = Column(Float, nullable=True)
     dine_in_price = Column(Float, nullable=True)
     rating = Column(Float, default=4.5)

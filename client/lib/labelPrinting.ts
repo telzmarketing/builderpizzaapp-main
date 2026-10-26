@@ -1,4 +1,13 @@
-import type { KdsLabelPreview, KdsLabelTemplate, KdsLabelTestPreview, KdsLabelVolume } from "./api";
+import type { KdsLabelPreview, KdsLabelTemplate, KdsLabelTestPreview, KdsLabelVolume, PreparationLabelPreview } from "./api";
+
+export function buildPreparationLabelPrintHtml(preview: PreparationLabelPreview, copies = 1): string {
+  const { width, height, margins } = dimensions(preview.template);
+  const execution = preview.execution;
+  const logo = preview.template.show_logo ? safeImageUrl(execution.restaurant?.logo_url) : null;
+  const date = (value?: string | null) => value ? new Date(value).toLocaleString("pt-BR") : "Não informado";
+  const content = `<article class="label">${logo ? `<img src="${escapeHtml(logo)}" alt=""/>` : ""}<header>${escapeHtml(execution.restaurant?.name || "Cozinha Preparo")}</header><h1>${escapeHtml(execution.product_name || "Preparação")}</h1><p><b>Quantidade:</b> ${escapeHtml(execution.quantity)}${execution.portion_grams ? ` · ${escapeHtml(execution.portion_grams)} g/porção` : ""}</p><p><b>Preparo:</b> ${escapeHtml(date(execution.prepared_at))}</p><p><b>Validade:</b> ${escapeHtml(date(execution.expires_on))}</p><p><b>Lote:</b> ${escapeHtml(execution.lot_code || execution.lot_id || "Não informado")}</p><p><b>Responsável:</b> ${escapeHtml(execution.responsible_id || "Não informado")}</p></article>`;
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiqueta de preparo</title><style>@page{size:${width}mm ${height}mm;margin:0}*{box-sizing:border-box}body{margin:0;color:#000;background:#fff;font:9pt Arial}.label{width:${width}mm;height:${height}mm;padding:${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm;overflow:hidden;break-after:page}.label:last-child{break-after:auto}img{max-width:20mm;max-height:8mm;object-fit:contain;filter:grayscale(1)}header{font-weight:bold;border-bottom:1px solid #000}h1{font-size:13pt;margin:2mm 0}p{margin:1mm 0;overflow-wrap:anywhere}</style></head><body>${Array.from({ length: Math.max(1, Math.min(10, Math.floor(copies))) }, () => content).join("")}</body></html>`;
+}
 
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
@@ -106,7 +115,7 @@ export function buildLabelCalibrationHtml(preview: KdsLabelTestPreview): string 
 }
 
 export interface LabelPrintTarget {
-  document: { open?: () => void; write: (html: string) => void; close: () => void };
+  document: { open?: () => void; write: (html: string) => void; close: () => void; images?: HTMLCollectionOf<HTMLImageElement> };
   focus: () => void;
   print: () => void;
   close?: () => void;
@@ -125,5 +134,14 @@ export function renderHtmlAndPrint(html: string, target: LabelPrintTarget, onDia
   target.document.write(html);
   target.document.close();
   target.focus();
-  globalThis.setTimeout(() => { target.print(); onDialogOpened?.(); }, 0);
+  const print = () => globalThis.setTimeout(() => { target.print(); onDialogOpened?.(); }, 0);
+  const images = Array.from(target.document.images ?? []);
+  if (!images.length) { print(); return; }
+  void Promise.all(images.map((image) => new Promise<void>((resolve) => {
+    if (image.complete) { if (!image.naturalWidth) image.hidden = true; resolve(); return; }
+    const finish = () => { clearTimeout(timeout); if (!image.naturalWidth) image.hidden = true; resolve(); };
+    const timeout = globalThis.setTimeout(() => { image.hidden = true; resolve(); }, 4000);
+    image.addEventListener("load", finish, { once: true });
+    image.addEventListener("error", finish, { once: true });
+  }))).then(print);
 }

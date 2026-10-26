@@ -50,7 +50,7 @@ jobs:
       PRODUCT_AUDIT_DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_product_ci
       INVENTORY_FOUNDATION_TEST_DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_inventory_ci
       JWT_SECRET_KEY: ci-only-not-for-production
-      TELZ_ALEMBIC_TARGET: 20261022_receipt_pdf_camera_evidence
+      TELZ_ALEMBIC_TARGET: 20261026_product_crust_visibility
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -494,7 +494,7 @@ jobs:
         shell: bash
         env:
           PREVIOUS_COMMIT: ${{ needs.inspect_vps.outputs.previous_commit }}
-          ALEMBIC_TARGET: 20261022_receipt_pdf_camera_evidence
+          ALEMBIC_TARGET: 20261026_product_crust_visibility
         run: |
           set -Eeuo pipefail
           source_delivery="$RUNNER_TEMP/promoted-source"
@@ -760,7 +760,7 @@ jobs:
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         env:
           OPERATION: ${{ inputs.operation }}
-          TELZ_ALEMBIC_TARGET: 20261022_receipt_pdf_camera_evidence
+          TELZ_ALEMBIC_TARGET: 20261026_product_crust_visibility
           EXPECTED_COMMIT: ${{ github.sha }}
           PREVIOUS_COMMIT: ${{ needs.inspect_vps.outputs.previous_commit }}
           PUBLIC_HEALTH_URL: https://app.telz.com.br/health

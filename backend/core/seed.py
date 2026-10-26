@@ -460,6 +460,113 @@ _ROLE_PERMISSIONS: dict = {
 
 
 def _seed_rbac(db: Session) -> None:
+    """Reconcile the shared RBAC catalog and every live tenant graph."""
+    tenant_ids = {
+        tenant_id for tenant_id, in db.query(Tenant.id).filter(
+            Tenant.deleted_at.is_(None)
+        ).all()
+    }
+    tenant_ids.add(LEGACY_TENANT_ID)
+    roles_name_is_globally_unique = _roles_name_is_globally_unique(db)
+    if len(tenant_ids) > 1 and roles_name_is_globally_unique:
+        raise RuntimeError(
+            "Nao foi possivel provisionar RBAC: Role.name ainda e globalmente unico."
+        )
+
+    module_keys = [key for key, _, _ in _MODULES]
+    modules = {
+        row.key: row for row in db.query(RbacModule).filter(
+            RbacModule.key.in_(module_keys)
+        ).all()
+    }
+    for key, name, order in _MODULES:
+        row = modules.get(key)
+        if row is None:
+            row = RbacModule(id=str(uuid.uuid4()), key=key, name=name, order_index=order, is_active=True)
+            db.add(row)
+            modules[key] = row
+        else:
+            row.name = name
+            row.order_index = order
+            row.is_active = True
+    db.flush()
+
+    permission_keys = [key for key, _ in _PERMISSIONS]
+    permissions = {
+        row.key: row for row in db.query(RbacPermission).filter(
+            RbacPermission.key.in_(permission_keys)
+        ).all()
+    }
+    for key, name in _PERMISSIONS:
+        row = permissions.get(key)
+        if row is None:
+            row = RbacPermission(id=str(uuid.uuid4()), key=key, name=name)
+            db.add(row)
+            permissions[key] = row
+        else:
+            row.name = name
+    db.flush()
+
+    role_rows = db.query(Role).filter(Role.name.in_([name for name, _, _ in _ROLES])).all()
+    roles = {(row.tenant_id, row.name): row for row in role_rows}
+    role_maps: dict[str, dict[str, str]] = {}
+    for tenant_id in sorted(tenant_ids):
+        role_maps[tenant_id] = {}
+        for name, description, is_system in _ROLES:
+            row = roles.get((tenant_id, name))
+            if row is None:
+                row = Role(
+                    id=str(uuid.uuid4()), tenant_id=tenant_id, name=name,
+                    description=description, is_system=is_system,
+                )
+                db.add(row)
+                roles[(tenant_id, name)] = row
+            role_maps[tenant_id][name] = row.id
+    db.flush()
+
+    role_ids = [role_id for mapping in role_maps.values() for role_id in mapping.values()]
+    existing = {
+        (row.role_id, row.module_id, row.permission_id): row
+        for row in db.query(RolePermission).filter(
+            RolePermission.role_id.in_(role_ids)
+        ).all()
+    }
+    for tenant_id, mapping in role_maps.items():
+        for role_name, module_permissions in _ROLE_PERMISSIONS.items():
+            role_id = mapping[role_name]
+            for module_key, permission_keys_for_module in module_permissions.items():
+                for permission_key in permission_keys_for_module:
+                    module_id = modules[module_key].id
+                    permission_id = permissions[permission_key].id
+                    key = (role_id, module_id, permission_id)
+                    if key not in existing:
+                        row = RolePermission(
+                            id=str(uuid.uuid4()), tenant_id=tenant_id,
+                            role_id=role_id, module_id=module_id,
+                            permission_id=permission_id, allowed=True,
+                        )
+                        db.add(row)
+                        existing[key] = row
+                    else:
+                        existing[key].tenant_id = tenant_id
+
+    # Station roles must never inherit permissions from another station.
+    for tenant_id, mapping in role_maps.items():
+        for role_name in ("cozinha", "expedicao"):
+            allowed_modules = set(_ROLE_PERMISSIONS[role_name])
+            stale = db.query(RolePermission).join(
+                RbacModule, RolePermission.module_id == RbacModule.id
+            ).filter(
+                RolePermission.tenant_id == tenant_id,
+                RolePermission.role_id == mapping[role_name],
+                ~RbacModule.key.in_(allowed_modules),
+            ).all()
+            for row in stale:
+                db.delete(row)
+    db.flush()
+
+
+def _seed_rbac_legacy_unused(db: Session) -> None:
     role_names = [name for name, _, _ in _ROLES]
     roles_by_tenant_and_name = {
         (role.tenant_id, role.name): role

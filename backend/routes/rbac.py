@@ -245,6 +245,32 @@ def _log(db: Session, user: AdminUser, action: str, module_key: str,
     ))
 
 
+def _validate_permission_entries(db: Session, entries) -> None:
+    """Reject duplicate or unknown grants before replacing a matrix."""
+    seen: set[tuple[str, str]] = set()
+    module_ids = set()
+    permission_ids = set()
+    for entry in entries:
+        pair = (entry.module_id, entry.permission_id)
+        if pair in seen:
+            raise HTTPException(400, "A matriz possui permissões duplicadas.")
+        seen.add(pair)
+        module_ids.add(entry.module_id)
+        permission_ids.add(entry.permission_id)
+    modules = {
+        row.id for row in db.query(RbacModule).filter(
+            RbacModule.id.in_(module_ids), RbacModule.is_active.is_(True)
+        ).all()
+    } if module_ids else set()
+    permissions = {
+        row.id for row in db.query(RbacPermission).filter(
+            RbacPermission.id.in_(permission_ids)
+        ).all()
+    } if permission_ids else set()
+    if modules != module_ids or permissions != permission_ids:
+        raise HTTPException(400, "Módulo ou permissão inválido para esta matriz.")
+
+
 # ── Effective permissions for current session ──────────────────────────────────
 
 @router.get("/auth/me/permissions")
@@ -479,6 +505,7 @@ def update_role_permissions(
     role = _role_query(db, scope).filter(Role.id == role_id).first()
     if not role:
         raise HTTPException(404, "Perfil não encontrado.")
+    _validate_permission_entries(db, body.permissions)
     role_permissions = _scoped_query(
         db.query(RolePermission), RolePermission, scope
     )
@@ -539,6 +566,14 @@ def update_user_permissions(
     user = _tenant_user_query(db, scope).filter(AdminUser.id == user_id).first()
     if not user:
         raise HTTPException(404, "Usuário não encontrado.")
+    _validate_permission_entries(db, body.permissions)
+    old_rows = _scoped_query(
+        db.query(UserPermission), UserPermission, scope
+    ).filter(UserPermission.user_id == user_id).all()
+    old_repr = json.dumps([
+        {"m": r.module_id, "p": r.permission_id, "a": r.allowed}
+        for r in old_rows
+    ], sort_keys=True)
     _scoped_query(db.query(UserPermission), UserPermission, scope).filter(
         UserPermission.user_id == user_id
     ).delete(synchronize_session=False)
@@ -552,9 +587,13 @@ def update_user_permissions(
             allowed=entry.allowed,
             overrides_role=True,
         ))
+    new_repr = json.dumps([
+        {"m": e.module_id, "p": e.permission_id, "a": e.allowed}
+        for e in body.permissions
+    ], sort_keys=True)
     _log(
         db, current, "update_permissions", "usuarios", "admin_user", user_id,
-        request=request, tenant_id=tenant_id,
+        old_val=old_repr, new_val=new_repr, request=request, tenant_id=tenant_id,
     )
     db.commit()
     return ok(None, "Permissões individuais atualizadas.")
@@ -568,8 +607,8 @@ def list_audit_logs(
     user_id: Optional[str] = Query(None),
     module_key: Optional[str] = Query(None),
     action: Optional[str] = Query(None),
-    limit: int = Query(100, le=500),
-    offset: int = Query(0),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current: AdminUser = Depends(get_current_admin),
 ):

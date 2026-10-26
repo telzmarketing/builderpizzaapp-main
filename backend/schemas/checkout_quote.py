@@ -44,3 +44,4 @@ class CheckoutQuoteOut(BaseModel):
     promotion_free_shipping_applied: bool = False
     total: float
     payment_method: str
+    cash_change_amount: float | None = None

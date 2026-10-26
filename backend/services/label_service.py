@@ -15,16 +15,17 @@ from backend.core.exceptions import DomainError, OrderNotFound
 from backend.core.tenant_context import TenantContext
 from backend.models.label import (
     LabelPrinter, LabelPrinterTemplate, LabelPrintJob, LabelSetting,
-    LabelTemplate, LabelVersion, LabelVolume, LabelVolumeRule,
+    LabelTemplate, LabelVersion, LabelVolume, LabelVolumeRule, PreparationLabelPrintJob,
 )
+from backend.models.preparation import PreparationExecution, PreparationOrder
 from backend.models.order import Order, OrderItem
-from backend.models.platform_saas import TenantProfile
 from backend.models.product import Product
-from backend.models.tenant import Tenant
 from backend.schemas.label import (
     LabelPrinterIn, LabelPrintIn, LabelReprintIn, LabelSettingsIn,
     LabelTemplateIn, LabelVolumeRuleIn,
 )
+from backend.services.operational_payment import cash_change_amount
+from backend.services.site_config_service import SiteConfigService
 
 
 class LabelService:
@@ -181,10 +182,7 @@ class LabelService:
         printer = self._resolve_printer(printer_id or (settings.default_printer_id if settings else None))
         template = self._resolve_template(template_id or (settings.default_template_id if settings else None), printer)
         products = self._products(order)
-        tenant = self.db.query(Tenant).filter(Tenant.id == self.tenant_id).first()
-        profile = self.db.query(TenantProfile).filter(TenantProfile.tenant_id == self.tenant_id).first()
-        identity = {"name": (profile.trade_name if profile and profile.trade_name else tenant.name if tenant else ""),
-                    "logo_url": profile.logo_url if profile else None}
+        identity = SiteConfigService(self.db).operational_identity(self.tenant_id)
         snapshot, raw_volumes = self._snapshot(
             order, products, include_drinks=bool(settings and settings.include_drinks), identity=identity,
         )
@@ -237,6 +235,57 @@ class LabelService:
                          "volume_index": row.volume_index, **row.content_json} for row in volumes],
             "volume_count": len(volumes), "is_first_print": previous_count == 0,
             "previous_print_count": previous_count,
+            "receipt": self._receipt(order, products, identity),
+        }
+
+    def _receipt(self, order, products, identity):
+        """Build the operational receipt projection from persisted order data."""
+        items, drinks = [], []
+        for item in sorted(order.items, key=lambda row: (int(row.position or 0), row.id)):
+            product = products.get(item.product_id)
+            is_drink = bool(
+                (product and product.product_type == "drink")
+                or item.selected_drink_variant
+            )
+            content = {
+                "quantity": int(item.quantity or 0),
+                "name": product.name if product else (item.flavors[0].flavor_name if item.flavors else "Item"),
+                "selected_size": item.selected_size,
+                "selected_drink_variant": item.selected_drink_variant,
+                "flavors": [f.flavor_name for f in sorted(item.flavors, key=lambda row: row.position or 0)],
+                "notes": item.notes,
+            }
+            (drinks if is_drink else items).append(content)
+        # Some legacy preview fixtures/databases do not carry the payments
+        # table; the receipt remains printable with an explicit pending state.
+        try:
+            payment = order.payment
+        except Exception:
+            self.db.rollback()
+            payment = None
+        payment_status = self._status(payment.status) if payment else "pending"
+        payment_provider = payment.provider if payment else None
+        return {
+            "restaurant": identity,
+            "order_code": order.order_code,
+            "customer_name": order.delivery_name,
+            "fulfillment_type": order.fulfillment_type,
+            "items": items,
+            "drinks": drinks,
+            "has_drinks": bool(drinks),
+            "payment": {
+                "method": self._status(payment.method) if payment else None,
+                "status": payment_status,
+                "provider": payment_provider,
+                "paid_online": bool(payment and payment_status == "approved" and payment_provider not in {None, "manual", "on_delivery"}),
+                "pay_on_delivery": bool(payment and payment.pay_on_delivery),
+                "cash_change_for": payment.cash_change_for if payment else None,
+                "cash_change_amount": cash_change_amount(payment, order.total) if payment else None,
+            },
+            "subtotal": order.subtotal,
+            "shipping_fee": order.shipping_fee,
+            "discount": order.discount,
+            "total": order.total,
         }
 
     def request_print(self, order_id: str, body: LabelPrintIn | LabelReprintIn, *, actor_id: str, reprint: bool):
@@ -313,6 +362,65 @@ class LabelService:
         self._commit("LabelPrintConcurrencyConflict")
         self.db.refresh(job)
         return {"job": self._job(job), "preview": snapshot}
+
+    def preview_execution(self, execution_id: str, *, printer_id: str | None = None, template_id: str | None = None):
+        self._ensure_defaults()
+        execution = self.db.query(PreparationExecution).filter(
+            PreparationExecution.tenant_id == self.tenant_id,
+            PreparationExecution.id == execution_id,
+        ).first()
+        if execution is None:
+            raise DomainError("Execucao de preparo nao encontrada.", code="PreparationExecutionNotFound")
+        settings = self.db.query(LabelSetting).filter(LabelSetting.tenant_id == self.tenant_id).first()
+        printer = self._resolve_printer(printer_id or (settings.default_printer_id if settings else None))
+        template = self._resolve_template(template_id or (settings.default_template_id if settings else None), printer)
+        identity = SiteConfigService(self.db).operational_identity(self.tenant_id)
+        order = execution.order
+        recipe = order.recipe if order else None
+        snapshot = {
+            "execution_id": execution.id, "order_id": execution.order_id,
+            "preparation_order_id": order.id if order else None,
+            "product_name": recipe.name if recipe else None,
+            "quantity": str(execution.produced_quantity),
+            "portion_grams": str(execution.portion_grams) if execution.portion_grams is not None else None,
+            "lot_id": execution.output_lot_id, "lot_code": execution.output_lot_code,
+            "expires_on": execution.expires_on.isoformat() if execution.expires_on else None,
+            "prepared_at": execution.prepared_at.isoformat() if execution.prepared_at else None,
+            "responsible_id": execution.actor_id, "restaurant": identity,
+        }
+        return {"execution": snapshot, "printer": self._printer(printer), "template": self._template(template)}
+
+    def request_execution_print(self, execution_id: str, body: LabelPrintIn | LabelReprintIn, *, actor_id: str, reprint: bool):
+        existing = self.db.query(PreparationLabelPrintJob).filter(
+            PreparationLabelPrintJob.tenant_id == self.tenant_id,
+            PreparationLabelPrintJob.idempotency_key == body.idempotency_key,
+        ).first()
+        if existing:
+            if existing.execution_id != execution_id or existing.job_type != ("reprint" if reprint else "print"):
+                raise DomainError("Chave de idempotencia ja usada em outra operacao.", code="LabelIdempotencyConflict")
+            return {"job": self._preparation_job(existing), "preview": self.preview_execution(execution_id, printer_id=existing.printer_id, template_id=existing.template_id)}
+        preview = self.preview_execution(execution_id, printer_id=body.printer_id, template_id=body.template_id)
+        prior = self.db.query(PreparationLabelPrintJob).filter(
+            PreparationLabelPrintJob.tenant_id == self.tenant_id,
+            PreparationLabelPrintJob.execution_id == execution_id,
+            PreparationLabelPrintJob.job_type.in_(("print", "reprint")),
+        ).count()
+        settings = self.db.query(LabelSetting).filter(LabelSetting.tenant_id == self.tenant_id).first()
+        if reprint and (settings is None or settings.require_reprint_reason) and not getattr(body, "reason", None):
+            raise DomainError("Informe o motivo da reimpressao.", code="LabelReprintReasonRequired")
+        if reprint and prior == 0:
+            raise DomainError("Nao existe impressao anterior para reimprimir.", code="LabelFirstPrintRequired")
+        if not reprint and prior > 0:
+            raise DomainError("Execucao ja impressa; use a reimpressao.", code="LabelReprintRequired")
+        job = PreparationLabelPrintJob(
+            id=self._uuid(), tenant_id=self.tenant_id, execution_id=execution_id,
+            printer_id=preview["printer"]["id"], template_id=preview["template"]["id"], actor_id=actor_id,
+            job_type="reprint" if reprint else "print", idempotency_key=body.idempotency_key,
+            copies=body.copies, reason=getattr(body, "reason", None), result_status="requested",
+            snapshot_json=jsonable_encoder(preview),
+        )
+        self.db.add(job); self._commit("PreparationLabelConcurrencyConflict"); self.db.refresh(job)
+        return {"job": self._preparation_job(job), "preview": preview}
 
     def mark_dialog_opened(self, job_id: str, *, actor_id: str):
         job = self._get(LabelPrintJob, job_id, "LabelPrintJobNotFound")
@@ -486,3 +594,7 @@ class LabelService:
     @staticmethod
     def _job(row):
         return {key: getattr(row, key) for key in ("id", "order_id", "label_version_id", "printer_id", "template_id", "actor_id", "job_type", "copies", "reason", "result_status", "created_at")}
+
+    @staticmethod
+    def _preparation_job(row):
+        return {key: getattr(row, key) for key in ("id", "execution_id", "printer_id", "template_id", "actor_id", "job_type", "copies", "reason", "result_status", "created_at")}

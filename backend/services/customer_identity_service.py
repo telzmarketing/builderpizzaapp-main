@@ -63,7 +63,9 @@ class CustomerIdentityService:
                 customer_q = customer_q.filter(Customer.tenant_id == tenant_id)
             return customer_q.first()
 
-        customer_q = self._db.query(Customer).filter(or_(Customer.phone == normalized, Customer.phone == phone))
+        customer_q = self._db.query(Customer).filter(
+            or_(Customer.normalized_phone == normalized, Customer.phone == normalized, Customer.phone == phone)
+        )
         if tenant_id:
             customer_q = customer_q.filter(Customer.tenant_id == tenant_id)
         return customer_q.first()
@@ -243,6 +245,7 @@ class CustomerIdentityService:
         if existing:
             if not existing.phone:
                 existing.phone = normalized
+            existing.normalized_phone = normalized
             if name and existing.name.startswith("Cliente WhatsApp"):
                 existing.name = name.strip()
             existing.last_contact_at = datetime.now(timezone.utc)
@@ -264,6 +267,7 @@ class CustomerIdentityService:
             name=label,
             email=system_lead_email(normalized),
             phone=normalized,
+            normalized_phone=normalized,
             crm_status="lead",
             source=source,
             marketing_whatsapp_consent=False,
@@ -307,6 +311,7 @@ class CustomerIdentityService:
         password_hash_value = hash_password(password)
         customer.name = name.strip()
         customer.email = normalize_email(email)
+        customer.normalized_phone = normalize_phone(customer.phone)
         customer.password_hash = password_hash_value
         customer.lgpd_consent = lgpd_consent
         customer.lgpd_consent_at = now

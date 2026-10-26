@@ -220,6 +220,37 @@ def test_rbac_seed_allows_same_role_name_in_another_tenant_on_composite_schema(d
     assert other_role.is_system is True
 
 
+def test_rbac_seed_provisions_complete_graph_for_existing_tenant(db):
+    db.add(Tenant(
+        id="tenant-empty",
+        slug="empty",
+        name="Empresa sem RBAC",
+        status="active",
+        timezone="America/Sao_Paulo",
+        locale="pt-BR",
+    ))
+    db.commit()
+
+    seed._seed_rbac(db)
+    db.commit()
+
+    roles = db.query(Role).filter(Role.tenant_id == "tenant-empty").all()
+    assert {role.name for role in roles} == {name for name, _, _ in seed._ROLES}
+    role_ids = {role.id for role in roles}
+    assert db.query(RolePermission).filter(
+        RolePermission.tenant_id == "tenant-empty",
+        RolePermission.role_id.in_(role_ids),
+    ).count() == sum(
+        len(perms)
+        for role_name, modules in seed._ROLE_PERMISSIONS.items()
+        for module, perms in modules.items()
+    )
+
+    seed._seed_rbac(db)
+    db.commit()
+    assert db.query(Role).filter(Role.tenant_id == "tenant-empty").count() == len(seed._ROLES)
+
+
 def test_rbac_seed_fails_closed_when_roles_name_is_still_globally_unique(db):
     db.add_all([
         Tenant(

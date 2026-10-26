@@ -9,12 +9,14 @@ import {
   loadPrinterSettings, savePrinterSettings,
   buildCompletoHtml, buildCozinhaHtml, buildEntregaHtml,
   SAMPLE_ORDER, DEFAULT_PRINTER_SETTINGS,
+  openReceiptPreview, withReceiptBranding,
   type PrinterSettings, type PrintTemplate, type PaperWidth,
 } from "@/lib/printing";
 import {
   loadSoundType, saveSoundType, playOrderAlert,
   SOUND_OPTIONS, type OrderSoundType,
 } from "@/lib/orderSound";
+import { useApp } from "@/context/AppContext";
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
@@ -61,13 +63,7 @@ function TemplateCard({
     doc.close();
   }, [html]);
 
-  const openPreview = () => {
-    const w = window.open("", "_blank", "width=440,height=700,scrollbars=yes");
-    if (!w) return;
-    w.document.write(html);
-    w.document.close();
-    w.onload = () => w.focus();
-  };
+  const openPreview = (print = false) => openReceiptPreview(html, print);
 
   return (
     <div
@@ -97,6 +93,7 @@ function TemplateCard({
           <Eye size={12} />
           Prévia
         </button>
+        <button type="button" onClick={(event) => { event.stopPropagation(); openPreview(true); }} className="min-h-10 rounded-lg border border-surface-03 px-3 text-xs font-bold text-gold">Imprimir teste</button>
       </div>
 
       {/* Receipt preview */}
@@ -116,6 +113,7 @@ function TemplateCard({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function AdminConfiguracoes() {
+  const { siteContent } = useApp();
   const [activeTab, setActiveTab] = useState<Tab>("impressora");
   const [settings, setSettings] = useState<PrinterSettings>(loadPrinterSettings);
   const [saved, setSaved] = useState(false);
@@ -136,9 +134,10 @@ export default function AdminConfiguracoes() {
   };
 
   // Build preview HTMLs with current settings + sample order
-  const htmlCompleto = buildCompletoHtml(SAMPLE_ORDER, settings);
-  const htmlCozinha  = buildCozinhaHtml(SAMPLE_ORDER, settings);
-  const htmlEtiqueta = buildEntregaHtml(SAMPLE_ORDER, settings);
+  const brandedSettings = withReceiptBranding(settings, siteContent as unknown as Record<string, unknown>);
+  const htmlCompleto = buildCompletoHtml(SAMPLE_ORDER, brandedSettings);
+  const htmlCozinha  = buildCozinhaHtml(SAMPLE_ORDER, brandedSettings);
+  const htmlEtiqueta = buildEntregaHtml(SAMPLE_ORDER, brandedSettings);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-00 to-surface-00">

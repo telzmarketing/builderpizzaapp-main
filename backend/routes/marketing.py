@@ -1,5 +1,6 @@
 """Marketing — Campaigns, Visitor tracking, Tracking links, Settings."""
 from __future__ import annotations
+from backend.services.storefront_presence import active_storefront_visitors
 import hashlib
 import json
 import uuid
@@ -7,7 +8,7 @@ import requests
 from datetime import date, datetime, timezone, timedelta
 from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, Date, ForeignKey, func, text
 from sqlalchemy.orm import Session
 
@@ -183,7 +184,11 @@ SECRET_KEYS = {
     "uazapi_token",
 }
 MASKED_SECRET = "********"
-INTERNAL_TRACKING_PREFIXES = ("/painel", "/motoboy")
+INTERNAL_TRACKING_PREFIXES = ("/painel", "/motoboy", "/tv")
+PUBLIC_SALES_EXACT_PATHS = (
+    "/", "/menu", "/cardapio", "/cart", "/checkout", "/order-tracking",
+)
+PUBLIC_SALES_PREFIXES = ("/product/", "/campanha/", "/promocao/")
 INTEGRATION_LABELS = {
     "meta_ads": "Meta Ads",
     "google_ads": "Google Ads",
@@ -492,6 +497,17 @@ class VisitorEventIn(BaseModel):
     longitude: float | None = None
     location_accuracy_m: float | None = None
 
+    @model_validator(mode="after")
+    def validate_presence_metadata(self):
+        if self.event_type in {"store_presence", "store_presence_leave"}:
+            tab_id = self.metadata.get("tab_id")
+            sequence = self.metadata.get("sequence")
+            if not isinstance(tab_id, str) or not 1 <= len(tab_id) <= 100:
+                raise ValueError("Presence requires a tab identifier.")
+            if type(sequence) is not int or not 1 <= sequence <= 999999999999999:
+                raise ValueError("Presence requires a positive sequence.")
+        return self
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -521,15 +537,17 @@ def _is_internal_tracking_page(value: str | None) -> bool:
     return any(path == prefix or path.startswith(f"{prefix}/") for prefix in INTERNAL_TRACKING_PREFIXES)
 
 
+def _is_public_sales_page(value: str | None) -> bool:
+    path = _tracking_path(value)
+    return path in PUBLIC_SALES_EXACT_PATHS or any(path.startswith(prefix) for prefix in PUBLIC_SALES_PREFIXES)
+
+
 def _public_tracking_sql(column: str) -> str:
-    value = f"COALESCE({column}, '')"
-    filters = []
-    for prefix in INTERNAL_TRACKING_PREFIXES:
-        filters.extend([
-            f"{value} NOT LIKE '{prefix}%'",
-            f"{value} NOT LIKE '%://%{prefix}%'",
-        ])
-    return f"({value} = '' OR ({' AND '.join(filters)}))"
+    # Normalize URL paths before matching: a query containing /product/ is not a storefront route.
+    value = f"SPLIT_PART(SPLIT_PART(REGEXP_REPLACE(COALESCE({column}, ''), '^https?://[^/]+', '', 'i'), '?', 1), '#', 1)"
+    exact = ", ".join(f"'{path}'" for path in PUBLIC_SALES_EXACT_PATHS)
+    prefixes = " OR ".join(f"{value} LIKE '{prefix}%'" for prefix in PUBLIC_SALES_PREFIXES)
+    return f"({value} IN ({exact}) OR {prefixes})"
 
 
 def _get_or_create_visitor(fingerprint: str, db: Session, tenant_id: str, ip_hash: str = "") -> VisitorProfile:
@@ -740,13 +758,12 @@ def marketing_dashboard(
               AND {_public_tracking_sql("vs.landing_page")}
         ) visitors
     """), {"since": since, "period_end": period_end, "tenant_id": tenant_id}).scalar() or 0
-    online_since = now - timedelta(minutes=5)
-    visitors_online = db.execute(text(f"""
-        SELECT COUNT(DISTINCT visitor_id)
-        FROM visitor_events ve
-        WHERE ve.tenant_id = :tenant_id AND created_at >= :online_since
-          AND {_public_tracking_sql("ve.page")}
-    """), {"online_since": online_since, "tenant_id": tenant_id}).scalar() or 0
+    presence_settings = db.query(MarketingSettings).filter(MarketingSettings.tenant_id == tenant_id).first()
+    active_ids, online_since = active_storefront_visitors(
+        db, tenant_id, now, (presence_settings.online_visitor_minutes or 5) if presence_settings else 5,
+        _public_tracking_sql("ve.page"),
+    )
+    visitors_online = len(active_ids)
 
     tracking_links = db.query(func.count(TrackingLink.id)).filter(TrackingLink.tenant_id == tenant_id, TrackingLink.active == True).scalar() or 0  # noqa: E712
     link_clicks = db.query(func.sum(TrackingLink.clicks)).filter(TrackingLink.tenant_id == tenant_id).scalar() or 0
@@ -853,7 +870,7 @@ def delete_tracking_link(link_id: str, db: Session = Depends(get_db), _=Depends(
 
 @public_router.post("/track")
 async def track_event(body: VisitorEventIn, request: Request, db: Session = Depends(get_db), context: TenantContext | None = Depends(public_wave6_context)):
-    if _is_internal_tracking_page(body.page):
+    if not _is_public_sales_page(body.page):
         return {"ok": True, "ignored": True}
 
     tenant_id = wave6_tenant_id(context)
@@ -939,7 +956,7 @@ def list_visitors(
         period_label = period
 
     params = {"start_dt": start_dt, "end_dt": end_dt, "tenant_id": tenant_id}
-    public_event_filter = _public_tracking_sql("ve.page")
+    public_event_filter = _public_tracking_sql("ve.page") + " AND ve.event_type NOT IN ('store_presence', 'store_presence_leave')"
     public_session_filter = _public_tracking_sql("vs.landing_page")
     period_visitors_cte = """
         SELECT DISTINCT visitor_id
@@ -959,16 +976,14 @@ def list_visitors(
     ).scalar() or 0
     settings = db.query(MarketingSettings).filter(MarketingSettings.tenant_id == tenant_id).first()
     online_minutes = settings.online_visitor_minutes if settings and settings.online_visitor_minutes else 5
-    online_since = now - timedelta(minutes=online_minutes)
-    online = db.execute(text(f"""
-        SELECT COUNT(DISTINCT visitor_id)
-        FROM visitor_events ve
-        WHERE ve.tenant_id = :tenant_id AND created_at >= :online_since
-          AND {public_event_filter}
-    """), {"online_since": online_since, "tenant_id": tenant_id}).scalar() or 0
+    active_ids, online_since = active_storefront_visitors(db, tenant_id, now, online_minutes, _public_tracking_sql("ve.page"))
+    online = len(active_ids)
+    active_fingerprints = db.query(VisitorProfile.fingerprint).filter(
+        VisitorProfile.tenant_id == tenant_id, VisitorProfile.id.in_(active_ids),
+    )
     online_registered_customers = db.query(func.count(func.distinct(CustomerEvent.customer_id))).filter(
         CustomerEvent.tenant_id == tenant_id,
-        CustomerEvent.created_at >= online_since,
+        CustomerEvent.session_id.in_(active_fingerprints),
         CustomerEvent.customer_id.isnot(None),
     ).scalar() or 0
 
@@ -1193,8 +1208,8 @@ def list_visitors(
             "sessions": int(v[11] or 0),
             "pageviews": int(v[12] or 0),
             "last_seen": (v[14] or v[10]).isoformat() if (v[14] or v[10]) else None,
-            "status": "online" if v[10] and v[10] >= online_since else "offline",
-            "is_online": bool(v[10] and v[10] >= online_since),
+            "status": "online" if v[0] in active_ids else "offline",
+            "is_online": v[0] in active_ids,
             "latitude": v[6],
             "longitude": v[7],
             "location_accuracy_m": v[8],
@@ -1212,8 +1227,8 @@ def list_visitors(
             "browser": v[5], "total_sessions": int(v[11] or 0),
             "total_pageviews": int(v[12] or 0), "total_orders": 0,
             "last_seen_at": (v[14] or v[10]).isoformat() if (v[14] or v[10]) else None,
-            "status": "online" if v[10] and v[10] >= online_since else "offline",
-            "is_online": bool(v[10] and v[10] >= online_since),
+            "status": "online" if v[0] in active_ids else "offline",
+            "is_online": v[0] in active_ids,
             "latitude": v[6],
             "longitude": v[7],
             "location_accuracy_m": v[8],

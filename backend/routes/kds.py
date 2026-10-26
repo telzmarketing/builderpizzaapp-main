@@ -50,6 +50,13 @@ def _production_command(task_id, body, db, actor, command):
 
 @router.post("/kitchen/tasks/{task_id}/start")
 def production_start(task_id: str, body: KdsCommandIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "edit"))): return _production_command(task_id, body, db, actor, "start")
+@router.post("/kitchen/tasks/{task_id}/confirm-stock")
+def production_confirm_stock(task_id: str, body: KdsCommandIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "edit"))): return _production_command(task_id, body, db, actor, "confirm-stock")
+@router.post("/kitchen/tasks/{task_id}/return-to-service")
+def production_return_service(task_id: str, body: KdsCommandIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "edit"))): return _production_command(task_id, body, db, actor, "return-to-service")
+@router.get("/kitchen/stock-alerts")
+def production_stock_alerts(db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("pedidos", "view"))):
+    return ok(production(db, actor).stock_alerts())
 @router.post("/kitchen/tasks/{task_id}/finish-assembly")
 def production_finish(task_id: str, body: KdsCommandIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("cozinha", "edit"))): return _production_command(task_id, body, db, actor, "finish-assembly")
 @router.post("/kitchen/tasks/{task_id}/start-oven")

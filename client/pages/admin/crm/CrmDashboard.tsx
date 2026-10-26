@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api";
+import { apiRequest } from "@/lib/api";
 import { useEffect, useState } from "react";
 import {
   Loader2, Users, KanbanSquare, ClipboardList, FolderOpen, RefreshCw,
@@ -7,10 +7,6 @@ import {
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
-
-const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const unwrap = (json: any) => json?.data ?? json;
 
 type Period = "today" | "7d" | "30d" | "90d" | "custom";
 
@@ -104,14 +100,9 @@ export default function CrmDashboard() {
   const [period, setPeriod] = useState<Period>("30d");
 
   const fetchData = (p: Period) => {
-    const token = localStorage.getItem("admin_token");
     setLoading(true);
     setError("");
-    apiFetch(`/crm/dashboard?period=${p}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => { if (!r.ok) throw new Error("Falha ao carregar dashboard CRM."); return r.json(); })
-      .then(unwrap)
+    apiRequest<CrmDashboardData>("GET", `/crm/dashboard?period=${p}`)
       .then(setData)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));

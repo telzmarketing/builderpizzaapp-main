@@ -2,8 +2,50 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, History, Loader2, Printer } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { kdsLabelsApi, type KdsLabelPreview, type KdsLabelPrinter, type KdsLabelPrintJob, type KdsLabelSettings, type KdsLabelTemplate } from "@/lib/api";
-import { openLabelPrintWindow, renderAndPrintLabels } from "@/lib/labelPrinting";
+import { kdsLabelsApi, preparationLabelsApi, type PreparationLabelPreview, type KdsLabelPreview, type KdsLabelPrinter, type KdsLabelPrintJob, type KdsLabelSettings, type KdsLabelTemplate } from "@/lib/api";
+import { buildPreparationLabelPrintHtml, openLabelPrintWindow, renderHtmlAndPrint, renderAndPrintLabels } from "@/lib/labelPrinting";
+
+/** Preparation labels use the execution snapshot; printing never reports production. */
+export function PreparationLabelPrintDialog({ executionId, open, onOpenChange }: { executionId: string | null; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [preview, setPreview] = useState<PreparationLabelPreview | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [copies, setCopies] = useState(1);
+  const [reason, setReason] = useState("");
+  const [done, setDone] = useState(false);
+  const pending = useRef<{ id: string; reprint: boolean; reason: string; copies: number } | null>(null);
+  useEffect(() => {
+    if (!open || !executionId) return;
+    let cancelled = false;
+    setPreview(null); setError(""); setReason(""); setDone(false); setCopies(1); pending.current = null;
+    preparationLabelsApi.preview(executionId).then((value) => { if (!cancelled) setPreview(value); }).catch((caught) => { if (!cancelled) setError(message(caught)); });
+    return () => { cancelled = true; };
+  }, [open, executionId]);
+  async function print(reprint: boolean) {
+    if (!executionId || !preview || busy) return;
+    if (reprint && !reason.trim()) { setError("Informe o motivo da reimpressão."); return; }
+    const target = openLabelPrintWindow();
+    if (!target) { setError("Habilite pop-ups para abrir a impressão."); return; }
+    setBusy(true); setError(""); setDone(false);
+    if (!pending.current || pending.current.reprint !== reprint || pending.current.reason !== reason.trim() || pending.current.copies !== copies) pending.current = { id: newIdempotencyKey(executionId), reprint, reason: reason.trim(), copies };
+    const submission = pending.current;
+    try {
+      const body = { printer_id: preview.printer.id, template_id: preview.template.id, copies: submission.copies, idempotency_key: submission.id };
+      const result = submission.reprint ? await preparationLabelsApi.reprint(executionId, { ...body, reason: submission.reason }) : await preparationLabelsApi.print(executionId, body);
+      renderHtmlAndPrint(buildPreparationLabelPrintHtml(result.preview, submission.copies), target);
+      setPreview(result.preview); setDone(true); pending.current = null;
+    } catch (caught) { target.close?.(); setError(message(caught)); }
+    finally { setBusy(false); }
+  }
+  return <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}><DialogContent className="border-surface-03 bg-surface-02 text-cream"><DialogHeader><DialogTitle>Etiquetas do preparo</DialogTitle><DialogDescription>Imprimir e reimprimir não altera o estoque. Selecione o equipamento físico na caixa de impressão do navegador.</DialogDescription></DialogHeader>
+    {error && <p role="alert" className="text-red-300">{error}</p>}
+    {!preview && !error && <p>Carregando etiqueta...</p>}
+    {preview && <><p className="font-bold">{preview.execution.product_name || "Preparação"}</p><p>Quantidade: {preview.execution.quantity} · Lote: {preview.execution.lot_code || "Não informado"}</p><p className="text-sm text-stone">{preview.printer.name} · {preview.template.name}</p><label>Cópias<input type="number" min={1} max={10} value={copies} disabled={busy} onChange={(event) => setCopies(Math.max(1, Math.min(10, Number(event.target.value) || 1)))} className="w-full rounded bg-surface-01 p-2"/></label><label>Motivo para reimprimir<textarea maxLength={300} value={reason} disabled={busy} onChange={(event) => setReason(event.target.value)} className="w-full rounded bg-surface-01 p-2"/></label></>}
+    {preview && <iframe title="Prévia da etiqueta de preparo" sandbox="" srcDoc={buildPreparationLabelPrintHtml(preview)} className="h-52 w-full rounded border bg-white" />}
+    {done && <p role="status" className="text-emerald-300">Impressão registrada. Confirme a fila no sistema operacional.</p>}
+    <DialogFooter><button disabled={busy} onClick={() => onOpenChange(false)}>Fechar</button><button disabled={!preview || busy} onClick={() => void print(false)} className="rounded bg-emerald-600 p-2">Imprimir</button><button disabled={!preview || busy || !reason.trim()} onClick={() => void print(true)} className="rounded border p-2">Reimprimir</button></DialogFooter>
+  </DialogContent></Dialog>;
+}
 
 interface Props {
   orderId: string | null;

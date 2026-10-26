@@ -9,6 +9,8 @@ class Customer(Base):
     __table_args__ = (
         Index("uq_customers_tenant_id_id", "tenant_id", "id", unique=True),
         Index("uq_customers_tenant_email", "tenant_id", "email", unique=True),
+        Index("uq_customers_tenant_normalized_phone", "tenant_id", "normalized_phone", unique=True,
+              postgresql_where=text("normalized_phone IS NOT NULL AND normalized_phone <> ''")),
         Index("uq_customers_tenant_google_id", "tenant_id", "google_id", unique=True,
               postgresql_where=text("google_id IS NOT NULL")),
     )
@@ -16,8 +18,9 @@ class Customer(Base):
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_customers_tenant_id_tenants"), nullable=True)
     name = Column(String(200), nullable=False)
-    email = Column(String(200), nullable=False)
+    email = Column(String(200), nullable=True)
     phone = Column(String(30))
+    normalized_phone = Column(String(30), nullable=True)
     password_hash = Column(Text, nullable=True)
     auth_version = Column(Integer, nullable=False, default=0)
     google_id = Column(String(200), nullable=True)

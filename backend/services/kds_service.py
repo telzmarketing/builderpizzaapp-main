@@ -20,6 +20,7 @@ from backend.models.order import Order, OrderStatus
 from backend.models.cmv import OrderCmvSnapshot, OrderItemCmvSnapshot
 from backend.models.product import Product
 from backend.services.order_service import OrderService
+from backend.services.operational_payment import cash_change_amount
 
 
 class KdsService:
@@ -300,6 +301,8 @@ class KdsService:
                 code="KdsOrderNotReadyToStart",
             )
         self._audit_order_transition(order, current, OrderStatus.preparing.value, actor_id)
+        from backend.services.kds_production_service import KdsProductionService
+        KdsProductionService(self.db, self.tenant_context).initialize_order(order_id, actor_id, commit=False)
         order = OrderService(
             self.db, self.tenant_context
         ).change_status(order.id, OrderStatus.preparing.value, changed_by=f"kds:{actor_id}")
@@ -307,6 +310,8 @@ class KdsService:
 
     def mark_ready(self, order_id: str, *, actor_id: str) -> dict:
         order = self._load_order(order_id, lock=True)
+        from backend.services.kds_production_service import ensure_kds_units_ready
+        ensure_kds_units_ready(self.db, order.tenant_id, order.id)
         current = self._status(order)
         self._audit_order_transition(order, current, OrderStatus.ready_for_pickup.value, actor_id)
         order = OrderService(
@@ -321,6 +326,8 @@ class KdsService:
         if order.fulfillment_type != "pickup":
             raise DomainError("Somente pedidos para retirada podem usar esta acao.", code="KdsPickupOnly")
         current = self._status(order)
+        from backend.services.kds_production_service import ensure_kds_units_ready
+        ensure_kds_units_ready(self.db, order.tenant_id, order.id)
         if current != OrderStatus.ready_for_pickup.value:
             raise DomainError("O pedido para retirada ainda nao esta pronto.", code="KdsPickupNotReady")
         self._audit_order_transition(
@@ -492,6 +499,39 @@ class KdsService:
                 ),
                 "assigned_at": delivery.assigned_at,
             } if delivery else None)
+            serialized_items = []
+            for item in order.items:
+                product = products.get(item.product_id)
+                is_drink = bool(
+                    (product is not None and product.product_type == "drink")
+                    or item.selected_drink_variant
+                )
+                serialized_items.append({
+                    "id": item.id,
+                    "product_id": item.product_id,
+                    "product_name": product.name if product is not None else "Item",
+                    "product_type": product.product_type if product is not None else None,
+                    "is_drink": is_drink,
+                    "quantity": item.quantity,
+                    "selected_size": item.selected_size,
+                    "selected_crust_type": item.selected_crust_type,
+                    "selected_border_name": item.selected_border_name,
+                    "selected_drink_variant": item.selected_drink_variant,
+                    "notes": item.notes,
+                    "add_ons": list(item.add_ons or []),
+                    "flavors": [{"name": flavor.flavor_name} for flavor in item.flavors],
+                    **({"composition": composition_by_item[item.id]} if composition_by_item is not None and item.id in composition_by_item else {}),
+                })
+            drinks = [
+                {
+                    "product_id": item["product_id"],
+                    "name": item["product_name"],
+                    "quantity": item["quantity"],
+                    "notes": item.get("notes"),
+                }
+                for item in serialized_items
+                if item["is_drink"]
+            ]
             payload = {
                 "id": order.id, "order_code": order.order_code,
                 "status": self._status(order),
@@ -504,18 +544,9 @@ class KdsService:
                 # This bounded association is shared by all operational KDS
                 # surfaces.  Address and payment details remain dispatch-only.
                 "delivery": delivery_summary,
-                "items": [{
-                    "id": item.id, "product_id": item.product_id,
-                    "product_name": products[item.product_id].name if item.product_id in products else "Item",
-                    "quantity": item.quantity, "selected_size": item.selected_size,
-                    "selected_crust_type": item.selected_crust_type,
-                    "selected_border_name": item.selected_border_name,
-                    "selected_drink_variant": item.selected_drink_variant,
-                    "notes": item.notes,
-                    "add_ons": list(item.add_ons or []),
-                    "flavors": [{"name": flavor.flavor_name} for flavor in item.flavors],
-                    **({"composition": composition_by_item[item.id]} if composition_by_item is not None and item.id in composition_by_item else {}),
-                } for item in order.items],
+                "items": serialized_items,
+                "drinks": drinks,
+                "has_drinks": bool(drinks),
             }
             if include_dispatch_details:
                 payload.update({
@@ -524,10 +555,13 @@ class KdsService:
                     "delivery_city": order.delivery_city,
                     "delivery_complement": order.delivery_complement,
                     "payment_method": self._status(payment.method) if payment else None,
+                    "payment_status": self._status(payment.status) if payment else None,
+                    "payment_provider": payment.provider if payment else None,
                     "pay_on_delivery": bool(payment.pay_on_delivery) if payment else False,
                     "delivery_payment_method": payment.delivery_payment_method if payment else None,
                     "cash_needs_change": payment.cash_needs_change if payment else None,
                     "cash_change_for": payment.cash_change_for if payment else None,
+                    "cash_change_amount": cash_change_amount(payment, order.total),
                     "can_assign_driver": delivery is None or delivery.status in (
                         DeliveryStatus.failed, DeliveryStatus.cancelled,
                     ),

@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Users, MapPin, Phone, Mail, Calendar, ShieldCheck, ShieldOff, Loader2, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { Search, Users, MapPin, Phone, Mail, Calendar, ShieldCheck, ShieldOff, Loader2, ChevronDown, ChevronUp, ExternalLink, Plus, X, AlertCircle, Upload, Download } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
-import { customersApi, type ApiCustomer } from "@/lib/api";
+import { ApiRequestError, customersApi, type ApiCustomer } from "@/lib/api";
 
 function formatDate(s: string) {
   return new Date(s).toLocaleDateString("pt-BR");
@@ -120,6 +120,15 @@ export default function AdminClientes() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ name: "", phone: "", email: "" });
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [phoneConflict, setPhoneConflict] = useState<ApiCustomer | null>(null);
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<Awaited<ReturnType<typeof customersApi.importFile>> | null>(null);
 
   useEffect(() => {
     customersApi.list()
@@ -127,6 +136,74 @@ export default function AdminClientes() {
       .catch(() => setError("Não foi possível carregar os clientes."))
       .finally(() => setLoading(false));
   }, []);
+
+  async function createCustomer(event: FormEvent) {
+    event.preventDefault();
+    setFormError("");
+    setPhoneConflict(null);
+    if (!form.name.trim() || !form.phone.trim()) {
+      setFormError("Nome e telefone são obrigatórios.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const created = await customersApi.createAdmin({
+        name: form.name.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim() || undefined,
+      });
+      setCustomers((current) => [created, ...current]);
+      setForm({ name: "", phone: "", email: "" });
+      setShowCreate(false);
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.code === "CustomerPhoneConflict") {
+        const payload = err.payload as { detail?: { customer?: ApiCustomer } } | undefined;
+        setPhoneConflict(payload?.detail?.customer ?? null);
+      } else {
+        setFormError(err instanceof Error ? err.message : "Não foi possível cadastrar o cliente.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function previewImport() {
+    if (!importFile) return;
+    setImporting(true);
+    try {
+      setImportResult(await customersApi.importFile(importFile, false));
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Não foi possível ler o arquivo.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function commitImport() {
+    if (!importFile) return;
+    setImporting(true);
+    try {
+      const result = await customersApi.importFile(importFile, true);
+      setImportResult(result);
+      const refreshed = await customersApi.list();
+      setCustomers(refreshed);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Não foi possível importar os clientes.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function downloadImportTemplate() {
+    const template = await customersApi.importTemplate();
+    const blob = new Blob([template.content], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = template.filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -164,9 +241,69 @@ export default function AdminClientes() {
                 className="bg-transparent text-cream placeholder-stone/60 text-sm outline-none flex-1 min-w-0"
               />
             </div>
+            <button
+              type="button"
+              onClick={() => { setShowCreate(true); setFormError(""); setPhoneConflict(null); }}
+              className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-gold px-4 py-2.5 text-sm font-black text-surface-00 hover:bg-gold/90"
+            >
+              <Plus size={16} /> Cadastrar cliente
+            </button>
+            <button type="button" onClick={() => { setShowImport(true); setImportResult(null); setFormError(""); }} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-gold/50 px-4 py-2.5 text-sm font-black text-gold hover:bg-gold/10">
+              <Upload size={16} /> Importar clientes
+            </button>
+            <button type="button" onClick={() => void downloadImportTemplate()} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-surface-03 px-4 py-2.5 text-sm font-bold text-stone hover:text-cream">
+              <Download size={16} /> Modelo
+            </button>
             <AdminTopActions />
           </div>
         </header>
+
+        {showCreate && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="create-customer-title">
+            <form onSubmit={createCustomer} className="w-full max-w-lg rounded-2xl border border-surface-03 bg-surface-01 p-6 shadow-2xl">
+              <div className="mb-5 flex items-center justify-between">
+                <div>
+                  <p className="text-gold text-xs font-bold uppercase tracking-[0.2em]">CRM</p>
+                  <h2 id="create-customer-title" className="text-xl font-black text-cream">Cadastrar cliente</h2>
+                </div>
+                <button type="button" onClick={() => setShowCreate(false)} className="rounded-lg p-2 text-stone hover:bg-surface-03 hover:text-cream" aria-label="Fechar"><X size={18} /></button>
+              </div>
+              <div className="grid gap-4">
+                <label className="grid gap-1 text-sm text-stone">Nome completo<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="rounded-xl border border-surface-03 bg-surface-02 px-3 py-3 text-cream outline-none focus:border-gold" /></label>
+                <label className="grid gap-1 text-sm text-stone">Telefone / WhatsApp<input required inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="rounded-xl border border-surface-03 bg-surface-02 px-3 py-3 text-cream outline-none focus:border-gold" /></label>
+                <label className="grid gap-1 text-sm text-stone">E-mail (opcional)<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="rounded-xl border border-surface-03 bg-surface-02 px-3 py-3 text-cream outline-none focus:border-gold" /></label>
+              </div>
+              {phoneConflict && (
+                <div className="mt-4 rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100">
+                  <p className="flex items-center gap-2 font-black"><AlertCircle size={16} /> Esse número já está cadastrado.</p>
+                  <p className="mt-1">{phoneConflict.name}{phoneConflict.phone ? ` · ${phoneConflict.phone}` : ""}</p>
+                  <button type="button" onClick={() => { setShowCreate(false); window.location.assign(`/painel/clientes/${phoneConflict.id}`); }} className="mt-3 rounded-lg border border-amber-300/50 px-3 py-2 font-bold hover:bg-amber-300/10">Abrir cadastro existente</button>
+                </div>
+              )}
+              {formError && <p className="mt-4 text-sm text-red-300">{formError}</p>}
+              <div className="mt-6 flex justify-end gap-3">
+                <button type="button" onClick={() => setShowCreate(false)} className="rounded-xl border border-surface-03 px-4 py-3 text-sm font-bold text-stone hover:text-cream">Cancelar</button>
+                <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-gold px-4 py-3 text-sm font-black text-surface-00 disabled:opacity-50">{saving && <Loader2 size={16} className="animate-spin" />} Salvar cliente</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {showImport && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="import-customers-title">
+            <div className="w-full max-w-2xl rounded-2xl border border-surface-03 bg-surface-01 p-6 shadow-2xl">
+              <div className="mb-5 flex items-center justify-between">
+                <div><p className="text-gold text-xs font-bold uppercase tracking-[0.2em]">CRM</p><h2 id="import-customers-title" className="text-xl font-black text-cream">Importar clientes</h2></div>
+                <button type="button" onClick={() => setShowImport(false)} className="rounded-lg p-2 text-stone hover:bg-surface-03 hover:text-cream" aria-label="Fechar"><X size={18} /></button>
+              </div>
+              <input type="file" accept=".csv,.xlsx" onChange={(event) => { setImportFile(event.target.files?.[0] ?? null); setImportResult(null); setFormError(""); }} className="block w-full rounded-xl border border-surface-03 bg-surface-02 p-3 text-sm text-stone" />
+              <p className="mt-2 text-xs text-stone">O telefone é a chave de duplicidade. Registros existentes não são sobrescritos e consentimentos promocionais permanecem desativados.</p>
+              {formError && <p className="mt-3 text-sm text-red-300">{formError}</p>}
+              {importResult && <div className="mt-4 rounded-xl border border-surface-03 bg-surface-02 p-4 text-sm text-cream"><p><strong>{importResult.valid_count}</strong> válidos · <strong>{importResult.rejected_count}</strong> rejeitados · <strong>{importResult.created_count}</strong> criados</p>{importResult.errors.length > 0 && <div className="mt-2 max-h-32 overflow-auto text-xs text-amber-200">{importResult.errors.map((item, index) => <p key={`${item.row}-${index}`}>Linha {item.row ?? "?"}: {item.reason}</p>)}</div>}</div>}
+              <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setShowImport(false)} className="rounded-xl border border-surface-03 px-4 py-3 text-sm font-bold text-stone hover:text-cream">Fechar</button><button type="button" disabled={!importFile || importing} onClick={() => void previewImport()} className="rounded-xl border border-gold/50 px-4 py-3 text-sm font-bold text-gold disabled:opacity-50">{importing ? "Analisando..." : "Analisar arquivo"}</button>{importResult && importResult.valid_count > 0 && importResult.created_count === 0 && <button type="button" disabled={importing} onClick={() => void commitImport()} className="rounded-xl bg-gold px-4 py-3 text-sm font-black text-surface-00 disabled:opacity-50">Confirmar importação</button>}</div>
+            </div>
+          </div>
+        )}
 
         <div className="p-6">
           {loading ? (

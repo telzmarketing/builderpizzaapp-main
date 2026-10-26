@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,9 @@ from backend.core.response import ok, created
 from backend.database import get_db
 from backend.models.customer import LgpdPolicy
 from backend.routes.admin_auth import get_current_admin
+from backend.core.rbac_authorization import AuthorizedTenantActor, require_rbac_permission
+from backend.core.tenant_context import TenantContext
+from backend.core.tenant_runtime import resolve_public_tenant_context
 
 router = APIRouter(prefix="/lgpd", tags=["lgpd"])
 admin_router = APIRouter(prefix="/admin/lgpd", tags=["admin-lgpd"])
@@ -50,6 +53,16 @@ _DEFAULT_CONTACT = (
     "Para exercer seus direitos ou esclarecer dúvidas sobre esta política, entre em contato conosco "
     "pelo e-mail ou telefone disponíveis em nossa loja."
 )
+
+LEGACY_TENANT_ID = "tenant-legacy-default"
+
+
+def _tenant_id(context: TenantContext | None) -> str:
+    return context.tenant_id if context is not None else LEGACY_TENANT_ID
+
+
+def _policy_query(db: Session, tenant_id: str):
+    return db.query(LgpdPolicy).filter(LgpdPolicy.tenant_id == tenant_id)
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -92,9 +105,10 @@ class LgpdPolicyIn(BaseModel):
 # ── Public endpoint ───────────────────────────────────────────────────────────
 
 @router.get("/current")
-def get_current_policy(db: Session = Depends(get_db)):
+def get_current_policy(request: Request, db: Session = Depends(get_db)):
     """Returns the active LGPD policy. Used by registration flow."""
-    policy = db.query(LgpdPolicy).filter(LgpdPolicy.is_active == True).first()  # noqa: E712
+    context = resolve_public_tenant_context(request, db)
+    policy = _policy_query(db, _tenant_id(context)).filter(LgpdPolicy.is_active == True).first()  # noqa: E712
     if not policy:
         return ok(None)
     return ok(LgpdPolicyOut.model_validate(policy))
@@ -103,18 +117,25 @@ def get_current_policy(db: Session = Depends(get_db)):
 # ── Admin endpoints ───────────────────────────────────────────────────────────
 
 @admin_router.get("")
-def list_policies(db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    policies = db.query(LgpdPolicy).order_by(LgpdPolicy.created_at.desc()).all()
+def list_policies(
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("configuracoes", "view")),
+):
+    policies = _policy_query(db, actor.tenant_id).order_by(LgpdPolicy.created_at.desc()).all()
     return ok([LgpdPolicyOut.model_validate(p) for p in policies])
 
 
 @admin_router.post("")
-def create_policy(body: LgpdPolicyIn, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    if body.is_active:
-        db.query(LgpdPolicy).update({"is_active": False})
+def create_policy(
+    body: LgpdPolicyIn,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("configuracoes", "edit")),
+):
+    # Creation is always a draft. Publication is an explicit separate command.
     policy = LgpdPolicy(
         id=str(uuid.uuid4()),
-        **body.model_dump(),
+        tenant_id=actor.tenant_id,
+        **{**body.model_dump(), "is_active": False},
     )
     db.add(policy)
     db.commit()
@@ -123,13 +144,17 @@ def create_policy(body: LgpdPolicyIn, db: Session = Depends(get_db), _=Depends(g
 
 
 @admin_router.post("/seed-default")
-def seed_default_policy(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def seed_default_policy(
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("configuracoes", "edit")),
+):
     """Creates a default policy with pre-filled texts if none exists."""
-    existing = db.query(LgpdPolicy).first()
+    existing = _policy_query(db, actor.tenant_id).first()
     if existing:
         return ok({"message": "Política já existe.", "id": existing.id})
     policy = LgpdPolicy(
         id=str(uuid.uuid4()),
+        tenant_id=actor.tenant_id,
         version="1.0",
         title="Política de Privacidade e Proteção de Dados",
         intro_text=_DEFAULT_INTRO,
@@ -141,7 +166,7 @@ def seed_default_policy(db: Session = Depends(get_db), _=Depends(get_current_adm
         contact_text=_DEFAULT_CONTACT,
         marketing_email_label="Desejo receber promoções e novidades por e-mail",
         marketing_whatsapp_label="Desejo receber promoções e novidades pelo WhatsApp",
-        is_active=True,
+        is_active=False,
     )
     db.add(policy)
     db.commit()
@@ -152,17 +177,22 @@ def seed_default_policy(db: Session = Depends(get_db), _=Depends(get_current_adm
 @admin_router.put("/{policy_id}")
 def update_policy(
     policy_id: str, body: LgpdPolicyIn,
-    db: Session = Depends(get_db), _=Depends(get_current_admin),
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("configuracoes", "edit")),
 ):
-    policy = db.query(LgpdPolicy).filter(LgpdPolicy.id == policy_id).first()
+    policy = _policy_query(db, actor.tenant_id).filter(LgpdPolicy.id == policy_id).first()
     if not policy:
         raise HTTPException(status_code=404, detail="Política não encontrada.")
 
-    if body.is_active:
-        db.query(LgpdPolicy).filter(LgpdPolicy.id != policy_id).update({"is_active": False})
+    if policy.is_active:
+        raise HTTPException(status_code=409, detail={
+            "code": "ActivePolicyImmutable",
+            "message": "A política publicada é imutável; crie uma nova versão em rascunho.",
+        })
 
-    for k, v in body.model_dump().items():
+    for k, v in body.model_dump(exclude={"is_active"}).items():
         setattr(policy, k, v)
+    policy.is_active = False
     policy.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(policy)
@@ -170,8 +200,12 @@ def update_policy(
 
 
 @admin_router.delete("/{policy_id}")
-def delete_policy(policy_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    policy = db.query(LgpdPolicy).filter(LgpdPolicy.id == policy_id).first()
+def delete_policy(
+    policy_id: str,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("configuracoes", "edit")),
+):
+    policy = _policy_query(db, actor.tenant_id).filter(LgpdPolicy.id == policy_id).first()
     if not policy:
         raise HTTPException(status_code=404, detail="Política não encontrada.")
     if policy.is_active:
@@ -182,11 +216,15 @@ def delete_policy(policy_id: str, db: Session = Depends(get_db), _=Depends(get_c
 
 
 @admin_router.post("/{policy_id}/activate")
-def activate_policy(policy_id: str, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    db.query(LgpdPolicy).update({"is_active": False})
-    policy = db.query(LgpdPolicy).filter(LgpdPolicy.id == policy_id).first()
+def activate_policy(
+    policy_id: str,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("configuracoes", "edit")),
+):
+    policy = _policy_query(db, actor.tenant_id).filter(LgpdPolicy.id == policy_id).first()
     if not policy:
         raise HTTPException(status_code=404, detail="Política não encontrada.")
+    _policy_query(db, actor.tenant_id).update({"is_active": False})
     policy.is_active = True
     policy.updated_at = datetime.now(timezone.utc)
     db.commit()

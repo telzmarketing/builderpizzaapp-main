@@ -20,10 +20,10 @@ import {
 type FinanceSection = "settings" | "summary" | "registries" | "transactions";
 
 const sections: AdminPageTab<FinanceSection>[] = [
-  { id: "settings", label: "Configuracoes", icon: Settings },
   { id: "summary", label: "Resumo e DRE", icon: LayoutDashboard },
   { id: "registries", label: "Cadastros", icon: Tags },
   { id: "transactions", label: "Lancamentos", icon: ClipboardList },
+  { id: "settings", label: "Configuracoes", icon: Settings },
 ];
 
 const panelClass = "rounded-lg border border-surface-03 bg-surface-02 p-5";
@@ -102,7 +102,7 @@ const emptyTransaction: FinanceTransactionInput = {
 };
 
 export default function GestaoFinance() {
-  const [section, setSection] = useState<FinanceSection>("settings");
+  const [section, setSection] = useState<FinanceSection>("summary");
 
   return (
     <AdminGestao

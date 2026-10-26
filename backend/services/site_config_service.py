@@ -8,6 +8,7 @@ from backend.core.exceptions import DomainError
 from backend.core.tenant_auth import get_current_tenant_context
 from backend.core.tenant_context import TenantContextMissing
 from backend.models.tenant import Tenant
+from backend.models.platform_saas import TenantProfile
 from backend.services.tenant_domain_service import TenantDomainService, parse_hostname_set, trusted_request_hostname
 from backend.services.platform_branding_service import PlatformBrandingService
 
@@ -84,6 +85,25 @@ class SiteConfigService:
         content, updated_at = stored or ({}, None)
         return content, updated_at, identity
 
+    def operational_identity(self, tenant_id):
+        """Read the same tenant-owned logo configured for the public storefront."""
+        tenant = self.db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        profile = self.db.query(TenantProfile).filter(TenantProfile.tenant_id == tenant_id).first()
+        stored = self._read(self.key(tenant_id))
+        if stored is None and tenant and tenant.is_legacy:
+            stored = self._read("default")
+        content = stored[0] if stored else {}
+        brand = content.get("brand") if isinstance(content.get("brand"), dict) else {}
+        media = content.get("media") if isinstance(content.get("media"), dict) else {}
+        def clean(value):
+            return value.strip() if isinstance(value, str) else ""
+        logo = next((clean(value) for value in (brand.get("logo"), brand.get("logoUrl"), media.get("logoUrl"))
+                     if clean(value) and (clean(value).startswith(("https://", "http://", "/", "uploads/", "api/uploads/")))), "")
+        if logo and not logo.startswith(("http://", "https://", "/")):
+            logo = "/" + logo
+        return {"name": clean(brand.get("name")) or (profile.trade_name if profile else None) or (tenant.name if tenant else ""),
+                "logo_url": logo or (profile.logo_url if profile else None)}
+
     def save(self, request, admin, content):
         identity = self.identity(request)
         tenant_id = identity.tenant_id
@@ -100,6 +120,33 @@ class SiteConfigService:
             "ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, updated_at = CURRENT_TIMESTAMP"
         ), {"key": self.key(tenant_id), "content": json.dumps(content, ensure_ascii=False)})
         self.db.commit()
+        return content
+
+    def read_admin(self, request, admin):
+        """Authenticated company config; the manager host does not select its identity."""
+        identity = self.identity(request)
+        tenant_id = identity.tenant_id
+        if identity.platform or tenant_id or get_settings().MULTI_TENANT_AUTH_ENABLED:
+            context = get_current_tenant_context(
+                authorization=request.headers.get("authorization"), requested_tenant_id=request.headers.get("x-tenant-id"),
+                admin=admin, db=self.db,
+            )
+            if tenant_id and context.tenant_id != tenant_id:
+                raise SiteConfigForbidden("Empresa selecionada diverge do dominio.")
+            tenant_id = context.tenant_id
+        tenant = self.db.query(Tenant).filter(Tenant.id == tenant_id).first() if tenant_id else None
+        stored = self._read(self.key(tenant_id))
+        if stored is None and tenant and tenant.is_legacy:
+            stored = self._read("default")
+        content = dict(stored[0]) if stored else {}
+        if tenant_id:
+            branding = self.operational_identity(tenant_id)
+            brand = dict(content.get("brand")) if isinstance(content.get("brand"), dict) else {}
+            media = content.get("media") if isinstance(content.get("media"), dict) else {}
+            brand.setdefault("name", branding["name"])
+            if not any((brand.get("logo"), brand.get("logoUrl"), media.get("logoUrl"))):
+                brand["logo"] = branding["logo_url"] or ""
+            content["brand"] = brand
         return content
 
     @staticmethod
@@ -141,10 +188,11 @@ class SiteConfigService:
         short_name = str(brand.get("name") or "Sua Loja").strip()
         version = self.version(updated_at)
         return {
+            "id": "/painel" if identity.platform else "/motoboy",
             "name": name, "short_name": short_name[:24] or "Sua Loja",
             "description": "Gestor Telz" if identity.platform else "Loja online",
-            "start_url": "/painel" if identity.platform else "/motoboy",
-            "scope": "/painel" if identity.platform else "/motoboy",
+            "start_url": "/painel" if identity.platform else "/motoboy/",
+            "scope": "/painel" if identity.platform else "/motoboy/",
             "display": "standalone", "display_override": ["fullscreen", "standalone"],
             "orientation": "portrait", "theme_color": "#000000", "background_color": "#000000",
             "icons": [{"src": f"/api/site-config/favicon?size={size}&v={version}",

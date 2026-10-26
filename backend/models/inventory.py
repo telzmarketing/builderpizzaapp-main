@@ -88,6 +88,7 @@ class InventoryItem(Base):
     name = Column(String(180), nullable=False)
     sku = Column(String(80), nullable=True, index=True)
     item_type = Column(String(40), nullable=False, default="ingredient")
+    portionable = Column(Boolean, nullable=False, default=False, server_default="false")
     category_id = Column(String, ForeignKey("inventory_categories.id", ondelete="SET NULL"), nullable=True, index=True)
     unit_id = Column(String, ForeignKey("inventory_units.id", ondelete="SET NULL"), nullable=True, index=True)
     default_location_id = Column(String, ForeignKey("inventory_locations.id", ondelete="SET NULL"), nullable=True, index=True)

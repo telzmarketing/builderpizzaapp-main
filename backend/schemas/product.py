@@ -161,6 +161,7 @@ class ProductBase(BaseModel):
     best_seller_badge_mode: str = "off"  # "off" | "manual" | "auto"
     visible_delivery: bool = True
     visible_dine_in: bool = True
+    show_crust_options: bool = True
     delivery_price: Optional[float] = Field(default=None, ge=0)
     dine_in_price: Optional[float] = Field(default=None, ge=0)
 

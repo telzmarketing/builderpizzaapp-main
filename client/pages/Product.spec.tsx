@@ -32,4 +32,13 @@ describe("product page direct access", () => {
     expect(html).toContain("Carregando opcoes");
     expect(html).toMatch(/disabled=""/);
   });
+
+  it("reuses configuration inside operator flow without public navigation", () => {
+    const product = { id: "operator-product", name: "Agua", description: "Agua mineral", product_type: "drink", price: 5, icon: "💧", active: true };
+    const html = renderToStaticMarkup(<StaticRouter location="/operacoes/novo-pedido"><Product productId="operator-product" catalog={[product as never]} embedded onBack={() => {}} onAdd={() => {}} /></StaticRouter>);
+    expect(html).toContain("Configurar produto");
+    expect(html).toContain("Voltar ao catálogo");
+    expect(html).not.toContain("Ir para a home da loja");
+    expect(html).not.toContain('href="/cart"');
+  });
 });

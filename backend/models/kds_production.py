@@ -15,7 +15,7 @@ class ProductionUnit(Base):
         ForeignKeyConstraint(["tenant_id", "order_id"], ["orders.tenant_id", "orders.id"], ondelete="RESTRICT"),
         ForeignKeyConstraint(["tenant_id", "order_item_id"], ["order_items.tenant_id", "order_items.id"], ondelete="RESTRICT"),
         CheckConstraint("unit_index > 0", name="ck_production_unit_index"),
-        CheckConstraint("state IN ('unassigned','queued','assembling','assembled','baking','checking','ready','blocked','cancelled')", name="ck_production_unit_state"),
+        CheckConstraint("state IN ('unassigned','queued','checking_stock','aguardando_analise','atendimento','assembling','assembled','baking','checking','ready','blocked','cancelled')", name="ck_production_unit_state"),
     )
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
@@ -36,7 +36,8 @@ class ProductionAttempt(Base):
         Index("uq_production_attempts_tenant_unit_number", "tenant_id", "production_unit_id", "attempt_number", unique=True),
         ForeignKeyConstraint(["tenant_id", "production_unit_id"], ["production_units.tenant_id", "production_units.id"], ondelete="RESTRICT"),
         CheckConstraint("attempt_number > 0", name="ck_production_attempt_number"),
-        CheckConstraint("state IN ('queued','assembling','assembled','baking','checking','ready','blocked','cancelled')", name="ck_production_attempt_state"),
+        CheckConstraint("state IN ('queued','checking_stock','aguardando_analise','atendimento','assembling','assembled','baking','checking','ready','blocked','cancelled')", name="ck_production_attempt_state"),
+        Index("ix_production_attempts_stock_queue", "tenant_id", "state", "stock_requested_at"),
     )
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
@@ -48,6 +49,9 @@ class ProductionAttempt(Base):
     previous_attempt_id = Column(String, ForeignKey("production_attempts.id", ondelete="RESTRICT"), nullable=True)
     assigned_at = Column(DateTime(timezone=True))
     started_at = Column(DateTime(timezone=True))
+    stock_requested_at = Column(DateTime(timezone=True))
+    stock_check_after = Column(DateTime(timezone=True))
+    stock_consumption_mode = Column(String(30))
     assembly_finished_at = Column(DateTime(timezone=True))
     oven_started_at = Column(DateTime(timezone=True))
     oven_finished_at = Column(DateTime(timezone=True))

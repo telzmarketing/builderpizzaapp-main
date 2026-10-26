@@ -398,6 +398,13 @@ class InventoryService:
         status = getattr(order.status, "value", order.status)
         if status != "preparing":
             return {"deducted": False, "reason": "not_preparing", "movements": 0}
+        # Persistent physical units choose the unit writer. Never charge the same
+        # commercial order again when its stock gate/tentative writer is active.
+        from backend.models.kds_production import ProductionUnit
+        if self._db.query(ProductionUnit.id).filter_by(
+            tenant_id=self._tenant_id, order_id=order_id,
+        ).first():
+            return {"deducted": False, "reason": "kds_units", "movements": 0}
         existing = (
             self._db.query(InventoryStockMovement.id)
             .filter(
@@ -919,6 +926,7 @@ class InventoryService:
             "name": item.name,
             "sku": item.sku,
             "item_type": item.item_type,
+            "portionable": bool(item.portionable),
             "category_id": item.category_id,
             "category_name": item.category.name if item.category else None,
             "unit_id": item.unit_id,

@@ -190,6 +190,26 @@ def test_dispatch_keeps_assigned_order_visible_but_marks_it_read_only():
     )[0]
     assert assigned_payload["delivery"]["delivery_person_name"] == "Carlos Silva"
     assert assigned_payload["can_assign_driver"] is False
+    assert assigned_payload["payment_status"] is None
+    assert assigned_payload["payment_provider"] is None
+    assert assigned_payload["cash_change_amount"] is None
+
+    # Operational status does not imply payment confirmation, including pickup.
+    payment = SimpleNamespace(status="pending", provider="on_delivery", method="cash",
+                              pay_on_delivery=True, delivery_payment_method="cash",
+                              cash_needs_change=True, cash_change_for=100)
+    pickup_base = {**base, "fulfillment_type": "pickup", "total": 74.99, "payment": payment}
+    pickup = service._serialize_orders(
+        [SimpleNamespace(**pickup_base, delivery=None)], include_dispatch_details=True,
+    )[0]
+    assert pickup["payment_status"] == "pending"
+    assert pickup["payment_provider"] == "on_delivery"
+    assert pickup["cash_change_amount"] == 25.01
+    kitchen_pickup = service._serialize_orders(
+        [SimpleNamespace(**pickup_base, delivery=None)], include_dispatch_details=False,
+    )[0]
+    assert "payment_status" not in kitchen_pickup
+    assert "cash_change_amount" not in kitchen_pickup
 
     failed = SimpleNamespace(
         id="delivery-2", status=DeliveryStatus.failed,

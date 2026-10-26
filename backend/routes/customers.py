@@ -1,7 +1,10 @@
+import csv
+import io
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -27,15 +30,99 @@ from backend.services.customer_ai_service import (
 )
 from backend.schemas.customer import (
     CustomerCreate, CustomerUpdate, CustomerOut,
-    AddressCreate, AddressOut, CustomerIdentityOut, WhatsAppLeadCreate,
+    AddressCreate, AddressOut, CustomerIdentityOut, WhatsAppLeadCreate, AdminCustomerCreate,
 )
 from backend.core.response import ok
 from backend.core.tenant_context import TenantContext
 from backend.core.tenant_ownership import assign_tenant_on_create, customers_orders_enforcement_enabled, scope_query_to_tenant
 from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
+from backend.core.rbac_authorization import AuthorizedTenantActor, require_rbac_permission
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 suggestions_router = APIRouter(prefix="/suggestions", tags=["customer-ai"])
+admin_router = APIRouter(prefix="/admin/customers", tags=["admin-customers"])
+
+_IMPORT_HEADERS = {"name", "nome", "nome completo", "phone", "telefone", "whatsapp", "email", "e-mail"}
+
+
+def _parse_customer_import(filename: str, raw: bytes) -> list[tuple[int, dict[str, str]]]:
+    name = (filename or "").lower().strip()
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Arquivo de clientes excede o limite de 5 MB.")
+    if name.endswith(".csv"):
+        text = None
+        for encoding in ("utf-8-sig", "latin-1"):
+            try:
+                text = raw.decode(encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        if text is None:
+            raise HTTPException(status_code=422, detail="CSV inválido. Use UTF-8 ou Latin-1.")
+        try:
+            dialect = csv.Sniffer().sniff(text[:2048], delimiters=",;")
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.DictReader(io.StringIO(text), dialect=dialect)
+        if not reader.fieldnames:
+            raise HTTPException(status_code=422, detail="CSV sem cabeçalho.")
+        return [(index, {str(k or "").strip().lower(): str(v or "").strip() for k, v in row.items()})
+                for index, row in enumerate(reader, start=2) if any(str(v or "").strip() for v in row.values())]
+    if name.endswith(".xlsx"):
+        try:
+            from openpyxl import load_workbook
+        except ImportError as exc:
+            raise HTTPException(status_code=503, detail="Importação XLSX indisponível no servidor.") from exc
+        workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        rows = workbook.active.iter_rows(values_only=True)
+        headers = next(rows, None)
+        if not headers:
+            raise HTTPException(status_code=422, detail="Planilha sem cabeçalho.")
+        normalized_headers = [str(value or "").strip().lower() for value in headers]
+        return [(index, {key: str(value or "").strip() for key, value in zip(normalized_headers, values)})
+                for index, values in enumerate(rows, start=2) if any(str(v or "").strip() for v in values)]
+    raise HTTPException(status_code=422, detail="Envie um arquivo CSV ou XLSX.")
+
+
+def _import_value(row: dict[str, str], *keys: str) -> str:
+    for key in keys:
+        value = row.get(key)
+        if value:
+            return value.strip()
+    return ""
+
+LEGACY_TENANT_ID = "tenant-legacy-default"
+
+
+def _resolved_tenant_id(context: TenantContext | None) -> str:
+    return context.tenant_id if context is not None else LEGACY_TENANT_ID
+
+
+def _phone_conflict(db: Session, tenant_id: str, phone: str | None) -> Customer | None:
+    normalized = normalize_phone(phone)
+    if not normalized:
+        return None
+    return (
+        db.query(Customer)
+        .filter(Customer.tenant_id == tenant_id, Customer.normalized_phone == normalized)
+        .first()
+        or db.query(Customer)
+        .filter(Customer.tenant_id == tenant_id, Customer.phone.in_([normalized, phone]))
+        .first()
+    )
+
+
+def _raise_phone_conflict(customer: Customer) -> None:
+    raise HTTPException(status_code=409, detail={
+        "code": "CustomerPhoneConflict",
+        "message": "Já existe um cliente com este telefone.",
+        "customer": {
+            "id": customer.id,
+            "name": customer.name,
+            "phone": customer.phone,
+            "email": customer.email,
+        },
+    })
 
 
 def _tenant_query(db: Session, model, context: TenantContext | None):
@@ -151,13 +238,25 @@ def get_customer(
 @router.post("", response_model=CustomerOut, status_code=201)
 def create_customer(body: CustomerCreate, request: Request, db: Session = Depends(get_db)):
     context = resolve_public_tenant_context(request, db)
+    tenant_id = _resolved_tenant_id(context)
+    normalized_phone = normalize_phone(body.phone)
+    existing_phone = _phone_conflict(db, tenant_id, normalized_phone)
+    if existing_phone:
+        _raise_phone_conflict(existing_phone)
     existing = _tenant_query(db, Customer, context).filter(Customer.email == body.email).first()
     if existing:
         raise HTTPException(400, "E-mail já cadastrado.")
-    customer = Customer(id=str(uuid.uuid4()), **body.model_dump())
+    customer = Customer(id=str(uuid.uuid4()), normalized_phone=normalized_phone or None, **body.model_dump())
     _own(customer, context)
     db.add(customer)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        existing_phone = _phone_conflict(db, tenant_id, normalized_phone)
+        if existing_phone:
+            _raise_phone_conflict(existing_phone)
+        raise exc
     CustomerIdentityService(db).sync_registered_customer(customer, auth_provider="manual")
     tenant_id = context.tenant_id if context else customer.tenant_id
     if tenant_id:
@@ -166,6 +265,129 @@ def create_customer(body: CustomerCreate, request: Request, db: Session = Depend
     db.commit()
     db.refresh(customer)
     return customer
+
+
+@admin_router.post("", response_model=CustomerOut, status_code=201)
+def create_admin_customer(
+    body: AdminCustomerCreate,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("clientes", "create")),
+):
+    """Create a minimal customer for operator flows inside one tenant."""
+    normalized_phone = normalize_phone(body.phone)
+    existing_phone = _phone_conflict(db, actor.tenant_id, normalized_phone)
+    if existing_phone:
+        _raise_phone_conflict(existing_phone)
+    email = str(body.email).strip().lower() if body.email else None
+    if email and db.query(Customer).filter(Customer.tenant_id == actor.tenant_id, Customer.email == email).first():
+        raise HTTPException(status_code=409, detail={
+            "code": "CustomerEmailConflict",
+            "message": "Já existe um cliente com este e-mail.",
+        })
+    customer = Customer(
+        id=str(uuid.uuid4()),
+        tenant_id=actor.tenant_id,
+        name=body.name.strip(),
+        email=email,
+        phone=body.phone,
+        normalized_phone=normalized_phone or None,
+        source="admin",
+        lgpd_consent=False,
+        marketing_email_consent=False,
+        marketing_whatsapp_consent=False,
+    )
+    db.add(customer)
+    try:
+        db.flush()
+        CustomerIdentityService(db).sync_registered_customer(customer, auth_provider="none")
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        existing_phone = _phone_conflict(db, actor.tenant_id, normalized_phone)
+        if existing_phone:
+            _raise_phone_conflict(existing_phone)
+        raise exc
+    db.refresh(customer)
+    return customer
+
+
+@admin_router.get("/import-template")
+def download_customer_import_template(
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("clientes", "create")),
+):
+    """Download the exact headers accepted by the customer importer."""
+    return {
+        "filename": "modelo-clientes.csv",
+        "content": "nome,telefone,email\nJoão da Silva,5511999999999,joao@example.com\n",
+    }
+
+
+@admin_router.post("/import")
+async def import_customers(
+    file: UploadFile = File(...),
+    commit: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("clientes", "create")),
+):
+    """Preview or commit a tenant-scoped customer import.
+
+    Phone is the deduplication key. Existing records are never overwritten and
+    imported rows never grant marketing consent.
+    """
+    raw = await file.read()
+    rows = _parse_customer_import(file.filename or "", raw)
+    existing = {
+        row[0]
+        for row in db.query(Customer.normalized_phone).filter(
+            Customer.tenant_id == actor.tenant_id,
+            Customer.normalized_phone.isnot(None),
+        ).all()
+        if row[0]
+    }
+    seen: set[str] = set()
+    valid: list[dict] = []
+    errors: list[dict] = []
+    for row_number, row in rows:
+        name = _import_value(row, "nome", "nome completo", "name")
+        phone = _import_value(row, "telefone", "whatsapp", "phone")
+        email = _import_value(row, "e-mail", "email") or None
+        normalized = normalize_phone(phone)
+        if not name:
+            errors.append({"row": row_number, "reason": "Nome obrigatório."})
+        elif not normalized:
+            errors.append({"row": row_number, "reason": "Telefone obrigatório e inválido."})
+        elif normalized in existing or normalized in seen:
+            errors.append({"row": row_number, "reason": "Telefone já cadastrado ou duplicado no arquivo."})
+        else:
+            seen.add(normalized)
+            valid.append({"name": name[:200], "phone": phone[:30], "normalized_phone": normalized, "email": email})
+    created = 0
+    if commit and valid:
+        for payload in valid:
+            customer = Customer(
+                id=str(uuid.uuid4()), tenant_id=actor.tenant_id,
+                name=payload["name"], phone=payload["phone"],
+                normalized_phone=payload["normalized_phone"], email=payload["email"],
+                source="import", lgpd_consent=False,
+                marketing_email_consent=False, marketing_whatsapp_consent=False,
+            )
+            try:
+                with db.begin_nested():
+                    db.add(customer)
+                    db.flush()
+                created += 1
+            except IntegrityError:
+                errors.append({"row": None, "reason": "Telefone já cadastrado durante a importação."})
+        db.commit()
+    return {
+        "mode": "committed" if commit else "preview",
+        "total_rows": len(rows),
+        "valid_count": len(valid),
+        "created_count": created,
+        "rejected_count": len(errors),
+        "rows": valid[:100],
+        "errors": errors[:500],
+    }
 
 
 @router.put("/{customer_id}", response_model=CustomerOut)
@@ -186,7 +408,14 @@ def update_customer(
         customer, db, authorization, x_customer_phone, x_customer_email,
         expected_tenant_id=context.tenant_id if context else None,
     )
-    for key, value in body.model_dump(exclude_none=True).items():
+    updates = body.model_dump(exclude_none=True)
+    if "phone" in updates:
+        normalized_phone = normalize_phone(updates["phone"])
+        existing_phone = _phone_conflict(db, _resolved_tenant_id(context), normalized_phone)
+        if existing_phone and existing_phone.id != customer.id:
+            _raise_phone_conflict(existing_phone)
+        updates["normalized_phone"] = normalized_phone or None
+    for key, value in updates.items():
         setattr(customer, key, value)
     db.commit()
     db.refresh(customer)

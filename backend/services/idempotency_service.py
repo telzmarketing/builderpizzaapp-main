@@ -72,6 +72,31 @@ class IdempotencyService:
         self.db.add(record)
         self.db.commit()
 
+    def abandon(self, record: IdempotencyKey) -> None:
+        """Release a claim when the business operation did not commit."""
+        self.db.rollback()
+        fresh = self.db.query(IdempotencyKey).filter(IdempotencyKey.id == record.id).first()
+        if fresh is not None and fresh.status == "processing":
+            self.db.delete(fresh)
+            self.db.commit()
+
+    def recover_completed(self, key: str, operation: str, payload: Any, resource_id: str) -> IdempotencyClaim:
+        """Complete a processing claim after recovering its committed resource."""
+        normalized = (key or "").strip()
+        record = self._find(operation, self._digest(normalized))
+        if record is None:
+            raise IdempotencyConflict("Chave de idempotencia nao encontrada.")
+        request_hash = self._request_digest(payload)
+        if record.request_hash != request_hash:
+            raise IdempotencyConflict("A mesma chave foi usada com outro payload.")
+        if record.status == "completed":
+            return IdempotencyClaim(record=record, replay_resource_id=record.resource_id)
+        record.status = "completed"
+        record.resource_id = resource_id
+        record.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        return IdempotencyClaim(record=record, replay_resource_id=resource_id)
+
     def _find(self, operation: str, key_hash: str) -> IdempotencyKey | None:
         return self.db.query(IdempotencyKey).filter(
             IdempotencyKey.tenant_id == self.tenant_id,

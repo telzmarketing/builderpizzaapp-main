@@ -73,6 +73,17 @@ def test_options_use_database_names_and_channel_price(catalog):
     assert service._validate_item(cart(), config(), channel="dine_in")[0] == 32
 
 
+def test_product_can_disable_crust_and_border_options(catalog):
+    product, rows, service = catalog
+    product.show_crust_options = False
+    rows[ProductCrustType] = [S(
+        id="crust", product_id="pizza", tenant_id="tenant-legacy-default",
+        active=True, name="Massa Tradicional", price_addition=0,
+    )]
+    with pytest.raises(DomainError, match="nao permite selecionar"):
+        service._validate_item(cart(selected_crust_type_id="crust"), config())
+
+
 def test_valid_size_takes_precedence_over_channel_price(catalog):
     product, rows, service = catalog
     size = S(id="large", product_id="pizza", tenant_id="tenant-legacy-default", active=True, label="Grande", price=80)

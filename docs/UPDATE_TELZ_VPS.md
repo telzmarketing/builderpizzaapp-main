@@ -8,7 +8,7 @@ uma reconstrucao planejada; ele nao deve ser reutilizado como updater.
 
 ## Fundacao de estoque ? schema com Decimal e novas operacoes
 
-O head atual da fonte e `20261022_receipt_pdf_camera_evidence`, filho de
+O head atual da fonte e `20261026_product_crust_visibility`, filho de
 `20261020_inventory_recipe_fractions`. A migration verifica finitude, amplitude e
 escala antes de converter quantidades/custos de estoque; residuos incompat?veis
 bloqueiam a atualizacao em vez de arredondar historico silenciosamente. Nao ha
@@ -217,7 +217,7 @@ obrigatoria e SHA completo aprovado no CI:
     esac
   done
   test "$(systemctl show telz-domain-ssl.service -p ActiveState --value)" = inactive
-  TELZ_ALEMBIC_TARGET=20261022_receipt_pdf_camera_evidence \
+  TELZ_ALEMBIC_TARGET=20261026_product_crust_visibility \
     /usr/local/sbin/telz-deploy-from-origin "$TARGET" /opt/telz
 )
 ```
@@ -343,7 +343,7 @@ imutavel e executa health checks.
 O target canonico desta entrega e:
 
 ```text
-20261022_receipt_pdf_camera_evidence
+20261026_product_crust_visibility
 ```
 
 O deploy fica bloqueado se o commit publicado nao possuir exatamente esse unico
@@ -370,7 +370,7 @@ A cadeia operacional que deve existir no commit publicado e linear:
   -> 20261014_tenant_domain_ssl
   -> 20261017_site_config
   -> 20261017_delivery_schema
-  -> 20261022_receipt_pdf_camera_evidence
+  -> 20261026_product_crust_visibility
 ```
 
 ## 2. Preflight
@@ -392,7 +392,7 @@ movimentacao manual para contornar o gate.
 
 Confirme no commit alvo:
 
-- unico head Alembic `20261022_receipt_pdf_camera_evidence`;
+- unico head Alembic `20261026_product_crust_visibility`;
 - workflow e updater usando o mesmo target;
 - CI verde para o mesmo SHA, incluindo o upgrade Alembic em PostgreSQL
   descartavel; CI verde nao substitui o backup nem a migration na VPS;
@@ -428,7 +428,7 @@ deploy, todos estes inputs promovidos e root-owned:
 - archive de fonte alvo e seu `TELZ_SOURCE_ARCHIVE_SHA256`;
 - archive de fonte anterior e seu `TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256`;
 - archive offline de dependencias e seu `TELZ_DEPENDENCY_ARCHIVE_SHA256`;
-- `TELZ_ALEMBIC_TARGET=20261022_receipt_pdf_camera_evidence`;
+- `TELZ_ALEMBIC_TARGET=20261026_product_crust_visibility`;
 - `TELZ_PUBLIC_HEALTH_URL` quando HTTPS publico e obrigatorio.
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
@@ -469,7 +469,7 @@ sudo /usr/local/sbin/telz-health-check /opt/telz
 ```
 
 Confirme que o link `current` termina em `/releases/<SHA-ALVO>/app`, o manifest
-registra o mesmo commit e `20261022_receipt_pdf_camera_evidence`, e o banco possui uma unica
+registra o mesmo commit e `20261026_product_crust_visibility`, e o banco possui uma unica
 revision igual ao target.
 
 Tambem valide HTTPS publico, login, loja, pedido, pagamentos, cozinha,

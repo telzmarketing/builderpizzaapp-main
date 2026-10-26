@@ -42,11 +42,15 @@ const IMAGE_FILE_RE = /\.(apng|avif|gif|jpe?g|jfif|pjpeg|pjp|png|svg|webp)$/i;
 
 export class ApiRequestError extends Error {
   readonly status: number;
+  readonly code?: string;
+  readonly payload?: unknown;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: string, payload?: unknown) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
+    this.code = code;
+    this.payload = payload;
   }
 }
 
@@ -113,7 +117,8 @@ function authHeaders(): HeadersInit {
 }
 
 function recoverUnauthorizedAdminSession(status: number, path: string): string | null {
-  if (path.startsWith("/auth/") || !window.location.pathname.startsWith("/painel")) return null;
+  const staffSurface = window.location.pathname.startsWith("/painel") || window.location.pathname === "/operacoes/novo-pedido";
+  if (path.startsWith("/auth/") || !staffSurface) return null;
   if (!shouldInvalidateAdminSession(status, path)) return null;
   if (readPlatformSupportSession()) {
     restorePlatformMasterSession();
@@ -177,9 +182,13 @@ async function requestForm<T>(method: string, path: string, body: FormData, extr
     const recoveryMessage = recoverUnauthorizedAdminSession(res.status, path);
     if (recoveryMessage) throw new Error(recoveryMessage);
     let message = `HTTP ${res.status}`;
+    let payload: unknown;
+    let code: string | undefined;
     try {
       const data = await res.json();
+      payload = data;
       const detail = data?.error?.message ?? data?.detail;
+      code = data?.error?.code ?? data?.detail?.code;
       if (Array.isArray(detail)) {
         message = detail.map((e: { msg?: string }) => e.msg ?? String(e)).join("; ");
       } else if (typeof detail === "string") {
@@ -188,7 +197,7 @@ async function requestForm<T>(method: string, path: string, body: FormData, extr
     } catch {
       /* ignore parse errors */
     }
-    throw new ApiRequestError(message, res.status);
+    throw new ApiRequestError(message, res.status, code, payload);
   }
 
   if (res.status === 204) return undefined as unknown as T;
@@ -386,6 +395,7 @@ export interface ApiProduct {
   active: boolean;
   visible_delivery?: boolean;
   visible_dine_in?: boolean;
+  show_crust_options?: boolean;
   delivery_price?: number | null;
   dine_in_price?: number | null;
   created_at: string;
@@ -992,7 +1002,12 @@ export interface ApiPromotionalKit {
   items: ApiKitItem[];
 }
 
+export type { OperationalDrink } from "./operationalDrinks";
+import type { OperationalDrink } from "./operationalDrinks";
+
 export interface ApiOrderItem {
+  product_type?: string | null;
+  is_drink?: boolean;
   selected_border_id?: string | null;
   selected_border_name?: string | null;
   selected_drink_variant_id?: string | null;
@@ -1043,6 +1058,8 @@ export type OrderStatus =
   | "refunded";
 
 export interface ApiOrder {
+  drinks?: OperationalDrink[];
+  has_drinks?: boolean;
   id: string;
   order_code: string | null;
   customer_id: string | null;
@@ -1077,6 +1094,7 @@ export interface ApiOrder {
   delivery_payment_method?: "cash" | "card" | string | null;
   cash_needs_change?: boolean | null;
   cash_change_for?: number | null;
+  cash_change_amount?: number | null;
   external_reference?: string | null;
   items: ApiOrderItem[];
   created_at: string;
@@ -1110,6 +1128,8 @@ export interface ApiOrder {
 }
 
 export interface KdsOrderItem {
+  product_type?: string | null;
+  is_drink?: boolean;
   id: string;
   product_id: string;
   product_name: string;
@@ -1133,6 +1153,8 @@ export interface KdsDeliverySummary {
 }
 
 export interface KdsKitchenOrder {
+  drinks?: OperationalDrink[];
+  has_drinks?: boolean;
   id: string;
   order_code?: string | null;
   status: OrderStatus;
@@ -1154,10 +1176,13 @@ export interface KdsDispatchOrder extends KdsKitchenOrder {
   delivery_city: string;
   delivery_complement?: string | null;
   payment_method?: string | null;
+  payment_status?: string | null;
+  payment_provider?: string | null;
   pay_on_delivery: boolean;
   delivery_payment_method?: "cash" | "card" | string | null;
   cash_needs_change?: boolean | null;
   cash_change_for?: number | null;
+  cash_change_amount?: number | null;
   can_assign_driver: boolean;
 }
 
@@ -1234,6 +1259,7 @@ export interface KdsOperatorPresence {
 
 export interface KdsProductionTask {
   id: string;
+  requires_oven?: boolean;
   order_id: string;
   order_code?: string | null;
   order_item_id: string;
@@ -1254,6 +1280,9 @@ export interface KdsProductionTask {
   consumption_operation_id?: string | null;
   composition_revision_id?: string | null;
   server_time?: string | null;
+  stock_requested_at?: string | null;
+  stock_check_after?: string | null;
+  blocked_reason?: string | null;
 }
 
 export interface KdsMyQueue {
@@ -1443,11 +1472,12 @@ export const kdsApi = {
   completeDispatchPickup: (orderId: string) =>
     post<KdsDispatchOrder>(`/kds/dispatch/orders/${orderId}/pickup-complete`, {}),
   myQueue: () => get<KdsMyQueue>("/kds/kitchen/my-queue"),
+  stockAlerts: () => get<KdsProductionTask[]>("/kds/kitchen/stock-alerts"),
   setPresence: (body: { state: KdsPresenceState; expected_version: number }, key: string) =>
     request<KdsOperatorPresence>("POST", "/kds/kitchen/presence", body, { "Idempotency-Key": key }),
   heartbeat: (body: { operational_session_id?: string; station_id?: string | null; expected_version?: number }, key: string) =>
     request<KdsHeartbeat>("POST", "/kds/kitchen/heartbeat", body, { "Idempotency-Key": key }),
-  commandTask: (taskId: string, command: "start" | "finish-assembly" | "start-oven" | "complete-oven" | "check" | "remake", body: Record<string, unknown>, key: string) =>
+  commandTask: (taskId: string, command: "start" | "confirm-stock" | "return-to-service" | "finish-assembly" | "start-oven" | "complete-oven" | "check" | "remake", body: Record<string, unknown>, key: string) =>
     request<KdsProductionTask>("POST", `/kds/kitchen/tasks/${encodeURIComponent(taskId)}/${command}`, body, { "Idempotency-Key": key }),
   redistribute: (body: { task_ids: string[]; from_operator_id?: string | null; to_operator_id: string; reason: string; expected_versions: Record<string, number> }, key: string) =>
     request<KdsMyQueue>("POST", "/kds/management/redistributions", body, { "Idempotency-Key": key }),
@@ -1706,6 +1736,23 @@ export interface CheckoutIn {
   session_id?: string | null;
   landing_page?: string | null;
   referrer?: string | null;
+}
+
+export interface ManualOrderIn extends CheckoutIn {
+  customer_id: string;
+  sales_channel: "counter" | "delivery" | "pickup";
+  fulfillment_type: "delivery" | "pickup";
+  payment_status: "pending" | "approved" | "paid";
+}
+
+export interface ManualOrderQuote {
+  total: number;
+  subtotal: number;
+  shipping_fee?: number;
+  delivery_fee_final: number;
+  discount?: number;
+  cash_change_amount?: number | null;
+  items: Array<{ product_id: string; unit_price: number; line_total: number }>;
 }
 
 export interface StoreOperationInterval {
@@ -5441,6 +5488,11 @@ export const ordersApi = {
     put<ApiOrderWhatsappNotificationConfig>("/orders/new-order-whatsapp-notifications", body),
 };
 
+export const manualOrdersApi = {
+  quote: (body: ManualOrderIn) => request<ManualOrderQuote>("POST", "/admin/orders/manual/quote", body),
+  create: (body: ManualOrderIn, key: string) => request<ApiOrder>("POST", "/admin/orders/manual", body, { "Idempotency-Key": key }),
+};
+
 // ─── Payments ─────────────────────────────────────────────────────────────────
 
 export type ApiRestaurantTableStatus = "available" | "occupied" | "reserved" | "cleaning" | "inactive";
@@ -6540,6 +6592,22 @@ export const marketingAutomationsApi = {
 
 export const customersApi = {
   list: () => get<ApiCustomer[]>("/customers"),
+  createAdmin: (data: { name: string; phone?: string; email?: string }) =>
+    post<ApiCustomer>("/admin/customers", data),
+  importTemplate: () => get<{ filename: string; content: string }>("/admin/customers/import-template"),
+  importFile: (file: File, commit = false) => {
+    const form = new FormData();
+    form.append("file", file);
+    return postForm<{
+      mode: "preview" | "committed";
+      total_rows: number;
+      valid_count: number;
+      created_count: number;
+      rejected_count: number;
+      rows: Array<{ name: string; phone: string; email?: string | null }>;
+      errors: Array<{ row: number | null; reason: string }>;
+    }>(`/admin/customers/import?commit=${commit ? "true" : "false"}`, form);
+  },
   get: (id: string) => get<ApiCustomer>(`/customers/${id}`),
   findIdentityByPhone: (phone: string, channel = "whatsapp") =>
     get<ApiCustomerIdentity | null>(
@@ -7233,6 +7301,7 @@ export const uploadApi = {
 // ─── Site Config (CMS persistence) ───────────────────────────────────────────
 
 export const siteConfigApi = {
+  getAdmin: () => get<Record<string, unknown>>("/admin/site-config"),
   get: () => get<Record<string, unknown>>("/site-config"),
   save: (content: unknown): Promise<unknown> =>
     put("/admin/site-config", content),
@@ -8232,6 +8301,11 @@ export const inventoryFoundationApi = {
 // transicao, o consumo e a transformacao em uma unica operacao autorizada.
 export interface PreparationOrder {
   id: string;
+  recipe_id?: string;
+  status?: string;
+  produced_quantity?: string;
+  lost_quantity?: string;
+  discarded_quantity?: string;
   preparation_id?: string | null;
   name: string;
   state: "draft" | "approved" | "scheduled" | "in_progress" | "partially_completed" | "completed" | "paused" | "blocked" | "cancelled" | string;
@@ -8292,6 +8366,43 @@ export interface PreparationReportResult {
   completed_at?: string | null;
 }
 
+export interface PreparationLabelPreview {
+  execution: {
+    execution_id: string;
+    product_name?: string | null;
+    quantity: string;
+    portion_grams?: string | null;
+    lot_id?: string | null;
+    lot_code?: string | null;
+    expires_on?: string | null;
+    prepared_at?: string | null;
+    responsible_id?: string | null;
+    restaurant?: { name?: string | null; logo_url?: string | null };
+  };
+  printer: KdsLabelPrinter;
+  template: KdsLabelTemplate;
+}
+
+export interface PreparationLabelPrintResult { job: KdsLabelPrintJob; preview: PreparationLabelPreview }
+
+export interface PcpWeeklyPlan {
+  id: string;
+  tenant_id: string;
+  week_start: string;
+  status: string;
+  source_window_start: string;
+  source_window_end: string;
+  suggestions: Array<{ product_id: string; suggested_quantity: number; source: string; approved: boolean }>;
+  approved_by?: string | null;
+  approved_at?: string | null;
+}
+
+export const pcpApi = {
+  get: (weekStart: string) => get<PcpWeeklyPlan>(`/pcp/weekly/${encodeURIComponent(weekStart)}`),
+  generate: (body: { week_start: string; source_weeks: number }) => post<PcpWeeklyPlan>("/pcp/weekly/generate", body),
+  approve: (weekStart: string, expectedStatus: string) => post<PcpWeeklyPlan>(`/pcp/weekly/${encodeURIComponent(weekStart)}/approve`, { expected_status: expectedStatus }),
+};
+
 export interface ProductionPlanSimulation {
   id?: string;
   horizon_start: string;
@@ -8303,8 +8414,16 @@ export interface ProductionPlanSimulation {
   proposed_orders: PreparationOrder[];
 }
 
+export function normalizePreparationOrder(order: PreparationOrder): PreparationOrder {
+  // Published backend names remain valid; this is a presentation adapter only.
+  return { ...order, state: order.state || order.status || "unknown", name: order.name || "Preparo sem identificação", produced_total: order.produced_total ?? order.produced_quantity ?? "Não informado", discarded_total: order.discarded_total ?? order.discarded_quantity ?? "Não informado" };
+}
+
 export const preparationApi = {
-  listOrders: (query = "") => get<PreparationOrder[] | { items: PreparationOrder[] }>(`/preparation/orders${query ? `?${query.replace(/^\?/, "")}` : ""}`),
+  listOrders: async (query = ""): Promise<PreparationOrder[] | { items: PreparationOrder[] }> => {
+    const value = await get<PreparationOrder[] | { items: PreparationOrder[] }>(`/preparation/orders${query ? `?${query.replace(/^\?/, "")}` : ""}`);
+    return Array.isArray(value) ? value.map(normalizePreparationOrder) : { ...value, items: value.items.map(normalizePreparationOrder) };
+  },
   getOrder: (id: string) => get<PreparationOrder>(`/preparation/orders/${encodeURIComponent(id)}`),
   recipe: (id: string) => get<PreparationRecipe>(`/preparation/orders/${encodeURIComponent(id)}/recipe`),
   start: (id: string, expectedVersion: number, key: string) =>
@@ -8316,13 +8435,27 @@ export const preparationApi = {
   command: (id: string, command: "pause" | "resume" | "block", body: { expected_version: number; reason?: string | null }, key: string) =>
     request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/${command}`, body, { "Idempotency-Key": key }),
   create: (body: Record<string, unknown>, key: string) =>
-    request<PreparationOrder>("POST", "/gestao/preparation/orders", body, { "Idempotency-Key": key }),
+    request<PreparationOrder>("POST", "/preparation/orders", body, { "Idempotency-Key": key }),
   manage: (id: string, command: "approve" | "schedule" | "reschedule" | "unblock" | "cancel", body: Record<string, unknown>, key: string) =>
-    request<PreparationOrder>("POST", `/gestao/preparation/orders/${encodeURIComponent(id)}/${command}`, body, { "Idempotency-Key": key }),
+    request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/${command}`, body, { "Idempotency-Key": key }),
   simulate: (body: Record<string, unknown>, key: string) =>
     request<ProductionPlanSimulation>("POST", "/gestao/production-plans/simulations", body, { "Idempotency-Key": key }),
   approvePlan: (id: string, body: { expected_version: number; reason: string }, key: string) =>
     request<ProductionPlanSimulation>("POST", `/gestao/production-plans/${encodeURIComponent(id)}/approve`, body, { "Idempotency-Key": key }),
+};
+
+export const preparationLabelsApi = {
+  preview: (executionId: string, printerId?: string | null, templateId?: string | null) => {
+    const query = new URLSearchParams();
+    if (printerId) query.set("printer_id", printerId);
+    if (templateId) query.set("template_id", templateId);
+    const suffix = query.toString();
+    return get<PreparationLabelPreview>(`/kds/dispatch/preparation-executions/${encodeURIComponent(executionId)}/labels/preview${suffix ? `?${suffix}` : ""}`);
+  },
+  print: (executionId: string, body: { printer_id?: string | null; template_id?: string | null; copies?: number; idempotency_key: string }) =>
+    request<PreparationLabelPrintResult>("POST", `/kds/dispatch/preparation-executions/${encodeURIComponent(executionId)}/labels/print`, body, { "Idempotency-Key": body.idempotency_key }),
+  reprint: (executionId: string, body: { printer_id?: string | null; template_id?: string | null; copies?: number; idempotency_key: string; reason: string }) =>
+    request<PreparationLabelPrintResult>("POST", `/kds/dispatch/preparation-executions/${encodeURIComponent(executionId)}/labels/reprint`, body, { "Idempotency-Key": body.idempotency_key }),
 };
 
 export interface OperationalRecipeIngredient {

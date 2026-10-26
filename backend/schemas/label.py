@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class LabelPrinterIn(BaseModel):
@@ -18,6 +18,25 @@ class LabelPrinterIn(BaseModel):
     dpi: int = Field(default=203, ge=72, le=1200)
     active: bool = True
     is_default: bool = False
+
+    @model_validator(mode="after")
+    def validate_transport(self):
+        """Network/local-service printers must declare a usable transport.
+
+        Browser printing intentionally remains valid without an address. The
+        backend only stores and validates the contract; a local agent owns the
+        actual socket/IPP/ESC-POS communication.
+        """
+        if self.connection_type == "network":
+            if not self.network_host or not self.network_host.strip():
+                raise ValueError("network_host e obrigatorio para impressora de rede")
+            if self.network_port is None:
+                raise ValueError("network_port e obrigatorio para impressora de rede")
+            if not self.protocol or not self.protocol.strip():
+                raise ValueError("protocol e obrigatorio para impressora de rede")
+        if self.connection_type == "local_service" and not (self.system_queue_hint or self.network_host):
+            raise ValueError("system_queue_hint ou network_host e obrigatorio para o servico local")
+        return self
 
 
 class LabelTemplateIn(BaseModel):

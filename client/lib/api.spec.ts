@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildApiBases, companyDomainsApi, inventoryFoundationApi, inventoryReceiptApi, kdsApi, platformDomainsApi, platformTenantsApi, preparationApi, productRecipesApi } from "./api";
+import { buildApiBases, companyDomainsApi, inventoryFoundationApi, inventoryReceiptApi, kdsApi, manualOrdersApi, normalizePreparationOrder, platformDomainsApi, platformTenantsApi, preparationApi, productRecipesApi, type ManualOrderIn, type PreparationOrder } from "./api";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -10,6 +10,33 @@ function memoryStorage() {
     removeItem: (key: string) => { values.delete(key); },
   };
 }
+
+describe("operator manual order API", () => {
+  beforeEach(() => {
+    const storage = memoryStorage(); storage.setItem("admin_token", "operator-token");
+    vi.stubGlobal("localStorage", storage); vi.stubGlobal("sessionStorage", memoryStorage());
+    vi.stubGlobal("window", { location: { pathname: "/operacoes/novo-pedido", replace: vi.fn() } });
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it("uses the operator bearer and stable idempotency independently of customer identity", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { id: "created" } }), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const body = { customer_id: "selected-customer", payment_method: "credit_card", payment_status: "pending" } as ManualOrderIn;
+    await manualOrdersApi.create(body, "same-draft-key");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/admin\/orders\/manual$/);
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer operator-token");
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBe("same-draft-key");
+    expect(JSON.parse(String(init.body))).toMatchObject({ customer_id: "selected-customer", payment_status: "pending" });
+  });
+
+  it("does not retry creation automatically after a network uncertainty", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network interrupted")); vi.stubGlobal("fetch", fetchMock);
+    await expect(manualOrdersApi.create({} as ManualOrderIn, "same-draft-key")).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("buildApiBases", () => {
   it("prioritizes the proxied API prefix in production", () => {
@@ -150,6 +177,13 @@ describe("supplier receipt contracts", () => {
 });
 
 describe("preparation contracts", () => {
+  it("adapts published preparation status names without inventing a remaining balance", () => {
+    const order = normalizePreparationOrder({ id: "prep", recipe_id: "recipe", status: "scheduled", produced_quantity: "40.000000", discarded_quantity: "0.000000", version: 2 } as PreparationOrder);
+    expect(order.state).toBe("scheduled");
+    expect(order.produced_total).toBe("40.000000");
+    expect(order.remaining_quantity).toBeUndefined();
+    expect(order.name).toBe("Preparo sem identificação");
+  });
   beforeEach(() => {
     vi.stubGlobal("localStorage", memoryStorage());
     vi.stubGlobal("sessionStorage", memoryStorage());
@@ -165,6 +199,16 @@ describe("preparation contracts", () => {
     expect(url).toMatch(/\/api\/preparation\/orders\/prep%2F1\/reports$/);
     expect(new Headers(init.headers).get("Idempotency-Key")).toBe("report-1");
     expect(JSON.parse(String(init.body)).expected_version).toBe(3);
+  });
+
+  it("creates preparation orders on the published recipe-based endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "prep" }), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await preparationApi.create({ recipe_id: "recipe", target_quantity: "40", expected_version: 0 }, "create-prep-key");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/preparation\/orders$/);
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBe("create-prep-key");
+    expect(JSON.parse(String(init.body)).recipe_id).toBe("recipe");
   });
 
   it("does not retry a planning mutation after a conflict", async () => {

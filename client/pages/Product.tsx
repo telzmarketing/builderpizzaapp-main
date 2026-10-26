@@ -4,7 +4,7 @@ import { ChevronLeft, Minus, Plus, AlertCircle, Check, Loader2, X, ZoomIn } from
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import CategorySeal from "@/components/CategorySeal";
 import BestSellerSeal from "@/components/BestSellerSeal";
-import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation } from "@/context/AppContext";
+import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation, type MultiFlavorsConfig } from "@/context/AppContext";
 import { sizesApi, crustApi, productPromotionsApi, customerEventsApi, ApiProductSize, ApiProductCrustType, ApiProductPriceQuote, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl } from "@/lib/api";
 import { isAllowedPizzaSize, isPizzaBroto, pizzaSizeDescription, pizzaSizeLabel, PIZZA_SIZE_LABELS } from "@/lib/pizzaSizes";
 import { formatCrustAddition, isNapolitanaCrust, isNapolitanaCrustBlocked, normalizeCrustPriceAddition } from "@/lib/pricing";
@@ -336,10 +336,23 @@ function PizzaDiagram({ division, slots }: { division: FlavorDivision; slots: (P
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function Product() {
-  const { id } = useParams<{ id: string }>();
+export interface ProductConfiguratorProps {
+  productId?: string;
+  catalog?: Pizza[];
+  embedded?: boolean;
+  onBack?: () => void;
+  onAdd?: ReturnType<typeof useApp>["addToCart"];
+  flavorConfig?: MultiFlavorsConfig;
+}
+
+export default function Product({ productId, catalog, embedded = false, onBack, onAdd, flavorConfig }: ProductConfiguratorProps = {}) {
+  const { id: routeId } = useParams<{ id: string }>();
+  const id = productId ?? routeId;
   const navigate = useNavigate();
-  const { products, addToCart, multiFlavorsConfig, siteContent, loading: appLoading, customer } = useApp();
+  const { products: storeProducts, addToCart: addStoreItem, multiFlavorsConfig: storeFlavorConfig, siteContent, loading: appLoading, customer } = useApp();
+  const multiFlavorsConfig = flavorConfig ?? storeFlavorConfig;
+  const products = catalog ?? storeProducts;
+  const addToCart = onAdd ?? addStoreItem;
   const p = siteContent.pages.product;
 
   const product = products.find((p) => p.id === id);
@@ -378,7 +391,7 @@ export default function Product() {
   const [imageZoomPosition, setImageZoomPosition] = useState({ x: 50, y: 50 });
 
   useEffect(() => {
-    if (!product) return;
+    if (!product || embedded) return;
     const td = getTrackingData();
     customerEventsApi.register({
       event_type: "product_viewed",
@@ -443,7 +456,7 @@ export default function Product() {
       });
 
     // Load crust types for pizza
-    const crustRequest = isPizza ? crustApi.list(product.id).then((crusts) => {
+    const crustRequest = isPizza && product.show_crust_options !== false ? crustApi.list(product.id).then((crusts) => {
         if (cancelled) return;
         const activeCrusts = crusts.filter((c) => c.active);
         setProductCrusts(activeCrusts);
@@ -459,6 +472,7 @@ export default function Product() {
   const isPizzaBrotoSelected = isPizza && isPizzaBroto(selectedSize);
   const productPrice = product?.delivery_price ?? product?.price ?? 0;
   const effectiveDivision: FlavorDivision = isFixedFlavorCombination ? 1 : division;
+  const showCrustOptions = isPizza && product?.show_crust_options !== false;
 
   // Separar crusts regulares de bordas (catupiry)
   const regularCrusts = productCrusts.filter((c) => !isCatupiryCrust(c.name));
@@ -706,14 +720,16 @@ export default function Product() {
       } : undefined,
       selectedBorder ? { id: selectedBorder.id, name: selectedBorder.name, priceAddition: borderAddition } : null,
     );
-    trackEvent("add_to_cart", totalPrice, { product_id: product.id, quantity, selected_size: selectedSize });
-    navigate("/cart");
+    if (!embedded) {
+      trackEvent("add_to_cart", totalPrice, { product_id: product.id, quantity, selected_size: selectedSize });
+      navigate("/cart");
+    }
   };
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
   const divisionOptions = DIVISION_OPTIONS.filter(
-    (opt) => opt.value <= PUBLIC_MAX_FLAVORS
+    (opt) => opt.value <= Math.min(PUBLIC_MAX_FLAVORS, multiFlavorsConfig.maxFlavors ?? PUBLIC_MAX_FLAVORS)
   );
 
   const availableForSlot = (slotIndex: number) =>
@@ -749,24 +765,24 @@ export default function Product() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
+    <div className={`${embedded ? "min-h-0" : "min-h-screen"} bg-gradient-to-br from-surface-01 to-surface-00`}>
 
       {/* Header */}
       <div className="bg-brand-dark px-4 py-3 flex justify-between items-center sticky top-0 z-30">
-        <button onClick={() => navigate(-1)} className="text-parchment hover:text-cream transition-colors">
+        <button type="button" onClick={() => embedded ? onBack?.() : navigate(-1)} aria-label={embedded ? "Voltar ao catálogo" : "Voltar"} className="text-parchment hover:text-cream transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <button onClick={() => navigate("/")} aria-label="Ir para a home da loja">
+        {embedded ? <strong className="text-cream">Configurar produto</strong> : <button onClick={() => navigate("/")} aria-label="Ir para a home da loja">
           <MoschettieriLogo className="text-cream text-base scale-[1.14] origin-center" />
-        </button>
+        </button>}
         <div className="w-6"></div>
       </div>
 
       {/* Content */}
-      <div className="px-4 pt-6 pb-36">
+      <div className="px-4 pt-6 pb-36 flex flex-col [&>*]:order-10">
 
         {/* ── Hero Product Image ───────────────────────────────────────────── */}
-        <div className="flex flex-col items-center mb-6">
+        <div className="flex flex-col items-center mb-6 order-0">
           <button
             type="button"
             onClick={openProductImageZoom}
@@ -813,8 +829,8 @@ export default function Product() {
         </div>
 
         {/* ── Pizza: Tipo de Massa ─────────────────────────────────────────── */}
-        {isPizza && regularCrusts.length > 0 && (
-          <div className="mb-6">
+        {showCrustOptions && regularCrusts.length > 0 && (
+          <div className="mb-6 order-4">
             <h3 className="text-cream font-bold mb-3">Tipo de Massa</h3>
             <div className="flex gap-2 flex-wrap">
               {regularCrusts.map((crust) => {
@@ -853,39 +869,23 @@ export default function Product() {
         )}
 
         {/* ── Pizza: Borda ─────────────────────────────────────────────────── */}
-        {isPizza && borderCrusts.length > 0 && (
-          <div className="mb-6">
+        {showCrustOptions && borderCrusts.length > 0 && (
+          <div className="mb-6 order-3">
             <h3 className="text-cream font-bold mb-3">Borda</h3>
             {borderAvailable ? (
-              <div className="flex flex-col gap-2">
-                <button
-                  onClick={() => setSelectedBorder(null)}
-                  className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold transition-all ${
-                    selectedBorder === null
-                      ? "bg-gold text-cream shadow-lg shadow-gold/30"
-                      : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
-                  }`}
-                >
-                  <span>Sem borda</span>
-                  <span className={`text-[10px] font-normal ${selectedBorder === null ? "text-cream/80" : "opacity-60"}`}>Sem adicional</span>
-                </button>
+              <select
+                aria-label="Selecionar borda"
+                value={selectedBorder?.id ?? ""}
+                onChange={(event) => setSelectedBorder(borderCrusts.find((border) => border.id === event.target.value) ?? null)}
+                className="w-full rounded-xl bg-surface-02 border border-surface-03 px-4 py-3 text-cream font-semibold"
+              >
+                <option value="">Sem borda</option>
                 {borderCrusts.map((border) => (
-                  <button
-                    key={border.id}
-                    onClick={() => setSelectedBorder(border)}
-                    className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold transition-all ${
-                      selectedBorder?.id === border.id
-                        ? "bg-gold text-cream shadow-lg shadow-gold/30"
-                        : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
-                    }`}
-                  >
-                    <span>{border.name}</span>
-                    <span className={`text-[10px] font-normal ${selectedBorder?.id === border.id ? "text-cream/80" : "text-gold-light"}`}>
-                      {border.price_addition > 0 ? `+ R$ ${border.price_addition.toFixed(2)}` : "Sem adicional"}
-                    </span>
-                  </button>
+                  <option key={border.id} value={border.id}>
+                    {border.name}{border.price_addition > 0 ? ` (+ R$ ${border.price_addition.toFixed(2)})` : ""}
+                  </option>
                 ))}
-              </div>
+              </select>
             ) : (
               <p className="text-stone text-sm bg-surface-02 rounded-xl px-4 py-3 border border-surface-03">
                 Borda disponível apenas com Massa Tradicional
@@ -898,7 +898,7 @@ export default function Product() {
         {(optionsLoading || optionsError || quoteError) && <div role="status" className="mb-4 rounded-xl bg-surface-02 p-4 text-sm text-amber-300">{optionsError || quoteError || "Carregando opcoes..."}{(optionsError || quoteError) && <button className="ml-3 underline" onClick={() => window.location.reload()}>Tentar novamente</button>}</div>}
         {isDrink && (product.drink_variants ?? []).some((variant) => variant.active) && <label className="mb-6 block text-cream">Variante<select className="mt-2 block w-full rounded-xl bg-surface-02 p-3" value={selectedDrinkVariantId} onChange={(event) => setSelectedDrinkVariantId(event.target.value)}>{(product.drink_variants ?? []).filter((variant) => variant.active).map((variant) => <option key={variant.id} value={variant.id}>{variant.name}{variant.price_addition > 0 ? ` (+ R$ ${variant.price_addition.toFixed(2)})` : ""}</option>)}</select></label>}
         {(!isDrink || productSizes.length > 0) && (
-        <div className="mb-6">
+        <div className="mb-6 order-1">
           <h3 className="text-cream font-bold mb-3">
             {p.sizeLabel}
           </h3>
@@ -941,7 +941,7 @@ export default function Product() {
 
         {/* ── Pizza: Division Selector ─────────────────────────────────────── */}
         {isPizza && !isFixedFlavorCombination && (
-          <div className="mb-6">
+          <div className="mb-6 order-2">
             <h3 className="text-cream font-bold mb-3">{p.divisionLabel}</h3>
             <div className="flex gap-2">
               {divisionOptions.map(({ value, label, emoji }) => {
@@ -967,7 +967,7 @@ export default function Product() {
               })}
             </div>
             {isPizzaBrotoSelected && (
-              <p className="text-stone/80 text-xs mt-2">Pizza Broto permite apenas 1 sabor.</p>
+              <p className="text-stone/80 text-xs mt-2">Pizza Individual permite apenas 1 sabor.</p>
             )}
           </div>
         )}
@@ -1260,7 +1260,7 @@ export default function Product() {
         </div>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 bg-surface-00 border-t border-surface-03 px-4 py-4 shadow-[0_-18px_40px_rgba(0,0,0,0.45)]">
+      <div className={`${embedded ? "sticky bottom-0 z-30" : "fixed bottom-0 left-0 right-0"} bg-surface-00 border-t border-surface-03 px-4 py-4 shadow-[0_-18px_40px_rgba(0,0,0,0.45)]`}>
         <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-stone text-xs">Total ({quantity}x)</p>
@@ -1298,7 +1298,7 @@ export default function Product() {
           }`}
         >
           {canAddToCart
-            ? `${p.addToCartButton} · R$ ${totalPrice.toFixed(2)}`
+            ? `${embedded ? "Adicionar ao pedido" : p.addToCartButton} · R$ ${totalPrice.toFixed(2)}`
             : !productInventoryAvailable
             ? "Indisponivel no momento"
             : optionsLoading || quoteLoading ? "Confirmando opcoes e preco..."

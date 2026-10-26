@@ -1,19 +1,16 @@
 /// <reference lib="webworker" />
 
-import { clientsClaim } from "workbox-core";
-import { ExpirationPlugin } from "workbox-expiration";
-import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from "workbox-precaching";
-import { NavigationRoute, registerRoute } from "workbox-routing";
-import { CacheFirst, StaleWhileRevalidate } from "workbox-strategies";
+import { setCacheNameDetails } from "workbox-core";
+import { precache, matchPrecache } from "workbox-precaching";
 
 declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<{ url: string; revision?: string | null }>;
 };
 
 const LEGACY_RUNTIME_CACHES = ["motoboy-static-v1", "motoboy-runtime-v1", "motoboy-media-v2"];
-const RUNTIME_STATIC_CACHE = "motoboy-static-v2";
-const RUNTIME_MEDIA_CACHE = "motoboy-media-v3";
 const GLOBAL_FAVICON_URL = "/api/site-config/favicon?size=192";
+const scopedWorker = new URL(self.registration.scope).pathname === "/motoboy/";
+const isMotoboy = (pathname: string) => pathname === "/motoboy" || pathname.startsWith("/motoboy/");
 
 type PushPayload = {
   title: string;
@@ -23,53 +20,51 @@ type PushPayload = {
   badge?: string;
 };
 
-precacheAndRoute(self.__WB_MANIFEST);
-cleanupOutdatedCaches();
+// The same script updates the old root registration into a push-only bridge.
+// Never install a root fetch handler or cache public/admin requests.
+if (scopedWorker) {
+  setCacheNameDetails({ prefix: "telz-motoboy", suffix: "v4" });
+  precache(self.__WB_MANIFEST);
+}
 
 self.skipWaiting();
-clientsClaim();
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(Promise.all(LEGACY_RUNTIME_CACHES.map((cacheName) => caches.delete(cacheName))));
+  event.waitUntil((async () => {
+    await Promise.all([...LEGACY_RUNTIME_CACHES, "motoboy-static-v2", "motoboy-media-v3"].map((cacheName) => caches.delete(cacheName)));
+    if (scopedWorker) {
+      await self.clients.claim();
+    } else {
+      // Exact known former cache only; leave other apps and push endpoints alone.
+      await caches.delete(`workbox-precache-v2-${self.registration.scope}`);
+      if (!(await self.registration.pushManager?.getSubscription())) await self.registration.unregister();
+    }
+  })());
 });
 
-registerRoute(
-  new NavigationRoute(createHandlerBoundToURL("/index.html"), {
-    allowlist: [/^\/motoboy(?:\/.*)?$/],
-  }),
-);
-
-registerRoute(
-  ({ request, url }) =>
-    request.method === "GET" &&
-    url.origin === self.location.origin &&
-    url.pathname.startsWith("/icons/"),
-  new CacheFirst({
-    cacheName: RUNTIME_STATIC_CACHE,
-    plugins: [
-      new ExpirationPlugin({
-        maxEntries: 80,
-        maxAgeSeconds: 30 * 24 * 60 * 60,
-      }),
-    ],
-  }),
-);
-
-registerRoute(
-  ({ request, url }) =>
-    request.method === "GET" &&
-    url.pathname !== "/api/site-config/favicon" &&
-    ["font", "image"].includes(request.destination),
-  new StaleWhileRevalidate({
-    cacheName: RUNTIME_MEDIA_CACHE,
-    plugins: [
-      new ExpirationPlugin({
-        maxEntries: 60,
-        maxAgeSeconds: 7 * 24 * 60 * 60,
-      }),
-    ],
-  }),
-);
+if (scopedWorker) self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+  if (event.request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
+  event.respondWith((async () => {
+    const client = event.clientId ? await self.clients.get(event.clientId) : null;
+    const path = event.request.mode === "navigate" ? url.pathname : client ? new URL(client.url).pathname : "";
+    // A scoped document can navigate via SPA into the store. Do not cache there.
+    if (!isMotoboy(path)) return fetch(event.request);
+    if (event.request.mode === "navigate") {
+      try { return await fetch(event.request); }
+      catch { return (await matchPrecache("/index.html")) || Response.error(); }
+    }
+    const precached = await matchPrecache(event.request.url);
+    if (precached) return precached;
+    if (!url.pathname.startsWith("/assets/") && !url.pathname.startsWith("/icons/")) return fetch(event.request);
+    const runtime = await caches.open("telz-motoboy-runtime-v4");
+    const cached = await runtime.match(event.request);
+    if (cached) return cached;
+    const response = await fetch(event.request);
+    if (response.ok && response.type === "basic") await runtime.put(event.request, response.clone());
+    return response;
+  })());
+});
 
 self.addEventListener("push", (event) => {
   const fallback: PushPayload = {
@@ -85,7 +80,8 @@ self.addEventListener("push", (event) => {
     payload = { ...fallback, body: event.data?.text() || fallback.body };
   }
   const title = payload.title || fallback.title;
-  const url = payload.url || fallback.url;
+  const requested = new URL(payload.url || fallback.url, self.location.origin);
+  const url = requested.origin === self.location.origin && isMotoboy(requested.pathname) ? requested.href : `${self.location.origin}/motoboy/`;
 
   event.waitUntil(
     self.registration.showNotification(title, {
@@ -100,12 +96,14 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  const targetUrl = new URL(event.notification.data?.url || "/motoboy", self.location.origin).href;
+  const requested = new URL(event.notification.data?.url || "/motoboy/", self.location.origin);
+  const targetUrl = requested.origin === self.location.origin && isMotoboy(requested.pathname) ? requested.href : `${self.location.origin}/motoboy/`;
 
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {
-        if ("focus" in client && client.url.startsWith(self.location.origin)) {
+        const clientUrl = new URL(client.url);
+        if ("focus" in client && clientUrl.origin === self.location.origin && isMotoboy(clientUrl.pathname)) {
           void client.focus();
           return;
         }

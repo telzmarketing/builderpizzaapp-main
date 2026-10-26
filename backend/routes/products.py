@@ -398,6 +398,8 @@ def quote_product_price(
     context = resolve_public_tenant_context(request, db)
     product = _tenant_query(db, Product, context).filter(Product.id == product_id, Product.active == True).first()  # noqa: E712
     assert_public_product(product, channel)
+    if getattr(product, "show_crust_options", True) is False and (crust_id or border_id):
+        raise HTTPException(422, "Este produto nao permite selecionar massa ou borda.")
 
     size = None
     if size_id:

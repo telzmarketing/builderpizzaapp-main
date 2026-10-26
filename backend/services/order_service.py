@@ -277,6 +277,10 @@ class OrderService:
         visible = "visible_dine_in" if channel == "dine_in" else "visible_delivery"
         if not getattr(product, visible, True):
             raise DomainError("Produto indisponivel neste canal.", code="ProductChannelUnavailable")
+        if getattr(product, "show_crust_options", True) is False and (
+            item.selected_crust_type_id or item.selected_border_id
+        ):
+            raise DomainError("Este produto nao permite selecionar massa ou borda.", code="CrustOptionsUnavailable")
         if item.flavor_division > 1 and product.product_type not in {None, "pizza"}:
             raise DomainError("Este produto nao aceita multiplos sabores.", code="InvalidFlavorProductType")
         if _is_fixed_flavor_combination(product) and (item.flavor_division != 1 or item.flavors[0].product_id != product.id):
@@ -486,6 +490,19 @@ class OrderService:
             delivery_fee_final = 0.0
 
         total = round(subtotal + delivery_fee_final - discount, 2)
+        cash_change_amount = None
+        if (
+            payload.payment_method == "pay_on_delivery"
+            and payload.delivery_payment_method == "cash"
+            and payload.cash_needs_change
+            and payload.cash_change_for is not None
+        ):
+            if payload.cash_change_for <= total:
+                raise DomainError(
+                    "O valor para troco deve ser maior que o total do pedido.",
+                    code="InvalidCashChange",
+                )
+            cash_change_amount = round(payload.cash_change_for - total, 2)
         return {
             "items": items,
             "subtotal": subtotal,
@@ -496,9 +513,19 @@ class OrderService:
             "promotion_free_shipping_applied": promotion_free_shipping,
             "total": total,
             "payment_method": payload.payment_method,
+            "cash_change_amount": cash_change_amount,
         }
 
-    def create_from_checkout(self, payload: CheckoutIn) -> Order:
+    def create_from_checkout(
+        self,
+        payload: CheckoutIn,
+        *,
+        sales_channel: str = "delivery",
+        payment_status: str = "pending",
+        payment_source: str | None = None,
+        external_reference_override: str | None = None,
+        created_by_admin_id: str | None = None,
+    ) -> Order:
         """
         Validate cart, recompute prices server-side, apply shipping + coupon,
         persist the order and fire OrderCreated event.
@@ -507,6 +534,13 @@ class OrderService:
         """
         if not payload.items:
             raise CartEmpty()
+        if sales_channel not in {"counter", "delivery", "pickup", "dine_in"}:
+            raise DomainError("Canal de venda invalido.", code="InvalidSalesChannel")
+        if payment_status not in {"pending", "approved", "paid"}:
+            raise DomainError("Situacao de pagamento invalida.", code="InvalidPaymentStatus")
+        payment_approved = payment_status in {"approved", "paid"}
+        if payment_approved and payment_source not in {None, "manual"}:
+            raise DomainError("Pagamento aprovado exige uma origem validada.", code="PaymentEvidenceRequired")
 
         if payload.customer_id:
             if not self._tenant_query(CustomerModel).filter(CustomerModel.id == payload.customer_id).first():
@@ -543,6 +577,7 @@ class OrderService:
         shipping_result = ShippingService(self._db, self._tenant_context).calculate(
             ShippingCalculateIn(
                 city=payload.delivery.city,
+                street=payload.delivery.street,
                 neighborhood=payload.delivery.neighborhood,
                 zip_code=payload.delivery.zip_code,
                 order_subtotal=subtotal,
@@ -623,7 +658,7 @@ class OrderService:
 
         # 4. Build order
         order_id = f"order-{uuid.uuid4().hex[:8]}"
-        external_reference = order_id
+        external_reference = external_reference_override or order_id
         order_code = self._generate_order_code()
         tracking = self._tracking_fields(payload)
         order = Order(
@@ -631,12 +666,14 @@ class OrderService:
             order_code=order_code,
             external_reference=external_reference,
             customer_id=payload.customer_id,
+            created_by_admin_id=created_by_admin_id,
             delivery_name=_clip_text(payload.delivery.name, 200) or "",
             delivery_phone=_clip_text(payload.delivery.phone, 30) or "",
             delivery_street=_clip_text(payload.delivery.street, 300) or "",
             delivery_city=_clip_text(payload.delivery.city, 100) or "",
             delivery_complement=_clip_text(payload.delivery.complement, 100),
-            status=OrderStatus.paid if is_pay_on_delivery else OrderStatus.aguardando_pagamento,
+            status=(OrderStatus.paid if (is_pay_on_delivery or payment_approved)
+                    else OrderStatus.aguardando_pagamento),
             coupon_id=resolved_coupon_id,
             campaign_id=tracking["campaign_id"],
             utm_source=tracking["utm_source"],
@@ -648,6 +685,7 @@ class OrderService:
             landing_page=tracking["landing_page"],
             referrer=tracking["referrer"],
             fulfillment_type="pickup" if payload.delivery.is_pickup else "delivery",
+            sales_channel=sales_channel,
             subtotal=subtotal,
             shipping_fee=delivery_fee_final,
             delivery_fee_original=delivery_fee_original,
@@ -669,16 +707,17 @@ class OrderService:
             id=str(uuid.uuid4()),
             order_id=order.id,
             method=payment_method,
-            status=PaymentStatus.pending,
+            status=PaymentStatus.approved if payment_approved else PaymentStatus.pending,
             amount=total,
-            gateway="on_delivery" if is_pay_on_delivery else "mercadopago",
-            provider="on_delivery" if is_pay_on_delivery else "mercado_pago",
+            gateway="on_delivery" if is_pay_on_delivery else ("manual" if payment_source == "manual" else "mercadopago"),
+            provider="on_delivery" if is_pay_on_delivery else ("manual" if payment_source == "manual" else "mercado_pago"),
             external_reference=external_reference,
             currency="BRL",
             pay_on_delivery=is_pay_on_delivery,
             delivery_payment_method=delivery_payment_method,
             cash_needs_change=cash_needs_change,
             cash_change_for=cash_change_for,
+            paid_at=None,
         )
         self._own(payment)
         self._db.add(payment)
@@ -1124,6 +1163,10 @@ class OrderService:
 
         if order.fulfillment_type == "dine_in" and new_status == "on_the_way":
             raise DomainError("Pedido do salao deve ser servido sem rota de entrega.", code="DineInDeliveryNotAllowed")
+
+        if new_status in {"ready_for_pickup", "on_the_way"}:
+            from backend.services.kds_production_service import ensure_kds_units_ready
+            ensure_kds_units_ready(self._db, order.tenant_id, order.id)
 
         # State machine validates transition (raises InvalidStatusTransition if invalid)
         order_sm.transition(order_id, current, new_status)

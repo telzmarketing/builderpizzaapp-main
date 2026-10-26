@@ -37,6 +37,13 @@ class CustomerCreate(CustomerBase):
     pass
 
 
+class AdminCustomerCreate(BaseModel):
+    """Minimal tenant-owned customer used by authenticated operators."""
+    name: str = Field(..., min_length=1, max_length=200)
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = Field(default=None, min_length=8, max_length=30)
+
+
 class CustomerUpdate(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None

@@ -282,6 +282,11 @@ class DeliveryService:
         delivery = self._get_delivery(delivery_id)
         old_status = delivery.status.value
 
+        if new_status in {"picked_up", "on_the_way", "delivered"}:
+            from backend.services.kds_production_service import ensure_kds_units_ready
+            order = self._get_order(delivery.order_id)
+            ensure_kds_units_ready(self._db, order.tenant_id, order.id)
+
         delivery_sm.transition(delivery_id, old_status, new_status)
 
         now = datetime.now(timezone.utc)
@@ -707,6 +712,9 @@ class DeliveryService:
         """Driver starts own delivery route from assigned to picked_up."""
         self._get_delivery_person(person_id)
         delivery = self._get_driver_delivery(person_id, delivery_id)
+        from backend.services.kds_production_service import ensure_kds_units_ready
+        order = self._get_order(delivery.order_id)
+        ensure_kds_units_ready(self._db, order.tenant_id, order.id)
         old_status = delivery.status.value
         now = datetime.now(timezone.utc)
         if old_status == "assigned":

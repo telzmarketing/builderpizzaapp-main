@@ -1,4 +1,8 @@
-import type { ApiOrder } from "./api";
+import { operationalPaymentHtml } from "./operationalPayment";
+import { siteConfigApi, type ApiOrder } from "./api";
+import { isOperationalDrink, operationalDrinks } from "./operationalDrinks";
+import { storeBranding } from "./storeBranding";
+import { readPlatformSupportSession } from "./platformSupportSession";
 
 // ── Printer settings (persisted in localStorage) ──────────────────────────────
 
@@ -6,18 +10,24 @@ export type PaperWidth = "58mm" | "80mm" | "a4";
 export type PrintTemplate = "completo" | "cozinha" | "entrega";
 
 export interface PrinterSettings {
+  storeLogoUrl?: string;
   paperWidth: PaperWidth;
   storeName: string;
   storePhone: string;
   storeAddress: string;
   storeCnpj: string;
   storeWebsite: string;
+  logoUrl?: string;
   defaultTemplate: PrintTemplate;
   autoPrint: boolean;
   autoPrintConfirmedOrders: boolean;
 }
 
 const STORAGE_KEY = "moschettieri_printer_settings";
+const scopedStorageKey = () => {
+  const tenant = readPlatformSupportSession()?.tenant_id;
+  return `${STORAGE_KEY}:${window.location.hostname}${tenant ? `:${tenant}` : ""}`;
+};
 
 export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   paperWidth: "80mm",
@@ -26,6 +36,7 @@ export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   storeAddress: "",
   storeCnpj: "",
   storeWebsite: "",
+  logoUrl: "/api/site-config/favicon?size=192",
   defaultTemplate: "completo" as PrintTemplate,
   autoPrint: false,
   autoPrintConfirmedOrders: true,
@@ -33,8 +44,13 @@ export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
 
 export function loadPrinterSettings(): PrinterSettings {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_PRINTER_SETTINGS };
+    const raw = localStorage.getItem(scopedStorageKey());
+    if (!raw) {
+      // Migrate device behavior, never another establishment's identity.
+      const old = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      if (!old) return { ...DEFAULT_PRINTER_SETTINGS };
+      return { ...DEFAULT_PRINTER_SETTINGS, paperWidth: old.paperWidth ?? DEFAULT_PRINTER_SETTINGS.paperWidth, defaultTemplate: old.defaultTemplate ?? DEFAULT_PRINTER_SETTINGS.defaultTemplate, autoPrint: old.autoPrint ?? false, autoPrintConfirmedOrders: old.autoPrintConfirmedOrders ?? true };
+    }
     return { ...DEFAULT_PRINTER_SETTINGS, ...JSON.parse(raw) };
   } catch {
     return { ...DEFAULT_PRINTER_SETTINGS };
@@ -42,13 +58,45 @@ export function loadPrinterSettings(): PrinterSettings {
 }
 
 export function savePrinterSettings(s: PrinterSettings): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  localStorage.setItem(scopedStorageKey(), JSON.stringify(s));
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(v: number) {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function escapeText(value: unknown) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
+}
+
+export function withReceiptBranding(settings: PrinterSettings, content: Record<string, unknown>): PrinterSettings {
+  const brand = (content.brand || {}) as Record<string, unknown>;
+  const identity = storeBranding(content);
+  return { ...settings, storeName: typeof brand.name === "string" && brand.name.trim() ? identity.name : settings.storeName, storeLogoUrl: identity.logo || undefined };
+}
+
+function storeHeader(settings: PrinterSettings) {
+  const logo = settings.storeLogoUrl || "";
+  const safeLogo = /^(https?:\/\/|\/(?!\/)|data:image\/(?:png|jpeg|gif|webp|svg\+xml)[;,])/i.test(logo);
+  return `${safeLogo ? `<img class="receipt-logo" src="${escapeText(logo)}" alt="${escapeText(settings.storeName)}"/>` : ""}<p class="c b" style="font-size:13px">${escapeText(settings.storeName)}</p>`;
+}
+
+function drinksBlock(order: ApiOrder) {
+  const drinks = operationalDrinks(order);
+  if (!drinks.length) return "";
+  return `<section class="drinks"><p class="b">ATENÇÃO — BEBIDAS</p>${drinks.map((drink) => `<p class="b">${drink.quantity} × ${escapeText(drink.name)}</p>${drink.notes ? `<p class="s">Obs.: ${escapeText(drink.notes)}</p>` : ""}`).join("")}</section>`;
+}
+
+function operationalHeader(order: ApiOrder) {
+  const origins: Record<string, string> = { counter: "Balcão", delivery: "Loja virtual", pickup: "Retirada", dine_in: "Salão", ifood: "iFood", "99food": "99Food", keeta: "Keeta" };
+  const mode = order.fulfillment_type === "pickup" ? "Retirada" : order.fulfillment_type === "dine_in" ? "Consumo no local" : "Entrega";
+  return `<p class="s">Origem: ${escapeText(origins[order.sales_channel || ""] || order.sales_channel || "Não informada")}</p><p class="s">Modalidade: ${mode}</p>`;
+}
+
+function dispatchChecklist(order: ApiOrder) {
+  return `<section class="dispatch-check"><p class="b">CONFERÊNCIA DA EXPEDIÇÃO</p><p>[ ] Produtos conferidos</p>${operationalDrinks(order).length ? "<p>[ ] Bebidas conferidas</p>" : ""}<p>[ ] Embalagens e lacres conferidos</p></section>`;
 }
 
 function orderNum(order: ApiOrder) {
@@ -148,6 +196,9 @@ function baseCss() {
     .r{text-align:right}
     .b{font-weight:bold}
     .s{font-size:var(--receipt-small);color:#000;font-weight:600}
+    .receipt-logo{display:block;max-width:75%;max-height:24mm;width:auto;height:auto;object-fit:contain;margin:0 auto 3mm;filter:grayscale(1) contrast(1.6)}
+    .drinks{background:#eee;border:2px solid #000;padding:2mm;margin:3mm 0;break-inside:avoid}
+    .dispatch-check{border-top:1px dashed #000;margin-top:3mm;padding-top:2mm;break-inside:avoid}
     @media print{
       *{color:#000!important;text-shadow:none!important}
       body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -160,7 +211,7 @@ function baseCss() {
 // ── Kitchen/Delivery legacy item lines ────────────────────────────────────────
 
 function itemLines(order: ApiOrder) {
-  return order.items.map((item) => {
+  return order.items.filter((item) => !isOperationalDrink(item)).map((item) => {
     const isMulti = item.flavor_division > 1;
     const name = isMulti ? item.flavors.map((f) => f.name).join(" + ") : item.product_name;
     const details = [
@@ -168,26 +219,26 @@ function itemLines(order: ApiOrder) {
       item.selected_crust_type || null,
       item.selected_drink_variant || null,
     ].filter(Boolean).join(" · ");
-    return { qty: item.quantity, name, details, addOns: item.add_ons ?? [], price: item.unit_price * item.quantity };
+    return { qty: item.quantity, name: escapeText(name), details: escapeText(details), notes: escapeText(item.notes), addOns: (item.add_ons ?? []).map(escapeText), price: item.unit_price * item.quantity };
   });
 }
 
 // ── Template 1: Pedido Completo ───────────────────────────────────────────────
 
 export function buildCompletoHtml(order: ApiOrder, settings: PrinterSettings): string {
-  const num = orderNum(order);
+  const num = escapeText(orderNum(order));
   const created = new Date(order.created_at);
 
   // Store header
   const headerParts = [
-    settings.storeName ? `<p class="c b" style="font-size:13px">${settings.storeName}</p>` : "",
-    settings.storeCnpj ? `<p class="c s">CNPJ: ${settings.storeCnpj}</p>` : "",
-    settings.storeAddress ? `<p class="c s">${settings.storeAddress}</p>` : "",
-    settings.storePhone ? `<p class="c s">${settings.storePhone}</p>` : "",
+    storeHeader(settings),
+    settings.storeCnpj ? `<p class="c s">CNPJ: ${escapeText(settings.storeCnpj)}</p>` : "",
+    settings.storeAddress ? `<p class="c s">${escapeText(settings.storeAddress)}</p>` : "",
+    settings.storePhone ? `<p class="c s">${escapeText(settings.storePhone)}</p>` : "",
   ].filter(Boolean).join("");
 
   // Items rows with sub-lines
-  const itemRows = order.items.map((item) => {
+  const itemRows = order.items.filter((item) => !isOperationalDrink(item)).map((item) => {
     const isMulti = item.flavor_division > 1;
     const sizePart = item.selected_size ? ` (${item.selected_size})` : "";
     const flavorPart = isMulti ? ` até ${item.flavor_division} Sabores` : "";
@@ -207,11 +258,12 @@ export function buildCompletoHtml(order: ApiOrder, settings: PrinterSettings): s
     }
     (item.add_ons ?? []).forEach((a) => subLines.push(`+ ${a}`));
 
-    const subHtml = subLines.map((l) => `<br/><span class="s">${l}</span>`).join("");
+    if (item.notes) subLines.push(`Obs.: ${item.notes}`);
+    const subHtml = subLines.map((l) => `<br/><span class="s">${escapeText(l)}</span>`).join("");
 
     return `<tr>
       <td class="qty" style="padding-top:2px">${item.quantity}</td>
-      <td class="desc"><span class="b">${mainName}</span>${subHtml}</td>
+      <td class="desc"><span class="b">${escapeText(mainName)}</span>${subHtml}</td>
       <td class="price" style="padding-top:2px">${fmt(item.unit_price * item.quantity)}</td>
     </tr>`;
   }).join("");
@@ -228,13 +280,13 @@ export function buildCompletoHtml(order: ApiOrder, settings: PrinterSettings): s
 
   // Delivery person
   const motoboy = order.delivery?.delivery_person_name;
-  const deliveryLine = motoboy
-    ? `<p class="s">Entrega: ${motoboy}</p>`
+  const deliveryLine = order.fulfillment_type === "pickup" ? `<p class="s">Retirada no balcão</p>` : order.fulfillment_type === "dine_in" ? `<p class="s">Consumo no local</p>` : motoboy
+    ? `<p class="s">Entrega: ${escapeText(motoboy)}</p>`
     : `<p class="s">Entrega pela loja</p>`;
 
   // Address
-  const addrLine = `${order.delivery_street}${order.delivery_complement ? `, ${order.delivery_complement}` : ""}`;
-  const refLine = order.delivery_complement ? `<p class="s">Ref: ${order.delivery_complement}</p>` : "";
+  const addrLine = escapeText(`${order.delivery_street}${order.delivery_complement ? `, ${order.delivery_complement}` : ""}`);
+  const refLine = order.delivery_complement ? `<p class="s">Ref: ${escapeText(order.delivery_complement)}</p>` : "";
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <title>Pedido ${num}</title>
@@ -245,22 +297,23 @@ ${headerParts}
 ${headerParts ? "<hr/>" : ""}
 
 <table><tr>
-  <td class="b" style="font-size:15px;letter-spacing:2px">ENTREGA</td>
+  <td class="b" style="font-size:15px;letter-spacing:2px">PEDIDO</td>
   <td class="r s">${shortDate(created)} — ${hhmm(created)}</td>
 </tr></table>
 
 <hr/>
 <p><span class="s">Pedido: </span><span class="b" style="font-size:14px">${num}</span></p>
-<p class="b">${order.delivery_name}</p>
-<p class="s">Telefone: ${order.delivery_phone} | ID: ${order.id.slice(0, 8).toUpperCase()}</p>
+${operationalHeader(order)}
+<p class="b">${escapeText(order.delivery_name)}</p>
+<p class="s">Telefone: ${escapeText(order.delivery_phone)} | ID: ${escapeText(order.id.slice(0, 8).toUpperCase())}</p>
 
 <hr/>
 <p>${addrLine}</p>
-<p>${order.delivery_city}</p>
+<p>${escapeText(order.delivery_city)}</p>
 ${refLine}
 
 <hr/>
-<p class="s">Entrega para as <span class="b">${estDeliveryTime(order)}</span></p>
+<p class="s">Previsão: <span class="b">${estDeliveryTime(order)}</span></p>
 ${deliveryLine}
 
 <hr/>
@@ -273,6 +326,7 @@ ${deliveryLine}
 </table>
 <hr/>
 <table>${itemRows}</table>
+${drinksBlock(order)}
 <hr/>
 
 <table>
@@ -284,10 +338,12 @@ ${deliveryLine}
 <hr/>
 
 <table class="totals">${finRows}</table>
+${operationalPaymentHtml(order)}
+${dispatchChecklist(order)}
 <hr/>
 
 <p class="c s">Obrigado pela preferência!</p>
-${settings.storeWebsite ? `<p class="c s">${settings.storeWebsite}</p>` : ""}
+${settings.storeWebsite ? `<p class="c s">${escapeText(settings.storeWebsite)}</p>` : ""}
 
 </body></html>`;
 }
@@ -295,7 +351,7 @@ ${settings.storeWebsite ? `<p class="c s">${settings.storeWebsite}</p>` : ""}
 // ── Template 2: Comanda Cozinha ───────────────────────────────────────────────
 
 export function buildCozinhaHtml(order: ApiOrder, settings: PrinterSettings): string {
-  const num = orderNum(order);
+  const num = escapeText(orderNum(order));
   const items = itemLines(order);
   const rows = items.map((i) => `
     <tr>
@@ -304,6 +360,7 @@ export function buildCozinhaHtml(order: ApiOrder, settings: PrinterSettings): st
         <div style="font-size:14px;font-weight:bold;text-transform:uppercase">${i.name}</div>
         ${i.details ? `<div class="s">${i.details}</div>` : ""}
         ${i.addOns.map((a) => `<div class="s">+ ${a}</div>`).join("")}
+        ${i.notes ? `<div class="s b">Obs.: ${i.notes}</div>` : ""}
       </td>
     </tr>
     <tr><td colspan="2"><hr/></td></tr>`).join("");
@@ -314,20 +371,24 @@ export function buildCozinhaHtml(order: ApiOrder, settings: PrinterSettings): st
 <title>Comanda ${num}</title>
 <style>${baseCss()}${paperCss(settings.paperWidth)}</style>
 </head><body>
+${storeHeader(settings)}
 <p class="c" style="font-size:11px;font-weight:bold;letter-spacing:2px">*** COMANDA COZINHA ***</p>
 <p class="c b" style="font-size:16px">PEDIDO ${num}</p>
 <p class="c s">${hhmm(created)}</p>
+${operationalHeader(order)}
 <hr/>
 <table>${rows}</table>
-<p class="b">${order.delivery_name}</p>
+${drinksBlock(order)}
+<p class="b">${escapeText(order.delivery_name)}</p>
 <p class="s">Entrega: ${order.estimated_time} min</p>
+${operationalPaymentHtml(order)}
 </body></html>`;
 }
 
 // ── Template 3: Via Entrega ────────────────────────────────────────────────────
 
 export function buildEntregaHtml(order: ApiOrder, settings: PrinterSettings): string {
-  const num = orderNum(order);
+  const num = escapeText(orderNum(order));
   const items = itemLines(order);
   const rows = items.map((i) => `
     <tr>
@@ -336,32 +397,38 @@ export function buildEntregaHtml(order: ApiOrder, settings: PrinterSettings): st
         <span class="b">${i.name}</span>
         ${i.details ? `<br/><span class="s">${i.details}</span>` : ""}
         ${i.addOns.map((a) => `<br/><span class="s">+ ${a}</span>`).join("")}
+        ${i.notes ? `<br/><span class="s b">Obs.: ${i.notes}</span>` : ""}
       </td>
       <td class="price">${fmt(i.price)}</td>
     </tr>`).join("");
 
   const created = new Date(order.created_at);
-  const addrLine = `${order.delivery_street}${order.delivery_complement ? `, ${order.delivery_complement}` : ""}`;
+  const addrLine = escapeText(`${order.delivery_street}${order.delivery_complement ? `, ${order.delivery_complement}` : ""}`);
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <title>Entrega ${num}</title>
 <style>${baseCss()}${paperCss(settings.paperWidth)}</style>
 </head><body>
+${storeHeader(settings)}
 <p class="c" style="font-size:11px;font-weight:bold;letter-spacing:2px">*** VIA ENTREGA ***</p>
 <p class="c b" style="font-size:16px">PEDIDO ${num}</p>
 <p class="c s">${shortDate(created)} — ${hhmm(created)}</p>
+${operationalHeader(order)}
 <hr/>
-<p class="b" style="font-size:13px">ENDEREÇO DE ENTREGA</p>
-<p class="b">${maskCustomerName(order.delivery_name)}</p>
+<p class="b" style="font-size:13px">${order.fulfillment_type === "pickup" ? "RETIRADA NO BALCÃO" : order.fulfillment_type === "dine_in" ? "CONSUMO NO LOCAL" : "ENDEREÇO DE ENTREGA"}</p>
+<p class="b">${escapeText(maskCustomerName(order.delivery_name))}</p>
 <p>${addrLine}</p>
-<p>${order.delivery_city}</p>
+<p>${escapeText(order.delivery_city)}</p>
 <hr/>
 <p class="b s">ITENS DO PEDIDO</p>
 <table>${rows}</table>
+${drinksBlock(order)}
 <hr/>
 ${order.shipping_fee > 0 ? `<p class="r">Taxa de entrega: ${fmt(order.shipping_fee)}</p>` : ""}
 ${order.discount > 0 ? `<p class="r">Desconto: -${fmt(order.discount)}</p>` : ""}
 <p class="r b" style="font-size:13px">TOTAL: R$ ${fmt(order.total)}</p>
+${operationalPaymentHtml(order)}
+${dispatchChecklist(order)}
 </body></html>`;
 }
 
@@ -376,23 +443,43 @@ export function buildPrintHtml(order: ApiOrder, template: PrintTemplate, setting
   return html;
 }
 
-function openPrintWindow(html: string, shouldPrint: boolean, printDelayMs = 0): boolean {
-  const w = window.open("", "_blank", "width=440,height=700,scrollbars=yes");
-  if (!w) return false;
+function writeReceiptWindow(w: Window, html: string, shouldPrint: boolean, printDelayMs = 0) {
+  w.document.open();
   w.document.write(html);
   w.document.close();
-  w.onload = () => {
+  const images = Array.from(w.document.images);
+  const ready = Promise.all(images.map((image) => image.complete ? Promise.resolve() : new Promise<void>((resolve) => { image.onload = () => resolve(); image.onerror = () => resolve(); })));
+  void Promise.race([ready, new Promise<void>((resolve) => window.setTimeout(resolve, 4000))]).then(() => {
+    // A missing/blocked logo leaves the textual company name legible.
+    images.filter((image) => !image.complete || image.naturalWidth === 0).forEach((image) => { image.hidden = true; });
     w.focus();
     if (shouldPrint) window.setTimeout(() => w.print(), printDelayMs);
-  };
+  });
+}
+
+export function openReceiptPreview(html: string, shouldPrint = false): boolean {
+  const w = window.open("", "_blank", "width=440,height=700,scrollbars=yes");
+  if (!w) return false;
+  writeReceiptWindow(w, html, shouldPrint);
   return true;
+}
+
+async function currentReceiptSettings(settings: PrinterSettings) {
+  try {
+    return await Promise.race([
+      siteConfigApi.getAdmin().then((content) => withReceiptBranding(settings, content)),
+      new Promise<PrinterSettings>((resolve) => window.setTimeout(() => resolve(settings), 2500)),
+    ]);
+  }
+  catch { return settings; }
 }
 
 export function printOrder(order: ApiOrder, template?: PrintTemplate): void {
   const settings = loadPrinterSettings();
   const tpl = template ?? settings.defaultTemplate;
-  const opened = openPrintWindow(buildPrintHtml(order, tpl, settings), settings.autoPrint);
-  if (!opened) alert("Habilite pop-ups para imprimir.");
+  const target = window.open("", "_blank", "width=440,height=700,scrollbars=yes");
+  if (!target) { alert("Habilite pop-ups para imprimir."); return; }
+  void currentReceiptSettings(settings).then((branded) => writeReceiptWindow(target, buildPrintHtml(order, tpl, branded), settings.autoPrint));
 }
 
 export function printConfirmedOrder(order: ApiOrder): boolean {
@@ -400,12 +487,11 @@ export function printConfirmedOrder(order: ApiOrder): boolean {
   if (!settings.autoPrintConfirmedOrders) return true;
 
   const templates: PrintTemplate[] = ["cozinha", "completo"];
-  const results = templates.map((tpl, index) => {
-    const html = buildPrintHtml(order, tpl, settings);
-    return openPrintWindow(html, true, index * 600);
-  });
-
-  return results.every(Boolean);
+  const targets = templates.map(() => window.open("", "_blank", "width=440,height=700,scrollbars=yes"));
+  void currentReceiptSettings(settings).then((branded) => targets.forEach((target, index) => {
+    if (target) writeReceiptWindow(target, buildPrintHtml(order, templates[index], branded), true, index * 600);
+  }));
+  return targets.every(Boolean);
 }
 
 // ── Sample order for preview ──────────────────────────────────────────────────
@@ -420,10 +506,19 @@ export const SAMPLE_ORDER: ApiOrder = {
   delivery_city: "São Paulo — Vila Siqueira (Zona Norte)",
   delivery_complement: "ap 9",
   status: "preparing",
-  subtotal: 87.40,
+  subtotal: 97.40,
   shipping_fee: 11.99,
   discount: 9.90,
-  total: 89.49,
+  total: 99.49,
+  sales_channel: "counter",
+  fulfillment_type: "delivery",
+  payment_method: "cash",
+  payment_status: "pending",
+  pay_on_delivery: true,
+  delivery_payment_method: "cash",
+  cash_needs_change: true,
+  cash_change_for: 100,
+  cash_change_amount: 0.51,
   estimated_time: 48,
   loyalty_points_earned: 0,
   coupon_id: null,
@@ -447,6 +542,11 @@ export const SAMPLE_ORDER: ApiOrder = {
         { product_id: "p2", name: "Castelões", price: 43.70, icon: "🍕" },
       ],
       add_ons: [], unit_price: 87.40, final_price: 87.40,
+    },
+    {
+      id: "sample-drink", product_id: "sample-drink", product_name: "Refrigerante 2 L", product_type: "drink", is_drink: true,
+      quantity: 1, selected_size: "2 L", flavor_division: 1, flavors: [], add_ons: [], unit_price: 10, final_price: 10,
+      selected_crust_type: null, selected_drink_variant: null, notes: null,
     },
   ],
   created_at: new Date().toISOString(),

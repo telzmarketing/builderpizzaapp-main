@@ -269,3 +269,16 @@ def test_admin_user_password_mutations_increment_auth_version():
     route = ADMIN_USERS_ROUTE.read_text(encoding="utf-8")
     increment = 'user.auth_version = int(getattr(user, "auth_version", 0) or 0) + 1'
     assert route.count(increment) == 2
+
+
+def test_permission_matrix_rejects_duplicate_entries_before_persisting():
+    entry = SimpleNamespace(module_id="mod-a", permission_id="view")
+    with pytest.raises(HTTPException) as error:
+        rbac._validate_permission_entries(SimpleNamespace(), [entry, entry])
+    assert error.value.status_code == 400
+
+
+def test_permission_updates_capture_old_and_new_matrix_in_audit():
+    route = ROUTE.read_text(encoding="utf-8")
+    assert "old_val=old_repr, new_val=new_repr" in route
+    assert "RbacModule.is_active.is_(True)" in route

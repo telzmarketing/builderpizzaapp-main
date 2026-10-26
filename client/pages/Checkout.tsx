@@ -23,6 +23,7 @@ import {
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { checkoutTrackingPayload, trackEvent, getTrackingData, firePixelEvent } from "@/lib/tracking";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
+import { scheduleShippingQuote } from "@/lib/checkoutShipping";
 import { useApp } from "@/context/AppContext";
 import {
   couponsApi,
@@ -134,6 +135,8 @@ export default function Checkout() {
   const [couponApplied, setCouponApplied] = useState(false);
   const [shippingResult, setShippingResult] = useState<ApiShipping | null>(null);
   const [shippingLoading, setShippingLoading] = useState(false);
+  const [shippingError, setShippingError] = useState("");
+  const [shippingRetry, setShippingRetry] = useState(0);
   const [errors, setErrors] = useState<Partial<typeof form>>({});
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
@@ -363,6 +366,8 @@ export default function Checkout() {
 
   useEffect(() => {
     if (deliveryMode === "pickup") {
+      setShippingLoading(false);
+      setShippingError("");
       setShippingResult({
         shipping_price: 0,
         shipping_type: "pickup",
@@ -374,12 +379,11 @@ export default function Checkout() {
       });
       return;
     }
-    if (!form.city.trim() && !form.neighborhood.trim() && !form.zip_code.trim()) return;
-
-    const tid = setTimeout(async () => {
-      setShippingLoading(true);
-      try {
-        const s = await shippingApi.calculate(
+    if (!form.city.trim() || !form.address.trim()) {
+      setShippingResult(null); setShippingLoading(false); setShippingError("");
+      return;
+    }
+    return scheduleShippingQuote(() => shippingApi.calculate(
           form.city,
           cartSubtotal,
           form.neighborhood || undefined,
@@ -387,16 +391,8 @@ export default function Checkout() {
           false,
           false,
           form.address || undefined
-        );
-        setShippingResult(s);
-      } catch {
-        /* keep previous */
-      } finally {
-        setShippingLoading(false);
-      }
-    }, 600);
-    return () => clearTimeout(tid);
-  }, [form.address, form.city, form.neighborhood, form.zip_code, cartSubtotal, deliveryMode]);
+        ), { result: setShippingResult, loading: setShippingLoading, error: setShippingError });
+  }, [form.address, form.city, form.neighborhood, form.zip_code, cartSubtotal, deliveryMode, shippingRetry]);
 
   useEffect(() => {
     if (!createdOrder) return;
@@ -534,8 +530,8 @@ export default function Checkout() {
     return null;
   }
 
-  const deliveryFee = shippingResult?.shipping_price ?? 10.0;
-  const shippingAvailable = shippingResult?.available !== false;
+  const deliveryFee = shippingResult?.shipping_price ?? 0;
+  const shippingAvailable = !shippingLoading && !shippingError && shippingResult?.available === true;
   const deliveryFeeFinal = couponFreeShipping || promotionFreeShipping || deliveryMode === "pickup" || shippingResult?.free ? 0 : deliveryFee;
   const total = reviewedQuote?.total ?? cartSubtotal + deliveryFeeFinal - couponDiscount;
 
@@ -607,7 +603,7 @@ export default function Checkout() {
       return;
     }
     if (!shippingAvailable && deliveryMode === "delivery") {
-      setApiError(shippingResult?.message || "Regiao nao atendida para delivery.");
+      setApiError(shippingError || (shippingLoading ? "Aguarde o cálculo do frete." : shippingResult?.message || "Informe o endereço completo e aguarde a confirmação do frete."));
       return;
     }
     if (paymentMethods) {
@@ -1108,6 +1104,8 @@ export default function Checkout() {
           </div>
         </section>
 
+        {deliveryMode === "delivery" && shippingLoading && <p role="status" className="flex items-center gap-2 text-sm text-stone"><Loader2 size={16} className="animate-spin" /> Calculando frete para este endereço...</p>}
+        {deliveryMode === "delivery" && shippingError && <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"><p>{shippingError}</p><button type="button" className="mt-2 min-h-11 rounded-lg border px-3 font-bold" onClick={() => setShippingRetry((value) => value + 1)}>Tentar calcular novamente</button></div>}
         {shippingResult && (
           <div className={`rounded-xl px-4 py-3 flex items-start gap-3 ${
             !shippingResult.available
@@ -1346,7 +1344,7 @@ export default function Checkout() {
 
             <div className="bg-surface-02 rounded-xl p-4 space-y-3 border border-surface-03">
               <Line label="Subtotal:" value={`R$ ${cartSubtotal.toFixed(2)}`} />
-              <Line label="Taxa de entrega:" value={deliveryFeeFinal === 0 ? "Gratis" : `R$ ${deliveryFee.toFixed(2)}`} />
+              <Line label="Taxa de entrega:" value={deliveryMode === "delivery" && !shippingAvailable ? "A confirmar" : deliveryFeeFinal === 0 ? "Gratis" : `R$ ${deliveryFee.toFixed(2)}`} />
               {promotionFreeShipping && <Line label="Frete gratis da promocao:" value="Aplicado" good />}
               {couponDiscount > 0 && <Line label="Desconto cupom:" value={`-R$ ${couponDiscount.toFixed(2)}`} good />}
               <div className="border-t border-surface-03 pt-3 flex justify-between">

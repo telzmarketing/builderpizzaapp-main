@@ -463,7 +463,7 @@ export default function AdminProducts() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<Pizza> & { product_type?: string }>({
     name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza",
-    visible_delivery: true, visible_dine_in: true, delivery_price: null, dine_in_price: null,
+    visible_delivery: true, visible_dine_in: true, show_crust_options: true, delivery_price: null, dine_in_price: null,
   });
 
   const selectedCategoryId = activeCatalogCategories.find((cat) => cat.name === ((formData as any).category || ""))?.id ?? "";
@@ -521,7 +521,7 @@ export default function AdminProducts() {
           ...channelFields,
         } as any);
       }
-      setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, delivery_price: null, dine_in_price: null });
+      setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, show_crust_options: true, delivery_price: null, dine_in_price: null });
       setShowForm(false);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao salvar produto.");
@@ -537,6 +537,7 @@ export default function AdminProducts() {
       best_seller_badge_mode: (product as any).best_seller_badge_mode ?? "off",
       visible_delivery: (product as any).visible_delivery !== false,
       visible_dine_in: (product as any).visible_dine_in !== false,
+      show_crust_options: (product as any).show_crust_options !== false,
       delivery_price: (product as any).delivery_price ?? null,
       dine_in_price: (product as any).dine_in_price ?? null,
     } as any);
@@ -1170,7 +1171,7 @@ export default function AdminProducts() {
 
   // ── Presets ───────────────────────────────────────────────────────────────────
   const SIZE_PRESETS = [
-    { label: "Pizza Broto", description: "25cm - 4 pedaços" },
+    { label: "Pizza Individual", description: "25cm - 4 pedaços" },
     { label: "Pizza Grande", description: "35cm - 8 pedaços" },
   ];
 
@@ -1338,7 +1339,7 @@ export default function AdminProducts() {
             <div className="flex items-center gap-3">
               {activeTab === "produtos" && (
                 <button
-                  onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, delivery_price: null, dine_in_price: null }); }}
+                  onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, show_crust_options: true, delivery_price: null, dine_in_price: null }); }}
                   className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
                 >
                   <Plus size={20} />
@@ -1402,7 +1403,7 @@ export default function AdminProducts() {
                   ))}
                 </select>
                 <button
-                  onClick={() => { setShowForm(true); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, delivery_price: null, dine_in_price: null }); }}
+                  onClick={() => { setShowForm(true); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, show_crust_options: true, delivery_price: null, dine_in_price: null }); }}
                   className="flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
                 >
                   <Plus size={20} />
@@ -2182,6 +2183,15 @@ export default function AdminProducts() {
                       />
                       Visivel no Salao
                     </label>
+                    <label className="flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-02 px-3 py-2 text-sm text-parchment sm:col-span-2">
+                      <input
+                        type="checkbox"
+                        checked={(formData as any).show_crust_options !== false}
+                        onChange={(event) => setFormData({ ...formData, show_crust_options: event.target.checked } as any)}
+                        className="accent-gold"
+                      />
+                      Exibir opções de massa e borda na personalização
+                    </label>
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <div>
@@ -2717,7 +2727,7 @@ export default function AdminProducts() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-parchment text-xs font-medium mb-1">Rótulo *</label>
-                      <input type="text" value={sizeForm.label} onChange={(e) => setSizeForm((f) => ({ ...f, label: e.target.value }))} className={cls} placeholder={(sizesModalProduct as any).product_type === "drink" ? 'Ex: "600ml"' : 'Ex: "Pizza Broto"'} maxLength={50} />
+                      <input type="text" value={sizeForm.label} onChange={(e) => setSizeForm((f) => ({ ...f, label: e.target.value }))} className={cls} placeholder={(sizesModalProduct as any).product_type === "drink" ? 'Ex: "600ml"' : 'Ex: "Pizza Individual"'} maxLength={50} />
                     </div>
                     <div>
                       <label className="block text-parchment text-xs font-medium mb-1">Preço (R$) *</label>

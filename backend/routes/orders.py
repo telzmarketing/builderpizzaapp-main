@@ -8,12 +8,13 @@ All business logic lives in OrderService. These handlers only:
 """
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
 from backend.core.response import ok, created, err, err_msg
 from backend.core.tenant_entitlements import require_operational_entitlement
+from backend.core.rbac_authorization import AuthorizedTenantActor, require_rbac_permission
 from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
@@ -23,13 +24,17 @@ from backend.models.order import Order, OrderStatus
 from backend.models.admin import AdminUser
 from backend.models.product import Product
 from backend.models.rbac import Role
-from backend.schemas.order import CheckoutIn, OrderStatusUpdate, OrderWhatsAppNotificationSettingsIn
+from backend.schemas.order import CheckoutIn, ManualOrderIn, OrderStatusUpdate, OrderWhatsAppNotificationSettingsIn
 from backend.schemas.checkout_quote import CheckoutQuoteOut
 from backend.services.payment_service import PaymentService
+from backend.services.operational_payment import cash_change_amount
 from backend.services.order_service import OrderService
 from backend.services.order_whatsapp_notification_service import OrderWhatsAppNotificationService
+from backend.services.idempotency_service import IdempotencyService
+from backend.models.idempotency import IdempotencyKey
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+admin_orders_router = APIRouter(prefix="/admin/orders", tags=["admin-orders"])
 
 
 def _require_admin(request: Request, db: Session) -> AdminUser:
@@ -70,6 +75,7 @@ def _build_product_lookup(db: Session, orders: list[Order]) -> dict[str, Product
 
 def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
     items = []
+    drinks = []
     for item in order.items:
         fallback_product = product_lookup.get(item.product_id)
         fallback_flavor = item.flavors[0] if item.flavors else None
@@ -89,10 +95,16 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
                 "icon": flavor_product.icon if flavor_product else "",
             })
 
-        items.append({
+        is_drink = bool(
+            (fallback_product and fallback_product.product_type == "drink")
+            or item.selected_drink_variant
+        )
+        serialized_item = {
             "id": item.id,
             "product_id": item.product_id,
             "product_name": product_name,
+            "product_type": fallback_product.product_type if fallback_product else None,
+            "is_drink": is_drink,
             "quantity": item.quantity,
             "selected_size": item.selected_size,
             "selected_size_id": item.selected_size_id,
@@ -119,7 +131,11 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
             "promotion_applied": bool(item.promotion_id),
             "promotion_blocked": bool(item.promotion_blocked),
             "promotion_block_reason": item.promotion_block_reason,
-        })
+        }
+        items.append(serialized_item)
+        if is_drink:
+            drinks.append({"product_id": item.product_id, "product_name": product_name, "quantity": item.quantity,
+                           "selected_drink_variant": item.selected_drink_variant})
 
     status = order.status.value if hasattr(order.status, "value") else str(order.status)
     delivery_summary = None
@@ -161,6 +177,7 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
         "delivery_payment_method": order.payment.delivery_payment_method if order.payment else None,
         "cash_needs_change": order.payment.cash_needs_change if order.payment else None,
         "cash_change_for": order.payment.cash_change_for if order.payment else None,
+        "cash_change_amount": cash_change_amount(order.payment, order.total),
         "external_reference": order.external_reference,
         "subtotal": order.subtotal,
         "shipping_fee": order.shipping_fee,
@@ -180,6 +197,8 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
         "table_id": order.table_id,
         "table_session_id": order.table_session_id,
         "items": items,
+        "drinks": drinks,
+        "has_drinks": bool(drinks),
         "created_at": order.created_at,
         "updated_at": order.updated_at,
         "paid_at": order.paid_at,
@@ -231,6 +250,134 @@ def create_order(body: CheckoutIn, request: Request, db: Session = Depends(get_d
 @router.post("/checkout", status_code=201, include_in_schema=False)
 def checkout_alias(body: CheckoutIn, request: Request, db: Session = Depends(get_db)):
     return create_order(body, request, db)
+
+
+def _manual_checkout_payload(body: ManualOrderIn) -> CheckoutIn:
+    return body.model_copy(update={
+        "delivery": body.delivery.model_copy(update={
+            "is_pickup": body.fulfillment_type == "pickup",
+        }),
+    })
+
+
+def _manual_quote(body: ManualOrderIn, actor: AuthorizedTenantActor, db: Session):
+    payload = _manual_checkout_payload(body)
+    try:
+        result = OrderService(db, actor.tenant_context).quote_checkout(payload)
+        return ok(CheckoutQuoteOut.model_validate(result).model_dump())
+    except DomainError as exc:
+        return err(exc)
+
+
+def _create_manual_order(
+    body: ManualOrderIn,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("pedidos", "create")),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=200),
+):
+    """Create an operator order through the same OrderService as the public checkout."""
+    idempotency = IdempotencyService(db, actor.tenant_id)
+    request_payload = body.model_dump(mode="json")
+    operation = "order.manual.create"
+    reference = f"manual:{actor.tenant_id}:{IdempotencyService._digest(idempotency_key.strip())[:48]}"
+    try:
+        claim = idempotency.claim(idempotency_key, operation, request_payload)
+    except DomainError:
+        recovered_order = db.query(Order).filter(
+            Order.tenant_id == actor.tenant_id,
+            Order.external_reference == reference,
+        ).first()
+        if recovered_order:
+            claim = idempotency.recover_completed(idempotency_key, operation, request_payload, recovered_order.id)
+        else:
+            raise
+    service = OrderService(db, actor.tenant_context)
+    if claim.replay_resource_id:
+        order = service.get(claim.replay_resource_id)
+        return ok(_serialize_orders(db, [order])[0], "Pedido manual já criado.")
+    try:
+        order = service.create_from_checkout(
+            _manual_checkout_payload(body),
+            sales_channel=body.sales_channel,
+            payment_status=body.payment_status,
+            payment_source="manual",
+            external_reference_override=reference,
+            created_by_admin_id=actor.user_id,
+        )
+        idempotency.complete(claim.record, order.id)
+        order = service.get(order.id)
+        return created(_serialize_orders(db, [order])[0], "Pedido manual criado com sucesso.")
+    except DomainError as exc:
+        # The order commit and idempotency completion are separate transactions.
+        # If completion failed after the order was committed, keep the claim and
+        # recover it from the deterministic external reference on retry.
+        db.rollback()
+        committed = db.query(Order).filter(
+            Order.tenant_id == actor.tenant_id,
+            Order.external_reference == reference,
+        ).first()
+        if committed:
+            recovered = idempotency.recover_completed(
+                idempotency_key, operation, request_payload, committed.id,
+            )
+            return ok(_serialize_orders(db, [committed])[0], "Pedido manual j\u00e1 criado.")
+        idempotency.abandon(claim.record)
+        return err(exc)
+    except Exception:
+        db.rollback()
+        committed = db.query(Order).filter(
+            Order.tenant_id == actor.tenant_id,
+            Order.external_reference == reference,
+        ).first()
+        if committed:
+            idempotency.recover_completed(
+                idempotency_key, operation, request_payload, committed.id,
+            )
+            return ok(_serialize_orders(db, [committed])[0], "Pedido manual j\u00e1 criado.")
+        idempotency.abandon(claim.record)
+        raise
+
+
+@router.post("/manual/quote")
+def quote_manual_order(
+    body: ManualOrderIn,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("pedidos", "create")),
+    _entitlement=Depends(require_operational_entitlement("orders.write", write=True)),
+):
+    return _manual_quote(body, actor, db)
+
+
+@router.post("/manual", status_code=201)
+def create_manual_order(
+    body: ManualOrderIn,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("pedidos", "create")),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=200),
+    _entitlement=Depends(require_operational_entitlement("orders.write", write=True)),
+):
+    return _create_manual_order(body, db, actor, idempotency_key)
+
+
+@admin_orders_router.post("/manual/quote")
+def quote_admin_manual_order(
+    body: ManualOrderIn,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("pedidos", "create")),
+    _entitlement=Depends(require_operational_entitlement("orders.write", write=True)),
+):
+    return _manual_quote(body, actor, db)
+
+
+@admin_orders_router.post("/manual", status_code=201)
+def create_admin_manual_order(
+    body: ManualOrderIn,
+    db: Session = Depends(get_db),
+    actor: AuthorizedTenantActor = Depends(require_rbac_permission("pedidos", "create")),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=200),
+    _entitlement=Depends(require_operational_entitlement("orders.write", write=True)),
+):
+    return _create_manual_order(body, db, actor, idempotency_key)
 
 
 @router.post("/quote")

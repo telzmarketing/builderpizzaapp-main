@@ -46,3 +46,10 @@ def update_site_config(
     db: Session = Depends(get_db), admin=Depends(get_current_admin),
 ):
     return ok(SiteConfigService(db).save(request, admin, body.root))
+
+
+@router.get("/admin/site-config")
+def get_admin_site_config(request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    response = ok(SiteConfigService(db).read_admin(request, admin))
+    response.headers.update(_NO_CACHE)
+    return response

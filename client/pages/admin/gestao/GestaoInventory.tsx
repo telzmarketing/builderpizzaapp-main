@@ -21,7 +21,6 @@ import {
 type Section = "settings" | "items" | "base" | "suppliers" | "purchases" | "replenishment" | "entries" | "foundation" | "documents" | "preparation";
 
 const sections: AdminPageTab<Section>[] = [
-  { id: "settings", label: "Configuracoes", icon: Settings },
   { id: "items", label: "Insumos", icon: Package },
   { id: "base", label: "Base", icon: Layers3 },
   { id: "suppliers", label: "Fornecedores", icon: Truck },
@@ -31,6 +30,7 @@ const sections: AdminPageTab<Section>[] = [
   { id: "foundation", label: "Saldos e conversoes", icon: Layers3 },
   { id: "documents", label: "NF-e recebidas", icon: FileText },
   { id: "preparation", label: "Preparo", icon: ChefHat },
+  { id: "settings", label: "Configuracoes", icon: Settings },
 ];
 
 const emptyOverview: InventoryOverview = {
@@ -54,7 +54,7 @@ function currency(value: number) {
 }
 
 export default function GestaoInventory() {
-  const [section, setSection] = useState<Section>("settings");
+  const [section, setSection] = useState<Section>("items");
 
   return (
     <AdminGestao

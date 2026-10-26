@@ -529,14 +529,15 @@ class InventoryFoundationService:
             row.status, row.version = "released", version+1
         self.db.flush()
 
-    def consume_legacy_sale(self, order_id, requirements, unit_costs, *, source_type="foundation_order_sale", operation_kind="order_sale", identity_scope="legacy-order"):
+    def consume_legacy_sale(self, order_id, requirements, unit_costs, *, source_type="foundation_order_sale", operation_kind="order_sale", identity_scope="legacy-order", include_untracked=False, reservation_order_id=None):
         """Flush-only bridge, caller owns order/item locks and commit/rollback."""
         handled = set()
         now = utcnow()
+        allocation_owner = reservation_order_id or order_id
         for item_id, required in sorted(requirements.items()):
             lots = self._query(InventoryLot).filter(InventoryLot.item_id == item_id).with_for_update().all()
             reservations = self._active_reservations(item_id)
-            if not lots and not reservations:
+            if not lots and not reservations and not include_untracked:
                 continue
             handled.add(item_id)
             prior = self._query(InventoryOperation).filter(InventoryOperation.kind == operation_kind, InventoryOperation.business_key == f"{order_id}:{item_id}").first()
@@ -554,12 +555,12 @@ class InventoryFoundationService:
             buckets = [(lot.location_id, lot.id) for lot in eligible]
             legacy_locations = self._query(InventoryStockMovement).filter(InventoryStockMovement.item_id == item_id, InventoryStockMovement.lot_id.is_(None)).with_entities(InventoryStockMovement.location_id).distinct().all()
             buckets += [(row[0], None) for row in legacy_locations]
-            own = [r for r in reservations if r.source_type == "order" and r.source_id == order_id]
+            own = [r for r in reservations if r.source_type == "order" and r.source_id == allocation_owner]
             # Explicitly allocated reservations precede otherwise free FEFO stock.
             buckets.sort(key=lambda bucket: not any(r.location_id == bucket[0] and r.lot_id == bucket[1] for r in own))
             remaining, ids, used, reservation_consumptions = Decimal(str(required)), [], {}, []
             for location_id, lot_id in buckets:
-                free = max(ZERO, self._available(item_id, location_id, lot_id, own_order=order_id))
+                free = max(ZERO, self._available(item_id, location_id, lot_id, own_order=allocation_owner))
                 allocated = min(remaining, free)
                 if allocated <= 0:
                     continue

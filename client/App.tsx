@@ -3,11 +3,13 @@ import { Toaster } from "@/components/ui/toaster";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { themeApi, applyTheme, DEFAULT_THEME, readCachedTheme } from "./lib/themeApi";
-import { captureTrackingFromUrl, firePixelEvent, trackEvent, getTrackingData, initCampaignPixel, initStorePixels, isInternalStaffPath, requestVisitorLocation } from "./lib/tracking";
+import { captureTrackingFromUrl, firePixelEvent, trackEvent, getTrackingData, initCampaignPixel, initStorePixels, isPublicSalesPath, requestVisitorLocation } from "./lib/tracking";
+import { startStorefrontPresence } from "./lib/storefrontPresence";
 import { customerEventsApi, runtimeSurfaceApi } from "./lib/api";
 import { getPublicExperience, isSalaoExperience } from "./lib/experience";
 import { isPlatformRuntimeSurface, isStoreRuntimeSurface } from "./lib/runtimeHostSurface";
 import { PlatformSurfaceProvider, usePlatformSurface } from "./context/PlatformSurfaceContext";
+import MotoboyPwaBoundary from "./components/MotoboyPwaBoundary";
 import {
   isPlatformSupportPanelPathAllowed,
   readPlatformSupportSession,
@@ -290,8 +292,10 @@ function ThemeInjector() {
 function TrackingInjector() {
   const { pathname, search } = useLocation();
 
+  useEffect(() => startStorefrontPresence(pathname), [pathname]);
+
   useEffect(() => {
-    if (isInternalStaffPath(pathname)) return;
+    if (!isPublicSalesPath(pathname)) return;
     if (sessionStorage.getItem("_mo_site_opened")) return;
     sessionStorage.setItem("_mo_site_opened", "1");
     const openingTimer = window.setTimeout(() => {
@@ -331,7 +335,7 @@ function TrackingInjector() {
   }, []);
 
   useEffect(() => {
-    if (isInternalStaffPath(pathname)) return;
+    if (!isPublicSalesPath(pathname)) return;
     const data = captureTrackingFromUrl();
     trackEvent("page_view");
     if (isSalaoExperience()) return;
@@ -483,6 +487,8 @@ const AdminSalao = lazy(() => import("./pages/admin/salao/AdminSalao"));
 const AdminSalaoPage = lazy(() => import("./pages/admin/salao/AdminSalaoPage"));
 const PromotionalLandingEditor = lazy(() => import("./pages/admin/PromotionalLandingEditor"));
 const Motoboy = lazy(() => import("./pages/Motoboy"));
+const ManualOrder = lazy(() => import("./pages/admin/ManualOrder"));
+const Preparation = lazy(() => import("./pages/admin/Preparation"));
 const OrderBoardTv = lazy(() => import("./pages/OrderBoardTv"));
 const Campanha = lazy(() => import("./pages/Campanha"));
 const PromocaoLanding = lazy(() => import("./pages/PromocaoLanding"));
@@ -523,6 +529,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
         {!orderBoardSurface && <ThemeInjector />}
           <Toaster />
           <BrowserRouter>
+            {!platformSurface && <MotoboyPwaBoundary />}
             {!platformSurface && !orderBoardSurface && <MotoboyNativeEntry />}
             {!platformSurface && !orderBoardSurface && <RouteDataLoader />}
             {!platformSurface && !orderBoardSurface && <StoreWidget />}
@@ -619,6 +626,9 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
 
               {/* ── Admin routes (protected by JWT guard) ── */}
               <Route element={<AdminGuard />}>
+                <Route path="/painel/preparo" element={<Preparation />} />
+                <Route path="/operacoes/novo-pedido" element={<ManualOrder />} />
+                <Route path="/painel/orders/novo" element={<FullPageRedirect to="/operacoes/novo-pedido" />} />
                 <Route path="/painel/bi-mobile" element={<AdminBIMobile />} />
                 <Route path="/painel/cozinha" element={<AdminCozinha />} />
                 <Route path="/painel/expedicao" element={<AdminExpedicao />} />

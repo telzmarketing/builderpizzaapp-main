@@ -1,3 +1,4 @@
+import { getStoreRefreshPlan, type CatalogBootstrapPlan } from "@/lib/storeRefresh";
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { firePixelEvent, getTrackingData } from "@/lib/tracking";
 import { readPlatformSupportSession } from "@/lib/platformSupportSession";
@@ -480,13 +481,6 @@ function apiCouponToCoupon(c: ApiCoupon): Coupon {
   };
 }
 
-type CatalogBootstrapPlan = {
-  products?: boolean;
-  promotions?: boolean;
-  multiFlavorsConfig?: boolean;
-  campaignBanners?: boolean;
-};
-
 function hasCatalogPlan(plan: CatalogBootstrapPlan) {
   return !!(plan.products || plan.promotions || plan.multiFlavorsConfig || plan.campaignBanners);
 }
@@ -506,13 +500,6 @@ function getCatalogBootstrapPlan(pathname: string): CatalogBootstrapPlan {
       productDetail ||
       pathname.startsWith("/painel/home-config"),
     multiFlavorsConfig: productDetail || adminProducts,
-    campaignBanners: pathname === "/",
-  };
-}
-
-function getStoreRefreshPlan(pathname: string): CatalogBootstrapPlan {
-  return {
-    products: pathname === "/" || pathname === "/cardapio" || pathname === "/menu" || pathname.startsWith("/product/"),
     campaignBanners: pathname === "/",
   };
 }
@@ -748,13 +735,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Store data polling (silent refresh every 30s for store pages) ─────────
   useEffect(() => {
+    let refreshing = false;
     async function refreshStoreData() {
+      if (document.visibilityState === "hidden" || refreshing) return;
       const refreshPlan = getStoreRefreshPlan(window.location.pathname);
       if (!hasCatalogPlan(refreshPlan)) return;
+      refreshing = true;
       try {
-        await loadCatalogData(refreshPlan);
-      } catch {
-        // silent
+        await Promise.allSettled([loadCatalogData(refreshPlan), loadSiteContent()]);
+      } finally {
+        refreshing = false;
       }
     }
     const intervalId = setInterval(refreshStoreData, 30_000);
@@ -762,9 +752,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (document.visibilityState === "visible") refreshStoreData();
     }
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", refreshStoreData);
+    function handleContentChange(event: StorageEvent) {
+      if (event.key === siteContentCacheKey()) void refreshStoreData();
+    }
+    window.addEventListener("storage", handleContentChange);
     return () => {
       clearInterval(intervalId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", refreshStoreData);
+      window.removeEventListener("storage", handleContentChange);
     };
   }, []);
 

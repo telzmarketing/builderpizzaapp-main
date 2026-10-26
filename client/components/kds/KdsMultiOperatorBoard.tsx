@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronRight, CirclePause, CirclePlay, Clock3, Database, Loader2, RefreshCw, UserRound, Users, Wifi, WifiOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { kdsApi, type KdsMyQueue, type KdsPresenceState, type KdsProductionTask } from "@/lib/api";
@@ -41,6 +41,35 @@ function consumptionLabel(task: KdsProductionTask) {
   if (task.consumption_mode === "not_required") return "Sem consumo de estoque nesta unidade";
   return "Consumo aguardando confirmação do servidor";
 }
+
+function StockCountdown({ task, onConfirm }: { task: KdsProductionTask; onConfirm: () => Promise<void> }) {
+  const [remaining, setRemaining] = useState(5);
+  const confirm = useRef(onConfirm);
+  confirm.current = onConfirm;
+  useEffect(() => {
+    // The deadline comes from the server; local clock changes cannot authorize stock.
+    const delay = Math.max(0, Date.parse(task.stock_check_after || "") - Date.parse(task.server_time || ""));
+    if (!Number.isFinite(delay)) return;
+    const deadline = performance.now() + delay;
+    const update = () => setRemaining(Math.max(0, Math.ceil((deadline - performance.now()) / 1000)));
+    update();
+    const interval = window.setInterval(update, 250);
+    const timeout = window.setTimeout(() => { void confirm.current(); }, delay + 50);
+    return () => { window.clearInterval(interval); window.clearTimeout(timeout); };
+  }, [task.id, task.version, task.stock_check_after, task.server_time]);
+  return <div role="status" className="mt-3 rounded-lg border border-sky-400/40 bg-sky-500/10 p-3 font-bold text-sky-200">{remaining ? `Conferindo estoque… ${remaining}s` : "Aguardando confirmação do servidor…"}<p className="mt-1 text-xs font-normal">Nenhuma baixa durante a contagem.</p></div>;
+}
+
+type TaskAction = "start" | "confirm-stock" | "return-to-service" | "finish-assembly" | "start-oven" | "complete-oven" | "check";
+const ACTION_LABELS: Record<TaskAction, string> = {
+  start: "Conferência de estoque iniciada",
+  "confirm-stock": "Estoque disponível — iniciando preparo",
+  "return-to-service": "Pedido encaminhado ao atendimento",
+  "finish-assembly": "Montagem concluída",
+  "start-oven": "Assamento iniciado",
+  "complete-oven": "Assamento concluído",
+  check: "Unidade conferida",
+};
 
 export default function KdsMultiOperatorBoard() {
   const { toast } = useToast();
@@ -106,12 +135,13 @@ export default function KdsMultiOperatorBoard() {
     }
   };
 
-  const command = async (task: KdsProductionTask, action: "start" | "finish-assembly") => {
+  const command = async (task: KdsProductionTask, action: TaskAction) => {
     setBusy(task.id);
     try {
-      const updated = await kdsApi.commandTask(task.id, action, { expected_version: task.version }, keyFor(action, task.id));
+      const updated = await kdsApi.commandTask(task.id, action, { expected_version: task.version, ...(action === "check" ? { approved: true } : {}) }, keyFor(action, task.id));
       setQueue((current) => current ? { ...current, tasks: current.tasks.map((item) => item.id === task.id ? updated : item) } : current);
-      toast({ title: action === "start" ? "Preparo iniciado" : "Montagem concluída" });
+      toast({ title: updated.state === "aguardando_analise" ? "Estoque indisponível — aguardando análise" : ACTION_LABELS[action], variant: updated.state === "aguardando_analise" ? "destructive" : "default" });
+      void load();
     } catch (caught) {
       const message = errorMessage(caught);
       setError(message);
@@ -171,12 +201,18 @@ export default function KdsMultiOperatorBoard() {
           <div className="flex items-start justify-between gap-2"><label className="flex items-center gap-2"><input type="checkbox" checked={isSelected} onChange={(event) => setSelected((current) => event.target.checked ? [...current, task.id] : current.filter((id) => id !== task.id))} aria-label={`Selecionar tarefa ${task.order_code || task.id}`} className="h-5 w-5 accent-gold" /><strong className="text-lg">#{(task.order_code || task.order_id.slice(0, 8)).toUpperCase()}</strong></label><span className="flex items-center gap-1 rounded-lg bg-surface-02 px-2 py-1 text-sm font-bold text-amber-300"><Clock3 size={14} />{formatTimer(task)}</span></div>
           <p className="mt-2 text-sm font-semibold text-stone">{task.product_name || "Unidade de produção"} · unidade {task.unit_index}</p>
           <p className="mt-1 text-xs uppercase tracking-wide text-stone">{task.state} · prioridade {task.priority}</p>
+          {task.state === "checking_stock" && <StockCountdown task={task} onConfirm={() => command(task, "confirm-stock")} />}
+          {(task.state === "aguardando_analise" || task.state === "atendimento") && <div role="alert" className="mt-3 rounded-lg border border-red-400/50 bg-red-500/10 p-3 text-sm font-bold text-red-200">{task.state === "atendimento" ? "Encaminhado ao atendimento" : "Aguardando análise do atendimento/gerência"}<p className="mt-1 font-normal">{task.blocked_reason || "Estoque não confirmado. Preparo bloqueado."}</p></div>}
           <div className="mt-3 rounded-lg border border-surface-03 bg-surface-02 px-3 py-2 text-xs text-stone">
             <p className="flex items-center gap-2 font-bold text-cream"><Database size={14} className="text-gold" /> {consumptionLabel(task)}</p>
             {task.consumption_operation_id && <p className="mt-1 truncate" title={task.consumption_operation_id}>Operação: {task.consumption_operation_id}</p>}
             {task.composition_revision_id && <p className="mt-1 truncate" title={task.composition_revision_id}>Composição congelada: {task.composition_revision_id}</p>}
           </div>
-          <div className="mt-4 flex gap-2">{task.state === "queued" || task.state === "unassigned" ? <button type="button" onClick={() => void command(task, "start")} disabled={Boolean(busy)} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-orange-500 px-3 font-black text-white disabled:opacity-50">{isBusy ? <Loader2 className="animate-spin" size={16} /> : <ChevronRight size={16} />} Iniciar</button> : task.state === "assembling" ? <button type="button" onClick={() => void command(task, "finish-assembly")} disabled={Boolean(busy)} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 font-black text-white disabled:opacity-50">{isBusy ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />} Concluir montagem</button> : <span className="flex min-h-11 flex-1 items-center justify-center rounded-lg bg-surface-02 px-3 text-sm font-bold text-stone">Aguardando próxima etapa</span>}</div>
+          <div className="mt-4 flex gap-2">{(() => {
+            const action: TaskAction | null = task.state === "queued" || task.state === "unassigned" ? "start" : task.state === "assembling" ? "finish-assembly" : task.state === "assembled" ? (task.requires_oven ? "start-oven" : "check") : task.state === "baking" ? "complete-oven" : task.state === "checking" ? "check" : task.state === "aguardando_analise" ? "return-to-service" : null;
+            const label = action === "start" ? "Iniciar / OK" : action === "finish-assembly" ? "Concluir montagem" : action === "start-oven" ? "Iniciar forno" : action === "complete-oven" ? "Retirar do forno" : action === "check" ? "Conferido — OK" : "Voltar para Atendimento";
+            return action ? <button type="button" onClick={() => void command(task, action)} disabled={Boolean(busy)} className={`flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg px-3 font-black text-white disabled:opacity-50 ${action === "return-to-service" ? "bg-red-600" : action === "start" ? "bg-orange-500" : "bg-emerald-600"}`}>{isBusy ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}{label}</button> : <span className="flex min-h-11 flex-1 items-center justify-center rounded-lg bg-surface-02 px-3 text-sm font-bold text-stone">{task.state === "checking_stock" ? "Conferência em andamento" : "Aguardando atendimento"}</span>;
+          })()}</div>
         </article>;
       })}</div>}
 

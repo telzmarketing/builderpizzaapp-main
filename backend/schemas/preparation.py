@@ -16,9 +16,22 @@ class PreparationReportIn(Strict):
     lost_quantity: Decimal = Field(default=Decimal(0), ge=0, max_digits=20, decimal_places=6)
     discarded_quantity: Decimal = Field(default=Decimal(0), ge=0, max_digits=20, decimal_places=6)
     output_lot_id: str | None = None
+    output_location_id: str | None = None
+    output_lot_code: str | None = Field(default=None, max_length=120)
+    expires_on: datetime | None = None
+    portion_grams: Decimal | None = Field(default=None, gt=0, max_digits=20, decimal_places=6)
     input_allocations: list[dict] = Field(default_factory=list)
     losses: list[dict] = Field(default_factory=list)
     reason: str | None = Field(default=None, max_length=300)
     prepared_at: datetime | None = None
     notes: str | None = None
-class PreparationOrderOut(BaseModel): id: str; recipe_id: str; target_quantity: str; produced_quantity: str; lost_quantity: str; discarded_quantity: str; status: str; version: int
+class PreparationOrderOut(BaseModel):
+    id: str
+    recipe_id: str
+    target_quantity: str
+    produced_quantity: str
+    lost_quantity: str
+    discarded_quantity: str
+    status: str
+    version: int
+    execution_id: str | None = None

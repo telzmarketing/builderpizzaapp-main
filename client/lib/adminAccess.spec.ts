@@ -3,6 +3,13 @@ import { filterAdminNavigation, findAdminNavigationGroup, findAdminNavigationIte
 import type { ApiEffectivePermissions } from "./api";
 
 describe("admin navigation route matching", () => {
+  it("keeps the preparation station behind existing inventory access", () => {
+    expect(findAdminNavigationItem("/painel/preparo")?.permissions).toEqual(["inventory"]);
+  });
+  it("keeps the mobile operator composer behind the orders module", () => {
+    expect(findAdminNavigationItem("/operacoes/novo-pedido")?.permissions).toEqual(["pedidos"]);
+    expect(findAdminNavigationGroup("/operacoes/novo-pedido")?.label).toBe("Operacoes");
+  });
   it("uses the most specific route when module paths overlap", () => {
     expect(findAdminNavigationGroup("/painel/salao/pagina")?.label).toBe("Configuracoes");
     expect(findAdminNavigationItem("/painel/salao/pagina")?.label).toBe("Pagina Salao");

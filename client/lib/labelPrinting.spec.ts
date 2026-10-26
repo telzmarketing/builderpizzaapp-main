@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildLabelPrintHtml, renderAndPrintLabels, type LabelPrintTarget } from "./labelPrinting";
+import { buildLabelPrintHtml, buildPreparationLabelPrintHtml, renderHtmlAndPrint, renderAndPrintLabels, type LabelPrintTarget } from "./labelPrinting";
 import type { KdsLabelPreview } from "./api";
 
 const preview: KdsLabelPreview = {
@@ -15,6 +15,29 @@ const preview: KdsLabelPreview = {
 };
 
 describe("labelPrinting", () => {
+  it("waits for the tenant logo to load before opening print", async () => {
+    vi.useFakeTimers();
+    try {
+      const listeners: Record<string, () => void> = {};
+      const image = { complete: false, naturalWidth: 100, hidden: false, addEventListener: (event: string, callback: () => void) => { listeners[event] = callback; } };
+      const target = { document: { write: vi.fn(), close: vi.fn(), images: [image] }, focus: vi.fn(), print: vi.fn() } as unknown as LabelPrintTarget;
+      renderHtmlAndPrint("<html>label</html>", target);
+      expect(target.print).not.toHaveBeenCalled();
+      listeners.load();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(target.print).toHaveBeenCalledOnce();
+      expect(image.hidden).toBe(false);
+    } finally { vi.useRealTimers(); }
+  });
+  it("renders preparation snapshot, safe branding and copies without inventing expiry", () => {
+    const html = buildPreparationLabelPrintHtml({ execution: { execution_id: "e1", product_name: "Muçarela <porção>", quantity: "40", portion_grams: "150", lot_code: "L&1", restaurant: { name: "Cozinha", logo_url: "javascript:alert(1)" } }, printer: preview.printer!, template: preview.template }, 2);
+    expect(html).toContain("Muçarela &lt;porção&gt;");
+    expect(html).toContain("150 g/porção");
+    expect(html).toContain("L&amp;1");
+    expect(html).toContain("Validade:</b> Não informado");
+    expect(html.match(/<article class="label">/g)).toHaveLength(2);
+    expect(html).not.toContain("javascript:");
+  });
   it("gera uma página em milímetros por volume e escapa dados do pedido", () => {
     const html = buildLabelPrintHtml(preview);
     expect(html).toContain("@page{size:100mm 50mm;margin:0}");

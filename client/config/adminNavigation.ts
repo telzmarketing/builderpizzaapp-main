@@ -78,7 +78,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
   {
     label: "Operacoes",
     children: [
-      { path: "/painel/orders", icon: ShoppingBag, label: "Pedidos", permissions: ["pedidos"] },
+      { path: "/painel/orders", aliases: ["/operacoes/novo-pedido"], icon: ShoppingBag, label: "Pedidos", permissions: ["pedidos"] },
       { path: "/painel/salao", icon: ClipboardList, label: "Salao & Reservas", permissions: ["pedidos"] },
       { path: "/painel/logistica", icon: Route, label: "Logistica", permissions: ["entregas", "motoboys"] },
     ],
@@ -95,7 +95,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
   {
     label: "Gestão",
     children: [
-      { path: "/painel/gestao/estoque", icon: Package, label: "Estoque", permissions: ["inventory"] },
+      { path: "/painel/gestao/estoque", aliases: ["/painel/preparo"], icon: Package, label: "Estoque", permissions: ["inventory"] },
       { path: "/painel/gestao/cmv", icon: BarChart3, label: "CMV", permissions: ["cmv"] },
       { path: "/painel/gestao/financeiro", icon: CreditCard, label: "Financeiro", permissions: ["finance"] },
       { path: "/painel/gestao/fiscal", icon: FileText, label: "Fiscal SEFAZ", permissions: ["fiscal"] },

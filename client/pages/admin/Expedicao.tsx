@@ -1,3 +1,5 @@
+import { operationalPaymentLines } from "@/lib/operationalPayment";
+import { operationalDrinks, isOperationalDrink } from "@/lib/operationalDrinks";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bike, CheckCircle2, Clock3, Loader2, MapPin, Maximize2, Minimize2, PackageCheck, Printer, RefreshCw, Truck, UserRound, WifiOff } from "lucide-react";
 import KdsSessionActions from "@/components/kds/KdsSessionActions";
@@ -23,15 +25,6 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Não foi possível atualizar a expedição.";
 }
 
-function paymentLabel(order: KdsDispatchOrder) {
-  if (!order.pay_on_delivery) return "Pagamento confirmado";
-  if (order.delivery_payment_method === "cash") {
-    return order.cash_needs_change && order.cash_change_for ? `Dinheiro · troco para R$ ${order.cash_change_for.toFixed(2).replace(".", ",")}` : "Dinheiro na entrega";
-  }
-  if (order.delivery_payment_method === "card") return "Cartão na entrega";
-  return "Pagamento na entrega";
-}
-
 export default function AdminExpedicao() {
   const { toast } = useToast();
   const [orders, setOrders] = useState<KdsDispatchOrder[]>([]);
@@ -48,11 +41,15 @@ export default function AdminExpedicao() {
   const knownOrderIds = useRef<Set<string>>(new Set());
   const initialLoad = useRef(true);
   const actionLock = useRef(false);
+  const loadSequence = useRef(0);
 
   const loadData = useCallback(async (manual = false) => {
+    if (actionLock.current) return;
+    const sequence = ++loadSequence.current;
     if (manual) setRefreshing(true);
     try {
       const [nextOrders, nextDrivers] = await Promise.all([kdsApi.listDispatchOrders(), kdsApi.listDispatchDrivers()]);
+      if (sequence !== loadSequence.current) return;
       const hasNewOrder = nextOrders.some((order) => !knownOrderIds.current.has(order.id));
       if (!initialLoad.current && hasNewOrder) playOrderAlert(loadSoundType());
       initialLoad.current = false;
@@ -63,6 +60,7 @@ export default function AdminExpedicao() {
       setError(null);
       setLastRefresh(new Date());
     } catch (caught) {
+      if (sequence !== loadSequence.current) return;
       setError(errorMessage(caught));
     } finally {
       setLoading(false);
@@ -100,6 +98,7 @@ export default function AdminExpedicao() {
     const driverId = selectedDrivers[order.id];
     if (!driverId || actionLock.current) return;
     actionLock.current = true;
+    loadSequence.current += 1;
     setAssigning(order.id);
     try {
       const result = await kdsApi.assignDispatchOrder(order.id, driverId);
@@ -108,7 +107,7 @@ export default function AdminExpedicao() {
       setDrivers((current) => current.filter((item) => item.id !== driverId));
       setSelectedDrivers((current) => clearAssignedDriverSelections(current, driverId));
       setError(null);
-      toast({ title: "Pedido liberado", description: `${driver?.name ?? "Motoboy"} recebeu o pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()}.` });
+      toast({ title: "Motoboy atribuído", description: `${driver?.name ?? "Motoboy"} aguarda coleta do pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()}. A rota ainda não foi iniciada.` });
     } catch (caught) {
       const message = errorMessage(caught);
       setError(message);
@@ -117,12 +116,14 @@ export default function AdminExpedicao() {
     } finally {
       actionLock.current = false;
       setAssigning(null);
+      void loadData();
     }
   };
 
   const completePickup = async (order: KdsDispatchOrder) => {
     if (actionLock.current) return;
     actionLock.current = true;
+    loadSequence.current += 1;
     setAssigning(order.id);
     try {
       await kdsApi.completeDispatchPickup(order.id);
@@ -137,6 +138,7 @@ export default function AdminExpedicao() {
     } finally {
       actionLock.current = false;
       setAssigning(null);
+      void loadData();
     }
   };
 
@@ -154,14 +156,17 @@ export default function AdminExpedicao() {
           {orders.map((order) => {
             const selectedDriver = selectedDrivers[order.id];
             const isPickup = order.fulfillment_type === "pickup";
+            const drinks = operationalDrinks(order);
             return <article key={order.id} className="flex flex-col gap-4 rounded-2xl border border-surface-03 bg-surface-02 p-5 shadow-soft">
-              <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-emerald-300">{isPickup ? "Pronto para retirada" : "Pronto para despachar"}</p><h2 className="text-2xl font-black">#{(order.order_code || order.id.slice(0, 8)).toUpperCase()}</h2><p className="flex items-center gap-1 text-stone"><UserRound size={15} />{order.delivery_name}</p>{order.delivery?.delivery_person_name && <p className="mt-2 flex items-center gap-1.5 text-sm font-bold text-emerald-300"><Bike size={16} /> Motoboy: {order.delivery.delivery_person_name}</p>}{isPickup && <span className="mt-2 inline-flex rounded-full bg-sky-500/15 px-3 py-1 text-xs font-black uppercase text-sky-200">Retirada</span>}</div><span className="flex items-center gap-1 rounded-lg bg-amber-500/10 px-3 py-2 font-bold text-amber-300"><Clock3 size={17} />{elapsed(order.updated_at || order.created_at)}</span></div>
-              {!isPickup && <div className="rounded-xl bg-surface-01 p-3 text-sm"><p className="flex items-start gap-2 font-semibold"><MapPin size={18} className="mt-0.5 shrink-0 text-gold" />{order.delivery_street}{order.delivery_complement ? `, ${order.delivery_complement}` : ""} · {order.delivery_city}</p><p className="mt-2 font-bold text-emerald-300">{paymentLabel(order)}</p></div>}
-              <div className="space-y-3 border-y border-surface-03 py-4">{order.items.map((item) => <div key={item.id}><p className="font-bold"><span className="mr-2 text-lg text-gold">{item.quantity}x</span>{itemDescription(item)}</p>{item.notes && <p className="mt-1 rounded-lg bg-amber-500/10 p-2 text-sm font-semibold text-amber-200">Obs.: {item.notes}</p>}</div>)}</div>
+              <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-emerald-300">{isPickup ? "Pronto para retirada" : order.delivery?.status === "assigned" ? "Motoboy atribuído — aguardando coleta" : "Pronto para despachar"}</p><h2 className="text-2xl font-black">#{(order.order_code || order.id.slice(0, 8)).toUpperCase()}</h2><p className="flex items-center gap-1 text-stone"><UserRound size={15} />{order.delivery_name}</p>{order.delivery?.delivery_person_name && <p className="mt-2 flex items-center gap-1.5 text-sm font-bold text-emerald-300"><Bike size={16} /> Motoboy: {order.delivery.delivery_person_name}</p>}{isPickup && <span className="mt-2 inline-flex rounded-full bg-sky-500/15 px-3 py-1 text-xs font-black uppercase text-sky-200">Retirada</span>}</div><span className="flex items-center gap-1 rounded-lg bg-amber-500/10 px-3 py-2 font-bold text-amber-300"><Clock3 size={17} />{elapsed(order.updated_at || order.created_at)}</span></div>
+              {!isPickup && <div className="rounded-xl bg-surface-01 p-3 text-sm"><p className="flex items-start gap-2 font-semibold"><MapPin size={18} className="mt-0.5 shrink-0 text-gold" />{order.delivery_street}{order.delivery_complement ? `, ${order.delivery_complement}` : ""} · {order.delivery_city}</p></div>}
+              <div className="space-y-3 border-y border-surface-03 py-4">{order.items.filter((item) => !isOperationalDrink(item)).map((item) => <div key={item.id}><p className="font-bold"><span className="mr-2 text-lg text-gold">{item.quantity}x</span>{itemDescription(item)}</p>{item.notes && <p className="mt-1 rounded-lg bg-amber-500/10 p-2 text-sm font-semibold text-amber-200">Obs.: {item.notes}</p>}</div>)}</div>
+              {drinks.length > 0 && <section aria-label="Atenção — bebidas" className="rounded-xl border-2 border-stone-300 bg-stone-100 p-4 text-zinc-950"><h3 className="font-black">ATENÇÃO — BEBIDAS</h3>{drinks.map((drink, index) => <div key={`${drink.product_id || index}:${index}`} className="mt-2"><p className="text-lg font-bold">{drink.quantity} × {drink.name}</p>{drink.notes && <p className="text-sm">Obs.: {drink.notes}</p>}</div>)}</section>}
               {!isPickup && order.can_assign_driver && <fieldset className="space-y-2"><legend className="mb-2 font-black">Escolha o motoboy</legend>{drivers.length === 0 ? <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center font-bold text-amber-200">Nenhum motoboy disponivel</div> : <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{drivers.map((driver) => <button type="button" key={driver.id} aria-pressed={selectedDriver === driver.id} disabled={Boolean(assigning)} onClick={() => setSelectedDrivers((current) => ({ ...current, [order.id]: driver.id }))} className={`min-h-14 rounded-xl border px-3 text-left font-bold transition-transform active:scale-[0.98] disabled:opacity-50 ${selectedDriver === driver.id ? "border-emerald-400 bg-emerald-500/20 text-emerald-200" : "border-surface-03 bg-surface-01 text-parchment"}`}><span className="flex items-center gap-2"><Bike size={18} />{driver.name}</span></button>)}</div>}</fieldset>}
+              <div className="rounded-xl border border-surface-03 bg-surface-01 p-3 text-sm" aria-label="Pagamento"><p className="font-black">PAGAMENTO</p>{operationalPaymentLines(order).map((line, index) => <p key={index} className="mt-1 font-bold">{line}</p>)}</div>
               <div className="mt-auto grid gap-2 sm:grid-cols-2">
                 <button type="button" disabled={Boolean(assigning)} onClick={() => setLabelOrder(order)} className="flex min-h-16 w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/50 bg-emerald-500/10 px-4 text-lg font-black text-emerald-200 transition-transform active:scale-[0.98] disabled:opacity-40"><Printer/> Imprimir etiqueta</button>
-                {isPickup ? <button type="button" disabled={Boolean(assigning)} onClick={() => void completePickup(order)} className="flex min-h-16 w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-lg font-black text-white transition-transform active:scale-[0.98] disabled:opacity-40">{assigning === order.id ? <Loader2 className="animate-spin"/> : <CheckCircle2/>}{assigning === order.id ? "Concluindo..." : "Concluir retirada"}</button> : order.can_assign_driver ? <button type="button" disabled={!selectedDriver || Boolean(assigning)} onClick={() => void assign(order)} className="flex min-h-16 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-lg font-black text-white transition-transform active:scale-[0.98] active:bg-emerald-800 disabled:opacity-40">{assigning === order.id ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}{assigning === order.id ? "Finalizando..." : "Finalizar e atribuir"}</button> : <div className="flex min-h-16 w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-4 text-center font-black text-emerald-200"><Bike /> Aguardando retirada pelo motoboy</div>}
+                {isPickup ? <button type="button" disabled={Boolean(assigning)} onClick={() => void completePickup(order)} className="flex min-h-16 w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-lg font-black text-white transition-transform active:scale-[0.98] disabled:opacity-40">{assigning === order.id ? <Loader2 className="animate-spin"/> : <CheckCircle2/>}{assigning === order.id ? "Concluindo..." : "Concluir retirada"}</button> : order.can_assign_driver ? <button type="button" disabled={!selectedDriver || Boolean(assigning)} onClick={() => void assign(order)} className="flex min-h-16 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-lg font-black text-white transition-transform active:scale-[0.98] active:bg-emerald-800 disabled:opacity-40">{assigning === order.id ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}{assigning === order.id ? "Finalizando..." : "Atribuir motoboy"}</button> : <div className="flex min-h-16 w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-4 text-center font-black text-emerald-200"><Bike /> Aguardando retirada pelo motoboy</div>}
               </div>
             </article>;
           })}

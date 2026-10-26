@@ -1,8 +1,9 @@
-export const PIZZA_SIZE_LABELS = ["Pizza Broto", "Pizza Grande"];
+export const PIZZA_SIZE_LABELS = ["Pizza Individual", "Pizza Grande"];
 
 const PIZZA_SIZE_DETAILS: Record<string, { label: string; description: string }> = {
-  brotinho: { label: "Pizza Broto", description: "25cm - 4 pedaços" },
-  "pizza broto": { label: "Pizza Broto", description: "25cm - 4 pedaços" },
+  brotinho: { label: "Pizza Individual", description: "25cm - 4 pedaços" },
+  "pizza broto": { label: "Pizza Individual", description: "25cm - 4 pedaços" },
+  "pizza individual": { label: "Pizza Individual", description: "25cm - 4 pedaços" },
   "pizza grande": { label: "Pizza Grande", description: "35cm - 8 pedaços" },
 };
 
@@ -19,5 +20,5 @@ export function pizzaSizeDescription(label: string, fallback?: string | null) {
 }
 
 export function isPizzaBroto(label: string) {
-  return pizzaSizeLabel(label) === "Pizza Broto";
+  return pizzaSizeLabel(label) === "Pizza Individual";
 }

@@ -56,6 +56,7 @@ from backend.routes import inventory_foundation as inventory_foundation_routes
 from backend.routes import inventory_receipts as inventory_receipts_routes
 from backend.routes import inventory_traceability as inventory_traceability_routes
 from backend.routes import preparation as preparation_routes
+from backend.routes import pcp as pcp_routes
 from backend.routes import recipe_images as recipe_image_routes
 from backend.routes import recipe_composition as recipe_composition_routes
 from backend.routes import cmv as cmv_routes
@@ -1315,12 +1316,14 @@ async def request_context_middleware(request: Request, call_next):
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(products.router)
 app.include_router(orders.router)
+app.include_router(orders.admin_orders_router)
 app.include_router(payments.router)
 app.include_router(shipping.router)
 app.include_router(coupons.router)
 app.include_router(loyalty.router)
 app.include_router(customers.router)
 app.include_router(customers.suggestions_router)
+app.include_router(customers.admin_router)
 app.include_router(promotions.router)
 app.include_router(promotion_landings_routes.router)
 app.include_router(admin.router)
@@ -1372,12 +1375,14 @@ app.include_router(fiscal_routes.router)
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")
 app.include_router(orders.router, prefix="/api")
+app.include_router(orders.admin_orders_router, prefix="/api")
 app.include_router(payments.router, prefix="/api")
 app.include_router(shipping.router, prefix="/api")
 app.include_router(coupons.router, prefix="/api")
 app.include_router(loyalty.router, prefix="/api")
 app.include_router(customers.router, prefix="/api")
 app.include_router(customers.suggestions_router, prefix="/api")
+app.include_router(customers.admin_router, prefix="/api")
 app.include_router(promotions.router, prefix="/api")
 app.include_router(promotion_landings_routes.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
@@ -1428,6 +1433,7 @@ app.include_router(inventory_foundation_routes.router, prefix="/api")
 app.include_router(inventory_receipts_routes.router, prefix="/api")
 app.include_router(inventory_traceability_routes.router, prefix="/api")
 app.include_router(preparation_routes.router, prefix="/api")
+app.include_router(pcp_routes.router, prefix="/api")
 app.include_router(recipe_image_routes.router, prefix="/api")
 app.include_router(recipe_composition_routes.router, prefix="/api")
 app.include_router(recipe_composition_routes.public_router, prefix="/api")

@@ -1,4 +1,5 @@
-import { apiFetch } from "@/lib/api";
+import { optionalMetric } from "@/lib/marketingMetrics";
+import { apiRequest } from "@/lib/api";
 import { useEffect, useState } from "react";
 import {
   Loader2, TrendingUp, DollarSign, MousePointerClick, ShoppingBag,
@@ -7,10 +8,6 @@ import {
 } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
-
-const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const unwrap = (json: any) => json?.data ?? json;
 
 type Period = "today" | "7d" | "30d" | "90d";
 
@@ -25,10 +22,10 @@ interface MarketingStats {
   leads: number;
   clients_generated: number;
   active_campaigns: number;
-  whatsapp_sent: number;
-  whatsapp_response_rate: number;
-  email_sent: number;
-  email_open_rate: number;
+  whatsapp_sent?: number;
+  whatsapp_response_rate?: number;
+  email_sent?: number;
+  email_open_rate?: number;
   clicks: number;
   orders: number;
   online_visitors: number;
@@ -78,15 +75,14 @@ function fmt(v: number) {
   return (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function pct(v: number) {
-  return `${((v ?? 0) * 100).toFixed(1)}%`;
+function pct(v: number | undefined) {
+  return optionalMetric(v, true);
 }
 
 const EMPTY_STATS: MarketingStats = {
   total_investment: 0, revenue_generated: 0, roas: 0, roi: 0,
   cpa: 0, cac: 0, visitors: 0, leads: 0, clients_generated: 0,
-  active_campaigns: 0, whatsapp_sent: 0, whatsapp_response_rate: 0,
-  email_sent: 0, email_open_rate: 0, clicks: 0, orders: 0,
+  active_campaigns: 0, clicks: 0, orders: 0,
   online_visitors: 0, revenue_by_channel: [], recent_campaigns: [],
 };
 
@@ -97,17 +93,9 @@ export default function MarketingDashboard() {
   const [error, setError] = useState("");
 
   const fetchData = (p: Period) => {
-    const token = localStorage.getItem("admin_token");
     setLoading(true);
     setError("");
-    apiFetch(`/marketing/dashboard?period=${p}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => {
-        if (!r.ok) throw new Error(`Erro ${r.status} ao carregar dashboard.`);
-        return r.json();
-      })
-      .then(unwrap)
+    apiRequest<MarketingStats>("GET", `/marketing/dashboard?period=${p}`)
       .then((d) => setData({ ...EMPTY_STATS, ...d }))
       .catch((e) => {
         setError(e.message);
@@ -136,9 +124,9 @@ export default function MarketingDashboard() {
   const row2 = [
     { label: "Clientes Gerados",       value: (data.clients_generated ?? 0).toLocaleString("pt-BR"), icon: UserCheck, color: "text-green-400", bg: "bg-green-500/10" },
     { label: "Campanhas Ativas",       value: String(data.active_campaigns ?? 0),  icon: Megaphone,   color: "text-orange-400", bg: "bg-orange-500/10" },
-    { label: "Disparos WhatsApp",      value: (data.whatsapp_sent ?? 0).toLocaleString("pt-BR"), icon: MessageCircle, color: "text-green-400", bg: "bg-green-500/10" },
+    { label: "Disparos WhatsApp",      value: optionalMetric(data.whatsapp_sent), icon: MessageCircle, color: "text-green-400", bg: "bg-green-500/10" },
     { label: "Taxa Resposta WA",       value: pct(data.whatsapp_response_rate), icon: MessageCircle, color: "text-green-400", bg: "bg-green-500/10" },
-    { label: "Disparos E-mail",        value: (data.email_sent ?? 0).toLocaleString("pt-BR"), icon: Mail, color: "text-blue-400", bg: "bg-blue-500/10" },
+    { label: "Disparos E-mail",        value: optionalMetric(data.email_sent), icon: Mail, color: "text-blue-400", bg: "bg-blue-500/10" },
     { label: "Taxa Abertura E-mail",   value: pct(data.email_open_rate),     icon: Eye,             color: "text-blue-400",   bg: "bg-blue-500/10" },
     { label: "Cliques",                value: (data.clicks ?? 0).toLocaleString("pt-BR"), icon: MousePointerClick, color: "text-purple-400", bg: "bg-purple-500/10" },
     { label: "Pedidos Gerados",        value: String(data.orders ?? 0),             icon: ShoppingBag,  color: "text-gold",       bg: "bg-gold/10" },

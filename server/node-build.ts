@@ -19,6 +19,7 @@ app.use(express.static(distPath, {
       fileName === "index.html" ||
       fileName === "registerSW.js" ||
       fileName === "sw.js" ||
+      fileName === "motoboy-pwa-head.js" ||
       fileName === "manifest.webmanifest"
     ) {
       res.setHeader("Cache-Control", "no-cache");

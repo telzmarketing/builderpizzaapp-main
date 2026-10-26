@@ -16,12 +16,12 @@ import {
 type FiscalSection = "settings" | "overview" | "company" | "certificate" | "profiles" | "documents";
 
 const sections: AdminPageTab<FiscalSection>[] = [
-  { id: "settings", label: "Configuracoes", icon: Settings },
   { id: "overview", label: "Resumo", icon: LayoutDashboard },
   { id: "company", label: "Empresa", icon: Building2 },
   { id: "certificate", label: "Certificado e serie", icon: KeyRound },
   { id: "profiles", label: "Perfis tributarios", icon: Tags },
   { id: "documents", label: "Documentos", icon: FileText },
+  { id: "settings", label: "Configuracoes", icon: Settings },
 ];
 
 const panelClass = "rounded-lg border border-surface-03 bg-surface-02 p-5";
@@ -95,7 +95,7 @@ const emptyProfile: FiscalProductProfileInput = {
 };
 
 export default function GestaoFiscal() {
-  const [section, setSection] = useState<FiscalSection>("settings");
+  const [section, setSection] = useState<FiscalSection>("overview");
 
   return (
     <AdminGestao

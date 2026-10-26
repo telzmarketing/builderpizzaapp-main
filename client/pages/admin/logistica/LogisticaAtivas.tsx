@@ -65,7 +65,7 @@ export default function LogisticaAtivas() {
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h3 className="text-cream font-bold text-lg">Entregas Ativas</h3>
-          <p className="text-stone text-sm mt-0.5">Pedidos em rota agora · atualiza a cada 15s</p>
+          <p className="text-stone text-sm mt-0.5">Entregas atribuídas, aguardando coleta e em rota · atualiza a cada 15s</p>
         </div>
         <div className="flex items-center gap-2">
           <button

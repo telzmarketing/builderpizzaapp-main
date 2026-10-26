@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Download } from "lucide-react";
+import { isMotoboyPath } from "@/lib/motoboyPwa";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -12,13 +14,19 @@ function isStandaloneMode() {
 }
 
 export default function MotoboyInstallButton() {
+  const { pathname } = useLocation();
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
 
   useEffect(() => {
+    if (!(pathname === "/motoboy" || pathname.startsWith("/motoboy/"))) {
+      setInstallPrompt(null);
+      return;
+    }
     setInstalled(isStandaloneMode());
 
     const handleBeforeInstallPrompt = (event: Event) => {
+      if (!isMotoboyPath(window.location.pathname)) return;
       event.preventDefault();
       if (!isStandaloneMode()) setInstallPrompt(event as BeforeInstallPromptEvent);
     };
@@ -35,17 +43,17 @@ export default function MotoboyInstallButton() {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
       window.removeEventListener("appinstalled", handleInstalled);
     };
-  }, []);
+  }, [pathname]);
 
   async function handleInstall() {
-    if (!installPrompt) return;
+    if (!installPrompt || !isMotoboyPath(window.location.pathname)) return;
 
     await installPrompt.prompt();
     await installPrompt.userChoice;
     setInstallPrompt(null);
   }
 
-  if (installed || !installPrompt) return null;
+  if (!(pathname === "/motoboy" || pathname.startsWith("/motoboy/")) || installed || !installPrompt) return null;
 
   return (
     <button

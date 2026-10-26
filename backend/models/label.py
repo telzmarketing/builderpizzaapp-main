@@ -1,7 +1,7 @@
 """Tenant-scoped dispatch label configuration and immutable print audit."""
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, JSON, String, Text, UniqueConstraint
 
 from backend.database import Base
 
@@ -164,6 +164,31 @@ class LabelPrintJob(Base):
     tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     order_id = Column(String, ForeignKey("orders.id", ondelete="CASCADE"), nullable=True)
     label_version_id = Column(String, ForeignKey("label_versions.id", ondelete="SET NULL"), nullable=True)
+    printer_id = Column(String, ForeignKey("label_printers.id", ondelete="SET NULL"), nullable=True)
+    template_id = Column(String, ForeignKey("label_templates.id", ondelete="SET NULL"), nullable=True)
+    actor_id = Column(String, nullable=False)
+    job_type = Column(String(20), nullable=False)
+    idempotency_key = Column(String(100), nullable=False)
+    copies = Column(Integer, nullable=False, default=1)
+    reason = Column(String(500), nullable=True)
+    result_status = Column(String(30), nullable=False, default="requested")
+    snapshot_json = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class PreparationLabelPrintJob(Base):
+    """Print audit for a preparation execution, independent of orders."""
+    __tablename__ = "preparation_label_print_jobs"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "idempotency_key", name="uq_preparation_label_jobs_idempotency"),
+        ForeignKeyConstraint(["tenant_id", "execution_id"], ["preparation_executions.tenant_id", "preparation_executions.id"], ondelete="CASCADE"),
+        CheckConstraint("job_type IN ('print','reprint')", name="ck_preparation_label_jobs_type"),
+        CheckConstraint("result_status IN ('requested','dialog_opened')", name="ck_preparation_label_jobs_result"),
+        Index("ix_preparation_label_jobs_tenant_execution", "tenant_id", "execution_id", "created_at"),
+    )
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    execution_id = Column(String, nullable=False)
     printer_id = Column(String, ForeignKey("label_printers.id", ondelete="SET NULL"), nullable=True)
     template_id = Column(String, ForeignKey("label_templates.id", ondelete="SET NULL"), nullable=True)
     actor_id = Column(String, nullable=False)

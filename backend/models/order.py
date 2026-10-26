@@ -39,6 +39,7 @@ class Order(Base):
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_orders_tenant_id_tenants"), nullable=True)
     customer_id = Column(String, ForeignKey("customers.id"), nullable=True)
+    created_by_admin_id = Column(String, ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True)
     address_id = Column(String, ForeignKey("addresses.id"), nullable=True)
 
     # Inline delivery address (for guest checkouts)

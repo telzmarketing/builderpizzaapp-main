@@ -1,11 +1,38 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_PRINTER_SETTINGS,
   buildPrintHtml,
   buildEntregaHtml,
+  withReceiptBranding,
+  openReceiptPreview,
   type PrinterSettings,
 } from "./printing";
 import type { ApiOrder } from "./api";
+
+describe("receipt print readiness", () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+  it("waits for the logo before requesting the browser print dialog", async () => {
+    vi.useFakeTimers();
+    const image = { complete: false, naturalWidth: 100, hidden: false, onload: null as null | (() => void), onerror: null as null | (() => void) };
+    const target = { document: { open: vi.fn(), write: vi.fn(), close: vi.fn(), images: [image] }, focus: vi.fn(), print: vi.fn() };
+    vi.stubGlobal("window", { open: vi.fn(() => target), setTimeout });
+    expect(openReceiptPreview("<html>receipt</html>", true)).toBe(true);
+    expect(target.print).not.toHaveBeenCalled();
+    image.complete = true;
+    image.onload?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(target.print).toHaveBeenCalledOnce();
+    expect(image.hidden).toBe(false);
+  });
+});
+
+it("prints the persisted pending cash payment and calculated change on delivery receipts", () => {
+  const order = { ...deliveryOrder(), payment_status: "pending" as const, pay_on_delivery: true, delivery_payment_method: "cash", cash_needs_change: true, cash_change_for: 100, cash_change_amount: 25.01 };
+  const html = buildEntregaHtml(order, DEFAULT_PRINTER_SETTINGS);
+  expect(html).toContain("Pagamento pendente");
+  expect(html).toContain("25,01");
+  expect(html).not.toContain("NÃO COBRAR");
+});
 
 function deliveryOrder(): ApiOrder {
   return {
@@ -85,6 +112,53 @@ describe("buildEntregaHtml", () => {
 });
 
 describe("buildPrintHtml", () => {
+  it("uses the tenant logo and server drink projection in all receipt templates", () => {
+    const order = { ...deliveryOrder(), sales_channel: "counter", fulfillment_type: "pickup", drinks: [{ product_id: "combo-drink", product_name: "Kuat 2 L", quantity: 2, notes: "Gelado" }] };
+    const settings = withReceiptBranding(DEFAULT_PRINTER_SETTINGS, { brand: { name: "Gran Torino", logo: "https://tenant.example/logo.png" } });
+    for (const template of ["completo", "cozinha", "entrega"] as const) {
+      const html = buildPrintHtml(order, template, settings);
+      expect(html).toContain('class="receipt-logo"');
+      expect(html).toContain('src="https://tenant.example/logo.png"');
+      expect(html).toContain("filter:grayscale(1)");
+      expect(html).toContain("ATENÇÃO — BEBIDAS");
+      expect(html).toContain("2 × Kuat 2 L");
+      expect(html).toContain("Gelado");
+      expect(html).toContain("Origem: Balcão");
+      expect(html).toContain("Modalidade: Retirada");
+      expect(html).toContain("PAGAMENTO");
+    }
+  });
+
+  it("classifies individual drinks only with structured facts and prints them in their own block", () => {
+    const order = deliveryOrder();
+    order.items.push({ ...order.items[0], id: "drink", product_id: "drink", product_name: "Água", product_type: "drink", quantity: 3 });
+    const html = buildPrintHtml(order, "completo", DEFAULT_PRINTER_SETTINGS);
+    expect(html).toContain("3 × Água");
+    expect(html.split("Água")).toHaveLength(2);
+    const ambiguous = { ...deliveryOrder(), items: [{ ...order.items[0], product_name: "Pizza refrigerante especial" }] };
+    expect(buildPrintHtml(ambiguous, "completo", DEFAULT_PRINTER_SETTINGS)).not.toContain("ATENÇÃO — BEBIDAS");
+  });
+
+  it("keeps payment method separate from actual status and renders persisted cash change", () => {
+    const order = { ...deliveryOrder(), payment_method: "credit_card" as const, payment_status: "pending" as const };
+    const pending = buildPrintHtml(order, "completo", DEFAULT_PRINTER_SETTINGS);
+    expect(pending).toContain("Cartão de crédito");
+    expect(pending).toContain("Pagamento pendente");
+    expect(pending).not.toContain("NÃO COBRAR");
+    const online = buildPrintHtml({ ...order, payment_status: "approved", payment_provider: "pagarme" }, "entrega", DEFAULT_PRINTER_SETTINGS);
+    expect(online).toContain("PAGO ONLINE — NÃO COBRAR");
+  });
+
+  it("escapes receipt content and rejects executable logo URLs", () => {
+    const order = deliveryOrder();
+    order.delivery_name = '<script>alert("customer")</script>';
+    order.items[0].notes = '<img src=x onerror="alert(1)">';
+    const html = buildPrintHtml(order, "completo", { ...DEFAULT_PRINTER_SETTINGS, storeLogoUrl: "javascript:alert(1)" });
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<img src=x");
+    expect(html).not.toContain("javascript:");
+    expect(html).toContain("&lt;img");
+  });
   it("monta as vias de cozinha e recepcao/completo para o mesmo pedido", () => {
     const settings: PrinterSettings = { ...DEFAULT_PRINTER_SETTINGS };
     const order = deliveryOrder();

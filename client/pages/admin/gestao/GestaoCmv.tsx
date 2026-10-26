@@ -7,9 +7,9 @@ import { cmvApi, type CmvOverview, type CmvProductCost } from "@/lib/api";
 type CmvSection = "settings" | "overview" | "products";
 
 const sections: AdminPageTab<CmvSection>[] = [
-  { id: "settings", label: "Configuracoes", icon: Settings },
   { id: "overview", label: "Indicadores", icon: Gauge },
   { id: "products", label: "Produtos e fichas", icon: ClipboardList },
+  { id: "settings", label: "Configuracoes", icon: Settings },
 ];
 
 const panelClass = "rounded-lg border border-surface-03 bg-surface-02 p-5";
@@ -39,7 +39,7 @@ function dreComplete(status: string) {
 }
 
 export default function GestaoCmv() {
-  const [section, setSection] = useState<CmvSection>("settings");
+  const [section, setSection] = useState<CmvSection>("overview");
 
   return (
     <AdminGestao

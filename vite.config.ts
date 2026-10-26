@@ -31,7 +31,7 @@ export default defineConfig(({ mode }) => ({
       srcDir: "client",
       filename: "sw.ts",
       registerType: "autoUpdate",
-      injectRegister: "script-defer",
+      injectRegister: false,
       includeManifestIcons: true,
       includeAssets: [
         "icons/telz.svg",
@@ -39,32 +39,12 @@ export default defineConfig(({ mode }) => ({
         "icons/icon-192.png",
         "icons/icon-512.png",
       ],
-      manifest: {
-        name: "Motoboy Delivery",
-        short_name: "Motoboy",
-        description: "Painel do entregador",
-        start_url: "/motoboy",
-        scope: "/motoboy",
-        display: "standalone",
-        display_override: ["fullscreen", "standalone"],
-        orientation: "portrait",
-        theme_color: "#000000",
-        background_color: "#000000",
-        icons: [
-          {
-            src: "/api/site-config/favicon?size=192",
-            sizes: "192x192",
-            purpose: "any maskable",
-          },
-          {
-            src: "/api/site-config/favicon?size=512",
-            sizes: "512x512",
-            purpose: "any maskable",
-          },
-        ],
-      },
+      // The tenant manifest is linked only by the Motoboy route bootstrap.
+      manifest: false,
       injectManifest: {
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest}"],
+        // Manifest association is route-owned; Vite must not inject it globally.
+        injectionPoint: "self.__WB_MANIFEST",
+        globPatterns: ["index.html", "motoboy-pwa-head.js", "assets/index-*.js", "assets/index-*.css", "assets/Motoboy-*.js", "assets/*.woff2", "icons/*.{png,svg,ico}"],
         globIgnores: [
           "favicon.ico",
           "icons/favicon-moschettieri-32.png",

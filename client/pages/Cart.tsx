@@ -88,8 +88,8 @@ function CartItemRow({ item, onRemove, onUpdate }: {
 }
 
 const SIZE_LABEL: Record<string, string> = {
-  Brotinho: "Pizza Broto",
-  "Pizza Broto": "Pizza Broto",
+  Brotinho: "Pizza Individual",
+  "Pizza Broto": "Pizza Individual",
   "Pizza Grande": "Pizza Grande",
   P: "Pequena",
   M: "Media",

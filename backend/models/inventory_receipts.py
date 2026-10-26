@@ -117,6 +117,8 @@ class InventoryReceiptDocumentLine(Base):
     total_price = Column(Numeric(20, 8), nullable=True)
     inventory_item_id = Column(String, nullable=True, index=True)
     association_status = Column(String(30), nullable=False, default="pending", server_default="pending")
+    # Explicit per-receipt decision; NULL means not reviewed yet.
+    portionable = Column(Boolean, nullable=True)
     extracted_json = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict, server_default="{}")
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
 

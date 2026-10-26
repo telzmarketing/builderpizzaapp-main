@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime
 from backend.models.order import OrderStatus
 
@@ -66,6 +66,16 @@ class CheckoutIn(BaseModel):
     session_id: Optional[str] = None
     landing_page: Optional[str] = None
     referrer: Optional[str] = None
+
+
+class ManualOrderIn(CheckoutIn):
+    """Authenticated operator order using the canonical checkout contract."""
+    customer_id: str = Field(..., min_length=1, max_length=100)
+    # Manual operator orders originate at the counter; delivery/pickup is the
+    # fulfillment mode. Salon orders keep their dedicated contract and route.
+    sales_channel: Literal["counter"] = "counter"
+    fulfillment_type: Literal["delivery", "pickup"] = "delivery"
+    payment_status: Literal["pending", "approved", "paid"] = "pending"
 
 
 class OrderItemFlavorOut(BaseModel):
