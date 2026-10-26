@@ -13,22 +13,22 @@ class DeliveryPersonCreate(BaseModel):
     name: str
     phone: str
     vehicle_type: VehicleType = VehicleType.motorcycle
-    email: Optional[str] = None
+    email: Optional[str] = Field(default=None, max_length=200)
     cpf: Optional[str] = None
     cnh: Optional[str] = None
     pix_key: Optional[str] = None
-    password: Optional[str] = None
+    password: Optional[str] = Field(default=None, min_length=1, max_length=72)
 
 
 class DeliveryPersonUpdate(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
     vehicle_type: Optional[VehicleType] = None
-    email: Optional[str] = None
+    email: Optional[str] = Field(default=None, max_length=200)
     cpf: Optional[str] = None
     cnh: Optional[str] = None
     pix_key: Optional[str] = None
-    password: Optional[str] = None
+    password: Optional[str] = Field(default=None, min_length=1, max_length=72)
 
 
 class DeliveryPersonStatusUpdate(BaseModel):

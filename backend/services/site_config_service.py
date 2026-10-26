@@ -155,6 +155,11 @@ class SiteConfigService:
             brand = content.get("brand", {})
             return brand.get("faviconUrl") or "/icons/telz.svg"
         brand = content.get("brand")
+        # Tenant stores never inherit the platform manager favicon through a copied CMS value.
+        if isinstance(brand, dict):
+            candidate = str(brand.get("faviconUrl") or brand.get("favicon_url") or brand.get("favicon") or "").strip().replace("\\", "/")
+            if candidate.lower() in {"/icons/telz.svg", "icons/telz.svg", "/icons/telz.png", "icons/telz.png"}:
+                brand = {**brand, "faviconUrl": ""}
         raw = str((brand.get("faviconUrl") or brand.get("favicon_url") or brand.get("favicon") or "")).strip().replace("\\", "/") if isinstance(brand, dict) else ""
         extensions = (".apng", ".avif", ".gif", ".ico", ".jpeg", ".jpg", ".jfif", ".pjpeg", ".pjp", ".png", ".svg", ".webp")
         if raw and not raw.startswith("data:") and raw.lower().endswith(extensions):

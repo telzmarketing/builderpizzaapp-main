@@ -57,7 +57,11 @@ class DeliveryService:
         self._wave7_enabled = wave7_orm_enabled()
         # Logistics was first introduced under the Operations gate. Wave 7
         # must also own every read and write when it is enabled on its own.
-        self._tenant_enabled = operations_enforcement_enabled() or self._wave7_enabled
+        # A trusted tenant context is authoritative even while the legacy
+        # operations feature flag is being migrated. Without this, motoboys
+        # created from a tenant domain could be persisted with tenant_id=NULL
+        # and then be unable to authenticate through that same domain.
+        self._tenant_enabled = bool(tenant_id) or operations_enforcement_enabled() or self._wave7_enabled
         if self._tenant_enabled and not tenant_id:
             raise TenantContextMissing("Tenant obrigatorio para operacoes de entrega.")
         if self._wave7_enabled:
@@ -106,6 +110,18 @@ class DeliveryService:
             )
             .first()
         )
+        if p is None and self._tenant_id:
+            # Only a legacy unowned row may be adopted by the current tenant
+            # admin during an explicit edit/credential reset.
+            p = (
+                self._db.query(DeliveryPerson)
+                .filter(
+                    DeliveryPerson.id == person_id,
+                    DeliveryPerson.tenant_id.is_(None),
+                    DeliveryPerson.deleted_at.is_(None),
+                )
+                .first()
+            )
         if not p:
             raise DeliveryPersonNotFound(person_id)
         return p
@@ -544,6 +560,13 @@ class DeliveryService:
         password: str | None = None,
     ) -> DeliveryPerson:
         from backend.models.delivery import VehicleType
+        normalized_email = email.strip().lower() if email else None
+        normalized_password = password.strip() if isinstance(password, str) else password
+        if normalized_email and not normalized_password:
+            raise DomainError(
+                "Informe uma senha para liberar o acesso do motoboy.",
+                code="DriverPasswordRequired",
+            )
         person = DeliveryPerson(
             id=str(uuid.uuid4()),
             tenant_id=self._tenant_id if self._tenant_enabled else None,
@@ -552,11 +575,11 @@ class DeliveryService:
             vehicle_type=VehicleType(vehicle_type),
             status=DeliveryPersonStatus.offline,
             active=True,
-            email=email,
+            email=normalized_email,
             cpf=cpf,
             cnh=cnh,
             pix_key=pix_key,
-            password_hash=_pwd_ctx.hash(password) if password else None,
+            password_hash=_pwd_ctx.hash(normalized_password) if normalized_password else None,
         )
         self._db.add(person)
         self._db.commit()
@@ -566,11 +589,29 @@ class DeliveryService:
     def update_person(self, person_id: str, **kwargs) -> DeliveryPerson:
         """Update mutable fields on a delivery person."""
         person = self._get_any_delivery_person(person_id)
+        # Repair legacy rows created before tenant enforcement when an
+        # authenticated tenant admin edits the credentials. Existing rows
+        # owned by another tenant remain filtered by _scope().
+        if person.tenant_id is None and self._tenant_id:
+            person.tenant_id = self._tenant_id
+        next_email = kwargs.get("email")
+        next_password = kwargs.get("password")
+        if next_email is not None:
+            next_email = next_email.strip().lower() or None
+            kwargs["email"] = next_email
+            if next_email and not (next_password or person.password_hash):
+                raise DomainError(
+                    "Informe uma senha para liberar o acesso do motoboy.",
+                    code="DriverPasswordRequired",
+                )
         for key, value in kwargs.items():
             if value is None:
                 continue
             if key == "password":
-                person.password_hash = _pwd_ctx.hash(value)
+                normalized_password = value.strip() if isinstance(value, str) else value
+                if not normalized_password:
+                    raise DomainError("A senha do motoboy nao pode ficar vazia.", code="DriverPasswordRequired")
+                person.password_hash = _pwd_ctx.hash(normalized_password)
             elif key == "vehicle_type":
                 from backend.models.delivery import VehicleType
                 person.vehicle_type = VehicleType(value) if isinstance(value, str) else value
