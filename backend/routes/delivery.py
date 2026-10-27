@@ -351,6 +351,7 @@ def _driver_delivery_payload(delivery):
         "updated_at": delivery.updated_at,
         "order": None if not order else {
             "id": order.id,
+            "order_code": order.order_code if order.tenant_id == delivery.tenant_id else None,
             "delivery_name": _mask_customer_name(order.delivery_name),
             "delivery_phone": None,
             "delivery_street": order.delivery_street,

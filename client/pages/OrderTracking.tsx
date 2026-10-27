@@ -1,3 +1,4 @@
+import { orderDisplayCode } from "@/lib/orderIdentity";
 import { useSearchParams, Link, useNavigate, useLocation } from "react-router-dom";
 import { ChevronLeft, Loader2 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
@@ -126,7 +127,7 @@ export default function OrderTracking() {
         <div className="text-center mb-2">
           <p className="text-stone text-sm">{t.orderNumberLabel}</p>
           <p className="text-4xl font-bold text-cream mt-1">
-            {order.order_code ? `ORDER-${order.order_code}` : `ORDER-${String(parseInt(order.id.replace(/-/g, "").slice(-4), 16) % 10000).padStart(4, "0")}`}
+            {`#${orderDisplayCode(order)}`}
           </p>
           <p className="text-stone text-sm mt-2">{estimatedText}</p>
         </div>

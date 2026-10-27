@@ -148,6 +148,7 @@ class DeliveryOut(BaseModel):
 
 class OrderAddressOut(BaseModel):
     id: str
+    order_code: Optional[str] = None
     delivery_name: Optional[str] = None
     delivery_phone: Optional[str] = None
     delivery_street: Optional[str] = None
@@ -159,6 +160,18 @@ class OrderAddressOut(BaseModel):
 
 class DeliveryWithAddressOut(DeliveryOut):
     order: Optional[OrderAddressOut] = None
+
+
+class OrderIdentityOut(BaseModel):
+    id: str
+    order_code: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ActiveDeliveryOut(DeliveryOut):
+    tenant_id: Optional[str] = None
+    order: Optional[OrderIdentityOut] = None
 
 
 class DriverDashboardOut(BaseModel):
@@ -244,6 +257,7 @@ class DeliveryAlertOut(BaseModel):
     alert_type: str = "delay"
     id: str
     order_id: str
+    order_code: Optional[str] = None
     delivery_person_id: Optional[str] = None
     person_name: Optional[str] = None
     person_phone: Optional[str] = None

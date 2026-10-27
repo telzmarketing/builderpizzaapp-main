@@ -1,3 +1,4 @@
+import { orderDisplayCode } from "@/lib/orderIdentity";
 import { operationalPaymentLines } from "@/lib/operationalPayment";
 import { operationalDrinks, isOperationalDrink } from "@/lib/operationalDrinks";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -130,7 +131,7 @@ export default function AdminExpedicao() {
       setError(null);
       const assignment = updated.auto_assignment;
       if (assignment?.status === "assigned") {
-        toast({ title: "Unidade fechada e motoboy atribuído", description: assignment.delivery_person_name || `Pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()}` });
+        toast({ title: "Unidade fechada e motoboy atribuído", description: assignment.delivery_person_name || `Pedido #${orderDisplayCode(order)}` });
       } else if (assignment?.status === "unavailable") {
         toast({ title: "Unidade fechada; motoboy aguardando", description: assignment.message || "Nenhum motoboy está disponível para atribuição automática.", variant: "destructive" });
       } else if (assignment?.status === "disabled") {
@@ -138,7 +139,7 @@ export default function AdminExpedicao() {
       } else if (assignment?.status === "blocked") {
         toast({ title: "Unidade fechada; despacho bloqueado", description: assignment.message || "O pedido ainda não está liberado para despacho.", variant: "destructive" });
       } else {
-        toast({ title: "Unidade fechada na expedição", description: `Pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()}` });
+        toast({ title: "Unidade fechada na expedição", description: `Pedido #${orderDisplayCode(order)}` });
       }
     } catch (caught) {
       const message = errorMessage(caught);
@@ -169,7 +170,7 @@ export default function AdminExpedicao() {
       setOrders((current) => current.filter((item) => item.id !== order.id));
       setReturnDrafts((current) => { const next = { ...current }; delete next[order.id]; return next; });
       setError(null);
-      toast({ title: "Unidades devolvidas à cozinha", description: `Pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()}` });
+      toast({ title: "Unidades devolvidas à cozinha", description: `Pedido #${orderDisplayCode(order)}` });
     } catch (caught) {
       const message = errorMessage(caught);
       setError(message);
@@ -191,7 +192,7 @@ export default function AdminExpedicao() {
       await kdsApi.completeDispatchPickup(order.id);
       setOrders((current) => current.filter((item) => item.id !== order.id));
       setError(null);
-      toast({ title: "Retirada concluída", description: `Pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()} entregue ao cliente.` });
+      toast({ title: "Retirada concluída", description: `Pedido #${orderDisplayCode(order)} entregue ao cliente.` });
     } catch (caught) {
       const message = errorMessage(caught);
       setError(message);
@@ -213,7 +214,7 @@ export default function AdminExpedicao() {
       await deliveryApi.updateStatus(deliveryId, "picked_up");
       setOrders((current) => current.filter((item) => item.id !== order.id));
       setError(null);
-      toast({ title: "Pedido retirado pelo motoboy", description: `Pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()} saiu da expedição.` });
+      toast({ title: "Pedido retirado pelo motoboy", description: `Pedido #${orderDisplayCode(order)} saiu da expedição.` });
     } catch (caught) {
       const message = errorMessage(caught);
       setError(message);
@@ -267,7 +268,7 @@ export default function AdminExpedicao() {
                   ? "Unidades fechadas — aguardando motoboy disponível"
                   : "Feche cada unidade para solicitar o motoboy automático";
             return <Fragment key={order.id}>{pipelineHeading}<article className="flex flex-col gap-4 rounded-2xl border border-surface-03 bg-surface-02 p-5 shadow-soft">
-              <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-emerald-300">{title}</p><h2 className="text-2xl font-black">#{(order.order_code || order.id.slice(0, 8)).toUpperCase()}</h2><p className="flex items-center gap-1 text-stone"><UserRound size={15} />{order.delivery_name}</p>{order.delivery?.delivery_person_name && <p className="mt-2 flex items-center gap-1.5 text-sm font-bold text-emerald-300"><Bike size={16} /> Motoboy: {order.delivery.delivery_person_name}</p>}{isPickup && <span className="mt-2 inline-flex rounded-full bg-sky-500/15 px-3 py-1 text-xs font-black uppercase text-sky-200">Retirada</span>}</div><span className="flex items-center gap-1 rounded-lg bg-amber-500/10 px-3 py-2 font-bold text-amber-300"><Clock3 size={17} />{elapsed(order.updated_at || order.created_at)}</span></div>
+              <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-emerald-300">{title}</p><h2 className="text-2xl font-black">#{orderDisplayCode(order)}</h2><p className="flex items-center gap-1 text-stone"><UserRound size={15} />{order.delivery_name}</p>{order.delivery?.delivery_person_name && <p className="mt-2 flex items-center gap-1.5 text-sm font-bold text-emerald-300"><Bike size={16} /> Motoboy: {order.delivery.delivery_person_name}</p>}{isPickup && <span className="mt-2 inline-flex rounded-full bg-sky-500/15 px-3 py-1 text-xs font-black uppercase text-sky-200">Retirada</span>}</div><span className="flex items-center gap-1 rounded-lg bg-amber-500/10 px-3 py-2 font-bold text-amber-300"><Clock3 size={17} />{elapsed(order.updated_at || order.created_at)}</span></div>
               {!isPickup && <div className="rounded-xl bg-surface-01 p-3 text-sm"><p className="flex items-start gap-2 font-semibold"><MapPin size={18} className="mt-0.5 shrink-0 text-gold" />{order.delivery_street}{order.delivery_complement ? `, ${order.delivery_complement}` : ""} · {order.delivery_city}</p></div>}
               <div className="space-y-3 border-y border-surface-03 py-4">{order.items.filter((item) => !isOperationalDrink(item)).map((item) => <div key={item.id}><p className="font-bold"><span className="mr-2 text-lg text-gold">{item.quantity}x</span>{itemDescription(item)}</p>{item.notes && <p className="mt-1 rounded-lg bg-amber-500/10 p-2 text-sm font-semibold text-amber-200">Obs.: {item.notes}</p>}</div>)}</div>
               {drinks.length > 0 && <section aria-label="Atenção — bebidas" className="rounded-xl border-2 border-stone-300 bg-stone-100 p-4 text-zinc-950"><h3 className="font-black">ATENÇÃO — BEBIDAS</h3>{drinks.map((drink, index) => <div key={`${drink.product_id || index}:${index}`} className="mt-2"><p className="text-lg font-bold">{drink.quantity} × {drink.name}</p>{drink.notes && <p className="text-sm">Obs.: {drink.notes}</p>}</div>)}</section>}

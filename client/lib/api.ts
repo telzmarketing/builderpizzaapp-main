@@ -7871,6 +7871,7 @@ export interface DeliveryPerson {
 
 export interface OrderAddress {
   id: string;
+  order_code?: string | null;
   delivery_name?: string;
   delivery_phone?: string;
   delivery_street?: string;
@@ -7985,6 +7986,7 @@ export interface DeliveryAlert {
   alert_type?: "delay" | "problem";
   id: string;
   order_id: string;
+  order_code?: string | null;
   delivery_person_id: string | null;
   person_name: string | null;
   person_phone: string | null;

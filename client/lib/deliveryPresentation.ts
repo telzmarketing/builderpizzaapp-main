@@ -1,3 +1,4 @@
+import { orderDisplayCode } from "./orderIdentity";
 import type { DeliveryRecord } from "./api";
 import { operationalPaymentLines } from "./operationalPayment";
 
@@ -17,4 +18,9 @@ export function driverPaymentLines(delivery: DeliveryRecord): string[] {
 
 export function driverAvailabilityLabel(status: string): string {
   return ({ available: "Disponível", busy: "Com entrega atribuída", reserved: "Reservado", returning: "Retornando", unavailable: "Indisponível", offline: "Offline" } as Record<string, string>)[status] ?? status;
+}
+
+/** Delivery IDs stay internal; the associated order owns the public code. */
+export function deliveryOrderCode(delivery: { order_id: string; order_code?: string | null; order?: { order_code?: string | null } }): string {
+  return orderDisplayCode({ id: delivery.order_id, order_code: delivery.order_code || delivery.order?.order_code });
 }

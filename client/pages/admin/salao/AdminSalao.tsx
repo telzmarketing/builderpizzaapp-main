@@ -1,3 +1,4 @@
+import { orderDisplayCode } from "@/lib/orderIdentity";
 import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
@@ -462,7 +463,7 @@ export default function AdminSalao() {
                       <div key={order.id} className="rounded-xl border border-surface-03 bg-surface-01 p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
-                            <p className="font-bold text-cream">Pedido {order.order_code || order.id.slice(0, 8)}</p>
+                            <p className="font-bold text-cream">Pedido {orderDisplayCode(order)}</p>
                             <p className="text-xs text-stone">{formatDateTime(order.created_at)}</p>
                           </div>
                           <p className="font-black text-gold">{formatCurrency(order.total)}</p>

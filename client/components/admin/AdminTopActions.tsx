@@ -1,3 +1,4 @@
+import { orderDisplayCode } from "@/lib/orderIdentity";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Bell, CheckCircle2, MessageCircle, PackageCheck, RefreshCw, Search, Truck, X } from "lucide-react";
@@ -53,8 +54,7 @@ function timeAgo(iso: string): string {
 }
 
 function orderCode(order: ApiOrder) {
-  const id = toText(order.id);
-  return order.order_code ? `#${toText(order.order_code)}` : `#${id.slice(0, 8).toUpperCase()}`;
+  return `#${orderDisplayCode(order)}`;
 }
 
 function orderNotification(order: ApiOrder): AdminNotification | null {

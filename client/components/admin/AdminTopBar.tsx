@@ -1,3 +1,4 @@
+import { orderDisplayCode } from "@/lib/orderIdentity";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Bell, RefreshCw, Search, X, ShoppingBag } from "lucide-react";
@@ -155,7 +156,7 @@ export default function AdminTopBar() {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-cream text-xs font-bold font-mono">
-                        #{order.id.slice(0, 8).toUpperCase()}
+                        #{orderDisplayCode(order)}
                       </span>
                       <span className="text-stone text-[10px]">{timeAgo(order.created_at)}</span>
                     </div>

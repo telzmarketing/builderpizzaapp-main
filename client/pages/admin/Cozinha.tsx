@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { kdsApi, type KdsKitchenOrder } from "@/lib/api";
 import { loadSoundType, playOrderAlert } from "@/lib/orderSound";
 import { activeKitchenOrders } from "@/lib/kds";
+import { orderDisplayCode } from "@/lib/orderIdentity";
 
 const POLL_INTERVAL_MS = 15_000;
 
@@ -121,7 +122,7 @@ export default function AdminCozinha() {
       );
       toast({
         title: "Unidades encaminhadas para a fila do pizzaiolo",
-        description: `Pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()}`,
+        description: `Pedido #${orderDisplayCode(order)}`,
       });
       setError(null);
       setLastRefresh(new Date());
@@ -160,7 +161,7 @@ export default function AdminCozinha() {
       setLastRefresh(new Date());
       toast({
         title: "Preparo finalizado",
-        description: `Pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()} enviado à expedição.`,
+        description: `Pedido #${orderDisplayCode(order)} enviado à expedição.`,
       });
     } catch (caught) {
       const message = errorMessage(caught);
@@ -182,9 +183,9 @@ export default function AdminCozinha() {
   const now = new Date();
   return (
     <section
-      className={`kds-touch ${fullscreen ? "fixed inset-0 z-[100] overflow-y-auto" : "min-h-screen"} min-w-0 bg-[#040e18] text-slate-100`}
+      className={`kds-touch ${fullscreen ? "fixed inset-0 z-[100] overflow-y-auto" : "min-h-screen min-h-[100dvh]"} min-w-0 max-w-full bg-[#040e18] pb-[env(safe-area-inset-bottom)] text-slate-100`}
     >
-      <header className="flex flex-col gap-4 rounded-b-2xl border-b border-[#20374a] bg-[#081521] p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+      <header className="flex flex-col gap-3 rounded-b-2xl border-b border-[#20374a] bg-[#081521] p-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:p-4">
         <div className="flex items-center gap-4">
           <ChefHat
             size={54}
@@ -203,8 +204,8 @@ export default function AdminCozinha() {
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex min-h-14 items-center gap-3 rounded-xl border border-[#20374a] bg-[#0b1926] px-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="flex min-h-12 items-center gap-3 rounded-xl border border-[#20374a] bg-[#0b1926] px-3 py-1">
             <Clock3 size={28} className="text-slate-300" />
             <div>
               <p className="text-xl font-bold tabular-nums">
@@ -224,7 +225,7 @@ export default function AdminCozinha() {
           </div>
           <div
             role="status"
-            className={`flex min-h-14 items-center gap-2 rounded-xl border border-[#20374a] bg-[#0b1926] px-4 font-bold ${error ? "text-red-300" : lastRefresh ? "text-emerald-400" : "text-slate-400"}`}
+            className={`flex min-h-12 items-center gap-2 rounded-xl border border-[#20374a] bg-[#0b1926] px-3 font-bold ${error ? "text-red-300" : lastRefresh ? "text-emerald-400" : "text-slate-400"}`}
           >
             {error ? <WifiOff size={24} /> : <Wifi size={24} />}
             {error

@@ -35,6 +35,7 @@ from backend.models.delivery import (
 from backend.models.order import Order, OrderStatus
 from backend.models.kds_production import ProductionUnit
 from backend.models.payment import Payment, PaymentStatus
+from backend.schemas.delivery import ActiveDeliveryOut
 
 _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -532,10 +533,15 @@ class DeliveryService:
             raise DeliveryNotFound(order_id)
         return d
 
-    def list_active(self) -> list[Delivery]:
-        """Return deliveries currently in progress."""
-        return (
+    def list_active(self) -> list[ActiveDeliveryOut]:
+        """Return deliveries currently in progress with their public order identity."""
+        from sqlalchemy.orm import joinedload
+
+        rows = (
             self._scope(self._db.query(Delivery), Delivery)
+            .options(joinedload(Delivery.order.and_(Order.tenant_id == Delivery.tenant_id)).load_only(
+                Order.id, Order.order_code, Order.tenant_id,
+            ))
             .filter(
                 Delivery.status.in_([
                     DeliveryStatus.assigned,
@@ -545,6 +551,7 @@ class DeliveryService:
             )
             .all()
         )
+        return [ActiveDeliveryOut.model_validate(delivery) for delivery in rows]
 
     # ── Delivery Person CRUD ──────────────────────────────────────────────────
 
@@ -1331,6 +1338,7 @@ class DeliveryService:
                 "alert_type": "problem",
                 "id": d.id,
                 "order_id": d.order_id,
+                "order_code": d.order.order_code if d.order and d.order.tenant_id == d.tenant_id else None,
                 "delivery_person_id": d.delivery_person_id,
                 "person_name": d.delivery_person.name if d.delivery_person else None,
                 "person_phone": d.delivery_person.phone if d.delivery_person else None,
@@ -1374,6 +1382,7 @@ class DeliveryService:
                     "alert_type": "delay",
                     "id": d.id,
                     "order_id": d.order_id,
+                    "order_code": d.order.order_code if d.order and d.order.tenant_id == d.tenant_id else None,
                     "delivery_person_id": d.delivery_person_id,
                     "person_name": d.delivery_person.name if d.delivery_person else None,
                     "person_phone": d.delivery_person.phone if d.delivery_person else None,

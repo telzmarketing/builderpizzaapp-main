@@ -30,11 +30,12 @@ import {
   type TaskAction,
 } from "./KdsMultiOperatorBoard";
 import KdsRecipeDetails from "./KdsRecipeDetails";
+import { orderDisplayCode } from "@/lib/orderIdentity";
 
 const panel =
   "min-w-0 overflow-hidden rounded-2xl border border-[#263f53] bg-[#091521]";
 const control =
-  "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#30485d] bg-[#0b1926] px-4 font-bold text-slate-100 disabled:opacity-40 active:scale-[0.98]";
+  "inline-flex min-h-12 min-w-12 touch-manipulation items-center justify-center gap-2 rounded-xl border border-[#30485d] bg-[#0b1926] px-4 py-2 font-bold text-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-40 active:scale-[0.98]";
 const stateLabels: Record<string, string> = {
   queued: "Aguardando",
   unassigned: "Não iniciada",
@@ -55,8 +56,7 @@ const presenceLabels: Record<string, string> = {
   in_production: "Em produção",
   paused: "Em pausa",
 };
-const code = (order: { order_code?: string | null; id: string }) =>
-  (order.order_code || order.id.slice(0, 8)).toUpperCase();
+const code = orderDisplayCode;
 const channel = (order: KdsKitchenOrder) =>
   order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in"
     ? "Salão"
@@ -102,7 +102,7 @@ function ProductVisual({
   const [failed, setFailed] = useState<string | null>(null);
   return (
     <div
-      className={`flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[#25394a] bg-[#0d1d2a] text-amber-400 ${small ? "h-14 w-14" : "aspect-square w-full max-w-64 xl:max-w-[200px]"}`}
+      className={`flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[#25394a] bg-[#0d1d2a] text-amber-400 ${small ? "h-14 w-14" : "aspect-square w-28 2xl:w-36"}`}
     >
       {image && failed !== image ? (
         <img
@@ -112,7 +112,7 @@ function ProductVisual({
           className="h-full w-full object-cover"
         />
       ) : (
-        <Pizza size={small ? 32 : 110} strokeWidth={1.3} aria-hidden="true" />
+        <Pizza size={small ? 32 : 80} strokeWidth={1.3} aria-hidden="true" />
       )}
     </div>
   );
@@ -278,8 +278,11 @@ export default function KdsTouchWorkspace(props: Props) {
           </button>
         </div>
       </div>
-      <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(210px,0.95fr)_minmax(0,2fr)_minmax(220px,0.95fr)] xl:items-start">
-        <section className={panel} aria-label="Fila de pedidos">
+      <div className="grid min-w-0 items-start gap-3 md:grid-cols-[minmax(220px,0.7fr)_minmax(0,1.7fr)] lg:grid-cols-[minmax(240px,0.6fr)_minmax(0,1.7fr)] 2xl:grid-cols-[minmax(240px,0.85fr)_minmax(0,2fr)_minmax(260px,0.9fr)]">
+        <section
+          className={`${panel} md:sticky md:top-3`}
+          aria-label="Fila de pedidos"
+        >
           <header className="flex items-center gap-3 border-b border-[#263f53] p-4">
             <Hourglass className="shrink-0 text-amber-400" size={30} />
             <div className="min-w-0 flex-1">
@@ -292,7 +295,7 @@ export default function KdsTouchWorkspace(props: Props) {
               {orders.length}
             </span>
           </header>
-          <div className="space-y-3 p-3 xl:max-h-[calc(100vh-290px)] xl:overflow-y-auto">
+          <div className="max-h-72 space-y-3 overflow-y-auto overscroll-contain p-3 md:max-h-[calc(100dvh-260px)] md:min-h-40">
             {props.ordersLoading ? (
               <p
                 role="status"
@@ -314,7 +317,7 @@ export default function KdsTouchWorkspace(props: Props) {
                 type="button"
                 onClick={() => chooseOrder(candidate.id)}
                 aria-pressed={order?.id === candidate.id}
-                className={`relative w-full overflow-hidden rounded-xl border p-4 text-left transition-colors ${order?.id === candidate.id ? "border-amber-400 bg-amber-400/5" : "border-[#263f53] bg-[#07111c] hover:bg-[#102335]"}`}
+                className={`relative min-h-12 w-full touch-manipulation overflow-hidden rounded-xl border p-4 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400 ${order?.id === candidate.id ? "border-amber-400 bg-amber-400/5" : "border-[#263f53] bg-[#07111c] hover:bg-[#102335]"}`}
               >
                 <span
                   className={`absolute inset-y-0 left-0 w-1.5 ${candidate.status === "preparing" ? "bg-amber-400" : "bg-cyan-400"}`}
@@ -364,8 +367,12 @@ export default function KdsTouchWorkspace(props: Props) {
                     setTaskId(candidate.id);
                   }}
                 >
-                  #{candidate.order_code || candidate.order_id.slice(0, 8)} ·{" "}
-                  {candidate.product_name}
+                  #
+                  {code({
+                    id: candidate.order_id,
+                    order_code: candidate.order_code,
+                  })}{" "}
+                  · {candidate.product_name}
                 </button>
               ))}
           </div>
@@ -388,7 +395,7 @@ export default function KdsTouchWorkspace(props: Props) {
                   {order
                     ? `#${code(order)}`
                     : task
-                      ? `#${task.order_code || task.order_id.slice(0, 8)}`
+                      ? `#${code({ id: task.order_id, order_code: task.order_code })}`
                       : "Sua estação"}
                 </h2>
                 {order && (
@@ -455,14 +462,71 @@ export default function KdsTouchWorkspace(props: Props) {
                     </nav>
                   )}
                 </div>
-                <div className="grid items-center gap-4 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
+                <div className="min-w-0 space-y-2">
+                  <h3 className="break-words text-xl font-bold leading-snug lg:text-2xl 2xl:text-3xl">
+                    {item
+                      ? description(item)
+                      : task?.product_name || "Unidade de produção"}
+                  </h3>
+                  {task && (
+                    <p className="font-bold text-amber-300">
+                      {stateLabels[task.state] ?? task.state}
+                    </p>
+                  )}
+                </div>
+                {action && task && (
+                  <button
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => void props.command(task, action.action)}
+                    className={`flex min-h-14 w-full items-center justify-center gap-3 rounded-xl px-5 text-lg font-black text-slate-950 disabled:opacity-40 ${action.action === "return-to-service" ? "bg-red-400" : "bg-amber-400 hover:bg-amber-300"}`}
+                  >
+                    {busy === task.id ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Check size={28} />
+                    )}
+                    {busy === task.id ? "Processando..." : action.label}
+                  </button>
+                )}
+                {order &&
+                  (order.status === "paid" || order.status === "pago") && (
+                    <button
+                      type="button"
+                      disabled={Boolean(props.updating)}
+                      onClick={() => void props.startOrder(order)}
+                      className="flex min-h-14 w-full items-center justify-center gap-3 rounded-xl bg-amber-400 p-4 text-lg font-black text-slate-950 disabled:opacity-40"
+                    >
+                      {props.updating === order.id ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <CirclePlay />
+                      )}
+                      Iniciar preparo do pedido
+                    </button>
+                  )}
+                {order?.status === "preparing" && (
+                  <button
+                    type="button"
+                    disabled={!allReady || Boolean(props.updating)}
+                    onClick={() => void props.finishOrder(order)}
+                    className="flex min-h-12 w-full items-center justify-center gap-3 rounded-xl bg-emerald-400 p-3 text-base font-black text-slate-950 disabled:opacity-40"
+                  >
+                    {props.updating === order.id ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Check />
+                    )}
+                    {props.updating === order.id
+                      ? "Finalizando preparo..."
+                      : allReady
+                        ? "Finalizar preparo do pedido"
+                        : "Aguardando todas as unidades"}
+                  </button>
+                )}
+                <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
                   <ProductVisual item={item} />
-                  <div className="min-w-0">
-                    <h3 className="break-words text-3xl font-bold">
-                      {item
-                        ? description(item)
-                        : task?.product_name || "Unidade de produção"}
-                    </h3>
+                  <div className="min-w-0 flex-1">
                     {ingredients.length > 0 ? (
                       <ul className="mt-3 space-y-2">
                         {ingredients.map((ingredient, index) => (
@@ -581,7 +645,7 @@ export default function KdsTouchWorkspace(props: Props) {
                     {(task.consumption_operation_id ||
                       task.composition_revision_id) && (
                       <details className="text-xs text-slate-400">
-                        <summary className="cursor-pointer py-2">
+                        <summary className="min-h-12 cursor-pointer py-4">
                           Detalhes de rastreabilidade
                         </summary>
                         <p className="break-all">
@@ -623,61 +687,11 @@ export default function KdsTouchWorkspace(props: Props) {
                     )}
                   </div>
                 </details>
-                {action && task && (
-                  <button
-                    type="button"
-                    disabled={Boolean(busy)}
-                    onClick={() => void props.command(task, action.action)}
-                    className={`flex min-h-14 w-full items-center justify-center gap-3 rounded-xl px-5 text-lg font-black text-slate-950 disabled:opacity-40 ${action.action === "return-to-service" ? "bg-red-400" : "bg-amber-400 hover:bg-amber-300"}`}
-                  >
-                    {busy === task.id ? (
-                      <Loader2 className="animate-spin" />
-                    ) : (
-                      <Check size={28} />
-                    )}
-                    {busy === task.id ? "Processando..." : action.label}
-                  </button>
-                )}
-                {order &&
-                  (order.status === "paid" || order.status === "pago") && (
-                    <button
-                      type="button"
-                      disabled={Boolean(props.updating)}
-                      onClick={() => void props.startOrder(order)}
-                      className="flex min-h-14 w-full items-center justify-center gap-3 rounded-xl bg-amber-400 p-4 text-lg font-black text-slate-950 disabled:opacity-40"
-                    >
-                      {props.updating === order.id ? (
-                        <Loader2 className="animate-spin" />
-                      ) : (
-                        <CirclePlay />
-                      )}
-                      Iniciar preparo do pedido
-                    </button>
-                  )}
-                {order?.status === "preparing" && (
-                  <button
-                    type="button"
-                    disabled={!allReady || Boolean(props.updating)}
-                    onClick={() => void props.finishOrder(order)}
-                    className="flex min-h-12 w-full items-center justify-center gap-3 rounded-xl bg-emerald-400 p-3 text-base font-black text-slate-950 disabled:opacity-40"
-                  >
-                    {props.updating === order.id ? (
-                      <Loader2 className="animate-spin" />
-                    ) : (
-                      <Check />
-                    )}
-                    {props.updating === order.id
-                      ? "Finalizando preparo..."
-                      : allReady
-                        ? "Finalizar preparo do pedido"
-                        : "Aguardando todas as unidades"}
-                  </button>
-                )}
               </>
             )}
           </div>
         </section>
-        <aside className="min-w-0 space-y-3">
+        <aside className="grid min-w-0 gap-3 md:col-span-2 md:grid-cols-2 2xl:col-span-1 2xl:grid-cols-1">
           <section className={panel}>
             <header className="flex items-center gap-3 border-b border-[#263f53] p-4">
               <ClipboardList size={30} className="shrink-0 text-slate-300" />
@@ -819,9 +833,13 @@ export default function KdsTouchWorkspace(props: Props) {
                             )
                           }
                         />
-                        <span className="break-words">
-                          #{entry.order_code || entry.order_id.slice(0, 8)} ·{" "}
-                          {entry.product_name} · {entry.unit_index}
+                        <span className="min-w-0 break-words">
+                          #
+                          {code({
+                            id: entry.order_id,
+                            order_code: entry.order_code,
+                          })}{" "}
+                          · {entry.product_name} · {entry.unit_index}
                         </span>
                       </label>
                     ))}

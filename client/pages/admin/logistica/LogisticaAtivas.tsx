@@ -1,3 +1,4 @@
+import { deliveryOrderCode } from "@/lib/deliveryPresentation";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, MapPin, RefreshCw, Route, Clock, Zap } from "lucide-react";
 import { deliveryApi, type DeliveryRecord } from "@/lib/api";
@@ -133,7 +134,7 @@ export default function LogisticaAtivas() {
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <div>
                     <p className="text-cream font-mono text-sm font-bold">
-                      #{d.order_id.slice(0, 8).toUpperCase()}
+                      #{deliveryOrderCode(d)}
                     </p>
                     <p className="text-stone text-xs mt-0.5">
                       Entrega #{d.id.slice(0, 8).toUpperCase()}

@@ -1,3 +1,4 @@
+import { orderDisplayCode } from "@/lib/orderIdentity";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, History, Loader2, Printer } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -169,7 +170,7 @@ export default function LabelPrintDialog({ orderId, orderCode, open, onOpenChang
   return <Dialog open={open} onOpenChange={(next) => !printing && onOpenChange(next)}>
     <DialogContent className="border-surface-03 bg-surface-02 text-cream sm:max-w-4xl">
       <DialogHeader>
-        <DialogTitle className="flex items-center gap-2"><Printer className="text-emerald-300" /> Etiquetas do pedido #{orderCode || orderId?.slice(0, 8).toUpperCase()}</DialogTitle>
+        <DialogTitle className="flex items-center gap-2"><Printer className="text-emerald-300" /> Etiquetas do pedido #{orderDisplayCode({ id: orderId || "", order_code: orderCode })}</DialogTitle>
         <DialogDescription className="text-stone">Revise os volumes. A impressora física será escolhida na caixa do navegador.</DialogDescription>
       </DialogHeader>
 

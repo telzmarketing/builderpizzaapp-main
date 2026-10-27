@@ -1,3 +1,4 @@
+import { orderDisplayCode } from "@/lib/orderIdentity";
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { ChevronLeft, Loader2, ShoppingBag, Star } from "lucide-react";
@@ -173,7 +174,7 @@ export default function Pedidos() {
                 <div className="flex items-center justify-between px-4 py-3 border-b border-surface-03">
                   <div>
                     <p className="text-cream font-bold text-sm font-mono">
-                      #{order.id.slice(0, 8).toUpperCase()}
+                      #{orderDisplayCode(order)}
                     </p>
                     <p className="text-stone text-xs">
                       {new Date(order.created_at).toLocaleDateString("pt-BR", {

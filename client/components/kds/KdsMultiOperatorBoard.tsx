@@ -1,3 +1,4 @@
+import { orderDisplayCode } from "@/lib/orderIdentity";
 import {
   useCallback,
   useEffect,
@@ -536,9 +537,7 @@ export default function KdsMultiOperatorBoard({
                       />
                       <strong className="text-lg">
                         #
-                        {(
-                          task.order_code || task.order_id.slice(0, 8)
-                        ).toUpperCase()}
+                        {orderDisplayCode({ id: task.order_id, order_code: task.order_code })}
                       </strong>
                     </label>
                     <span className="flex items-center gap-1 rounded-lg bg-surface-02 px-2 py-1 text-sm font-bold text-amber-300">

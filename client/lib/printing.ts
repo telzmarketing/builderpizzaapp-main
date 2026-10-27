@@ -1,3 +1,4 @@
+import { orderDisplayCode } from "@/lib/orderIdentity";
 import { operationalPaymentHtml } from "./operationalPayment";
 import { siteConfigApi, type ApiOrder } from "./api";
 import { isOperationalDrink, operationalDrinks } from "./operationalDrinks";
@@ -100,7 +101,7 @@ function dispatchChecklist(order: ApiOrder) {
 }
 
 function orderNum(order: ApiOrder) {
-  return order.order_code ? `#${order.order_code}` : `#${order.id.slice(0, 8).toUpperCase()}`;
+  return `#${orderDisplayCode(order)}`;
 }
 
 function shortDate(d: Date) {

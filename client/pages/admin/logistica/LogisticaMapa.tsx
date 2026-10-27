@@ -1,3 +1,4 @@
+import { deliveryOrderCode } from "@/lib/deliveryPresentation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, MapPin, RefreshCw, Navigation, Route } from "lucide-react";
 import { deliveryApi, type LogisticsOverview } from "@/lib/api";
@@ -251,7 +252,7 @@ export default function LogisticaMapa() {
           <div style="font-family:sans-serif;font-size:12px;min-width:160px">
             <b style="color:#f97316">📍 Destino</b><br>
             ${d.order?.delivery_street ?? ""}${d.order?.delivery_city ? ` — ${d.order.delivery_city}` : ""}
-            <br><span style="color:#6b7280">Pedido #${d.order_id.slice(0, 8).toUpperCase()}</span>
+            <br><span style="color:#6b7280">Pedido #${deliveryOrderCode(d)}</span>
           </div>`;
 
         const marker = L!.marker([geo.lat, geo.lng], { icon }).addTo(map).bindPopup(popup);
@@ -405,7 +406,7 @@ export default function LogisticaMapa() {
                               </span>
                             )}
                             <p className="text-parchment text-xs font-bold font-mono">
-                              #{d.order_id.slice(0, 8).toUpperCase()}
+                              #{deliveryOrderCode(d)}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">

@@ -1,3 +1,4 @@
+import { orderDisplayCode } from "@/lib/orderIdentity";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bike,
@@ -171,7 +172,7 @@ export default function KdsOverview() {
                       <article key={order.id} className="rounded-xl border border-surface-03 bg-surface-01 p-3">
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <strong className="text-lg text-cream">#{(order.order_code || order.id.slice(0, 8)).toUpperCase()}</strong>
+                            <strong className="text-lg text-cream">#{orderDisplayCode(order)}</strong>
                             <p className="text-xs font-semibold text-stone">{order.fulfillment_type === "pickup" ? "Retirada" : "Entrega"}</p>
                           </div>
                           <span className="flex shrink-0 items-center gap-1 text-xs font-bold text-amber-300"><Clock3 size={13} aria-hidden="true" /> {elapsed(order.status_started_at)}</span>

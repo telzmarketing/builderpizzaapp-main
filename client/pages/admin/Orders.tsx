@@ -1,3 +1,4 @@
+import { orderDisplayCode } from "@/lib/orderIdentity";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -395,7 +396,7 @@ export default function AdminOrders() {
       setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
     } catch (caught) {
       const order = orders.find((item) => item.id === orderId);
-      const orderLabel = order?.order_code || orderId.slice(0, 8).toUpperCase();
+      const orderLabel = orderDisplayCode(order || { id: orderId });
       const detail = caught instanceof Error && caught.message.trim()
         ? caught.message.trim()
         : "Verifique a conexão e tente novamente.";
@@ -810,7 +811,7 @@ export default function AdminOrders() {
               <div className="min-w-0">
                 <h3 className="text-lg font-bold text-cream">Excluir pedido</h3>
                 <p className="mt-1 text-sm text-stone">
-                  Pedido #{deleteModal.order.id.slice(0, 8).toUpperCase()} de {deleteModal.order.delivery_name}
+                  Pedido #{orderDisplayCode(deleteModal.order)} de {deleteModal.order.delivery_name}
                 </p>
               </div>
             </div>
@@ -879,7 +880,7 @@ export default function AdminOrders() {
           <div className="bg-surface-02 rounded-2xl border border-surface-03 p-6 w-full max-w-md">
             <h3 className="text-cream font-bold text-lg mb-1">Atribuir Motoboy</h3>
             <p className="text-stone text-sm mb-5">
-              Pedido #{assignModal.order.id.slice(0, 8).toUpperCase()} · {assignModal.order.delivery_name}
+              Pedido #{orderDisplayCode(assignModal.order)} · {assignModal.order.delivery_name}
             </p>
 
             {availablePersons.length === 0 ? (
@@ -963,7 +964,7 @@ interface OrderCardProps {
   onDragEnd: () => void;
 }
 
-function OrderCard({
+export function OrderCard({
   order,
   updating,
   onAdvance,
@@ -1025,7 +1026,7 @@ function OrderCard({
       {/* Top row: ID + status badge */}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="font-mono text-xs font-black text-cream">#{order.id.slice(0, 8).toUpperCase()}</h3>
+          <h3 className="font-mono text-xs font-black text-cream">#{orderDisplayCode(order)}</h3>
           <p className="mt-1 text-[10px] text-stone">{formatDateTime(order.created_at)} · {orderTimeLabel(order)}</p>
         </div>
         <span className={`max-w-full shrink-0 truncate rounded-full px-1.5 py-1 text-[9px] font-bold ${statusColor(order.status)}`}>

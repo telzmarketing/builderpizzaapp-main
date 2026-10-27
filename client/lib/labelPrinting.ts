@@ -1,3 +1,4 @@
+import { orderDisplayCode } from "@/lib/orderIdentity";
 import type { KdsLabelPreview, KdsLabelTemplate, KdsLabelTestPreview, KdsLabelVolume, PreparationLabelPreview } from "./api";
 
 export function buildPreparationLabelPrintHtml(preview: PreparationLabelPreview, copies = 1): string {
@@ -49,7 +50,7 @@ function volumeMarkup(preview: KdsLabelPreview, volume: KdsLabelVolume, printedA
   return `<article class="label" aria-label="Volume ${volume.sequence} de ${volume.total_volumes}"><div class="label-inner">
     <section class="summary">
       <div class="caption">PEDIDO</div>
-      <div class="order-number">${escapeHtml(preview.order.order_code ?? preview.order.id.slice(0, 8).toUpperCase())}</div>
+      <div class="order-number">${escapeHtml(orderDisplayCode(preview.order))}</div>
       <div class="caption quantity-title">QUANTIDADE DE ITENS</div>
       <div class="quantity">${escapeHtml(volume.quantity)}</div>
       <div class="volume">${escapeHtml(volume.sequence)} DE ${escapeHtml(volume.total_volumes)}</div>
@@ -72,7 +73,7 @@ export function buildLabelPrintHtml(preview: KdsLabelPreview): string {
   const scale = Math.max(0.5, Math.min(2, preview.template.scale_percent / 100));
   const fontScale = Math.max(0.5, Math.min(2, preview.template.font_scale_percent / 100));
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/>
-  <title>Etiquetas do pedido ${escapeHtml(preview.order.order_code ?? preview.order.id)}</title>
+  <title>Etiquetas do pedido ${escapeHtml(orderDisplayCode(preview.order))}</title>
   <style>
     @page{size:${width}mm ${height}mm;margin:0}
     *{box-sizing:border-box}

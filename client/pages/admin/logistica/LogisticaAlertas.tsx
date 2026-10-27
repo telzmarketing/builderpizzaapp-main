@@ -1,3 +1,4 @@
+import { deliveryOrderCode } from "@/lib/deliveryPresentation";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, RefreshCw, AlertTriangle, CheckCircle2, MapPin, Clock, Phone, X } from "lucide-react";
 import { deliveryApi, type DeliveryAlert } from "@/lib/api";
@@ -167,7 +168,7 @@ export default function LogisticaAlertas() {
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
                     <p className="font-mono text-sm font-bold text-cream">
-                      #{a.order_id.slice(0, 8).toUpperCase()}
+                      #{deliveryOrderCode(a)}
                     </p>
                     {isProblem && (
                       <p className="mt-0.5 text-xs font-bold text-red-300">
@@ -239,7 +240,7 @@ export default function LogisticaAlertas() {
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <p className="font-bold text-cream">Resolver problema da entrega</p>
-                <p className="mt-1 text-xs text-stone">Pedido #{resolving.order_id.slice(0, 8).toUpperCase()}</p>
+                <p className="mt-1 text-xs text-stone">Pedido #{deliveryOrderCode(resolving)}</p>
               </div>
               <button
                 onClick={() => setResolving(null)}

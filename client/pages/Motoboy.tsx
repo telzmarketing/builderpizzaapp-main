@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import MotoboyInstallButton from "@/components/MotoboyInstallButton";
-import { driverPaymentLines } from "@/lib/deliveryPresentation";
+import { deliveryOrderCode, driverPaymentLines } from "@/lib/deliveryPresentation";
 import {
   deliveryApi,
   type DeliveryEarning,
@@ -78,8 +78,8 @@ function money(value?: number | null) {
   return (value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function shortOrder(id: string) {
-  return `#${id.slice(0, 8).toUpperCase()}`;
+function shortOrder(delivery: DeliveryRecord) {
+  return `#${deliveryOrderCode(delivery)}`;
 }
 
 function maskCustomerName(name?: string | null) {
@@ -224,7 +224,7 @@ function DeliveryCard({
       {/* Header do card */}
       <div className="flex items-center justify-between gap-3 border-b border-surface-03 px-4 py-3">
         <div className="min-w-0">
-          <p className="font-mono text-base font-black text-gold">{shortOrder(delivery.order_id)}</p>
+          <p className="font-mono text-base font-black text-gold">{shortOrder(delivery)}</p>
           <p className="mt-0.5 truncate text-sm font-semibold text-cream">{maskCustomerName(order?.delivery_name)}</p>
         </div>
         <span className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-bold tracking-wide ${statusCls}`}>
@@ -653,7 +653,7 @@ export default function Motoboy() {
                         <p className={resolved ? "text-sm font-black text-green-200" : "text-sm font-black text-red-200"}>
                           {resolved ? "Resolvido pela administração" : "Aguardando administração"}
                         </p>
-                        <p className="mt-1 font-mono text-xs font-bold text-gold">{shortOrder(delivery.order_id)}</p>
+                        <p className="mt-1 font-mono text-xs font-bold text-gold">{shortOrder(delivery)}</p>
                         <p className="mt-1 line-clamp-2 text-xs text-parchment">
                           {resolved
                             ? delivery.admin_resolution_note || "Problema resolvido. Verifique a orientação da loja."
@@ -683,7 +683,7 @@ export default function Motoboy() {
                       {i + 1}
                     </span>
                     <span className="min-w-0 truncate leading-tight">
-                      <span className="font-mono text-xs text-gold">{shortOrder(delivery.order_id)}</span>
+                      <span className="font-mono text-xs text-gold">{shortOrder(delivery)}</span>
                       {" — "}
                       {delivery.order?.delivery_street || "Endereço não informado"}
                     </span>
@@ -783,7 +783,7 @@ export default function Motoboy() {
                   className="flex w-full items-center justify-between rounded-xl border border-surface-03 bg-surface-02 px-4 py-3.5 text-left hover:border-surface-03/80 transition-colors"
                 >
                   <div>
-                    <p className="font-mono text-sm font-black text-gold">{shortOrder(delivery.order_id)}</p>
+                    <p className="font-mono text-sm font-black text-gold">{shortOrder(delivery)}</p>
                     <p className="mt-0.5 text-xs text-stone">{maskCustomerName(delivery.order?.delivery_name)}</p>
                   </div>
                   <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2.5 py-1 text-xs font-bold text-green-300">
@@ -816,7 +816,7 @@ export default function Motoboy() {
               ) : earnings.map((earning) => (
                 <div key={earning.id} className="flex items-center justify-between rounded-xl border border-surface-03 bg-surface-02 px-4 py-3.5">
                   <div>
-                    <p className="font-mono text-sm font-black text-parchment">{shortOrder(earning.delivery_id)}</p>
+                    <p className="font-mono text-sm font-black text-parchment">Entrega #{earning.delivery_id.slice(0, 8).toUpperCase()}</p>
                     <p className="mt-0.5 text-xs text-stone">{earning.period_date || earning.created_at || "—"}</p>
                   </div>
                   <div className="text-right">
@@ -842,7 +842,7 @@ export default function Motoboy() {
           <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border-t border-surface-03 bg-surface-02 p-5">
             <div className="mb-5 flex items-center justify-between">
               <div>
-                <p className="font-mono text-lg font-black text-gold">{shortOrder(detail.order_id)}</p>
+                <p className="font-mono text-lg font-black text-gold">{shortOrder(detail)}</p>
                 <p className="text-xs text-stone">Detalhes do pedido</p>
               </div>
               <button onClick={() => setDetail(null)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-03 text-stone hover:text-cream transition-colors">
@@ -890,7 +890,7 @@ export default function Motoboy() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <p className="font-black text-cream">Reportar problema</p>
-                <p className="text-xs text-stone">{shortOrder(problem.order_id)}</p>
+                <p className="text-xs text-stone">{shortOrder(problem)}</p>
               </div>
               <button onClick={() => { setProblem(null); setProblemText(""); setProblemReason(PAYMENT_DELIVERY_PROBLEM_REASONS[0].value); }} className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-03 text-stone hover:text-cream transition-colors">
                 <X size={18} />

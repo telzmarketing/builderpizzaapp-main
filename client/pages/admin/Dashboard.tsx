@@ -1,3 +1,4 @@
+import { orderDisplayCode } from "@/lib/orderIdentity";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -247,7 +248,7 @@ export default function AdminDashboard() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-cream text-xs font-medium truncate">{order.delivery_name}</p>
-                            <p className="text-stone text-[10px]">#{order.id.slice(0, 8).toUpperCase()}</p>
+                            <p className="text-stone text-[10px]">#{orderDisplayCode(order)}</p>
                           </div>
                           <div className="text-right flex-shrink-0">
                             <p className="text-gold text-xs font-bold">R${order.total.toFixed(2)}</p>
