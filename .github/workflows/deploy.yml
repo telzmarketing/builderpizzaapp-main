@@ -693,16 +693,27 @@ jobs:
           VPS_HOST_FINGERPRINT: ${{ secrets.VPS_HOST_FINGERPRINT }}
         run: |
           set -Eeuo pipefail
-          [[ "$VPS_HOST_FINGERPRINT" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]
+          if [[ ! "$VPS_HOST_FINGERPRINT" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]; then
+            echo "::error::Secret VPS_HOST_FINGERPRINT ausente ou invalido. Configure no environment production o fingerprint OpenSSH SHA256 (prefixo SHA256: e 43 caracteres base64 sem padding)."
+            exit 1
+          fi
           operation="$RUNNER_TEMP/delivery-source/operation-bundle.tar.gz"
-          test -f "$operation"; test ! -L "$operation"
+          if [[ ! -f "$operation" || -L "$operation" ]]; then
+            echo "::error::Artefato operation-bundle.tar.gz ausente ou inseguro no pacote baixado."
+            exit 1
+          fi
           echo "operation_sha256=$(sha256sum "$operation" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "operation_base64=$(base64 -w0 "$operation")" >> "$GITHUB_OUTPUT"
           if [[ "${{ inputs.operation }}" == "deploy" ]]; then
             target="$RUNNER_TEMP/delivery-source/target-source.tar.gz"
             previous="$RUNNER_TEMP/delivery-source/previous-source.tar.gz"
             dependencies="$RUNNER_TEMP/delivery-dependencies/dependency-bundle.tar.gz"
-            for file in "$target" "$previous" "$dependencies"; do test -f "$file"; test ! -L "$file"; done
+            for file in "$target" "$previous" "$dependencies"; do
+              if [[ ! -f "$file" || -L "$file" ]]; then
+                echo "::error::Artefato requerido ausente ou inseguro: $(basename "$file")."
+                exit 1
+              fi
+            done
             echo "target_path=$target" >> "$GITHUB_OUTPUT"
             echo "previous_path=$previous" >> "$GITHUB_OUTPUT"
             echo "dependencies_path=$dependencies" >> "$GITHUB_OUTPUT"
