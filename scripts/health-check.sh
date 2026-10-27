@@ -70,6 +70,9 @@ schema_pair_is_compatible() {
     "20261026_product_crust_visibility:20261026_order_driver_delivery_fee")
       return 0
       ;;
+    "20261026_order_driver_delivery_fee:20261027_kds_dispatch_unit_completion")
+      return 0
+      ;;
     *)
       return 1
       ;;

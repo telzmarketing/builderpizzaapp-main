@@ -1,6 +1,6 @@
 # Atualizacao Telz na VPS
 
-Atualizado em: 2026-10-17
+Atualizado em: 2026-10-27
 
 Este procedimento cobre atualizacao incremental de uma instalacao existente em
 `/opt/telz`. `installer/install.sh` e exclusivo da primeira instalacao ou de
@@ -8,11 +8,14 @@ uma reconstrucao planejada; ele nao deve ser reutilizado como updater.
 
 ## Head atual e repasse do motoboy
 
-O head atual da fonte e `20261026_order_driver_delivery_fee`, filho de
-`20261026_product_crust_visibility`, que sucede `20261020_inventory_recipe_fractions`.
-A migration adiciona somente `orders.driver_delivery_fee` como coluna nullable;
-codigo anterior ignora essa coluna, portanto o rollback de codigo preserva o
-schema expandido. O downgrade nao e autorizado nem necessario.
+O head atual da fonte e `20261027_kds_dispatch_unit_completion`, filho de
+`20261026_order_driver_delivery_fee`, que por sua vez sucede
+`20261026_product_crust_visibility` e `20261020_inventory_recipe_fractions`.
+A migration `20261027_kds_dispatch_unit_completion` adiciona apenas colunas
+nullable, uma chave estrangeira e um indice para registrar o fechamento por
+unidade. O codigo anterior ignora essas adicoes, portanto o rollback de codigo
+para `20261026_order_driver_delivery_fee` preserva o schema expandido. O
+downgrade continua bloqueado para preservar o historico de fechamento.
 
 ## Historico: fundacao de estoque com Decimal
 
@@ -221,7 +224,7 @@ obrigatoria e SHA completo aprovado no CI:
     esac
   done
   test "$(systemctl show telz-domain-ssl.service -p ActiveState --value)" = inactive
-  TELZ_ALEMBIC_TARGET=20261026_order_driver_delivery_fee \
+  TELZ_ALEMBIC_TARGET=20261027_kds_dispatch_unit_completion \
     /usr/local/sbin/telz-deploy-from-origin "$TARGET" /opt/telz
 )
 ```
@@ -347,7 +350,7 @@ imutavel e executa health checks.
 O target canonico desta entrega e:
 
 ```text
-20261026_order_driver_delivery_fee
+20261027_kds_dispatch_unit_completion
 ```
 
 O deploy fica bloqueado se o commit publicado nao possuir exatamente esse unico
@@ -376,6 +379,7 @@ A cadeia operacional que deve existir no commit publicado e linear:
   -> 20261017_delivery_schema
   -> 20261026_product_crust_visibility
   -> 20261026_order_driver_delivery_fee
+  -> 20261027_kds_dispatch_unit_completion
 ```
 
 ## 2. Preflight
@@ -397,7 +401,7 @@ movimentacao manual para contornar o gate.
 
 Confirme no commit alvo:
 
-- unico head Alembic `20261026_order_driver_delivery_fee`;
+- unico head Alembic `20261027_kds_dispatch_unit_completion`;
 - workflow e updater usando o mesmo target;
 - CI verde para o mesmo SHA, incluindo o upgrade Alembic em PostgreSQL
   descartavel; CI verde nao substitui o backup nem a migration na VPS;
@@ -433,7 +437,7 @@ deploy, todos estes inputs promovidos e root-owned:
 - archive de fonte alvo e seu `TELZ_SOURCE_ARCHIVE_SHA256`;
 - archive de fonte anterior e seu `TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256`;
 - archive offline de dependencias e seu `TELZ_DEPENDENCY_ARCHIVE_SHA256`;
-- `TELZ_ALEMBIC_TARGET=20261026_order_driver_delivery_fee`;
+- `TELZ_ALEMBIC_TARGET=20261027_kds_dispatch_unit_completion`;
 - `TELZ_PUBLIC_HEALTH_URL` quando HTTPS publico e obrigatorio.
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
@@ -474,7 +478,7 @@ sudo /usr/local/sbin/telz-health-check /opt/telz
 ```
 
 Confirme que o link `current` termina em `/releases/<SHA-ALVO>/app`, o manifest
-registra o mesmo commit e `20261026_order_driver_delivery_fee`, e o banco possui uma unica
+registra o mesmo commit e `20261027_kds_dispatch_unit_completion`, e o banco possui uma unica
 revision igual ao target.
 
 Tambem valide HTTPS publico, login, loja, pedido, pagamentos, cozinha,

@@ -137,7 +137,7 @@ validate_operational_config
 BRANCH="${BRANCH:-main}"
 RUN_TESTS="${RUN_TESTS:-false}"
 EXPECTED_COMMIT="${TELZ_EXPECTED_COMMIT:-}"
-ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261026_order_driver_delivery_fee}"
+ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261027_kds_dispatch_unit_completion}"
 FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"
 FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"
 EXPLICIT_RECOVERY="${TELZ_EXPLICIT_RECOVERY:-false}"
@@ -637,7 +637,8 @@ schema_is_rollback_compatible() {
     "20261017_site_config:20261017_runtime_schema")
       return 0
       ;;
-    "20261026_product_crust_visibility:20261026_order_driver_delivery_fee")
+    "20261026_product_crust_visibility:20261026_order_driver_delivery_fee" | \
+    "20261026_order_driver_delivery_fee:20261027_kds_dispatch_unit_completion")
       return 0
       ;;
     *)

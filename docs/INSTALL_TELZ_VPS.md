@@ -1,6 +1,6 @@
 # Instalacao Telz em VPS
 
-Atualizado em: 2026-10-17
+Atualizado em: 2026-10-27
 
 Este documento cobre somente a primeira instalacao ou uma reconstrucao
 planejada em Ubuntu 22.04/24.04. Uma instalacao existente deve ser atualizada
@@ -26,7 +26,7 @@ uma VPS descartavel antes do uso em producao.
 O target Alembic desta entrega e:
 
 ```text
-20261026_order_driver_delivery_fee
+20261027_kds_dispatch_unit_completion
 ```
 
 Antes de instalar, confirme que esse valor e o unico head do commit publicado e
@@ -49,7 +49,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Defina explicitamente:
 
 ```env
-ALEMBIC_TARGET=20261026_order_driver_delivery_fee
+ALEMBIC_TARGET=20261027_kds_dispatch_unit_completion
 INSTALL_SSL=false
 ```
 
@@ -147,7 +147,7 @@ sudo journalctl -u telz-whatsapp-gateway -n 100 --no-pager
 
 Registre separadamente:
 
-- revision unica `20261026_order_driver_delivery_fee` no codigo e no banco;
+- revision unica `20261027_kds_dispatch_unit_completion` no codigo e no banco;
 - health local e HTTP/HTTPS publico;
 - login, loja, pedido, painel e WhatsApp;
 - isolamento entre pelo menos dois tenants;
