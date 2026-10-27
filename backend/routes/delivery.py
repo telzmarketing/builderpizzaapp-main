@@ -475,6 +475,23 @@ def driver_start_delivery(
         return err_msg(str(exc), code="Unauthorized", status_code=401)
 
 
+@router.post("/driver/deliveries/{delivery_id}/confirm-payment")
+def driver_confirm_payment(
+    delivery_id: str,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Driver confirms receipt of a pay-on-delivery payment while on route."""
+    try:
+        person_id = _decode_driver_token(authorization)
+        delivery = _driver_service(db, person_id).confirm_driver_payment(person_id, delivery_id)
+        return ok(_driver_delivery_payload(delivery), "Recebimento do pagamento confirmado.")
+    except ValueError as exc:
+        return err_msg(str(exc), code="Unauthorized", status_code=401)
+    except DomainError as exc:
+        return err(exc)
+
+
 @router.post("/driver/deliveries/{delivery_id}/complete")
 def driver_complete_delivery(
     delivery_id: str,

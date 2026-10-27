@@ -25,6 +25,8 @@ class ProductionUnit(Base):
     state = Column(String(24), nullable=False, default="unassigned", server_default="unassigned")
     requires_oven = Column(Boolean, nullable=False, default=False, server_default="false")
     version = Column(Integer, nullable=False, default=1, server_default="1")
+    dispatch_completed_at = Column(DateTime(timezone=True), nullable=True)
+    dispatch_completed_by = Column(String, ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
     attempts = relationship("ProductionAttempt", back_populates="unit", cascade="all, delete-orphan", order_by="ProductionAttempt.attempt_number")

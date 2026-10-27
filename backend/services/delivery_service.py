@@ -33,7 +33,8 @@ from backend.models.delivery import (
     DeliveryPersonStatus, LogisticsSettings, GeocodeCache,
 )
 from backend.models.order import Order, OrderStatus
-from backend.models.payment import PaymentStatus
+from backend.models.kds_production import ProductionUnit
+from backend.models.payment import Payment, PaymentStatus
 
 _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -866,6 +867,51 @@ class DeliveryService:
         ))
         return delivery
 
+    def confirm_driver_payment(self, person_id: str, delivery_id: str) -> Delivery:
+        """Record receipt of an on-delivery payment by the assigned driver."""
+        self._get_delivery_person(person_id)
+        delivery = self._get_driver_delivery(person_id, delivery_id)
+        order = self._get_order(delivery.order_id)
+        payment = (
+            self._scope(self._db.query(Payment), Payment)
+            .filter(Payment.order_id == order.id)
+            .populate_existing()
+            .with_for_update()
+            .first()
+        )
+        order.payment = payment
+        if not payment or not payment.pay_on_delivery:
+            raise DomainError("Este pedido nao e pagamento na entrega.", code="PaymentMethodMismatch")
+
+        # Repeated requests are safe, including retries after the payment commit.
+        if payment.status in {PaymentStatus.approved, PaymentStatus.paid}:
+            return delivery
+        if delivery.status != DeliveryStatus.on_the_way:
+            raise DomainError(
+                "Inicie a entrega antes de confirmar o recebimento do pagamento.",
+                code="DeliveryNotInRoute",
+            )
+        if payment.status != PaymentStatus.pending:
+            raise DomainError("Somente pagamentos pendentes podem ser confirmados.", code="PaymentNotPending")
+
+        from backend.services.payment_service import PaymentService
+
+        PaymentService(self._db, tenant_id=delivery.tenant_id).confirm_pay_on_delivery(
+            delivery.order_id,
+            source="driver_delivery",
+        )
+        self._add_event(
+            delivery_id,
+            "driver_payment_received",
+            description="Motoboy confirmou o recebimento do pagamento na entrega.",
+            actor_type="driver",
+            actor_id=person_id,
+            metadata={"payment_method": payment.delivery_payment_method},
+        )
+        self._db.commit()
+        self._db.refresh(delivery)
+        return delivery
+
     def complete_driver_delivery(
         self,
         person_id: str,
@@ -881,6 +927,8 @@ class DeliveryService:
         owned = self._get_driver_delivery(person_id, delivery_id)
         if owned.status == DeliveryStatus.completed:
             return owned
+        if owned.status not in {DeliveryStatus.on_the_way, DeliveryStatus.delivered}:
+            raise DomainError("Inicie a entrega antes de marcala como entregue.", code="DeliveryNotInRoute")
         order = self._get_order(owned.order_id)
         payment = order.payment
         pending_pay_on_delivery = bool(
@@ -888,8 +936,8 @@ class DeliveryService:
             and payment.pay_on_delivery
             and payment.status not in {PaymentStatus.approved, PaymentStatus.paid}
         )
-        if pending_pay_on_delivery and not payment_received:
-            raise DomainError("Confirme o recebimento do pagamento na entrega para finalizar.", code="PaymentReceiptRequired")
+        if pending_pay_on_delivery:
+            raise DomainError("Confirme o recebimento do pagamento antes de marcar como entregue.", code="PaymentReceiptRequired")
         if payment_received and not (payment and payment.pay_on_delivery):
             raise DomainError("Este pedido nao e pagamento na entrega.", code="PaymentMethodMismatch")
 
@@ -901,13 +949,6 @@ class DeliveryService:
             delivery_photo_url=delivery_photo_url,
             notes=notes,
         )
-        if payment_received:
-            from backend.services.payment_service import PaymentService
-
-            PaymentService(self._db, tenant_id=delivery.tenant_id).confirm_pay_on_delivery(
-                delivery.order_id,
-                source="driver_delivery",
-            )
         self._add_event(
             delivery_id,
             "driver_completed",
@@ -1364,12 +1405,25 @@ class DeliveryService:
 
         from sqlalchemy import func
 
-        # Orders eligible for assignment
+        # Assignment starts only after the kitchen has explicitly released an
+        # order. `preparing` is not eligible: a polling worker must never put a
+        # driver on an order whose pizzas are still in production.
         eligible_orders = (
             self._scope(self._db.query(Order), Order)
-            .filter(Order.status.in_([OrderStatus.ready_for_pickup, OrderStatus.preparing]))
+            .filter(
+                Order.status == OrderStatus.ready_for_pickup,
+                Order.fulfillment_type == "delivery",
+            )
             .all()
         )
+        eligible_orders = [
+            order for order in eligible_orders
+            if not self._db.query(ProductionUnit.id).filter(
+                ProductionUnit.tenant_id == order.tenant_id,
+                ProductionUnit.order_id == order.id,
+                ProductionUnit.state.notin_(("ready", "cancelled")),
+            ).first()
+        ]
         if not eligible_orders:
             return []
 

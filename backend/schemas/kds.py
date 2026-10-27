@@ -11,6 +11,15 @@ class DispatchAssignIn(BaseModel):
     estimated_minutes: int = Field(default=40, ge=1, le=240)
 
 
+class DispatchUnitCompleteIn(BaseModel):
+    expected_version: int = Field(ge=0)
+
+
+class DispatchReturnToKitchenIn(BaseModel):
+    production_unit_ids: list[str] = Field(min_length=1, max_length=100)
+    reason: str = Field(min_length=1, max_length=300)
+
+
 KdsOverviewStage = Literal[
     "waiting_kitchen",
     "preparing",

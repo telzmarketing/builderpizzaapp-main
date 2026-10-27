@@ -4,7 +4,7 @@ import KdsSessionActions from "@/components/kds/KdsSessionActions";
 import KdsRecipeDetails from "@/components/kds/KdsRecipeDetails";
 import KdsMultiOperatorBoard from "@/components/kds/KdsMultiOperatorBoard";
 import { useToast } from "@/hooks/use-toast";
-import { kdsApi, type KdsKitchenOrder, type KdsOrderItem } from "@/lib/api";
+import { kdsApi, type KdsKitchenOrder, type KdsOrderItem, type KdsProductionUnit } from "@/lib/api";
 import { loadSoundType, playOrderAlert } from "@/lib/orderSound";
 import { activeKitchenOrders } from "@/lib/kds";
 
@@ -24,6 +24,15 @@ function itemDescription(item: KdsOrderItem) {
   if (item.selected_crust_type) parts.push(`· ${item.selected_crust_type}`);
   if (item.selected_drink_variant) parts.push(`· ${item.selected_drink_variant}`);
   return parts.join(" ");
+}
+
+function productionUnitStatus(unit: KdsProductionUnit) {
+  const labels: Record<string, string> = {
+    unassigned: "Não iniciada", queued: "Aguardando pizzaiolo", assembling: "Em montagem",
+    assembled: "Montada", baking: "No forno", checking: "Em conferência", ready: "Pronta",
+    blocked: "Bloqueada", cancelled: "Cancelada",
+  };
+  return labels[unit.state] ?? unit.state;
 }
 
 function errorMessage(error: unknown) {
@@ -92,32 +101,14 @@ export default function AdminCozinha() {
     }
   };
 
-  const advanceOrder = async (order: KdsKitchenOrder) => {
-    if (actionLock.current) return;
+  const startOrder = async (order: KdsKitchenOrder) => {
+    if ((order.status !== "paid" && order.status !== "pago") || actionLock.current) return;
     actionLock.current = true;
     setUpdating(order.id);
     try {
-      if (order.status === "ready_for_pickup") {
-        if (order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in") await kdsApi.serveKitchenOrder(order.id);
-        else await kdsApi.completeKitchenPickup(order.id);
-        setOrders((current) => current.filter((item) => item.id !== order.id));
-      } else if (order.status === "preparing") {
-        const updated = await kdsApi.markKitchenOrderReady(order.id);
-        setOrders((current) => order.fulfillment_type === "pickup" || order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in"
-          ? current.map((item) => item.id === order.id ? updated : item)
-          : current.filter((item) => item.id !== order.id));
-      } else {
-        const updated = await kdsApi.startKitchenOrder(order.id);
-        setOrders((current) => current.map((item) => item.id === order.id ? updated : item));
-      }
-      toast({
-        title: order.status === "ready_for_pickup"
-          ? (order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in" ? "Pedido servido" : "Retirada concluída")
-          : order.status === "preparing"
-            ? (order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in" ? "Pedido pronto para servir" : order.fulfillment_type === "pickup" ? "Pedido pronto para retirada" : "Pedido enviado para expedição")
-            : "Preparo iniciado",
-        description: `Pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()}`,
-      });
+      const updated = await kdsApi.startKitchenOrder(order.id);
+      setOrders((current) => activeKitchenOrders(current.map((item) => item.id === order.id ? updated : item)));
+      toast({ title: "Unidades encaminhadas para a fila do pizzaiolo", description: `Pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()}` });
       setError(null);
       setLastRefresh(new Date());
     } catch (caught) {
@@ -130,12 +121,29 @@ export default function AdminCozinha() {
     }
   };
 
-  const columns = [
-    { key: "waiting", label: "Aguardando preparo", statuses: ["paid", "pago"], accent: "text-amber-300", action: "Iniciar preparo", button: "bg-orange-500 active:bg-orange-700" },
-    { key: "preparing", label: "Em preparo", statuses: ["preparing"], accent: "text-orange-300", action: "Finalizar preparo", button: "bg-emerald-600 active:bg-emerald-800" },
-    { key: "pickup", label: "Aguardando retirada / servico", statuses: ["ready_for_pickup"], accent: "text-sky-300", action: "Concluir retirada", button: "bg-sky-600 active:bg-sky-800" },
-  ];
+  const finishOrder = async (order: KdsKitchenOrder) => {
+    const units = order.production_units ?? [];
+    if (units.length === 0 || units.some((unit) => unit.state !== "ready") || actionLock.current) return;
+    actionLock.current = true;
+    setUpdating(order.id);
+    try {
+      const updated = await kdsApi.markKitchenOrderReady(order.id);
+      setOrders((current) => current.map((item) => item.id === order.id ? updated : item));
+      setError(null);
+      setLastRefresh(new Date());
+      toast({ title: "Preparo finalizado", description: `Pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()} enviado à expedição.` });
+    } catch (caught) {
+      const message = errorMessage(caught);
+      setError(message);
+      toast({ title: "Preparo não finalizado", description: message, variant: "destructive" });
+    } finally {
+      actionLock.current = false;
+      setUpdating(null);
+    }
+  };
 
+  const waitingOrders = orders.filter((order) => order.status === "paid" || order.status === "pago").sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+  const preparingOrders = orders.filter((order) => order.status === "preparing").sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
   return (
     <section className={`${fullscreen ? "fixed inset-0 z-[100]" : "min-h-screen"} flex flex-col overflow-hidden bg-surface-00 text-cream`}>
       <header className="flex flex-col gap-4 border-b border-surface-03 bg-surface-02 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -156,21 +164,41 @@ export default function AdminCozinha() {
       <div className="p-3 pb-0"><KdsMultiOperatorBoard /></div>
 
       {loading ? <div className="flex flex-1 items-center justify-center gap-3 text-lg text-stone"><Loader2 className="animate-spin text-gold" /> Carregando pedidos...</div> : (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-3 lg:overflow-hidden">
-          {columns.map((column) => {
-            const items = orders.filter((order) => column.statuses.includes(order.status)).sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
-            return <div key={column.key} className="flex min-h-[20rem] flex-col overflow-hidden rounded-2xl border border-surface-03 bg-surface-01">
-              <div className="flex items-center justify-between border-b border-surface-03 px-5 py-4"><h2 className={`text-lg font-black ${column.accent}`}>{column.label}</h2><span className="rounded-full bg-surface-03 px-3 py-1 font-black">{items.length}</span></div>
-              <div className="grid flex-1 auto-rows-max gap-4 overflow-y-auto p-4 xl:grid-cols-2">
-                {items.length === 0 && <div className="col-span-full flex min-h-52 flex-col items-center justify-center gap-3 text-center text-stone"><UtensilsCrossed size={42} /><strong>Nenhum pedido nesta etapa</strong></div>}
-                {items.map((order) => <article key={order.id} className="flex flex-col gap-4 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft">
-                  <div className="flex items-start justify-between gap-3"><div><strong className="text-xl">#{(order.order_code || order.id.slice(0, 8)).toUpperCase()}</strong><p className="text-sm text-stone">{order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in" ? "Salao" : order.fulfillment_type === "pickup" ? "Retirada no balcão" : "Entrega"}</p>{order.delivery?.delivery_person_name && <p className="mt-2 flex items-center gap-1.5 text-sm font-bold text-emerald-300"><Bike size={16} /> Motoboy: {order.delivery.delivery_person_name}</p>}</div><span className="flex items-center gap-1 rounded-lg bg-surface-01 px-2 py-1 text-sm font-bold text-amber-300"><Clock3 size={16} />{elapsed(order.created_at)}</span></div>
-                  <div className="space-y-3 border-y border-surface-03 py-4">{order.items.map((item) => <div key={item.id} className="space-y-2"><p className="font-bold"><span className="mr-2 text-lg text-gold">{item.quantity}x</span>{itemDescription(item)}</p>{item.add_ons?.length > 0 && <p className="text-xs text-stone">Adicionais: {item.add_ons.join(", ")}</p>}{item.notes && <p className="mt-1 rounded-lg bg-amber-500/10 p-2 text-sm font-semibold text-amber-200">Obs.: {item.notes}</p>}<KdsRecipeDetails recipe={item.recipe} /></div>)}</div>
-                  <button type="button" disabled={Boolean(updating)} onClick={() => void advanceOrder(order)} className={`mt-auto flex min-h-16 w-full items-center justify-center gap-2 rounded-xl px-4 text-lg font-black text-white transition-transform active:scale-[0.98] disabled:opacity-50 ${column.button}`}>{updating === order.id ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}{updating === order.id ? "Processando..." : order.status === "ready_for_pickup" && (order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in") ? "Marcar servido" : order.status === "preparing" && order.fulfillment_type === "pickup" ? "Pronto para retirada" : column.action}</button>
-                </article>)}
-              </div>
-            </div>;
-          })}
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
+          <section className="rounded-2xl border border-surface-03 bg-surface-01">
+            <div className="flex items-center justify-between border-b border-surface-03 px-5 py-4"><h2 className="text-lg font-black text-amber-300">Aguardando preparo</h2><span className="rounded-full bg-surface-03 px-3 py-1 font-black">{waitingOrders.length}</span></div>
+            <div className="grid gap-4 p-4 xl:grid-cols-2">
+              {waitingOrders.length === 0 && <div className="col-span-full flex min-h-36 flex-col items-center justify-center gap-3 text-center text-stone"><UtensilsCrossed size={36} /><strong>Nenhum pedido aguardando início</strong></div>}
+              {waitingOrders.map((order) => <article key={order.id} className="flex flex-col gap-4 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft">
+                <div className="flex items-start justify-between gap-3"><div><strong className="text-xl">#{(order.order_code || order.id.slice(0, 8)).toUpperCase()}</strong><p className="text-sm text-stone">{order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in" ? "Salão" : order.fulfillment_type === "pickup" ? "Retirada no balcão" : "Entrega"}</p>{order.delivery?.delivery_person_name && <p className="mt-2 flex items-center gap-1.5 text-sm font-bold text-emerald-300"><Bike size={16} /> Motoboy: {order.delivery.delivery_person_name}</p>}</div><span className="flex items-center gap-1 rounded-lg bg-surface-01 px-2 py-1 text-sm font-bold text-amber-300"><Clock3 size={16} />{elapsed(order.created_at)}</span></div>
+                <div className="space-y-3 border-y border-surface-03 py-4">{order.items.map((item) => <div key={item.id} className="space-y-2"><p className="font-bold"><span className="mr-2 text-lg text-gold">{item.quantity}x</span>{itemDescription(item)}</p>{item.add_ons?.length > 0 && <p className="text-xs text-stone">Adicionais: {item.add_ons.join(", ")}</p>}{item.notes && <p className="mt-1 rounded-lg bg-amber-500/10 p-2 text-sm font-semibold text-amber-200">Obs.: {item.notes}</p>}<KdsRecipeDetails recipe={item.recipe} /></div>)}</div>
+                <button type="button" disabled={Boolean(updating)} onClick={() => void startOrder(order)} className="mt-auto flex min-h-16 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 text-lg font-black text-white transition-transform active:scale-[0.98] disabled:opacity-50">{updating === order.id ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}{updating === order.id ? "Inicializando unidades..." : "Iniciar preparo"}</button>
+              </article>)}
+            </div>
+          </section>
+          <section className="rounded-2xl border border-surface-03 bg-surface-01">
+            <div className="flex items-center justify-between border-b border-surface-03 px-5 py-4"><div><h2 className="text-lg font-black text-orange-300">Em preparo</h2><p className="text-sm text-stone">Acompanhe cada unidade e finalize o pedido quando todas estiverem prontas.</p></div><span className="rounded-full bg-surface-03 px-3 py-1 font-black">{preparingOrders.length}</span></div>
+            <div className="grid gap-4 p-4 xl:grid-cols-2">
+              {preparingOrders.length === 0 && <div className="col-span-full flex min-h-36 flex-col items-center justify-center gap-3 text-center text-stone"><UtensilsCrossed size={36} /><strong>Nenhum pedido em preparo</strong></div>}
+              {preparingOrders.map((order) => {
+                const units = order.production_units ?? [];
+                const readyCount = units.filter((unit) => unit.state === "ready").length;
+                const allReady = units.length > 0 && readyCount === units.length;
+                return <article key={order.id} className="flex flex-col gap-4 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft">
+                  <div className="flex items-start justify-between gap-3"><div><strong className="text-xl">#{(order.order_code || order.id.slice(0, 8)).toUpperCase()}</strong><p className="text-sm text-stone">{order.sales_channel === "dine_in" || order.fulfillment_type === "dine_in" ? "Salão" : order.fulfillment_type === "pickup" ? "Retirada no balcão" : "Entrega"}</p>{order.delivery?.delivery_person_name && <p className="mt-2 flex items-center gap-1.5 text-sm font-bold text-emerald-300"><Bike size={16} /> Motoboy: {order.delivery.delivery_person_name}</p>}</div><span className="flex items-center gap-1 rounded-lg bg-surface-01 px-2 py-1 text-sm font-bold text-amber-300"><Clock3 size={16} />{elapsed(order.created_at)}</span></div>
+                  <section aria-label="Progresso por unidade" className="space-y-2 border-y border-surface-03 py-4">
+                    <div className="flex items-center justify-between"><h3 className="font-black">Progresso das unidades</h3><span className="text-sm font-bold text-stone">{readyCount}/{units.length} prontas</span></div>
+                    {units.length === 0 ? <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">As unidades de produção ainda não foram carregadas. O pedido não pode ser finalizado.</p> : units.map((unit) => {
+                      const item = order.items.find((candidate) => candidate.id === unit.order_item_id);
+                      const isDrink = unit.product_type === "drink" || Boolean(item?.is_drink) || item?.product_type === "drink";
+                      return <div key={unit.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface-01 px-3 py-2"><span className="min-w-0 truncate font-semibold">{isDrink ? "Bebida" : "Pizza"} {unit.unit_index} · {item ? itemDescription(item) : unit.product_name}</span><span className={`shrink-0 text-sm font-bold ${unit.state === "ready" ? "text-emerald-300" : unit.state === "blocked" ? "text-red-300" : "text-stone"}`}>{productionUnitStatus(unit)}</span></div>;
+                    })}
+                  </section>
+                  <button type="button" disabled={!allReady || Boolean(updating)} onClick={() => void finishOrder(order)} className="mt-auto flex min-h-16 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-lg font-black text-white transition-transform active:scale-[0.98] disabled:opacity-50">{updating === order.id ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}{updating === order.id ? "Finalizando preparo..." : allReady ? "Finalizar preparo" : "Aguardando todas as unidades"}</button>
+                </article>;
+              })}
+            </div>
+          </section>
         </div>
       )}
     </section>

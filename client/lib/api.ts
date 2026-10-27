@@ -1152,6 +1152,18 @@ export interface KdsDeliverySummary {
   assigned_at?: string | null;
 }
 
+export interface KdsProductionUnit {
+  id: string;
+  order_item_id: string;
+  unit_index: number;
+  task_id: string | null;
+  state: string;
+  version: number;
+  dispatch_completed_at?: string | null;
+  product_name?: string;
+  product_type?: string | null;
+}
+
 export interface KdsKitchenOrder {
   drinks?: OperationalDrink[];
   has_drinks?: boolean;
@@ -1168,6 +1180,7 @@ export interface KdsKitchenOrder {
   preparation_started_at?: string | null;
   delivery: KdsDeliverySummary | null;
   items: KdsOrderItem[];
+  production_units?: KdsProductionUnit[];
 }
 
 export interface KdsDispatchOrder extends KdsKitchenOrder {
@@ -1184,6 +1197,11 @@ export interface KdsDispatchOrder extends KdsKitchenOrder {
   cash_change_for?: number | null;
   cash_change_amount?: number | null;
   can_assign_driver: boolean;
+  auto_assignment?: {
+    status: "assigned" | "unavailable" | "disabled" | "blocked" | "already_assigned" | string;
+    delivery_person_name?: string | null;
+    message?: string | null;
+  } | null;
 }
 
 export interface KdsDriver {
@@ -1464,6 +1482,10 @@ export const kdsApi = {
     post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/pickup-complete`, {}),
   listDispatchOrders: () => get<KdsDispatchOrder[]>("/kds/dispatch/orders"),
   listDispatchDrivers: () => get<KdsDriver[]>("/kds/dispatch/drivers"),
+  completeDispatchUnit: (orderId: string, unitId: string, expectedVersion: number) =>
+    post<KdsDispatchOrder>(`/kds/dispatch/orders/${encodeURIComponent(orderId)}/units/${encodeURIComponent(unitId)}/complete`, { expected_version: expectedVersion }),
+  returnDispatchUnitsToKitchen: (orderId: string, productionUnitIds: string[], reason: string) =>
+    post<KdsKitchenOrder>(`/kds/dispatch/orders/${encodeURIComponent(orderId)}/return-to-kitchen`, { production_unit_ids: productionUnitIds, reason }),
   assignDispatchOrder: (orderId: string, deliveryPersonId: string, estimatedMinutes = 40) =>
     post<KdsDispatchResult>(`/kds/dispatch/orders/${orderId}/assign`, {
       delivery_person_id: deliveryPersonId,
@@ -8013,6 +8035,8 @@ export const deliveryApi = {
     driverRequest<DeliveryPerson>("PUT", "/delivery/driver/location", { lat, lng }),
   driverStartDelivery: (deliveryId: string, notes?: string) =>
     driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/start`, { notes }),
+  driverConfirmPayment: (deliveryId: string) =>
+    driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/confirm-payment`, {}),
   driverCompleteDelivery: (deliveryId: string, notes?: string, payment_received = false) =>
     driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/complete`, { notes, payment_received }),
   driverReportProblem: (deliveryId: string, reason: string, description?: string) =>

@@ -68,7 +68,7 @@ class KdsProductionService:
 
     def _order_for_attempt(self, attempt):
         order = self.db.query(Order).filter_by(tenant_id=self.tenant_id, id=attempt.unit.order_id).populate_existing().with_for_update().first()
-        if not order or str(getattr(order.status, "value", order.status)) not in {"paid", "pago", "preparing"}:
+        if not order or str(getattr(order.status, "value", order.status)) != "preparing":
             raise KdsStockConflict("Pedido nao esta elegivel para producao.", code="KdsOrderNotEligible")
         return order
 

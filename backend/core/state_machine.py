@@ -34,7 +34,7 @@ ORDER_TRANSITIONS: dict[str, list[str]] = {
     "pagamento_recusado": ["aguardando_pagamento", "cancelled"],
     "pagamento_expirado": ["aguardando_pagamento", "cancelled"],
     "preparing":         ["ready_for_pickup", "on_the_way", "cancelled"],
-    "ready_for_pickup":  ["on_the_way"],
+    "ready_for_pickup":  ["preparing", "on_the_way"],
     "on_the_way":        ["delivered"],
     "delivered":         [],          # terminal
     "cancelled":         [],          # terminal

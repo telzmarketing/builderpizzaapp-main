@@ -66,8 +66,8 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
   },
   {
     id: "paid",
-    title: "Pedido Confirmado",
-    description: "Pedidos confirmados para preparo",
+    title: "Confirmado / aguardando preparo",
+    description: "Confirmação por 1 min; depois aguarda o início do pizzaiolo",
     statuses: ["paid", "pago"],
     icon: CheckCircle2,
     accent: "text-cyan-300 bg-cyan-500/10 border-cyan-500/20",
@@ -80,7 +80,7 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
     statuses: ["preparing"],
     icon: Utensils,
     accent: "text-gold bg-gold/10 border-gold/20",
-    targetStatus: "preparing",
+    targetStatus: null,
   },
   {
     id: "ready",
@@ -125,8 +125,6 @@ const NEXT_STATUS: Partial<Record<string, OrderStatus>> = {
   pending: "paid",
   waiting_payment: "paid",
   aguardando_pagamento: "paid",
-  paid: "preparing",
-  pago: "preparing",
   preparing: "ready_for_pickup",
   ready_for_pickup: "on_the_way",
   on_the_way: "delivered",
@@ -136,8 +134,6 @@ const NEXT_LABEL: Partial<Record<string, string>> = {
   pending: "Aprovar pagamento",
   waiting_payment: "Aprovar pagamento",
   aguardando_pagamento: "Aprovar pagamento",
-  paid: "Preparando",
-  pago: "Preparando",
   preparing: "Pronto",
   ready_for_pickup: "A caminho",
   on_the_way: "Entregue",
@@ -293,12 +289,15 @@ export default function AdminOrders() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [statusActionError, setStatusActionError] = useState("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [newOrderFlash, setNewOrderFlash] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => todayInputValue());
-  const [onlineStats, setOnlineStats] = useState({ visitors: 0, registeredCustomers: 0 });
+  const [onlineStats, setOnlineStats] = useState<{ visitors: number; registeredCustomers: number } | null>(null);
+  const [onlineStatsError, setOnlineStatsError] = useState("");
+  const [onlineStatsUpdatedAt, setOnlineStatsUpdatedAt] = useState<Date | null>(null);
   const [deleteModal, setDeleteModal] = useState<{ order: ApiOrder; confirmation: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [labelOrder, setLabelOrder] = useState<ApiOrder | null>(null);
@@ -369,8 +368,10 @@ export default function AdminOrders() {
         visitors: data.online_visitors ?? 0,
         registeredCustomers: data.online_registered_customers ?? 0,
       });
+      setOnlineStatsError("");
+      setOnlineStatsUpdatedAt(new Date());
     } catch {
-      setOnlineStats({ visitors: 0, registeredCustomers: 0 });
+      setOnlineStatsError("Não foi possível atualizar as métricas de presença.");
     }
   }, []);
 
@@ -387,13 +388,19 @@ export default function AdminOrders() {
 
   const handleStatusChange = useCallback(async (orderId: string, newStatus: OrderStatus) => {
     setUpdatingId(orderId);
+    setStatusActionError("");
     try {
       const current = orders.find((order) => order.id === orderId);
       if (newStatus === "delivered" && current?.sales_channel === "dine_in") await kdsApi.serveKitchenOrder(orderId);
       const updated = newStatus === "delivered" && current?.sales_channel === "dine_in" ? await ordersApi.get(orderId) : await ordersApi.updateStatus(orderId, newStatus);
       setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
-    } catch {
-      alert("Erro ao atualizar status.");
+    } catch (caught) {
+      const order = orders.find((item) => item.id === orderId);
+      const orderLabel = order?.order_code || orderId.slice(0, 8).toUpperCase();
+      const detail = caught instanceof Error && caught.message.trim()
+        ? caught.message.trim()
+        : "Verifique a conexão e tente novamente.";
+      setStatusActionError(`Falha ao atualizar o status do pedido #${orderLabel}: ${detail}`);
     } finally {
       setUpdatingId(null);
     }
@@ -535,7 +542,7 @@ export default function AdminOrders() {
 
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 py-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between flex-shrink-0">
+        <header className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 py-4 flex flex-col gap-4 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-gold/25 bg-gold/10 text-gold">
               <ShoppingBag size={20} />
@@ -556,11 +563,6 @@ export default function AdminOrders() {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            {canCreateManualOrder(adminPermissions) && <button type="button" onClick={() => window.matchMedia("(max-width: 767px)").matches ? navigate("/operacoes/novo-pedido") : setManualOrderOpen(true)} className="flex min-h-12 items-center gap-2 rounded-xl bg-gold px-5 py-3 font-black text-black"><Plus size={20} /> Fazer Pedido</button>}
-            <OperationsContactPanel />
-            <AdminTopActions />
-          </div>
         </header>
 
         {/* Body */}
@@ -568,6 +570,11 @@ export default function AdminOrders() {
           {error && (
             <div className="mx-4 md:mx-8 mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
               {error}
+            </div>
+          )}
+          {statusActionError && (
+            <div role="alert" className="mx-4 md:mx-8 mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+              {statusActionError}
             </div>
           )}
           {orderSearchQuery && (
@@ -590,20 +597,34 @@ export default function AdminOrders() {
           )}
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            <div className="relative z-20 flex w-full flex-shrink-0 flex-wrap items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-4 py-3 md:px-6">
+            <div className="relative z-20 flex w-full flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-surface-03 bg-surface-01/95 px-4 py-3 md:px-6">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
               <div className="flex h-10 min-w-[14rem] shrink-0 items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 px-4">
                 <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-stone">
                   <Users size={15} className="text-green-400" />
                   Visitantes online
                 </span>
-                <span className="text-sm font-black text-cream">{onlineStats.visitors}</span>
+                <span className="text-sm font-black text-cream">{onlineStats?.visitors ?? "—"}</span>
               </div>
               <div className="flex h-10 min-w-[17rem] shrink-0 items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 px-4">
                 <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-stone">
                   <UserCheck size={15} className="text-blue-400" />
                   Clientes cadastrados online
                 </span>
-                <span className="text-sm font-black text-cream">{onlineStats.registeredCustomers}</span>
+                <span className="text-sm font-black text-cream">{onlineStats?.registeredCustomers ?? "—"}</span>
+              </div>
+              <span role={onlineStatsError ? "alert" : "status"} className={`px-1 text-xs ${onlineStatsError ? "text-red-300" : "text-stone"}`}>
+                {onlineStatsError
+                  ? `${onlineStatsError}${onlineStatsUpdatedAt ? ` Última atualização: ${onlineStatsUpdatedAt.toLocaleTimeString("pt-BR")}.` : ""}`
+                  : onlineStatsUpdatedAt
+                    ? `Atualizado às ${onlineStatsUpdatedAt.toLocaleTimeString("pt-BR")}`
+                    : "Carregando métricas de presença..."}
+              </span>
+              </div>
+              <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
+                {canCreateManualOrder(adminPermissions) && <button type="button" onClick={() => window.matchMedia("(max-width: 767px)").matches ? navigate("/operacoes/novo-pedido") : setManualOrderOpen(true)} className="flex min-h-12 items-center gap-2 rounded-xl bg-gold px-5 py-3 font-black text-black"><Plus size={20} /> Fazer Pedido</button>}
+                <OperationsContactPanel />
+                <AdminTopActions />
               </div>
             </div>
             <div className="relative z-20 flex w-full flex-shrink-0 flex-wrap items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-4 py-4 md:px-6">
@@ -961,6 +982,12 @@ function OrderCard({
   onDragEnd,
 }: OrderCardProps) {
   const [printMenuOpen, setPrintMenuOpen] = useState(false);
+  const [clockTick, setClockTick] = useState(Date.now());
+  useEffect(() => {
+    if (!CONFIRMED_PAYMENT_STATUSES.has(order.status)) return;
+    const timer = window.setInterval(() => setClockTick(Date.now()), 5_000);
+    return () => window.clearInterval(timer);
+  }, [order.status]);
   const isReadyForPickup = order.status === "ready_for_pickup";
   const canPrintLabels = ["ready_for_pickup", "on_the_way", "delivered"].includes(order.status);
   const isWaitingPayment = WAITING_PAYMENT_STATUSES.has(order.status);
@@ -971,6 +998,12 @@ function OrderCard({
     (order.payment_status === "failed" || order.payment_status === "rejected" || unresolvedDeliveryProblem),
   );
   const paymentInfo = paymentInfoLabel(order);
+  const confirmedAt = order.paid_at || order.created_at;
+  const paidStageLabel = CONFIRMED_PAYMENT_STATUSES.has(order.status)
+    ? clockTick - new Date(confirmedAt).getTime() < 60_000
+      ? "Pedido confirmado"
+      : "Aguardando preparo"
+    : STATUS_LABELS[order.status] ?? order.status;
   const remoteProvider = (order.payment_provider || "").toLowerCase();
   const hasRemotePayment = remoteProvider === "mercado_pago" || remoteProvider === "asaas";
   const paymentStatus = order.payment_status || "pending";
@@ -999,7 +1032,7 @@ function OrderCard({
           <p className="mt-1 text-[10px] text-stone">{formatDateTime(order.created_at)} · {orderTimeLabel(order)}</p>
         </div>
         <span className={`max-w-full shrink-0 truncate rounded-full px-1.5 py-1 text-[9px] font-bold ${statusColor(order.status)}`}>
-          {order.sales_channel === "dine_in" && order.status === "delivered" ? "Servido" : STATUS_LABELS[order.status] ?? order.status}
+          {order.sales_channel === "dine_in" && order.status === "delivered" ? "Servido" : paidStageLabel}
         </span>
       </div>
 

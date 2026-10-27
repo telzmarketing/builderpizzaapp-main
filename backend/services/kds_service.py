@@ -12,10 +12,13 @@ from sqlalchemy.orm import Session, joinedload
 
 from backend.core.events import DeliveryAssigned
 from backend.core.exceptions import DomainError, OrderNotFound
+from backend.core.state_machine import delivery_sm
 from backend.core.tenant_context import TenantContext, TenantSource
 from backend.models.delivery import (
     Delivery, DeliveryEvent, DeliveryPerson, DeliveryPersonStatus, DeliveryStatus,
+    LogisticsSettings,
 )
+from backend.models.kds_production import ProductionUnit, ProductionAttempt
 from backend.models.order import Order, OrderStatus
 from backend.models.cmv import OrderCmvSnapshot, OrderItemCmvSnapshot
 from backend.models.product import Product
@@ -72,6 +75,49 @@ class KdsService:
         if order is None:
             raise OrderNotFound(order_id)
         return order
+
+    def _latest_attempts(self, units: list[ProductionUnit]) -> dict[str, ProductionAttempt]:
+        if not units:
+            return {}
+        attempts = self.db.query(ProductionAttempt).filter(
+            ProductionAttempt.tenant_id == self.tenant_id,
+            ProductionAttempt.production_unit_id.in_([unit.id for unit in units]),
+        ).order_by(ProductionAttempt.attempt_number).all()
+        latest: dict[str, ProductionAttempt] = {}
+        for attempt in attempts:
+            latest[attempt.production_unit_id] = attempt
+        return latest
+
+    def _production_unit_snapshot(self, orders: list[Order]):
+        if not orders:
+            return {}, {}
+        units = self.db.query(ProductionUnit).filter(
+            ProductionUnit.tenant_id == self.tenant_id,
+            ProductionUnit.order_id.in_([order.id for order in orders]),
+        ).order_by(ProductionUnit.order_id, ProductionUnit.order_item_id, ProductionUnit.unit_index).all()
+        latest = self._latest_attempts(units)
+        by_order: dict[str, list[ProductionUnit]] = {order.id: [] for order in orders}
+        progress = {order.id: {"total_units": 0, "ready_units": 0, "pending_units": 0, "dispatch_completed_units": 0} for order in orders}
+        for unit in units:
+            by_order.setdefault(unit.order_id, []).append(unit)
+            row = progress[unit.order_id]
+            row["total_units"] += 1
+            if unit.state == "ready" and latest.get(unit.id) is not None and latest[unit.id].state == "ready":
+                row["ready_units"] += 1
+            else:
+                row["pending_units"] += 1
+            if unit.dispatch_completed_at is not None:
+                row["dispatch_completed_units"] += 1
+        return by_order, progress
+
+    def _audit_unit(self, order_id: str, unit_id: str, actor_id: str, old: str, new: str, module_key: str) -> None:
+        from backend.models.rbac import AdminAuditLog
+        self.db.add(AdminAuditLog(
+            id=str(uuid.uuid4()), tenant_id=self.tenant_id, user_id=actor_id,
+            action="status_change", module_key=module_key,
+            entity_type="production_unit", entity_id=unit_id,
+            old_value=old, new_value=f"{new}; order_id={order_id}",
+        ))
 
     def kitchen_orders(self) -> list[dict]:
         orders = self._order_query().options(
@@ -308,11 +354,29 @@ class KdsService:
         ).change_status(order.id, OrderStatus.preparing.value, changed_by=f"kds:{actor_id}")
         return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=False)[0]
 
+    def _assert_all_units_ready(self, order: Order) -> list[ProductionUnit]:
+        units, progress = self._production_unit_snapshot([order])
+        expected = sum(max(0, int(item.quantity or 0)) for item in order.items)
+        actual = progress.get(order.id, {}).get("ready_units", 0)
+        if expected <= 0 or progress.get(order.id, {}).get("total_units", 0) != expected or actual != expected:
+            raise DomainError(
+                "Todas as unidades físicas precisam estar prontas no KDS antes de avançar o pedido.",
+                code="KdsUnitsPending",
+            )
+        return units.get(order.id, [])
+
     def mark_ready(self, order_id: str, *, actor_id: str) -> dict:
         order = self._load_order(order_id, lock=True)
-        from backend.services.kds_production_service import ensure_kds_units_ready
-        ensure_kds_units_ready(self.db, order.tenant_id, order.id)
         current = self._status(order)
+        units, _ = self._production_unit_snapshot([order])
+        if units.get(order.id):
+            self._assert_all_units_ready(order)
+        else:
+            # Published orders created before physical-unit KDS keep their legacy gate.
+            from backend.services.kds_production_service import ensure_kds_units_ready
+            ensure_kds_units_ready(self.db, order.tenant_id, order.id)
+        if current == OrderStatus.ready_for_pickup.value:
+            return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=False)[0]
         self._audit_order_transition(order, current, OrderStatus.ready_for_pickup.value, actor_id)
         order = OrderService(
             self.db, self.tenant_context
@@ -326,8 +390,9 @@ class KdsService:
         if order.fulfillment_type != "pickup":
             raise DomainError("Somente pedidos para retirada podem usar esta acao.", code="KdsPickupOnly")
         current = self._status(order)
-        from backend.services.kds_production_service import ensure_kds_units_ready
-        ensure_kds_units_ready(self.db, order.tenant_id, order.id)
+        units = self._assert_all_units_ready(order)
+        if any(unit.dispatch_completed_at is None for unit in units):
+            raise DomainError("Conclua cada unidade na expedição antes de entregar o pedido.", code="DispatchUnitsPending")
         if current != OrderStatus.ready_for_pickup.value:
             raise DomainError("O pedido para retirada ainda nao esta pronto.", code="KdsPickupNotReady")
         self._audit_order_transition(
@@ -365,6 +430,154 @@ class KdsService:
         ).order_by(Order.updated_at).all()
         return self._serialize_orders(orders, include_dispatch_details=True)
 
+    def complete_dispatch_unit(
+        self, order_id: str, unit_id: str, *, expected_version: int, actor_id: str,
+    ) -> dict:
+        order = self._load_order(order_id, lock=True)
+        if self._status(order) != OrderStatus.ready_for_pickup.value:
+            raise DomainError("A unidade só pode ser fechada após o pedido ficar pronto.", code="DispatchOrderNotReady")
+        self._assert_all_units_ready(order)
+        unit = self.db.query(ProductionUnit).filter(
+            ProductionUnit.tenant_id == self.tenant_id,
+            ProductionUnit.order_id == order.id,
+            ProductionUnit.id == unit_id,
+        ).with_for_update().first()
+        if unit is None:
+            raise DomainError("Unidade de produção não encontrada neste pedido.", code="ProductionUnitNotFound")
+        if unit.dispatch_completed_at is None:
+            if unit.version != expected_version:
+                raise DomainError("A unidade foi alterada por outro operador.", code="VersionConflict")
+            latest = self._latest_attempts([unit]).get(unit.id)
+            if unit.state != "ready" or latest is None or latest.state != "ready":
+                raise DomainError("A unidade ainda não foi concluída na cozinha.", code="ProductionUnitNotReady")
+            unit.dispatch_completed_at = datetime.now(timezone.utc)
+            unit.dispatch_completed_by = actor_id
+            unit.version += 1
+            self._audit_unit(order.id, unit.id, actor_id, "dispatch_open", "dispatch_completed", "expedicao")
+            self.db.commit()
+
+        current_units, _ = self._production_unit_snapshot([self._load_order(order_id)])
+        all_closed = bool(current_units.get(order_id)) and all(
+            row.dispatch_completed_at is not None for row in current_units[order_id]
+        )
+        assignment = None
+        if all_closed and order.fulfillment_type == "delivery":
+            assignment = self._auto_assign_order(order_id, actor_id=actor_id)
+        updated = self._serialize_orders(
+            [self._load_order(order_id)], include_dispatch_details=True,
+        )[0]
+        updated["auto_assignment"] = assignment
+        return updated
+
+    def _auto_assign_order(self, order_id: str, *, actor_id: str) -> dict:
+        settings = self.db.query(LogisticsSettings).filter(
+            LogisticsSettings.tenant_id == self.tenant_id,
+        ).first()
+        if settings is None or not settings.auto_assign:
+            return {"status": "disabled"}
+        order = self._load_order(order_id)
+        if self._status(order) != OrderStatus.ready_for_pickup.value:
+            return {"status": "blocked", "message": "Pedido ainda não está pronto."}
+        if order.delivery and order.delivery.status not in (DeliveryStatus.failed, DeliveryStatus.cancelled):
+            return {"status": "already_assigned", "delivery_person_name": order.delivery.delivery_person.name if order.delivery.delivery_person else None}
+
+        active_statuses = (DeliveryStatus.assigned, DeliveryStatus.picked_up, DeliveryStatus.on_the_way)
+        counts = dict(self.db.query(
+            Delivery.delivery_person_id, func.count(Delivery.id),
+        ).filter(
+            Delivery.tenant_id == self.tenant_id,
+            Delivery.status.in_(active_statuses),
+        ).group_by(Delivery.delivery_person_id).all())
+        people = self.db.query(DeliveryPerson).filter(
+            DeliveryPerson.tenant_id == self.tenant_id,
+            DeliveryPerson.active.is_(True),
+            DeliveryPerson.deleted_at.is_(None),
+            DeliveryPerson.status == DeliveryPersonStatus.available,
+        ).order_by(DeliveryPerson.name).all()
+        eligible = [person for person in people if counts.get(person.id, 0) < (settings.max_concurrent_deliveries or 0)]
+        if not eligible:
+            return {"status": "unavailable", "message": "Nenhum motoboy elegível/disponível para atribuição automática."}
+        selected = min(eligible, key=lambda person: (counts.get(person.id, 0), person.name.lower(), person.id))
+        try:
+            result = self.assign_driver(
+                order_id, selected.id,
+                estimated_minutes=settings.default_estimated_minutes or 40,
+                actor_id=actor_id, assignment_source="kds_auto_assign",
+            )
+            return {"status": "assigned", "delivery_person_name": result["delivery"]["delivery_person_name"]}
+        except DomainError as exc:
+            return {"status": "unavailable", "message": exc.message}
+
+    def return_to_kitchen(
+        self, order_id: str, production_unit_ids: list[str], *, reason: str, actor_id: str,
+    ) -> dict:
+        order = self._load_order(order_id, lock=True)
+        if self._status(order) != OrderStatus.ready_for_pickup.value:
+            raise DomainError("Somente pedidos prontos na expedição podem voltar à cozinha.", code="DispatchReturnInvalidState")
+        if not reason.strip():
+            raise DomainError("Informe o motivo do retorno à cozinha.", code="ReasonRequired")
+        delivery = self.db.query(Delivery).filter(
+            Delivery.tenant_id == self.tenant_id, Delivery.order_id == order.id,
+        ).with_for_update().first()
+        if delivery and delivery.status in (
+            DeliveryStatus.picked_up, DeliveryStatus.on_the_way,
+            DeliveryStatus.delivered, DeliveryStatus.completed,
+        ):
+            raise DomainError("Pedido com rota iniciada ou concluída não pode voltar à cozinha.", code="DispatchReturnRouteStarted")
+        units = self._assert_all_units_ready(order)
+        selected_ids = set(production_unit_ids)
+        if len(selected_ids) != len(production_unit_ids) or not selected_ids:
+            raise DomainError("Selecione ao menos uma unidade válida para refazer.", code="InvalidProductionUnits")
+        selected = [unit for unit in units if unit.id in selected_ids]
+        if len(selected) != len(selected_ids):
+            raise DomainError("Uma ou mais unidades não pertencem ao pedido.", code="ProductionUnitNotFound")
+        if delivery and delivery.status in (DeliveryStatus.pending_assignment, DeliveryStatus.assigned):
+            person = self.db.query(DeliveryPerson).filter(
+                DeliveryPerson.tenant_id == self.tenant_id,
+                DeliveryPerson.id == delivery.delivery_person_id,
+            ).with_for_update().first() if delivery.delivery_person_id else None
+            delivery_sm.transition(
+                delivery.id, self._status(delivery), DeliveryStatus.cancelled.value,
+            )
+            delivery.status = DeliveryStatus.cancelled
+            if person:
+                other_active = self.db.query(Delivery.id).filter(
+                    Delivery.tenant_id == self.tenant_id,
+                    Delivery.delivery_person_id == person.id,
+                    Delivery.id != delivery.id,
+                    Delivery.status.in_((DeliveryStatus.assigned, DeliveryStatus.picked_up, DeliveryStatus.on_the_way)),
+                ).first()
+                if not other_active:
+                    person.status = DeliveryPersonStatus.available
+            self.db.add(DeliveryEvent(
+                id=str(uuid.uuid4()), tenant_id=self.tenant_id, delivery_id=delivery.id,
+                event_type="cancelled", description="Atribuição cancelada para retorno do pedido à cozinha.",
+                actor_type="admin", actor_id=actor_id, metadata_json=json.dumps({"reason": reason, "source": "kds_dispatch_return"}),
+            ))
+        for unit in selected:
+            latest = self._latest_attempts([unit]).get(unit.id)
+            if latest is None or latest.state != "ready":
+                raise DomainError("Somente unidades prontas podem voltar para retrabalho.", code="ProductionUnitNotReady")
+            unit.state = "queued"
+            unit.version += 1
+            unit.dispatch_completed_at = None
+            unit.dispatch_completed_by = None
+            self.db.add(ProductionAttempt(
+                id=str(uuid.uuid4()), tenant_id=self.tenant_id,
+                production_unit_id=unit.id, attempt_number=latest.attempt_number + 1,
+                state="queued", previous_attempt_id=latest.id,
+            ))
+            self._audit_unit(order.id, unit.id, actor_id, "ready", f"queued: {reason}", "expedicao")
+        self._audit_order_transition(
+            order, OrderStatus.ready_for_pickup.value, OrderStatus.preparing.value,
+            actor_id, module_key="expedicao",
+        )
+        OrderService(self.db, self.tenant_context).change_status(
+            order.id, OrderStatus.preparing.value,
+            changed_by=f"kds:expedicao:{actor_id}",
+        )
+        return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=False)[0]
+
     def available_drivers(self) -> list[dict]:
         people = self.db.query(DeliveryPerson).filter(
             DeliveryPerson.tenant_id == self.tenant_id,
@@ -381,13 +594,16 @@ class KdsService:
 
     def assign_driver(
         self, order_id: str, delivery_person_id: str, *,
-        estimated_minutes: int, actor_id: str,
+        estimated_minutes: int, actor_id: str, assignment_source: str = "kds_dispatch",
     ) -> dict:
         order = self._load_order(order_id, lock=True)
         if self._status(order) != OrderStatus.ready_for_pickup.value:
             raise DomainError("O pedido ainda nao esta pronto para expedicao.", code="DispatchOrderNotReady")
         if order.fulfillment_type != "delivery":
             raise DomainError("Pedidos para retirada nao recebem motoboy.", code="DispatchPickupNotAllowed")
+        units = self._assert_all_units_ready(order)
+        if any(unit.dispatch_completed_at is None for unit in units):
+            raise DomainError("Conclua cada unidade na expedição antes de atribuir a entrega.", code="DispatchUnitsPending")
 
         person = self.db.query(DeliveryPerson).filter(
             DeliveryPerson.id == delivery_person_id,
@@ -422,12 +638,12 @@ class KdsService:
         self.db.add(DeliveryEvent(
             id=str(uuid.uuid4()), tenant_id=self.tenant_id,
             delivery_id=delivery.id, event_type="assigned",
-            description=f"Motoboy {person.name} atribuido pela expedicao.",
+            description=f"Motoboy {person.name} atribuido automaticamente." if assignment_source == "kds_auto_assign" else f"Motoboy {person.name} atribuido pela expedicao.",
             actor_type="admin", actor_id=actor_id,
             metadata_json=json.dumps({
                 "delivery_person_id": person.id,
                 "estimated_minutes": estimated_minutes,
-                "source": "kds_dispatch",
+                "source": assignment_source,
             }),
         ))
         try:
@@ -479,6 +695,8 @@ class KdsService:
         self, orders: list[Order], *, include_dispatch_details: bool,
         composition_by_item: dict[str, dict | None] | None = None,
     ) -> list[dict]:
+        production_units, production_progress = self._production_unit_snapshot(orders)
+        latest_attempts = self._latest_attempts([unit for rows in production_units.values() for unit in rows])
         product_ids = {item.product_id for order in orders for item in order.items}
         products = {
             row.id: row for row in self.db.query(Product).filter(
@@ -547,6 +765,19 @@ class KdsService:
                 "items": serialized_items,
                 "drinks": drinks,
                 "has_drinks": bool(drinks),
+                "production_units": [{
+                    "id": unit.id,
+                    "order_item_id": unit.order_item_id,
+                    "unit_index": unit.unit_index,
+                    "task_id": latest_attempts.get(unit.id).id if latest_attempts.get(unit.id) else None,
+                    "state": unit.state,
+                    "version": unit.version,
+                    "dispatch_completed_at": unit.dispatch_completed_at,
+                } for unit in production_units.get(order.id, [])],
+                "production_progress": production_progress.get(order.id, {
+                    "total_units": 0, "ready_units": 0, "pending_units": 0,
+                    "dispatch_completed_units": 0,
+                }),
             }
             if include_dispatch_details:
                 payload.update({

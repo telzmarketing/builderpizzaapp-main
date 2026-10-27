@@ -729,7 +729,11 @@ class OrderService:
             delivery_payment_method=delivery_payment_method,
             cash_needs_change=cash_needs_change,
             cash_change_for=cash_change_for,
-            paid_at=None,
+            # For pay-on-delivery, the order is accepted for operations even
+            # though the Payment remains pending until the courier collects it.
+            # paid_at marks this operational confirmation timestamp for the
+            # one-minute confirmation projection in the orders board.
+            paid_at=datetime.now(timezone.utc) if (is_pay_on_delivery or payment_approved) else None,
         )
         self._own(payment)
         self._db.add(payment)
@@ -1176,9 +1180,38 @@ class OrderService:
         if order.fulfillment_type == "dine_in" and new_status == "on_the_way":
             raise DomainError("Pedido do salao deve ser servido sem rota de entrega.", code="DineInDeliveryNotAllowed")
 
+        if new_status == "preparing" and current in {"paid", "pago", "ready_for_pickup"} and not changed_by.startswith("kds:"):
+            raise DomainError("A entrada ou o retorno à cozinha deve ser confirmado pelo KDS.", code="KdsActionRequired")
+
         if new_status in {"ready_for_pickup", "on_the_way"}:
             from backend.services.kds_production_service import ensure_kds_units_ready
             ensure_kds_units_ready(self._db, order.tenant_id, order.id)
+        if new_status == "ready_for_pickup":
+            from backend.models.kds_production import ProductionUnit, ProductionAttempt
+            units = self._db.query(ProductionUnit).filter(
+                ProductionUnit.tenant_id == order.tenant_id,
+                ProductionUnit.order_id == order.id,
+            ).all()
+            if units:
+                if not changed_by.startswith("kds:"):
+                    raise DomainError("O KDS deve confirmar todas as unidades antes de liberar o pedido.", code="KdsActionRequired")
+                expected_units = sum(max(0, int(item.quantity or 0)) for item in order.items)
+                if len(units) != expected_units:
+                    raise DomainError("A fila de produção não contém todas as unidades físicas do pedido.", code="KdsUnitsIncomplete")
+                attempts = self._db.query(ProductionAttempt).filter(
+                    ProductionAttempt.tenant_id == order.tenant_id,
+                    ProductionAttempt.production_unit_id.in_([unit.id for unit in units]),
+                ).order_by(ProductionAttempt.production_unit_id, ProductionAttempt.attempt_number).all()
+                latest_by_unit = {}
+                for attempt in attempts:
+                    latest_by_unit[attempt.production_unit_id] = attempt
+                if any(
+                    unit.state != "ready"
+                    or latest_by_unit.get(unit.id) is None
+                    or latest_by_unit[unit.id].state != "ready"
+                    for unit in units
+                ):
+                    raise DomainError("Todas as unidades físicas precisam estar prontas no KDS.", code="KdsUnitsPending")
 
         # State machine validates transition (raises InvalidStatusTransition if invalid)
         order_sm.transition(order_id, current, new_status)
@@ -1208,7 +1241,9 @@ class OrderService:
                 order.preparation_time_minutes = int((order.out_for_delivery_at - order.preparation_started_at).total_seconds() / 60)
 
         self._db.flush()
-        if new_status == "preparing":
+        # Returning a ready order to the kitchen preserves its prior stock
+        # consumption. Rework attempts consume their own frozen composition.
+        if new_status == "preparing" and current != "ready_for_pickup":
             self._consume_inventory_for_effective_sale(order.id)
         if new_status in {"cancelled", "refunded"}:
             self._reverse_inventory_for_cancelled_sale(order.id)

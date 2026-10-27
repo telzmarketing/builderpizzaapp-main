@@ -533,20 +533,70 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return null;
     }
   });
+  const activeCustomerIdRef = useRef<string | null>(customer?.id ?? null);
+  const identifyRetryTimersRef = useRef<number[]>([]);
+  const identifySequenceRef = useRef(0);
+
+  const cancelSessionIdentifyRetries = useCallback(() => {
+    identifySequenceRef.current += 1;
+    identifyRetryTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    identifyRetryTimersRef.current = [];
+  }, []);
+
+  const linkSessionToCustomer = useCallback((customerId: string) => {
+    cancelSessionIdentifyRetries();
+    const sequence = identifySequenceRef.current;
+    const sessionId = getTrackingData().session_id;
+    const retryDelays = [750, 2_000, 5_000];
+    let retryIndex = 0;
+
+    const attempt = async () => {
+      if (
+        sequence !== identifySequenceRef.current ||
+        activeCustomerIdRef.current !== customerId ||
+        !sessionStorage.getItem("customer_access_token")
+      ) return;
+
+      try {
+        await customerEventsApi.identify(sessionId, customerId);
+      } catch {
+        const delay = retryDelays[retryIndex++];
+        if (delay === undefined || sequence !== identifySequenceRef.current) return;
+        const timer = window.setTimeout(() => {
+          identifyRetryTimersRef.current = identifyRetryTimersRef.current.filter((pending) => pending !== timer);
+          void attempt();
+        }, delay);
+        identifyRetryTimersRef.current.push(timer);
+      }
+    };
+
+    void attempt();
+  }, [cancelSessionIdentifyRetries]);
+
+  useEffect(() => () => cancelSessionIdentifyRetries(), [cancelSessionIdentifyRetries]);
 
   useEffect(() => {
     if (!sessionStorage.getItem("customer_access_token")) return;
+    let cancelled = false;
+    const authSessionSequence = identifySequenceRef.current;
     authApi.me()
       .then(({ customer: current }) => {
+        if (cancelled || authSessionSequence !== identifySequenceRef.current) return;
         setCustomer(current);
+        activeCustomerIdRef.current = current.id;
         localStorage.setItem("customer", JSON.stringify(current));
+        linkSessionToCustomer(current.id);
       })
       .catch(() => {
+        if (cancelled || authSessionSequence !== identifySequenceRef.current) return;
+        cancelSessionIdentifyRetries();
+        activeCustomerIdRef.current = null;
         sessionStorage.removeItem("customer_access_token");
         localStorage.removeItem("customer");
         setCustomer(null);
       });
-  }, []);
+    return () => { cancelled = true; };
+  }, [cancelSessionIdentifyRetries, linkSessionToCustomer]);
 
   const [initialProducts] = useState(getInitialProductsState);
   const [products, setProducts] = useState<Pizza[]>(initialProducts.products);
@@ -767,45 +817,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Customer auth ─────────────────────────────────────────────────────────
 
-  const _linkSession = (customerId: string) => {
-    const td = getTrackingData();
-    customerEventsApi.identify(td.session_id, customerId).catch(() => {});
-  };
-
   const customerLogin = async (phone: string, password: string) => {
     const { customer: c, access_token } = await authApi.login(phone, password);
     sessionStorage.setItem("customer_access_token", access_token);
     setCustomer(c);
+    activeCustomerIdRef.current = c.id;
     localStorage.setItem("customer", JSON.stringify(c));
-    _linkSession(c.id);
+    linkSessionToCustomer(c.id);
   };
 
   const googleLogin = async (credential: string) => {
     const { customer: c, access_token } = await authApi.googleLogin(credential);
     sessionStorage.setItem("customer_access_token", access_token);
     setCustomer(c);
+    activeCustomerIdRef.current = c.id;
     localStorage.setItem("customer", JSON.stringify(c));
-    _linkSession(c.id);
+    linkSessionToCustomer(c.id);
   };
 
   const emailLogin = async (email: string, password: string) => {
     const { customer: c, access_token } = await authApi.emailLogin(email, password);
     sessionStorage.setItem("customer_access_token", access_token);
     setCustomer(c);
+    activeCustomerIdRef.current = c.id;
     localStorage.setItem("customer", JSON.stringify(c));
-    _linkSession(c.id);
+    linkSessionToCustomer(c.id);
   };
 
   const registerCustomer = async (data: { name: string; email: string; password: string; phone: string; street?: string; number?: string; complement?: string; neighborhood?: string; city?: string; state?: string; zip_code?: string; label?: string; lgpd_consent: boolean; lgpd_policy_version?: string; marketing_email_consent?: boolean; marketing_whatsapp_consent?: boolean }) => {
     const { customer: c, access_token } = await authApi.register(data);
     sessionStorage.setItem("customer_access_token", access_token);
     setCustomer(c);
+    activeCustomerIdRef.current = c.id;
     localStorage.setItem("customer", JSON.stringify(c));
-    _linkSession(c.id);
+    linkSessionToCustomer(c.id);
     firePixelEvent("Lead", { content_name: "Cadastro de cliente" });
   };
 
   const customerLogout = async () => {
+    cancelSessionIdentifyRetries();
+    activeCustomerIdRef.current = null;
     try {
       await authApi.logout();
     } finally {

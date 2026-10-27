@@ -151,7 +151,7 @@ export default function LabelPrintDialog({ orderId, orderCode, open, onOpenChang
       const result = reprint
         ? await kdsLabelsApi.reprint(orderId, { ...payload, reason: reason.trim() || "Reimpressão operacional" })
         : await kdsLabelsApi.print(orderId, payload);
-      const printable = result.preview;
+      const printable = { ...result.preview, template: { ...result.preview.template, show_logo: true } };
       renderAndPrintLabels({ ...printable, volumes: Array.from({ length: copies }, () => printable.volumes).flat() }, target, () => { void kdsLabelsApi.markDialogOpened(result.job.id); });
       setPreview({ ...printable, is_first_print: false, previous_print_count: printable.previous_print_count + 1 });
       setHistory((current) => [result.job, ...current]);
@@ -193,9 +193,11 @@ export default function LabelPrintDialog({ orderId, orderCode, open, onOpenChang
 
         {previewing ? <div className="flex min-h-40 items-center justify-center gap-2 text-stone"><Loader2 className="animate-spin"/> Atualizando prévia...</div> : !preview ? <div className="rounded-xl border border-dashed border-surface-03 p-8 text-center text-stone">Nenhuma etiqueta disponível para este pedido.</div> : <>
           <div className="flex items-center justify-between gap-3"><p className="font-black">{preview.volume_count} volume(s)</p>{isReprint && <span className="flex items-center gap-1 rounded-full bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-200"><History size={14}/> Reimpressão · {preview.previous_print_count} anterior(es)</span>}</div>
+          {!preview.restaurant.logo_url && <p role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">Configure o logo da empresa no perfil do estabelecimento antes de imprimir etiquetas.</p>}
           <div className="grid max-h-72 gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
             {preview.volumes.map((volume) => <article key={volume.id ?? `${volume.order_item_id}-${volume.sequence}`} className="rounded-xl border border-surface-03 bg-white p-3 text-black" style={{ aspectRatio: `${preview.template.width_mm}/${preview.template.height_mm}` }}>
-              <p className="text-xs font-bold uppercase">{preview.restaurant.name}</p><p className="text-lg font-black">Pedido #{preview.order.order_code}</p><p className="font-black">{volume.product_name}</p>
+              {preview.restaurant.logo_url ? <img src={preview.restaurant.logo_url} alt={`Logo de ${preview.restaurant.name}`} className="mb-1 max-h-8 max-w-24 object-contain" /> : <p className="text-[10px] font-bold text-amber-700">Logo da empresa não configurado</p>}
+              <p className="text-xs font-bold uppercase">{preview.restaurant.name}</p><p className="text-lg font-black">Pedido #{preview.order.order_code}</p><p className="font-bold">Cliente: {preview.order.customer_name || "Não informado"}</p><p className="font-black">{volume.product_name}</p>
               <p className="text-xs">{[volume.selected_size, volume.selected_crust_type, volume.selected_drink_variant].filter(Boolean).join(" · ")}</p>
               {volume.notes && <p className="mt-1 border border-black p-1 text-xs font-bold">OBS: {volume.notes}</p>}
               <p className="mt-2 text-right text-xs font-black">VOLUME {volume.sequence}/{volume.total_volumes}</p>
@@ -216,7 +218,7 @@ export default function LabelPrintDialog({ orderId, orderCode, open, onOpenChang
 
       <DialogFooter>
         <button type="button" onClick={() => onOpenChange(false)} disabled={printing} className="min-h-11 rounded-lg border border-surface-03 px-5 font-bold disabled:opacity-50">Cancelar</button>
-        <button type="button" onClick={() => void print()} disabled={!preview || previewing || printing || printers.length === 0 || templates.length === 0} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 font-black text-white disabled:opacity-40">
+        <button type="button" onClick={() => void print()} disabled={!preview || !preview.restaurant.logo_url || previewing || printing || printers.length === 0 || templates.length === 0} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 font-black text-white disabled:opacity-40">
           {printing ? <Loader2 className="animate-spin"/> : <Printer/>}{printing ? "Registrando..." : isReprint ? "Reimprimir etiquetas" : "Imprimir etiquetas"}
         </button>
       </DialogFooter>

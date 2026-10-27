@@ -198,25 +198,26 @@ function DriverLocationMap({ location }: { location: { lat: number; lng: number 
 }
 
 function DeliveryCard({
-  delivery, currentLocation, busy, onStart, onComplete, onProblem, onView,
+  delivery, currentLocation, busy, onStart, onConfirmPayment, onComplete, onProblem, onView,
 }: {
   delivery: DeliveryRecord;
   currentLocation: { lat: number; lng: number } | null;
   busy: boolean;
   onStart:    (d: DeliveryRecord) => void;
-  onComplete: (d: DeliveryRecord, paymentReceived: boolean) => void;
+  onConfirmPayment: (d: DeliveryRecord) => void;
+  onComplete: (d: DeliveryRecord) => void;
   onProblem:  (d: DeliveryRecord) => void;
   onView:     (d: DeliveryRecord) => void;
 }) {
-  const [paymentReceived, setPaymentReceived] = useState(false);
   const order      = delivery.order;
   const address    = deliveryAddress(delivery);
   const mapsUrl    = address ? googleMapsRouteUrl(address, currentLocation) : null;
   const searchUrl  = address ? googleMapsSearchUrl(address) : null;
   const statusCls  = STATUS_CLASSES[delivery.status] || "border-surface-03 bg-surface-03/50 text-stone";
   const canStart   = delivery.status === "assigned" || delivery.status === "picked_up";
-  const canComplete= delivery.status === "on_the_way" || delivery.status === "picked_up" || delivery.status === "assigned";
   const requiresPaymentReceipt = isPayOnDelivery(delivery) && !isDeliveryPaymentConfirmed(delivery);
+  const canConfirmPayment = delivery.status === "on_the_way" && requiresPaymentReceipt;
+  const canComplete = delivery.status === "on_the_way" && !requiresPaymentReceipt;
 
   return (
     <article className="overflow-hidden rounded-xl border border-surface-03 bg-surface-02 shadow-lg shadow-black/20">
@@ -295,28 +296,26 @@ function DeliveryCard({
           </button>
         )}
 
+        {canConfirmPayment && (
+          <button
+            disabled={busy}
+            onClick={() => onConfirmPayment(delivery)}
+            className="col-span-2 flex h-12 items-center justify-center gap-2 rounded-lg border border-gold/30 bg-gold/10 font-black text-gold disabled:opacity-50 hover:bg-gold/20 transition-colors"
+          >
+            {busy ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+            Confirmar recebimento do pagamento
+          </button>
+        )}
+
         {canComplete && (
-          <>
-            {requiresPaymentReceipt && (
-              <label className="col-span-2 flex items-center gap-2 rounded-lg border border-gold/25 bg-gold/10 px-3 py-2 text-sm font-bold text-parchment">
-                <input
-                  type="checkbox"
-                  checked={paymentReceived}
-                  onChange={(event) => setPaymentReceived(event.target.checked)}
-                  className="h-4 w-4 accent-gold"
-                />
-                Confirmo que recebi o pagamento na entrega
-              </label>
-            )}
             <button
-              disabled={busy || (requiresPaymentReceipt && !paymentReceived)}
-              onClick={() => onComplete(delivery, requiresPaymentReceipt ? paymentReceived : false)}
+              disabled={busy}
+              onClick={() => onComplete(delivery)}
               className="col-span-2 flex h-12 items-center justify-center gap-2 rounded-lg bg-green-600 font-black text-white disabled:opacity-50 hover:bg-green-700 transition-colors"
             >
               {busy ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
               Marcar como entregue
             </button>
-          </>
         )}
 
         <button
@@ -714,7 +713,8 @@ export default function Motoboy() {
                 currentLocation={mapLocation}
                 busy={actionLoading === activeDeliveries[0].id}
                 onStart={(d) => runAction(d.id, () => deliveryApi.driverStartDelivery(d.id))}
-                onComplete={(d, paymentReceived) => runAction(d.id, () => deliveryApi.driverCompleteDelivery(d.id, undefined, paymentReceived))}
+                onConfirmPayment={(d) => runAction(d.id, () => deliveryApi.driverConfirmPayment(d.id))}
+                onComplete={(d) => runAction(d.id, () => deliveryApi.driverCompleteDelivery(d.id))}
                 onProblem={setProblem}
                 onView={setDetail}
               />
@@ -758,7 +758,8 @@ export default function Motoboy() {
                     currentLocation={mapLocation}
                     busy={actionLoading === delivery.id}
                     onStart={(d) => runAction(d.id, () => deliveryApi.driverStartDelivery(d.id))}
-                    onComplete={(d, paymentReceived) => runAction(d.id, () => deliveryApi.driverCompleteDelivery(d.id, undefined, paymentReceived))}
+                    onConfirmPayment={(d) => runAction(d.id, () => deliveryApi.driverConfirmPayment(d.id))}
+                    onComplete={(d) => runAction(d.id, () => deliveryApi.driverCompleteDelivery(d.id))}
                     onProblem={setProblem}
                     onView={setDetail}
                   />
