@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { kdsApi, type KdsOverview, type KdsOverviewStage } from "@/lib/api";
 import { groupKdsOverviewOrders } from "@/lib/kds";
+import KdsBrandLogo from "@/components/kds/KdsBrandLogo";
 
 const POLL_INTERVAL_MS = 15_000;
 
@@ -104,9 +105,9 @@ export default function KdsOverview() {
     <section className="space-y-5" aria-live="polite">
       <div className="flex flex-col gap-3 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gold/10 text-gold">
+          <KdsBrandLogo fallback={<span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gold/10 text-gold">
             <Gauge aria-hidden="true" />
-          </span>
+          </span>} />
           <div>
             <h2 className="text-lg font-black text-cream">Fluxo operacional em tempo real</h2>
             <p className="text-sm text-stone">

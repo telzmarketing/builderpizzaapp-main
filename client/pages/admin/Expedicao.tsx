@@ -4,6 +4,7 @@ import { operationalDrinks, isOperationalDrink } from "@/lib/operationalDrinks";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bike, CheckCircle2, Clock3, Loader2, MapPin, Maximize2, Minimize2, PackageCheck, Printer, RefreshCw, Truck, UserRound, WifiOff } from "lucide-react";
 import KdsSessionActions from "@/components/kds/KdsSessionActions";
+import KdsBrandLogo from "@/components/kds/KdsBrandLogo";
 import LabelPrintDialog from "@/components/kds/LabelPrintDialog";
 import { useToast } from "@/hooks/use-toast";
 import { deliveryApi, kdsApi, type KdsDispatchOrder, type KdsDriver, type KdsOrderItem } from "@/lib/api";
@@ -238,7 +239,7 @@ export default function AdminExpedicao() {
   return (
     <section className={`${fullscreen ? "fixed inset-0 z-[100]" : "min-h-screen"} flex flex-col overflow-hidden bg-surface-00 text-cream`}>
       <header className="flex flex-col gap-4 border-b border-surface-03 bg-surface-02 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3"><span className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300"><Truck size={28} /></span><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">KDS touch</p><h1 className="text-2xl font-black">Expedição</h1><p className="text-sm text-stone">{lastRefresh ? `Atualizado às ${lastRefresh.toLocaleTimeString("pt-BR")}` : "Sincronizando"}</p></div></div>
+        <div className="flex items-center gap-3"><KdsBrandLogo fallback={<span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300"><Truck size={28} /></span>} /><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">KDS touch</p><h1 className="text-2xl font-black">Expedição</h1><p className="text-sm text-stone">{lastRefresh ? `Atualizado às ${lastRefresh.toLocaleTimeString("pt-BR")}` : "Sincronizando"}</p></div></div>
         <div className="flex flex-wrap gap-2"><div className="flex min-h-12 items-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-4 font-bold text-emerald-300"><Bike /> {drivers.length} disponiveis</div><button type="button" aria-label="Atualizar expedicao" onClick={() => void loadData(true)} disabled={refreshing} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl border border-surface-03 bg-surface-01 active:scale-95 disabled:opacity-50"><RefreshCw className={refreshing ? "animate-spin" : ""} /></button><button type="button" aria-label={fullscreen ? "Sair da tela cheia" : "Entrar em tela cheia"} onClick={() => void toggleFullscreen()} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl border border-surface-03 bg-surface-01 active:scale-95">{fullscreen ? <Minimize2 /> : <Maximize2 />}</button><KdsSessionActions /></div>
       </header>
 
