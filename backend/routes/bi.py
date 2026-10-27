@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -10,7 +11,9 @@ from backend.core.response import ok
 from backend.core.wave6_tenant_context import WAVE6_SESSION_TENANT_KEY, panel_wave6_context, wave6_tenant_id
 from backend.database import get_db
 from backend.routes.admin_auth import get_current_admin
-from backend.schemas.bi import BIInsightStatusUpdate, GranularityKey, PeriodKey
+from backend.schemas.bi import (BIInsightStatusUpdate, GranularityKey, PeriodKey,
+    BIMobileQuery, MobilePeriod, MobileCompare, MobileMonthly)
+from backend.services.bi_mobile_service import BIMobileService
 from backend.services.business_intelligence_service import BusinessIntelligenceService
 
 router = APIRouter(
@@ -46,6 +49,26 @@ def mobile(
     db: Session = Depends(get_db),
 ):
     return ok(_service(db).mobile(selected_date or local_today()))
+
+
+@router.get("/mobile/analytics")
+def mobile_analytics(
+    selected_date: date | None = Query(default=None, alias="date"),
+    period: MobilePeriod = Query(default="today"),
+    compare: MobileCompare = Query(default="previous_month"),
+    partial: bool = Query(default=True),
+    monthly: MobileMonthly = Query(default="6m"),
+    view: Literal["all", "orders", "attendance", "evolution", "general"] = Query(default="all"),
+    grouping: Literal["day", "week"] = Query(default="day"),
+    db: Session = Depends(get_db),
+):
+    return ok(BIMobileService(db, wave6_tenant_id(db.info.get(WAVE6_SESSION_TENANT_KEY))).analytics(
+        BIMobileQuery(date=selected_date, period=period, compare=compare, partial=partial, monthly=monthly, view=view, grouping=grouping)))
+
+
+@router.post("/mobile/analyze")
+def mobile_analyze(body: BIMobileQuery, db: Session = Depends(get_db)):
+    return ok(BIMobileService(db, wave6_tenant_id(db.info.get(WAVE6_SESSION_TENANT_KEY))).analyze(body))
 
 
 @router.get("/overview")

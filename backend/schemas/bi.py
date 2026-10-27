@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import date
+from datetime import date as CalendarDate
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 PeriodKey = Literal["today", "7d", "30d", "90d", "month", "previous_month"]
@@ -173,3 +174,77 @@ class BIRunAnalysisOut(BaseModel):
     message: str
     insights: list[BIInsightOut]
     recommendations: list[BIRecommendationOut]
+
+
+MobilePeriod = Literal["today", "7d", "30d", "90d", "month"]
+MobileCompare = Literal["previous_month", "previous_period", "none"]
+MobileMonthly = Literal["6m", "12m", "year", "previous_year"]
+
+
+class BIMobileQuery(BaseModel):
+    date: CalendarDate | None = None
+    period: MobilePeriod = "today"
+    compare: MobileCompare = "previous_month"
+    partial: bool = True
+    monthly: MobileMonthly = "6m"
+    view: Literal["all", "orders", "attendance", "evolution", "general"] = "all"
+    grouping: Literal["day", "week"] = "day"
+
+
+class BIMobileTotals(BaseModel):
+    orders: int = 0
+    valid_orders: int = 0
+    pizzas: int = 0
+    revenue: float = 0
+    average_ticket: float = 0
+    cancelled_orders: int = 0
+    cancelled_value: float = 0
+    completed_orders: int = 0
+    active_orders: int = 0
+    gross_sales: float = 0
+    discounts: float = 0
+    forecast_revenue: float = 0
+    daily_revenue: float = 0
+    daily_orders: float = 0
+    best_day: str | None = None
+    status_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class BIMobileSalesPoint(BaseModel):
+    label: str
+    date: str
+    previous_date: str | None = None
+    revenue: float = 0
+    orders: int = 0
+    pizzas: int = 0
+    previous_revenue: float | None = None
+    previous_orders: int | None = None
+    previous_pizzas: int | None = None
+    comparison: dict = Field(default_factory=dict)
+
+
+class BIMobileAnalyticsOut(BaseModel):
+    period: dict
+    totals: BIMobileTotals
+    previous_totals: BIMobileTotals | None
+    comparison: dict
+    sales: list[BIMobileSalesPoint]
+    monthly: list[dict]
+    attendance: dict
+    payments: list[dict]
+    channels: list[dict]
+    history: dict
+    generated_at: str
+    definitions: list[str]
+
+
+class BIMobileAnalysisOut(BaseModel):
+    generated_at: str
+    engine: Literal["calculated", "ai_assisted"] = "calculated"
+    ai_note: str = "Análise calculada a partir dos registros persistidos."
+    period: dict
+    summary: str
+    facts: list[str]
+    trends: list[str]
+    attention: list[str]
+    recommendations: list[str]

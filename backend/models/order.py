@@ -25,6 +25,7 @@ class OrderStatus(str, enum.Enum):
 class Order(Base):
     __tablename__ = "orders"
     __table_args__ = (
+        Index("ix_orders_tenant_created_at", "tenant_id", "created_at"),
         Index("uq_orders_tenant_id_id", "tenant_id", "id", unique=True),
         Index("uq_orders_tenant_order_code", "tenant_id", "order_code", unique=True,
               postgresql_where=text("order_code IS NOT NULL")),

@@ -9,7 +9,7 @@ from datetime import date, datetime, timezone, timedelta
 from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from pydantic import BaseModel, model_validator
-from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, Date, ForeignKey, func, text
+from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, Date, ForeignKey, Index, func, text
 from sqlalchemy.orm import Session
 
 from backend.core.local_time import local_period_bounds, local_today
@@ -87,6 +87,7 @@ class VisitorProfile(Base):
 
 class VisitorSession(Base):
     __tablename__ = "visitor_sessions"
+    __table_args__ = (Index("ix_visitor_sessions_tenant_started_at", "tenant_id", "started_at"),)
     tenant_id = wave6_tenant_column("visitor_sessions")
     id = Column(String, primary_key=True)
     visitor_id = Column(String, ForeignKey("visitor_profiles.id", ondelete="CASCADE"), nullable=False)
@@ -104,6 +105,7 @@ class VisitorSession(Base):
 
 class VisitorEvent(Base):
     __tablename__ = "visitor_events"
+    __table_args__ = (Index("ix_visitor_events_tenant_created_at", "tenant_id", "created_at"),)
     tenant_id = wave6_tenant_column("visitor_events")
     id = Column(String, primary_key=True)
     visitor_id = Column(String, ForeignKey("visitor_profiles.id", ondelete="CASCADE"), nullable=False)

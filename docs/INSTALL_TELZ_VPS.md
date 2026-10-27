@@ -26,7 +26,7 @@ uma VPS descartavel antes do uso em producao.
 O target Alembic desta entrega e:
 
 ```text
-20261027_kds_dispatch_unit_completion
+20261027_bi_mobile_analytics_indexes
 ```
 
 Antes de instalar, confirme que esse valor e o unico head do commit publicado e
@@ -49,7 +49,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Defina explicitamente:
 
 ```env
-ALEMBIC_TARGET=20261027_kds_dispatch_unit_completion
+ALEMBIC_TARGET=20261027_bi_mobile_analytics_indexes
 INSTALL_SSL=false
 ```
 
@@ -147,7 +147,7 @@ sudo journalctl -u telz-whatsapp-gateway -n 100 --no-pager
 
 Registre separadamente:
 
-- revision unica `20261027_kds_dispatch_unit_completion` no codigo e no banco;
+- revision unica `20261027_bi_mobile_analytics_indexes` no codigo e no banco;
 - health local e HTTP/HTTPS publico;
 - login, loja, pedido, painel e WhatsApp;
 - isolamento entre pelo menos dois tenants;

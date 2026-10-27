@@ -7474,7 +7474,53 @@ function biQuery(params?: { period?: ApiBIPeriod; date_from?: string; date_to?: 
   return query ? `?${query}` : "";
 }
 
+export type ApiBIMobilePeriod = "today" | "7d" | "30d" | "90d" | "month";
+export type ApiBIMobileMonthly = "6m" | "12m" | "year" | "previous_year";
+export interface ApiBIMobileFilters {
+  date: string;
+  period: ApiBIMobilePeriod;
+  compare: "previous_month" | "previous_period" | "none";
+  partial: boolean;
+  monthly: ApiBIMobileMonthly;
+  view?: "orders" | "attendance" | "evolution" | "general" | "all";
+  grouping?: "day" | "week";
+}
+export interface ApiBIMobileTotals {
+  orders: number; valid_orders: number; pizzas: number; revenue: number;
+  average_ticket: number; cancelled_orders: number; cancelled_value: number;
+  completed_orders: number; active_orders: number; gross_sales: number;
+  discounts: number; forecast_revenue: number; daily_revenue: number;
+  daily_orders: number; best_day: string | null;
+  status_counts: Record<string, number>;
+}
+export interface ApiBIMobileAnalytics {
+  period: { date_from: string; date_to: string; previous_date_from: string | null; previous_date_to: string | null; partial: boolean; timezone: string; day_basis: string; cutoff?: string; comparison_rule?: string; granularity?: string };
+  totals: ApiBIMobileTotals;
+  previous_totals: ApiBIMobileTotals | null;
+  comparison: Record<string, { difference: number; percent: number | null }>;
+  sales: Array<{ label: string; date: string; previous_date?: string; revenue: number; orders: number; pizzas: number; previous_revenue?: number; previous_orders?: number; previous_pizzas?: number; [key: string]: unknown }>;
+  monthly: Array<{ month: string; revenue: number; orders: number; pizzas: number; average_ticket: number; growth_percent: number | null; partial?: boolean }>;
+  attendance: { unique_visitors: number; accesses: number; visitors_online: number; customers_online: number; whatsapp: (Omit<ApiAgenteWhatsAppOperationalMetrics, "chatbots_online" | "human_attendants_online"> & { chatbots_online: number | null; human_attendants_online: number | null }) | null; chatbot: number | null; human_operators: number | null; availability_note: string; total_attendances?: number | null; avg_attendance_seconds?: number | null; ai_status?: string | null; chatbot_conversations?: Record<string, number> };
+  payments: Array<{ method: string; orders: number; revenue: number }>;
+  channels: Array<{ channel: string; orders: number; revenue: number }>;
+  history: { first_order_at: string | null; status: string };
+  generated_at: string;
+  definitions: string[];
+}
+export interface ApiBIMobileAnalysis {
+  summary: string;
+  engine: "calculated" | "ai_assisted";
+  ai_note?: string;
+  facts: string[]; trends: string[]; attention: string[]; recommendations: string[];
+  generated_at: string;
+}
+function biMobileQuery(filters: ApiBIMobileFilters) {
+  return new URLSearchParams(Object.entries(filters).map(([key, value]) => [key, String(value)])).toString();
+}
+
 export const biApi = {
+  mobileAnalytics: (filters: ApiBIMobileFilters) => get<ApiBIMobileAnalytics>(`/bi/mobile/analytics?${biMobileQuery(filters)}`),
+  mobileAnalyze: (filters: ApiBIMobileFilters) => post<ApiBIMobileAnalysis>("/bi/mobile/analyze", filters),
   dashboard: (params?: { period?: ApiBIPeriod; date_from?: string; date_to?: string }) =>
     get<ApiBIDashboard>(`/bi/dashboard${biQuery(params)}`),
   mobile: (date: string) => get<ApiBIMobile>(`/bi/mobile?date=${encodeURIComponent(date)}`),

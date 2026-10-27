@@ -154,6 +154,8 @@ class ChatbotConversation(Base):
 
     __table_args__ = (
         Index("ix_chatbot_conv_status_iniciada", "status", "iniciada_em"),
+        Index("ix_chatbot_conversations_tenant_iniciada_em", "tenant_id", "iniciada_em"),
+        Index("ix_chatbot_conversations_tenant_encerrada_em", "tenant_id", "encerrada_em"),
     )
 
 
