@@ -108,6 +108,7 @@ def test_update_and_rollback_compatibility_are_explicit_and_fail_closed():
         "20261017_site_config:20261017_delivery_schema",
         "20261017_delivery_schema:20261017_runtime_schema",
         "20261017_site_config:20261017_runtime_schema",
+        "20261026_product_crust_visibility:20261026_order_driver_delivery_fee",
     }
 
     sources = {
@@ -172,6 +173,8 @@ def test_schema_predicates_allow_reviewed_recovery_and_reject_unknown_pairs():
             ("20261017_runtime_schema", "20261017_delivery_schema", 1),
             ("20261017_site_config", "20261017_runtime_schema", 0),
             ("20261014_tenant_domain_ssl", "20261017_runtime_schema", 1),
+            ("20261026_product_crust_visibility", "20261026_order_driver_delivery_fee", 0),
+            ("20261026_order_driver_delivery_fee", "20261026_product_crust_visibility", 1),
             ("unknown", "20261017_runtime_schema", 1),
         )
         for code, database, expected in cases:

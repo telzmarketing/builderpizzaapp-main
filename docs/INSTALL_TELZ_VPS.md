@@ -26,7 +26,7 @@ uma VPS descartavel antes do uso em producao.
 O target Alembic desta entrega e:
 
 ```text
-20261026_product_crust_visibility
+20261026_order_driver_delivery_fee
 ```
 
 Antes de instalar, confirme que esse valor e o unico head do commit publicado e
@@ -49,7 +49,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Defina explicitamente:
 
 ```env
-ALEMBIC_TARGET=20261026_product_crust_visibility
+ALEMBIC_TARGET=20261026_order_driver_delivery_fee
 INSTALL_SSL=false
 ```
 
@@ -147,7 +147,7 @@ sudo journalctl -u telz-whatsapp-gateway -n 100 --no-pager
 
 Registre separadamente:
 
-- revision unica `20261026_product_crust_visibility` no codigo e no banco;
+- revision unica `20261026_order_driver_delivery_fee` no codigo e no banco;
 - health local e HTTP/HTTPS publico;
 - login, loja, pedido, painel e WhatsApp;
 - isolamento entre pelo menos dois tenants;

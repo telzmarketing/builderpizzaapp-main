@@ -250,6 +250,9 @@ schema_pair_is_compatible() {
     "20261017_site_config:20261017_runtime_schema")
       return 0
       ;;
+    "20261026_product_crust_visibility:20261026_order_driver_delivery_fee")
+      return 0
+      ;;
     *)
       return 1
       ;;
