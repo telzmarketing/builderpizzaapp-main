@@ -8001,6 +8001,8 @@ export const deliveryApi = {
     post<DeliveryRecord>("/delivery/assign", { order_id, delivery_person_id, estimated_minutes }),
   listActive: () =>
     get<DeliveryRecord[]>("/delivery/active"),
+  updateStatus: (deliveryId: string, status: "picked_up" | "on_the_way" | "delivered" | "completed" | "failed" | "cancelled") =>
+    put<DeliveryRecord>(`/delivery/${encodeURIComponent(deliveryId)}/status`, { status }),
   resolveProblem: (deliveryId: string, resolution_note: string) =>
     post<DeliveryRecord>(`/delivery/${deliveryId}/resolve-problem`, { resolution_note }),
 

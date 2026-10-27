@@ -180,6 +180,46 @@ export default function KdsMultiOperatorBoard() {
   if (loading && !queue) return <div className="flex items-center gap-2 rounded-2xl border border-surface-03 bg-surface-02 p-5 text-stone"><Loader2 className="animate-spin text-gold" /> Carregando fila multioperador...</div>;
 
   return (
+    <>
+      <style>{`
+        @media (min-width: 1024px) {
+          section[aria-label="KDS multioperador"] {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 17rem;
+            align-items: stretch;
+          }
+          section[aria-label="KDS multioperador"] > header,
+          section[aria-label="KDS multioperador"] > [role="alert"],
+          section[aria-label="KDS multioperador"] > div:not(.grid) {
+            grid-column: 1 / -1;
+          }
+          section[aria-label="KDS multioperador"] > .grid.gap-3.sm\\:grid-cols-3 {
+            grid-column: 2;
+            grid-row: 3;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+          }
+          section[aria-label="KDS multioperador"] > .grid.gap-3.sm\\:grid-cols-3 > div {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.5rem 0.75rem;
+          }
+          section[aria-label="KDS multioperador"] > .grid.gap-3.sm\\:grid-cols-3 + .rounded-xl {
+            grid-column: 1;
+            grid-row: 3;
+            min-height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+          section[aria-label="KDS multioperador"]:has(> [role="alert"]) > .grid.gap-3.sm\\:grid-cols-3,
+          section[aria-label="KDS multioperador"]:has(> [role="alert"]) > .grid.gap-3.sm\\:grid-cols-3 + .rounded-xl {
+            grid-row: 4;
+          }
+        }
+      `}</style>
     <section className="space-y-4 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft" aria-label="KDS multioperador">
       <header className="flex flex-col gap-3 border-b border-surface-03 pb-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gold/10 text-gold"><Users /></span><div><h2 className="text-lg font-black">Fila multioperador</h2><p className="text-sm text-stone">Atribuição, presença e tempo derivados do servidor</p></div></div>
@@ -218,5 +258,6 @@ export default function KdsMultiOperatorBoard() {
 
       {selected.length > 0 && <div className="flex flex-col gap-3 rounded-xl border border-gold/40 bg-gold/5 p-3 sm:flex-row sm:items-center"><span className="text-sm font-bold">{selected.length} tarefa(s) selecionada(s)</span><select value={targetOperator} onChange={(event) => setTargetOperator(event.target.value)} className="min-h-11 flex-1 rounded-lg border border-surface-03 bg-surface-01 px-3 text-sm" aria-label="Operador de destino"><option value="">Escolha o operador de destino</option>{operators.filter((operator) => operator.operator_id !== presence?.operator_id && operator.state !== "offline").map((operator) => <option key={operator.operator_id} value={operator.operator_id}>{operator.operator_name} · {PRESENCE_LABELS[operator.state]}</option>)}</select><button type="button" onClick={() => void redistribute()} disabled={!targetOperator || busy === "redistribute"} className="min-h-11 rounded-lg bg-gold px-4 font-black text-surface-00 disabled:opacity-50">{busy === "redistribute" ? <Loader2 className="animate-spin" size={16} /> : <UserRound size={16} />} Redistribuir</button></div>}
     </section>
+    </>
   );
 }

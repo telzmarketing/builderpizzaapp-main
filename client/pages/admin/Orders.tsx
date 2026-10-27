@@ -5,7 +5,6 @@ import {
   PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Trash2, Truck,
   Undo2, UserCheck, Users, Utensils, Plus,
 } from "lucide-react";
-import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import LabelPrintDialog from "@/components/kds/LabelPrintDialog";
 import ManualOrderComposer from "@/components/admin/ManualOrderComposer";
@@ -538,8 +537,6 @@ export default function AdminOrders() {
 
   return (
     <div className="min-h-0 bg-surface-00 flex flex-col md:flex-row md:h-auto overflow-visible">
-      <AdminSidebar />
-
       <main className="min-h-0 flex-1 flex flex-col overflow-visible">
         {/* Header */}
         <header className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 py-4 flex flex-col gap-4 flex-shrink-0">
@@ -624,7 +621,7 @@ export default function AdminOrders() {
               <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
                 {canCreateManualOrder(adminPermissions) && <button type="button" onClick={() => window.matchMedia("(max-width: 767px)").matches ? navigate("/operacoes/novo-pedido") : setManualOrderOpen(true)} className="flex min-h-12 items-center gap-2 rounded-xl bg-gold px-5 py-3 font-black text-black"><Plus size={20} /> Fazer Pedido</button>}
                 <OperationsContactPanel />
-                <AdminTopActions />
+                <AdminTopActions force />
               </div>
             </div>
             <div className="relative z-20 flex w-full flex-shrink-0 flex-wrap items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-4 py-4 md:px-6">

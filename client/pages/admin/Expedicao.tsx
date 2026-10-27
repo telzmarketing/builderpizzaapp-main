@@ -1,11 +1,11 @@
 import { operationalPaymentLines } from "@/lib/operationalPayment";
 import { operationalDrinks, isOperationalDrink } from "@/lib/operationalDrinks";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bike, CheckCircle2, Clock3, Loader2, MapPin, Maximize2, Minimize2, PackageCheck, Printer, RefreshCw, Truck, UserRound, WifiOff } from "lucide-react";
 import KdsSessionActions from "@/components/kds/KdsSessionActions";
 import LabelPrintDialog from "@/components/kds/LabelPrintDialog";
 import { useToast } from "@/hooks/use-toast";
-import { kdsApi, type KdsDispatchOrder, type KdsDriver, type KdsOrderItem } from "@/lib/api";
+import { deliveryApi, kdsApi, type KdsDispatchOrder, type KdsDriver, type KdsOrderItem } from "@/lib/api";
 import { loadSoundType, playOrderAlert } from "@/lib/orderSound";
 import { replaceDispatchOrder } from "@/lib/kds";
 
@@ -202,6 +202,38 @@ export default function AdminExpedicao() {
       void loadData();
     }
   };
+
+  const markDriverPickedUp = async (order: KdsDispatchOrder) => {
+    const deliveryId = order.delivery?.id;
+    if (!deliveryId || order.delivery?.status !== "assigned" || actionLock.current) return;
+    actionLock.current = true;
+    loadSequence.current += 1;
+    setAssigning(order.id);
+    try {
+      await deliveryApi.updateStatus(deliveryId, "picked_up");
+      setOrders((current) => current.filter((item) => item.id !== order.id));
+      setError(null);
+      toast({ title: "Pedido retirado pelo motoboy", description: `Pedido #${(order.order_code || order.id.slice(0, 8)).toUpperCase()} saiu da expedição.` });
+    } catch (caught) {
+      const message = errorMessage(caught);
+      setError(message);
+      toast({ title: "Retirada não concluída", description: message, variant: "destructive" });
+    } finally {
+      actionLock.current = false;
+      setAssigning(null);
+      void loadData();
+    }
+  };
+
+  const finalizationOrders = orders.filter((order) => {
+    const units = order.production_units ?? [];
+    return units.length === 0 || units.some((unit) => !unit.dispatch_completed_at);
+  });
+  const awaitingPickupOrders = orders.filter((order) => {
+    const units = order.production_units ?? [];
+    return units.length > 0 && units.every((unit) => Boolean(unit.dispatch_completed_at));
+  });
+  const pipelineOrders = [...finalizationOrders, ...awaitingPickupOrders];
   return (
     <section className={`${fullscreen ? "fixed inset-0 z-[100]" : "min-h-screen"} flex flex-col overflow-hidden bg-surface-00 text-cream`}>
       <header className="flex flex-col gap-4 border-b border-surface-03 bg-surface-02 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -220,7 +252,8 @@ export default function AdminExpedicao() {
 
       {loading ? <div className="flex flex-1 items-center justify-center gap-3 text-lg text-stone"><Loader2 className="animate-spin text-emerald-300" /> Carregando expedição...</div> : orders.length === 0 ? <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center text-stone"><PackageCheck size={64} className="text-emerald-400" /><h2 className="text-2xl font-black text-cream">Expedição em dia</h2><p>Nenhum pedido aguarda conferência e motoboy.</p></div> : (
         <div className="grid flex-1 auto-rows-max gap-4 overflow-y-auto p-4 xl:grid-cols-2 2xl:grid-cols-3">
-          {orders.map((order) => {
+          {pipelineOrders.map((order, index) => {
+            const pipelineHeading = index === 0 && finalizationOrders.length > 0 ? <div className="col-span-full rounded-xl border border-amber-500/30 bg-amber-500/5 p-4"><h2 className="text-xl font-black text-amber-200">Finalização</h2><p className="text-sm text-stone">Finalize cada unidade antes de liberar o pedido para retirada.</p></div> : index === finalizationOrders.length ? <div className="col-span-full rounded-xl border border-sky-500/30 bg-sky-500/5 p-4"><h2 className="text-xl font-black text-sky-200">Aguardando retirada</h2><p className="text-sm text-stone">Pedidos finalizados aguardando coleta.</p></div> : null;
             const units = order.production_units ?? [];
             const closedUnits = units.filter((unit) => Boolean(unit.dispatch_completed_at)).length;
             const allUnitsClosed = units.length > 0 && closedUnits === units.length;
@@ -233,7 +266,7 @@ export default function AdminExpedicao() {
                 : allUnitsClosed
                   ? "Unidades fechadas — aguardando motoboy disponível"
                   : "Feche cada unidade para solicitar o motoboy automático";
-            return <article key={order.id} className="flex flex-col gap-4 rounded-2xl border border-surface-03 bg-surface-02 p-5 shadow-soft">
+            return <Fragment key={order.id}>{pipelineHeading}<article className="flex flex-col gap-4 rounded-2xl border border-surface-03 bg-surface-02 p-5 shadow-soft">
               <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-emerald-300">{title}</p><h2 className="text-2xl font-black">#{(order.order_code || order.id.slice(0, 8)).toUpperCase()}</h2><p className="flex items-center gap-1 text-stone"><UserRound size={15} />{order.delivery_name}</p>{order.delivery?.delivery_person_name && <p className="mt-2 flex items-center gap-1.5 text-sm font-bold text-emerald-300"><Bike size={16} /> Motoboy: {order.delivery.delivery_person_name}</p>}{isPickup && <span className="mt-2 inline-flex rounded-full bg-sky-500/15 px-3 py-1 text-xs font-black uppercase text-sky-200">Retirada</span>}</div><span className="flex items-center gap-1 rounded-lg bg-amber-500/10 px-3 py-2 font-bold text-amber-300"><Clock3 size={17} />{elapsed(order.updated_at || order.created_at)}</span></div>
               {!isPickup && <div className="rounded-xl bg-surface-01 p-3 text-sm"><p className="flex items-start gap-2 font-semibold"><MapPin size={18} className="mt-0.5 shrink-0 text-gold" />{order.delivery_street}{order.delivery_complement ? `, ${order.delivery_complement}` : ""} · {order.delivery_city}</p></div>}
               <div className="space-y-3 border-y border-surface-03 py-4">{order.items.filter((item) => !isOperationalDrink(item)).map((item) => <div key={item.id}><p className="font-bold"><span className="mr-2 text-lg text-gold">{item.quantity}x</span>{itemDescription(item)}</p>{item.notes && <p className="mt-1 rounded-lg bg-amber-500/10 p-2 text-sm font-semibold text-amber-200">Obs.: {item.notes}</p>}</div>)}</div>
@@ -274,7 +307,8 @@ export default function AdminExpedicao() {
               </section>}
               <div className="rounded-xl border border-surface-03 bg-surface-01 p-3 text-sm" aria-label="Pagamento"><p className="font-black">PAGAMENTO</p>{operationalPaymentLines(order).map((line, index) => <p key={index} className="mt-1 font-bold">{line}</p>)}</div>
               {isPickup ? <button type="button" disabled={!allUnitsClosed || Boolean(assigning) || Boolean(updatingUnitId)} onClick={() => void completePickup(order)} className="mt-auto flex min-h-16 w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-lg font-black text-white transition-transform active:scale-[0.98] disabled:opacity-40">{assigning === order.id ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}{assigning === order.id ? "Concluindo..." : allUnitsClosed ? "Concluir retirada" : "Feche todas as unidades"}</button> : <div className={`mt-auto flex min-h-16 w-full items-center justify-center gap-2 rounded-xl border px-4 text-center font-black ${order.delivery?.delivery_person_name ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-200" : allUnitsClosed ? "border-amber-500/35 bg-amber-500/10 text-amber-200" : "border-surface-03 bg-surface-01 text-stone"}`}><Bike />{order.delivery?.delivery_person_name ? `Motoboy atribuído: ${order.delivery.delivery_person_name}` : allUnitsClosed ? "Aguardando motoboy disponível" : "Despacho liberado ao fechar todas as unidades"}</div>}
-            </article>;
+              {!isPickup && allUnitsClosed && order.delivery?.status === "assigned" && <button type="button" disabled={Boolean(assigning) || Boolean(updatingUnitId)} onClick={() => void markDriverPickedUp(order)} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 text-lg font-black text-zinc-950 transition-transform active:scale-[0.98] disabled:opacity-40">{assigning === order.id ? <Loader2 className="animate-spin" /> : <Bike />}{assigning === order.id ? "Confirmando..." : "Retirado pelo motoboy"}</button>}
+            </article></Fragment>;
           })}
         </div>
       )}
