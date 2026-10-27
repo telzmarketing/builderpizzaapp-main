@@ -474,12 +474,13 @@ async function currentReceiptSettings(settings: PrinterSettings) {
   catch { return settings; }
 }
 
-export function printOrder(order: ApiOrder, template?: PrintTemplate): void {
+export function printOrder(order: ApiOrder, template?: PrintTemplate): boolean {
   const settings = loadPrinterSettings();
   const tpl = template ?? settings.defaultTemplate;
   const target = window.open("", "_blank", "width=440,height=700,scrollbars=yes");
-  if (!target) { alert("Habilite pop-ups para imprimir."); return; }
+  if (!target) { alert("Habilite pop-ups para imprimir."); return false; }
   void currentReceiptSettings(settings).then((branded) => writeReceiptWindow(target, buildPrintHtml(order, tpl, branded), settings.autoPrint));
+  return true;
 }
 
 export function printConfirmedOrder(order: ApiOrder): boolean {

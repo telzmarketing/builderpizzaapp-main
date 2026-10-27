@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
-from backend.core.tenant_context import TenantContext, TenantContextMissing, TenantSource
+from backend.core.tenant_context import TenantContext, TenantContextMissing
 from backend.core.events import bus, ShippingCalculated
 from backend.core.exceptions import DomainError
 from backend.core.tenant_ownership import (
@@ -69,6 +69,7 @@ DELIVERY_RADIUS_BLOCK_MESSAGE = (
     "Nao entregamos no endereco informado, pois ultrapassa o raio de entrega. "
     "Altere o endereco de entrega para continuar."
 )
+LEGACY_TENANT_ID = "tenant-legacy-default"
 
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -92,10 +93,11 @@ class ShippingService:
         # Freight was initially protected by the Operations rollout.  Wave 7
         # owns this surface independently: enabling it must never leave the
         # public calculation or backoffice rules on global data.
-        self._tenant_enabled = operations_enforcement_enabled() or self._wave7_enabled or (
-            tenant_context is not None
-            and tenant_context.source == TenantSource.SUPPORT
-        )
+        # A trusted context is sufficient to scope this service.  The rollout
+        # flag remains the compatibility switch for callers without context;
+        # authenticated panel/public flows must never fall back to the legacy
+        # tenant just because the flag is still disabled.
+        self._tenant_enabled = operations_enforcement_enabled() or self._wave7_enabled or tenant_context is not None
         if self._wave7_enabled and tenant_context is None:
             raise TenantContextMissing("Contexto confiavel obrigatorio para frete da Wave 7.")
 
@@ -108,6 +110,11 @@ class ShippingService:
         )
 
     def _own(self, resource):
+        # The operations schema is tenant-owned even while the rollout gate is
+        # disabled. Compatibility mode must continue using the backfilled
+        # legacy owner instead of attempting a NULL tenant_id insert.
+        if not self._tenant_enabled and hasattr(resource, "tenant_id") and getattr(resource, "tenant_id", None) is None:
+            resource.tenant_id = LEGACY_TENANT_ID
         return assign_tenant_on_create(resource, self._tenant_context, enabled=self._tenant_enabled)
 
     def _singleton_id(self, prefix: str) -> str:

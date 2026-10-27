@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, Plus, Search, ShoppingBag, Trash2, UserRound } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, Plus, Printer, Search, ShoppingBag, Trash2, UserRound } from "lucide-react";
 import Product from "@/pages/Product";
-import { ApiRequestError, customersApi, manualOrdersApi, productsApi, isAssetUrl, resolveOptimizedAssetUrl, type ApiCustomer, type ApiOrder, type ApiProduct, type ManualOrderIn, type ManualOrderQuote } from "@/lib/api";
+import { ApiRequestError, customersApi, manualOrdersApi, ordersApi, paymentsApi, productsApi, isAssetUrl, resolveOptimizedAssetUrl, type ApiCustomer, type ApiOrder, type ApiProduct, type ManualOrderIn, type ManualOrderQuote } from "@/lib/api";
 import { readStoredAdminSession } from "@/lib/adminSession";
 import { canCreateManualOrder, configuredManualLine, newManualOrderKey, type ManualCartLine } from "@/lib/manualOrder";
 import { readPlatformSupportSession } from "@/lib/platformSupportSession";
+import { printOrder } from "@/lib/printing";
 import type { MultiFlavorsConfig } from "@/context/AppContext";
 
 type Draft = {
@@ -61,6 +62,9 @@ export default function ManualOrderComposer({ onCreated }: { onCreated?: (order:
   const [quote, setQuote] = useState<{ signature: string; value: ManualOrderQuote } | null>(null);
   const [quoteError, setQuoteError] = useState("");
   const [created, setCreated] = useState<ApiOrder | null>(null);
+  const [printed, setPrinted] = useState(false);
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
   const submitting = useRef(false);
   const allowed = useMemo(() => {
     try { return canCreateManualOrder(JSON.parse(localStorage.getItem("admin_permissions") || "null")); } catch { return false; }
@@ -92,7 +96,8 @@ export default function ManualOrderComposer({ onCreated }: { onCreated?: (order:
       customer_id: draft.customer.id, sales_channel: "counter", fulfillment_type: draft.fulfillment,
       items: draft.lines.map((line) => line.item),
       delivery: { name: draft.customer.name, phone: draft.phone, street: draft.fulfillment === "pickup" ? "Retirada no local" : draft.street, city: draft.fulfillment === "pickup" ? "Retirada" : draft.city, neighborhood: draft.neighborhood || undefined, zip_code: draft.zip || undefined, complement: draft.complement || undefined, is_pickup: draft.fulfillment === "pickup" },
-      payment_method: draft.method, payment_status: draft.paymentStatus,
+      // Manual orders are created pending; payment is confirmed after printing.
+      payment_method: draft.method, payment_status: "pending",
       delivery_payment_method: draft.method === "pay_on_delivery" ? draft.collection : null,
       cash_needs_change: (draft.method === "cash" || (draft.method === "pay_on_delivery" && draft.collection === "cash")) && !!draft.cashFor,
       cash_change_for: draft.cashFor && (draft.method === "cash" || (draft.method === "pay_on_delivery" && draft.collection === "cash")) ? Number(draft.cashFor.replace(",", ".")) : null,
@@ -149,7 +154,20 @@ export default function ManualOrderComposer({ onCreated }: { onCreated?: (order:
 
   if (!allowed) return <p role="alert" className="p-6 text-amber-200">Seu perfil não possui permissão para criar pedidos.</p>;
   if (sessionChanged) return <p role="alert" className="p-6 text-amber-200">A sessão ou empresa mudou. Feche e abra novamente o atendimento.</p>;
-  if (created) return <section className="space-y-5 p-6 text-center"><CheckCircle2 size={56} className="mx-auto text-emerald-300" /><h2 className="text-2xl font-black">Pedido #{created.order_code || created.id.slice(0, 8)} criado</h2><p>{created.delivery_name} · {money(created.total)}</p><p>Situação do pagamento: <strong>{["paid", "approved"].includes(created.payment_status || "") ? "Recebido" : "Pendente"}</strong></p>{created.cash_change_amount != null && <p className="text-xl font-bold text-gold">Troco: {money(created.cash_change_amount)}</p>}<p className="text-sm text-stone">Pedido registrado no fluxo operacional.</p><button type="button" className={button} onClick={() => { setDraft(emptyDraft()); setCreated(null); setStep(0); }}>Novo pedido</button><Link to="/painel/orders" className="ml-4 inline-block py-3 text-gold">Ver Operações</Link></section>;
+  if (created) {
+    const paid = ["paid", "approved"].includes(created.payment_status || "") || ["paid", "pago"].includes(created.status);
+    async function confirmPayment() {
+      if (!printed || paymentBusy || paid) return;
+      setPaymentBusy(true); setPaymentError("");
+      try {
+        await paymentsApi.approve(created.id);
+        setCreated(await ordersApi.get(created.id));
+      } catch (caught) {
+        setPaymentError(errorText(caught));
+      } finally { setPaymentBusy(false); }
+    }
+    return <section className="space-y-5 p-6 text-center"><CheckCircle2 size={56} className="mx-auto text-emerald-300" /><h2 className="text-2xl font-black">Pedido #{created.order_code || created.id.slice(0, 8)} finalizado</h2><p>{created.delivery_name} - {money(created.total)}</p><p>Situacao do pagamento: <strong>{paid ? "Recebido" : "Pendente"}</strong></p>{created.cash_change_amount != null && <p className="text-xl font-bold text-gold">Troco: {money(created.cash_change_amount)}</p>}<p className="text-sm text-stone">Imprima o pedido antes de confirmar o pagamento.</p>{paymentError && <p role="alert" className="rounded-xl bg-red-500/10 p-4 text-red-200">{paymentError}</p>}<div className="flex flex-wrap justify-center gap-3"><button type="button" className={button} onClick={() => { if (printOrder(created)) setPrinted(true); }}><Printer size={18} /> {printed ? "Imprimir novamente" : "Imprimir pedido"}</button><button type="button" className={button} disabled={!printed || paymentBusy || paid} onClick={() => void confirmPayment()}>{paymentBusy ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}{paid ? "Pagamento confirmado" : "Confirmar pagamento"}</button></div><div><button type="button" className="py-3 text-gold" onClick={() => { setDraft(emptyDraft()); setCreated(null); setPrinted(false); setPaymentError(""); setStep(0); }}>Novo pedido</button><Link to="/painel/orders" className="ml-4 inline-block py-3 text-gold">Ver Operacoes</Link></div></section>;
+  }
   if (selectedProduct && flavorConfig) return <Product productId={selectedProduct} catalog={catalog} flavorConfig={flavorConfig} embedded onBack={() => setSelectedProduct(null)} onAdd={(...args) => { patch({ lines: [...draft.lines, configuredManualLine(args, newManualOrderKey())] }); setSelectedProduct(null); }} />;
 
   return <section className="flex min-h-0 flex-col text-cream" aria-label="Criar pedido manual">
@@ -181,15 +199,15 @@ export default function ManualOrderComposer({ onCreated }: { onCreated?: (order:
           {!draft.lines.length && <p className="py-6 text-stone">Seu pedido está vazio. Selecione os produtos.</p>}
           <label className="block text-sm">Forma de pagamento<select className={`${input} mt-2`} value={draft.method} onChange={(event) => patch({ method: event.target.value as Draft["method"] })}>{Object.entries(methods).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           {draft.method === "pay_on_delivery" && <label className="block text-sm">Como será recebido<select className={`${input} mt-2`} value={draft.collection} onChange={(event) => patch({ collection: event.target.value as Draft["collection"] })}><option value="cash">Dinheiro</option><option value="card">Cartão</option></select></label>}
-          <label className="block text-sm">Situação do pagamento<select className={`${input} mt-2`} value={draft.paymentStatus} onChange={(event) => patch({ paymentStatus: event.target.value as Draft["paymentStatus"] })}><option value="pending">Pendente — cobrar</option><option value="paid">Recebido no atendimento</option></select></label>
+          <p className="rounded-xl bg-surface-02 p-4 text-sm text-stone">O pagamento sera confirmado depois da impressao do pedido.</p>
           {(draft.method === "cash" || (draft.method === "pay_on_delivery" && draft.collection === "cash")) && <label className="block text-sm">Valor entregue para troco (opcional)<input className={`${input} mt-2`} inputMode="decimal" value={draft.cashFor} onChange={(event) => patch({ cashFor: event.target.value })} placeholder="Ex.: 100,00" /></label>}
           <label className="block text-sm">Cupom (opcional)<input className={`${input} mt-2`} value={draft.coupon} onChange={(event) => patch({ coupon: event.target.value })} /></label>
-          <div className="space-y-2 rounded-xl bg-surface-02 p-4"><p>Cliente: <strong>{draft.customer?.name || "Selecione o cliente"}</strong></p><p>{draft.fulfillment === "pickup" ? "Retirada" : "Entrega"} · {methods[draft.method]}</p><p className="font-bold">{draft.paymentStatus === "pending" ? "Pagamento pendente — cobrar" : "Pagamento recebido no atendimento"}</p>{currentQuote && <><p>Produtos: {money(currentQuote.subtotal)}</p><p>Entrega: {money(currentQuote.delivery_fee_final)}</p><p>Desconto: {money(currentQuote.discount || 0)}</p>{currentQuote.cash_change_amount != null && <p className="text-xl font-bold text-gold">Troco: {money(currentQuote.cash_change_amount)}</p>}</>}</div>
+          <div className="space-y-2 rounded-xl bg-surface-02 p-4"><p>Cliente: <strong>{draft.customer?.name || "Selecione o cliente"}</strong></p><p>{draft.fulfillment === "pickup" ? "Retirada" : "Entrega"} · {methods[draft.method]}</p><p className="font-bold">Pagamento sera confirmado apos a impressao</p>{currentQuote && <><p>Produtos: {money(currentQuote.subtotal)}</p><p>Entrega: {money(currentQuote.delivery_fee_final)}</p><p>Desconto: {money(currentQuote.discount || 0)}</p>{currentQuote.cash_change_amount != null && <p className="text-xl font-bold text-gold">Troco: {money(currentQuote.cash_change_amount)}</p>}</>}</div>
         </>}
       </fieldset>
       {loading && <p role="status" className="flex items-center gap-2 text-stone"><Loader2 className="animate-spin" size={18} /> Carregando catálogo e clientes…</p>}
       {quoteError && <p role="alert" className="rounded-xl bg-amber-500/10 p-4 text-amber-200">{quoteError}</p>}
     </div>
-    <footer className="sticky bottom-0 z-20 flex flex-wrap items-center justify-between gap-3 border-t border-surface-03 bg-surface-00 p-4"><button type="button" disabled={busy} onClick={() => setStep(2)} className="flex min-h-12 items-center gap-2 text-left"><ShoppingBag className="text-gold" /><span><strong className="block">{draft.lines.reduce((total, line) => total + line.item.quantity, 0)} itens · {currentQuote ? money(currentQuote.total) : "Aguardando orçamento"}</strong><span className="text-xs text-stone">Carrinho e resumo</span></span></button><div className="flex gap-2">{step > 0 && <button type="button" aria-label="Etapa anterior" disabled={busy} onClick={() => setStep(step - 1)} className="min-h-12 rounded-xl border border-surface-03 px-3"><ChevronLeft /></button>}{step < 2 && !draft.submission ? <button type="button" disabled={busy} className={button} onClick={() => setStep(step + 1)}>Continuar <ChevronRight size={18} /></button> : <button type="button" disabled={busy || (!draft.submission && !currentQuote)} className={button} onClick={() => void submit()}>{busy ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}{draft.submission ? "Tentar novamente" : "Confirmar pedido"}</button>}</div></footer>
+    <footer className="sticky bottom-0 z-20 flex flex-wrap items-center justify-between gap-3 border-t border-surface-03 bg-surface-00 p-4"><button type="button" disabled={busy} onClick={() => setStep(2)} className="flex min-h-12 items-center gap-2 text-left"><ShoppingBag className="text-gold" /><span><strong className="block">{draft.lines.reduce((total, line) => total + line.item.quantity, 0)} itens · {currentQuote ? money(currentQuote.total) : "Aguardando orçamento"}</strong><span className="text-xs text-stone">Carrinho e resumo</span></span></button><div className="flex gap-2">{step > 0 && <button type="button" aria-label="Etapa anterior" disabled={busy} onClick={() => setStep(step - 1)} className="min-h-12 rounded-xl border border-surface-03 px-3"><ChevronLeft /></button>}{step < 2 && !draft.submission ? <button type="button" disabled={busy} className={button} onClick={() => setStep(step + 1)}>Continuar <ChevronRight size={18} /></button> : <button type="button" disabled={busy || (!draft.submission && !currentQuote)} className={button} onClick={() => void submit()}>{busy ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}{draft.submission ? "Tentar novamente" : "Finalizar pedido"}</button>}</div></footer>
   </section>;
 }

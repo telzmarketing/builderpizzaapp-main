@@ -266,8 +266,8 @@ export default function AdminClientes() {
         </header>
 
         {showCreate && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="create-customer-title">
-            <form onSubmit={createCustomer} className="w-full max-w-lg rounded-2xl border border-surface-03 bg-surface-01 p-6 shadow-2xl">
+          <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="create-customer-title">
+            <form onSubmit={createCustomer} className="my-auto max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-surface-03 bg-surface-01 p-6 shadow-2xl">
               <div className="mb-5 flex items-center justify-between">
                 <div>
                   <p className="text-gold text-xs font-bold uppercase tracking-[0.2em]">CRM</p>

@@ -54,7 +54,7 @@ class FreightTypeConfig(Base):
     __tablename__ = "freight_type_configs"
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_freight_type_configs_tenant_id_tenants"), nullable=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_freight_type_configs_tenant_id_tenants"), nullable=False)
     # Identity is (tenant_id, freight_type).  A global UNIQUE here would
     # prevent every company from configuring its own standard freight types.
     freight_type = Column(String(50), nullable=False)
