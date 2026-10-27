@@ -81,7 +81,7 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
   );
 }
 
-export default function PreparationOperationsPanel() {
+export default function PreparationOperationsPanel({ showKdsLink = true }: { showKdsLink?: boolean }) {
   const [orders, setOrders] = useState<PreparationOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -110,7 +110,7 @@ export default function PreparationOperationsPanel() {
   return <section className="space-y-5 rounded-lg border border-surface-03 bg-surface-02 p-5">
     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div><h2 className="text-lg font-black text-cream">Preparo e planejamento</h2><p className="mt-1 text-sm text-stone">Ordens, fichas e apontamentos de producao com controle de versao.</p></div>
-      <Link to="/painel/preparo" className={ghost}>Abrir KDS Cozinha Preparo</Link>
+      {showKdsLink && <Link to="/painel/preparo" className={ghost}>Abrir KDS Cozinha Preparo</Link>}
       <div className="flex flex-wrap gap-2"><button type="button" className={view === "operator" ? button : ghost} onClick={() => setView("operator")}>Operacao</button><button type="button" className={view === "planning" ? button : ghost} onClick={() => setView("planning")}>Planejamento</button><button type="button" className={ghost} onClick={() => void load()}><RefreshCw size={15} /> Atualizar</button></div>
     </div>
     {loading && <div className="flex min-h-32 items-center justify-center text-stone"><Loader2 size={18} className="mr-2 animate-spin" /> Carregando ordens...</div>}

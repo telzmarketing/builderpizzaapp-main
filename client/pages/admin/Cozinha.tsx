@@ -13,11 +13,13 @@ import {
 import KdsSessionActions from "@/components/kds/KdsSessionActions";
 import KdsTouchWorkspace from "@/components/kds/KdsTouchWorkspace";
 import KdsMultiOperatorBoard from "@/components/kds/KdsMultiOperatorBoard";
+import { useApp } from "@/context/AppContext";
 import { useToast } from "@/hooks/use-toast";
 import { kdsApi, type KdsKitchenOrder } from "@/lib/api";
 import { loadSoundType, playOrderAlert } from "@/lib/orderSound";
 import { activeKitchenOrders } from "@/lib/kds";
 import { orderDisplayCode } from "@/lib/orderIdentity";
+import { storeBranding } from "@/lib/storeBranding";
 
 const POLL_INTERVAL_MS = 15_000;
 
@@ -29,6 +31,9 @@ function errorMessage(error: unknown) {
 
 export default function AdminCozinha() {
   const { toast } = useToast();
+  const { siteContent } = useApp();
+  const brand = storeBranding(siteContent);
+  const [failedLogo, setFailedLogo] = useState<string | null>(null);
   const [orders, setOrders] = useState<KdsKitchenOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -187,11 +192,20 @@ export default function AdminCozinha() {
     >
       <header className="flex flex-col gap-3 rounded-b-2xl border-b border-[#20374a] bg-[#081521] p-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:p-4">
         <div className="flex items-center gap-4">
-          <ChefHat
-            size={54}
-            strokeWidth={1.6}
-            className="shrink-0 text-amber-400"
-          />
+          {brand.logo && failedLogo !== brand.logo ? (
+            <img
+              src={brand.logo}
+              alt={`Logo de ${brand.name}`}
+              className="h-14 w-20 shrink-0 object-contain sm:w-24"
+              onError={() => setFailedLogo(brand.logo)}
+            />
+          ) : (
+            <ChefHat
+              size={54}
+              strokeWidth={1.6}
+              className="shrink-0 text-amber-400"
+            />
+          )}
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-400">
               KDS Touch
