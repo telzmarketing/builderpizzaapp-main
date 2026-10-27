@@ -41,6 +41,7 @@ from backend.models import (  # noqa: F401
     order,
     order_board,
     paid_traffic,
+    pcp,
     payment,
     payment_config,
     product,

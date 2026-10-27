@@ -113,7 +113,7 @@ def test_postgresql_routes_read_configuration_after_upgrade(postgres_connection)
         assert client.get("/api/site-config").json()["data"] == branding
         favicon = client.get("/api/site-config/favicon?size=32", follow_redirects=False)
         assert favicon.status_code == 307
-        assert favicon.headers["location"].startswith("/uploads/custom.png?v=")
+        assert favicon.headers["location"].startswith("/api/uploads/custom.png?v=")
 
 
 def test_postgresql_missing_table_is_created_seeded_and_repeatable(postgres_connection):

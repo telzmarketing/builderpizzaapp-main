@@ -18,6 +18,23 @@ from backend.services.kds_service import KdsService
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class EmptyQuery:
+    """Minimal SQLAlchemy query stub for serialization fixtures with no rows."""
+
+    def filter(self, *args, **kwargs):
+        return self
+
+    def order_by(self, *args, **kwargs):
+        return self
+
+    def all(self):
+        return []
+
+
+def empty_db():
+    return SimpleNamespace(query=lambda _model: EmptyQuery())
+
+
 def test_station_accounts_are_fail_closed_outside_their_kds_surface():
     assert station_path_allowed("cozinha", "/api/kds/kitchen/orders")
     assert not station_path_allowed("cozinha", "/api/orders")
@@ -145,7 +162,7 @@ def test_kitchen_eager_loads_and_exposes_only_bounded_delivery_identity():
         delivery_city="Cidade", delivery_complement="Apto 1",
     )
     context = TenantContext(tenant_id="tenant-a", source=TenantSource.JOB)
-    payload = KdsService(SimpleNamespace(), context)._serialize_orders(
+    payload = KdsService(empty_db(), context)._serialize_orders(
         [order], include_dispatch_details=False,
     )[0]
 
@@ -179,7 +196,7 @@ def test_dispatch_keeps_assigned_order_visible_but_marks_it_read_only():
         delivery_complement=None,
     )
     context = TenantContext(tenant_id="tenant-a", source=TenantSource.JOB)
-    service = KdsService(SimpleNamespace(), context)
+    service = KdsService(empty_db(), context)
 
     assigned = SimpleNamespace(
         id="delivery-1", status=DeliveryStatus.assigned,

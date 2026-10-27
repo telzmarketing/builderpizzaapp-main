@@ -132,7 +132,7 @@ def test_config_favicon_and_manifest_keep_two_tenants_and_manager_separate(brand
         assert config.json()["data"] == payload
         favicon = branding.client.get(READ_PATHS[1], headers={"host": f"{suffix}.example.com"}, follow_redirects=False)
         assert favicon.status_code == 307
-        assert favicon.headers["location"].startswith(f"/uploads/{suffix}-favicon.png?v=")
+        assert favicon.headers["location"].startswith(f"/api/uploads/{suffix}-favicon.png?v=")
         manifest = branding.client.get(READ_PATHS[2], headers={"host": f"{suffix}.example.com"})
         assert manifest.status_code == 200
         assert manifest.json()["name"] == f"Company {suffix}"
@@ -188,7 +188,7 @@ def test_untrusted_forwarded_host_cannot_switch_branding(branding):
     response = branding.client.get(READ_PATHS[1], headers={"host": "a.example.com", "x-forwarded-host": "b.example.com"},
         follow_redirects=False)
     assert response.status_code == 307
-    assert response.headers["location"].startswith("/uploads/a-favicon.png?v=")
+    assert response.headers["location"].startswith("/api/uploads/a-favicon.png?v=")
     response = branding.client.get(READ_PATHS[1], headers={"host": "unknown.example.com", "x-forwarded-host": "app.telz.com.br"},
         follow_redirects=False)
     assert response.status_code == 404

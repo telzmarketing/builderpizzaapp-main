@@ -37,9 +37,16 @@ def test_tenantized_startup_seeds_use_legacy_tenant():
         )
         assert tenant_keyword is not None
         assert isinstance(tenant_keyword.value, ast.Name)
-        assert tenant_keyword.value.id == "LEGACY_TENANT_ID"
+        # Catalog seeds target legacy; RBAC reconciliation also creates
+        # tenant-scoped Role and RolePermission rows for active tenants.
+        if tenant_keyword.value.id == "tenant_id":
+            assert constructor.func.id in {"Role", "RolePermission"}
+        else:
+            assert tenant_keyword.value.id == "LEGACY_TENANT_ID"
 
     assert "MultiFlavorsConfig.tenant_id == LEGACY_TENANT_ID" in seed
+    assert "tenant_ids.add(LEGACY_TENANT_ID)" in seed
+    assert "for tenant_id in sorted(tenant_ids)" in seed
 
 
 def test_coupon_orm_maps_ancestral_tenant_column_and_pair_index():
