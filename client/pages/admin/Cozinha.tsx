@@ -164,8 +164,8 @@ export default function AdminCozinha() {
       <div className="p-3 pb-0"><KdsMultiOperatorBoard /></div>
 
       {loading ? <div className="flex flex-1 items-center justify-center gap-3 text-lg text-stone"><Loader2 className="animate-spin text-gold" /> Carregando pedidos...</div> : (
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
-          <section className="rounded-2xl border border-surface-03 bg-surface-01">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-3 lg:grid-cols-2 lg:items-start">
+          <section className="flex min-w-0 flex-col rounded-2xl border border-surface-03 bg-surface-01">
             <div className="flex items-center justify-between border-b border-surface-03 px-5 py-4"><h2 className="text-lg font-black text-amber-300">Aguardando preparo</h2><span className="rounded-full bg-surface-03 px-3 py-1 font-black">{waitingOrders.length}</span></div>
             <div className="grid gap-4 p-4 xl:grid-cols-2">
               {waitingOrders.length === 0 && <div className="col-span-full flex min-h-36 flex-col items-center justify-center gap-3 text-center text-stone"><UtensilsCrossed size={36} /><strong>Nenhum pedido aguardando início</strong></div>}
@@ -176,7 +176,7 @@ export default function AdminCozinha() {
               </article>)}
             </div>
           </section>
-          <section className="rounded-2xl border border-surface-03 bg-surface-01">
+          <section className="flex min-w-0 flex-col rounded-2xl border border-surface-03 bg-surface-01">
             <div className="flex items-center justify-between border-b border-surface-03 px-5 py-4"><div><h2 className="text-lg font-black text-orange-300">Em preparo</h2><p className="text-sm text-stone">Acompanhe cada unidade e finalize o pedido quando todas estiverem prontas.</p></div><span className="rounded-full bg-surface-03 px-3 py-1 font-black">{preparingOrders.length}</span></div>
             <div className="grid gap-4 p-4 xl:grid-cols-2">
               {preparingOrders.length === 0 && <div className="col-span-full flex min-h-36 flex-col items-center justify-center gap-3 text-center text-stone"><UtensilsCrossed size={36} /><strong>Nenhum pedido em preparo</strong></div>}

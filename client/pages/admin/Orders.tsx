@@ -537,10 +537,10 @@ export default function AdminOrders() {
   const isToday = selectedDate === todayInputValue();
 
   return (
-    <div className="min-h-screen bg-surface-00 flex flex-col md:flex-row md:h-screen overflow-hidden">
+    <div className="min-h-0 bg-surface-00 flex flex-col md:flex-row md:h-auto overflow-visible">
       <AdminSidebar />
 
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="min-h-0 flex-1 flex flex-col overflow-visible">
         {/* Header */}
         <header className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 py-4 flex flex-col gap-4 flex-shrink-0">
           <div className="flex items-center gap-3">
@@ -566,7 +566,7 @@ export default function AdminOrders() {
         </header>
 
         {/* Body */}
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col overflow-visible">
           {error && (
             <div className="mx-4 md:mx-8 mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
               {error}
@@ -596,7 +596,7 @@ export default function AdminOrders() {
             </div>
           )}
 
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-visible">
             <div className="relative z-20 flex w-full flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-surface-03 bg-surface-01/95 px-4 py-3 md:px-6">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
               <div className="flex h-10 min-w-[14rem] shrink-0 items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 px-4">
