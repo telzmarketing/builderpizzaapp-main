@@ -1,8 +1,9 @@
+import "./Expedicao.css";
 import { orderDisplayCode } from "@/lib/orderIdentity";
 import { operationalPaymentLines } from "@/lib/operationalPayment";
 import { operationalDrinks, isOperationalDrink } from "@/lib/operationalDrinks";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bike, CheckCircle2, Clock3, Loader2, MapPin, Maximize2, Minimize2, PackageCheck, Printer, RefreshCw, Truck, UserRound, WifiOff } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Bike, CalendarDays, ChefHat, ChevronRight, CheckCircle2, Clock3, ListOrdered, Pizza, Loader2, MapPin, Maximize2, Minimize2, PackageCheck, Printer, RefreshCw, Truck, UserRound, WifiOff } from "lucide-react";
 import KdsSessionActions from "@/components/kds/KdsSessionActions";
 import KdsBrandLogo from "@/components/kds/KdsBrandLogo";
 import LabelPrintDialog from "@/components/kds/LabelPrintDialog";
@@ -51,6 +52,7 @@ function hasDispatchManagePermission() {
 
 export default function AdminExpedicao() {
   const { toast } = useToast();
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [orders, setOrders] = useState<KdsDispatchOrder[]>([]);
   const [drivers, setDrivers] = useState<KdsDriver[]>([]);
   const [returnDrafts, setReturnDrafts] = useState<Record<string, { unitIds: string[]; reason: string }>>({});
@@ -68,8 +70,10 @@ export default function AdminExpedicao() {
   const actionLock = useRef(false);
   const loadSequence = useRef(0);
   const canManageReturns = useMemo(hasDispatchManagePermission, []);
-  const pickupCount = orders.filter((order) => order.fulfillment_type === "pickup").length;
-  const deliveryCount = orders.filter((order) => order.fulfillment_type !== "pickup").length;
+  const operatorName = useMemo(() => {
+    try { return (JSON.parse(localStorage.getItem("admin_user") || "{}") as { name?: string }).name || "Operador"; }
+    catch { return "Operador"; }
+  }, []);
 
   const loadData = useCallback(async (manual = false) => {
     if (actionLock.current) return;
@@ -235,27 +239,9 @@ export default function AdminExpedicao() {
     const units = order.production_units ?? [];
     return units.length > 0 && units.every((unit) => Boolean(unit.dispatch_completed_at));
   });
-  const pipelineOrders = [...finalizationOrders, ...awaitingPickupOrders];
-  return (
-    <section className={`${fullscreen ? "fixed inset-0 z-[100]" : "min-h-screen"} flex flex-col overflow-hidden bg-surface-00 text-cream`}>
-      <header className="flex flex-col gap-4 border-b border-surface-03 bg-surface-02 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3"><KdsBrandLogo fallback={<span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300"><Truck size={28} /></span>} /><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">KDS touch</p><h1 className="text-2xl font-black">Expedição</h1><p className="text-sm text-stone">{lastRefresh ? `Atualizado às ${lastRefresh.toLocaleTimeString("pt-BR")}` : "Sincronizando"}</p></div></div>
-        <div className="flex flex-wrap gap-2"><div className="flex min-h-12 items-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-4 font-bold text-emerald-300"><Bike /> {drivers.length} disponiveis</div><button type="button" aria-label="Atualizar expedicao" onClick={() => void loadData(true)} disabled={refreshing} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl border border-surface-03 bg-surface-01 active:scale-95 disabled:opacity-50"><RefreshCw className={refreshing ? "animate-spin" : ""} /></button><button type="button" aria-label={fullscreen ? "Sair da tela cheia" : "Entrar em tela cheia"} onClick={() => void toggleFullscreen()} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl border border-surface-03 bg-surface-01 active:scale-95">{fullscreen ? <Minimize2 /> : <Maximize2 />}</button><KdsSessionActions /></div>
-      </header>
-
-      {error && <div role="alert" className="m-3 flex items-center justify-between gap-3 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-red-200"><span className="flex items-center gap-2"><WifiOff /> {error}</span><button type="button" onClick={() => void loadData(true)} className="min-h-12 rounded-lg bg-red-500 px-5 font-bold text-white active:bg-red-700">Tentar novamente</button></div>}
-
-      {!loading && <div className="grid grid-cols-2 gap-3 border-b border-surface-03 bg-surface-01/80 p-3 sm:grid-cols-4">
-        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3"><p className="text-[11px] font-bold uppercase tracking-wider text-emerald-300">Na fila</p><p className="mt-1 text-2xl font-black">{orders.length}</p></div>
-        <div className="rounded-xl border border-sky-500/25 bg-sky-500/10 p-3"><p className="text-[11px] font-bold uppercase tracking-wider text-sky-300">Retiradas</p><p className="mt-1 text-2xl font-black">{pickupCount}</p></div>
-        <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3"><p className="text-[11px] font-bold uppercase tracking-wider text-amber-300">Entregas</p><p className="mt-1 text-2xl font-black">{deliveryCount}</p></div>
-        <div className="rounded-xl border border-violet-500/25 bg-violet-500/10 p-3"><p className="text-[11px] font-bold uppercase tracking-wider text-violet-300">Motoboys livres</p><p className="mt-1 text-2xl font-black">{drivers.length}</p></div>
-      </div>}
-
-      {loading ? <div className="flex flex-1 items-center justify-center gap-3 text-lg text-stone"><Loader2 className="animate-spin text-emerald-300" /> Carregando expedição...</div> : orders.length === 0 ? <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center text-stone"><PackageCheck size={64} className="text-emerald-400" /><h2 className="text-2xl font-black text-cream">Expedição em dia</h2><p>Nenhum pedido aguarda conferência e motoboy.</p></div> : (
-        <div className="grid flex-1 auto-rows-max gap-4 overflow-y-auto p-4 xl:grid-cols-2 2xl:grid-cols-3">
-          {pipelineOrders.map((order, index) => {
-            const pipelineHeading = index === 0 && finalizationOrders.length > 0 ? <div className="col-span-full rounded-xl border border-amber-500/30 bg-amber-500/5 p-4"><h2 className="text-xl font-black text-amber-200">Finalização</h2><p className="text-sm text-stone">Finalize cada unidade antes de liberar o pedido para retirada.</p></div> : index === finalizationOrders.length ? <div className="col-span-full rounded-xl border border-sky-500/30 bg-sky-500/5 p-4"><h2 className="text-xl font-black text-sky-200">Aguardando retirada</h2><p className="text-sm text-stone">Pedidos finalizados aguardando coleta.</p></div> : null;
+  const selectedOrder = finalizationOrders.find((order) => order.id === selectedOrderId) ?? finalizationOrders[0];
+  const now = new Date();
+  const renderOrder = (order: KdsDispatchOrder) => {
             const units = order.production_units ?? [];
             const closedUnits = units.filter((unit) => Boolean(unit.dispatch_completed_at)).length;
             const allUnitsClosed = units.length > 0 && closedUnits === units.length;
@@ -268,30 +254,30 @@ export default function AdminExpedicao() {
                 : allUnitsClosed
                   ? "Unidades fechadas — aguardando motoboy disponível"
                   : "Feche cada unidade para solicitar o motoboy automático";
-            return <Fragment key={order.id}>{pipelineHeading}<article className="flex flex-col gap-4 rounded-2xl border border-surface-03 bg-surface-02 p-5 shadow-soft">
-              <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-emerald-300">{title}</p><h2 className="text-2xl font-black">#{orderDisplayCode(order)}</h2><p className="flex items-center gap-1 text-stone"><UserRound size={15} />{order.delivery_name}</p>{order.delivery?.delivery_person_name && <p className="mt-2 flex items-center gap-1.5 text-sm font-bold text-emerald-300"><Bike size={16} /> Motoboy: {order.delivery.delivery_person_name}</p>}{isPickup && <span className="mt-2 inline-flex rounded-full bg-sky-500/15 px-3 py-1 text-xs font-black uppercase text-sky-200">Retirada</span>}</div><span className="flex items-center gap-1 rounded-lg bg-amber-500/10 px-3 py-2 font-bold text-amber-300"><Clock3 size={17} />{elapsed(order.updated_at || order.created_at)}</span></div>
+            return <article key={order.id} className={`dispatch-order ${allUnitsClosed ? "dispatch-order-ready" : ""} flex flex-col gap-4 rounded-xl border border-surface-03 bg-surface-02 p-4`}>
+              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-bold uppercase tracking-wider text-emerald-300">{title}</p><h2 className="text-2xl font-black">#{orderDisplayCode(order)}</h2><p className="flex items-center gap-1 text-stone"><UserRound size={15} />{order.delivery_name}</p>{order.delivery?.delivery_person_name && <p className="mt-2 flex items-center gap-1.5 text-sm font-bold text-emerald-300"><Bike size={16} /> Motoboy: {order.delivery.delivery_person_name}</p>}{isPickup && <span className="mt-2 inline-flex rounded-full bg-sky-500/15 px-3 py-1 text-xs font-black uppercase text-sky-200">Retirada</span>}</div><span className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-amber-500/10 px-3 py-2 font-bold text-amber-300"><Clock3 size={17} />{elapsed(order.updated_at || order.created_at)}</span></div>
               {!isPickup && <div className="rounded-xl bg-surface-01 p-3 text-sm"><p className="flex items-start gap-2 font-semibold"><MapPin size={18} className="mt-0.5 shrink-0 text-gold" />{order.delivery_street}{order.delivery_complement ? `, ${order.delivery_complement}` : ""} · {order.delivery_city}</p></div>}
-              <div className="space-y-3 border-y border-surface-03 py-4">{order.items.filter((item) => !isOperationalDrink(item)).map((item) => <div key={item.id}><p className="font-bold"><span className="mr-2 text-lg text-gold">{item.quantity}x</span>{itemDescription(item)}</p>{item.notes && <p className="mt-1 rounded-lg bg-amber-500/10 p-2 text-sm font-semibold text-amber-200">Obs.: {item.notes}</p>}</div>)}</div>
-              {drinks.length > 0 && <section aria-label="Atenção — bebidas" className="rounded-xl border-2 border-stone-300 bg-stone-100 p-4 text-zinc-950"><h3 className="font-black">ATENÇÃO — BEBIDAS</h3>{drinks.map((drink, index) => <div key={`${drink.product_id || index}:${index}`} className="mt-2"><p className="text-lg font-bold">{drink.quantity} × {drink.name}</p>{drink.notes && <p className="text-sm">Obs.: {drink.notes}</p>}</div>)}</section>}
+              <details open={!allUnitsClosed} className="border-y border-surface-03"><summary className="cursor-pointer py-3 text-sm font-bold">Itens e observações do pedido</summary><div className="space-y-3 pb-3">{order.items.filter((item) => !isOperationalDrink(item)).map((item) => <div key={item.id}><p className="font-bold"><span className="mr-2 text-lg text-gold">{item.quantity}x</span>{itemDescription(item)}</p>{item.notes && <p className="mt-1 rounded-lg bg-amber-500/10 p-2 text-sm font-semibold text-amber-200">Obs.: {item.notes}</p>}</div>)}</div></details>
+              {drinks.length > 0 && <section aria-label="Atenção — bebidas" className="dispatch-drinks rounded-xl border-2 p-4"><h3 className="font-black">ATENÇÃO — BEBIDAS</h3>{drinks.map((drink, index) => <div key={`${drink.product_id || index}:${index}`} className="mt-2"><p className="text-lg font-bold">{drink.quantity} × {drink.name}</p>{drink.notes && <p className="text-sm">Obs.: {drink.notes}</p>}</div>)}</section>}
               <section aria-label="Fechamento por unidade" className="space-y-3 rounded-xl border border-surface-03 bg-surface-01 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-black">Fechamento por unidade</h3><span className="text-sm font-bold text-stone">{closedUnits}/{units.length} fechada(s)</span></div>
-                {units.length === 0 ? <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">As unidades deste pedido ainda não foram carregadas; o despacho permanece bloqueado.</p> : units.map((unit) => {
+                {units.length === 0 ? <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">As unidades deste pedido ainda não foram carregadas; o despacho permanece bloqueado.</p> : allUnitsClosed ? <><div className="space-y-2">{units.map((unit) => { const item = order.items.find((candidate) => candidate.id === unit.order_item_id); return <div key={unit.id} className="flex items-center gap-2 rounded-lg border border-surface-03 p-2 text-sm"><CheckCircle2 size={17} className="shrink-0 text-emerald-300" /><span className="min-w-0 flex-1">{unit.unit_index} · {item ? itemDescription(item) : unit.product_name || "Item"}</span><span className="text-xs text-stone">Fechada</span></div>; })}</div><button type="button" disabled={Boolean(updatingUnitId) || Boolean(assigning)} onClick={() => setLabelOrder(order)} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-surface-03 text-sm font-bold disabled:opacity-40"><Printer size={16} />Etiquetas do pedido</button></> : units.map((unit) => {
                   const item = order.items.find((candidate) => candidate.id === unit.order_item_id);
                   const isDrink = unit.product_type === "drink" || Boolean(item && isOperationalDrink(item));
                   const completed = Boolean(unit.dispatch_completed_at);
                   const canClose = unit.state === "ready" && !completed;
                   const busy = updatingUnitId === unit.id;
-                  return <div key={unit.id} className="flex flex-col gap-3 rounded-lg border border-surface-03 p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0"><p className="font-bold">{isDrink ? "Bebida" : (unit.product_type === "pizza" || item?.product_type === "pizza" || Boolean(item?.flavors?.length) ? "Pizza" : "Item")} {unit.unit_index} · {item ? itemDescription(item) : (unit.product_name || "Item")}</p><p className={`mt-1 text-sm font-semibold ${completed ? "text-emerald-300" : unit.state === "blocked" ? "text-red-300" : "text-stone"}`}>{productionUnitStatus(unit)}</p></div>
+                  return <div key={unit.id} className="flex flex-col gap-3 rounded-lg border border-surface-03 p-3 ">
+                    <div className="min-w-0"><p className="flex items-start gap-2 font-bold"><Pizza size={19} className="mt-0.5 shrink-0 text-amber-400" />{isDrink ? "Bebida" : (unit.product_type === "pizza" || item?.product_type === "pizza" || Boolean(item?.flavors?.length) ? "Pizza" : "Item")} {unit.unit_index} · {item ? itemDescription(item) : (unit.product_name || "Item")}</p><p className={`mt-1 text-sm font-semibold ${completed ? "text-emerald-300" : unit.state === "blocked" ? "text-red-300" : "text-stone"}`}>{productionUnitStatus(unit)}</p></div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <button type="button" disabled={Boolean(updatingUnitId) || Boolean(assigning)} onClick={() => setLabelOrder(order)} className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-emerald-500/40 px-3 text-sm font-bold text-emerald-200 disabled:opacity-40"><Printer size={16} /> Etiquetas do pedido</button>
                       <button type="button" disabled={!canClose || Boolean(updatingUnitId) || Boolean(assigning)} onClick={() => void completeUnit(order, unit.id, unit.version)} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-black text-white disabled:opacity-40">{busy ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}{completed ? "Unidade fechada" : canClose ? "Fechar unidade" : "Aguardando preparo"}</button>
                     </div>
                   </div>;
-                })}
+                      })}
                 {units.length > 0 && <p className="text-xs text-stone">A impressão abre as etiquetas do pedido inteiro; o serviço atual não permite filtrar uma unidade.</p>}
               </section>
-              {canManageReturns && <section aria-label="Devolver unidades à cozinha" className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+              {canManageReturns && <details className="dispatch-return"><summary className="min-h-11 cursor-pointer py-3 text-sm font-bold text-amber-200">Devolver unidades à cozinha</summary><section aria-label="Devolver unidades à cozinha" className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
                 <div><h3 className="font-black text-amber-200">Devolver unidade(s) à cozinha</h3><p className="text-xs text-stone">Selecione as unidades que precisam de retrabalho e informe o motivo.</p></div>
                 {units.filter((unit) => unit.state === "ready").map((unit) => {
                   const item = order.items.find((candidate) => candidate.id === unit.order_item_id);
@@ -306,15 +292,51 @@ export default function AdminExpedicao() {
                 })}
                 <label className="block text-sm font-semibold">Motivo obrigatório<textarea maxLength={300} required aria-required="true" value={returnDrafts[order.id]?.reason ?? ""} onChange={(event) => updateReturnDraft(order.id, { reason: event.target.value })} placeholder="Descreva por que a unidade deve voltar à cozinha" className="mt-1 min-h-20 w-full rounded-lg border border-surface-03 bg-surface-01 p-3 text-cream" /></label>
                 <button type="button" disabled={!returnDrafts[order.id]?.unitIds.length || !returnDrafts[order.id]?.reason.trim() || Boolean(assigning) || Boolean(updatingUnitId)} onClick={() => void returnUnitsToKitchen(order)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 font-black text-amber-100 disabled:opacity-40">{assigning === order.id ? <Loader2 className="animate-spin" /> : <RefreshCw />} Devolver seleção à cozinha</button>
-              </section>}
+              </section></details>}
               <div className="rounded-xl border border-surface-03 bg-surface-01 p-3 text-sm" aria-label="Pagamento"><p className="font-black">PAGAMENTO</p>{operationalPaymentLines(order).map((line, index) => <p key={index} className="mt-1 font-bold">{line}</p>)}</div>
               {isPickup ? <button type="button" disabled={!allUnitsClosed || Boolean(assigning) || Boolean(updatingUnitId)} onClick={() => void completePickup(order)} className="mt-auto flex min-h-16 w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-lg font-black text-white transition-transform active:scale-[0.98] disabled:opacity-40">{assigning === order.id ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}{assigning === order.id ? "Concluindo..." : allUnitsClosed ? "Concluir retirada" : "Feche todas as unidades"}</button> : <div className={`mt-auto flex min-h-16 w-full items-center justify-center gap-2 rounded-xl border px-4 text-center font-black ${order.delivery?.delivery_person_name ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-200" : allUnitsClosed ? "border-amber-500/35 bg-amber-500/10 text-amber-200" : "border-surface-03 bg-surface-01 text-stone"}`}><Bike />{order.delivery?.delivery_person_name ? `Motoboy atribuído: ${order.delivery.delivery_person_name}` : allUnitsClosed ? "Aguardando motoboy disponível" : "Despacho liberado ao fechar todas as unidades"}</div>}
               {!isPickup && allUnitsClosed && order.delivery?.status === "assigned" && <button type="button" disabled={Boolean(assigning) || Boolean(updatingUnitId)} onClick={() => void markDriverPickedUp(order)} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 text-lg font-black text-zinc-950 transition-transform active:scale-[0.98] disabled:opacity-40">{assigning === order.id ? <Loader2 className="animate-spin" /> : <Bike />}{assigning === order.id ? "Confirmando..." : "Retirado pelo motoboy"}</button>}
-            </article></Fragment>;
-          })}
+            </article>;
+  };
+  return (
+    <section className={`kds-dispatch ${fullscreen ? "fixed inset-0 z-[100]" : "min-h-screen"} flex flex-col text-cream`}>
+      <header className="dispatch-header">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="dispatch-brand"><KdsBrandLogo className="h-16 w-24 object-contain" fallback={<Truck size={38} className="text-slate-200" />} /></div>
+          <div><h1 className="text-2xl font-black tracking-tight sm:text-3xl">KDS Expedição</h1><p className="mt-1 text-sm text-parchment">Acompanhamento de pedidos em tempo real</p></div>
         </div>
-      )}
-      <LabelPrintDialog orderId={labelOrder?.id ?? null} orderCode={labelOrder?.order_code} open={Boolean(labelOrder)} onOpenChange={(next) => { if (!next) setLabelOrder(null); }}/>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="hidden items-center gap-2 text-xs text-parchment 2xl:flex"><CalendarDays size={20} />{now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span>
+          <span className="flex items-center gap-2 text-sm tabular-nums"><Clock3 size={20} className="text-stone" />{now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
+          <span className="dispatch-control gap-2"><UserRound size={20} /><span className="max-w-32 truncate">{operatorName}</span></span>
+          <button type="button" aria-label="Atualizar expedicao" onClick={() => void loadData(true)} disabled={refreshing} className="dispatch-control gap-2 font-bold disabled:opacity-50"><RefreshCw size={20} className={refreshing ? "animate-spin" : ""} /><span>Atualizar</span></button>
+          <button type="button" aria-label={fullscreen ? "Sair da tela cheia" : "Entrar em tela cheia"} onClick={() => void toggleFullscreen()} className="dispatch-control">{fullscreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}</button>
+          <KdsSessionActions />
+        </div>
+      </header>
+      <div className="dispatch-status text-xs text-stone"><span className="flex items-center gap-2"><span className={`h-1.5 w-1.5 rounded-full ${error ? "bg-red-400" : "bg-emerald-400"}`} />{lastRefresh ? `Atualizado às ${lastRefresh.toLocaleTimeString("pt-BR")}` : "Sincronizando pedidos"}</span><span className="flex items-center gap-2"><Bike size={15} />{drivers.length} motoboy(s) disponível(is)</span></div>
+      {error && <div role="alert" className="mx-4 mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-red-200"><span className="flex items-center gap-2"><WifiOff />{error}</span><button type="button" onClick={() => void loadData(true)} disabled={refreshing} className="min-h-11 rounded-lg bg-red-500 px-5 font-bold text-white disabled:opacity-50">Tentar novamente</button></div>}
+      {loading ? <div className="flex flex-1 items-center justify-center gap-3 p-16 text-stone"><Loader2 className="animate-spin" />Carregando expedição...</div> : <div className="dispatch-board">
+        <section className="dispatch-lane" aria-label="Fila de finalização">
+          <div className="dispatch-lane-heading"><ListOrdered size={34} /><div className="flex-1"><h2>Fila de finalização</h2><p>Aguardando finalização na expedição</p></div><span className="dispatch-count">{finalizationOrders.length}</span></div>
+          <div className="dispatch-lane-content">
+            {finalizationOrders.length === 0 ? <div className="dispatch-empty"><PackageCheck size={36} /><p>Nenhum pedido na fila de finalização.</p></div> : finalizationOrders.map((order) => <button key={order.id} type="button" aria-pressed={selectedOrder?.id === order.id} aria-controls="dispatch-selected-order" onClick={() => { setSelectedOrderId(order.id); if (window.matchMedia("(max-width: 1199px)").matches) document.getElementById("dispatch-selected-order")?.scrollIntoView({ behavior: "smooth", block: "start" }); }} className="dispatch-queue-card">
+              <div className="flex flex-col gap-2"><strong className="text-lg">#{orderDisplayCode(order)}</strong><span className="dispatch-time">{new Date(order.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span></div>
+              <div className="min-w-0 flex-1"><p className="font-bold">{order.delivery_name || "Cliente"}</p><p className="mt-1 text-sm text-stone">{order.fulfillment_type === "pickup" ? "Retirada no balcão" : [order.delivery_street, order.delivery_city].filter(Boolean).join(" · ") || "Entrega"}</p><p className="mt-2 line-clamp-2 text-sm text-parchment">{order.items.map((item) => `${item.quantity}× ${itemDescription(item)}`).join(" · ")}</p></div>
+              <ChevronRight size={19} className="shrink-0 text-stone" />
+            </button>)}
+          </div>
+        </section>
+        <section className="dispatch-lane" aria-label="Em finalização" id="dispatch-selected-order">
+          <div className="dispatch-lane-heading"><ChefHat size={36} /><div className="flex-1"><h2>Em finalização</h2><p>Confira e feche cada unidade do pedido</p></div><span className="dispatch-count">{selectedOrder ? 1 : 0}</span></div>
+          <div className="dispatch-lane-content">{selectedOrder ? renderOrder(selectedOrder) : <div className="dispatch-empty"><ChefHat size={36} /><p>Selecione um pedido da fila para finalizar.</p></div>}</div>
+        </section>
+        <section className="dispatch-lane" aria-label="Entrega">
+          <div className="dispatch-lane-heading"><PackageCheck size={36} /><div className="flex-1"><h2>Entrega</h2><p>Pedidos finalizados aguardando coleta</p></div><span className="dispatch-count">{awaitingPickupOrders.length}</span></div>
+          <div className="dispatch-lane-content">{awaitingPickupOrders.length ? awaitingPickupOrders.map(renderOrder) : <div className="dispatch-empty"><Bike size={36} /><p>Nenhum pedido aguardando coleta.</p></div>}</div>
+        </section>
+      </div>}
+      <LabelPrintDialog orderId={labelOrder?.id ?? null} orderCode={labelOrder?.order_code} open={Boolean(labelOrder)} onOpenChange={(next) => { if (!next) setLabelOrder(null); }} />
     </section>
   );
 }
