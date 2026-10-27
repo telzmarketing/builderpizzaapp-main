@@ -46,6 +46,12 @@ from backend.services.product_pricing_service import ProductPriceResult, Product
 
 # ── Pricing helpers (shared with front-end logic) ─────────────────────────────
 
+def _driver_delivery_fee_snapshot(shipping_result, *, is_pickup: bool, sales_channel: str) -> float | None:
+    if is_pickup or sales_channel == "dine_in" or shipping_result.shipping_type != "by_distance":
+        return None
+    return round(shipping_result.shipping_price, 2)
+
+
 def _compute_flavor_price(
     flavors: list[FlavorIn],
     division: int,
@@ -583,6 +589,7 @@ class OrderService:
                 order_subtotal=subtotal,
                 is_pickup=payload.delivery.is_pickup,
                 is_scheduled=payload.delivery.is_scheduled,
+                distance_km=payload.delivery.distance_km,
             )
         )
         if not shipping_result.available:
@@ -691,6 +698,11 @@ class OrderService:
             delivery_fee_original=delivery_fee_original,
             delivery_fee_discount=delivery_fee_discount,
             delivery_fee_final=delivery_fee_final,
+            driver_delivery_fee=_driver_delivery_fee_snapshot(
+                shipping_result,
+                is_pickup=payload.delivery.is_pickup,
+                sales_channel=sales_channel,
+            ),
             free_shipping_applied=free_shipping_applied,
             discount=discount,
             total=total,

@@ -74,6 +74,9 @@ class Order(Base):
     delivery_fee_original = Column(Float, default=0.0)
     delivery_fee_discount = Column(Float, default=0.0)
     delivery_fee_final = Column(Float, default=0.0)
+    # Gross courier payout snapshot for distance-priced delivery orders.
+    # Nullable to retain the legacy logistics rate for other freight modes.
+    driver_delivery_fee = Column(Float, nullable=True)
     free_shipping_applied = Column(Boolean, default=False)
     discount = Column(Float, default=0.0)
     total = Column(Float, nullable=False)

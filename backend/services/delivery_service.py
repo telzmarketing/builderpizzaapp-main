@@ -38,6 +38,12 @@ from backend.models.payment import PaymentStatus
 _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+def _driver_delivery_earning_amount(order: Order, configured_rate: float) -> float:
+    """Resolve courier pay from the checkout snapshot, falling back for legacy orders."""
+    snapshot = getattr(order, "driver_delivery_fee", None)
+    return float(snapshot) if snapshot is not None else float(configured_rate or 0.0)
+
+
 class DeliveryService:
     """
     Single authority for delivery assignment, tracking, and completion.
@@ -423,11 +429,19 @@ class DeliveryService:
             delta = delivery.delivered_at - delivery.assigned_at
             duration_minutes = int(delta.total_seconds() / 60)
 
-        # Auto-create earnings record if rate_per_delivery is configured
+        # Pay distance-based orders from the gross freight snapshot captured
+        # at checkout; other freight types retain the logistics flat rate.
         try:
+            order = self._get_order(delivery.order_id)
             settings_row = self._scope(self._db.query(LogisticsSettings), LogisticsSettings).first()
-            rate = (getattr(settings_row, "rate_per_delivery", None) or 0.0) if settings_row else 0.0
-            if rate > 0 and delivery.delivery_person_id:
+            configured_rate = (getattr(settings_row, "rate_per_delivery", None) or 0.0) if settings_row else 0.0
+            rate = _driver_delivery_earning_amount(order, configured_rate)
+            existing_earning = (
+                self._scope(self._db.query(DeliveryEarning), DeliveryEarning)
+                .filter(DeliveryEarning.delivery_id == delivery.id)
+                .first()
+            )
+            if rate > 0 and delivery.delivery_person_id and existing_earning is None:
                 earning = DeliveryEarning(
                     id=str(uuid.uuid4()),
                     tenant_id=self._tenant_id if self._tenant_enabled else None,

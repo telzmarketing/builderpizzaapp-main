@@ -126,6 +126,7 @@ export default function LogisticaConfig() {
           <div>
             <p className="text-cream text-sm font-medium">Valor por entrega (R$)</p>
             <p className="text-stone text-xs mt-0.5">Repasse automático creditado ao motoboy ao finalizar cada entrega · visível na aba Financeiro</p>
+            <p className="text-stone/80 text-xs mt-1">Para entregas com frete calculado por distância, o repasse considera a regra por quilômetro configurada em Configurações &gt; Entregas e Fretes. Este valor fixo é usado nas demais modalidades ou quando não houver faixa de distância aplicável.</p>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-stone text-sm font-medium">R$</span>
