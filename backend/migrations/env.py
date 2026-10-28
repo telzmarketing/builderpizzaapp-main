@@ -27,6 +27,7 @@ from backend.models import (  # noqa: F401
     finance,
     fiscal,
     gestao,
+    gestor,
     home_config,
     idempotency,
     inventory,
