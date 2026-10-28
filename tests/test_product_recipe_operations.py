@@ -72,7 +72,7 @@ def pg_inventory():
     from backend.core.tenant_context import TenantContext, TenantSource
     from backend.core.wave6_tenant_context import bind_wave6_tenant_context
     from backend.models.tenant import Tenant
-    from backend.models.product import Product
+    from backend.models.product import Product, ProductCategory
     from backend.models.inventory import InventoryItem, InventoryStockMovement, InventoryRecipeVersion, InventoryRecipeItem
     from backend.models.gestao import GestaoModuleSettings
     from backend.services.inventory_service import InventoryService
@@ -88,9 +88,16 @@ def pg_inventory():
             bind_wave6_tenant_context(db, context)
             db.add(Tenant(id=tid, slug=tid, name="Synthetic recipe tenant"))
             db.flush()
-            product = Product(id=uuid.uuid4().hex, tenant_id=tid, name="Synthetic pizza", description="test", price=50, product_type="pizza")
+            category = ProductCategory(
+                id=uuid.uuid4().hex,
+                tenant_id=tid,
+                name="Synthetic pizzas",
+                enable_recipe=True,
+            )
+            product = Product(id=uuid.uuid4().hex, tenant_id=tid, category_id=category.id,
+                              name="Synthetic pizza", description="test", price=50, product_type="pizza")
             stock = InventoryItem(id=uuid.uuid4().hex, tenant_id=tid, name="Synthetic cheese")
-            db.add_all([product, stock])
+            db.add_all([category, product, stock])
             db.add(GestaoModuleSettings(id=uuid.uuid4().hex, tenant_id=tid, module_key="inventory", title="Inventory", enabled=True, status="active", settings_json='{"sales_control_enabled":true,"auto_consume_on_preparing":true}'))
             db.flush()
             version = InventoryRecipeVersion(id=uuid.uuid4().hex, tenant_id=tid, product_id=product.id, component_role="flavor", reference_fraction=.5, version_number=1, active=True)

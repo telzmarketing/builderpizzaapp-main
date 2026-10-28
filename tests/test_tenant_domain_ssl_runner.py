@@ -393,7 +393,7 @@ def test_failed_nginx_test_in_renewal_hook_never_reloads(monkeypatch):
     monkeypatch.setattr(hook.os, 'geteuid', lambda: 0, raising=False)
     monkeypatch.setattr(hook.os, 'O_NOFOLLOW', 0, raising=False)
     monkeypatch.setattr(hook.os, 'open', lambda *args, **kwargs: 12345)
-    monkeypatch.setattr(hook.os, 'fstat', lambda *args: SimpleNamespace(st_uid=0, st_mode=0o600, st_nlink=1))
+    monkeypatch.setattr(hook.os, 'fstat', lambda *args: SimpleNamespace(st_uid=0, st_mode=0o600, st_nlink=1, st_size=0))
     monkeypatch.setattr(hook.os, 'close', lambda *args: None)
     calls = []
     def run(argv, **kwargs):
