@@ -633,13 +633,14 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/cozinha" element={<AdminCozinha />} />
                 <Route path="/painel/expedicao" element={<AdminExpedicao />} />
                 <Route path="/painel/kds/sala-motoboy" element={<FullPageRedirect to="/tv/motoboys" />} />
+                {/* The KDS overview is an operational wallboard and owns its full viewport. */}
+                <Route path="/painel/kds" element={<KdsOverview />} />
                 <Route element={<AdminLayout />}>
                 <Route path="/painel" element={<AdminDashboard />} />
                 <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />
                 <Route path="/painel/products" element={<AdminProducts />} />
                 <Route path="/painel/products/landing/:productId/:promotionId" element={<PromotionalLandingEditor />} />
                 <Route path="/painel/orders" element={<AdminOrders />} />
-                <Route path="/painel/kds" element={<KdsOverview />} />
                 <Route path="/painel/salao" element={<AdminSalao />} />
                 <Route path="/painel/fidelidade" element={<AdminFidelidade />} />
                 <Route path="/painel/conteudo" element={<AdminConteudo />} />

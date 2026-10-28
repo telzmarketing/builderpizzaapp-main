@@ -94,15 +94,18 @@ export default function KdsOverview() {
 
   if (loading && !overview) {
     return (
-      <div className="flex min-h-[24rem] items-center justify-center gap-3 text-stone">
+      <main className="flex min-h-screen w-full items-center justify-center bg-surface-00 px-4 text-stone">
+        <div className="flex items-center gap-3">
         <Loader2 className="animate-spin text-gold" aria-hidden="true" />
         <span className="font-semibold">Carregando operação KDS...</span>
-      </div>
+        </div>
+      </main>
     );
   }
 
   return (
-    <section className="space-y-5" aria-live="polite">
+    <main className="min-h-screen w-full overflow-y-auto bg-surface-00 px-3 py-4 text-cream sm:px-5 sm:py-5 lg:px-8 lg:py-6">
+      <section className="mx-auto w-full max-w-[1800px] space-y-5" aria-live="polite">
       <div className="flex flex-col gap-3 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <KdsBrandLogo fallback={<span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gold/10 text-gold">
@@ -192,6 +195,7 @@ export default function KdsOverview() {
           })}
         </div>
       )}
-    </section>
+      </section>
+    </main>
   );
 }
