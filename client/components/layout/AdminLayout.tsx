@@ -1,8 +1,8 @@
 import "@/admin.css";
-import { Suspense, useState } from "react";
+import { Suspense, useState, type ReactNode } from "react";
 import { Outlet } from "react-router-dom";
 import { Loader2 } from "lucide-react";
-import { AdminLayoutContext } from "@/components/layout/AdminLayoutContext";
+import { AdminHeaderActionsContext, AdminLayoutContext } from "@/components/layout/AdminLayoutContext";
 import AdminHeader from "@/components/layout/AdminHeader";
 import ContextSidebar from "@/components/layout/ContextSidebar";
 import PageContainer from "@/components/layout/PageContainer";
@@ -23,27 +23,30 @@ function AdminRouteFallback() {
 
 export default function AdminLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [headerActions, setHeaderActions] = useState<ReactNode>(null);
 
   return (
     <AdminLayoutContext.Provider value>
-      <div className="admin-shell">
-        <StoreOperationAudioAlert />
-        <div className="app-layout flex h-screen min-h-screen flex-col overflow-hidden bg-surface-00">
-          <PlatformSupportBanner />
-          <TopNavigation mobileMenuOpen={mobileMenuOpen} onMobileMenuChange={setMobileMenuOpen} />
-          <div className="flex min-h-0 flex-1 overflow-hidden">
-            <ContextSidebar />
-            <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-              <AdminHeader />
-              <PageContainer>
-                <Suspense fallback={<AdminRouteFallback />}>
-                  <Outlet />
-                </Suspense>
-              </PageContainer>
-            </main>
+      <AdminHeaderActionsContext.Provider value={setHeaderActions}>
+        <div className="admin-shell">
+          <StoreOperationAudioAlert />
+          <div className="app-layout flex h-screen min-h-screen flex-col overflow-hidden bg-surface-00">
+            <PlatformSupportBanner />
+            <TopNavigation mobileMenuOpen={mobileMenuOpen} onMobileMenuChange={setMobileMenuOpen} />
+            <div className="flex min-h-0 flex-1 overflow-hidden">
+              <ContextSidebar />
+              <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                <AdminHeader actions={headerActions} />
+                <PageContainer>
+                  <Suspense fallback={<AdminRouteFallback />}>
+                    <Outlet />
+                  </Suspense>
+                </PageContainer>
+              </main>
+            </div>
           </div>
         </div>
-      </div>
+      </AdminHeaderActionsContext.Provider>
     </AdminLayoutContext.Provider>
   );
 }

@@ -2,10 +2,11 @@ import { orderDisplayCode } from "@/lib/orderIdentity";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  AlertTriangle, Bell, BellOff, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2,
+  AlertTriangle, Bell, BellOff, CalendarDays, ChevronLeft, ChevronRight, Clock3, Loader2,
   PackageCheck, Printer, RefreshCw, Route, ShoppingBag, Trash2, Truck,
   Undo2, UserCheck, Users, Utensils, Plus,
 } from "lucide-react";
+import { useAdminHeaderActions } from "@/components/layout/AdminLayoutContext";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import LabelPrintDialog from "@/components/kds/LabelPrintDialog";
 import ManualOrderComposer from "@/components/admin/ManualOrderComposer";
@@ -65,19 +66,10 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
     targetStatus: "pending",
   },
   {
-    id: "paid",
-    title: "Confirmado / aguardando preparo",
-    description: "Confirmação por 1 min; depois aguarda o início do pizzaiolo",
-    statuses: ["paid", "pago"],
-    icon: CheckCircle2,
-    accent: "text-cyan-300 bg-cyan-500/10 border-cyan-500/20",
-    targetStatus: "paid",
-  },
-  {
     id: "preparing",
     title: "Preparando",
-    description: "Pedidos em produção",
-    statuses: ["preparing"],
+    description: "Aguardando início ou em produção",
+    statuses: ["paid", "pago", "preparing"],
     icon: Utensils,
     accent: "text-gold bg-gold/10 border-gold/20",
     targetStatus: null,
@@ -285,6 +277,7 @@ function isEffectiveRevenueOrder(order: ApiOrder) {
 
 export default function AdminOrders() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const setHeaderActions = useAdminHeaderActions();
   const [orders, setOrders] = useState<ApiOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -536,33 +529,25 @@ export default function AdminOrders() {
   const selectedDateLabel = useMemo(() => formatDayLabel(selectedDate), [selectedDate]);
   const isToday = selectedDate === todayInputValue();
 
+  useEffect(() => {
+    if (!setHeaderActions) return;
+    setHeaderActions(
+      <p role="status" className="text-xs leading-snug text-stone">
+        {lastUpdated
+          ? `Atualizado às ${lastUpdated.toLocaleTimeString("pt-BR", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            })} - ${lastUpdated.toLocaleDateString("pt-BR")}`
+          : "Carregando pedidos..."}
+      </p>,
+    );
+    return () => setHeaderActions(null);
+  }, [lastUpdated, setHeaderActions]);
+
   return (
     <div className="min-h-0 bg-surface-00 flex flex-col md:flex-row md:h-auto overflow-visible">
       <main className="min-h-0 flex-1 flex flex-col overflow-visible">
-        {/* Header */}
-        <header className="bg-surface-02 border-b border-surface-03 px-4 md:px-8 py-4 flex flex-col gap-4 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-gold/25 bg-gold/10 text-gold">
-              <ShoppingBag size={20} />
-            </div>
-            <div>
-              <p className="text-gold text-[11px] font-bold uppercase tracking-[0.22em] mb-1">
-                Operacao
-              </p>
-              <h2 className="text-xl md:text-2xl font-black leading-tight text-cream">Pedidos</h2>
-              <p className="text-stone text-xs md:text-sm mt-1 leading-snug">
-                {lastUpdated
-                  ? `Atualizado as ${lastUpdated.toLocaleTimeString("pt-BR", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                    })} - ${selectedDateLabel}`
-                  : "Carregando pedidos..."}
-              </p>
-            </div>
-          </div>
-        </header>
-
         {/* Body */}
         <div className="flex min-w-0 flex-1 flex-col overflow-visible">
           {error && (
@@ -695,15 +680,6 @@ export default function AdminOrders() {
                 <RefreshCw size={16} className={loading || refreshing ? "animate-spin" : ""} />
                 Atualizar
               </button>
-              <p className="ml-auto min-w-[10rem] truncate text-right text-[11px] text-stone">
-                {lastUpdated
-                  ? `Atualizado as ${lastUpdated.toLocaleTimeString("pt-BR", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                    })}`
-                  : "Carregando pedidos..."}
-              </p>
             </div>
 
             {loading ? (
@@ -718,7 +694,7 @@ export default function AdminOrders() {
               </div>
             ) : (
               <div className="w-full min-w-0 flex-1 overflow-y-auto px-3 pb-4 pt-3 md:px-4 md:pb-4">
-                <div className="grid min-h-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 xl:gap-2">
+                <div className="grid min-h-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 xl:gap-2">
                   {KANBAN_COLUMNS.map((column) => {
                     const Icon = column.icon;
                     const columnOrders = groupedOrders.get(column.id) ?? [];
