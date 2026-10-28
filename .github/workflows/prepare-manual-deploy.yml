@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  TELZ_ALEMBIC_TARGET: 20261027_logistics_settings_tenant_key
+  TELZ_ALEMBIC_TARGET: 20261028_order_item_option_selections
   TELZ_PUBLIC_HEALTH_URL: https://app.telz.com.br/health
 
 jobs:
