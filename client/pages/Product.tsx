@@ -552,7 +552,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
 
   const activeFlavors = flavorSlots.slice(0, effectiveDivision);
   const allFilled = isFixedFlavorCombination || activeFlavors.every((f) => f !== null);
-  const effectivePricingRule: PricingRule = effectiveDivision > 1 ? "average" : multiFlavorsConfig.pricingRule;
+  const effectivePricingRule: PricingRule = multiFlavorsConfig.pricingRule;
   const flavorCategoryFilters = multiFlavorsConfig.flavorCategoryFilters ?? [];
   const selectedSizeLookup = normalizeProductText(selectedSizeObj?.label ?? selectedSize);
 

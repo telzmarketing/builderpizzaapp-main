@@ -12,6 +12,7 @@ import string
 import unicodedata
 import uuid
 from datetime import datetime, timezone, timedelta
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.exceptions import (
@@ -330,8 +331,12 @@ class OrderService:
                 prices.append(ProductPricingService.product_channel_price(row, channel))
         if product.id not in [row.id for row in flavors]:
             raise DomainError("O produto principal deve integrar a composicao.", code="InvalidPrimaryFlavor")
-        rule = PricingRule.average if item.flavor_division > 1 else config.pricing_rule
-        server_price = max(prices) if rule == PricingRule.most_expensive else sum(prices) / len(prices)
+        rule = config.pricing_rule
+        server_price = _compute_flavor_price(
+            [FlavorIn(product_id=row.id, name=row.name, price=price, icon=row.icon or "") for row, price in zip(flavors, prices)],
+            item.flavor_division,
+            rule,
+        )
         if crust:
             server_price += normalize_crust_price_addition(crust.price_addition, product.price)
         pricing = ProductPricingService(self._db, self._tenant_context).calculate(
@@ -1478,7 +1483,14 @@ class OrderService:
             )
 
         self._db.delete(order)
-        self._db.commit()
+        try:
+            self._db.commit()
+        except IntegrityError as exc:
+            self._db.rollback()
+            raise DomainError(
+                "Pedido possui registros operacionais vinculados e nao pode ser excluido fisicamente. Cancele o pedido pelo fluxo operacional.",
+                code="OrderHasOperationalRecords",
+            ) from exc
 
     def list(
         self,

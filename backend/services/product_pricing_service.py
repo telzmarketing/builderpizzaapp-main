@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from backend.core.exceptions import DomainError, NapolitanaMultiFlavorNotAllowed
 from backend.core.tenant_context import TenantContext, TenantSource
 from backend.core.tenant_ownership import identity_catalog_enforcement_enabled, scope_query_to_tenant
-from backend.models.product import Product, ProductCrustType, ProductSize, ProductDrinkVariant, PricingRule
+from backend.models.product import Product, MultiFlavorsConfig, ProductCrustType, ProductSize, ProductDrinkVariant, PricingRule
 from backend.models.product_promotion import ProductPromotion, ProductPromotionCombination
 
 
@@ -194,6 +194,15 @@ class ProductPricingService:
         if not flavor_product_ids or len(flavor_product_ids) <= 1:
             return None
 
+        if pricing_rule is None:
+            config_id = (
+                f"multi-flavors-{self._tenant_context.tenant_id}"
+                if identity_catalog_enforcement_enabled() and self._tenant_context
+                else "default"
+            )
+            config = self._query(MultiFlavorsConfig).filter(MultiFlavorsConfig.id == config_id).first()
+            pricing_rule = config.pricing_rule if config else PricingRule.average
+
         selected_size_label = self._normalize_size_label(size.label if size else None)
         prices: list[float] = []
         for flavor_product_id in flavor_product_ids:
@@ -211,7 +220,12 @@ class ProductPricingService:
         if not prices:
             return None
 
-        base_price = sum(prices) / len(prices)
+        if pricing_rule == PricingRule.most_expensive:
+            base_price = max(prices)
+        elif pricing_rule == PricingRule.proportional:
+            base_price = sum(price / len(prices) for price in prices)
+        else:
+            base_price = sum(prices) / len(prices)
         if crust:
             base_price += normalize_crust_price_addition(crust.price_addition, product.price)
         return round(base_price, 2)

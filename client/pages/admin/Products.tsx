@@ -2037,16 +2037,17 @@ export default function AdminProducts() {
 
                   <div>
                     <label className="block text-parchment text-sm font-medium mb-3">Regra cadastrada</label>
-                    <p className="mb-3 text-sm text-stone">Pizzas com 2 ou 3 sabores usam sempre a media dos precos. A configuracao legada abaixo e preservada para vendas inteiras.</p>
+                    <p className="mb-3 text-sm text-stone">Escolha como o preco de pizzas com 2 ou 3 sabores deve ser calculado.</p>
                     <div className="space-y-2">
                       {PRICING_OPTIONS.map((opt) => (
                         <button
                           key={opt.value}
-                          disabled
+                          type="button"
+                          onClick={() => updateMultiFlavorsConfig({ ...multiFlavorsConfig, pricingRule: opt.value })}
                           className={`w-full text-left p-3 rounded-xl border-2 transition-all ${multiFlavorsConfig.pricingRule === opt.value ? "border-gold bg-gold/10" : "border-surface-03 hover:border-gold/50"}`}
                         >
                           <p className={`font-bold text-sm ${multiFlavorsConfig.pricingRule === opt.value ? "text-gold" : "text-cream"}`}>{opt.label}</p>
-                          <p className="text-stone text-xs mt-0.5">Configuracao legada preservada</p>
+                          <p className="text-stone text-xs mt-0.5">{opt.description}</p>
                         </button>
                       ))}
                     </div>
