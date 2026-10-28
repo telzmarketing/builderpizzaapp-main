@@ -11,7 +11,7 @@ class CatalogInput(BaseModel):
     model_config = {"allow_inf_nan": False}
 
     nullable_fields: ClassVar[frozenset[str]] = frozenset({
-        "parent_id", "description", "category", "subcategory", "product_type",
+        "parent_id", "description", "category", "subcategory", "category_id", "subcategory_id", "product_type",
         "delivery_price", "dine_in_price", "start_time", "end_time",
         "start_date", "end_date", "default_value", "gift_product_id",
         "product_size_id", "product_crust_type_id", "promotional_value",
@@ -41,6 +41,12 @@ class ProductCategoryCreate(CatalogInput):
     name: str = Field(min_length=1, max_length=100)
     active: bool = True
     sort_order: int = 0
+    enable_sizes: bool = False
+    enable_product_options: bool = False
+    enable_recipe: bool = False
+    enable_dough: bool = False
+    enable_border: bool = False
+    enable_promotions: bool = False
 
 
 class ProductCategoryUpdate(CatalogInput):
@@ -48,6 +54,12 @@ class ProductCategoryUpdate(CatalogInput):
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     active: Optional[bool] = None
     sort_order: Optional[int] = None
+    enable_sizes: Optional[bool] = None
+    enable_product_options: Optional[bool] = None
+    enable_recipe: Optional[bool] = None
+    enable_dough: Optional[bool] = None
+    enable_border: Optional[bool] = None
+    enable_promotions: Optional[bool] = None
 
 
 class ProductCategoryOut(BaseModel):
@@ -57,6 +69,12 @@ class ProductCategoryOut(BaseModel):
     name: str
     active: bool
     sort_order: int
+    enable_sizes: bool = False
+    enable_product_options: bool = False
+    enable_recipe: bool = False
+    enable_dough: bool = False
+    enable_border: bool = False
+    enable_promotions: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -228,6 +246,8 @@ class ProductBase(BaseModel):
     icon: str = "🍕"
     category: Optional[str] = None
     subcategory: Optional[str] = None
+    category_id: Optional[str] = None
+    subcategory_id: Optional[str] = None
     product_type: Optional[str] = None  # "pizza" | "drink" | "other" | "brinde"
     rating: float = Field(default=4.5, ge=1.0, le=5.0)
     active: bool = True
@@ -259,6 +279,8 @@ class ProductUpdate(CatalogInput):
     icon: Optional[str] = None
     category: Optional[str] = None
     subcategory: Optional[str] = None
+    category_id: Optional[str] = None
+    subcategory_id: Optional[str] = None
     product_type: Optional[Literal["pizza", "drink", "other", "brinde"]] = None
     rating: Optional[float] = Field(default=None, ge=1.0, le=5.0)
     active: Optional[bool] = None
@@ -275,6 +297,12 @@ class ProductOut(ProductBase):
     id: str
     created_at: datetime
     updated_at: datetime
+    enable_sizes: bool = False
+    enable_product_options: bool = False
+    enable_recipe: bool = False
+    enable_dough: bool = False
+    enable_border: bool = False
+    enable_promotions: bool = False
     sizes: List[ProductSizeOut] = []
     crust_types: List[ProductCrustTypeOut] = []
     drink_variants: List[ProductDrinkVariantOut] = []

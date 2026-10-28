@@ -25,7 +25,7 @@ from backend.schemas.product import (
 )
 from backend.routes.admin_auth import get_current_admin
 from backend.services import product_category_service
-from backend.services.product_pricing_service import ProductPricingService
+from backend.services.product_pricing_service import ProductPricingService, ProductPriceResult
 from backend.services.promotion_landing_service import PromotionLandingService
 from backend.services.inventory_service import ProductInventoryAvailabilityService
 from backend.core.tenant_context import TenantContext
@@ -166,6 +166,16 @@ def _product_payload(
     include_inactive_option_groups: bool = False,
 ) -> dict:
     payload = ProductOut.model_validate(product).model_dump()
+    capabilities = product_category_service.effective_capabilities(db, product, context)
+    payload.update(capabilities)
+    if not capabilities["enable_sizes"]:
+        payload["sizes"] = []
+    if not capabilities["enable_product_options"]:
+        payload["option_groups"] = []
+    if not capabilities["enable_dough"] and not capabilities["enable_border"]:
+        payload["crust_types"] = []
+    if not capabilities["enable_promotions"]:
+        payload["promotion_applied"] = False
     if not include_inactive_option_groups:
         payload["option_groups"] = [
             {
@@ -175,20 +185,22 @@ def _product_payload(
             for group in payload.get("option_groups", [])
             if group.get("active")
         ]
-    default_size = next((size for size in product.sizes if size.active and size.is_default), None)
+    default_size = next((size for size in product.sizes if capabilities["enable_sizes"] and size.active and size.is_default), None)
     if not default_size:
-        default_size = next((size for size in product.sizes if size.active), None)
+        default_size = next((size for size in product.sizes if capabilities["enable_sizes"] and size.active), None)
     pricing = ProductPricingService(db, context)
     quote = pricing.calculate(product=product, size=default_size, channel=channel)
-    active_sizes = [size for size in product.sizes if size.active] or [None]
-    active_crusts = [crust for crust in product.crust_types if crust.active]
+    if not capabilities["enable_promotions"]:
+        quote = ProductPriceResult(standard_price=quote.standard_price, final_price=quote.standard_price)
+    active_sizes = [size for size in product.sizes if capabilities["enable_sizes"] and size.active] or [None]
+    active_crusts = [crust for crust in product.crust_types if (capabilities["enable_dough"] or capabilities["enable_border"]) and crust.active]
     crust_options = active_crusts or [None]
     promotion_quotes = [
         candidate
         for size in active_sizes
         for crust in crust_options
         for candidate in [pricing.calculate(product=product, size=size, crust=crust, channel=channel)]
-        if candidate.promotion_applied
+        if capabilities["enable_promotions"] and candidate.promotion_applied
     ]
     if promotion_quotes:
         quote = min(promotion_quotes, key=lambda candidate: candidate.final_price)
@@ -427,6 +439,10 @@ def _get_option_group(product_id: str, group_id: str, request: Request, db: Sess
         raise HTTPException(404, "Grupo de opcoes nao encontrado.")
     if active_only and (not group.active or not group.product.active):
         raise HTTPException(404, "Grupo de opcoes nao encontrado.")
+    if active_only and not product_category_service.effective_capabilities(db, group.product, context)["enable_product_options"]:
+        raise HTTPException(404, "Grupo de opcoes nao encontrado.")
+    if not active_only:
+        product_category_service.require_capability(db, group.product, "enable_product_options", context)
     return context, group
 
 
@@ -445,6 +461,8 @@ def list_option_groups(
         raise HTTPException(404, "Produto nao encontrado.")
     if active_only:
         assert_public_product(product, channel)
+        if not product_category_service.effective_capabilities(db, product, context)["enable_product_options"]:
+            return []
     query = _tenant_query(db, ProductOptionGroup, context).options(
         selectinload(ProductOptionGroup.options),
     ).filter(ProductOptionGroup.product_id == product_id)
@@ -463,6 +481,7 @@ def create_option_group(product_id: str, body: ProductOptionGroupCreate, request
     product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto nao encontrado.")
+    product_category_service.require_capability(db, product, "enable_product_options", context)
     group = ProductOptionGroup(id=f"pgroup-{uuid.uuid4().hex[:10]}", product_id=product_id, **body.model_dump())
     assign_catalog_tenant(group, context)
     db.add(group)
@@ -553,8 +572,13 @@ def quote_product_price(
     context = resolve_public_tenant_context(request, db)
     product = _tenant_query(db, Product, context).filter(Product.id == product_id, Product.active == True).first()  # noqa: E712
     assert_public_product(product, channel)
-    if getattr(product, "show_crust_options", True) is False and (crust_id or border_id):
-        raise HTTPException(422, "Este produto nao permite selecionar massa ou borda.")
+    capabilities = product_category_service.effective_capabilities(db, product, context)
+    if size_id and not capabilities["enable_sizes"]:
+        raise HTTPException(422, "A categoria deste produto nao habilita tamanho.")
+    if crust_id and not capabilities["enable_dough"]:
+        raise HTTPException(422, "A categoria deste produto nao habilita massa.")
+    if border_id and not capabilities["enable_border"]:
+        raise HTTPException(422, "A categoria deste produto nao habilita borda.")
 
     size = None
     if size_id:
@@ -643,6 +667,7 @@ def create_product_promotion(product_id: str, body: ProductPromotionCreate, requ
     product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto nao encontrado.")
+    product_category_service.require_capability(db, product, "enable_promotions", context)
     ProductCatalogService(db, context).validate_promotion(product_id, body)
     promotion = ProductPromotion(
         id=f"pp-{uuid.uuid4().hex[:10]}",
@@ -682,6 +707,10 @@ def update_product_promotion(product_id: str, promotion_id: str, body: ProductPr
     )
     if not promotion:
         raise HTTPException(404, "Promocao nao encontrada.")
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(404, "Produto nao encontrado.")
+    product_category_service.require_capability(db, product, "enable_promotions", context)
 
     ProductCatalogService(db, context).validate_promotion(product_id, body, current=promotion)
     values = body.model_dump(exclude_unset=True, exclude={"combinations"})
@@ -718,14 +747,22 @@ def delete_product_promotion(product_id: str, promotion_id: str, request: Reques
 @router.post("", response_model=ProductOut, status_code=201, dependencies=[Depends(require_rbac_permission("cardapio", "create"))])
 def create_product(body: ProductCreate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
     context = resolve_panel_tenant_context(request, db, admin)
+    body = product_category_service.normalize_product_category_payload(db, body, context)
     product = ProductCatalogService(db, context).create(body)
+    product_category_service.sync_product_category_refs(db, product, context)
+    db.commit()
+    db.refresh(product)
     return _product_payload(product, db, context=context)
 
 
 @router.put("/{product_id}", response_model=ProductOut, dependencies=[Depends(require_rbac_permission("cardapio", "edit"))])
 def update_product(product_id: str, body: ProductUpdate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
     context = resolve_panel_tenant_context(request, db, admin)
+    body = product_category_service.normalize_product_category_payload(db, body, context)
     product = ProductCatalogService(db, context).update(product_id, body)
+    product_category_service.sync_product_category_refs(db, product, context)
+    db.commit()
+    db.refresh(product)
     return _product_payload(product, db, context=context)
 
 
@@ -758,6 +795,8 @@ def list_sizes(
         raise HTTPException(404, "Produto não encontrado.")
     if active_only:
         assert_public_product(product, channel)
+        if not product_category_service.effective_capabilities(db, product, context)["enable_sizes"]:
+            return []
     q = _tenant_query(db, ProductSize, context).filter(ProductSize.product_id == product_id)
     if active_only:
         q = q.filter(ProductSize.active == True)  # noqa: E712
@@ -770,6 +809,7 @@ def create_size(product_id: str, body: ProductSizeCreate, request: Request, db: 
     product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
+    product_category_service.require_capability(db, product, "enable_sizes", context)
     size = ProductSize(id=f"size-{uuid.uuid4().hex[:8]}", product_id=product_id, **body.model_dump())
     assign_catalog_tenant(size, context)
     db.add(size)
@@ -784,6 +824,10 @@ def update_size(product_id: str, size_id: str, body: ProductSizeUpdate, request:
     size = _tenant_query(db, ProductSize, context).filter(ProductSize.id == size_id, ProductSize.product_id == product_id).first()
     if not size:
         raise HTTPException(404, "Tamanho não encontrado.")
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(404, "Produto nao encontrado.")
+    product_category_service.require_capability(db, product, "enable_sizes", context)
     for key, value in body.model_dump(exclude_none=True).items():
         setattr(size, key, value)
     db.commit()
@@ -819,6 +863,9 @@ def list_crusts(
         raise HTTPException(404, "Produto não encontrado.")
     if active_only:
         assert_public_product(product, channel)
+        capabilities = product_category_service.effective_capabilities(db, product, context)
+        if not capabilities["enable_dough"] and not capabilities["enable_border"]:
+            return []
     q = _tenant_query(db, ProductCrustType, context).filter(ProductCrustType.product_id == product_id)
     if active_only:
         q = q.filter(ProductCrustType.active == True)  # noqa: E712
@@ -831,6 +878,9 @@ def create_crust(product_id: str, body: ProductCrustTypeCreate, request: Request
     product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
+    capabilities = product_category_service.effective_capabilities(db, product, context)
+    if not capabilities["enable_dough"] and not capabilities["enable_border"]:
+        raise HTTPException(422, "A categoria deste produto nao habilita massa ou borda.")
     crust = ProductCrustType(id=f"crust-{uuid.uuid4().hex[:8]}", product_id=product_id, **body.model_dump())
     assign_catalog_tenant(crust, context)
     db.add(crust)
@@ -845,6 +895,12 @@ def update_crust(product_id: str, crust_id: str, body: ProductCrustTypeUpdate, r
     crust = _tenant_query(db, ProductCrustType, context).filter(ProductCrustType.id == crust_id, ProductCrustType.product_id == product_id).first()
     if not crust:
         raise HTTPException(404, "Tipo de massa não encontrado.")
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(404, "Produto nao encontrado.")
+    capabilities = product_category_service.effective_capabilities(db, product, context)
+    if not capabilities["enable_dough"] and not capabilities["enable_border"]:
+        raise HTTPException(422, "A categoria deste produto nao habilita massa ou borda.")
     for key, value in body.model_dump(exclude_none=True).items():
         setattr(crust, key, value)
     db.commit()

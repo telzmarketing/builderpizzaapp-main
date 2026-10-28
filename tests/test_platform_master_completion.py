@@ -667,7 +667,7 @@ def test_platform_operations_is_the_single_static_head_and_master_downgrade_is_s
     }
     heads = set(revisions) - {parent for parents in revisions.values() for parent in parents}
     assert missing == set()
-    assert heads == {"20261027_kds_dispatch_unit_completion"}
+    assert heads == {"20261028_product_category_capabilities"}
 
     bridge = (versions / "20260814_merge_all_heads.py").read_text(encoding="utf-8")
     assert 'down_revision = "20260813_automation_event_core"' in bridge

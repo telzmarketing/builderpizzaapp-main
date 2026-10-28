@@ -6,7 +6,7 @@ import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import ImageUpload from "@/components/admin/ImageUpload";
 import ProductRecipeEditor from "@/components/admin/ProductRecipeEditor";
-import { productsApi, sizesApi, crustApi, drinkVariantApi, categoriesApi, productPromotionsApi, ApiProduct, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, ApiProductPromotion, ApiProductPromotionCombination, ProductPromotionDiscountType, ApiBestSellerConfig, ApiProductOptionGroup, ApiProductOption, ApiProductOptionSelectionType, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { productsApi, sizesApi, crustApi, drinkVariantApi, categoriesApi, productPromotionsApi, ApiProduct, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, ApiProductPromotion, ApiProductPromotionCombination, ProductPromotionDiscountType, ApiBestSellerConfig, ApiProductOptionGroup, ApiProductOption, ApiProductOptionSelectionType, ApiProductCategoryCapabilities, ApiProductCategoryCapabilityKey, getProductCategoryCapabilities, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { pizzaSizeDescription, pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { normalizeCrustPriceAddition } from "@/lib/pricing";
 
@@ -43,6 +43,41 @@ const productHasCatupiryCrust = (product: Pizza) =>
 const PIZZA_ICON = "\u{1F355}";
 const DRINK_ICON = "\u{1F964}";
 const OTHER_ICON = "\u{1F354}";
+
+const CATEGORY_CAPABILITY_KEYS: ApiProductCategoryCapabilityKey[] = [
+  "enable_sizes",
+  "enable_product_options",
+  "enable_recipe",
+  "enable_dough",
+  "enable_border",
+  "enable_promotions",
+];
+
+const CATEGORY_CAPABILITY_LABELS: Record<ApiProductCategoryCapabilityKey, string> = {
+  enable_sizes: "Tamanhos",
+  enable_product_options: "Opções do produto",
+  enable_recipe: "Ficha técnica",
+  enable_dough: "Massas",
+  enable_border: "Bordas",
+  enable_promotions: "Promoções",
+};
+
+const DEFAULT_CATEGORY_CAPABILITIES: Record<ApiProductCategoryCapabilityKey, boolean> = {
+  enable_sizes: true,
+  enable_product_options: true,
+  enable_recipe: true,
+  enable_dough: true,
+  enable_border: true,
+  enable_promotions: true,
+};
+
+const categoryCapabilitiesOrDefault = (category?: Parameters<typeof getProductCategoryCapabilities>[0]): Record<ApiProductCategoryCapabilityKey, boolean> => {
+  const capabilities = getProductCategoryCapabilities(category) ?? {};
+  return CATEGORY_CAPABILITY_KEYS.reduce((result, key) => {
+    result[key] = capabilities[key] ?? DEFAULT_CATEGORY_CAPABILITIES[key];
+    return result;
+  }, {} as Record<ApiProductCategoryCapabilityKey, boolean>);
+};
 
 const getTypeIcon = (type: string | null | undefined) => {
   if (type === "drink") return DRINK_ICON;
@@ -197,13 +232,17 @@ export default function AdminProducts() {
   const [activeProductSubcategory, setActiveProductSubcategory] = useState("");
   const [configSaved, setConfigSaved] = useState(false);
   const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
+  const [catalogCategoriesLoading, setCatalogCategoriesLoading] = useState(true);
+  const [catalogCategoriesError, setCatalogCategoriesError] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryCapabilities, setNewCategoryCapabilities] = useState<Record<ApiProductCategoryCapabilityKey, boolean>>({ ...DEFAULT_CATEGORY_CAPABILITIES });
   const [newSubcategoryNames, setNewSubcategoryNames] = useState<Record<string, string>>({});
   const [categorySaving, setCategorySaving] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
   const [editingCategoryParentId, setEditingCategoryParentId] = useState("");
   const [editingCategoryActive, setEditingCategoryActive] = useState(true);
+  const [editingCategoryCapabilities, setEditingCategoryCapabilities] = useState<Record<ApiProductCategoryCapabilityKey, boolean>>({ ...DEFAULT_CATEGORY_CAPABILITIES });
   const [categoryReorderingId, setCategoryReorderingId] = useState<string | null>(null);
 
   const sortedCatalogCategories = [...catalogCategories].sort((a, b) => {
@@ -263,9 +302,20 @@ export default function AdminProducts() {
     updateMultiFlavorsConfig({ ...multiFlavorsConfig, flavorCategoryFilters: selected });
   };
 
-  useEffect(() => {
-    categoriesApi.list().then(setCatalogCategories).catch(() => setCatalogCategories([]));
+  const loadCatalogCategories = useCallback(async () => {
+    setCatalogCategoriesLoading(true);
+    setCatalogCategoriesError("");
+    try {
+      setCatalogCategories(await categoriesApi.list());
+    } catch (error) {
+      setCatalogCategories([]);
+      setCatalogCategoriesError(error instanceof Error ? error.message : "Erro ao carregar categorias.");
+    } finally {
+      setCatalogCategoriesLoading(false);
+    }
   }, []);
+
+  useEffect(() => { void loadCatalogCategories(); }, [loadCatalogCategories]);
 
   const handleAddCategory = async () => {
     const name = newCategoryName.trim();
@@ -277,6 +327,7 @@ export default function AdminProducts() {
         name,
         active: true,
         sort_order: parentCategories.length,
+        ...newCategoryCapabilities,
       });
       setCatalogCategories((prev) => [...prev, created]);
       setNewCategoryName("");
@@ -345,6 +396,7 @@ export default function AdminProducts() {
     setEditingCategoryName(category.name);
     setEditingCategoryParentId(category.parent_id ?? "");
     setEditingCategoryActive(category.active);
+    setEditingCategoryCapabilities(categoryCapabilitiesOrDefault(category));
   };
 
   const cancelEditCategory = () => {
@@ -352,6 +404,7 @@ export default function AdminProducts() {
     setEditingCategoryName("");
     setEditingCategoryParentId("");
     setEditingCategoryActive(true);
+    setEditingCategoryCapabilities({ ...DEFAULT_CATEGORY_CAPABILITIES });
   };
 
   const handleSaveCategory = async (category: ApiProductCategory) => {
@@ -364,6 +417,7 @@ export default function AdminProducts() {
         parent_id: editingCategoryParentId || null,
         active: editingCategoryActive,
         sort_order: category.sort_order,
+        ...(category.parent_id ? {} : editingCategoryCapabilities),
       });
       setCatalogCategories((prev) => prev.map((cat) => cat.id === updated.id ? updated : cat));
       cancelEditCategory();
@@ -463,7 +517,7 @@ export default function AdminProducts() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<Pizza> & { product_type?: string }>({
     name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza",
-    visible_delivery: true, visible_dine_in: true, show_crust_options: true, delivery_price: null, dine_in_price: null,
+    visible_delivery: true, visible_dine_in: true, delivery_price: null, dine_in_price: null,
   });
 
   const [optionGroupsProduct, setOptionGroupsProduct] = useState<Pizza | null>(null);
@@ -478,8 +532,28 @@ export default function AdminProducts() {
   const [editingOptionId, setEditingOptionId] = useState<string | null>(null);
   const [optionForm, setOptionForm] = useState({ label: "", price_addition: 0, active: true });
 
-  const selectedCategoryId = activeCatalogCategories.find((cat) => cat.name === ((formData as any).category || ""))?.id ?? "";
+  const selectedCategoryId = (formData as any).category_id
+    || activeCatalogCategories.find((cat) => cat.name === ((formData as any).category || ""))?.id
+    || "";
+  const selectedCategoryConfig = activeCatalogCategories.find((cat) => cat.id === selectedCategoryId)
+    ?? activeCatalogCategories.find((cat) => cat.name === ((formData as any).category || ""));
+  const selectedCategoryCapabilities = categoryCapabilitiesOrDefault(selectedCategoryConfig);
   const availableSubcategories = activeSubcategories.filter((cat) => cat.parent_id === selectedCategoryId);
+  const selectedSubcategoryId = (formData as any).subcategory_id
+    || availableSubcategories.find((cat) => cat.name === ((formData as any).subcategory || ""))?.id
+    || "";
+
+  const capabilitiesForProduct = (product: Pizza): Record<ApiProductCategoryCapabilityKey, boolean> | null => {
+    const direct = getProductCategoryCapabilities(product);
+    if (direct) return categoryCapabilitiesOrDefault({ ...product, ...direct });
+    const category = catalogCategories.find((item) =>
+      (product as any).category_id ? item.id === (product as any).category_id : item.name === ((product as any).category || "").trim()
+    );
+    return category ? categoryCapabilitiesOrDefault(category) : null;
+  };
+
+  const productCapabilityEnabled = (product: Pizza, key: ApiProductCategoryCapabilityKey, fallback: boolean) =>
+    capabilitiesForProduct(product)?.[key] ?? fallback;
 
   const openOptionGroupsModal = async (product: Pizza) => {
     setOptionGroupsProduct(product);
@@ -600,7 +674,15 @@ export default function AdminProducts() {
         dine_in_price: Number.isFinite(dineInPrice as number) ? dineInPrice : null,
       };
       if (editingId) {
-        await updateProduct(editingId, { ...formData, ...channelFields, price, category: category || null, subcategory: subcategory || null } as any);
+        await updateProduct(editingId, {
+          ...formData,
+          ...channelFields,
+          price,
+          category: category || null,
+          subcategory: subcategory || null,
+          category_id: selectedCategoryId || null,
+          subcategory_id: selectedSubcategoryId || null,
+        } as any);
         setEditingId(null);
       } else {
         await addProduct({
@@ -608,12 +690,14 @@ export default function AdminProducts() {
           price, icon: formData.icon || PIZZA_ICON,
           category: category || null,
           subcategory: subcategory || null,
+          category_id: selectedCategoryId || null,
+          subcategory_id: selectedSubcategoryId || null,
           product_type: formData.product_type || "pizza",
           rating: formData.rating || 4.5, active: true,
           ...channelFields,
         } as any);
       }
-      setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, show_crust_options: true, delivery_price: null, dine_in_price: null });
+      setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", category_id: "", subcategory: "", subcategory_id: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, delivery_price: null, dine_in_price: null });
       setShowForm(false);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao salvar produto.");
@@ -625,11 +709,12 @@ export default function AdminProducts() {
       ...product,
       category: (product as any).category ?? "",
       subcategory: (product as any).subcategory ?? "",
+      category_id: (product as any).category_id ?? "",
+      subcategory_id: (product as any).subcategory_id ?? "",
       product_type: (product as any).product_type ?? "pizza",
       best_seller_badge_mode: (product as any).best_seller_badge_mode ?? "off",
       visible_delivery: (product as any).visible_delivery !== false,
       visible_dine_in: (product as any).visible_dine_in !== false,
-      show_crust_options: (product as any).show_crust_options !== false,
       delivery_price: (product as any).delivery_price ?? null,
       dine_in_price: (product as any).dine_in_price ?? null,
     } as any);
@@ -1431,7 +1516,7 @@ export default function AdminProducts() {
             <div className="flex items-center gap-3">
               {activeTab === "produtos" && (
                 <button
-                  onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, show_crust_options: true, delivery_price: null, dine_in_price: null }); }}
+                  onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", category_id: "", subcategory: "", subcategory_id: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, delivery_price: null, dine_in_price: null }); }}
                   className="flex items-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
                 >
                   <Plus size={20} />
@@ -1495,7 +1580,7 @@ export default function AdminProducts() {
                   ))}
                 </select>
                 <button
-                  onClick={() => { setShowForm(true); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, show_crust_options: true, delivery_price: null, dine_in_price: null }); }}
+                  onClick={() => { setShowForm(true); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", category_id: "", subcategory: "", subcategory_id: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, delivery_price: null, dine_in_price: null }); }}
                   className="flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-4 rounded-lg transition-colors"
                 >
                   <Plus size={20} />
@@ -1603,6 +1688,13 @@ export default function AdminProducts() {
                     const pType = (product as any).product_type as string | null | undefined;
                     const isPizza = !pType || pType === "pizza";
                     const isDrink = pType === "drink";
+                    const productCapabilities = capabilitiesForProduct(product);
+                    const canManageSizes = productCapabilities?.enable_sizes ?? (isPizza || isDrink);
+                    const canManageOptions = productCapabilities?.enable_product_options ?? true;
+                    const canManageRecipe = productCapabilities?.enable_recipe ?? true;
+                    const canManageCrust = productCapabilities?.enable_dough ?? isPizza;
+                    const canManageBorder = productCapabilities?.enable_border ?? isPizza;
+                    const canManagePromotions = productCapabilities?.enable_promotions ?? isPizza;
                     return (
                       <div key={product.id} className="bg-surface-02 rounded-xl p-6 border border-surface-03">
                         <div className="flex items-start gap-3 mb-3">
@@ -1655,28 +1747,28 @@ export default function AdminProducts() {
                           </button>
                         </div>
 
-                        <button onClick={() => openSizesModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-gold/10 hover:border-gold/40 text-parchment hover:text-gold font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
+                        {canManageSizes && <button onClick={() => openSizesModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-gold/10 hover:border-gold/40 text-parchment hover:text-gold font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                           <Ruler size={15} />
                           Gerenciar Tamanhos
                           {(product as any).sizes && (product as any).sizes.length > 0 && (
                             <span className="ml-auto text-xs bg-gold/20 text-gold px-1.5 py-0.5 rounded-full">{(product as any).sizes.length}</span>
                           )}
-                        </button>
+                        </button>}
 
-                        <button onClick={() => { void openOptionGroupsModal(product); }} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-violet-500/10 hover:border-violet-400/40 text-parchment hover:text-violet-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
+                        {canManageOptions && <button onClick={() => { void openOptionGroupsModal(product); }} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-violet-500/10 hover:border-violet-400/40 text-parchment hover:text-violet-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                           <Settings2 size={15} />
                           Opcoes do produto
                           {((product as any).option_groups ?? []).length > 0 && (
                             <span className="ml-auto text-xs bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded-full">{((product as any).option_groups ?? []).length}</span>
                           )}
-                        </button>
+                        </button>}
 
-                        <button onClick={() => setRecipeModalProduct(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-emerald-500/10 hover:border-emerald-500/40 text-parchment hover:text-emerald-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
+                        {canManageRecipe && <button onClick={() => setRecipeModalProduct(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-emerald-500/10 hover:border-emerald-500/40 text-parchment hover:text-emerald-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                           <ClipboardList size={15} />
                           Ficha tecnica
-                        </button>
+                        </button>}
 
-                        {isPizza && (
+                        {canManageCrust && (
                           <button onClick={() => openCrustModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-amber-500/10 hover:border-amber-500/40 text-parchment hover:text-amber-400 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                             <ChefHat size={15} />
                             Gerenciar Massas
@@ -1688,7 +1780,7 @@ export default function AdminProducts() {
                           </button>
                         )}
 
-                        {isPizza && (
+                        {canManageBorder && (
                           <button onClick={() => openBorderModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-orange-500/10 hover:border-orange-500/40 text-parchment hover:text-orange-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                             <Tag size={15} />
                             Gerenciar Bordas
@@ -1698,7 +1790,7 @@ export default function AdminProducts() {
                           </button>
                         )}
 
-                        {isPizza && (
+                        {canManagePromotions && (
                           <button onClick={() => openPromotionModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-emerald-500/10 hover:border-emerald-500/40 text-parchment hover:text-emerald-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                             <Tag size={15} />
                             Gerenciar Promoções
@@ -1725,7 +1817,7 @@ export default function AdminProducts() {
                       {products.length === 0 ? "Nenhum produto cadastrado" : "Nenhum produto encontrado para esta busca"}
                     </p>
                     {products.length === 0 && (
-                      <button onClick={() => setShowForm(true)} className="mt-4 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-6 rounded-lg transition-colors inline-flex items-center gap-2">
+                      <button onClick={() => { setShowForm(true); setEditingId(null); setFormData({ name: "", description: "", price: 0, icon: PIZZA_ICON, category: "", category_id: "", subcategory: "", subcategory_id: "", rating: 4.5, product_type: "pizza", visible_delivery: true, visible_dine_in: true, delivery_price: null, dine_in_price: null }); }} className="mt-4 bg-gold hover:bg-gold/90 text-cream font-bold py-2 px-6 rounded-lg transition-colors inline-flex items-center gap-2">
                         <Plus size={20} /> Adicionar Primeiro Produto
                       </button>
                     )}
@@ -1804,30 +1896,50 @@ export default function AdminProducts() {
                     <Tag size={18} className="text-gold" />
                     <div>
                       <h3 className="text-cream font-bold">Categorias do Cardapio</h3>
-                      <p className="text-stone text-sm">Crie categorias principais e adicione diversas subcategorias dentro de cada uma.</p>
+                      <p className="text-stone text-sm">Defina quais recursos ficam disponíveis para os produtos de cada categoria.</p>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-[1fr,auto] gap-2">
-                    <input
-                      type="text"
-                      value={newCategoryName}
-                      onChange={(e) => setNewCategoryName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddCategory(); } }}
-                      className={cls}
-                      placeholder="Ex: Pizzas, Bebidas, Sobremesas..."
-                      maxLength={100}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddCategory}
-                      disabled={categorySaving || !newCategoryName.trim()}
-                      className="flex items-center gap-2 bg-gold hover:bg-gold/90 disabled:opacity-50 disabled:cursor-not-allowed text-cream font-bold py-2 px-4 rounded-lg transition-colors"
-                    >
-                      {categorySaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                      Criar
-                    </button>
+                  <div className="space-y-3 rounded-xl border border-surface-03 bg-surface-01 p-4">
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr,auto]">
+                      <input
+                        type="text"
+                        value={newCategoryName}
+                        onChange={(e) => setNewCategoryName(e.target.value)}
+                        className={cls}
+                        placeholder="Ex: Pizzas, Bebidas, Sobremesas..."
+                        maxLength={100}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddCategory}
+                        disabled={categorySaving || !newCategoryName.trim()}
+                        className="flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 disabled:opacity-50 disabled:cursor-not-allowed text-cream font-bold py-2 px-4 rounded-lg transition-colors"
+                      >
+                        {categorySaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                        Criar categoria
+                      </button>
+                    </div>
+                    <div>
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone">Recursos desta categoria</p>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {CATEGORY_CAPABILITY_KEYS.map((key) => (
+                          <label key={key} className="flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-02 px-3 py-2 text-xs text-parchment">
+                            <input
+                              type="checkbox"
+                              checked={newCategoryCapabilities[key]}
+                              onChange={(event) => setNewCategoryCapabilities((current) => ({ ...current, [key]: event.target.checked }))}
+                              className="accent-gold"
+                            />
+                            {CATEGORY_CAPABILITY_LABELS[key]}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   </div>
+
+                  {catalogCategoriesLoading && <p role="status" className="text-sm text-stone">Carregando categorias...</p>}
+                  {catalogCategoriesError && <p role="alert" className="text-sm text-red-300">{catalogCategoriesError} <button type="button" className="underline" onClick={() => { void loadCatalogCategories(); }}>Tentar novamente</button></p>}
 
                   {editingCategoryId && (
                     <div className="rounded-xl border border-gold/30 bg-gold/10 p-4 space-y-3">
@@ -1868,6 +1980,21 @@ export default function AdminProducts() {
                           />
                           Ativa
                         </label>
+                        {!catalogCategories.find((cat) => cat.id === editingCategoryId)?.parent_id && (
+                          <div className="grid w-full grid-cols-1 gap-2 border-t border-gold/20 pt-3 sm:grid-cols-2 lg:grid-cols-3">
+                            {CATEGORY_CAPABILITY_KEYS.map((key) => (
+                              <label key={key} className="flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-02 px-3 py-2 text-xs text-parchment">
+                                <input
+                                  type="checkbox"
+                                  checked={editingCategoryCapabilities[key]}
+                                  onChange={(event) => setEditingCategoryCapabilities((current) => ({ ...current, [key]: event.target.checked }))}
+                                  className="accent-gold"
+                                />
+                                {CATEGORY_CAPABILITY_LABELS[key]}
+                              </label>
+                            ))}
+                          </div>
+                        )}
                         <button
                           type="button"
                           onClick={() => {
@@ -1911,6 +2038,13 @@ export default function AdminProducts() {
                                 <p className="text-stone text-xs">
                                   {category.active ? "Categoria ativa" : "Categoria inativa"} - {children.length} subcategoria{children.length === 1 ? "" : "s"}
                                 </p>
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  {CATEGORY_CAPABILITY_KEYS.filter((key) => categoryCapabilitiesOrDefault(category)[key]).map((key) => (
+                                    <span key={key} className="rounded-full border border-gold/20 bg-gold/10 px-2 py-0.5 text-[10px] text-gold">
+                                      {CATEGORY_CAPABILITY_LABELS[key]}
+                                    </span>
+                                  ))}
+                                </div>
                               </div>
                               <div className="flex items-center gap-1">
                                 <button
@@ -2284,15 +2418,6 @@ export default function AdminProducts() {
                       />
                       Visivel no Salao
                     </label>
-                    <label className="flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-02 px-3 py-2 text-sm text-parchment sm:col-span-2">
-                      <input
-                        type="checkbox"
-                        checked={(formData as any).show_crust_options !== false}
-                        onChange={(event) => setFormData({ ...formData, show_crust_options: event.target.checked } as any)}
-                        className="accent-gold"
-                      />
-                      Exibir opções de massa e borda na personalização
-                    </label>
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <div>
@@ -2333,8 +2458,11 @@ export default function AdminProducts() {
                     </button>
                   </div>
                   <select
-                    value={(formData as any).category || ""}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value, subcategory: "" } as any)}
+                    value={selectedCategoryId || ""}
+                    onChange={(e) => {
+                      const category = activeCatalogCategories.find((item) => item.id === e.target.value);
+                      setFormData({ ...formData, category_id: e.target.value, category: category?.name || "", subcategory_id: "", subcategory: "" } as any);
+                    }}
                     className={cls}
                     disabled={activeCatalogCategories.length === 0}
                   >
@@ -2342,13 +2470,13 @@ export default function AdminProducts() {
                       {activeCatalogCategories.length === 0 ? "Cadastre uma categoria na aba Categorias" : "Selecione uma categoria"}
                     </option>
                     {activeCatalogCategories.map((cat) => (
-                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
                     ))}
-                    {(formData as any).category && !catalogCategoryNames.includes((formData as any).category) && (
-                      <option value={(formData as any).category}>Categoria atual nao cadastrada: {(formData as any).category}</option>
+                    {(formData as any).category && !selectedCategoryId && (
+                      <option value="">Categoria atual nao cadastrada: {(formData as any).category}</option>
                     )}
                   </select>
-                  {(formData as any).category && !catalogCategoryNames.includes((formData as any).category) && (
+                  {(formData as any).category && !selectedCategoryId && (
                     <p className="text-amber-400 text-xs mt-2">
                       Esta categoria veio de um produto antigo. Crie ela na aba Categorias ou selecione uma categoria cadastrada.
                     </p>
@@ -2357,8 +2485,11 @@ export default function AdminProducts() {
                 <div>
                   <label className="block text-parchment text-sm font-medium mb-2">Subcategoria</label>
                   <select
-                    value={(formData as any).subcategory || ""}
-                    onChange={(e) => setFormData({ ...formData, subcategory: e.target.value } as any)}
+                    value={selectedSubcategoryId || ""}
+                    onChange={(e) => {
+                      const subcategory = availableSubcategories.find((item) => item.id === e.target.value);
+                      setFormData({ ...formData, subcategory_id: e.target.value, subcategory: subcategory?.name || "" } as any);
+                    }}
                     className={cls}
                     disabled={!selectedCategoryId || availableSubcategories.length === 0}
                   >
@@ -2366,13 +2497,27 @@ export default function AdminProducts() {
                       {!selectedCategoryId ? "Selecione uma categoria primeiro" : availableSubcategories.length === 0 ? "Sem subcategorias cadastradas" : "Selecione uma subcategoria"}
                     </option>
                     {availableSubcategories.map((cat) => (
-                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
                     ))}
-                    {(formData as any).subcategory && !catalogSubcategoryNames.includes((formData as any).subcategory) && (
-                      <option value={(formData as any).subcategory}>Subcategoria atual nao cadastrada: {(formData as any).subcategory}</option>
+                    {(formData as any).subcategory && !selectedSubcategoryId && (
+                      <option value="">Subcategoria atual nao cadastrada: {(formData as any).subcategory}</option>
                     )}
                   </select>
                 </div>
+                {selectedCategoryConfig && (
+                  <div className="rounded-xl border border-gold/20 bg-gold/5 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-stone">Recursos definidos pela categoria</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {CATEGORY_CAPABILITY_KEYS.filter((key) => selectedCategoryCapabilities[key]).map((key) => (
+                        <span key={key} className="rounded-full border border-gold/25 bg-gold/10 px-2.5 py-1 text-xs font-semibold text-gold">
+                          {CATEGORY_CAPABILITY_LABELS[key]}
+                        </span>
+                      ))}
+                      {!CATEGORY_CAPABILITY_KEYS.some((key) => selectedCategoryCapabilities[key]) && <span className="text-xs text-stone">Nenhum recurso adicional habilitado.</span>}
+                    </div>
+                    <p className="mt-2 text-xs text-stone">Os blocos de configuração do produto seguem essa categoria e não são definidos individualmente neste cadastro.</p>
+                  </div>
+                )}
                 <div>
                   <ImageUpload
                     value={formData.icon || ""}

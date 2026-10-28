@@ -39,6 +39,7 @@ from backend.schemas.inventory import (
     InventoryUnitIn,
 )
 from backend.services.recipe_resolution import resolve_recipes, required_ingredients, required_decimal_ingredients
+from backend.services.product_category_service import effective_capabilities
 
 TENANT_ID = "default"
 ZERO = Decimal("0")
@@ -802,6 +803,8 @@ class InventoryService:
         ).first()
         if not product:
             raise InventoryInvalidReference("Produto do catalogo nao encontrado.")
+        if not effective_capabilities(self._db, product, self._tenant_context)["enable_recipe"]:
+            raise InventoryInvalidReference("A categoria deste produto nao habilita ficha tecnica.")
         return product
 
     def _validate_recipe_refs(self, product_id: str, data: dict, items: list[dict]) -> None:

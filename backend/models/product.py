@@ -29,6 +29,8 @@ class Product(Base):
     icon = Column(Text, default="🍕")
     category = Column(String(100), nullable=True)
     subcategory = Column(String(100), nullable=True)
+    category_id = Column(String, ForeignKey("product_categories.id", ondelete="SET NULL"), nullable=True)
+    subcategory_id = Column(String, ForeignKey("product_categories.id", ondelete="SET NULL"), nullable=True)
     product_type = Column(String(20), nullable=True)  # "pizza" | "drink" | "other"
     visible_delivery = Column(Boolean, nullable=False, default=True)
     visible_dine_in = Column(Boolean, nullable=False, default=True)
@@ -60,6 +62,12 @@ class ProductCategory(Base):
     name = Column(String(100), nullable=False)
     active = Column(Boolean, default=True)
     sort_order = Column(Integer, default=0)
+    enable_sizes = Column(Boolean, nullable=False, default=False, server_default="false")
+    enable_product_options = Column(Boolean, nullable=False, default=False, server_default="false")
+    enable_recipe = Column(Boolean, nullable=False, default=False, server_default="false")
+    enable_dough = Column(Boolean, nullable=False, default=False, server_default="false")
+    enable_border = Column(Boolean, nullable=False, default=False, server_default="false")
+    enable_promotions = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))

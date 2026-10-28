@@ -8,12 +8,12 @@ uma reconstrucao planejada; ele nao deve ser reutilizado como updater.
 
 ## Head atual e indices do BI Mobile
 
-O head atual da fonte e `20261027_logistics_settings_tenant_key`, filho de
+O head atual da fonte e `20261028_product_category_capabilities`, filho de
 `20261027_kds_dispatch_unit_completion`. A nova migration adiciona cinco
 indices compostos por empresa e data nas tabelas existentes de pedidos,
 visitantes, sessoes e conversas do chatbot. Nenhum dado ou contrato muda.
 O codigo KDS anterior funciona sobre o schema expandido; o par direcional
-`20261027_kds_dispatch_unit_completion:20261027_bi_mobile_analytics_indexes:20261027_logistics_settings_tenant_key`
+`20261027_kds_dispatch_unit_completion:20261027_bi_mobile_analytics_indexes:20261027_logistics_settings_tenant_key:20261028_product_option_groups:20261028_order_item_option_selections:20261028_product_category_capabilities`
 foi revisado para rollback apenas de codigo. Outros saltos permanecem bloqueados.
 A construcao transacional dos indices pode bloquear escritas nas tabelas;
 agende janela operacional para bases grandes e ensaie primeiro em clone.
@@ -237,7 +237,7 @@ obrigatoria e SHA completo aprovado no CI:
     esac
   done
   test "$(systemctl show telz-domain-ssl.service -p ActiveState --value)" = inactive
-  TELZ_ALEMBIC_TARGET=20261027_logistics_settings_tenant_key \
+  TELZ_ALEMBIC_TARGET=20261028_product_category_capabilities \
     /usr/local/sbin/telz-deploy-from-origin "$TARGET" /opt/telz
 )
 ```
@@ -363,7 +363,7 @@ imutavel e executa health checks.
 O target canonico desta entrega e:
 
 ```text
-20261027_logistics_settings_tenant_key
+20261028_product_category_capabilities
 ```
 
 O deploy fica bloqueado se o commit publicado nao possuir exatamente esse unico
@@ -394,6 +394,7 @@ A cadeia operacional que deve existir no commit publicado e linear:
   -> 20261026_order_driver_delivery_fee
   -> 20261027_kds_dispatch_unit_completion
   -> 20261027_logistics_settings_tenant_key
+  -> 20261028_product_category_capabilities
 ```
 
 ## 2. Preflight
@@ -415,7 +416,7 @@ movimentacao manual para contornar o gate.
 
 Confirme no commit alvo:
 
-- unico head Alembic `20261027_logistics_settings_tenant_key`;
+- unico head Alembic `20261028_product_category_capabilities`;
 - workflow e updater usando o mesmo target;
 - CI verde para o mesmo SHA, incluindo o upgrade Alembic em PostgreSQL
   descartavel; CI verde nao substitui o backup nem a migration na VPS;
@@ -451,7 +452,7 @@ deploy, todos estes inputs promovidos e root-owned:
 - archive de fonte alvo e seu `TELZ_SOURCE_ARCHIVE_SHA256`;
 - archive de fonte anterior e seu `TELZ_PREVIOUS_SOURCE_ARCHIVE_SHA256`;
 - archive offline de dependencias e seu `TELZ_DEPENDENCY_ARCHIVE_SHA256`;
-- `TELZ_ALEMBIC_TARGET=20261027_logistics_settings_tenant_key`;
+- `TELZ_ALEMBIC_TARGET=20261028_product_category_capabilities`;
 - `TELZ_PUBLIC_HEALTH_URL` quando HTTPS publico e obrigatorio.
 
 Gerar esses valores manualmente, copiar arquivos do worktree ou omitir hashes
@@ -492,7 +493,7 @@ sudo /usr/local/sbin/telz-health-check /opt/telz
 ```
 
 Confirme que o link `current` termina em `/releases/<SHA-ALVO>/app`, o manifest
-registra o mesmo commit e `20261027_logistics_settings_tenant_key`, e o banco possui uma unica
+registra o mesmo commit e `20261028_product_category_capabilities`, e o banco possui uma unica
 revision igual ao target.
 
 Tambem valide HTTPS publico, login, loja, pedido, pagamentos, cozinha,

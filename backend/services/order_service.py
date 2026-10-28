@@ -43,6 +43,7 @@ from backend.models.customer import Address, Customer as CustomerModel
 from backend.schemas.order import CheckoutIn, CartItemIn, FlavorIn, OrderStatusUpdate
 from backend.services.customer_metrics_service import sync_customer_order_metrics
 from backend.services.product_pricing_service import ProductPriceResult, ProductPricingService, normalize_crust_price_addition
+from backend.services.product_category_service import effective_capabilities
 
 
 # ── Pricing helpers (shared with front-end logic) ─────────────────────────────
@@ -281,13 +282,16 @@ class OrderService:
         product = self._tenant_query(Product, catalog=True).filter(Product.id == item.product_id, Product.active == True).first()
         if not product or product.product_type == "brinde":
             raise ProductNotFound(item.product_id)
+        capabilities = effective_capabilities(self._db, product, self._tenant_context)
         visible = "visible_dine_in" if channel == "dine_in" else "visible_delivery"
         if not getattr(product, visible, True):
             raise DomainError("Produto indisponivel neste canal.", code="ProductChannelUnavailable")
-        if getattr(product, "show_crust_options", True) is False and (
-            item.selected_crust_type_id or item.selected_border_id
-        ):
-            raise DomainError("Este produto nao permite selecionar massa ou borda.", code="CrustOptionsUnavailable")
+        if item.selected_size_id and not capabilities["enable_sizes"]:
+            raise DomainError("Este produto nao permite selecionar tamanho.", code="SizesUnavailable")
+        if item.selected_crust_type_id and not capabilities["enable_dough"]:
+            raise DomainError("Este produto nao permite selecionar massa.", code="DoughUnavailable")
+        if item.selected_border_id and not capabilities["enable_border"]:
+            raise DomainError("Este produto nao permite selecionar borda.", code="BorderUnavailable")
         if item.flavor_division > 1 and product.product_type not in {None, "pizza"}:
             raise DomainError("Este produto nao aceita multiplos sabores.", code="InvalidFlavorProductType")
         if _is_fixed_flavor_combination(product) and (item.flavor_division != 1 or item.flavors[0].product_id != product.id):
@@ -301,18 +305,18 @@ class OrderService:
                 raise DomainError(f"{label} inexistente, inativo ou de outro produto.", code="InvalidProductOption")
             return row
 
-        size = option(ProductSize, item.selected_size_id, "Tamanho")
-        if size is None and any(candidate.active for candidate in product.sizes):
+        size = option(ProductSize, item.selected_size_id, "Tamanho") if capabilities["enable_sizes"] else None
+        if size is None and capabilities["enable_sizes"] and any(candidate.active for candidate in product.sizes):
             raise DomainError("Selecione um tamanho valido.", code="ProductSizeRequired")
-        crust = option(ProductCrustType, item.selected_crust_type_id, "Massa")
-        border = option(ProductCrustType, item.selected_border_id, "Borda")
+        crust = option(ProductCrustType, item.selected_crust_type_id, "Massa") if capabilities["enable_dough"] else None
+        border = option(ProductCrustType, item.selected_border_id, "Borda") if capabilities["enable_border"] else None
         variant = option(ProductDrinkVariant, item.selected_drink_variant_id, "Variante")
 
         # Generic product options are authoritative for products that have an
         # explicit configuration. Client labels and prices are display hints;
         # the server resolves the tenant-owned rows and calculates the delta.
         option_price_addition = 0.0
-        active_groups = [group for group in getattr(product, "option_groups", []) if group.active]
+        active_groups = [group for group in getattr(product, "option_groups", []) if group.active] if capabilities["enable_product_options"] else []
         if active_groups:
             selections_by_group: dict[str, list] = {}
             for selection in item.option_selections:
@@ -400,6 +404,8 @@ class OrderService:
             product=product, size=size, crust=crust, border=border, drink_variant=variant,
             channel=channel, standard_price_override=round(server_price, 2), flavor_count=item.flavor_division,
         )
+        if not capabilities["enable_promotions"]:
+            pricing = ProductPriceResult(standard_price=pricing.standard_price, final_price=pricing.standard_price)
         item.selected_size = size.label if size else "Unico"
         item.selected_crust_type_name = crust.name if crust else None
         item.selected_border_name = border.name if border else None

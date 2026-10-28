@@ -369,8 +369,57 @@ export interface ApiProductCategory {
   name: string;
   active: boolean;
   sort_order: number;
+  enable_sizes?: boolean;
+  enable_product_options?: boolean;
+  enable_recipe?: boolean;
+  enable_dough?: boolean;
+  enable_border?: boolean;
+  enable_promotions?: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export type ApiProductCategoryCapabilityKey =
+  | "enable_sizes"
+  | "enable_product_options"
+  | "enable_recipe"
+  | "enable_dough"
+  | "enable_border"
+  | "enable_promotions";
+
+export type ApiProductCategoryCapabilities = Partial<Record<ApiProductCategoryCapabilityKey, boolean>>;
+
+/**
+ * Category capabilities may arrive flattened on the product or nested under
+ * category_capabilities while older API responses still omit them entirely.
+ * Returning null lets callers preserve the legacy behavior in that case.
+ */
+export function getProductCategoryCapabilities(
+  source?: Partial<ApiProductCategory> & {
+    category_capabilities?: ApiProductCategoryCapabilities | null;
+    categoryCapabilities?: ApiProductCategoryCapabilities | null;
+  } | null,
+): ApiProductCategoryCapabilities | null {
+  if (!source) return null;
+  const nested = source.category_capabilities ?? source.categoryCapabilities ?? {};
+  const resolved = {} as ApiProductCategoryCapabilities;
+  const keys: ApiProductCategoryCapabilityKey[] = [
+    "enable_sizes",
+    "enable_product_options",
+    "enable_recipe",
+    "enable_dough",
+    "enable_border",
+    "enable_promotions",
+  ];
+  let found = false;
+  for (const key of keys) {
+    const value = nested[key] ?? source[key];
+    if (typeof value === "boolean") {
+      resolved[key] = value;
+      found = true;
+    }
+  }
+  return found ? resolved : null;
 }
 
 export type ApiProductOptionSelectionType = "single" | "multiple" | "quantity" | "text";
@@ -415,6 +464,16 @@ export interface ApiProduct {
   icon: string;
   category: string | null;
   subcategory: string | null;
+  category_id?: string | null;
+  subcategory_id?: string | null;
+  category_capabilities?: ApiProductCategoryCapabilities | null;
+  categoryCapabilities?: ApiProductCategoryCapabilities | null;
+  enable_sizes?: boolean;
+  enable_product_options?: boolean;
+  enable_recipe?: boolean;
+  enable_dough?: boolean;
+  enable_border?: boolean;
+  enable_promotions?: boolean;
   product_type: string | null;  // "pizza" | "drink" | "other"
   rating: number;
   active: boolean;
