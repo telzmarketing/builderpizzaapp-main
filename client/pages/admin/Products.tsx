@@ -6,7 +6,7 @@ import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import ImageUpload from "@/components/admin/ImageUpload";
 import ProductRecipeEditor from "@/components/admin/ProductRecipeEditor";
-import { productsApi, sizesApi, crustApi, drinkVariantApi, categoriesApi, productPromotionsApi, ApiProduct, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, ApiProductPromotion, ApiProductPromotionCombination, ProductPromotionDiscountType, ApiBestSellerConfig, isAssetUrl, resolveAssetUrl } from "@/lib/api";
+import { productsApi, sizesApi, crustApi, drinkVariantApi, categoriesApi, productPromotionsApi, ApiProduct, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, ApiProductPromotion, ApiProductPromotionCombination, ProductPromotionDiscountType, ApiBestSellerConfig, ApiProductOptionGroup, ApiProductOption, ApiProductOptionSelectionType, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { pizzaSizeDescription, pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { normalizeCrustPriceAddition } from "@/lib/pricing";
 
@@ -466,8 +466,100 @@ export default function AdminProducts() {
     visible_delivery: true, visible_dine_in: true, show_crust_options: true, delivery_price: null, dine_in_price: null,
   });
 
+  const [optionGroupsProduct, setOptionGroupsProduct] = useState<Pizza | null>(null);
+  const [optionGroups, setOptionGroups] = useState<ApiProductOptionGroup[]>([]);
+  const [optionGroupsLoading, setOptionGroupsLoading] = useState(false);
+  const [optionGroupSaving, setOptionGroupSaving] = useState(false);
+  const [editingOptionGroupId, setEditingOptionGroupId] = useState<string | null>(null);
+  const [optionGroupForm, setOptionGroupForm] = useState({
+    key: "", name: "", selection_type: "single" as ApiProductOptionSelectionType,
+    required: false, min_selections: 0, max_selections: 1, active: true,
+  });
+  const [editingOptionId, setEditingOptionId] = useState<string | null>(null);
+  const [optionForm, setOptionForm] = useState({ label: "", price_addition: 0, active: true });
+
   const selectedCategoryId = activeCatalogCategories.find((cat) => cat.name === ((formData as any).category || ""))?.id ?? "";
   const availableSubcategories = activeSubcategories.filter((cat) => cat.parent_id === selectedCategoryId);
+
+  const openOptionGroupsModal = async (product: Pizza) => {
+    setOptionGroupsProduct(product);
+    setOptionGroupsLoading(true);
+    setEditingOptionGroupId(null);
+    setEditingOptionId(null);
+    setOptionGroupForm({ key: "", name: "", selection_type: "single", required: false, min_selections: 0, max_selections: 1, active: true });
+    setOptionForm({ label: "", price_addition: 0, active: true });
+    try {
+      setOptionGroups(await productsApi.optionGroups.list(product.id, false));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Erro ao carregar grupos de opcoes.");
+      setOptionGroups([]);
+    } finally {
+      setOptionGroupsLoading(false);
+    }
+  };
+
+  const resetOptionGroupForm = () => {
+    setEditingOptionGroupId(null);
+    setOptionGroupForm({ key: "", name: "", selection_type: "single", required: false, min_selections: 0, max_selections: 1, active: true });
+  };
+
+  const saveOptionGroup = async () => {
+    if (!optionGroupsProduct || !optionGroupForm.key.trim() || !optionGroupForm.name.trim()) return;
+    setOptionGroupSaving(true);
+    try {
+      const payload = {
+        key: optionGroupForm.key.trim(), name: optionGroupForm.name.trim(), selection_type: optionGroupForm.selection_type,
+        required: optionGroupForm.required,
+        min_selections: Math.max(optionGroupForm.required ? 1 : 0, Number(optionGroupForm.min_selections) || 0),
+        max_selections: optionGroupForm.selection_type === "single" ? 1 : Math.max(optionGroupForm.required ? 1 : 0, Number(optionGroupForm.max_selections) || 0),
+        sort_order: editingOptionGroupId ? (optionGroups.find((group) => group.id === editingOptionGroupId)?.sort_order ?? optionGroups.length) : optionGroups.length,
+        active: optionGroupForm.active,
+      };
+      const saved = editingOptionGroupId
+        ? await productsApi.optionGroups.update(optionGroupsProduct.id, editingOptionGroupId, payload)
+        : await productsApi.optionGroups.create(optionGroupsProduct.id, payload);
+      setOptionGroups((current) => editingOptionGroupId ? current.map((group) => group.id === saved.id ? { ...group, ...saved } : group) : [...current, saved]);
+      resetOptionGroupForm();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Erro ao salvar grupo de opcoes.");
+    } finally {
+      setOptionGroupSaving(false);
+    }
+  };
+
+  const saveOption = async (group: ApiProductOptionGroup) => {
+    if (!optionGroupsProduct || !optionForm.label.trim()) return;
+    setOptionGroupSaving(true);
+    try {
+    const payload = { name: optionForm.label.trim(), key: optionForm.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `option-${group.options.length + 1}`, price_addition: Number(optionForm.price_addition) || 0, sort_order: group.options.length, active: optionForm.active };
+      const editingOption = editingOptionId ? group.options.find((option) => option.id === editingOptionId) : null;
+      const saved = editingOption
+        ? await productsApi.optionGroups.options.update(optionGroupsProduct.id, group.id, editingOption.id, payload)
+        : await productsApi.optionGroups.options.create(optionGroupsProduct.id, group.id, payload);
+      setOptionGroups((current) => current.map((item) => item.id !== group.id ? item : {
+        ...item,
+        options: editingOption ? item.options.map((option) => option.id === saved.id ? saved : option) : [...item.options, saved],
+      }));
+      setEditingOptionId(null);
+      setOptionForm({ label: "", price_addition: 0, active: true });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Erro ao salvar opcao.");
+    } finally {
+      setOptionGroupSaving(false);
+    }
+  };
+
+  const removeOptionGroup = async (group: ApiProductOptionGroup) => {
+    if (!optionGroupsProduct || !confirm(`Remover o grupo "${group.name}"?`)) return;
+    await productsApi.optionGroups.remove(optionGroupsProduct.id, group.id);
+    setOptionGroups((current) => current.filter((item) => item.id !== group.id));
+  };
+
+  const removeOption = async (group: ApiProductOptionGroup, option: ApiProductOption) => {
+    if (!optionGroupsProduct || !confirm(`Remover a opcao "${option.name}"?`)) return;
+    await productsApi.optionGroups.options.remove(optionGroupsProduct.id, group.id, option.id);
+    setOptionGroups((current) => current.map((item) => item.id !== group.id ? item : { ...item, options: item.options.filter((itemOption) => itemOption.id !== option.id) }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1571,6 +1663,14 @@ export default function AdminProducts() {
                           )}
                         </button>
 
+                        <button onClick={() => { void openOptionGroupsModal(product); }} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-violet-500/10 hover:border-violet-400/40 text-parchment hover:text-violet-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
+                          <Settings2 size={15} />
+                          Opcoes do produto
+                          {((product as any).option_groups ?? []).length > 0 && (
+                            <span className="ml-auto text-xs bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded-full">{((product as any).option_groups ?? []).length}</span>
+                          )}
+                        </button>
+
                         <button onClick={() => setRecipeModalProduct(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-emerald-500/10 hover:border-emerald-500/40 text-parchment hover:text-emerald-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                           <ClipboardList size={15} />
                           Ficha tecnica
@@ -2011,7 +2111,7 @@ export default function AdminProducts() {
                               }`}
                             >
                               <span className="min-w-0">
-                                <span className="block truncate text-sm font-bold">{option.label}</span>
+                                 <span className="block truncate text-sm font-bold">{option.label}</span>
                                 <span className="block text-xs text-stone">{option.type} - {option.count} produto{option.count === 1 ? "" : "s"}</span>
                               </span>
                               <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
@@ -2326,6 +2426,65 @@ export default function AdminProducts() {
       )}
 
       {/* ── Sizes Modal ───────────────────────────────────────────────────────── */}
+      {optionGroupsProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3" onClick={() => setOptionGroupsProduct(null)}>
+          <div className="w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl border border-surface-03 bg-surface-02 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-surface-03 bg-surface-02 px-5 py-4">
+              <div>
+                <h3 className="text-lg font-bold text-cream">Opcoes de {optionGroupsProduct.name}</h3>
+                <p className="text-xs text-stone">Esses grupos controlam o que aparece na tela do cliente.</p>
+              </div>
+              <button type="button" onClick={() => setOptionGroupsProduct(null)} className="text-stone hover:text-cream"><X size={20} /></button>
+            </div>
+            <div className="space-y-5 p-5">
+              <div className="rounded-xl border border-violet-400/30 bg-violet-500/5 p-4 space-y-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <input className={cls} value={optionGroupForm.key} onChange={(event) => setOptionGroupForm((form) => ({ ...form, key: event.target.value }))} placeholder="Chave (ex: recheio)" disabled={!!editingOptionGroupId} />
+                  <input className={cls} value={optionGroupForm.name} onChange={(event) => setOptionGroupForm((form) => ({ ...form, name: event.target.value }))} placeholder="Nome exibido (ex: Recheio)" />
+                  <select className={cls} value={optionGroupForm.selection_type} onChange={(event) => setOptionGroupForm((form) => ({ ...form, selection_type: event.target.value as ApiProductOptionSelectionType }))}>
+                    <option value="single">Uma escolha</option>
+                    <option value="multiple">Varias escolhas</option>
+                    <option value="quantity">Escolha com quantidade</option>
+                    <option value="text">Texto livre</option>
+                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input className={cls} type="number" min="0" value={optionGroupForm.min_selections} onChange={(event) => setOptionGroupForm((form) => ({ ...form, min_selections: Number(event.target.value) || 0 }))} placeholder="Minimo" />
+                    <input className={cls} type="number" min="0" value={optionGroupForm.max_selections} onChange={(event) => setOptionGroupForm((form) => ({ ...form, max_selections: Number(event.target.value) || 0 }))} placeholder="Maximo (0 = livre)" />
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-4 text-sm text-parchment">
+                  <label className="flex items-center gap-2"><input type="checkbox" className="accent-gold" checked={optionGroupForm.required} onChange={(event) => setOptionGroupForm((form) => ({ ...form, required: event.target.checked }))} /> Obrigatorio</label>
+                  <label className="flex items-center gap-2"><input type="checkbox" className="accent-gold" checked={optionGroupForm.active} onChange={(event) => setOptionGroupForm((form) => ({ ...form, active: event.target.checked }))} /> Ativo</label>
+                  <button type="button" onClick={() => { void saveOptionGroup(); }} disabled={optionGroupSaving || !optionGroupForm.key.trim() || !optionGroupForm.name.trim()} className="ml-auto rounded-lg bg-gold px-3 py-2 text-xs font-bold text-cream disabled:opacity-50">{editingOptionGroupId ? "Salvar grupo" : "Adicionar grupo"}</button>
+                  {editingOptionGroupId && <button type="button" onClick={resetOptionGroupForm} className="rounded-lg bg-surface-03 px-3 py-2 text-xs font-bold text-parchment">Cancelar</button>}
+                </div>
+              </div>
+
+              {optionGroupsLoading ? <div className="py-8 text-center text-stone"><Loader2 className="mx-auto animate-spin" size={24} /></div> : optionGroups.length === 0 ? <p className="rounded-xl border border-dashed border-surface-03 p-6 text-center text-sm text-stone">Nenhum grupo configurado. O produto continua usando a experiencia legada.</p> : (
+                <div className="space-y-3">
+                  {optionGroups.map((group) => (
+                    <div key={group.id} className="rounded-xl border border-surface-03 bg-surface-01 p-4">
+                      <div className="flex flex-wrap items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2"><h4 className="font-bold text-cream">{group.name}</h4><span className="rounded-full bg-surface-03 px-2 py-0.5 text-[10px] text-stone">{group.selection_type}</span>{group.required && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-300">obrigatorio</span>}</div>
+                          <p className="text-xs text-stone">{group.key} · {group.options.length} opcao(oes) {group.active ? "· ativo" : "· inativo"}</p>
+                        </div>
+                        <button type="button" onClick={() => { setEditingOptionGroupId(group.id); setOptionGroupForm({ key: group.key, name: group.name, selection_type: group.selection_type, required: group.required, min_selections: group.min_selections, max_selections: group.max_selections, active: group.active }); }} className="text-xs text-gold">Editar grupo</button>
+                        <button type="button" onClick={() => { void removeOptionGroup(group); }} className="text-xs text-red-400">Remover</button>
+                      </div>
+                      {group.selection_type !== "text" && <div className="mt-3 space-y-2">
+                        {group.options.map((option) => <div key={option.id} className="flex items-center gap-2 rounded-lg bg-surface-03 px-3 py-2 text-sm"><span className="min-w-0 flex-1 text-parchment">{option.name}</span><span className="text-xs text-gold-light">{option.price_addition > 0 ? `+ R$ ${option.price_addition.toFixed(2)}` : "Sem adicional"}</span><button type="button" onClick={() => { setEditingOptionId(option.id); setOptionForm({ label: option.name, price_addition: option.price_addition, active: option.active }); }} className="text-xs text-gold">Editar</button><button type="button" onClick={() => { void removeOption(group, option); }} className="text-xs text-red-400">Remover</button></div>)}
+                        <div className="grid grid-cols-[1fr,110px,auto] gap-2"><input className={cls} value={editingOptionId && group.options.some((option) => option.id === editingOptionId) ? optionForm.label : (editingOptionId ? "" : optionForm.label)} onChange={(event) => setOptionForm((form) => ({ ...form, label: event.target.value }))} placeholder="Nova opcao" /><input className={cls} type="number" min="0" step="0.01" value={optionForm.price_addition} onChange={(event) => setOptionForm((form) => ({ ...form, price_addition: Number(event.target.value) || 0 }))} placeholder="Adicional" /><button type="button" onClick={() => { void saveOption(group); }} disabled={optionGroupSaving || !optionForm.label.trim()} className="rounded-lg bg-surface-03 px-3 text-xs font-bold text-parchment disabled:opacity-50">{editingOptionId && group.options.some((option) => option.id === editingOptionId) ? "Salvar" : "Adicionar"}</button></div>
+                      </div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {recipeModalProduct && <ProductRecipeEditor key={recipeModalProduct.id} product={recipeModalProduct} catalog={products} onClose={() => setRecipeModalProduct(null)} />}
 
       {promotionModalProduct && (

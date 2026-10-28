@@ -50,6 +50,15 @@ export interface CartItemVariation {
   priceAddition: number;
 }
 
+export interface CartItemOptionSelection {
+  groupId: string;
+  groupName: string;
+  optionId?: string;
+  label: string;
+  quantity?: number;
+  priceAddition: number;
+}
+
 export interface CartItem {
   cartItemId: string;
   productId: string;
@@ -65,6 +74,7 @@ export interface CartItem {
   selectedCrustType?: CartItemVariation | null;
   selectedBorder?: CartItemVariation | null;
   selectedDrinkVariant?: CartItemVariation | null;
+  selectedOptions: CartItemOptionSelection[];
   promotionApplied?: boolean;
   promotionId?: string | null;
   promotionName?: string | null;
@@ -312,7 +322,8 @@ interface AppContextType {
     drinkVariant?: CartItemVariation | null,
     sizeId?: string,
     promotion?: CartPromotionMeta
-    , border?: CartItemVariation | null
+    , border?: CartItemVariation | null,
+    selectedOptions?: CartItemOptionSelection[]
   ) => void;
   updateCartItem: (cartItemId: string, quantity: number, size: string, addOns: string[]) => void;
   removeFromCart: (cartItemId: string) => void;
@@ -915,7 +926,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     drinkVariant?: CartItemVariation | null,
     sizeId?: string,
     promotion?: CartPromotionMeta
-    , border?: CartItemVariation | null
+    , border?: CartItemVariation | null,
+    selectedOptions?: CartItemOptionSelection[]
   ) => {
     const cartItemId = `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const isFixedFlavorCombination = isFixedFlavorCombinationProduct(primaryProduct);
@@ -946,6 +958,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         selectedCrustType: crustType ?? null,
         selectedBorder: border ?? null,
         selectedDrinkVariant: drinkVariant ?? null,
+         selectedOptions: selectedOptions ?? [],
         promotionApplied: !!promotion?.applied,
         promotionId: promotion?.id ?? null,
         promotionName: promotion?.name ?? null,

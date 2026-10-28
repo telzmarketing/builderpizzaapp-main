@@ -13,6 +13,15 @@ class FlavorIn(BaseModel):
     icon: str
 
 
+class OptionSelectionIn(BaseModel):
+    group_id: str = Field(min_length=1, max_length=100)
+    group_name: Optional[str] = None
+    option_id: Optional[str] = None
+    label: Optional[str] = None
+    quantity: int = Field(default=1, ge=1, le=99)
+    price_addition: float = Field(default=0, ge=0)
+
+
 class CartItemIn(BaseModel):
     product_id: str
     quantity: int = Field(ge=1)
@@ -22,6 +31,7 @@ class CartItemIn(BaseModel):
     flavors: list[FlavorIn]
     final_price: float
     add_ons: list[str] = []
+    option_selections: list[OptionSelectionIn] = Field(default_factory=list, max_length=100)
     # Pizza crust selection
     selected_crust_type_id: Optional[str] = None
     selected_crust_type_name: Optional[str] = None
@@ -104,6 +114,7 @@ class OrderItemOut(BaseModel):
     selected_drink_variant: Optional[str] = None
     notes: Optional[str] = None
     add_ons: list[str] = []
+    option_selections: list[OptionSelectionIn] = []
     unit_price: float
     total_price: float
     standard_unit_price: Optional[float] = None

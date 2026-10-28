@@ -146,6 +146,79 @@ class ProductDrinkVariantOut(BaseModel):
     created_at: datetime
 
 
+class ProductOptionBase(CatalogInput):
+    key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$")
+    name: str = Field(min_length=1, max_length=120)
+    price_addition: float = Field(default=0.0, ge=0)
+    sort_order: int = Field(default=0, ge=0)
+    active: bool = True
+
+
+class ProductOptionCreate(ProductOptionBase):
+    pass
+
+
+class ProductOptionUpdate(CatalogInput):
+    key: Optional[str] = Field(default=None, min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$")
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    price_addition: Optional[float] = Field(default=None, ge=0)
+    sort_order: Optional[int] = Field(default=None, ge=0)
+    active: Optional[bool] = None
+
+
+class ProductOptionOut(ProductOptionBase):
+    model_config = {"from_attributes": True}
+    id: str
+    group_id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProductOptionGroupBase(CatalogInput):
+    key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$")
+    name: str = Field(min_length=1, max_length=100)
+    selection_type: Literal["single", "multiple", "quantity", "text"] = "single"
+    required: bool = False
+    min_selections: int = Field(default=0, ge=0)
+    max_selections: int = Field(default=1, ge=0)
+    sort_order: int = Field(default=0, ge=0)
+    active: bool = True
+
+    @model_validator(mode="after")
+    def validate_selection_bounds(self):
+        if self.max_selections < self.min_selections:
+            raise ValueError("max_selections deve ser maior ou igual a min_selections.")
+        if self.required and self.min_selections < 1:
+            raise ValueError("Grupo obrigatorio deve exigir ao menos uma selecao.")
+        if self.selection_type == "single" and self.max_selections > 1:
+            raise ValueError("Grupo de selecao unica nao pode aceitar mais de uma opcao.")
+        return self
+
+
+class ProductOptionGroupCreate(ProductOptionGroupBase):
+    pass
+
+
+class ProductOptionGroupUpdate(CatalogInput):
+    key: Optional[str] = Field(default=None, min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$")
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    selection_type: Optional[Literal["single", "multiple", "quantity", "text"]] = None
+    required: Optional[bool] = None
+    min_selections: Optional[int] = Field(default=None, ge=0)
+    max_selections: Optional[int] = Field(default=None, ge=0)
+    sort_order: Optional[int] = Field(default=None, ge=0)
+    active: Optional[bool] = None
+
+
+class ProductOptionGroupOut(ProductOptionGroupBase):
+    model_config = {"from_attributes": True}
+    id: str
+    product_id: str
+    created_at: datetime
+    updated_at: datetime
+    options: List[ProductOptionOut] = Field(default_factory=list)
+
+
 # ── Product ───────────────────────────────────────────────────────────────────
 
 class ProductBase(BaseModel):
@@ -205,6 +278,7 @@ class ProductOut(ProductBase):
     sizes: List[ProductSizeOut] = []
     crust_types: List[ProductCrustTypeOut] = []
     drink_variants: List[ProductDrinkVariantOut] = []
+    option_groups: List[ProductOptionGroupOut] = Field(default_factory=list)
     standard_price: Optional[float] = None
     current_price: Optional[float] = None
     promotion_applied: bool = False

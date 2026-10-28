@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Boolean, Integer, Enum, Text, DateTime, ForeignKey, JSON, Index, UniqueConstraint
+from sqlalchemy import Column, String, Float, Boolean, Integer, Enum, Text, DateTime, ForeignKey, JSON, Index, UniqueConstraint, CheckConstraint, ForeignKeyConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -46,6 +46,7 @@ class Product(Base):
     sizes = relationship("ProductSize", back_populates="product", cascade="all, delete-orphan", order_by="ProductSize.sort_order")
     crust_types = relationship("ProductCrustType", back_populates="product", cascade="all, delete-orphan", order_by="ProductCrustType.sort_order")
     drink_variants = relationship("ProductDrinkVariant", back_populates="product", cascade="all, delete-orphan", order_by="ProductDrinkVariant.sort_order")
+    option_groups = relationship("ProductOptionGroup", back_populates="product", cascade="all, delete-orphan", order_by="ProductOptionGroup.sort_order")
     promotions = relationship("ProductPromotion", foreign_keys="ProductPromotion.product_id", back_populates="product", cascade="all, delete-orphan")
 
 
@@ -114,6 +115,73 @@ class ProductDrinkVariant(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     product = relationship("Product", back_populates="drink_variants")
+
+
+class ProductOptionGroup(Base):
+    """Configurable customer-facing option group owned by one product."""
+    __tablename__ = "product_option_groups"
+    __table_args__ = (
+        Index("uq_product_option_groups_tenant_id_id", "tenant_id", "id", unique=True),
+        UniqueConstraint("tenant_id", "product_id", "key", name="uq_product_option_groups_product_key"),
+        ForeignKeyConstraint(
+            ["tenant_id", "product_id"],
+            ["products.tenant_id", "products.id"],
+            name="fk_product_option_groups_tenant_product",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint("selection_type IN ('single','multiple','quantity','text')", name="ck_product_option_groups_selection_type"),
+        CheckConstraint("sort_order >= 0", name="ck_product_option_groups_sort_order"),
+        CheckConstraint("min_selections >= 0 AND max_selections >= min_selections", name="ck_product_option_groups_selection_bounds"),
+        CheckConstraint("NOT required OR min_selections >= 1", name="ck_product_option_groups_required_minimum"),
+        CheckConstraint("selection_type <> 'single' OR max_selections <= 1", name="ck_product_option_groups_single_maximum"),
+    )
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_product_option_groups_tenant_id_tenants"), nullable=True)
+    product_id = Column(String, nullable=False)
+    key = Column(String(64), nullable=False)
+    name = Column(String(100), nullable=False)
+    selection_type = Column(String(16), nullable=False, default="single", server_default="single")
+    required = Column(Boolean, nullable=False, default=False, server_default="false")
+    min_selections = Column(Integer, nullable=False, default=0, server_default="0")
+    max_selections = Column(Integer, nullable=False, default=1, server_default="1")
+    sort_order = Column(Integer, nullable=False, default=0, server_default="0")
+    active = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    product = relationship("Product", back_populates="option_groups")
+    options = relationship("ProductOption", back_populates="group", cascade="all, delete-orphan", order_by="ProductOption.sort_order")
+
+
+class ProductOption(Base):
+    """Selectable value inside a product option group."""
+    __tablename__ = "product_options"
+    __table_args__ = (
+        Index("uq_product_options_tenant_id_id", "tenant_id", "id", unique=True),
+        UniqueConstraint("tenant_id", "group_id", "key", name="uq_product_options_group_key"),
+        ForeignKeyConstraint(
+            ["tenant_id", "group_id"],
+            ["product_option_groups.tenant_id", "product_option_groups.id"],
+            name="fk_product_options_tenant_group",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint("sort_order >= 0", name="ck_product_options_sort_order"),
+        CheckConstraint("price_addition >= 0", name="ck_product_options_price_addition"),
+    )
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", name="fk_product_options_tenant_id_tenants"), nullable=True)
+    group_id = Column(String, nullable=False)
+    key = Column(String(64), nullable=False)
+    name = Column(String(120), nullable=False)
+    price_addition = Column(Float, nullable=False, default=0.0, server_default="0")
+    sort_order = Column(Integer, nullable=False, default=0, server_default="0")
+    active = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    group = relationship("ProductOptionGroup", back_populates="options")
 
 
 class BestSellerConfig(Base):

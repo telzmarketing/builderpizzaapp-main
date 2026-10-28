@@ -373,6 +373,31 @@ export interface ApiProductCategory {
   updated_at: string;
 }
 
+export type ApiProductOptionSelectionType = "single" | "multiple" | "quantity" | "text";
+
+export interface ApiProductOption {
+  id: string;
+  group_id: string;
+  name: string;
+  price_addition: number;
+  sort_order: number;
+  active: boolean;
+}
+
+export interface ApiProductOptionGroup {
+  id: string;
+  product_id: string;
+  key: string;
+  name: string;
+  selection_type: ApiProductOptionSelectionType;
+  required: boolean;
+  min_selections: number;
+  max_selections: number;
+  sort_order: number;
+  active: boolean;
+  options: ApiProductOption[];
+}
+
 export interface ApiHomeCatalogConfig {
   id: string;
   mode: "all" | "categories" | "products";
@@ -403,6 +428,7 @@ export interface ApiProduct {
   sizes?: ApiProductSize[];
   crust_types?: ApiProductCrustType[];
   drink_variants?: ApiProductDrinkVariant[];
+  option_groups?: ApiProductOptionGroup[];
   standard_price?: number | null;
   current_price?: number | null;
   promotion_applied?: boolean;
@@ -1725,6 +1751,7 @@ export interface CheckoutItemIn {
   selected_drink_variant_id?: string | null;
   selected_drink_variant_name?: string | null;
   notes?: string | null;
+  option_selections?: Array<{ group_id: string; group_name: string; option_id?: string; label: string; quantity?: number; price_addition: number }>;
 }
 
 export interface CheckoutIn {
@@ -5275,6 +5302,25 @@ export const productsApi = {
     put<ApiProduct>(`/products/${id}`, data),
 
   remove: (id: string) => del<void>(`/products/${id}`),
+
+  optionGroups: {
+    list: (productId: string, activeOnly = false) =>
+      get<ApiProductOptionGroup[]>(`/products/${productId}/option-groups${activeOnly ? "?active_only=true" : ""}`),
+    create: (productId: string, data: Omit<ApiProductOptionGroup, "id" | "product_id" | "options">) =>
+      post<ApiProductOptionGroup>(`/products/${productId}/option-groups`, data),
+    update: (productId: string, groupId: string, data: Partial<Omit<ApiProductOptionGroup, "id" | "product_id" | "options">>) =>
+      put<ApiProductOptionGroup>(`/products/${productId}/option-groups/${groupId}`, data),
+    remove: (productId: string, groupId: string) =>
+      del<void>(`/products/${productId}/option-groups/${groupId}`),
+    options: {
+      create: (productId: string, groupId: string, data: Omit<ApiProductOption, "id" | "group_id">) =>
+        post<ApiProductOption>(`/products/${productId}/option-groups/${groupId}/options`, data),
+      update: (productId: string, groupId: string, optionId: string, data: Partial<Omit<ApiProductOption, "id" | "group_id">>) =>
+        put<ApiProductOption>(`/products/${productId}/option-groups/${groupId}/options/${optionId}`, data),
+      remove: (productId: string, groupId: string, optionId: string) =>
+        del<void>(`/products/${productId}/option-groups/${groupId}/options/${optionId}`),
+    },
+  },
 
   getMultiFlavorsConfig: () =>
     get<ApiMultiFlavorsConfig>("/products/config/multi-flavors"),

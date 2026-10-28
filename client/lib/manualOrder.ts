@@ -4,11 +4,19 @@ import type { ApiEffectivePermissions, CheckoutItemIn } from "./api";
 export interface ManualCartLine { id: string; name: string; item: CheckoutItemIn }
 
 export function configuredManualLine(args: Parameters<NonNullable<ProductConfiguratorProps["onAdd"]>>, id: string): ManualCartLine {
-  const [product, quantity, size, addOns, flavors, division, unitPrice, notes, crust, drink, sizeId, , border] = args;
+  const [product, quantity, size, addOns, flavors, division, unitPrice, notes, crust, drink, sizeId, , border, selectedOptions] = args;
   return { id, name: product.name, item: {
     product_id: product.id, quantity, selected_size: size, selected_size_id: sizeId,
     flavor_division: division, flavors: flavors.map((flavor) => ({ product_id: flavor.productId, name: flavor.name, price: flavor.price, icon: flavor.icon })),
     final_price: unitPrice, add_ons: addOns, notes: notes || null,
+    option_selections: selectedOptions?.map((option) => ({
+      group_id: option.groupId,
+      group_name: option.groupName,
+      option_id: option.optionId,
+      label: option.label,
+      quantity: option.quantity ?? 1,
+      price_addition: option.priceAddition,
+    })) ?? [],
     selected_crust_type_id: crust?.id ?? null, selected_crust_type_name: crust?.name ?? null,
     selected_border_id: border?.id ?? null, selected_border_name: border?.name ?? null,
     selected_drink_variant_id: drink?.id ?? null, selected_drink_variant_name: drink?.name ?? null,

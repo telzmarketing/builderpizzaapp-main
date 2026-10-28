@@ -144,6 +144,7 @@ class OrderItem(Base):
     selected_drink_variant = Column(String(100), nullable=True)
     notes = Column(Text, nullable=True)
     add_ons = Column(JSON, nullable=False, default=list)
+    option_selections = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list, server_default="[]")
     customizations = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list, server_default="[]")
     unit_price = Column(Float, nullable=False)
     total_price = Column(Float, nullable=False)

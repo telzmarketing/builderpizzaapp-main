@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from backend.database import get_db
 from backend.models.admin import AdminUser
 from backend.models.order import Order, OrderItem, OrderStatus
-from backend.models.product import Product, BestSellerConfig, MultiFlavorsConfig, ProductSize, ProductCrustType, ProductDrinkVariant
+from backend.models.product import Product, BestSellerConfig, MultiFlavorsConfig, ProductSize, ProductCrustType, ProductDrinkVariant, ProductOptionGroup, ProductOption
 from backend.models.product_promotion import ProductPromotion, ProductPromotionCombination
 from backend.schemas.product import (
     ProductCreate, ProductUpdate, ProductOut,
@@ -18,6 +18,8 @@ from backend.schemas.product import (
     ProductSizeCreate, ProductSizeUpdate, ProductSizeOut,
     ProductCrustTypeCreate, ProductCrustTypeUpdate, ProductCrustTypeOut,
     ProductDrinkVariantCreate, ProductDrinkVariantUpdate, ProductDrinkVariantOut,
+    ProductOptionGroupCreate, ProductOptionGroupUpdate, ProductOptionGroupOut,
+    ProductOptionCreate, ProductOptionUpdate, ProductOptionOut,
     ProductPromotionCreate, ProductPromotionUpdate, ProductPromotionOut,
     ProductPriceQuoteOut,
 )
@@ -161,8 +163,18 @@ def _product_payload(
     inventory_payload: dict | None = None,
     context: TenantContext | None = None,
     channel: str = "delivery",
+    include_inactive_option_groups: bool = False,
 ) -> dict:
     payload = ProductOut.model_validate(product).model_dump()
+    if not include_inactive_option_groups:
+        payload["option_groups"] = [
+            {
+                **group,
+                "options": [option for option in group.get("options", []) if option.get("active")],
+            }
+            for group in payload.get("option_groups", [])
+            if group.get("active")
+        ]
     default_size = next((size for size in product.sizes if size.active and size.is_default), None)
     if not default_size:
         default_size = next((size for size in product.sizes if size.active), None)
@@ -337,6 +349,7 @@ def list_products(
         selectinload(Product.sizes),
         selectinload(Product.crust_types),
         selectinload(Product.drink_variants),
+        selectinload(Product.option_groups).selectinload(ProductOptionGroup.options),
         selectinload(Product.promotions).selectinload(ProductPromotion.combinations),
         selectinload(Product.promotions).selectinload(ProductPromotion.gift_product),
     )
@@ -360,7 +373,18 @@ def list_products(
     inventory_payloads = ProductInventoryAvailabilityService(
         db, tenant_id=context.tenant_id if context else None, tenant_context=context
     ).product_payloads([product.id for product in products])
-    return [_product_payload(product, db, auto_badge_ids, inventory_payloads.get(product.id), context, channel=effective_channel or "delivery") for product in products]
+    return [
+        _product_payload(
+            product,
+            db,
+            auto_badge_ids,
+            inventory_payloads.get(product.id),
+            context,
+            channel=effective_channel or "delivery",
+            include_inactive_option_groups=not active_only,
+        )
+        for product in products
+    ]
 
 
 @router.get("/{product_id}", response_model=ProductOut)
@@ -371,7 +395,9 @@ def get_product(product_id: str, request: Request, db: Session = Depends(get_db)
         if is_admin_request
         else resolve_public_tenant_context(request, db)
     )
-    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
+    product = _tenant_query(db, Product, context).options(
+        selectinload(Product.option_groups).selectinload(ProductOptionGroup.options),
+    ).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
     if not is_admin_request:
@@ -379,7 +405,136 @@ def get_product(product_id: str, request: Request, db: Session = Depends(get_db)
     inventory_payload = ProductInventoryAvailabilityService(
         db, tenant_id=context.tenant_id if context else None, tenant_context=context
     ).product_payloads([product.id]).get(product.id)
-    return _product_payload(product, db, inventory_payload=inventory_payload, context=context, channel=channel)
+    return _product_payload(
+        product,
+        db,
+        inventory_payload=inventory_payload,
+        context=context,
+        channel=channel,
+        include_inactive_option_groups=is_admin_request,
+    )
+
+
+def _get_option_group(product_id: str, group_id: str, request: Request, db: Session, *, admin, active_only: bool):
+    context = (
+        resolve_public_tenant_context(request, db)
+        if active_only else resolve_panel_tenant_context(request, db, admin)
+    )
+    group = _tenant_query(db, ProductOptionGroup, context).options(
+        selectinload(ProductOptionGroup.options),
+    ).filter(ProductOptionGroup.id == group_id, ProductOptionGroup.product_id == product_id).first()
+    if not group:
+        raise HTTPException(404, "Grupo de opcoes nao encontrado.")
+    if active_only and (not group.active or not group.product.active):
+        raise HTTPException(404, "Grupo de opcoes nao encontrado.")
+    return context, group
+
+
+@router.get("/{product_id}/option-groups", response_model=list[ProductOptionGroupOut])
+def list_option_groups(
+    product_id: str,
+    request: Request,
+    active_only: bool = True,
+    channel: str = Query(default="delivery", pattern="^(delivery|dine_in)$"),
+    db: Session = Depends(get_db),
+):
+    admin = _require_catalog_admin(request, db) if not active_only else None
+    context = resolve_public_tenant_context(request, db) if active_only else resolve_panel_tenant_context(request, db, admin)
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(404, "Produto nao encontrado.")
+    if active_only:
+        assert_public_product(product, channel)
+    query = _tenant_query(db, ProductOptionGroup, context).options(
+        selectinload(ProductOptionGroup.options),
+    ).filter(ProductOptionGroup.product_id == product_id)
+    if active_only:
+        query = query.filter(ProductOptionGroup.active.is_(True))
+    groups = query.order_by(ProductOptionGroup.sort_order, ProductOptionGroup.id).all()
+    if active_only:
+        for group in groups:
+            group.options = [option for option in group.options if option.active]
+    return groups
+
+
+@router.post("/{product_id}/option-groups", response_model=ProductOptionGroupOut, status_code=201, dependencies=[Depends(require_rbac_permission("cardapio", "create"))])
+def create_option_group(product_id: str, body: ProductOptionGroupCreate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context = resolve_panel_tenant_context(request, db, admin)
+    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(404, "Produto nao encontrado.")
+    group = ProductOptionGroup(id=f"pgroup-{uuid.uuid4().hex[:10]}", product_id=product_id, **body.model_dump())
+    assign_catalog_tenant(group, context)
+    db.add(group)
+    db.commit()
+    db.refresh(group)
+    return group
+
+
+@router.put("/{product_id}/option-groups/{group_id}", response_model=ProductOptionGroupOut, dependencies=[Depends(require_rbac_permission("cardapio", "edit"))])
+def update_option_group(product_id: str, group_id: str, body: ProductOptionGroupUpdate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context, group = _get_option_group(product_id, group_id, request, db, admin=admin, active_only=False)
+    values = body.model_dump(exclude_unset=True)
+    merged = {key: values.get(key, getattr(group, key)) for key in ("key", "name", "selection_type", "required", "min_selections", "max_selections", "sort_order", "active")}
+    ProductOptionGroupCreate.model_validate(merged)
+    for key, value in values.items():
+        setattr(group, key, value)
+    db.commit()
+    db.refresh(group)
+    return group
+
+
+@router.delete("/{product_id}/option-groups/{group_id}", status_code=204, dependencies=[Depends(require_rbac_permission("cardapio", "delete"))])
+def delete_option_group(product_id: str, group_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    _, group = _get_option_group(product_id, group_id, request, db, admin=admin, active_only=False)
+    group.active = False
+    for option in group.options:
+        option.active = False
+    db.commit()
+
+
+@router.get("/{product_id}/option-groups/{group_id}/options", response_model=list[ProductOptionOut])
+def list_product_options(product_id: str, group_id: str, request: Request, active_only: bool = True, db: Session = Depends(get_db)):
+    admin = _require_catalog_admin(request, db) if not active_only else None
+    context, group = _get_option_group(product_id, group_id, request, db, admin=admin, active_only=active_only)
+    query = _tenant_query(db, ProductOption, context).filter(ProductOption.group_id == group.id)
+    if active_only:
+        query = query.filter(ProductOption.active.is_(True))
+    return query.order_by(ProductOption.sort_order, ProductOption.id).all()
+
+
+@router.post("/{product_id}/option-groups/{group_id}/options", response_model=ProductOptionOut, status_code=201, dependencies=[Depends(require_rbac_permission("cardapio", "create"))])
+def create_product_option(product_id: str, group_id: str, body: ProductOptionCreate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context, group = _get_option_group(product_id, group_id, request, db, admin=admin, active_only=False)
+    option = ProductOption(id=f"popt-{uuid.uuid4().hex[:10]}", group_id=group.id, **body.model_dump())
+    assign_catalog_tenant(option, context)
+    db.add(option)
+    db.commit()
+    db.refresh(option)
+    return option
+
+
+@router.put("/{product_id}/option-groups/{group_id}/options/{option_id}", response_model=ProductOptionOut, dependencies=[Depends(require_rbac_permission("cardapio", "edit"))])
+def update_product_option(product_id: str, group_id: str, option_id: str, body: ProductOptionUpdate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context, group = _get_option_group(product_id, group_id, request, db, admin=admin, active_only=False)
+    option = _tenant_query(db, ProductOption, context).filter(ProductOption.id == option_id, ProductOption.group_id == group.id).first()
+    if not option:
+        raise HTTPException(404, "Opcao nao encontrada.")
+    for key, value in body.model_dump(exclude_unset=True).items():
+        setattr(option, key, value)
+    db.commit()
+    db.refresh(option)
+    return option
+
+
+@router.delete("/{product_id}/option-groups/{group_id}/options/{option_id}", status_code=204, dependencies=[Depends(require_rbac_permission("cardapio", "delete"))])
+def delete_product_option(product_id: str, group_id: str, option_id: str, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
+    context, group = _get_option_group(product_id, group_id, request, db, admin=admin, active_only=False)
+    option = _tenant_query(db, ProductOption, context).filter(ProductOption.id == option_id, ProductOption.group_id == group.id).first()
+    if not option:
+        raise HTTPException(404, "Opcao nao encontrada.")
+    option.active = False
+    db.commit()
 
 
 @router.get("/{product_id}/price", response_model=ProductPriceQuoteOut)

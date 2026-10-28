@@ -307,6 +307,62 @@ class OrderService:
         crust = option(ProductCrustType, item.selected_crust_type_id, "Massa")
         border = option(ProductCrustType, item.selected_border_id, "Borda")
         variant = option(ProductDrinkVariant, item.selected_drink_variant_id, "Variante")
+
+        # Generic product options are authoritative for products that have an
+        # explicit configuration. Client labels and prices are display hints;
+        # the server resolves the tenant-owned rows and calculates the delta.
+        option_price_addition = 0.0
+        active_groups = [group for group in getattr(product, "option_groups", []) if group.active]
+        if active_groups:
+            selections_by_group: dict[str, list] = {}
+            for selection in item.option_selections:
+                selections_by_group.setdefault(selection.group_id, []).append(selection)
+            known_group_ids = {group.id for group in active_groups}
+            if any(group_id not in known_group_ids for group_id in selections_by_group):
+                raise DomainError("Grupo de opcoes invalido para este produto.", code="InvalidProductOptionGroup")
+            normalized_selections = []
+            for group in active_groups:
+                selections = selections_by_group.get(group.id, [])
+                selected_count = sum(selection.quantity for selection in selections) if group.selection_type == "quantity" else len(selections)
+                minimum = max(1 if group.required else 0, group.min_selections)
+                if selected_count < minimum or (group.max_selections > 0 and selected_count > group.max_selections):
+                    raise DomainError(f"Revise as opcoes obrigatorias de {group.name}.", code="InvalidProductOptionSelection")
+                if group.selection_type == "single" and len(selections) > 1:
+                    raise DomainError(f"Escolha apenas uma opcao em {group.name}.", code="InvalidProductOptionSelection")
+                if group.selection_type == "text":
+                    if len(selections) > 1 or (selections and not (selections[0].label or "").strip()):
+                        raise DomainError(f"Texto invalido em {group.name}.", code="InvalidProductOptionSelection")
+                    if selections:
+                        normalized_selections.append({
+                            "group_id": group.id,
+                            "group_name": group.name,
+                            "option_id": None,
+                            "label": (selections[0].label or "").strip()[:300],
+                            "quantity": 1,
+                            "price_addition": 0,
+                        })
+                    continue
+                seen_options: set[str] = set()
+                for selection in selections:
+                    if not selection.option_id or selection.option_id in seen_options:
+                        raise DomainError(f"Opcao invalida em {group.name}.", code="InvalidProductOptionSelection")
+                    selected_option = next((candidate for candidate in group.options if candidate.id == selection.option_id and candidate.active), None)
+                    if selected_option is None:
+                        raise DomainError(f"Opcao inexistente ou inativa em {group.name}.", code="InvalidProductOptionSelection")
+                    seen_options.add(selected_option.id)
+                    quantity = selection.quantity if group.selection_type == "quantity" else 1
+                    option_price_addition += float(selected_option.price_addition or 0) * quantity
+                    normalized_selections.append({
+                        "group_id": group.id,
+                        "group_name": group.name,
+                        "option_id": selected_option.id,
+                        "label": selected_option.name,
+                        "quantity": quantity,
+                        "price_addition": round(float(selected_option.price_addition or 0) * quantity, 2),
+                    })
+            item.option_selections = normalized_selections
+        elif item.option_selections:
+            raise DomainError("Este produto nao possui opcoes configuraveis.", code="ProductOptionsUnavailable")
         flavors = []
         prices = []
         filters = {_normalize_category_text(value) for value in (config.flavor_category_filters or [])}
@@ -337,6 +393,7 @@ class OrderService:
             item.flavor_division,
             rule,
         )
+        server_price += option_price_addition
         if crust:
             server_price += normalize_crust_price_addition(crust.price_addition, product.price)
         pricing = ProductPricingService(self._db, self._tenant_context).calculate(
@@ -767,6 +824,7 @@ class OrderService:
                 selected_drink_variant=_clip_text(item.selected_drink_variant_name, 100),
                 notes=item.notes,
                 add_ons=list(item.add_ons),
+                option_selections=list(item.option_selections),
                 unit_price=unit_price,
                 total_price=round(unit_price * item.quantity, 2),
                 standard_unit_price=pricing.standard_price,

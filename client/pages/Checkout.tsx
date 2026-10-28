@@ -661,6 +661,14 @@ export default function Checkout() {
         selected_drink_variant_id: item.selectedDrinkVariant?.id ?? null,
         selected_drink_variant_name: item.selectedDrinkVariant?.name ?? null,
         notes: item.notes ?? null,
+        option_selections: item.selectedOptions.map((option) => ({
+          group_id: option.groupId,
+          group_name: option.groupName,
+          option_id: option.optionId,
+          label: option.label,
+          quantity: option.quantity,
+          price_addition: option.priceAddition,
+        })),
       })),
       delivery: {
         name: form.name,
@@ -1297,6 +1305,7 @@ export default function Checkout() {
                   <div className="flex-1 min-w-0">
                     <p className="text-cream font-semibold text-sm truncate">{displayName}</p>
                     <p className="text-stone text-xs">{item.quantity}x - {pizzaSizeLabel(item.selectedSize)}</p>
+                    {item.selectedOptions.length > 0 && <p className="text-stone text-[11px] mt-0.5">{item.selectedOptions.map((option) => `${option.groupName}: ${option.label}${option.quantity && option.quantity > 1 ? ` (${option.quantity}x)` : ""}`).join(" · ")}</p>}
                     {item.promotionApplied && item.promotionName && (
                       <p className="text-emerald-300 text-[11px] font-semibold mt-0.5">{item.promotionName} aplicada</p>
                     )}

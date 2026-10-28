@@ -4,8 +4,8 @@ import { ChevronLeft, Minus, Plus, AlertCircle, Check, Loader2, X, ZoomIn } from
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import CategorySeal from "@/components/CategorySeal";
 import BestSellerSeal from "@/components/BestSellerSeal";
-import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation, type MultiFlavorsConfig } from "@/context/AppContext";
-import { sizesApi, crustApi, productPromotionsApi, customerEventsApi, ApiProductSize, ApiProductCrustType, ApiProductPriceQuote, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl } from "@/lib/api";
+import { useApp, Pizza, PizzaFlavor, FlavorDivision, PricingRule, CartItemVariation, CartItemOptionSelection, type MultiFlavorsConfig } from "@/context/AppContext";
+import { sizesApi, crustApi, productPromotionsApi, customerEventsApi, productsApi, ApiProductSize, ApiProductCrustType, ApiProductPriceQuote, ApiProductOptionGroup, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl } from "@/lib/api";
 import { isAllowedPizzaSize, isPizzaBroto, pizzaSizeDescription, pizzaSizeLabel, PIZZA_SIZE_LABELS } from "@/lib/pizzaSizes";
 import { formatCrustAddition, isNapolitanaCrust, isNapolitanaCrustBlocked, normalizeCrustPriceAddition } from "@/lib/pricing";
 import { firePixelEvent, trackEvent, getTrackingData } from "@/lib/tracking";
@@ -357,10 +357,15 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
 
   const product = products.find((p) => p.id === id);
 
+  const [optionGroups, setOptionGroups] = useState<ApiProductOptionGroup[]>([]);
+  const [optionGroupsLoading, setOptionGroupsLoading] = useState(false);
+  const [selectedOptionState, setSelectedOptionState] = useState<Record<string, { selected: Record<string, number>; text: string }>>({});
+
   // Product type flags
   const productType = normalizeProductText(product?.product_type);
   const isDrink = isDrinkLikeCandidate(product);
-  const isPizza = !isDrink && (!productType || productType === "pizza");
+  const hasExplicitOptionGroups = optionGroups.length > 0 || Boolean(product?.option_groups?.length);
+  const isPizza = !hasExplicitOptionGroups && !isDrink && (!productType || productType === "pizza");
   const isFixedFlavorCombination = isPizza && isFixedFlavorCombinationProduct(product);
 
   const [quantity, setQuantity] = useState(1);
@@ -423,6 +428,22 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     setImageZoomOpen(false);
     setImageZoomScale(1);
     setImageZoomPosition({ x: 50, y: 50 });
+    setOptionGroups((product.option_groups ?? []).filter((group) => group.active));
+    setSelectedOptionState({});
+  }, [product?.id]);
+
+  useEffect(() => {
+    if (!product) return;
+    let cancelled = false;
+    setOptionGroupsLoading(true);
+    productsApi.optionGroups.list(product.id, true).then((groups) => {
+      if (!cancelled) setOptionGroups(groups.filter((group) => group.active));
+    }).catch(() => {
+      if (!cancelled) setOptionGroups((product.option_groups ?? []).filter((group) => group.active));
+    }).finally(() => {
+      if (!cancelled) setOptionGroupsLoading(false);
+    });
+    return () => { cancelled = true; };
   }, [product?.id]);
 
   useEffect(() => {
@@ -440,7 +461,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     setOptionsLoading(true);
     setOptionsError("");
     setSelectedSizeFallback(isPizza ? "Pizza Grande" : "");
-    const sizesRequest = sizesApi.list(product.id).then((sizes) => {
+    const sizesRequest = hasExplicitOptionGroups ? Promise.resolve() : sizesApi.list(product.id).then((sizes) => {
         if (cancelled) return;
         const activeSizes = sizes.filter((s) => s.active && (!isPizza || isAllowedPizzaSize(s.label)));
         setProductSizes(activeSizes);
@@ -466,7 +487,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
       }).catch(() => { if (!cancelled) setOptionsError("Nao foi possivel carregar as massas e bordas."); }) : Promise.resolve();
     Promise.all([sizesRequest, crustRequest]).finally(() => { if (!cancelled) setOptionsLoading(false); });
     return () => { cancelled = true; };
-  }, [product?.id, isPizza, isDrink]);
+  }, [product?.id, isPizza, isDrink, hasExplicitOptionGroups]);
 
   const selectedSize = selectedSizeObj ? selectedSizeObj.label : selectedSizeFallback;
   const isPizzaBrotoSelected = isPizza && isPizzaBroto(selectedSize);
@@ -478,6 +499,38 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
   const regularCrusts = productCrusts.filter((c) => !isCatupiryCrust(c.name));
   const borderCrusts = productCrusts.filter((c) => isCatupiryCrust(c.name));
   const borderAvailable = isPizza && borderCrusts.length > 0 && !isNapolitanaCrust(selectedCrust?.name);
+
+  const selectedOptionSelections = useMemo<CartItemOptionSelection[]>(() => optionGroups.flatMap((group) => {
+    const state = selectedOptionState[group.id] ?? { selected: {}, text: "" };
+    if (group.selection_type === "text") {
+      return state.text.trim() ? [{ groupId: group.id, groupName: group.name, label: state.text.trim(), priceAddition: 0 }] : [];
+    }
+    return Object.entries(state.selected).filter(([, quantity]) => quantity > 0).flatMap(([optionId, quantity]) => {
+      const option = group.options.find((candidate) => candidate.id === optionId);
+      return option ? [{ groupId: group.id, groupName: group.name, optionId: option.id, label: option.name, quantity: group.selection_type === "quantity" ? quantity : 1, priceAddition: option.price_addition * (group.selection_type === "quantity" ? quantity : 1) }] : [];
+    });
+  }), [optionGroups, selectedOptionState]);
+
+  const optionPriceAddition = selectedOptionSelections.reduce((sum, selection) => sum + selection.priceAddition, 0);
+  const genericOptionsValid = optionGroups.every((group) => {
+    const state = selectedOptionState[group.id] ?? { selected: {}, text: "" };
+    if (group.selection_type === "text") return !group.required || state.text.trim().length > 0;
+    const count = group.selection_type === "quantity"
+      ? Object.values(state.selected).reduce((sum, quantity) => sum + quantity, 0)
+      : Object.keys(state.selected).filter((optionId) => state.selected[optionId] > 0).length;
+    const minimum = Math.max(group.required ? 1 : 0, group.min_selections || 0);
+    return count >= minimum && (!group.max_selections || count <= group.max_selections);
+  });
+
+  const setOptionSelection = (group: ApiProductOptionGroup, optionId: string, quantity: number) => {
+    setSelectedOptionState((current) => {
+      const previous = current[group.id] ?? { selected: {}, text: "" };
+      const selected = { ...previous.selected };
+      if (quantity > 0) selected[optionId] = quantity;
+      else delete selected[optionId];
+      return { ...current, [group.id]: { ...previous, selected } };
+    });
+  };
 
   useEffect(() => {
     if (!isPizzaBrotoSelected || division === 1) return;
@@ -513,7 +566,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
   }, [effectiveDivision, productCrusts, selectedCrust?.id]);
 
   useEffect(() => {
-    if (!product || optionsLoading || optionsError) {
+    if (!product || optionsLoading || optionsError || optionGroupsLoading) {
       setPriceQuote(null);
       return;
     }
@@ -522,6 +575,12 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     setQuoteLoading(true);
     setQuoteError("");
     setPriceQuote(null);
+    if (hasExplicitOptionGroups) {
+      const basePrice = product.delivery_price ?? product.price ?? 0;
+      setPriceQuote({ standard_price: basePrice + optionPriceAddition, final_price: basePrice + optionPriceAddition, promotion_applied: false, promotion_id: null, promotion_name: null, discount_amount: 0, discount_type: null, free_shipping: false, gift_enabled: false, gift_product_id: null, gift_quantity: 1, gift_name: null, gift_icon: null, blocks_other_coupons: false, promotion_blocked: false, promotion_block_reason: null });
+      setQuoteLoading(false);
+      return;
+    }
     const selectedFlavorIds = flavorSlots
       .slice(0, division)
       .map((flavor) => flavor?.id)
@@ -546,7 +605,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     return () => {
       cancelled = true;
     };
-  }, [product?.id, isPizza, isDrink, selectedSizeObj?.id, selectedCrust?.id, selectedBorder?.id, selectedDrinkVariantId, effectiveDivision, selectedFlavorIdsKey, optionsLoading, optionsError]);
+  }, [product?.id, isPizza, isDrink, hasExplicitOptionGroups, optionPriceAddition, optionGroupsLoading, selectedSizeObj?.id, selectedCrust?.id, selectedBorder?.id, selectedDrinkVariantId, effectiveDivision, selectedFlavorIdsKey, optionsLoading, optionsError]);
 
   // ── Computed values ──────────────────────────────────────────────────────────
 
@@ -667,6 +726,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
       setCartError(true);
       return;
     }
+    if (hasExplicitOptionGroups && !genericOptionsValid) return;
 
     let flavors: PizzaFlavor[];
     if (isFixedFlavorCombination) {
@@ -719,6 +779,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
         blocksOtherCoupons: priceQuote.blocks_other_coupons,
       } : undefined,
       selectedBorder ? { id: selectedBorder.id, name: selectedBorder.name, priceAddition: borderAddition } : null,
+      selectedOptionSelections,
     );
     if (!embedded) {
       trackEvent("add_to_cart", totalPrice, { product_id: product.id, quantity, selected_size: selectedSize });
@@ -739,7 +800,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     });
 
   const productInventoryAvailable = !!product && product.inventory_available !== false;
-  const canAddToCart = productInventoryAvailable && !optionsLoading && !optionsError && !quoteLoading && !quoteError && !!priceQuote && (isDrink ? true : (allFilled && (regularCrusts.length === 0 || selectedCrust !== null)));
+  const canAddToCart = productInventoryAvailable && !optionGroupsLoading && !optionsLoading && !optionsError && !quoteLoading && !quoteError && !!priceQuote && (hasExplicitOptionGroups ? genericOptionsValid : (isDrink ? true : (allFilled && (regularCrusts.length === 0 || selectedCrust !== null))));
 
   if (appLoading && !product) {
     return (
@@ -896,8 +957,27 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
 
         {/* ── Size Selector ───────────────────────────────────────────────── */}
         {(optionsLoading || optionsError || quoteError) && <div role="status" className="mb-4 rounded-xl bg-surface-02 p-4 text-sm text-amber-300">{optionsError || quoteError || "Carregando opcoes..."}{(optionsError || quoteError) && <button className="ml-3 underline" onClick={() => window.location.reload()}>Tentar novamente</button>}</div>}
-        {isDrink && (product.drink_variants ?? []).some((variant) => variant.active) && <label className="mb-6 block text-cream">Variante<select className="mt-2 block w-full rounded-xl bg-surface-02 p-3" value={selectedDrinkVariantId} onChange={(event) => setSelectedDrinkVariantId(event.target.value)}>{(product.drink_variants ?? []).filter((variant) => variant.active).map((variant) => <option key={variant.id} value={variant.id}>{variant.name}{variant.price_addition > 0 ? ` (+ R$ ${variant.price_addition.toFixed(2)})` : ""}</option>)}</select></label>}
-        {(!isDrink || productSizes.length > 0) && (
+         {hasExplicitOptionGroups && (
+           <div className="order-2 space-y-5">
+             {optionGroups.map((group) => {
+               const state = selectedOptionState[group.id] ?? { selected: {}, text: "" };
+               const selectedCount = group.selection_type === "quantity" ? Object.values(state.selected).reduce((sum, quantity) => sum + quantity, 0) : Object.keys(state.selected).length;
+               return (
+                 <section key={group.id} className="rounded-2xl border border-surface-03 bg-surface-02/60 p-4">
+                   <div className="mb-3 flex items-start justify-between gap-3"><div><h3 className="font-bold text-cream">{group.name}{group.required ? " *" : ""}</h3><p className="text-xs text-stone">{group.selection_type === "single" ? "Escolha uma opcao" : group.selection_type === "multiple" ? "Escolha uma ou mais opcoes" : group.selection_type === "quantity" ? "Informe a quantidade" : "Digite uma observacao"}{group.max_selections ? ` · maximo ${group.max_selections}` : ""}</p></div>{group.selection_type !== "text" && <span className="text-xs text-stone">{selectedCount} selecionada(s)</span>}</div>
+                   {group.selection_type === "text" ? (
+                     <textarea value={state.text} onChange={(event) => setSelectedOptionState((current) => ({ ...current, [group.id]: { ...state, text: event.target.value } }))} rows={2} maxLength={300} className="w-full rounded-xl border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream outline-none focus:border-gold" placeholder="Digite aqui" />
+                   ) : (
+                   <div className="space-y-2">{group.options.filter((option) => option.active).map((option) => { const currentQuantity = state.selected[option.id] ?? 0; const checked = currentQuantity > 0; return <div key={option.id} className="flex items-center gap-3 rounded-xl border border-surface-03 bg-surface-01 px-3 py-2">{group.selection_type === "quantity" ? <input type="number" min={0} max={group.max_selections || undefined} value={currentQuantity} onChange={(event) => setOptionSelection(group, option.id, Math.max(0, Number(event.target.value) || 0))} className="w-16 rounded-lg bg-surface-02 px-2 py-1 text-center text-sm text-cream" /> : <input type={group.selection_type === "single" ? "radio" : "checkbox"} name={`product-option-${group.id}`} checked={checked} onChange={() => { if (group.selection_type === "single") setSelectedOptionState((current) => ({ ...current, [group.id]: { ...state, selected: { [option.id]: 1 } } })); else setOptionSelection(group, option.id, checked ? 0 : 1); }} className="accent-gold" />}<span className="flex-1 text-sm text-parchment">{option.name}</span><span className="text-xs text-gold-light">{option.price_addition > 0 ? `+ R$ ${option.price_addition.toFixed(2)}` : ""}</span></div>; })}</div>
+                   )}
+                   {group.required && !genericOptionsValid && ((group.selection_type === "text" && !state.text.trim()) || (group.selection_type !== "text" && selectedCount < Math.max(1, group.min_selections || 0))) && <p className="mt-2 text-xs text-amber-300">Escolha uma opcao para continuar.</p>}
+                 </section>
+               );
+             })}
+           </div>
+         )}
+         {isDrink && (product.drink_variants ?? []).some((variant) => variant.active) && <label className="mb-6 block text-cream">Variante<select className="mt-2 block w-full rounded-xl bg-surface-02 p-3" value={selectedDrinkVariantId} onChange={(event) => setSelectedDrinkVariantId(event.target.value)}>{(product.drink_variants ?? []).filter((variant) => variant.active).map((variant) => <option key={variant.id} value={variant.id}>{variant.name}{variant.price_addition > 0 ? ` (+ R$ ${variant.price_addition.toFixed(2)})` : ""}</option>)}</select></label>}
+         {!hasExplicitOptionGroups && (isPizza || productSizes.length > 0) && (
         <div className="mb-6 order-1">
           <h3 className="text-cream font-bold mb-3">
             {p.sizeLabel}
@@ -919,7 +999,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                   <span className="block text-[10px] text-gold-light mt-0.5">R${size.price.toFixed(2)}</span>
                 </button>
               ))
-            ) : (
+            ) : isPizza ? (
               PIZZA_SIZE_LABELS.map((size) => (
                 <button
                   key={size}
@@ -934,7 +1014,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                   <span className="block text-[10px] opacity-70 font-normal">{pizzaSizeDescription(size)}</span>
                 </button>
               ))
-            )}
+            ) : null}
           </div>
         </div>
         )}
@@ -1301,8 +1381,9 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
             ? `${embedded ? "Adicionar ao pedido" : p.addToCartButton} · R$ ${totalPrice.toFixed(2)}`
             : !productInventoryAvailable
             ? "Indisponivel no momento"
-            : optionsLoading || quoteLoading ? "Confirmando opcoes e preco..."
+            : optionGroupsLoading || optionsLoading || quoteLoading ? "Confirmando opcoes e preco..."
             : optionsError || quoteError ? "Preco indisponivel - tente novamente"
+            : hasExplicitOptionGroups ? "Preencha as opcoes obrigatorias"
             : `Escolha ${activeFlavors.filter((f) => !f).length} sabor(es) restante(s)`}
         </button>
       </div>

@@ -64,6 +64,7 @@ function CartItemRow({ item, onRemove, onUpdate }: {
               {item.selectedDrinkVariant && ` · ${item.selectedDrinkVariant.name}`}
             </span>
           </div>
+          {item.selectedOptions.length > 0 && <p className="mt-1 text-xs text-stone">{item.selectedOptions.map((option) => `${option.groupName}: ${option.label}${option.quantity && option.quantity > 1 ? ` (${option.quantity}x)` : ""}`).join(" · ")}</p>}
           <p className="text-gold font-bold text-sm mt-1">
             R$ {item.finalPrice.toFixed(2)}
           </p>
