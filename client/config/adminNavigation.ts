@@ -59,6 +59,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     label: "Dashboard",
     children: [
       { path: "/painel", icon: BarChart3, label: "Dashboard", exact: true, permissions: ["dashboard"] },
+      { path: "/painel/gestor", icon: Sparkles, label: "Gestor IA", exact: true, permissions: ["whatsapp", "relatorios"] },
     ],
   },
   {

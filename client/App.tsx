@@ -434,6 +434,7 @@ const AdminLogin = lazy(() => import("./pages/admin/Login"));
 const AdminChangePassword = lazy(() => import("./pages/admin/ChangePassword"));
 const AcceptPlatformInvitation = lazy(() => import("./pages/admin/AcceptPlatformInvitation"));
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
+const AdminGestor = lazy(() => import("./pages/admin/Gestor"));
 const AdminEmpresas = lazy(() => import("./pages/admin/Empresas"));
 const AdminProducts = lazy(() => import("./pages/admin/Products"));
 const AdminOrders = lazy(() => import("./pages/admin/Orders"));
@@ -637,6 +638,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/kds" element={<KdsOverview />} />
                 <Route element={<AdminLayout />}>
                 <Route path="/painel" element={<AdminDashboard />} />
+                <Route path="/painel/gestor" element={<AdminGestor />} />
                 <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />
                 <Route path="/painel/products" element={<AdminProducts />} />
                 <Route path="/painel/products/landing/:productId/:promotionId" element={<PromotionalLandingEditor />} />
