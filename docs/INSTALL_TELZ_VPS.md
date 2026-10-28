@@ -49,7 +49,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Defina explicitamente:
 
 ```env
-ALEMBIC_TARGET=20261028_product_category_capabilities
+ALEMBIC_TARGET=20261028_gestor_gateway_instance
 INSTALL_SSL=false
 ```
 

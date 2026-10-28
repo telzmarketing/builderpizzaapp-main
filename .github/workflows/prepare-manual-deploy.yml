@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  TELZ_ALEMBIC_TARGET: 20261028_gestor_automations
+  TELZ_ALEMBIC_TARGET: 20261028_gestor_gateway_instance
   TELZ_PUBLIC_HEALTH_URL: https://app.telz.com.br/health
 
 jobs:
