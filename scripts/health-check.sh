@@ -73,7 +73,8 @@ schema_pair_is_compatible() {
     "20261026_order_driver_delivery_fee:20261027_kds_dispatch_unit_completion")
       return 0
       ;;
-    "20261027_kds_dispatch_unit_completion:20261027_bi_mobile_analytics_indexes")
+    "20261027_kds_dispatch_unit_completion:20261027_bi_mobile_analytics_indexes" | \
+    "20261027_bi_mobile_analytics_indexes:20261027_logistics_settings_tenant_key")
       return 0
       ;;
     *)

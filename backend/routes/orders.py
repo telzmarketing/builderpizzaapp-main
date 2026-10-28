@@ -45,7 +45,7 @@ def _require_admin(request: Request, db: Session) -> AdminUser:
     )
 
 
-def _require_order_delete_access(admin: AdminUser, db: Session) -> None:
+def _require_order_delete_access(admin: AdminUser, db: Session, request: Request) -> None:
     if not admin.role_id:
         return
     role_id = admin.role_id.strip().lower()
@@ -55,7 +55,9 @@ def _require_order_delete_access(admin: AdminUser, db: Session) -> None:
     role_name = (role.name if role else "").strip().lower()
     if role_name in {"master", "administrador", "administrativo"}:
         return
-    raise HTTPException(status_code=403, detail="Apenas administradores e master podem excluir pedidos.")
+    # The published tenant RBAC dependency is the source of truth for custom
+    # roles. Keep the legacy master/admin fallback above for old installations.
+    require_rbac_permission("pedidos", "delete")(request=request, db=db, admin=admin)
 
 
 def _build_product_lookup(db: Session, orders: list[Order]) -> dict[str, Product]:
@@ -622,7 +624,7 @@ def delete_order(
     admin: AdminUser = Depends(get_current_admin),
     _entitlement=Depends(require_operational_entitlement("orders.write", write=True)),
 ):
-    _require_order_delete_access(admin, db)
+    _require_order_delete_access(admin, db, request)
     try:
         tenant_context = resolve_panel_tenant_context(request, db, admin)
         OrderService(db, tenant_context).delete(order_id)

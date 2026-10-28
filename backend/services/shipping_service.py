@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import math
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
@@ -83,6 +84,13 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 def _strip_cep(cep: str) -> str:
     return cep.replace("-", "").replace(".", "").strip()
+
+
+def _normalize_area_name(value: str | None) -> str:
+    """Normalize neighborhood/city labels before comparing shipping rules."""
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return " ".join(text.casefold().split())
 
 
 class ShippingService:
@@ -357,8 +365,8 @@ class ShippingService:
     def calculate(self, payload: ShippingCalculateIn, *, order_id: str | None = None) -> ShippingCalculateOut:
         cfg = self.get_config()
         now = datetime.now(timezone.utc)
-        nbhd_lower = (payload.neighborhood or "").lower().strip()
-        city_lower = (payload.city or "").lower().strip()
+        nbhd_lower = _normalize_area_name(payload.neighborhood)
+        city_lower = _normalize_area_name(payload.city)
         cep_clean = _strip_cep(payload.zip_code or "")
         distance_km = self._resolve_distance_km(payload, cfg)
 
@@ -412,7 +420,7 @@ class ShippingService:
             .all()
         )
         for block in blocks:
-            cond = block.condition.lower().strip()
+            cond = _normalize_area_name(block.condition)
             if cond and (cond in nbhd_lower or cond in city_lower):
                 msg = block.message or cfg.unavailable_message
                 result = ShippingCalculateOut(
@@ -466,7 +474,7 @@ class ShippingService:
                 if nbhd_ids and nbhd_lower:
                     nbhds = self._query(ShippingNeighborhood).filter(ShippingNeighborhood.id.in_(nbhd_ids)).all()
                     for n in nbhds:
-                        if n.name.lower() == nbhd_lower:
+                        if _normalize_area_name(n.name) == nbhd_lower:
                             matched = True
                             break
             elif promo.promo_type == "free_campaign":
@@ -528,7 +536,7 @@ class ShippingService:
                     .all()
                 )
                 for n in nbhds:
-                    if n.name.lower() == nbhd_lower:
+                    if _normalize_area_name(n.name) == nbhd_lower:
                         if n.min_order_value > 0 and payload.order_subtotal < n.min_order_value:
                             continue
                         price = 0.0 if n.is_free else n.shipping_value
@@ -706,8 +714,8 @@ class ShippingService:
             .all()
         )
         total_surcharge = 0.0
-        nbhd_lower = (payload.neighborhood or "").lower().strip()
-        city_lower = (payload.city or "").lower().strip()
+        nbhd_lower = _normalize_area_name(payload.neighborhood)
+        city_lower = _normalize_area_name(payload.city)
         current_time = now.strftime("%H:%M")
 
         for rule in extras:
@@ -718,7 +726,7 @@ class ShippingService:
             elif rule.rule_type == "demand_surcharge":
                 total_surcharge += self._surcharge_value(rule, base.shipping_price)
             elif rule.rule_type == "area_surcharge":
-                cond = rule.condition.lower().strip()
+                cond = _normalize_area_name(rule.condition)
                 if cond and (cond in nbhd_lower or cond in city_lower):
                     total_surcharge += self._surcharge_value(rule, base.shipping_price)
             elif rule.rule_type == "scheduled_surcharge" and payload.is_scheduled:

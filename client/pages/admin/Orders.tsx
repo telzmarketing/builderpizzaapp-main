@@ -149,6 +149,7 @@ function loadStoredAdminPermissions(): ApiEffectivePermissions | null {
 function canDeleteOrdersFromPermissions(permissions: ApiEffectivePermissions | null) {
   if (!permissions) return false;
   if (permissions.is_master) return true;
+  if (permissions.modules?.pedidos?.delete === true) return true;
   const roleName = (permissions.role_name ?? "").trim().toLowerCase();
   const roleId = (permissions.role_id ?? "").trim().toLowerCase();
   return (

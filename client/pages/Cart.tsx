@@ -103,7 +103,7 @@ const SIZE_LABEL: Record<string, string> = {
 
 export default function Cart() {
   const navigate = useNavigate();
-  const { cart, removeFromCart, updateCartItem, cartSubtotal, cartDeliveryFee, cartTotal, siteContent, customer } = useApp();
+  const { cart, removeFromCart, updateCartItem, cartSubtotal, cartDeliveryFee, siteContent, customer } = useApp();
   const { pages, nav } = siteContent;
   const c = pages.cart;
 
@@ -374,7 +374,7 @@ export default function Cart() {
           </div>
           <div className="flex justify-between text-parchment text-sm">
             <span>Taxa de entrega:</span>
-            <span>{couponFreeShipping || promotionFreeShipping ? "Gratis" : `R$ ${cartDeliveryFee.toFixed(2)}`}</span>
+            <span>{couponFreeShipping || promotionFreeShipping ? "Gratis" : "Calculada no checkout"}</span>
           </div>
           {promotionFreeShipping && (
             <div className="flex justify-between text-sm">
@@ -389,7 +389,7 @@ export default function Cart() {
             </div>
           )}
           <div className="border-t border-surface-03 pt-3 flex justify-between">
-            <span className="text-cream font-bold">Total:</span>
+            <span className="text-cream font-bold">Total antes do frete:</span>
             <span className="text-gold font-bold text-lg">R$ {finalTotal.toFixed(2)}</span>
           </div>
         </div>
@@ -418,7 +418,7 @@ export default function Cart() {
           <ShoppingCart size={18} />
           {storeStatus && !storeStatus.is_open && !storeStatus.allow_scheduled_orders
             ? "Loja fechada"
-            : `Finalizar pedido · R$ ${finalTotal.toFixed(2)}`}
+            : "Continuar para checkout"}
         </button>
       </div>
       <BottomNav />

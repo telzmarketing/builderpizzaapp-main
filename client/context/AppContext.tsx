@@ -1000,8 +1000,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const clearCart = () => setCart([]);
 
   const cartSubtotal = cart.reduce((sum, item) => sum + item.finalPrice * item.quantity, 0);
-  const cartDeliveryFee = cart.length > 0 ? 10.0 : 0;
-  const cartTotal = cartSubtotal + cartDeliveryFee;
+  // Delivery is address-dependent and is calculated by the checkout/shipping
+  // service. The cart must not invent a fee before an address is available.
+  const cartDeliveryFee = 0;
+  const cartTotal = cartSubtotal;
 
   // ── Promotions ────────────────────────────────────────────────────────────
 
