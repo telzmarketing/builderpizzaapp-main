@@ -87,11 +87,11 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
   {
     label: "KDS",
     children: [
-      { path: "/painel/kds", icon: Gauge, label: "Painel Geral", exact: true, permissions: ["pedidos"] },
+      { path: "/painel/kds", icon: Gauge, label: "KDS Principal", exact: true, permissions: ["pedidos"] },
       { path: "/painel/cozinha", icon: ChefHat, label: "KDS Pizzaiolo", permissions: ["cozinha"] },
       { path: "/painel/preparo", icon: ChefHat, label: "KDS Cozinha Preparo", permissions: ["inventory"] },
       { path: "/painel/expedicao", icon: Truck, label: "KDS Expedição", permissions: ["expedicao"] },
-      { path: "/painel/kds/sala-motoboy", icon: Monitor, label: "Painel Sala Motoboy", permissions: ["pedidos"] },
+      { path: "/painel/kds/sala-motoboy", icon: Monitor, label: "KDS Motoboys", permissions: ["pedidos"] },
     ],
   },
   {

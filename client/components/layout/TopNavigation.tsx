@@ -75,6 +75,7 @@ export default function TopNavigation({
   const navigate = useNavigate();
   const { siteContent } = useApp();
   const searchRef = useRef<HTMLDivElement>(null);
+  const kdsMenuRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   const permissions = readJson<ApiEffectivePermissions>("admin_permissions");
   const supportSession = readPlatformSupportSession();
@@ -84,6 +85,7 @@ export default function TopNavigation({
   const [mobileModuleLabel, setMobileModuleLabel] = useState(activeGroup?.label ?? navigationGroups[0]?.label ?? "");
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [kdsOpen, setKdsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
   const adminName = toText(adminUser?.name, "Administrador");
@@ -98,15 +100,26 @@ export default function TopNavigation({
   }, [activeGroup?.label, pathname]);
 
   useEffect(() => {
-    if (!searchOpen && !profileOpen) return;
+    if (!searchOpen && !kdsOpen && !profileOpen) return;
     const closeDropdowns = (event: MouseEvent) => {
       const target = event.target as Node;
       if (searchOpen && searchRef.current && !searchRef.current.contains(target)) setSearchOpen(false);
+      if (kdsOpen && kdsMenuRef.current && !kdsMenuRef.current.contains(target)) setKdsOpen(false);
       if (profileOpen && profileRef.current && !profileRef.current.contains(target)) setProfileOpen(false);
     };
     document.addEventListener("mousedown", closeDropdowns);
-    return () => document.removeEventListener("mousedown", closeDropdowns);
-  }, [profileOpen, searchOpen]);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setSearchOpen(false);
+      setKdsOpen(false);
+      setProfileOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeDropdowns);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [kdsOpen, profileOpen, searchOpen]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -208,6 +221,46 @@ export default function TopNavigation({
             const Icon = group.children[0]?.icon;
             const active = activeGroup?.label === group.label;
             const target = moduleTarget(group);
+            if (group.label === "KDS") {
+              return (
+                <div key={group.label} ref={kdsMenuRef} className="relative shrink-0">
+                  <button
+                    type="button"
+                    aria-haspopup="menu"
+                    aria-expanded={kdsOpen}
+                    onClick={() => setKdsOpen((open) => !open)}
+                    className={`flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-bold uppercase outline-none transition-colors ${
+                      active || kdsOpen
+                        ? "bg-surface-03 text-cream"
+                        : "text-stone hover:bg-surface-03 hover:text-cream"
+                    }`}
+                  >
+                    {Icon && <Icon size={15} />}
+                    <span>{group.label}</span>
+                  </button>
+                  {kdsOpen && (
+                    <div role="menu" aria-label="Páginas KDS" className="absolute left-0 top-12 z-50 min-w-64 overflow-hidden rounded-2xl border border-surface-03 bg-surface-02 p-1 shadow-2xl">
+                      {group.children.map((item) => {
+                        const ItemIcon = item.icon;
+                        return (
+                          <Link
+                            key={item.path}
+                            to={item.path}
+                            role="menuitem"
+                            onMouseEnter={() => preloadAdminRoute(item.path)}
+                            onClick={() => setKdsOpen(false)}
+                            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-stone transition-colors hover:bg-surface-03 hover:text-cream"
+                          >
+                            <ItemIcon size={16} className="shrink-0 text-gold" />
+                            <span>{item.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
             return (
               <button
                 key={group.label}

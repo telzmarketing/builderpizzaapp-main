@@ -45,4 +45,22 @@ describe("admin navigation route matching", () => {
 
     expect(kdsItems).toEqual(["/painel/kds", "/painel/kds/sala-motoboy"]);
   });
+
+  it("exposes the exact KDS dropdown labels for an authorized admin", () => {
+    const permissions: ApiEffectivePermissions = {
+      is_master: true,
+      modules: {},
+    };
+
+    expect(filterAdminNavigation(permissions)
+      .find((group) => group.label === "KDS")
+      ?.children.map((item) => item.label))
+      .toEqual([
+        "KDS Principal",
+        "KDS Pizzaiolo",
+        "KDS Cozinha Preparo",
+        "KDS Expedição",
+        "KDS Motoboys",
+      ]);
+  });
 });
