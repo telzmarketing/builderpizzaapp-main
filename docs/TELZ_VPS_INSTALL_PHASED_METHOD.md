@@ -76,7 +76,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Use inicialmente:
 
 ```env
-ALEMBIC_TARGET=20261028_gestor_gateway_instance
+ALEMBIC_TARGET=20261028_gestor_automations
 INSTALL_SSL=false
 ```
 
