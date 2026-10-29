@@ -94,10 +94,14 @@ def pg_inventory():
                 name="Synthetic pizzas",
                 enable_recipe=True,
             )
+            # Product.category_id is a scalar FK without an ORM relationship,
+            # so make the referenced category visible before inserting products.
+            db.add(category)
+            db.flush()
             product = Product(id=uuid.uuid4().hex, tenant_id=tid, category_id=category.id,
                               name="Synthetic pizza", description="test", price=50, product_type="pizza")
             stock = InventoryItem(id=uuid.uuid4().hex, tenant_id=tid, name="Synthetic cheese")
-            db.add_all([category, product, stock])
+            db.add_all([product, stock])
             db.add(GestaoModuleSettings(id=uuid.uuid4().hex, tenant_id=tid, module_key="inventory", title="Inventory", enabled=True, status="active", settings_json='{"sales_control_enabled":true,"auto_consume_on_preparing":true}'))
             db.flush()
             version = InventoryRecipeVersion(id=uuid.uuid4().hex, tenant_id=tid, product_id=product.id, component_role="flavor", reference_fraction=.5, version_number=1, active=True)
