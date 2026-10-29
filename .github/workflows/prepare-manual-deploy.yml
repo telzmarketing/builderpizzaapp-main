@@ -6,6 +6,7 @@ on:
       previous_commit:
         description: SHA completo (40 caracteres) atualmente ativo na VPS
         required: true
+        default: 633e9173e5d6a205c6fd3a11a3b1dc3dd9c2b137
         type: string
 
 concurrency:
@@ -114,12 +115,17 @@ jobs:
         run: |
           set -Eeuo pipefail
           target_commit="$(git rev-parse HEAD)"
+          echo "target_commit=$target_commit"
+          echo "previous_commit=$PREVIOUS_COMMIT"
           [[ "$target_commit" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PREVIOUS_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           git cat-file -e "$target_commit^{commit}"
           git cat-file -e "$PREVIOUS_COMMIT^{commit}"
           git merge-base --is-ancestor "$PREVIOUS_COMMIT" "$target_commit"
-          test "$PREVIOUS_COMMIT" != "$target_commit"
+          if [[ "$PREVIOUS_COMMIT" == "$target_commit" ]]; then
+            echo "::error::previous_commit deve ser a release atualmente ativa na VPS e nao pode ser igual ao commit alvo ($target_commit)."
+            exit 1
+          fi
 
           work="$RUNNER_TEMP/telz-manual-package"
           delivery="$work/delivery"
