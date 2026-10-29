@@ -106,7 +106,7 @@ def pg_inventory():
             db.flush()
             db.add(InventoryRecipeItem(id=uuid.uuid4().hex, tenant_id=tid, recipe_id=version.id, inventory_item_id=stock.id, quantity=100, waste_percent=0))
             db.flush()
-            yield NS(db=db, tid=tid, context=context, product=product, stock=stock, recipe=version, service=InventoryService(db, tid, context))
+            yield NS(db=db, tid=tid, context=context, product=product, category=category, stock=stock, recipe=version, service=InventoryService(db, tid, context))
         finally:
             db.close()
             transaction.rollback()
@@ -172,7 +172,8 @@ def test_pg_snapshot_marks_missing_secondary_recipe_and_blocks_partial_consumpti
     from backend.services.cmv_snapshot_service import OrderCmvSnapshotService, CmvOrderItemContext
     from backend.services.inventory_service import InventoryInvalidReference
     p = pg_inventory
-    second = Product(id=uuid.uuid4().hex, tenant_id=p.tid, name="No recipe", description="test", price=50, product_type="pizza")
+    second = Product(id=uuid.uuid4().hex, tenant_id=p.tid, category_id=p.category.id,
+                     name="No recipe", description="test", price=50, product_type="pizza")
     order = Order(id=uuid.uuid4().hex, tenant_id=p.tid, status=OrderStatus.preparing, subtotal=50, total=50, fulfillment_type="pickup", preparation_started_at=datetime.now(timezone.utc))
     p.db.add_all([second, order])
     p.db.flush()
