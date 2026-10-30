@@ -46,7 +46,19 @@ _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 def _driver_delivery_earning_amount(order: Order, configured_rate: float) -> float:
     """Resolve courier pay from the checkout snapshot, falling back for legacy orders."""
     snapshot = getattr(order, "driver_delivery_fee", None)
-    return float(snapshot) if snapshot is not None else float(configured_rate or 0.0)
+    amount = float(snapshot) if snapshot is not None else float(configured_rate or 0.0)
+    return round(amount, 2)
+
+
+def _collapse_earnings_by_delivery(earnings):
+    """Keep one financial row per delivery when reading legacy duplicate data."""
+    priority = {"cancelled": 0, "pending": 1, "paid": 2}
+    collapsed = {}
+    for earning in earnings:
+        current = collapsed.get(earning.delivery_id)
+        if current is None or priority.get(earning.status, -1) > priority.get(current.status, -1):
+            collapsed[earning.delivery_id] = earning
+    return list(collapsed.values())
 
 
 class DeliveryService:
@@ -94,6 +106,18 @@ class DeliveryService:
 
     def _get_delivery(self, delivery_id: str) -> Delivery:
         d = self._scope(self._db.query(Delivery), Delivery).filter(Delivery.id == delivery_id).first()
+        if not d:
+            raise DeliveryNotFound(delivery_id)
+        return d
+
+    def _get_delivery_for_completion(self, delivery_id: str) -> Delivery:
+        """Lock the delivery row so retries cannot create two earnings."""
+        d = (
+            self._scope(self._db.query(Delivery), Delivery)
+            .filter(Delivery.id == delivery_id)
+            .with_for_update()
+            .first()
+        )
         if not d:
             raise DeliveryNotFound(delivery_id)
         return d
@@ -197,6 +221,31 @@ class DeliveryService:
         for earning in earnings:
             earning.status = "cancelled"
             earning.notes = notes or earning.notes
+
+    def _ensure_delivery_earning(self, delivery: Delivery) -> None:
+        """Create the one active earning for a completed delivery if absent."""
+        order = self._get_order(delivery.order_id)
+        settings_row = self._scope(self._db.query(LogisticsSettings), LogisticsSettings).first()
+        configured_rate = (getattr(settings_row, "rate_per_delivery", None) or 0.0) if settings_row else 0.0
+        rate = _driver_delivery_earning_amount(order, configured_rate)
+        existing_earning = (
+            self._scope(self._db.query(DeliveryEarning), DeliveryEarning)
+            .filter(
+                DeliveryEarning.delivery_id == delivery.id,
+                DeliveryEarning.status.in_(("pending", "paid")),
+            )
+            .first()
+        )
+        if delivery.delivery_person_id and existing_earning is None:
+            self._db.add(DeliveryEarning(
+                id=str(uuid.uuid4()),
+                tenant_id=self._tenant_id if self._tenant_enabled else None,
+                delivery_id=delivery.id,
+                delivery_person_id=delivery.delivery_person_id,
+                amount=rate,
+                status="pending",
+                period_date=datetime.now(timezone.utc).date(),
+            ))
 
     # ── Assign ────────────────────────────────────────────────────────────────
 
@@ -410,7 +459,15 @@ class DeliveryService:
         Mark delivery as completed (after 'delivered').
         Records proof-of-delivery fields and frees the motoboy.
         """
-        delivery = self._get_delivery(delivery_id)
+        delivery = self._get_delivery_for_completion(delivery_id)
+
+        # A retry after the transaction already committed is successful and
+        # must not create another earning or increment driver statistics.
+        if delivery.status == DeliveryStatus.completed:
+            self._ensure_delivery_earning(delivery)
+            self._db.commit()
+            self._db.refresh(delivery)
+            return delivery
 
         delivery_sm.transition(delivery_id, delivery.status.value, "completed")
         delivery.status = DeliveryStatus.completed
@@ -1334,14 +1391,14 @@ class DeliveryService:
         )
         if person_id:
             q = q.filter(DeliveryEarning.delivery_person_id == person_id)
-        if status:
-            q = q.filter(DeliveryEarning.status == status)
         if period_from:
             q = q.filter(DeliveryEarning.period_date >= period_from)
         if period_to:
             q = q.filter(DeliveryEarning.period_date <= period_to)
 
-        earnings = q.order_by(DeliveryEarning.created_at.desc()).all()
+        earnings = _collapse_earnings_by_delivery(q.order_by(DeliveryEarning.created_at.desc()).all())
+        if status:
+            earnings = [e for e in earnings if e.status == status]
         return [
             {
                 "id": e.id,
@@ -1426,7 +1483,7 @@ class DeliveryService:
                 eq = eq.filter(DeliveryEarning.period_date >= period_from)
             if period_to:
                 eq = eq.filter(DeliveryEarning.period_date <= period_to)
-            earnings = eq.all()
+            earnings = _collapse_earnings_by_delivery(eq.all())
 
             result.append({
                 "person_id": person.id,

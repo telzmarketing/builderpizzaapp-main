@@ -48,7 +48,7 @@ from backend.services.product_category_service import effective_capabilities
 # ── Pricing helpers (shared with front-end logic) ─────────────────────────────
 
 def _driver_delivery_fee_snapshot(shipping_result, *, is_pickup: bool, sales_channel: str) -> float | None:
-    if is_pickup or sales_channel == "dine_in" or shipping_result.shipping_type != "by_distance":
+    if is_pickup or sales_channel == "dine_in" or shipping_result.shipping_type not in {"by_distance", "by_neighborhood"}:
         return None
     return round(shipping_result.shipping_price, 2)
 

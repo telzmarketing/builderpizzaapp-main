@@ -2,7 +2,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from backend.models.order import Order
-from backend.services.delivery_service import _driver_delivery_earning_amount
+from backend.services.delivery_service import (
+    _collapse_earnings_by_delivery,
+    _driver_delivery_earning_amount,
+)
 from backend.services.order_service import _driver_delivery_fee_snapshot
 
 
@@ -28,7 +31,17 @@ def test_dine_in_does_not_get_driver_fee_snapshot():
     assert _driver_delivery_fee_snapshot(distance_result, is_pickup=False, sales_channel="dine_in") is None
 
 
-def test_non_distance_freight_type_does_not_get_driver_fee_snapshot():
+def test_neighborhood_freight_snapshot_uses_the_configured_neighborhood_value():
+    neighborhood_result = SimpleNamespace(shipping_type="by_neighborhood", shipping_price=8.765)
+
+    assert _driver_delivery_fee_snapshot(
+        neighborhood_result,
+        is_pickup=False,
+        sales_channel="delivery",
+    ) == 8.77
+
+
+def test_unrelated_freight_type_does_not_get_driver_fee_snapshot():
     fixed_result = SimpleNamespace(shipping_type="fixed", shipping_price=8.0)
 
     assert _driver_delivery_fee_snapshot(fixed_result, is_pickup=False, sales_channel="delivery") is None
@@ -50,6 +63,28 @@ def test_legacy_order_uses_logistics_rate():
     order = SimpleNamespace(driver_delivery_fee=None)
 
     assert _driver_delivery_earning_amount(order, 7.0) == 7.0
+
+
+def test_driver_earning_amount_is_normalized_to_cents():
+    order = SimpleNamespace(driver_delivery_fee=8.765)
+
+    assert _driver_delivery_earning_amount(order, 7.0) == 8.77
+
+
+def test_earning_read_models_keep_paid_row_once_per_delivery():
+    rows = [
+        SimpleNamespace(delivery_id="delivery-1", status="cancelled", amount=8.0),
+        SimpleNamespace(delivery_id="delivery-1", status="pending", amount=8.0),
+        SimpleNamespace(delivery_id="delivery-1", status="paid", amount=8.0),
+        SimpleNamespace(delivery_id="delivery-2", status="pending", amount=5.0),
+    ]
+
+    collapsed = _collapse_earnings_by_delivery(rows)
+
+    assert [(row.delivery_id, row.status) for row in collapsed] == [
+        ("delivery-1", "paid"),
+        ("delivery-2", "pending"),
+    ]
 
 
 def test_order_model_has_nullable_driver_fee_snapshot():
