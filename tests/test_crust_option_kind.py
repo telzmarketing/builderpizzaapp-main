@@ -174,3 +174,38 @@ def test_forward_only_migration_sql():
     assert "UPDATE " not in sql and "DELETE " not in sql and "DROP " not in sql
     with pytest.raises(RuntimeError, match="Forward-only"):
         migration.downgrade()
+
+
+def test_legacy_border_backfill_is_narrow_and_idempotent():
+    path = Path(__file__).parents[1] / "backend/migrations/versions/20261030_backfill_legacy_border_option_kind.py"
+    spec = importlib.util.spec_from_file_location("legacy_border_backfill", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE product_crust_types (id VARCHAR PRIMARY KEY, name VARCHAR NOT NULL, option_kind VARCHAR(10) NOT NULL)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO product_crust_types (id, name, option_kind) VALUES "
+            "('border-1', ' Borda de Catupiry ', 'dough'), "
+            "('border-2', 'BORDA', 'dough'), "
+            "('dough-1', 'Tradicional', 'dough'), "
+            "('dough-2', 'Sem borda', 'dough'), "
+            "('existing-border', 'Borda de Cheddar', 'border')"
+        )
+        context = MigrationContext.configure(connection)
+        with Operations.context(context):
+            migration.upgrade()
+            migration.upgrade()
+        rows = dict(connection.exec_driver_sql("SELECT id, option_kind FROM product_crust_types").fetchall())
+
+    assert rows == {
+        "border-1": "border",
+        "border-2": "border",
+        "dough-1": "dough",
+        "dough-2": "dough",
+        "existing-border": "border",
+    }
+    with pytest.raises(RuntimeError, match="Forward-only"):
+        migration.downgrade()
