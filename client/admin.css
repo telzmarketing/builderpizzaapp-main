@@ -156,6 +156,40 @@
   .kds-pdv .kds-pdv-inner > aside { display: none; }
   .kds-pdv .kds-pdv-inner > section { width: 100%; }
 
+  /* The tablet page owns the vertical scroll. Do not combine a viewport-sized
+   * composer with an overflow-hidden card: that clips the order footer and
+   * makes Finalizar pedido unreachable near the bottom of the screen. */
+  .kds-pdv .kds-pdv-frame,
+  .kds-pdv .kds-pdv-frame-content {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .kds-pdv .kds-pdv-canvas {
+    display: block;
+    min-height: 0;
+  }
+
+  .kds-pdv .kds-pdv-catalog,
+  .kds-pdv .kds-pdv-order,
+  .kds-pdv .kds-pdv-order-scroll {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .kds-pdv .kds-pdv-order {
+    border-top-width: 1px;
+  }
+
+  .kds-pdv .kds-pdv-order > div:last-child {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+  }
+
   .kds-preparation-content { max-width: none; }
   .preparation-panel { padding: 1rem; }
   .preparation-order-card { padding: 1rem; }
