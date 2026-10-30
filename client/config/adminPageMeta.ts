@@ -31,6 +31,7 @@ export const adminPageMeta: Record<string, PageMeta> = {
   "/painel/home-config": { eyebrow: "Catalogo", title: "Catalogo da Home", subtitle: "Organizacao da vitrine da loja" },
   "/painel/orders": { eyebrow: "Operacoes", title: "Pedidos", subtitle: "Acompanhamento e gestão dos pedidos" },
   "/painel/kds": { eyebrow: "KDS", title: "Painel Geral", subtitle: "Visão consolidada da cozinha, expedição e entregas" },
+  "/painel/kds/analitico": { eyebrow: "KDS", title: "Analítico KDS", subtitle: "Indicadores históricos de todas as estações KDS" },
   "/painel/kds/sala-motoboy": { eyebrow: "KDS", title: "Painel Sala Motoboy", subtitle: "Acesso ao painel de chamadas para retirada" },
   "/painel/cozinha": { eyebrow: "KDS", title: "KDS Pizzaiolo", subtitle: "Fila touch de preparo de pizzas" },
   "/painel/expedicao": { eyebrow: "KDS", title: "KDS Expedição", subtitle: "Conferência e atribuição de motoboy" },

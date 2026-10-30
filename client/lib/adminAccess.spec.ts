@@ -20,6 +20,16 @@ describe("admin navigation route matching", () => {
     expect(findAdminNavigationItem("/painel/marketing/ads")?.label).toBe("Trafego Pago");
   });
 
+  it("places Gestor IA under the existing Gestao module without changing its access contract", () => {
+    expect(findAdminNavigationGroup("/painel/gestor")?.label).toBe("Gestão");
+    expect(findAdminNavigationItem("/painel/gestor")).toMatchObject({
+      path: "/painel/gestor",
+      label: "Gestor IA",
+      exact: true,
+      permissions: ["whatsapp", "relatorios"],
+    });
+  });
+
   it.each([
     ["cozinha", "/painel/cozinha", "KDS Pizzaiolo"],
     ["expedicao", "/painel/expedicao", "KDS Expedição"],
@@ -43,7 +53,7 @@ describe("admin navigation route matching", () => {
       .find((group) => group.label === "KDS")
       ?.children.map((item) => item.path);
 
-    expect(kdsItems).toEqual(["/painel/kds", "/painel/kds/sala-motoboy"]);
+    expect(kdsItems).toEqual(["/painel/kds", "/painel/kds/analitico", "/painel/kds/sala-motoboy"]);
   });
 
   it("exposes the exact KDS dropdown labels for an authorized admin", () => {
@@ -57,6 +67,7 @@ describe("admin navigation route matching", () => {
       ?.children.map((item) => item.label))
       .toEqual([
         "KDS Principal",
+        "Analítico KDS",
         "KDS Pizzaiolo",
         "KDS Cozinha Preparo",
         "KDS Expedição",

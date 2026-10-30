@@ -169,6 +169,17 @@ class BIOperationsOut(BaseModel):
     orders_by_status: list[dict]
 
 
+class BIKdsAnalyticsOut(BaseModel):
+    period: str
+    date_from: str
+    date_to: str
+    generated_at: str
+    orders: dict
+    flow_minutes: dict
+    production: dict
+    definitions: list[str]
+
+
 class BIRunAnalysisOut(BaseModel):
     status: str
     message: str

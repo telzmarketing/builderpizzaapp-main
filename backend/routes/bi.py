@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from backend.core.local_time import local_today
+from backend.core.rbac_authorization import require_rbac_permission
 from backend.core.response import ok
 from backend.core.wave6_tenant_context import WAVE6_SESSION_TENANT_KEY, panel_wave6_context, wave6_tenant_id
 from backend.database import get_db
@@ -144,6 +145,19 @@ def operations(
     service = _service(db)
     bounds = service.resolve_bounds(period, date_from, date_to)
     return ok(service.get_operations(**bounds))
+
+
+@router.get("/kds-analytics", dependencies=[Depends(require_rbac_permission("pedidos", "view"))])
+def kds_analytics(
+    period: PeriodKey = Query(default="30d"),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """Historical aggregate for all KDS stages and physical production."""
+    service = _service(db)
+    bounds = service.resolve_bounds(period, date_from, date_to)
+    return ok(service.get_kds_analytics(**bounds))
 
 
 @router.get("/funnel")

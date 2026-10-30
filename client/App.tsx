@@ -440,6 +440,7 @@ const AdminEmpresas = lazy(() => import("./pages/admin/Empresas"));
 const AdminProducts = lazy(() => import("./pages/admin/Products"));
 const AdminOrders = lazy(() => import("./pages/admin/Orders"));
 const KdsOverview = lazy(() => import("./pages/admin/KdsOverview"));
+const KdsAnalytics = lazy(() => import("./pages/admin/KdsAnalytics"));
 const AdminCozinha = lazy(() => import("./pages/admin/Cozinha"));
 const AdminExpedicao = lazy(() => import("./pages/admin/Expedicao"));
 const AdminFidelidade = lazy(() => import("./pages/admin/AdminFidelidade"));
@@ -640,6 +641,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 {/* The KDS overview is an operational wallboard and owns its full viewport. */}
                 <Route path="/painel/kds" element={<KdsOverview />} />
                 <Route element={<AdminLayout />}>
+                <Route path="/painel/kds/analitico" element={<KdsAnalytics />} />
                 <Route path="/painel" element={<AdminDashboard />} />
                 <Route path="/painel/gestor" element={<AdminGestor />} />
                 <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />

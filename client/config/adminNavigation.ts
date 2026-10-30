@@ -59,7 +59,6 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     label: "Dashboard",
     children: [
       { path: "/painel", icon: BarChart3, label: "Dashboard", exact: true, permissions: ["dashboard"] },
-      { path: "/painel/gestor", icon: Sparkles, label: "Gestor IA", exact: true, permissions: ["whatsapp", "relatorios"] },
     ],
   },
   {
@@ -88,6 +87,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     label: "KDS",
     children: [
       { path: "/painel/kds", icon: Gauge, label: "KDS Principal", exact: true, permissions: ["pedidos"] },
+      { path: "/painel/kds/analitico", icon: BarChart3, label: "Analítico KDS", exact: true, permissions: ["pedidos"] },
       { path: "/painel/cozinha", icon: ChefHat, label: "KDS Pizzaiolo", permissions: ["cozinha"] },
       { path: "/painel/preparo", icon: ChefHat, label: "KDS Cozinha Preparo", permissions: ["inventory"] },
       { path: "/painel/expedicao", icon: Truck, label: "KDS Expedição", permissions: ["expedicao"] },
@@ -97,6 +97,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
   {
     label: "Gestão",
     children: [
+      { path: "/painel/gestor", icon: Sparkles, label: "Gestor IA", exact: true, permissions: ["whatsapp", "relatorios"] },
       { path: "/painel/gestao/estoque", icon: Package, label: "Estoque", permissions: ["inventory"] },
       { path: "/painel/gestao/cmv", icon: BarChart3, label: "CMV", permissions: ["cmv"] },
       { path: "/painel/gestao/financeiro", icon: CreditCard, label: "Financeiro", permissions: ["finance"] },

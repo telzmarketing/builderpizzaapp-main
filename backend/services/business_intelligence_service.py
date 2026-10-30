@@ -18,6 +18,7 @@ from backend.models.order import Order, OrderItem, OrderStatus
 from backend.models.paid_traffic import AdDailyMetric
 from backend.models.payment import Payment, PaymentStatus
 from backend.models.product import Product
+from backend.models.kds_production import ProductionAttempt, ProductionUnit
 from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 
 
@@ -669,6 +670,117 @@ class BusinessIntelligenceService:
             "orders_by_status": [
                 {"status": getattr(row[0], "value", row[0]), "total": int(row[1] or 0)}
                 for row in status_rows
+            ],
+        }
+
+    def get_kds_analytics(
+        self,
+        start_dt: datetime,
+        end_dt: datetime,
+        period: str,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> dict:
+        """Aggregate the canonical order and physical-production KDS flow."""
+        orders = self._orders_in_period(start_dt, end_dt).all()
+        status_counts: dict[str, int] = {}
+        stage_counts = {
+            "waiting_kitchen": 0,
+            "preparing": 0,
+            "ready_for_pickup": 0,
+            "in_route": 0,
+            "delivered": 0,
+        }
+        durations: dict[str, list[float]] = {
+            "payment_to_preparation": [],
+            "preparation_to_ready": [],
+            "ready_to_dispatch": [],
+            "dispatch_to_delivery": [],
+            "total": [],
+        }
+
+        def minutes_between(start: datetime | None, end: datetime | None) -> float | None:
+            if start is None or end is None or end < start:
+                return None
+            return (end - start).total_seconds() / 60
+
+        for order in orders:
+            status = getattr(order.status, "value", order.status)
+            status_counts[status] = status_counts.get(status, 0) + 1
+            if order.delivered_at:
+                stage_counts["delivered"] += 1
+            elif order.out_for_delivery_at:
+                stage_counts["in_route"] += 1
+            elif order.ready_for_pickup_at:
+                stage_counts["ready_for_pickup"] += 1
+            elif order.preparation_started_at:
+                stage_counts["preparing"] += 1
+            elif order.paid_at:
+                stage_counts["waiting_kitchen"] += 1
+            for key, start, end in (
+                ("payment_to_preparation", order.paid_at, order.preparation_started_at),
+                ("preparation_to_ready", order.preparation_started_at, order.ready_for_pickup_at),
+                ("ready_to_dispatch", order.ready_for_pickup_at, order.out_for_delivery_at),
+                ("dispatch_to_delivery", order.out_for_delivery_at, order.delivered_at),
+                ("total", order.paid_at, order.delivered_at),
+            ):
+                value = minutes_between(start, end)
+                if value is not None:
+                    durations[key].append(value)
+
+        units = self._db.query(ProductionUnit).filter(
+            ProductionUnit.tenant_id == self._tenant_id,
+            ProductionUnit.created_at >= start_dt,
+            ProductionUnit.created_at <= end_dt,
+        ).all()
+        unit_states: dict[str, int] = {}
+        for unit in units:
+            unit_states[unit.state] = unit_states.get(unit.state, 0) + 1
+
+        attempts = self._db.query(ProductionAttempt).filter(
+            ProductionAttempt.tenant_id == self._tenant_id,
+            ProductionAttempt.created_at >= start_dt,
+            ProductionAttempt.created_at <= end_dt,
+        ).all()
+        completed_attempt_durations = [
+            value for attempt in attempts
+            if (value := minutes_between(attempt.created_at, attempt.completed_at)) is not None
+        ]
+
+        def average(values: list[float]) -> float:
+            return self._round(sum(values) / len(values) if values else 0)
+
+        return {
+            **self._period_payload({
+                "period": period,
+                "date_from": date_from,
+                "date_to": date_to,
+                "start_dt": start_dt,
+                "end_dt": end_dt,
+            }),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "orders": {
+                "total": len(orders),
+                "completed": stage_counts["delivered"],
+                "status_counts": status_counts,
+                "stage_counts": stage_counts,
+            },
+            "flow_minutes": {
+                key: {"average": average(values), "samples": len(values)}
+                for key, values in durations.items()
+            },
+            "production": {
+                "units": len(units),
+                "unit_state_counts": unit_states,
+                "attempts": len(attempts),
+                "rework_attempts": sum(1 for attempt in attempts if attempt.attempt_number > 1),
+                "completed_attempts": sum(1 for attempt in attempts if attempt.completed_at is not None),
+                "average_attempt_minutes": average(completed_attempt_durations),
+            },
+            "definitions": [
+                "Pedidos e unidades usam created_at dentro do período e do tenant autenticado.",
+                "Etapas do fluxo usam timestamps persistidos do pedido; lacunas não são inferidas.",
+                "Tempo médio de tentativa usa created_at até completed_at e contabiliza reprocessamentos.",
             ],
         }
 

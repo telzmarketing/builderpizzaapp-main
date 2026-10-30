@@ -1345,6 +1345,29 @@ export interface KdsOverview {
   orders: KdsOverviewOrder[];
 }
 
+export interface KdsAnalytics {
+  period: string;
+  date_from: string;
+  date_to: string;
+  generated_at: string;
+  orders: {
+    total: number;
+    completed: number;
+    status_counts: Record<string, number>;
+    stage_counts: Record<string, number>;
+  };
+  flow_minutes: Record<string, { average: number; samples: number }>;
+  production: {
+    units: number;
+    unit_state_counts: Record<string, number>;
+    attempts: number;
+    rework_attempts: number;
+    completed_attempts: number;
+    average_attempt_minutes: number;
+  };
+  definitions: string[];
+}
+
 /** Contratos da estação multioperador. A identidade do operador é sempre
  * derivada da sessão autenticada pelo backend; o cliente só envia comandos
  * versionados e idempotentes. */
@@ -7891,6 +7914,12 @@ function biMobileQuery(filters: ApiBIMobileFilters) {
 }
 
 export const biApi = {
+  kdsAnalytics: (period = "30d", dateFrom?: string, dateTo?: string) => {
+    const query = new URLSearchParams({ period });
+    if (dateFrom) query.set("date_from", dateFrom);
+    if (dateTo) query.set("date_to", dateTo);
+    return get<KdsAnalytics>(`/bi/kds-analytics?${query.toString()}`);
+  },
   mobileAnalytics: (filters: ApiBIMobileFilters) => get<ApiBIMobileAnalytics>(`/bi/mobile/analytics?${biMobileQuery(filters)}`),
   mobileAnalyze: (filters: ApiBIMobileFilters) => post<ApiBIMobileAnalysis>("/bi/mobile/analyze", filters),
   dashboard: (params?: { period?: ApiBIPeriod; date_from?: string; date_to?: string }) =>
