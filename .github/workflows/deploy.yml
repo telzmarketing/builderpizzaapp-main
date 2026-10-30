@@ -49,7 +49,7 @@ jobs:
       POPUP_TEST_DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci
       PRODUCT_AUDIT_DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_product_ci
       INVENTORY_FOUNDATION_TEST_DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_inventory_ci
-      JWT_SECRET_KEY: ci-only-not-for-production
+      JWT_SECRET_KEY: ci-only-not-for-production-qr-secret
       TELZ_ALEMBIC_TARGET: 20261030_crust_option_kind
 
     steps:
@@ -625,7 +625,7 @@ jobs:
           "$work/target-venv/bin/python" -m pip install --no-index --find-links "$work/dependencies/wheelhouse" -c "$work/dependencies/python-freezes/$GITHUB_SHA.txt" pytest==8.3.5 httpx==0.28.1
           (
             cd "$work/target"
-            DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci JWT_SECRET_KEY=ci-only-not-for-production \
+            DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci JWT_SECRET_KEY=ci-only-not-for-production-qr-secret \
               "$work/target-venv/bin/alembic" -c backend/alembic.ini upgrade "$ALEMBIC_TARGET"
             DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci "$work/target-venv/bin/python" - <<'PY'
           import os
@@ -637,7 +637,7 @@ jobs:
           engine.dispose()
           PY
             for database in telz_product_ci telz_inventory_ci; do
-              DATABASE_URL="postgresql://telz_ci:telz_ci@127.0.0.1:5432/$database" JWT_SECRET_KEY=ci-only-not-for-production \
+              DATABASE_URL="postgresql://telz_ci:telz_ci@127.0.0.1:5432/$database" JWT_SECRET_KEY=ci-only-not-for-production-qr-secret \
                 "$work/target-venv/bin/alembic" -c backend/alembic.ini upgrade "$ALEMBIC_TARGET"
             done
             SITE_CONFIG_TEST_DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci \
@@ -647,7 +647,7 @@ jobs:
             POPUP_TEST_DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci \
             PRODUCT_AUDIT_DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_product_ci \
             INVENTORY_FOUNDATION_TEST_DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_inventory_ci \
-            DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci JWT_SECRET_KEY=ci-only-not-for-production \
+            DATABASE_URL=postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci JWT_SECRET_KEY=ci-only-not-for-production-qr-secret \
               "$work/target-venv/bin/python" -m pytest -q --junitxml=backend-tests.xml
             "$work/target-venv/bin/python" tests/test_inventory_foundation_postgresql.py --verify-pg-report backend-tests.xml
           )

@@ -580,6 +580,8 @@ def quote_product_price(
         raise HTTPException(422, "A categoria deste produto nao habilita massa.")
     if border_id and not capabilities["enable_border"]:
         raise HTTPException(422, "A categoria deste produto nao habilita borda.")
+    if crust_id and border_id and crust_id == border_id:
+        raise HTTPException(422, "A mesma opcao nao pode ser usada como massa e borda.")
 
     size = None
     if size_id:
