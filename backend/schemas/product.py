@@ -113,6 +113,7 @@ class ProductSizeOut(BaseModel):
 # ── Crust Types ───────────────────────────────────────────────────────────────
 
 class ProductCrustTypeCreate(CatalogInput):
+    option_kind: Literal["dough", "border"] = "dough"
     name: str = Field(min_length=1, max_length=100)
     price_addition: float = Field(default=0.0, ge=0)
     active: bool = True
@@ -120,6 +121,7 @@ class ProductCrustTypeCreate(CatalogInput):
 
 
 class ProductCrustTypeUpdate(CatalogInput):
+    option_kind: Optional[Literal["dough", "border"]] = None
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     price_addition: Optional[float] = Field(default=None, ge=0)
     active: Optional[bool] = None
@@ -128,6 +130,7 @@ class ProductCrustTypeUpdate(CatalogInput):
 
 class ProductCrustTypeOut(BaseModel):
     model_config = {"from_attributes": True}
+    option_kind: Literal["dough", "border"] = "dough"
     id: str
     product_id: str
     name: str

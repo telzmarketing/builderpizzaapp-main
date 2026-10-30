@@ -48,7 +48,7 @@ def sale(db, monkeypatch):
     db.add_all([product, table, MultiFlavorsConfig(id=f"multi-flavors-{tenant_id}", tenant_id=tenant_id, max_flavors=3, pricing_rule=PricingRule.average)])
     db.flush()
     size = ProductSize(id=f"size-{token}", tenant_id=tenant_id, product_id=product.id, label="Grande", price=80)
-    border = ProductCrustType(id=f"border-{token}", tenant_id=tenant_id, product_id=product.id, name="Catupiry", price_addition=8)
+    border = ProductCrustType(id=f"border-{token}", tenant_id=tenant_id, product_id=product.id, name="Catupiry", price_addition=8, option_kind="border")
     comanda = TableSession(id=f"session-{token}", tenant_id=tenant_id, table_id=table.id)
     db.add_all([size, border, comanda])
     db.flush()

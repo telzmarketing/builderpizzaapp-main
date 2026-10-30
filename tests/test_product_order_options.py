@@ -64,7 +64,7 @@ def test_missing_required_size_cannot_buy_large_at_base_price(catalog):
 
 def test_options_use_database_names_and_channel_price(catalog):
     _, rows, service = catalog
-    rows[ProductCrustType] = [S(id="border", product_id="pizza", tenant_id="tenant-legacy-default", active=True, name="Catupiry", price_addition=8)]
+    rows[ProductCrustType] = [S(id="border", product_id="pizza", tenant_id="tenant-legacy-default", active=True, name="Catupiry", price_addition=8, option_kind="border")]
     item = cart(selected_border_id="border", selected_border_name="FREE")
     price, *_ = service._validate_item(item, config())
     assert price == 43
@@ -82,6 +82,28 @@ def test_product_can_disable_crust_and_border_options(catalog):
     )]
     with pytest.raises(DomainError, match="nao permite selecionar"):
         service._validate_item(cart(selected_crust_type_id="crust"), config())
+
+
+@pytest.mark.parametrize("field,kind", [("selected_crust_type_id", "border"), ("selected_border_id", "dough")])
+def test_order_rejects_option_of_wrong_kind(catalog, field, kind):
+    _, rows, service = catalog
+    rows[ProductCrustType] = [S(id="option", product_id="pizza", tenant_id="tenant-legacy-default",
+                              active=True, name="Arbitrary", price_addition=8, option_kind=kind)]
+    with pytest.raises(DomainError) as error:
+        service._validate_item(cart(**{field: "option"}), config())
+    assert error.value.code == "InvalidProductOptionKind"
+
+
+@pytest.mark.parametrize("field,disabled", [("selected_crust_type_id", "enable_dough"), ("selected_border_id", "enable_border")])
+def test_order_respects_independent_category_capabilities(catalog, monkeypatch, field, disabled):
+    _, _, service = catalog
+    monkeypatch.setattr("backend.services.order_service.effective_capabilities", lambda *_: {
+        "enable_sizes": False, "enable_dough": disabled != "enable_dough",
+        "enable_border": disabled != "enable_border", "enable_product_options": False,
+        "enable_promotions": False,
+    })
+    with pytest.raises(DomainError, match="nao permite selecionar"):
+        service._validate_item(cart(**{field: "option"}), config())
 
 
 def test_valid_size_takes_precedence_over_channel_price(catalog):

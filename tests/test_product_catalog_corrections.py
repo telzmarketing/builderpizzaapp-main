@@ -166,7 +166,7 @@ def test_postgres_public_channel_scope_and_authoritative_quote(catalog_pg):
     hidden = _product(state, visible_delivery=False, visible_dine_in=True)
     foreign = _product(state, tenant=state.tenant_b)
     crust = ProductCrustType(id=f"crust-{state.marker}", tenant_id=state.tenant_a, product_id=visible.id, name="Normal", price_addition=2)
-    border = ProductCrustType(id=f"border-{state.marker}", tenant_id=state.tenant_a, product_id=visible.id, name="Borda recheada", price_addition=7)
+    border = ProductCrustType(id=f"border-{state.marker}", tenant_id=state.tenant_a, product_id=visible.id, name="Borda recheada", price_addition=7, option_kind="border")
     size = ProductSize(id=f"size-{state.marker}", tenant_id=state.tenant_a, product_id=visible.id, label="Grande", price=80)
     state.db.add_all([crust, border, size])
     state.db.flush()

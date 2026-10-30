@@ -80,6 +80,9 @@ class ProductPricingService:
     ) -> ProductPriceResult:
         if channel not in {"delivery", "dine_in"}:
             raise DomainError("Canal de venda invalido.", code="InvalidSalesChannel")
+        for selected, expected_kind in ((crust, "dough"), (border, "border")):
+            if selected is not None and (getattr(selected, "option_kind", None) or "dough") != expected_kind:
+                raise DomainError("Tipo de massa ou borda invalido.", code="InvalidProductOptionKind")
         if border and crust and border.id == crust.id:
             raise DomainError("Massa e borda devem ser opcoes distintas.", code="DuplicateProductOption")
         if border and crust and is_napolitana_crust(crust.name):

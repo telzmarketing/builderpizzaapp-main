@@ -346,6 +346,7 @@ export interface ApiProductSize {
 export interface ApiProductCrustType {
   id: string;
   product_id: string;
+  option_kind: "dough" | "border";
   name: string;
   price_addition: number;
   active: boolean;
@@ -5428,8 +5429,13 @@ export const sizesApi = {
 // ─── Crust Types ──────────────────────────────────────────────────────────────
 
 export const crustApi = {
-  list: (productId: string, activeOnly = true) =>
-    get<ApiProductCrustType[]>(`/products/${productId}/crusts${activeOnly ? "" : "?active_only=false"}`),
+  list: (productId: string, activeOnly = true, optionKind?: ApiProductCrustType["option_kind"]) => {
+    const query = new URLSearchParams();
+    if (!activeOnly) query.set("active_only", "false");
+    if (optionKind) query.set("option_kind", optionKind);
+    const suffix = query.size ? `?${query.toString()}` : "";
+    return get<ApiProductCrustType[]>(`/products/${productId}/crusts${suffix}`);
+  },
 
   create: (productId: string, data: Omit<ApiProductCrustType, "id" | "product_id" | "created_at">) =>
     post<ApiProductCrustType>(`/products/${productId}/crusts`, data),

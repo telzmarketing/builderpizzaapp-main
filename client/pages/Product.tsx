@@ -488,7 +488,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
         if (cancelled) return;
         const activeCrusts = crusts.filter((c) => c.active);
         setProductCrusts(activeCrusts);
-        setSelectedCrust(activeCrusts[0] ?? null);
+        setSelectedCrust(showCrustOptions ? activeCrusts.find((crust) => crust.option_kind === "dough") ?? null : null);
         setSelectedBorder(null);
       }).catch(() => { if (!cancelled) setOptionsError("Nao foi possivel carregar as massas e bordas."); }) : Promise.resolve();
     Promise.all([sizesRequest, crustRequest]).finally(() => { if (!cancelled) setOptionsLoading(false); });
@@ -504,10 +504,9 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
   const showBorderOptions = categoryCapabilities?.enable_border ?? (isPizza && product?.show_crust_options !== false);
   const showPromotions = categoryCapabilities?.enable_promotions !== false;
 
-  // A API oficial usa o mesmo recurso para massas e bordas. A UI mantém as
-  // opções independentes e evita oferecer a mesma opção simultaneamente.
-  const regularCrusts = productCrusts;
-  const borderCrusts = productCrusts.filter((c) => c.id !== selectedCrust?.id);
+  // O recurso é compartilhado, mas o tipo persistido separa massas e bordas.
+  const regularCrusts = productCrusts.filter((crust) => crust.option_kind === "dough");
+  const borderCrusts = productCrusts.filter((crust) => crust.option_kind === "border");
   const borderAvailable = showBorderOptions && borderCrusts.length > 0 && !isNapolitanaCrust(selectedCrust?.name);
 
   const selectedOptionSelections = useMemo<CartItemOptionSelection[]>(() => optionGroups.flatMap((group) => {
@@ -958,32 +957,6 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
           </div>
         )}
 
-        {/* ── Pizza: Borda ─────────────────────────────────────────────────── */}
-        {showBorderOptions && borderCrusts.length > 0 && (
-          <div className="mb-6 order-3">
-            <h3 className="text-cream font-bold mb-3">Borda</h3>
-            {borderAvailable ? (
-              <select
-                aria-label="Selecionar borda"
-                value={selectedBorder?.id ?? ""}
-                onChange={(event) => setSelectedBorder(borderCrusts.find((border) => border.id === event.target.value) ?? null)}
-                className="w-full rounded-xl bg-surface-02 border border-surface-03 px-4 py-3 text-cream font-semibold"
-              >
-                <option value="">Sem borda</option>
-                {borderCrusts.map((border) => (
-                  <option key={border.id} value={border.id}>
-                    {border.name}{border.price_addition > 0 ? ` (+ R$ ${border.price_addition.toFixed(2)})` : ""}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <p className="text-stone text-sm bg-surface-02 rounded-xl px-4 py-3 border border-surface-03">
-                Borda disponível apenas com Massa Tradicional
-              </p>
-            )}
-          </div>
-        )}
-
         {/* ── Size Selector ───────────────────────────────────────────────── */}
         {(optionsLoading || optionsError || quoteError) && <div role="status" className="mb-4 rounded-xl bg-surface-02 p-4 text-sm text-amber-300">{optionsError || quoteError || "Carregando opcoes..."}{(optionsError || quoteError) && <button className="ml-3 underline" onClick={() => window.location.reload()}>Tentar novamente</button>}</div>}
          {hasExplicitOptionGroups && (
@@ -1238,6 +1211,32 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                   )}
                 </div>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Pizza: Borda (após divisão e sabores) ────────────────────────── */}
+        {showBorderOptions && borderCrusts.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-cream font-bold mb-3">Borda</h3>
+            {borderAvailable ? (
+              <select
+                aria-label="Selecionar borda"
+                value={selectedBorder?.id ?? ""}
+                onChange={(event) => setSelectedBorder(borderCrusts.find((border) => border.id === event.target.value) ?? null)}
+                className="w-full rounded-xl bg-surface-02 border border-surface-03 px-4 py-3 text-cream font-semibold"
+              >
+                <option value="">Sem borda</option>
+                {borderCrusts.map((border) => (
+                  <option key={border.id} value={border.id}>
+                    {border.name}{border.price_addition > 0 ? ` (+ R$ ${border.price_addition.toFixed(2)})` : ""}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-stone text-sm bg-surface-02 rounded-xl px-4 py-3 border border-surface-03">
+                Borda disponível apenas com Massa Tradicional
+              </p>
             )}
           </div>
         )}

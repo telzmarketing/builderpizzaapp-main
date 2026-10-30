@@ -11,6 +11,7 @@ from backend.core.tenant_context import TenantContext
 from backend.core.catalog_context import catalog_query, assign_catalog_tenant
 from backend.models.product import Product, ProductCategory, ProductSize, ProductCrustType
 from backend.models.product_promotion import ProductPromotion
+from backend.services.product_category_service import effective_capabilities
 
 
 DEFAULT_PRODUCT_ICONS = {
@@ -29,6 +30,57 @@ class ProductCatalogService:
 
     def _query(self, model):
         return catalog_query(self.db, model, self.context)
+
+    def _crust_product(self, product_id: str) -> Product:
+        product = self._query(Product).filter(Product.id == product_id).first()
+        if product is None:
+            raise HTTPException(404, "Produto nao encontrado.")
+        return product
+
+    def _require_crust_kind(self, product: Product, option_kind: str) -> None:
+        if option_kind not in {"dough", "border"}:
+            raise HTTPException(422, "Tipo de opcao invalido.")
+        capabilities = effective_capabilities(self.db, product, self.context)
+        capability = "enable_dough" if option_kind == "dough" else "enable_border"
+        if not capabilities[capability]:
+            raise HTTPException(422, "A categoria deste produto nao habilita este tipo de opcao.")
+
+    def list_crusts(self, product_id: str, *, active_only: bool, channel: str, option_kind: str | None = None):
+        product = self._crust_product(product_id)
+        if active_only:
+            assert_public_product(product, channel)
+        query = self._query(ProductCrustType).filter(ProductCrustType.product_id == product_id)
+        if option_kind is not None:
+            query = query.filter(ProductCrustType.option_kind == option_kind)
+        if active_only:
+            capabilities = effective_capabilities(self.db, product, self.context)
+            allowed = [kind for kind, flag in (("dough", "enable_dough"), ("border", "enable_border")) if capabilities[flag]]
+            query = query.filter(ProductCrustType.active.is_(True), ProductCrustType.option_kind.in_(allowed))
+        # No discriminator keeps the legacy combined response, now with typed rows.
+        return query.order_by(ProductCrustType.sort_order, ProductCrustType.id).all()
+
+    def create_crust(self, product_id: str, body):
+        product = self._crust_product(product_id)
+        self._require_crust_kind(product, body.option_kind)
+        row = ProductCrustType(id=f"crust-{uuid.uuid4().hex[:8]}", product_id=product_id, **body.model_dump())
+        assign_catalog_tenant(row, self.context)
+        self.db.add(row)
+        self.db.commit()
+        self.db.refresh(row)
+        return row
+
+    def update_crust(self, product_id: str, crust_id: str, body):
+        product = self._crust_product(product_id)
+        row = self._query(ProductCrustType).filter(ProductCrustType.id == crust_id, ProductCrustType.product_id == product_id).first()
+        if row is None:
+            raise HTTPException(404, "Opcao nao encontrada.")
+        values = body.model_dump(exclude_unset=True)
+        self._require_crust_kind(product, values.get("option_kind", row.option_kind))
+        for key, value in values.items():
+            setattr(row, key, value)
+        self.db.commit()
+        self.db.refresh(row)
+        return row
 
     def product_values(self, values: dict, *, current: Product | None = None, creating: bool = False) -> dict:
         """Validate edited references, preserving untouched legacy classifications."""

@@ -1,5 +1,6 @@
 import json
 import uuid
+from typing import Literal
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_
@@ -172,8 +173,8 @@ def _product_payload(
         payload["sizes"] = []
     if not capabilities["enable_product_options"]:
         payload["option_groups"] = []
-    if not capabilities["enable_dough"] and not capabilities["enable_border"]:
-        payload["crust_types"] = []
+    payload["crust_types"] = [row for row in payload["crust_types"]
+                              if capabilities["enable_dough" if row["option_kind"] == "dough" else "enable_border"]]
     if not capabilities["enable_promotions"]:
         payload["promotion_applied"] = False
     if not include_inactive_option_groups:
@@ -193,7 +194,7 @@ def _product_payload(
     if not capabilities["enable_promotions"]:
         quote = ProductPriceResult(standard_price=quote.standard_price, final_price=quote.standard_price)
     active_sizes = [size for size in product.sizes if capabilities["enable_sizes"] and size.active] or [None]
-    active_crusts = [crust for crust in product.crust_types if (capabilities["enable_dough"] or capabilities["enable_border"]) and crust.active]
+    active_crusts = [crust for crust in product.crust_types if capabilities["enable_dough"] and crust.active and crust.option_kind == "dough"]
     crust_options = active_crusts or [None]
     promotion_quotes = [
         candidate
@@ -594,7 +595,7 @@ def quote_product_price(
     if crust_id:
         crust = (
             _tenant_query(db, ProductCrustType, context)
-            .filter(ProductCrustType.id == crust_id, ProductCrustType.product_id == product_id, ProductCrustType.active == True)  # noqa: E712
+            .filter(ProductCrustType.id == crust_id, ProductCrustType.product_id == product_id, ProductCrustType.active == True, ProductCrustType.option_kind == "dough")  # noqa: E712
             .first()
         )
         if not crust:
@@ -605,6 +606,7 @@ def quote_product_price(
         border = _tenant_query(db, ProductCrustType, context).filter(
             ProductCrustType.id == border_id, ProductCrustType.product_id == product_id,
             ProductCrustType.active.is_(True),
+            ProductCrustType.option_kind == "border",
         ).first()
         if border is None or border_id == crust_id:
             raise HTTPException(422, "Borda invalida para este produto.")
@@ -852,60 +854,28 @@ def list_crusts(
     active_only: bool = True,
     db: Session = Depends(get_db),
     channel: str = Query(default="delivery", pattern="^(delivery|dine_in)$"),
+    option_kind: Literal["dough", "border"] | None = Query(default=None),
 ):
     context = (
         resolve_public_tenant_context(request, db)
         if active_only
         else resolve_panel_tenant_context(request, db, _require_catalog_admin(request, db))
     )
-    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
-    if not product:
-        raise HTTPException(404, "Produto não encontrado.")
-    if active_only:
-        assert_public_product(product, channel)
-        capabilities = product_category_service.effective_capabilities(db, product, context)
-        if not capabilities["enable_dough"] and not capabilities["enable_border"]:
-            return []
-    q = _tenant_query(db, ProductCrustType, context).filter(ProductCrustType.product_id == product_id)
-    if active_only:
-        q = q.filter(ProductCrustType.active == True)  # noqa: E712
-    return q.order_by(ProductCrustType.sort_order).all()
+    return ProductCatalogService(db, context).list_crusts(
+        product_id, active_only=active_only, channel=channel, option_kind=option_kind,
+    )
 
 
 @router.post("/{product_id}/crusts", response_model=ProductCrustTypeOut, status_code=201, dependencies=[Depends(require_rbac_permission("cardapio", "create"))])
 def create_crust(product_id: str, body: ProductCrustTypeCreate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
     context = resolve_panel_tenant_context(request, db, admin)
-    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
-    if not product:
-        raise HTTPException(404, "Produto não encontrado.")
-    capabilities = product_category_service.effective_capabilities(db, product, context)
-    if not capabilities["enable_dough"] and not capabilities["enable_border"]:
-        raise HTTPException(422, "A categoria deste produto nao habilita massa ou borda.")
-    crust = ProductCrustType(id=f"crust-{uuid.uuid4().hex[:8]}", product_id=product_id, **body.model_dump())
-    assign_catalog_tenant(crust, context)
-    db.add(crust)
-    db.commit()
-    db.refresh(crust)
-    return crust
+    return ProductCatalogService(db, context).create_crust(product_id, body)
 
 
 @router.put("/{product_id}/crusts/{crust_id}", response_model=ProductCrustTypeOut, dependencies=[Depends(require_rbac_permission("cardapio", "edit"))])
 def update_crust(product_id: str, crust_id: str, body: ProductCrustTypeUpdate, request: Request, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
     context = resolve_panel_tenant_context(request, db, admin)
-    crust = _tenant_query(db, ProductCrustType, context).filter(ProductCrustType.id == crust_id, ProductCrustType.product_id == product_id).first()
-    if not crust:
-        raise HTTPException(404, "Tipo de massa não encontrado.")
-    product = _tenant_query(db, Product, context).filter(Product.id == product_id).first()
-    if not product:
-        raise HTTPException(404, "Produto nao encontrado.")
-    capabilities = product_category_service.effective_capabilities(db, product, context)
-    if not capabilities["enable_dough"] and not capabilities["enable_border"]:
-        raise HTTPException(422, "A categoria deste produto nao habilita massa ou borda.")
-    for key, value in body.model_dump(exclude_none=True).items():
-        setattr(crust, key, value)
-    db.commit()
-    db.refresh(crust)
-    return crust
+    return ProductCatalogService(db, context).update_crust(product_id, crust_id, body)
 
 
 @router.delete("/{product_id}/crusts/{crust_id}", status_code=204, dependencies=[Depends(require_rbac_permission("cardapio", "delete"))])

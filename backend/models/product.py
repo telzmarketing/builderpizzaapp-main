@@ -99,12 +99,15 @@ class ProductCrustType(Base):
         Index("uq_product_crust_types_tenant_id_id", "tenant_id", "id", unique=True),
         CheckConstraint("price_addition >= 0", name="ck_product_crust_types_price_addition"),
         CheckConstraint("sort_order >= 0", name="ck_product_crust_types_sort_order"),
+        CheckConstraint("option_kind IN ('dough', 'border')", name="ck_product_crust_types_option_kind"),
     )
 
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_product_crust_types_tenant_id_tenants"), nullable=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)
+    # Legacy rows and clients omitting the discriminator remain dough options.
+    option_kind = Column(String(10), nullable=False, default="dough", server_default="dough")
     price_addition = Column(Float, default=0.0)
     active = Column(Boolean, default=True)
     sort_order = Column(Integer, default=0)

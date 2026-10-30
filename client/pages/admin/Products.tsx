@@ -34,7 +34,10 @@ const DISCOUNT_LABELS: Record<ProductPromotionDiscountType, string> = {
 };
 
 const productHasActiveCrust = (product: Pizza) =>
-  (((product as any).crust_types ?? []) as ApiProductCrustType[]).some((crust) => crust.active);
+  (((product as any).crust_types ?? []) as ApiProductCrustType[]).some((crust) => crust.active && crust.option_kind === "dough");
+
+const productCrustCount = (product: Pizza, kind: ApiProductCrustType["option_kind"]) =>
+  (product.crust_types ?? []).filter((crust) => crust.option_kind === kind).length;
 
 const PIZZA_ICON = "\u{1F355}";
 const ESFIHA_ICON = "\u{1FAD3}";
@@ -895,8 +898,8 @@ export default function AdminProducts() {
     setCrustModalProduct(product);
     setCrustsLoading(true);
     try {
-      const crusts = await crustApi.list(product.id, false);
-      setProductCrusts(crusts.sort((a, b) => a.sort_order - b.sort_order));
+      const crusts = await crustApi.list(product.id, false, "dough");
+      setProductCrusts(crusts.filter((crust) => crust.option_kind === "dough").sort((a, b) => a.sort_order - b.sort_order));
     } catch {
       setProductCrusts([]);
     } finally {
@@ -920,8 +923,8 @@ export default function AdminProducts() {
     setBorderModalProduct(product);
     setBordersLoading(true);
     try {
-      const crusts = await crustApi.list(product.id, false);
-      setProductBorders(crusts.sort((a, b) => a.sort_order - b.sort_order));
+      const crusts = await crustApi.list(product.id, false, "border");
+      setProductBorders(crusts.filter((crust) => crust.option_kind === "border").sort((a, b) => a.sort_order - b.sort_order));
     } catch {
       setProductBorders([]);
     } finally {
@@ -941,6 +944,7 @@ export default function AdminProducts() {
     const priceAddition = isNaN(priceAdd) || priceAdd < 0 ? 0 : priceAdd;
     try {
       const created = await crustApi.create(borderModalProduct.id, {
+        option_kind: "border",
         name: borderForm.name.trim(),
         price_addition: priceAddition,
         active: true,
@@ -958,7 +962,7 @@ export default function AdminProducts() {
     if (!borderModalProduct || !trimmed || trimmed === border.name) return;
     setSavingBorderId(border.id);
     try {
-      const updated = await crustApi.update(borderModalProduct.id, border.id, { name: trimmed });
+      const updated = await crustApi.update(borderModalProduct.id, border.id, { name: trimmed, option_kind: "border" });
       setProductBorders((prev) => prev.map((item) => item.id === border.id ? updated : item));
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao atualizar nome da borda.");
@@ -976,7 +980,7 @@ export default function AdminProducts() {
     [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
     setSavingBorderId(border.id);
     try {
-      const updated = await Promise.all(reordered.map((item, index) => crustApi.update(borderModalProduct.id, item.id, { sort_order: index })));
+      const updated = await Promise.all(reordered.map((item, index) => crustApi.update(borderModalProduct.id, item.id, { sort_order: index, option_kind: "border" })));
       setProductBorders(updated.sort((a, b) => a.sort_order - b.sort_order));
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao alterar ordem das bordas.");
@@ -989,7 +993,7 @@ export default function AdminProducts() {
     if (!borderModalProduct) return;
     setSavingBorderId(border.id);
     try {
-      const updated = await crustApi.update(borderModalProduct.id, border.id, { active: !border.active });
+      const updated = await crustApi.update(borderModalProduct.id, border.id, { active: !border.active, option_kind: "border" });
       setProductBorders((prev) => prev.map((item) => item.id === border.id ? updated : item));
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao atualizar borda.");
@@ -1008,7 +1012,7 @@ export default function AdminProducts() {
     if (Math.abs(priceAddition - border.price_addition) < 0.001) return;
     setSavingBorderId(border.id);
     try {
-      const updated = await crustApi.update(borderModalProduct.id, border.id, { price_addition: priceAddition });
+      const updated = await crustApi.update(borderModalProduct.id, border.id, { price_addition: priceAddition, option_kind: "border" });
       setProductBorders((prev) => prev.map((item) => item.id === border.id ? updated : item));
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao atualizar adicional da borda.");
@@ -1033,11 +1037,12 @@ export default function AdminProducts() {
     const priceAdd = parseFloat(crustForm.price_addition || "0");
     try {
       const created = await crustApi.create(crustModalProduct.id, {
+        option_kind: "dough",
         name: crustForm.name.trim(),
         price_addition: isNaN(priceAdd) ? 0 : priceAdd,
         active: true,
         sort_order: productCrusts.length,
-      } as any);
+      });
       setProductCrusts((prev) => [...prev, created]);
       setCrustForm({ name: "", price_addition: "" });
     } catch (err: unknown) {
@@ -1049,7 +1054,7 @@ export default function AdminProducts() {
     if (!crustModalProduct) return;
     setSavingCrustId(crust.id);
     try {
-      const updated = await crustApi.update(crustModalProduct.id, crust.id, { active: !crust.active });
+      const updated = await crustApi.update(crustModalProduct.id, crust.id, { active: !crust.active, option_kind: "dough" });
       setProductCrusts((prev) => prev.map((c) => (c.id === crust.id ? updated : c)));
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao atualizar massa.");
@@ -1068,7 +1073,7 @@ export default function AdminProducts() {
     if (Math.abs(priceAddition - crust.price_addition) < 0.001) return;
     setSavingCrustId(crust.id);
     try {
-      const updated = await crustApi.update(crustModalProduct.id, crust.id, { price_addition: priceAddition });
+      const updated = await crustApi.update(crustModalProduct.id, crust.id, { price_addition: priceAddition, option_kind: "dough" });
       setProductCrusts((prev) => prev.map((c) => (c.id === crust.id ? updated : c)));
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao atualizar adicional da massa.");
@@ -1088,7 +1093,7 @@ export default function AdminProducts() {
     setReorderingCrustId(crust.id);
     try {
       const updatedCrusts = await Promise.all(
-        reordered.map((item, index) => crustApi.update(crustModalProduct.id, item.id, { sort_order: index }))
+        reordered.map((item, index) => crustApi.update(crustModalProduct.id, item.id, { sort_order: index, option_kind: "dough" }))
       );
       setProductCrusts(updatedCrusts.sort((a, b) => a.sort_order - b.sort_order));
     } catch (err: unknown) {
@@ -1128,7 +1133,7 @@ export default function AdminProducts() {
     existing: ApiProductPromotionCombination[] = [],
   ): ApiProductPromotionCombination[] => {
     const sizeRows = sizes.filter((size) => size.active);
-    const crustRows: (ApiProductCrustType | null)[] = crusts.filter((crust) => crust.active);
+    const crustRows: (ApiProductCrustType | null)[] = crusts.filter((crust) => crust.active && crust.option_kind === "dough");
     const rows = crustRows.length > 0 ? crustRows : [null];
     return sizeRows.flatMap((size) => rows.map((crust) => {
       const current = existing.find((combo) =>
@@ -1153,7 +1158,7 @@ export default function AdminProducts() {
       const [promotions, sizes, crusts, gifts] = await Promise.all([
         productPromotionsApi.list(product.id),
         sizesApi.list(product.id, false),
-        crustApi.list(product.id, false),
+        crustApi.list(product.id, false, "dough"),
         productsApi.listGifts(),
       ]);
       setProductPromotions(promotions);
@@ -1795,9 +1800,9 @@ export default function AdminProducts() {
                           <button onClick={() => openCrustModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-amber-500/10 hover:border-amber-500/40 text-parchment hover:text-amber-400 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                             <ChefHat size={15} />
                             Gerenciar Massas
-                            {(((product as any).crust_types ?? []) as ApiProductCrustType[]).length > 0 && (
+                            {productCrustCount(product, "dough") > 0 && (
                               <span className="ml-auto text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full">
-                                {(((product as any).crust_types ?? []) as ApiProductCrustType[]).length}
+                                {productCrustCount(product, "dough")}
                               </span>
                             )}
                           </button>

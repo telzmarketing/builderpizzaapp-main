@@ -311,6 +311,9 @@ class OrderService:
             raise DomainError("Selecione um tamanho valido.", code="ProductSizeRequired")
         crust = option(ProductCrustType, item.selected_crust_type_id, "Massa") if capabilities["enable_dough"] else None
         border = option(ProductCrustType, item.selected_border_id, "Borda") if capabilities["enable_border"] else None
+        for selected, expected_kind in ((crust, "dough"), (border, "border")):
+            if selected is not None and (getattr(selected, "option_kind", None) or "dough") != expected_kind:
+                raise DomainError("Tipo de massa ou borda invalido.", code="InvalidProductOptionKind")
         variant = option(ProductDrinkVariant, item.selected_drink_variant_id, "Variante")
 
         # Generic product options are authoritative for products that have an
