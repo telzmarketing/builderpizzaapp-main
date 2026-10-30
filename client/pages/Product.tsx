@@ -1055,6 +1055,31 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
         )}
 
         {/* ── Pizza: Flavor Slots ──────────────────────────────────────────── */}
+        {showBorderOptions && borderCrusts.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-cream font-bold mb-3">Borda</h3>
+            {borderAvailable ? (
+              <select
+                aria-label="Selecionar borda"
+                value={selectedBorder?.id ?? ""}
+                onChange={(event) => setSelectedBorder(borderCrusts.find((border) => border.id === event.target.value) ?? null)}
+                className="w-full rounded-xl bg-surface-02 border border-surface-03 px-4 py-3 text-cream font-semibold"
+              >
+                <option value="">Sem borda</option>
+                {borderCrusts.map((border) => (
+                  <option key={border.id} value={border.id}>
+                    {border.name}{border.price_addition > 0 ? ` (+ R$ ${border.price_addition.toFixed(2)})` : ""}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-stone text-sm bg-surface-02 rounded-xl px-4 py-3 border border-surface-03">
+                Borda disponível apenas com Massa Tradicional
+              </p>
+            )}
+          </div>
+        )}
+
         {isPizza && !isFixedFlavorCombination && (
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">
@@ -1211,32 +1236,6 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                   )}
                 </div>
               </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Pizza: Borda (após divisão e sabores) ────────────────────────── */}
-        {showBorderOptions && borderCrusts.length > 0 && (
-          <div className="mb-6">
-            <h3 className="text-cream font-bold mb-3">Borda</h3>
-            {borderAvailable ? (
-              <select
-                aria-label="Selecionar borda"
-                value={selectedBorder?.id ?? ""}
-                onChange={(event) => setSelectedBorder(borderCrusts.find((border) => border.id === event.target.value) ?? null)}
-                className="w-full rounded-xl bg-surface-02 border border-surface-03 px-4 py-3 text-cream font-semibold"
-              >
-                <option value="">Sem borda</option>
-                {borderCrusts.map((border) => (
-                  <option key={border.id} value={border.id}>
-                    {border.name}{border.price_addition > 0 ? ` (+ R$ ${border.price_addition.toFixed(2)})` : ""}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <p className="text-stone text-sm bg-surface-02 rounded-xl px-4 py-3 border border-surface-03">
-                Borda disponível apenas com Massa Tradicional
-              </p>
             )}
           </div>
         )}
