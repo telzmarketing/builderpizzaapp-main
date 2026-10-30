@@ -88,10 +88,27 @@
  * opened from a nested admin shell or a browser with reduced chrome. */
 .kds-pdv {
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   min-width: 0;
+  height: 100dvh;
   min-height: 100dvh;
   overflow-x: hidden;
+}
+
+.kds-pdv-header { flex: 0 0 auto; }
+
+.kds-pdv .kds-pdv-workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.kds-pdv .kds-pdv-frame,
+.kds-pdv .kds-pdv-frame-content,
+.kds-pdv .kds-pdv-canvas {
+  height: 100%;
 }
 
 .kds-pdv .kds-pdv-inner {
@@ -186,6 +203,8 @@
   }
 
   .kds-pdv .kds-pdv-inner { max-width: none; }
+  .kds-pdv { height: auto; min-height: 100dvh; overflow-x: hidden; overflow-y: visible; }
+  .kds-pdv .kds-pdv-workspace { flex: 0 0 auto; }
   .kds-pdv .kds-pdv-inner > aside { display: none; }
   .kds-pdv .kds-pdv-inner > section { width: 100%; }
 
@@ -201,6 +220,7 @@
 
   .kds-pdv .kds-pdv-canvas {
     display: block;
+    height: auto !important;
     min-height: 0;
   }
 
