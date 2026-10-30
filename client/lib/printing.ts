@@ -5,6 +5,7 @@ import { paymentsApi, siteConfigApi, type ApiOrder, type ApiPayment } from "./ap
 import { isOperationalDrink, operationalDrinks } from "./operationalDrinks";
 import { storeBranding } from "./storeBranding";
 import { readPlatformSupportSession } from "./platformSupportSession";
+import { partnerLogoUrl, partnerOriginLabel } from "./partnerIdentification";
 
 // ── Printer settings (persisted in localStorage) ──────────────────────────────
 
@@ -94,7 +95,11 @@ function drinksBlock(order: ApiOrder) {
 function operationalHeader(order: ApiOrder) {
   const origins: Record<string, string> = { counter: "Balcão", delivery: "Loja virtual", pickup: "Retirada", dine_in: "Salão", ifood: "iFood", "99food": "99Food", keeta: "Keeta" };
   const mode = order.fulfillment_type === "pickup" ? "Retirada" : order.fulfillment_type === "dine_in" ? "Consumo no local" : "Entrega";
-  return `<p class="s">Origem: ${escapeText(origins[order.sales_channel || ""] || order.sales_channel || "Não informada")}</p><p class="s">Modalidade: ${mode}</p>`;
+  const label = order.order_identification?.display_name || (order.order_origin ? partnerOriginLabel(order.order_origin) : (origins[order.sales_channel || ""] || order.sales_channel || "Não informada"));
+  const logo = order.partner_logo_url || order.order_identification?.logo_url || partnerLogoUrl(order.order_origin);
+  const safeLogo = /^(https?:\/\/|\/(?!\/)|data:image\/(?:png|jpeg|gif|webp|svg\+xml)[;,])/i.test(logo || "");
+  const partnerLine = `<div class="partner-origin">${safeLogo ? `<img src="${escapeText(logo)}" alt=""/>` : ""}<span>Pedido ${escapeText(label)}${order.partner_order_number ? ` · ${escapeText(order.partner_order_number)}` : ""}</span></div>`;
+  return `${partnerLine}<p class="s">Origem: ${escapeText(label)}</p><p class="s">Modalidade: ${mode}</p>`;
 }
 
 function dispatchChecklist(order: ApiOrder) {
@@ -228,6 +233,7 @@ function baseCss() {
     .b{font-weight:bold}
     .s{font-size:var(--receipt-small);color:#000;font-weight:600}
     .receipt-logo{display:block;max-width:75%;max-height:24mm;width:auto;height:auto;object-fit:contain;margin:0 auto 3mm;filter:grayscale(1) contrast(1.6)}
+    .partner-origin{display:flex;align-items:center;justify-content:center;gap:2mm;font-weight:bold;text-align:center;margin:2mm 0}.partner-origin img{max-width:18mm;max-height:10mm;object-fit:contain;filter:grayscale(1) contrast(1.5)}
     .drinks{background:#eee;border:2px solid #000;padding:2mm;margin:3mm 0;break-inside:avoid}
     .dispatch-check{border-top:1px dashed #000;margin-top:3mm;padding-top:2mm;break-inside:avoid}
     .receipt-qr{text-align:center;border-top:1px dashed #000;border-bottom:1px dashed #000;margin:3mm 0;padding:2mm 0;break-inside:avoid}

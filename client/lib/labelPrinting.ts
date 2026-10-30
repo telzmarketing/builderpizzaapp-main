@@ -1,6 +1,7 @@
 import { orderDisplayCode } from "@/lib/orderIdentity";
 import QRCode from "qrcode";
 import type { KdsLabelPreview, KdsLabelTemplate, KdsLabelTestPreview, KdsLabelVolume, PreparationLabelPreview } from "./api";
+import { partnerLogoUrl, partnerOriginLabel } from "./partnerIdentification";
 
 function qrSvg(payload?: string | null, label = "QR Code operacional"): string {
   if (!payload) return "";
@@ -63,12 +64,15 @@ function dimensions(template: KdsLabelTemplate) {
 
 function volumeMarkup(preview: KdsLabelPreview, volume: KdsLabelVolume, printedAt: string) {
   const logo = preview.template.show_logo ? safeImageUrl(preview.restaurant.logo_url) : null;
+  const partnerLogo = safeImageUrl(preview.order.partner_logo_url || preview.order.order_identification?.logo_url || partnerLogoUrl(preview.order.order_origin));
+  const partnerLabel = preview.order.order_identification?.display_name || (preview.order.order_origin ? partnerOriginLabel(preview.order.order_origin) : "");
   const flavorNames = (volume.flavors ?? []).map((flavor) => typeof flavor === "string" ? flavor : flavor.name);
   const details = [volume.selected_size, volume.selected_crust_type, volume.selected_drink_variant, ...flavorNames, ...(volume.add_ons ?? []).map((addOn) => `+ ${addOn}`)].filter(Boolean);
   return `<article class="label" aria-label="Volume ${volume.sequence} de ${volume.total_volumes}"><div class="label-inner">
     <section class="summary">
       <div class="caption">PEDIDO</div>
       <div class="order-number">${escapeHtml(orderDisplayCode(preview.order))}</div>
+      ${partnerLabel ? `<div class="caption">${partnerLogo ? `<img class="partner-logo" src="${escapeHtml(partnerLogo)}" alt=""/>` : ""}${escapeHtml(partnerLabel)}${preview.order.partner_order_number ? ` · ${escapeHtml(preview.order.partner_order_number)}` : ""}</div>` : ""}
       <div class="caption quantity-title">QUANTIDADE DE ITENS</div>
       <div class="quantity">${escapeHtml(volume.quantity)}</div>
       <div class="volume">${escapeHtml(volume.sequence)} DE ${escapeHtml(volume.total_volumes)}</div>
@@ -110,6 +114,7 @@ export function buildLabelPrintHtml(preview: KdsLabelPreview): string {
     .details{min-width:0;padding:1mm 2mm;display:flex;flex-direction:column;overflow:hidden;border-right:.45mm solid #000}
     header{display:flex;align-items:center;gap:1.5mm;border-bottom:.3mm solid #000;padding-bottom:.8mm;min-height:6mm}
     header img{display:block;max-width:11mm;max-height:6mm;object-fit:contain;filter:grayscale(1) contrast(2)}
+    .partner-logo{display:block;max-width:14mm;max-height:7mm;margin:1mm auto;object-fit:contain;filter:grayscale(1) contrast(2)}
     .store{font-size:8pt;line-height:1;font-weight:900;overflow-wrap:anywhere}
     .product{font-size:11pt;line-height:1.05;font-weight:900;margin-top:1mm;overflow-wrap:anywhere;hyphens:auto}
     .description{font-size:7pt;line-height:1.05;margin-top:.6mm;overflow-wrap:anywhere}

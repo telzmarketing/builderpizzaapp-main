@@ -3,15 +3,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, Plus, Printer, Search, ShoppingBag, Trash2, UserRound } from "lucide-react";
 import Product from "@/pages/Product";
-import { ApiRequestError, customersApi, manualOrdersApi, ordersApi, paymentsApi, productsApi, isAssetUrl, resolveOptimizedAssetUrl, type ApiCustomer, type ApiOrder, type ApiProduct, type ManualOrderIn, type ManualOrderQuote } from "@/lib/api";
+import { ApiRequestError, customersApi, manualOrdersApi, ordersApi, paymentsApi, productsApi, isAssetUrl, resolveOptimizedAssetUrl, type ApiCustomer, type ApiOrder, type ApiProduct, type ManualOrderIn, type ManualOrderQuote, type PartnerOrderOrigin } from "@/lib/api";
 import { readStoredAdminSession } from "@/lib/adminSession";
 import { canCreateManualOrder, configuredManualLine, newManualOrderKey, type ManualCartLine } from "@/lib/manualOrder";
 import { readPlatformSupportSession } from "@/lib/platformSupportSession";
 import { printOrder } from "@/lib/printing";
+import { PARTNER_ORIGIN_OPTIONS, isPartnerOrigin } from "@/lib/partnerIdentification";
+import PartnerOrderIdentity from "./PartnerOrderIdentity";
 import type { MultiFlavorsConfig } from "@/context/AppContext";
 
 type Draft = {
   key: string; lines: ManualCartLine[]; customer: Pick<ApiCustomer, "id" | "name" | "phone"> | null;
+  orderOrigin: PartnerOrderOrigin; partnerOrderNumber: string;
   fulfillment: "delivery" | "pickup"; phone: string; street: string; city: string; neighborhood: string; zip: string; complement: string;
   method: ManualOrderIn["payment_method"]; paymentStatus: "pending" | "paid"; collection: "cash" | "card";
   cashFor: string; coupon: string; submission?: ManualOrderIn;
@@ -23,7 +26,7 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : "
 const methods: Record<ManualOrderIn["payment_method"], string> = { pix: "Pix", cash: "Dinheiro", credit_card: "Cartão de crédito", debit_card: "Cartão de débito", pay_on_delivery: "Pagamento na entrega / retirada" };
 
 function emptyDraft(): Draft {
-  return { key: newManualOrderKey(), lines: [], customer: null, fulfillment: "delivery", phone: "", street: "", city: "", neighborhood: "", zip: "", complement: "", method: "cash", paymentStatus: "pending", collection: "cash", cashFor: "", coupon: "" };
+  return { key: newManualOrderKey(), lines: [], customer: null, orderOrigin: "own", partnerOrderNumber: "", fulfillment: "delivery", phone: "", street: "", city: "", neighborhood: "", zip: "", complement: "", method: "cash", paymentStatus: "pending", collection: "cash", cashFor: "", coupon: "" };
 }
 
 function draftStorageKey() {
@@ -93,8 +96,11 @@ export default function ManualOrderComposer({ onCreated }: { onCreated?: (order:
   const payload: ManualOrderIn | null = useMemo(() => {
     if (!draft.customer || !draft.phone.trim() || !draft.lines.length) return null;
     if (draft.fulfillment === "delivery" && (!draft.street.trim() || !draft.city.trim())) return null;
+    if (isPartnerOrigin(draft.orderOrigin) && !draft.partnerOrderNumber.trim()) return null;
     return {
       customer_id: draft.customer.id, sales_channel: "counter", fulfillment_type: draft.fulfillment,
+      order_origin: draft.orderOrigin,
+      partner_order_number: isPartnerOrigin(draft.orderOrigin) ? draft.partnerOrderNumber.trim() : null,
       items: draft.lines.map((line) => line.item),
       delivery: { name: draft.customer.name, phone: draft.phone, street: draft.fulfillment === "pickup" ? "Retirada no local" : draft.street, city: draft.fulfillment === "pickup" ? "Retirada" : draft.city, neighborhood: draft.neighborhood || undefined, zip_code: draft.zip || undefined, complement: draft.complement || undefined, is_pickup: draft.fulfillment === "pickup" },
       // Manual orders are created pending; payment is confirmed after printing.
@@ -181,6 +187,12 @@ export default function ManualOrderComposer({ onCreated }: { onCreated?: (order:
       <fieldset disabled={locked || loading} className="min-w-0 space-y-4 disabled:opacity-70">
         {step === 0 && <>
           <h2 className="flex items-center gap-2 text-xl font-bold"><UserRound /> Cliente e atendimento</h2>
+          <div className="space-y-3 rounded-2xl border border-gold/30 bg-gold/5 p-4">
+            <label className="block text-sm font-bold">Origem do pedido<select aria-label="Origem do pedido" className={`${input} mt-2`} value={draft.orderOrigin} onChange={(event) => patch({ orderOrigin: event.target.value as PartnerOrderOrigin, partnerOrderNumber: "" })}>{PARTNER_ORIGIN_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}{option.value === "own" ? " · Gran Torino" : ""}</option>)}</select></label>
+            <PartnerOrderIdentity order={{ order_origin: draft.orderOrigin, partner_order_number: isPartnerOrigin(draft.orderOrigin) ? draft.partnerOrderNumber || "número pendente" : null }} />
+            {isPartnerOrigin(draft.orderOrigin) && <label className="block text-sm font-bold">Número do pedido no aplicativo<input aria-label="Número do pedido no aplicativo" required className={`${input} mt-2`} value={draft.partnerOrderNumber} onChange={(event) => patch({ partnerOrderNumber: event.target.value })} placeholder="Ex.: 123456789" /></label>}
+            {isPartnerOrigin(draft.orderOrigin) && !draft.partnerOrderNumber.trim() && <p className="text-xs text-amber-200">Informe o número do pedido para continuar.</p>}
+          </div>
           <label className="block text-sm">Pesquisar por nome ou telefone<input className={`${input} mt-2`} value={customerQuery} onChange={(event) => setCustomerQuery(event.target.value)} placeholder="Quem está fazendo o pedido?" /></label>
           {customerQuery && <div className="max-h-56 space-y-2 overflow-y-auto">{filteredCustomers.length ? filteredCustomers.map((customer) => <button type="button" key={customer.id} onClick={() => selectCustomer(customer)} className="flex min-h-14 w-full justify-between gap-3 rounded-xl border border-surface-03 p-3 text-left"><strong>{customer.name}</strong><span className="text-stone">{customer.phone}</span></button>) : <p className="p-3 text-stone">Nenhum cliente encontrado. Cadastre abaixo.</p>}</div>}
           {draft.customer && <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4"><strong>{draft.customer.name}</strong><label className="mt-3 block text-sm">Telefone do pedido<input className={`${input} mt-2`} type="tel" value={draft.phone} onChange={(event) => patch({ phone: event.target.value })} /></label></div>}

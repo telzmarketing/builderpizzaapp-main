@@ -1143,6 +1143,26 @@ export type OrderStatus =
   | "cancelled"
   | "refunded";
 
+export type PartnerOrderOrigin = "own" | "partner_99" | "ifood" | "keeta";
+
+export interface PartnerIdentification {
+  order_origin: PartnerOrderOrigin;
+  display_name: string;
+  logo_url?: string | null;
+  enabled: boolean;
+}
+
+export interface PartnerIdentificationResponse {
+  partners: PartnerIdentification[];
+}
+
+export interface OrderIdentification {
+  code: PartnerOrderOrigin | string;
+  display_name: string;
+  logo_url?: string | null;
+  partner_order_number?: string | null;
+}
+
 export interface ApiOrder {
   drinks?: OperationalDrink[];
   has_drinks?: boolean;
@@ -1182,6 +1202,10 @@ export interface ApiOrder {
   cash_change_for?: number | null;
   cash_change_amount?: number | null;
   external_reference?: string | null;
+  order_origin?: PartnerOrderOrigin | string | null;
+  partner_order_number?: string | null;
+  partner_logo_url?: string | null;
+  order_identification?: OrderIdentification | null;
   items: ApiOrderItem[];
   created_at: string;
   updated_at: string;
@@ -1268,6 +1292,10 @@ export interface KdsKitchenOrder {
   status: OrderStatus;
   fulfillment_type: "delivery" | "pickup" | string;
   sales_channel?: string | null;
+  order_origin?: PartnerOrderOrigin | string | null;
+  partner_order_number?: string | null;
+  partner_logo_url?: string | null;
+  order_identification?: OrderIdentification | null;
   notes?: string | null;
   total: number;
   estimated_time: number;
@@ -1338,6 +1366,10 @@ export interface KdsOverviewCounters {
 export interface KdsOverviewOrder {
   id: string;
   order_code?: string | null;
+  order_origin?: PartnerOrderOrigin | string | null;
+  partner_order_number?: string | null;
+  partner_logo_url?: string | null;
+  order_identification?: OrderIdentification | null;
   stage: KdsOverviewStage;
   status: string;
   fulfillment_type: "delivery" | "pickup" | string;
@@ -1520,7 +1552,7 @@ export interface KdsLabelVolume {
 }
 
 export interface KdsLabelPreview {
-  order: { id: string; order_code?: string | null; status: string; fulfillment_type: string; customer_name?: string | null; notes?: string | null };
+  order: { id: string; order_code?: string | null; status: string; fulfillment_type: string; customer_name?: string | null; notes?: string | null; order_origin?: string | null; partner_order_number?: string | null; partner_logo_url?: string | null; order_identification?: { display_name?: string; logo_url?: string | null } | null };
   restaurant: { name: string; logo_url?: string | null };
   version: { id: string; number: number; fingerprint: string; created_at: string };
   printer?: KdsLabelPrinter | null;
@@ -1676,6 +1708,10 @@ export const kdsLabelsApi = {
 export interface OrderBoardOrder {
   id: string;
   order_code: string;
+  order_origin?: PartnerOrderOrigin | string | null;
+  partner_order_number?: string | null;
+  partner_logo_url?: string | null;
+  order_identification?: OrderIdentification | null;
   status: string;
   created_at: string;
   preparation_started_at?: string | null;
@@ -1887,6 +1923,8 @@ export interface ManualOrderIn extends CheckoutIn {
   sales_channel: "counter" | "delivery" | "pickup";
   fulfillment_type: "delivery" | "pickup";
   payment_status: "pending" | "approved" | "paid";
+  order_origin?: PartnerOrderOrigin;
+  partner_order_number?: string | null;
 }
 
 export interface ManualOrderQuote {
@@ -5662,6 +5700,11 @@ export const ordersApi = {
 export const manualOrdersApi = {
   quote: (body: ManualOrderIn) => request<ManualOrderQuote>("POST", "/admin/orders/manual/quote", body),
   create: (body: ManualOrderIn, key: string) => request<ApiOrder>("POST", "/admin/orders/manual", body, { "Idempotency-Key": key }),
+};
+
+export const partnerIdentificationApi = {
+  get: () => get<PartnerIdentificationResponse>("/partner-identification"),
+  update: (partners: PartnerIdentification[]) => put<PartnerIdentificationResponse>("/partner-identification", { partners }),
 };
 
 // ─── Payments ─────────────────────────────────────────────────────────────────

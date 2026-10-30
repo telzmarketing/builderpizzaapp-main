@@ -27,6 +27,7 @@ from backend.schemas.label import (
 from backend.services.operational_payment import cash_change_amount
 from backend.services.site_config_service import SiteConfigService
 from backend.services.qr_code_service import create_qr_payload
+from backend.services.partner_identification_service import PARTNER_DEFAULTS, PartnerIdentificationService
 
 
 class LabelService:
@@ -41,6 +42,19 @@ class LabelService:
     @staticmethod
     def _status(value) -> str:
         return value.value if hasattr(value, "value") else str(value)
+
+    def _partner_identity(self, order):
+        code = getattr(order, "order_origin", None) or "own"
+        try:
+            resolved = PartnerIdentificationService(self.db, None).resolved_for_orders([order]).get(order.id, {})
+        except Exception:
+            resolved = {}
+        return {
+            "code": code,
+            "display_name": resolved.get("display_name") or PARTNER_DEFAULTS.get(code, "Gran Torino"),
+            "logo_url": resolved.get("logo_url"),
+            "partner_order_number": getattr(order, "partner_order_number", None),
+        }
 
     def _get(self, model, row_id: str, code: str):
         row = self.db.query(model).filter(model.id == row_id, model.tenant_id == self.tenant_id).first()
@@ -242,7 +256,11 @@ class LabelService:
         )
         return {
             "order": {"id": order.id, "order_code": order.order_code, "status": self._status(order.status),
-                      "fulfillment_type": order.fulfillment_type, "customer_name": order.delivery_name, "notes": order.notes},
+                      "fulfillment_type": order.fulfillment_type, "customer_name": order.delivery_name, "notes": order.notes,
+                      "order_origin": getattr(order, "order_origin", None) or "own",
+                      "partner_order_number": getattr(order, "partner_order_number", None),
+                      "partner_logo_url": self._partner_identity(order)["logo_url"],
+                      "order_identification": self._partner_identity(order)},
             "restaurant": identity,
             "version": {"id": version.id, "number": version.version_number, "fingerprint": version.fingerprint,
                         "created_at": version.created_at, "invalidated_at": version.invalidated_at},

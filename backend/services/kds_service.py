@@ -24,6 +24,7 @@ from backend.models.cmv import OrderCmvSnapshot, OrderItemCmvSnapshot
 from backend.models.product import Product
 from backend.services.order_service import OrderService
 from backend.services.operational_payment import cash_change_amount
+from backend.services.partner_identification_service import PartnerIdentificationService
 
 
 class KdsService:
@@ -272,6 +273,9 @@ class KdsService:
         ).filter(
             Order.status.in_(self.OVERVIEW_ORDER_STATUSES),
         ).order_by(Order.created_at).all()
+        identifications = PartnerIdentificationService(
+            self.db, self.tenant_context
+        ).resolved_for_orders(orders)
 
         counters = {stage: 0 for stage in self.OVERVIEW_STAGES}
         serialized_orders = []
@@ -280,7 +284,9 @@ class KdsService:
             stage = self._overview_stage(order, delivery)
             counters[stage] += 1
             serialized_orders.append(
-                self._serialize_overview_order(order, stage, delivery)
+                self._serialize_overview_order(
+                    order, stage, delivery, identifications.get(order.id)
+                )
             )
 
         driver_counts = dict(self.db.query(
@@ -332,6 +338,7 @@ class KdsService:
 
     def _serialize_overview_order(
         self, order: Order, stage: str, delivery: Delivery | None,
+        identification: dict | None = None,
     ) -> dict:
         status_started_at = {
             "waiting_kitchen": order.paid_at,
@@ -358,6 +365,10 @@ class KdsService:
         return {
             "id": order.id,
             "order_code": order.order_code,
+            "order_origin": (identification or {}).get("code"),
+            "partner_order_number": (identification or {}).get("partner_order_number"),
+            "partner_logo_url": (identification or {}).get("logo_url"),
+            "order_identification": identification,
             "stage": stage,
             "status": self._status(order),
             "fulfillment_type": order.fulfillment_type or "delivery",
@@ -733,6 +744,9 @@ class KdsService:
         self, orders: list[Order], *, include_dispatch_details: bool,
         composition_by_item: dict[str, dict | None] | None = None,
     ) -> list[dict]:
+        identifications = PartnerIdentificationService(
+            self.db, self.tenant_context
+        ).resolved_for_orders(orders)
         production_units, production_progress = self._production_unit_snapshot(orders)
         latest_attempts = self._latest_attempts([unit for rows in production_units.values() for unit in rows])
         drink_item_ids = self._drink_item_ids(orders)
@@ -806,6 +820,10 @@ class KdsService:
                 }
             payload = {
                 "id": order.id, "order_code": order.order_code,
+                "order_origin": identifications.get(order.id, {}).get("code"),
+                "partner_order_number": identifications.get(order.id, {}).get("partner_order_number"),
+                "partner_logo_url": identifications.get(order.id, {}).get("logo_url"),
+                "order_identification": identifications.get(order.id),
                 "status": self._status(order),
                 "fulfillment_type": order.fulfillment_type or "delivery",
                 "sales_channel": order.sales_channel or "delivery",

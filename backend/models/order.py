@@ -36,6 +36,10 @@ class Order(Base):
             "fulfillment_type IN ('delivery','pickup','dine_in')",
             name="ck_orders_fulfillment_type",
         ),
+        CheckConstraint(
+            "order_origin IN ('own','partner_99','ifood','keeta')",
+            name="ck_orders_order_origin",
+        ),
     )
 
     id = Column(String, primary_key=True)
@@ -54,6 +58,10 @@ class Order(Base):
     status = Column(Enum(OrderStatus), default=OrderStatus.pending)
     order_code = Column(String(10), nullable=True)
     external_reference = Column(String(120), nullable=True)
+    # Business origin is intentionally separate from external_reference, which
+    # remains reserved for technical idempotency/integration references.
+    order_origin = Column(String(20), nullable=False, default="own", server_default="own")
+    partner_order_number = Column(String(120), nullable=True)
     coupon_id = Column(String, ForeignKey("coupons.id"), nullable=True)
     campaign_id = Column(String, ForeignKey("traffic_campaigns.id", ondelete="SET NULL"), nullable=True)
     utm_source = Column(String(100), nullable=True)

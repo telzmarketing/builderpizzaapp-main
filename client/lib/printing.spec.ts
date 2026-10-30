@@ -34,6 +34,13 @@ it("prints the persisted pending cash payment and calculated change on delivery 
   expect(html).not.toContain("NÃO COBRAR");
 });
 
+it("prints partner origin, external number and configured partner logo", () => {
+  const html = buildEntregaHtml({ ...deliveryOrder(), order_origin: "ifood", partner_order_number: "IFOOD-123", partner_logo_url: "/uploads/ifood.png" }, DEFAULT_PRINTER_SETTINGS);
+  expect(html).toContain("Pedido iFood");
+  expect(html).toContain("IFOOD-123");
+  expect(html).toContain("/uploads/ifood.png");
+});
+
 function deliveryOrder(): ApiOrder {
   return {
     id: "abc12345-0000-0000-0000-000000000000",

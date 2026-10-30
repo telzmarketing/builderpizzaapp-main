@@ -10,6 +10,7 @@ import { useAdminHeaderActions } from "@/components/layout/AdminLayoutContext";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import LabelPrintDialog from "@/components/kds/LabelPrintDialog";
 import ManualOrderComposer from "@/components/admin/ManualOrderComposer";
+import PartnerOrderIdentity from "@/components/admin/PartnerOrderIdentity";
 import OperationsContactPanel from "@/components/admin/OperationsContactPanel";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { canCreateManualOrder } from "@/lib/manualOrder";
@@ -1010,6 +1011,8 @@ export function OrderCard({
           {order.sales_channel === "dine_in" && order.status === "delivered" ? "Servido" : paidStageLabel}
         </span>
       </div>
+
+      <PartnerOrderIdentity order={order} compact className="mt-2" />
 
       {/* Customer */}
       <div className="mt-2">

@@ -32,6 +32,7 @@ from backend.services.order_service import OrderService
 from backend.services.order_whatsapp_notification_service import OrderWhatsAppNotificationService
 from backend.services.idempotency_service import IdempotencyService
 from backend.models.idempotency import IdempotencyKey
+from backend.services.partner_identification_service import PartnerIdentificationService
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 admin_orders_router = APIRouter(prefix="/admin/orders", tags=["admin-orders"])
@@ -75,7 +76,7 @@ def _build_product_lookup(db: Session, orders: list[Order]) -> dict[str, Product
     return {product.id: product for product in products}
 
 
-def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
+def _serialize_order(order: Order, product_lookup: dict[str, Product], identification: dict | None = None) -> dict:
     items = []
     drinks = []
     for item in order.items:
@@ -182,6 +183,14 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
         "cash_change_for": order.payment.cash_change_for if order.payment else None,
         "cash_change_amount": cash_change_amount(order.payment, order.total),
         "external_reference": order.external_reference,
+        "order_origin": getattr(order, "order_origin", None) or "own",
+        "partner_order_number": getattr(order, "partner_order_number", None),
+        "order_identification": identification or {
+            "code": getattr(order, "order_origin", None) or "own",
+            "display_name": "Gran Torino",
+            "logo_url": None,
+            "partner_order_number": getattr(order, "partner_order_number", None),
+        },
         "subtotal": order.subtotal,
         "shipping_fee": order.shipping_fee,
         "delivery_fee_original": order.delivery_fee_original or order.shipping_fee or 0,
@@ -222,7 +231,8 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
 
 def _serialize_orders(db: Session, orders: list[Order]) -> list[dict]:
     product_lookup = _build_product_lookup(db, orders)
-    return [_serialize_order(order, product_lookup) for order in orders]
+    identification = PartnerIdentificationService(db, None).resolved_for_orders(orders)
+    return [_serialize_order(order, product_lookup, identification.get(order.id)) for order in orders]
 
 
 @router.post("", status_code=201)
@@ -302,6 +312,8 @@ def _create_manual_order(
         order = service.create_from_checkout(
             _manual_checkout_payload(body),
             sales_channel=body.sales_channel,
+            order_origin=body.order_origin,
+            partner_order_number=body.partner_order_number,
             payment_status=body.payment_status,
             payment_source="manual",
             external_reference_override=reference,

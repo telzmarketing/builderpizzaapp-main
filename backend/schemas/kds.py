@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from backend.schemas.partner_identification import ResolvedOrderIdentificationOut
 
 
 class DispatchAssignIn(BaseModel):
@@ -37,6 +38,10 @@ class KdsOverviewDeliveryOut(BaseModel):
 class KdsOverviewOrderOut(BaseModel):
     id: str
     order_code: str | None = None
+    order_origin: str | None = None
+    partner_order_number: str | None = None
+    partner_logo_url: str | None = None
+    order_identification: ResolvedOrderIdentificationOut | None = None
     stage: KdsOverviewStage
     status: str
     fulfillment_type: str

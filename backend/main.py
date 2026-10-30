@@ -78,6 +78,7 @@ from backend.routes import kds as kds_routes
 from backend.routes import labels as labels_routes
 from backend.routes import order_board as order_board_routes
 from backend.routes import gestor as gestor_routes
+from backend.routes import partner_identification as partner_identification_routes
 
 settings = get_settings()
 
@@ -1372,6 +1373,8 @@ app.include_router(inventory_routes.router)
 app.include_router(cmv_routes.router)
 app.include_router(finance_routes.router)
 app.include_router(fiscal_routes.router)
+app.include_router(partner_identification_routes.router)
+app.include_router(partner_identification_routes.compat_router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")
@@ -1444,6 +1447,8 @@ app.include_router(recipe_composition_routes.public_router, prefix="/api")
 app.include_router(cmv_routes.router, prefix="/api")
 app.include_router(finance_routes.router, prefix="/api")
 app.include_router(fiscal_routes.router, prefix="/api")
+app.include_router(partner_identification_routes.router, prefix="/api")
+app.include_router(partner_identification_routes.compat_router, prefix="/api")
 app.include_router(platform_tenants_routes.router, prefix="/api")
 app.include_router(platform_tenants_routes.master_router, prefix="/api")
 app.include_router(platform_tenants_routes.host_router, prefix="/api")

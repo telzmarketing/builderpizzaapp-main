@@ -599,6 +599,8 @@ class OrderService:
         payload: CheckoutIn,
         *,
         sales_channel: str = "delivery",
+        order_origin: str = "own",
+        partner_order_number: str | None = None,
         payment_status: str = "pending",
         payment_source: str | None = None,
         external_reference_override: str | None = None,
@@ -614,6 +616,22 @@ class OrderService:
             raise CartEmpty()
         if sales_channel not in {"counter", "delivery", "pickup", "dine_in"}:
             raise DomainError("Canal de venda invalido.", code="InvalidSalesChannel")
+        origin_aliases = {"99": "partner_99", "99food": "partner_99", "propria": "own", "venda_propria": "own"}
+        order_origin = origin_aliases.get(str(order_origin or "own").strip().lower(), str(order_origin or "own").strip().lower())
+        if order_origin not in {"own", "partner_99", "ifood", "keeta"}:
+            raise DomainError("Origem do pedido invalida.", code="InvalidOrderOrigin")
+        normalized_partner_number = _clip_text(partner_order_number, 120)
+        if order_origin == "own":
+            if normalized_partner_number:
+                raise DomainError(
+                    "Venda propria nao deve possuir numero de pedido de aplicativo.",
+                    code="PartnerOrderNumberNotAllowed",
+                )
+        elif not normalized_partner_number:
+            raise DomainError(
+                "Pedidos de aplicativo exigem o numero do pedido no parceiro.",
+                code="PartnerOrderNumberRequired",
+            )
         if payment_status not in {"pending", "approved", "paid"}:
             raise DomainError("Situacao de pagamento invalida.", code="InvalidPaymentStatus")
         payment_approved = payment_status in {"approved", "paid"}
@@ -744,6 +762,8 @@ class OrderService:
             id=order_id,
             order_code=order_code,
             external_reference=external_reference,
+            order_origin=order_origin,
+            partner_order_number=normalized_partner_number,
             customer_id=payload.customer_id,
             created_by_admin_id=created_by_admin_id,
             delivery_name=_clip_text(payload.delivery.name, 200) or "",

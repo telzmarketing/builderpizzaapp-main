@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Literal, Optional
 from datetime import datetime
 from backend.models.order import OrderStatus
@@ -80,12 +80,38 @@ class CheckoutIn(BaseModel):
 
 class ManualOrderIn(CheckoutIn):
     """Authenticated operator order using the canonical checkout contract."""
-    customer_id: str = Field(..., min_length=1, max_length=100)
+    customer_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
     # Manual operator orders originate at the counter; delivery/pickup is the
     # fulfillment mode. Salon orders keep their dedicated contract and route.
     sales_channel: Literal["counter"] = "counter"
     fulfillment_type: Literal["delivery", "pickup"] = "delivery"
     payment_status: Literal["pending", "approved", "paid"] = "pending"
+    order_origin: Literal["own", "partner_99", "ifood", "keeta"] = "own"
+    partner_order_number: Optional[str] = Field(default=None, min_length=1, max_length=120)
+
+    @field_validator("order_origin", mode="before")
+    @classmethod
+    def normalize_order_origin(cls, value: str | None) -> str:
+        aliases = {
+            "own": "own",
+            "propria": "own",
+            "venda_propria": "own",
+            "99": "partner_99",
+            "99food": "partner_99",
+            "partner_99": "partner_99",
+            "ifood": "ifood",
+            "keeta": "keeta",
+        }
+        normalized = str(value or "own").strip().lower()
+        return aliases.get(normalized, normalized)
+
+    @model_validator(mode="after")
+    def validate_origin_fields(self) -> "ManualOrderIn":
+        if self.order_origin == "own" and not self.customer_id:
+            raise ValueError("Venda propria exige um cliente pesquisado ou cadastrado.")
+        if self.order_origin != "own" and not self.partner_order_number:
+            raise ValueError("Pedidos de aplicativo exigem o numero do pedido no parceiro.")
+        return self
 
 
 class OrderItemFlavorOut(BaseModel):
@@ -157,6 +183,10 @@ class OrderOut(BaseModel):
     is_scheduled: bool = False
     scheduled_for: Optional[datetime] = None
     coupon_id: Optional[str]
+    external_reference: Optional[str] = None
+    order_origin: Literal["own", "partner_99", "ifood", "keeta"] = "own"
+    partner_order_number: Optional[str] = None
+    order_identification: Optional["OrderIdentificationOut"] = None
     campaign_id: Optional[str] = None
     utm_source: Optional[str] = None
     utm_medium: Optional[str] = None
@@ -184,6 +214,13 @@ class OrderOut(BaseModel):
     delivery_time_minutes: Optional[int] = None
 
     model_config = {"from_attributes": True}
+
+
+class OrderIdentificationOut(BaseModel):
+    code: Literal["own", "partner_99", "ifood", "keeta"]
+    display_name: str
+    logo_url: Optional[str] = None
+    partner_order_number: Optional[str] = None
 
 
 class OrderStatusUpdate(BaseModel):
