@@ -1,10 +1,10 @@
 import { orderDisplayCode } from "@/lib/orderIdentity";
 import { useSearchParams, Link, useNavigate, useLocation } from "react-router-dom";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft, Loader2, MapPin, RefreshCw } from "lucide-react";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import { useApp } from "@/context/AppContext";
-import { useEffect, useState, useCallback } from "react";
-import { ordersApi, paymentsApi, isAssetUrl, resolveAssetUrl, type ApiOrder, type ApiPayment, type OrderStatus } from "@/lib/api";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { ordersApi, paymentsApi, isAssetUrl, resolveAssetUrl, type ApiCustomerDeliveryLocation, type ApiOrder, type ApiPayment, type OrderStatus } from "@/lib/api";
 import { pizzaSizeLabel } from "@/lib/pizzaSizes";
 
 const PROGRESS_STEPS: OrderStatus[] = ["preparing", "on_the_way", "delivered"];
@@ -28,6 +28,11 @@ export default function OrderTracking() {
   const [payment, setPayment] = useState<ApiPayment | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [deliveryLocation, setDeliveryLocation] = useState<ApiCustomerDeliveryLocation | null>(null);
+  const [deliveryLocationLoading, setDeliveryLocationLoading] = useState(false);
+  const [deliveryLocationError, setDeliveryLocationError] = useState("");
+  const locationRequestInFlight = useRef(false);
+  const locationRequestStarted = useRef(false);
   const [paymentError] = useState<string>(
     (location.state as { paymentError?: string } | null)?.paymentError ?? ""
   );
@@ -48,6 +53,40 @@ export default function OrderTracking() {
   }, [orderId]);
 
   useEffect(() => { fetchOrder(); }, [fetchOrder]);
+
+  const fetchDeliveryLocation = useCallback(async () => {
+    if (!orderId || order?.status !== "on_the_way" || locationRequestInFlight.current) return;
+    locationRequestInFlight.current = true;
+    if (!locationRequestStarted.current) {
+      locationRequestStarted.current = true;
+      setDeliveryLocationLoading(true);
+    }
+    try {
+      const locationData = await ordersApi.getDeliveryLocation(orderId);
+      setDeliveryLocation(locationData);
+      setDeliveryLocationError("");
+    } catch (error) {
+      setDeliveryLocationError(error instanceof Error ? error.message : "Nao foi possivel carregar a localizacao do motoboy.");
+    } finally {
+      locationRequestInFlight.current = false;
+      setDeliveryLocationLoading(false);
+    }
+  }, [order?.status, orderId]);
+
+  useEffect(() => {
+    locationRequestInFlight.current = false;
+    locationRequestStarted.current = false;
+    setDeliveryLocation(null);
+    setDeliveryLocationError("");
+    setDeliveryLocationLoading(false);
+  }, [orderId]);
+
+  useEffect(() => {
+    if (!order || order.status !== "on_the_way") return;
+    void fetchDeliveryLocation();
+    const id = setInterval(() => void fetchDeliveryLocation(), 10_000);
+    return () => clearInterval(id);
+  }, [fetchDeliveryLocation, order?.status]);
 
   useEffect(() => {
     // Clear checkout lock when the user reaches this page so future /checkout visits work normally.
@@ -164,6 +203,42 @@ export default function OrderTracking() {
           <div className="text-center mb-8">
             <p className="text-stone text-sm">{statusDescription}</p>
           </div>
+        )}
+
+        {order.status === "on_the_way" && (
+          <section className="mb-8 rounded-xl border border-sky-500/30 bg-sky-500/10 p-4" aria-live="polite">
+            <div className="flex items-center gap-2">
+              <MapPin size={20} className="text-sky-300" />
+              <h3 className="font-bold text-cream">Localizacao do motoboy</h3>
+            </div>
+            {deliveryLocationLoading && (
+              <p className="mt-3 flex items-center gap-2 text-sm text-stone"><Loader2 size={15} className="animate-spin" /> Consultando a localizacao...</p>
+            )}
+            {!deliveryLocationLoading && deliveryLocationError && (
+              <div className="mt-3 flex items-center justify-between gap-3 text-sm text-red-200">
+                <span>{deliveryLocationError}</span>
+                <button type="button" onClick={() => void fetchDeliveryLocation()} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-red-300/40 px-3 py-2 font-bold hover:bg-red-300/10">
+                  <RefreshCw size={14} /> Tentar novamente
+                </button>
+              </div>
+            )}
+            {!deliveryLocationLoading && !deliveryLocationError && !deliveryLocation?.available && (
+              <p className="mt-3 text-sm text-stone">A localizacao ainda nao esta disponivel. Ela aparece quando o motoboy iniciar a entrega.</p>
+            )}
+            {!deliveryLocationLoading && !deliveryLocationError && deliveryLocation?.available && deliveryLocation.latitude !== null && deliveryLocation.longitude !== null && (
+              <div className="mt-3 space-y-3">
+                <p className="text-sm text-parchment">Ultima atualizacao: {deliveryLocation.captured_at ? new Date(deliveryLocation.captured_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "agora"}</p>
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${deliveryLocation.latitude},${deliveryLocation.longitude}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-sky-500 px-4 py-3 text-sm font-bold text-white hover:bg-sky-400"
+                >
+                  <MapPin size={16} /> Abrir localizacao no mapa
+                </a>
+              </div>
+            )}
+          </section>
         )}
 
         {paymentError && (

@@ -28,6 +28,7 @@ class TenantContextMismatch(TenantContextError):
 class TenantSource(str, Enum):
     PANEL = "panel"
     SUPPORT = "support"
+    CUSTOMER_SESSION = "customer_session"
     PUBLIC_HOST = "public_host"
     WEBHOOK = "webhook"
     JOB = "job"
@@ -56,6 +57,8 @@ class TenantContext:
             not self.actor_id or not self.support_session_id
         ):
             raise TenantContextMissing("Contexto de suporte exige ator e sessao validos.")
+        if self.source == TenantSource.CUSTOMER_SESSION and not self.actor_id:
+            raise TenantContextMissing("Contexto do cliente exige sessao autenticada valida.")
         if self.source == TenantSource.PUBLIC_HOST and not self.hostname:
             raise TenantContextMissing("Contexto publico exige hostname validado.")
 

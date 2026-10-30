@@ -40,8 +40,8 @@ class DeliveryPersonAccessUpdate(BaseModel):
 
 
 class DeliveryPersonLocationUpdate(BaseModel):
-    lat: float
-    lng: float
+    lat: float = Field(..., ge=-90, le=90, allow_inf_nan=False)
+    lng: float = Field(..., ge=-180, le=180, allow_inf_nan=False)
 
 
 class DriverDeliveryActionIn(BaseModel):
@@ -176,6 +176,16 @@ class OrderIdentityOut(BaseModel):
 class ActiveDeliveryOut(DeliveryOut):
     tenant_id: Optional[str] = None
     order: Optional[OrderIdentityOut] = None
+
+
+class CustomerDeliveryLocationOut(BaseModel):
+    order_id: str
+    delivery_status: Optional[DeliveryStatus] = None
+    available: bool
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    captured_at: Optional[datetime] = None
+    max_age_seconds: int
 
 
 class DriverDashboardOut(BaseModel):

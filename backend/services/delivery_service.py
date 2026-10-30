@@ -11,6 +11,7 @@ from __future__ import annotations
 import random
 import uuid
 import json
+import math
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
@@ -494,31 +495,9 @@ class DeliveryService:
             delta = delivery.delivered_at - delivery.assigned_at
             duration_minutes = int(delta.total_seconds() / 60)
 
-        # Pay distance-based orders from the gross freight snapshot captured
-        # at checkout; other freight types retain the logistics flat rate.
-        try:
-            order = self._get_order(delivery.order_id)
-            settings_row = self._scope(self._db.query(LogisticsSettings), LogisticsSettings).first()
-            configured_rate = (getattr(settings_row, "rate_per_delivery", None) or 0.0) if settings_row else 0.0
-            rate = _driver_delivery_earning_amount(order, configured_rate)
-            existing_earning = (
-                self._scope(self._db.query(DeliveryEarning), DeliveryEarning)
-                .filter(DeliveryEarning.delivery_id == delivery.id)
-                .first()
-            )
-            if rate > 0 and delivery.delivery_person_id and existing_earning is None:
-                earning = DeliveryEarning(
-                    id=str(uuid.uuid4()),
-                    tenant_id=self._tenant_id if self._tenant_enabled else None,
-                    delivery_id=delivery.id,
-                    delivery_person_id=delivery.delivery_person_id,
-                    amount=rate,
-                    status="pending",
-                    period_date=datetime.now(timezone.utc).date(),
-                )
-                self._db.add(earning)
-        except Exception:
-            pass  # never fail completion due to earnings issue
+        # Pay from the immutable checkout snapshot when present. Legacy orders
+        # without a snapshot retain the current logistics flat rate.
+        self._ensure_delivery_earning(delivery)
 
         self._add_event(
             delivery_id,
@@ -584,6 +563,72 @@ class DeliveryService:
         self._db.commit()
         self._db.refresh(person)
         return person
+
+    CUSTOMER_LOCATION_MAX_AGE_SECONDS = 120
+    CUSTOMER_LOCATION_STATUSES = {
+        DeliveryStatus.picked_up,
+        DeliveryStatus.on_the_way,
+    }
+
+    def get_customer_location(self, order_id: str, customer_id: str) -> dict:
+        """Return only a recent position for the authenticated customer's order."""
+        order = (
+            self._scope(self._db.query(Order), Order)
+            .filter(
+                Order.id == order_id,
+                Order.customer_id == customer_id,
+                Order.archived_at.is_(None),
+            )
+            .first()
+        )
+        if not order:
+            raise OrderNotFound(order_id)
+
+        delivery = (
+            self._scope(self._db.query(Delivery), Delivery)
+            .filter(Delivery.order_id == order.id)
+            .first()
+        )
+        response = {
+            "order_id": order.id,
+            "delivery_status": delivery.status if delivery else None,
+            "available": False,
+            "latitude": None,
+            "longitude": None,
+            "captured_at": None,
+            "max_age_seconds": self.CUSTOMER_LOCATION_MAX_AGE_SECONDS,
+        }
+        if not delivery or delivery.status not in self.CUSTOMER_LOCATION_STATUSES:
+            return response
+
+        person = (
+            self._scope(self._db.query(DeliveryPerson), DeliveryPerson)
+            .filter(DeliveryPerson.id == delivery.delivery_person_id)
+            .first()
+        ) if delivery.delivery_person_id else None
+        if not person or person.location_updated_at is None:
+            return response
+        if person.location_lat is None or person.location_lng is None:
+            return response
+        if not math.isfinite(person.location_lat) or not math.isfinite(person.location_lng):
+            return response
+        if not (-90 <= person.location_lat <= 90 and -180 <= person.location_lng <= 180):
+            return response
+
+        captured_at = person.location_updated_at
+        if captured_at.tzinfo is None:
+            captured_at = captured_at.replace(tzinfo=timezone.utc)
+        age_seconds = (datetime.now(timezone.utc) - captured_at).total_seconds()
+        if age_seconds < 0 or age_seconds > self.CUSTOMER_LOCATION_MAX_AGE_SECONDS:
+            return response
+
+        response.update({
+            "available": True,
+            "latitude": person.location_lat,
+            "longitude": person.location_lng,
+            "captured_at": captured_at,
+        })
+        return response
 
     # ── Queries ───────────────────────────────────────────────────────────────
 

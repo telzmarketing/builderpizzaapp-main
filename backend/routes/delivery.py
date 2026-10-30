@@ -40,6 +40,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import DomainError
+from backend.core.customer_auth import authenticate_customer_token
 from backend.core.response import ok, created, no_content, err, err_msg
 from backend.core.tenant_context import TenantContext, TenantContextMissing, TenantSource, trusted_process_context
 from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
@@ -800,6 +801,39 @@ def list_active_deliveries(
     """Return all deliveries currently in progress (assigned / picked_up / on_the_way)."""
     try:
         return ok(_admin_service(request, db, admin).list_active())
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.get("/order/{order_id}/location")
+def get_customer_delivery_location(
+    order_id: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Return a recent motoboy position for the authenticated customer's order."""
+    tenant_context = resolve_public_tenant_context(request, db)
+    customer = authenticate_customer_token(
+        authorization,
+        db,
+        expected_tenant_id=tenant_context.tenant_id if tenant_context else None,
+    )
+    if tenant_context:
+        tenant_context.assert_tenant(customer.tenant_id)
+    customer_context = tenant_context or TenantContext(
+        tenant_id=customer.tenant_id or "",
+        source=TenantSource.CUSTOMER_SESSION,
+        actor_id=customer.id,
+        correlation_id=f"customer-location:{customer.id}",
+    )
+    service = DeliveryService(
+        db,
+        tenant_id=customer.tenant_id,
+        tenant_context=customer_context,
+    )
+    try:
+        return ok(service.get_customer_location(order_id, customer.id))
     except DomainError as exc:
         return err(exc)
 

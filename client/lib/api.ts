@@ -1213,6 +1213,16 @@ export interface ApiOrder {
   } | null;
 }
 
+export interface ApiCustomerDeliveryLocation {
+  order_id: string;
+  delivery_status: string | null;
+  available: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  captured_at: string | null;
+  max_age_seconds: number;
+}
+
 export interface KdsOrderItem {
   product_type?: string | null;
   is_drink?: boolean;
@@ -5622,6 +5632,9 @@ export const ordersApi = {
 
   get: (id: string) =>
     request<ApiOrder>("GET", `/orders/${id}`, undefined, orderAccessHeaders(id)),
+
+  getDeliveryLocation: (id: string) =>
+    request<ApiCustomerDeliveryLocation>("GET", `/delivery/order/${encodeURIComponent(id)}/location`, undefined, orderAccessHeaders(id)),
 
   paymentStatus: (id: string) =>
     request<ApiPaymentStatus>("GET", `/orders/${id}/payment-status`, undefined, orderAccessHeaders(id)),
