@@ -227,12 +227,12 @@ export default function TopNavigation({
                 <div key={group.label} className="relative shrink-0">
                   <button
                     type="button"
-                    aria-label="Abrir KDS Principal"
-                    onMouseEnter={() => preloadAdminRoute(target)}
-                    onFocus={() => preloadAdminRoute(target)}
+                    aria-label="Abrir KDS Analítico"
+                    onMouseEnter={() => preloadAdminRoute("/painel/kds/analitico")}
+                    onFocus={() => preloadAdminRoute("/painel/kds/analitico")}
                     onClick={() => {
-                      clearFocus();
-                      navigate("/painel/kds");
+                      focusGroup("KDS");
+                      navigate("/painel/kds/analitico");
                     }}
                     className={`flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-bold uppercase outline-none transition-colors ${
                       active
