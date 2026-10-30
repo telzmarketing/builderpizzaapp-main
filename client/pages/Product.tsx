@@ -997,8 +997,8 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                   }`}
                 >
                   <span className="block font-black">{pizzaSizeLabel(size.label)}</span>
-                  <span className="block text-xs text-stone font-normal">{pizzaSizeDescription(size.label, size.description)}</span>
-                  <span className="block text-xs text-stone mt-0.5">R${size.price.toFixed(2)}</span>
+                  <span className="block text-xs text-white font-normal">{pizzaSizeDescription(size.label, size.description)}</span>
+                  <span className="block text-xs text-white mt-0.5">R${size.price.toFixed(2)}</span>
                 </button>
               ))
             ) : isPizza ? (
@@ -1013,7 +1013,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                   }`}
                 >
                   <span className="block font-black">{size}</span>
-                  <span className="block text-xs text-stone font-normal">{pizzaSizeDescription(size)}</span>
+                  <span className="block text-xs text-white font-normal">{pizzaSizeDescription(size)}</span>
                 </button>
               ))
             ) : null}
