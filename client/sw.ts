@@ -9,8 +9,11 @@ declare const self: ServiceWorkerGlobalScope & {
 
 const LEGACY_RUNTIME_CACHES = ["motoboy-static-v1", "motoboy-runtime-v1", "motoboy-media-v2"];
 const GLOBAL_FAVICON_URL = "/api/site-config/favicon?size=192";
-const scopedWorker = new URL(self.registration.scope).pathname === "/motoboy/";
+const scopePath = new URL(self.registration.scope).pathname;
+const scopedWorker = scopePath === "/motoboy/" || scopePath === "/painel/bi-mobile/";
+const scopedBi = scopePath === "/painel/bi-mobile/";
 const isMotoboy = (pathname: string) => pathname === "/motoboy" || pathname.startsWith("/motoboy/");
+const isBiMobile = (pathname: string) => pathname === "/painel/bi-mobile" || pathname.startsWith("/painel/bi-mobile/");
 
 type PushPayload = {
   title: string;
@@ -23,7 +26,7 @@ type PushPayload = {
 // The same script updates the old root registration into a push-only bridge.
 // Never install a root fetch handler or cache public/admin requests.
 if (scopedWorker) {
-  setCacheNameDetails({ prefix: "telz-motoboy", suffix: "v4" });
+  setCacheNameDetails({ prefix: scopedBi ? "telz-bi-mobile" : "telz-motoboy", suffix: "v4" });
   precache(self.__WB_MANIFEST);
 }
 
@@ -49,7 +52,7 @@ if (scopedWorker) self.addEventListener("fetch", (event) => {
     const client = event.clientId ? await self.clients.get(event.clientId) : null;
     const path = event.request.mode === "navigate" ? url.pathname : client ? new URL(client.url).pathname : "";
     // A scoped document can navigate via SPA into the store. Do not cache there.
-    if (!isMotoboy(path)) return fetch(event.request);
+    if (!isMotoboy(path) && !isBiMobile(path)) return fetch(event.request);
     if (event.request.mode === "navigate") {
       try { return await fetch(event.request); }
       catch { return (await matchPrecache("/index.html")) || Response.error(); }
@@ -57,7 +60,7 @@ if (scopedWorker) self.addEventListener("fetch", (event) => {
     const precached = await matchPrecache(event.request.url);
     if (precached) return precached;
     if (!url.pathname.startsWith("/assets/") && !url.pathname.startsWith("/icons/")) return fetch(event.request);
-    const runtime = await caches.open("telz-motoboy-runtime-v4");
+    const runtime = await caches.open(scopedBi ? "telz-bi-mobile-runtime-v4" : "telz-motoboy-runtime-v4");
     const cached = await runtime.match(event.request);
     if (cached) return cached;
     const response = await fetch(event.request);

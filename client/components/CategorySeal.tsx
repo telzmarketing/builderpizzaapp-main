@@ -20,6 +20,10 @@ const SEAL_STYLES = [
 ];
 
 const SEAL_STYLES_BY_KEY: Record<string, string> = {
+  pizzas: "bg-red-600 text-white shadow-red-950/50",
+  pizza: "bg-red-600 text-white shadow-red-950/50",
+  esfihas: "bg-amber-400 text-black shadow-amber-950/40",
+  esfiha: "bg-amber-400 text-black shadow-amber-950/40",
   especiais: "bg-red-600 text-white shadow-red-950/50",
   especial: "bg-red-600 text-white shadow-red-950/50",
   promocoes: "bg-orange-500 text-black shadow-orange-950/45",
@@ -36,7 +40,7 @@ const SEAL_STYLES_BY_KEY: Record<string, string> = {
 };
 
 function sealLabel(product?: Pick<ApiProduct, "category" | "subcategory"> | null) {
-  return (product?.subcategory || product?.category || "").trim();
+  return (product?.category || product?.subcategory || "").trim();
 }
 
 function normalizeLabel(label: string) {

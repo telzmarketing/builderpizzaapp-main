@@ -86,12 +86,12 @@ def get_promotion(promo_id: str, request: Request, db: Session = Depends(get_db)
     if not promo:
         return err_msg(f"Promoção '{promo_id}' não encontrada.", code="PromotionNotFound", status_code=404)
     if not promo.active and not is_admin_request:
-        return err_msg("Promocao nao encontrada.", code="PromotionNotFound", status_code=404)
+        return err_msg("Promo\u00e7\u00e3o n\u00e3o encontrada.", code="PromotionNotFound", status_code=404)
     if not promo.active and is_admin_request:
         context = resolve_panel_tenant_context(request, db, _require_admin(request, db))
         promo = _query(db, context).filter(Promotion.id == promo_id).first()
         if not promo:
-            return err_msg(f"PromoÃ§Ã£o '{promo_id}' nÃ£o encontrada.", code="PromotionNotFound", status_code=404)
+            return err_msg(f"Promo\u00e7\u00e3o '{promo_id}' n\u00e3o encontrada.", code="PromotionNotFound", status_code=404)
     return ok(promo)
 
 

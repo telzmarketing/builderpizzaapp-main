@@ -194,19 +194,21 @@ class SiteConfigService:
             target = f"{target}{separator}v={self.version(updated_at)}"
         return target
 
-    def manifest(self, request):
+    def manifest(self, request, app: str | None = None):
         content, updated_at, identity = self.read(request)
         brand = content.get("brand")
         brand = brand if isinstance(brand, dict) else {}
         name = str(brand.get("pageTitle") or brand.get("name") or "Sua Loja").strip()
         short_name = str(brand.get("name") or "Sua Loja").strip()
         version = self.version(updated_at)
+        is_bi_mobile = app == "bi-mobile"
         return {
-            "id": "/painel" if identity.platform else "/motoboy",
-            "name": name, "short_name": short_name[:24] or "Sua Loja",
-            "description": "Gestor Telz" if identity.platform else "Loja online",
-            "start_url": "/painel" if identity.platform else "/motoboy/",
-            "scope": "/painel" if identity.platform else "/motoboy/",
+            "id": "/painel/bi-mobile" if is_bi_mobile else ("/painel" if identity.platform else "/motoboy"),
+            "name": "BI Mobile" if is_bi_mobile else name,
+            "short_name": "BI Mobile" if is_bi_mobile else (short_name[:24] or "Sua Loja"),
+            "description": "Indicadores operacionais do BI Mobile" if is_bi_mobile else ("Gestor Telz" if identity.platform else "Loja online"),
+            "start_url": "/painel/bi-mobile/" if is_bi_mobile else ("/painel" if identity.platform else "/motoboy/"),
+            "scope": "/painel/bi-mobile/" if is_bi_mobile else ("/painel" if identity.platform else "/motoboy/"),
             "display": "standalone", "display_override": ["fullscreen", "standalone"],
             "orientation": "portrait", "theme_color": "#000000", "background_color": "#000000",
             "icons": [{"src": f"/api/site-config/favicon?size={size}&v={version}",

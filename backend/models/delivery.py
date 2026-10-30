@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Float, Integer, Enum, DateTime, Date, ForeignKey, Index, Text, func
+from sqlalchemy import Column, String, Boolean, Float, Integer, Enum, DateTime, Date, ForeignKey, ForeignKeyConstraint, Index, Text, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -162,6 +162,28 @@ class DeliveryEvent(Base):
 
     delivery = relationship("Delivery", back_populates="events")
     __table_args__ = (Index("uq_delivery_events_tenant_id_id", "tenant_id", "id", unique=True),)
+
+
+class DeliveryItemConfirmation(Base):
+    """Immutable anti-replay record for one signed label volume scan."""
+    __tablename__ = "delivery_item_confirmations"
+    __table_args__ = (
+        ForeignKeyConstraint(["tenant_id", "delivery_id"], ["deliveries.tenant_id", "deliveries.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["tenant_id", "order_item_id"], ["order_items.tenant_id", "order_items.id"], ondelete="RESTRICT"),
+        UniqueConstraint("tenant_id", "token_hash", name="uq_delivery_item_confirmations_token"),
+        UniqueConstraint("tenant_id", "delivery_id", "label_volume_id", name="uq_delivery_item_confirmations_volume"),
+        Index("ix_delivery_item_confirmations_delivery", "tenant_id", "delivery_id", "confirmed_at"),
+    )
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
+    delivery_id = Column(String, nullable=False)
+    order_id = Column(String, ForeignKey("orders.id", ondelete="RESTRICT"), nullable=False)
+    order_item_id = Column(String, nullable=False)
+    label_volume_id = Column(String, ForeignKey("label_volumes.id", ondelete="RESTRICT"), nullable=False)
+    token_hash = Column(String(64), nullable=False)
+    actor_id = Column(String, ForeignKey("delivery_persons.id", ondelete="RESTRICT"), nullable=False)
+    confirmed_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
 
 
 class DeliveryEarning(Base):

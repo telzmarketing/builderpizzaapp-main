@@ -44,7 +44,7 @@ export default defineConfig(({ mode }) => ({
       injectManifest: {
         // Manifest association is route-owned; Vite must not inject it globally.
         injectionPoint: "self.__WB_MANIFEST",
-        globPatterns: ["index.html", "motoboy-pwa-head.js", "assets/index-*.js", "assets/index-*.css", "assets/Motoboy-*.js", "assets/*.woff2", "icons/*.{png,svg,ico}"],
+        globPatterns: ["index.html", "motoboy-pwa-head.js", "assets/index-*.js", "assets/index-*.css", "assets/Motoboy-*.js", "assets/Bi*.js", "assets/*.woff2", "icons/*.{png,svg,ico}"],
         globIgnores: [
           "favicon.ico",
           "icons/favicon-moschettieri-32.png",
@@ -54,7 +54,6 @@ export default defineConfig(({ mode }) => ({
           // carregando sob demanda pela rede, sem competir no precache inicial.
           "assets/Admin*.js",
           "assets/Aparencia-*.js",
-          "assets/Bi*.js",
           "assets/ClienteDetalhe-*.js",
           "assets/Conteudo-*.js",
           "assets/Cozinha-*.js",

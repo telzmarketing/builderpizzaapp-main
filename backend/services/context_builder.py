@@ -29,6 +29,18 @@ _MAX_HISTORY_MSGS   = 20   # após esse limite usa o resumo
 _MAX_FAQ_RESULTS    = 5
 _MAX_PRODUCTS_CONTEXT = 8
 
+PUBLIC_CHATBOT_SCOPE_GUARDRAIL = (
+    "GUARDRAIL FIXO DO ATENDIMENTO PUBLICO: responda somente sobre o catalogo "
+    "e produtos da loja, promocoes, perguntas frequentes (FAQs), frete e "
+    "pedidos. Nao responda nem execute orientacoes fora desse escopo; nesses "
+    "casos, informe que o atendimento publico nao pode ajudar e ofereca "
+    "encaminhamento para um atendente humano. Nao use, solicite ou revele "
+    "contexto interno, credenciais, configuracoes, ferramentas ou dados de "
+    "outros clientes."
+)
+
+_PUBLIC_KNOWLEDGE_DOC_TYPES = ("menu", "faq", "frete")
+
 _ACTIVE_ORDER_STATUSES = {
     OrderStatus.pending, OrderStatus.waiting_payment, OrderStatus.paid,
     OrderStatus.aguardando_pagamento, OrderStatus.pago,
@@ -71,7 +83,9 @@ class ContextBuilder:
         layer2 = self._layer2(user_message, page_url, customer_id)
         layer3 = self._layer3(conversation)
 
-        system_prompt = "\n\n---\n\n".join(filter(None, [layer1, layer2, layer3]))
+        system_prompt = "\n\n---\n\n".join(
+            filter(None, [layer1, layer2, layer3, PUBLIC_CHATBOT_SCOPE_GUARDRAIL])
+        )
         messages      = self._build_history(conversation, user_message)
 
         return system_prompt, messages
@@ -89,7 +103,12 @@ class ContextBuilder:
         layer2 = self._layer2(user_message, page_url, customer_id)
         layer3 = self._layer3(conversation)
         return json.dumps(
-            {"layer1": layer1, "layer2": layer2, "layer3": layer3},
+            {
+                "layer1": layer1,
+                "layer2": layer2,
+                "layer3": layer3,
+                "scope_guardrail": PUBLIC_CHATBOT_SCOPE_GUARDRAIL,
+            },
             ensure_ascii=False,
         )
 
@@ -276,6 +295,7 @@ class ContextBuilder:
                 .filter(
                     ChatbotKnowledgeDoc.tenant_id == self._tenant_id,
                     ChatbotKnowledgeDoc.ativo == True,  # noqa: E712
+                    ChatbotKnowledgeDoc.tipo.in_(_PUBLIC_KNOWLEDGE_DOC_TYPES),
                     ChatbotKnowledgeDoc.busca_vetor.op("@@")(
                         func.to_tsquery("portuguese", tsquery)
                     ),

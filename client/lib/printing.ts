@@ -1,6 +1,7 @@
 import { orderDisplayCode } from "@/lib/orderIdentity";
 import { operationalPaymentHtml } from "./operationalPayment";
-import { siteConfigApi, type ApiOrder } from "./api";
+import QRCode from "qrcode";
+import { paymentsApi, siteConfigApi, type ApiOrder, type ApiPayment } from "./api";
 import { isOperationalDrink, operationalDrinks } from "./operationalDrinks";
 import { storeBranding } from "./storeBranding";
 import { readPlatformSupportSession } from "./platformSupportSession";
@@ -104,6 +105,35 @@ function orderNum(order: ApiOrder) {
   return `#${orderDisplayCode(order)}`;
 }
 
+function isSafeQrDataUrl(value?: string | null): value is string {
+  return /^data:image\/(?:png|jpeg|jpg|webp);base64,[a-z0-9+/=]+$/i.test(value || "");
+}
+
+function paymentQrBlock(payment?: ApiPayment | null, qrCodeDataUrl?: string | null) {
+  const src = isSafeQrDataUrl(qrCodeDataUrl)
+    ? qrCodeDataUrl
+    : isSafeQrDataUrl(payment?.pix_qr_code)
+      ? payment.pix_qr_code
+      : isSafeQrDataUrl(payment?.qr_code)
+        ? payment.qr_code
+        : null;
+  if (!src) return "";
+  const payload = payment?.qr_code_text || payment?.pix_payload;
+  return `<section class="receipt-qr"><p class="b c">QR CODE PIX</p><img class="receipt-qr-image" src="${escapeText(src)}" alt="QR Code para pagamento"/>${payload ? `<p class="s qr-payload">${escapeText(payload)}</p>` : ""}</section>`;
+}
+
+export async function receiptQrDataUrl(payment?: ApiPayment | null): Promise<string | null> {
+  if (isSafeQrDataUrl(payment?.pix_qr_code)) return payment.pix_qr_code;
+  if (isSafeQrDataUrl(payment?.qr_code)) return payment.qr_code;
+  const payload = payment?.qr_code_text || payment?.pix_payload;
+  if (!payload) return null;
+  try {
+    return await QRCode.toDataURL(payload, { margin: 1, width: 256 });
+  } catch {
+    return null;
+  }
+}
+
 function shortDate(d: Date) {
   const day = String(d.getDate()).padStart(2, "0");
   const months = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -200,6 +230,9 @@ function baseCss() {
     .receipt-logo{display:block;max-width:75%;max-height:24mm;width:auto;height:auto;object-fit:contain;margin:0 auto 3mm;filter:grayscale(1) contrast(1.6)}
     .drinks{background:#eee;border:2px solid #000;padding:2mm;margin:3mm 0;break-inside:avoid}
     .dispatch-check{border-top:1px dashed #000;margin-top:3mm;padding-top:2mm;break-inside:avoid}
+    .receipt-qr{text-align:center;border-top:1px dashed #000;border-bottom:1px dashed #000;margin:3mm 0;padding:2mm 0;break-inside:avoid}
+    .receipt-qr-image{display:block;width:32mm;height:32mm;max-width:100%;margin:2mm auto;image-rendering:pixelated}
+    .qr-payload{overflow-wrap:anywhere;word-break:break-all}
     @media print{
       *{color:#000!important;text-shadow:none!important}
       body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -226,7 +259,7 @@ function itemLines(order: ApiOrder) {
 
 // ── Template 1: Pedido Completo ───────────────────────────────────────────────
 
-export function buildCompletoHtml(order: ApiOrder, settings: PrinterSettings): string {
+export function buildCompletoHtml(order: ApiOrder, settings: PrinterSettings, payment?: ApiPayment | null, qrCodeDataUrl?: string | null): string {
   const num = escapeText(orderNum(order));
   const created = new Date(order.created_at);
 
@@ -340,6 +373,7 @@ ${drinksBlock(order)}
 
 <table class="totals">${finRows}</table>
 ${operationalPaymentHtml(order)}
+${paymentQrBlock(payment, qrCodeDataUrl)}
 ${dispatchChecklist(order)}
 <hr/>
 
@@ -388,7 +422,7 @@ ${operationalPaymentHtml(order)}
 
 // ── Template 3: Via Entrega ────────────────────────────────────────────────────
 
-export function buildEntregaHtml(order: ApiOrder, settings: PrinterSettings): string {
+export function buildEntregaHtml(order: ApiOrder, settings: PrinterSettings, payment?: ApiPayment | null, qrCodeDataUrl?: string | null): string {
   const num = escapeText(orderNum(order));
   const items = itemLines(order);
   const rows = items.map((i) => `
@@ -429,18 +463,19 @@ ${order.shipping_fee > 0 ? `<p class="r">Taxa de entrega: ${fmt(order.shipping_f
 ${order.discount > 0 ? `<p class="r">Desconto: -${fmt(order.discount)}</p>` : ""}
 <p class="r b" style="font-size:13px">TOTAL: R$ ${fmt(order.total)}</p>
 ${operationalPaymentHtml(order)}
+${paymentQrBlock(payment, qrCodeDataUrl)}
 ${dispatchChecklist(order)}
 </body></html>`;
 }
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
-export function buildPrintHtml(order: ApiOrder, template: PrintTemplate, settings: PrinterSettings): string {
+export function buildPrintHtml(order: ApiOrder, template: PrintTemplate, settings: PrinterSettings, payment?: ApiPayment | null, qrCodeDataUrl?: string | null): string {
   let html: string;
   const tpl = template;
   if (tpl === "cozinha") html = buildCozinhaHtml(order, settings);
-  else if (tpl === "entrega") html = buildEntregaHtml(order, settings);
-  else html = buildCompletoHtml(order, settings);
+  else if (tpl === "entrega") html = buildEntregaHtml(order, settings, payment, qrCodeDataUrl);
+  else html = buildCompletoHtml(order, settings, payment, qrCodeDataUrl);
   return html;
 }
 
@@ -480,7 +515,13 @@ export function printOrder(order: ApiOrder, template?: PrintTemplate): boolean {
   const tpl = template ?? settings.defaultTemplate;
   const target = window.open("", "_blank", "width=440,height=700,scrollbars=yes");
   if (!target) { alert("Habilite pop-ups para imprimir."); return false; }
-  void currentReceiptSettings(settings).then((branded) => writeReceiptWindow(target, buildPrintHtml(order, tpl, branded), settings.autoPrint));
+  void Promise.all([
+    currentReceiptSettings(settings),
+    paymentsApi.getByOrder(order.id).catch(() => null),
+  ]).then(async ([branded, payment]) => {
+    const qrCodeDataUrl = await receiptQrDataUrl(payment);
+    writeReceiptWindow(target, buildPrintHtml(order, tpl, branded, payment, qrCodeDataUrl), settings.autoPrint);
+  });
   return true;
 }
 
@@ -490,9 +531,15 @@ export function printConfirmedOrder(order: ApiOrder): boolean {
 
   const templates: PrintTemplate[] = ["cozinha", "completo"];
   const targets = templates.map(() => window.open("", "_blank", "width=440,height=700,scrollbars=yes"));
-  void currentReceiptSettings(settings).then((branded) => targets.forEach((target, index) => {
-    if (target) writeReceiptWindow(target, buildPrintHtml(order, templates[index], branded), true, index * 600);
-  }));
+  void Promise.all([
+    currentReceiptSettings(settings),
+    paymentsApi.getByOrder(order.id).catch(() => null),
+  ]).then(async ([branded, payment]) => {
+    const qrCodeDataUrl = await receiptQrDataUrl(payment);
+    targets.forEach((target, index) => {
+      if (target) writeReceiptWindow(target, buildPrintHtml(order, templates[index], branded, payment, qrCodeDataUrl), true, index * 600);
+    });
+  });
   return targets.every(Boolean);
 }
 

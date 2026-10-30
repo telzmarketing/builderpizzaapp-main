@@ -9,6 +9,7 @@ import ProductRecipeEditor from "@/components/admin/ProductRecipeEditor";
 import { productsApi, sizesApi, crustApi, drinkVariantApi, categoriesApi, productPromotionsApi, ApiProduct, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, ApiProductPromotion, ApiProductPromotionCombination, ProductPromotionDiscountType, ApiBestSellerConfig, ApiProductOptionGroup, ApiProductOption, ApiProductOptionSelectionType, ApiProductCategoryCapabilities, ApiProductCategoryCapabilityKey, getProductCategoryCapabilities, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { pizzaSizeDescription, pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { normalizeCrustPriceAddition } from "@/lib/pricing";
+import { catalogProductsSummary, displayCatalogCount } from "@/lib/adminCatalogIndicators";
 
 const PRICING_OPTIONS: { value: PricingRule; label: string; description: string }[] = [
   { value: "most_expensive", label: "Mais Caro", description: "Cliente paga pelo sabor mais caro (padrão iFood)" },
@@ -32,15 +33,11 @@ const DISCOUNT_LABELS: Record<ProductPromotionDiscountType, string> = {
   percent_off: "Desconto percentual",
 };
 
-const CATUPIRY_CRUST_NAME = "Borda com Catupiry";
-
-const isCatupiryCrust = (name?: string | null) =>
-  (name || "").trim().toLowerCase().includes("catupiry");
-
-const productHasCatupiryCrust = (product: Pizza) =>
-  (((product as any).crust_types ?? []) as ApiProductCrustType[]).some((crust) => crust.active && isCatupiryCrust(crust.name));
+const productHasActiveCrust = (product: Pizza) =>
+  (((product as any).crust_types ?? []) as ApiProductCrustType[]).some((crust) => crust.active);
 
 const PIZZA_ICON = "\u{1F355}";
+const ESFIHA_ICON = "\u{1FAD3}";
 const DRINK_ICON = "\u{1F964}";
 const OTHER_ICON = "\u{1F354}";
 
@@ -80,6 +77,7 @@ const categoryCapabilitiesOrDefault = (category?: Parameters<typeof getProductCa
 };
 
 const getTypeIcon = (type: string | null | undefined) => {
+  if (type === "esfiha") return ESFIHA_ICON;
   if (type === "drink") return DRINK_ICON;
   if (type === "other") return OTHER_ICON;
   return PIZZA_ICON;
@@ -87,7 +85,7 @@ const getTypeIcon = (type: string | null | undefined) => {
 
 const isBrokenIconValue = (value?: string | null) => {
   const trimmed = (value || "").trim();
-  return !trimmed || trimmed.includes("ðŸ") || trimmed.includes("�");
+  return !trimmed || trimmed.includes("Ã°Å¸") || trimmed.includes("ï¿½");
 };
 
 const normalizeUploadReference = (value: string) =>
@@ -139,7 +137,7 @@ function ProductIconPreview({ icon, name, type }: { icon?: string | null; name: 
   }
 
   const normalized = normalizeUploadReference(cleanIcon);
-  const shouldFallback = isBrokenIconValue(cleanIcon) || looksLikeUploadToken(normalized) || cleanIcon.length > 6;
+  const shouldFallback = isBrokenIconValue(cleanIcon) || looksLikeUploadToken(normalized) || cleanIcon.length > 6 || (type === "esfiha" && cleanIcon === PIZZA_ICON);
   return <span className="text-3xl">{shouldFallback ? getTypeIcon(type) : cleanIcon}</span>;
 }
 
@@ -207,8 +205,9 @@ export default function AdminProducts() {
   const loadProducts = useCallback(async () => {
     setCatalogLoading(true);
     setCatalogError("");
+    setProducts([]);
     try { setProducts((await productsApi.list(false)).filter((product) => product.product_type !== "brinde")); }
-    catch (error) { setCatalogError(error instanceof Error ? error.message : "Erro ao carregar produtos."); }
+    catch (error) { setProducts([]); setCatalogError(error instanceof Error ? error.message : "Erro ao carregar produtos."); }
     finally { setCatalogLoading(false); }
   }, []);
   useEffect(() => { void loadProducts(); }, [loadProducts]);
@@ -253,6 +252,8 @@ export default function AdminProducts() {
   const activeCatalogCategories = parentCategories.filter((cat) => cat.active);
   const subcategories = sortedCatalogCategories.filter((cat) => !!cat.parent_id);
   const activeSubcategories = subcategories.filter((cat) => cat.active);
+  const productCountsReady = !catalogLoading && !catalogError;
+  const categoryCountsReady = productCountsReady && !catalogCategoriesLoading && !catalogCategoriesError;
   const catalogCategoryNames = parentCategories.map((cat) => cat.name);
   const catalogSubcategoryNames = subcategories.map((cat) => cat.name);
   const getSubcategoriesForCategory = (parentId: string) =>
@@ -305,6 +306,7 @@ export default function AdminProducts() {
   const loadCatalogCategories = useCallback(async () => {
     setCatalogCategoriesLoading(true);
     setCatalogCategoriesError("");
+    setCatalogCategories([]);
     try {
       setCatalogCategories(await categoriesApi.list());
     } catch (error) {
@@ -428,12 +430,12 @@ export default function AdminProducts() {
     }
   };
 
-  // ── Brindes CRUD ─────────────────────────────────────────────────────────────
+  // â”€â”€ Brindes CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [brindes, setBrindes] = useState<ApiProduct[]>([]);
   const [brindesLoading, setBrindesLoading] = useState(false);
   const [showBrindeForm, setShowBrindeForm] = useState(false);
   const [editingBrindeId, setEditingBrindeId] = useState<string | null>(null);
-  const [brindeForm, setBrindeForm] = useState({ name: "", description: "", icon: "🎁", active: true });
+  const [brindeForm, setBrindeForm] = useState({ name: "", description: "", icon: "ðŸŽ", active: true });
   const [brindeSaving, setBrindeSaving] = useState(false);
 
   const loadBrindes = useCallback(async () => {
@@ -454,13 +456,13 @@ export default function AdminProducts() {
 
   const openNewBrindeForm = () => {
     setEditingBrindeId(null);
-    setBrindeForm({ name: "", description: "", icon: "🎁", active: true });
+    setBrindeForm({ name: "", description: "", icon: "ðŸŽ", active: true });
     setShowBrindeForm(true);
   };
 
   const openEditBrindeForm = (b: ApiProduct) => {
     setEditingBrindeId(b.id);
-    setBrindeForm({ name: b.name, description: b.description, icon: (b as any).icon || "🎁", active: (b as any).active ?? true });
+    setBrindeForm({ name: b.name, description: b.description, icon: (b as any).icon || "ðŸŽ", active: (b as any).active ?? true });
     setShowBrindeForm(true);
   };
 
@@ -494,7 +496,7 @@ export default function AdminProducts() {
       }
       setShowBrindeForm(false);
       setEditingBrindeId(null);
-      setBrindeForm({ name: "", description: "", icon: "🎁", active: true });
+      setBrindeForm({ name: "", description: "", icon: "ðŸŽ", active: true });
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao salvar brinde.");
     } finally {
@@ -512,7 +514,7 @@ export default function AdminProducts() {
     }
   };
 
-  // ── Products CRUD ────────────────────────────────────────────────────────────
+  // â”€â”€ Products CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<Pizza> & { product_type?: string }>({
@@ -770,7 +772,7 @@ export default function AdminProducts() {
     }
   };
 
-  // ── Sizes modal ──────────────────────────────────────────────────────────────
+  // â”€â”€ Sizes modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [sizesModalProduct, setSizesModalProduct] = useState<Pizza | null>(null);
   const [productSizes, setProductSizes] = useState<ApiProductSize[]>([]);
   const [sizesLoading, setSizesLoading] = useState(false);
@@ -881,7 +883,7 @@ export default function AdminProducts() {
     }
   };
 
-  // ── Crust modal (pizza) ───────────────────────────────────────────────────────
+  // â”€â”€ Crust modal (pizza) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [crustModalProduct, setCrustModalProduct] = useState<Pizza | null>(null);
   const [productCrusts, setProductCrusts] = useState<ApiProductCrustType[]>([]);
   const [crustsLoading, setCrustsLoading] = useState(false);
@@ -894,7 +896,7 @@ export default function AdminProducts() {
     setCrustsLoading(true);
     try {
       const crusts = await crustApi.list(product.id, false);
-      setProductCrusts(crusts.filter((crust) => !isCatupiryCrust(crust.name)));
+      setProductCrusts(crusts.sort((a, b) => a.sort_order - b.sort_order));
     } catch {
       setProductCrusts([]);
     } finally {
@@ -911,7 +913,7 @@ export default function AdminProducts() {
   const [borderModalProduct, setBorderModalProduct] = useState<Pizza | null>(null);
   const [productBorders, setProductBorders] = useState<ApiProductCrustType[]>([]);
   const [bordersLoading, setBordersLoading] = useState(false);
-  const [borderForm, setBorderForm] = useState({ price_addition: "" });
+  const [borderForm, setBorderForm] = useState({ name: "", price_addition: "" });
   const [savingBorderId, setSavingBorderId] = useState<string | null>(null);
 
   const openBorderModal = useCallback(async (product: Pizza) => {
@@ -919,7 +921,7 @@ export default function AdminProducts() {
     setBordersLoading(true);
     try {
       const crusts = await crustApi.list(product.id, false);
-      setProductBorders(crusts.filter((crust) => isCatupiryCrust(crust.name)));
+      setProductBorders(crusts.sort((a, b) => a.sort_order - b.sort_order));
     } catch {
       setProductBorders([]);
     } finally {
@@ -930,35 +932,56 @@ export default function AdminProducts() {
   const closeBorderModal = () => {
     setBorderModalProduct(null);
     setProductBorders([]);
-    setBorderForm({ price_addition: "" });
+    setBorderForm({ name: "", price_addition: "" });
   };
 
-  const handleAddCatupiryBorder = async () => {
-    if (!borderModalProduct) return;
+  const handleAddBorder = async () => {
+    if (!borderModalProduct || !borderForm.name.trim()) return;
     const priceAdd = parseFloat(borderForm.price_addition || "0");
     const priceAddition = isNaN(priceAdd) || priceAdd < 0 ? 0 : priceAdd;
-    const existing = productBorders.find((border) => isCatupiryCrust(border.name));
     try {
-      if (existing) {
-        const updated = await crustApi.update(borderModalProduct.id, existing.id, {
-          name: CATUPIRY_CRUST_NAME,
-          price_addition: priceAddition,
-          active: true,
-        } as any);
-        setProductBorders((prev) => prev.map((border) => border.id === updated.id ? updated : border));
-      } else {
-        const allCrusts = await crustApi.list(borderModalProduct.id, false);
-        const created = await crustApi.create(borderModalProduct.id, {
-          name: CATUPIRY_CRUST_NAME,
-          price_addition: priceAddition,
-          active: true,
-          sort_order: allCrusts.length,
-        } as any);
-        setProductBorders((prev) => [...prev, created]);
-      }
-      setBorderForm({ price_addition: "" });
+      const created = await crustApi.create(borderModalProduct.id, {
+        name: borderForm.name.trim(),
+        price_addition: priceAddition,
+        active: true,
+        sort_order: productBorders.length,
+      });
+      setProductBorders((prev) => [...prev, created].sort((a, b) => a.sort_order - b.sort_order));
+      setBorderForm({ name: "", price_addition: "" });
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Erro ao adicionar borda.");
+    }
+  };
+
+  const handleUpdateBorderName = async (border: ApiProductCrustType, name: string) => {
+    const trimmed = name.trim();
+    if (!borderModalProduct || !trimmed || trimmed === border.name) return;
+    setSavingBorderId(border.id);
+    try {
+      const updated = await crustApi.update(borderModalProduct.id, border.id, { name: trimmed });
+      setProductBorders((prev) => prev.map((item) => item.id === border.id ? updated : item));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao atualizar nome da borda.");
+    } finally {
+      setSavingBorderId(null);
+    }
+  };
+
+  const handleMoveBorder = async (border: ApiProductCrustType, direction: -1 | 1) => {
+    if (!borderModalProduct) return;
+    const currentIndex = productBorders.findIndex((item) => item.id === border.id);
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= productBorders.length) return;
+    const reordered = [...productBorders];
+    [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
+    setSavingBorderId(border.id);
+    try {
+      const updated = await Promise.all(reordered.map((item, index) => crustApi.update(borderModalProduct.id, item.id, { sort_order: index })));
+      setProductBorders(updated.sort((a, b) => a.sort_order - b.sort_order));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erro ao alterar ordem das bordas.");
+    } finally {
+      setSavingBorderId(null);
     }
   };
 
@@ -1007,10 +1030,6 @@ export default function AdminProducts() {
 
   const handleAddCrust = async () => {
     if (!crustModalProduct || !crustForm.name.trim()) return;
-    if (isCatupiryCrust(crustForm.name)) {
-      alert("Use o botao Gerenciar Bordas para adicionar borda com Catupiry.");
-      return;
-    }
     const priceAdd = parseFloat(crustForm.price_addition || "0");
     try {
       const created = await crustApi.create(crustModalProduct.id, {
@@ -1090,7 +1109,7 @@ export default function AdminProducts() {
     }
   };
 
-  // ── Drink variants modal ──────────────────────────────────────────────────────
+  // â”€â”€ Drink variants modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Product promotions modal (pizza)
   const [promotionModalProduct, setPromotionModalProduct] = useState<Pizza | null>(null);
   const [productPromotions, setProductPromotions] = useState<ApiProductPromotion[]>([]);
@@ -1346,7 +1365,7 @@ export default function AdminProducts() {
     }
   };
 
-  // ── Presets ───────────────────────────────────────────────────────────────────
+  // â”€â”€ Presets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const SIZE_PRESETS = [
     { label: "Pizza Individual", description: "25cm - 4 pedaços" },
     { label: "Pizza Grande", description: "35cm - 8 pedaços" },
@@ -1601,7 +1620,7 @@ export default function AdminProducts() {
 
           <div className="p-8 pt-6">
 
-            {/* ── TAB: PRODUTOS ── */}
+            {/* â”€â”€ TAB: PRODUTOS â”€â”€ */}
             {activeTab === "produtos" && (
               <>
                 {catalogLoading && <p role="status" className="mb-4 text-stone">Carregando produtos...</p>}
@@ -1611,7 +1630,7 @@ export default function AdminProducts() {
                     <div>
                       <p className="text-sm font-bold text-cream">Produtos por categoria</p>
                       <p className="text-xs text-stone">
-                        {filteredProducts.length} produto{filteredProducts.length === 1 ? "" : "s"} nesta visualizacao
+                        {catalogProductsSummary(filteredProducts.length, productCountsReady)}
                       </p>
                     </div>
                     {selectedCategoryTab && selectedCategoryTab.kind !== "all" && (
@@ -1637,13 +1656,15 @@ export default function AdminProducts() {
                         }`}
                       >
                         <span>{tab.label}</span>
-                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${
-                          selectedProductCategory === tab.id
-                            ? "bg-cream/15 text-cream"
-                            : "bg-surface-01 text-stone"
-                        }`}>
-                          {tab.count}
-                        </span>
+                        {displayCatalogCount(tab.count, categoryCountsReady) && (
+                          <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${
+                            selectedProductCategory === tab.id
+                              ? "bg-cream/15 text-cream"
+                              : "bg-surface-01 text-stone"
+                          }`}>
+                            {displayCatalogCount(tab.count, categoryCountsReady)}
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -1675,7 +1696,9 @@ export default function AdminProducts() {
                             }`}
                           >
                             <span>{tab.label}</span>
-                            <span className="rounded-full bg-surface-03 px-1.5 py-0.5 text-[10px] text-stone">{tab.count}</span>
+                            {displayCatalogCount(tab.count, categoryCountsReady) && (
+                              <span className="rounded-full bg-surface-03 px-1.5 py-0.5 text-[10px] text-stone">{displayCatalogCount(tab.count, categoryCountsReady)}</span>
+                            )}
                           </button>
                         ))}
                       </div>
@@ -1717,11 +1740,11 @@ export default function AdminProducts() {
                                 </span>
                               )}
                               <span className="inline-flex items-center gap-1 text-xs bg-surface-03 text-stone border border-surface-03 px-2 py-0.5 rounded-full">
-                                {getTypeIcon(pType)} {pType === "drink" ? "Bebida" : pType === "other" ? "Outros" : "Pizza"}
+                                {getTypeIcon(pType)} {pType === "drink" ? "Bebida" : pType === "esfiha" ? "Esfiha" : pType === "other" ? "Outros" : "Pizza"}
                               </span>
-                              {isPizza && productHasCatupiryCrust(product) && (
+                              {isPizza && productHasActiveCrust(product) && (
                                 <span className="inline-flex items-center gap-1 text-xs bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full">
-                                  Borda Catupiry
+                                  Bordas configuradas
                                 </span>
                               )}
                             </div>
@@ -1772,9 +1795,9 @@ export default function AdminProducts() {
                           <button onClick={() => openCrustModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-amber-500/10 hover:border-amber-500/40 text-parchment hover:text-amber-400 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                             <ChefHat size={15} />
                             Gerenciar Massas
-                            {(((product as any).crust_types ?? []) as ApiProductCrustType[]).filter((crust) => !isCatupiryCrust(crust.name)).length > 0 && (
+                            {(((product as any).crust_types ?? []) as ApiProductCrustType[]).length > 0 && (
                               <span className="ml-auto text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full">
-                                {(((product as any).crust_types ?? []) as ApiProductCrustType[]).filter((crust) => !isCatupiryCrust(crust.name)).length}
+                                {(((product as any).crust_types ?? []) as ApiProductCrustType[]).length}
                               </span>
                             )}
                           </button>
@@ -1784,7 +1807,7 @@ export default function AdminProducts() {
                           <button onClick={() => openBorderModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-orange-500/10 hover:border-orange-500/40 text-parchment hover:text-orange-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                             <Tag size={15} />
                             Gerenciar Bordas
-                            {productHasCatupiryCrust(product) && (
+                            {productHasActiveCrust(product) && (
                               <span className="ml-auto text-xs bg-orange-500/20 text-orange-300 px-1.5 py-0.5 rounded-full">1</span>
                             )}
                           </button>
@@ -1811,7 +1834,7 @@ export default function AdminProducts() {
                   })}
                 </div>
 
-                {filteredProducts.length === 0 && (
+                {productCountsReady && filteredProducts.length === 0 && (
                   <div className="text-center py-12">
                     <p className="text-stone text-lg">
                       {products.length === 0 ? "Nenhum produto cadastrado" : "Nenhum produto encontrado para esta busca"}
@@ -1826,7 +1849,7 @@ export default function AdminProducts() {
               </>
             )}
 
-            {/* ── TAB: BRINDES ── */}
+            {/* â”€â”€ TAB: BRINDES â”€â”€ */}
             {activeTab === "brindes" && (
               <div className="space-y-6">
                 {brindesLoading ? (
@@ -1853,7 +1876,7 @@ export default function AdminProducts() {
                               className="w-full h-full object-cover"
                             />
                           ) : (
-                            <span className="text-5xl">{(b as any).icon || "🎁"}</span>
+                            <span className="text-5xl">{(b as any).icon || "ðŸŽ"}</span>
                           )}
                         </div>
                         <div className="p-4 flex flex-col gap-2 flex-1">
@@ -1888,7 +1911,7 @@ export default function AdminProducts() {
               </div>
             )}
 
-            {/* ── TAB: CATEGORIAS ── */}
+            {/* â”€â”€ TAB: CATEGORIAS â”€â”€ */}
             {activeTab === "categorias" && (
               <div className="max-w-4xl space-y-4">
                 <div className="bg-surface-02 rounded-xl p-6 border border-surface-03 space-y-4">
@@ -2191,7 +2214,7 @@ export default function AdminProducts() {
               </div>
             )}
 
-            {/* ── TAB: CONFIG ── */}
+            {/* â”€â”€ TAB: CONFIG â”€â”€ */}
             {activeTab === "config" && (
               <div className="max-w-xl">
                 <div className="bg-surface-02 rounded-xl p-6 border border-surface-03 space-y-4">
@@ -2246,7 +2269,9 @@ export default function AdminProducts() {
                             >
                               <span className="min-w-0">
                                  <span className="block truncate text-sm font-bold">{option.label}</span>
-                                <span className="block text-xs text-stone">{option.type} - {option.count} produto{option.count === 1 ? "" : "s"}</span>
+                                {displayCatalogCount(option.count, categoryCountsReady) && (
+                                  <span className="block text-xs text-stone">{option.type} - {displayCatalogCount(option.count, categoryCountsReady)} produto{option.count === 1 ? "" : "s"}</span>
+                                )}
                               </span>
                               <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
                                 selected ? "border-gold bg-gold text-cream" : "border-surface-03 bg-surface-01"
@@ -2291,14 +2316,14 @@ export default function AdminProducts() {
                     onClick={handleConfigSave}
                     className={`w-full py-3 rounded-xl font-bold text-sm transition-colors ${configSaved ? "bg-green-500 text-white" : "bg-gold hover:bg-gold/90 text-cream"}`}
                   >
-                    {configSaved ? "✓ Salvo!" : "Salvar Configurações"}
+                    {configSaved ? "âœ“ Salvo!" : "Salvar Configurações"}
                   </button>
                 </div>
 
                 {/* Best Seller Config */}
                 <div className="bg-surface-02 rounded-xl p-6 border border-surface-03 space-y-4 mt-6">
                   <div className="flex items-center gap-3 pb-3 border-b border-surface-03">
-                    <span className="text-lg">🔥</span>
+                    <span className="text-lg">ðŸ”¥</span>
                     <div>
                       <h3 className="text-cream font-bold">Selo "Mais Pedida" — Automático</h3>
                       <p className="text-stone text-sm">Configura o cálculo automático por volume de vendas</p>
@@ -2343,7 +2368,7 @@ export default function AdminProducts() {
                         disabled={bestSellerSaving}
                         className={`w-full py-3 rounded-xl font-bold text-sm transition-colors ${bestSellerSaved ? "bg-green-500 text-white" : "bg-gold hover:bg-gold/90 text-cream"} disabled:opacity-60`}
                       >
-                        {bestSellerSaved ? "✓ Salvo!" : bestSellerSaving ? "Salvando..." : "Salvar Configuração do Selo"}
+                        {bestSellerSaved ? "âœ“ Salvo!" : bestSellerSaving ? "Salvando..." : "Salvar Configuração do Selo"}
                       </button>
                     </>
                   )}
@@ -2355,7 +2380,7 @@ export default function AdminProducts() {
         </div>
       </div>
 
-      {/* ── Product Form Modal ───────────────────────────────────────────────── */}
+      {/* â”€â”€ Product Form Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showForm && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
@@ -2483,6 +2508,26 @@ export default function AdminProducts() {
                   )}
                 </div>
                 <div>
+                  <label className="block text-parchment text-sm font-medium mb-2">Tipo do produto</label>
+                  <select
+                    value={(formData.product_type as string) || "pizza"}
+                    onChange={(event) => {
+                      const productType = event.target.value;
+                      setFormData({
+                        ...formData,
+                        product_type: productType,
+                        icon: formData.icon === PIZZA_ICON || formData.icon === ESFIHA_ICON ? (productType === "esfiha" ? ESFIHA_ICON : productType === "drink" ? DRINK_ICON : productType === "other" ? OTHER_ICON : PIZZA_ICON) : formData.icon,
+                      });
+                    }}
+                    className={cls}
+                  >
+                    <option value="pizza">Pizza</option>
+                    <option value="esfiha">Esfiha</option>
+                    <option value="drink">Bebida</option>
+                    <option value="other">Outros</option>
+                  </select>
+                </div>
+                <div>
                   <label className="block text-parchment text-sm font-medium mb-2">Subcategoria</label>
                   <select
                     value={selectedSubcategoryId || ""}
@@ -2536,7 +2581,7 @@ export default function AdminProducts() {
                     className={cls}
                   >
                     <option value="off">Não exibir</option>
-                    <option value="manual">Manual — exibir sempre neste produto</option>
+                    <option value="manual">Manual â€” exibir sempre neste produto</option>
                     <option value="auto">Automático — conforme volume de vendas</option>
                   </select>
                   <p className="text-stone text-xs mt-1">Manual tem prioridade. Automático considera apenas pedidos pagos/concluídos.</p>
@@ -2545,13 +2590,13 @@ export default function AdminProducts() {
                 {!editingId && (
                   <div className="bg-surface-03/60 rounded-lg p-3 text-stone text-xs">
                     {(formData.product_type || "pizza") === "pizza" && (
-                      <span>💡 Após criar a pizza, use <strong className="text-parchment">Gerenciar Tamanhos</strong>, <strong className="text-parchment">Gerenciar Massas</strong> e <strong className="text-parchment">Gerenciar Bordas</strong> no card do produto.</span>
+                      <span>ðŸ’¡ ApÃ³s criar a pizza, use <strong className="text-parchment">Gerenciar Tamanhos</strong>, <strong className="text-parchment">Gerenciar Massas</strong> e <strong className="text-parchment">Gerenciar Bordas</strong> no card do produto.</span>
                     )}
                     {formData.product_type === "drink" && (
-                      <span>💡 Após criar a bebida, use <strong className="text-parchment">Gerenciar Tamanhos</strong> e <strong className="text-parchment">Gerenciar Variantes</strong> no card do produto.</span>
+                      <span>ðŸ’¡ ApÃ³s criar a bebida, use <strong className="text-parchment">Gerenciar Tamanhos</strong> e <strong className="text-parchment">Gerenciar Variantes</strong> no card do produto.</span>
                     )}
                     {formData.product_type === "other" && (
-                      <span>💡 Após criar o produto, use <strong className="text-parchment">Gerenciar Tamanhos</strong> para configurar variações de tamanho e preço.</span>
+                      <span>ðŸ’¡ ApÃ³s criar o produto, use <strong className="text-parchment">Gerenciar Tamanhos</strong> para configurar variaÃ§Ãµes de tamanho e preÃ§o.</span>
                     )}
                   </div>
                 )}
@@ -2570,7 +2615,7 @@ export default function AdminProducts() {
         </div>
       )}
 
-      {/* ── Sizes Modal ───────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Sizes Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {optionGroupsProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3" onClick={() => setOptionGroupsProduct(null)}>
           <div className="w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl border border-surface-03 bg-surface-02 shadow-2xl" onClick={(event) => event.stopPropagation()}>
@@ -3057,7 +3102,7 @@ export default function AdminProducts() {
         </div>
       )}
 
-      {/* ── Crust Modal (Pizza) ──────────────────────────────────────────────── */}
+      {/* â”€â”€ Crust Modal (Pizza) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {crustModalProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={closeCrustModal}>
           <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -3176,7 +3221,7 @@ export default function AdminProducts() {
         </div>
       )}
 
-      {/* ── Drink Variants Modal ─────────────────────────────────────────────── */}
+      {/* â”€â”€ Drink Variants Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {borderModalProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={closeBorderModal}>
           <div className="bg-surface-02 rounded-2xl border border-surface-03 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -3208,8 +3253,15 @@ export default function AdminProducts() {
                     {productBorders.map((border) => (
                       <div key={border.id} className="flex items-center gap-3 bg-surface-03 rounded-xl px-4 py-3">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-cream font-bold text-sm">{CATUPIRY_CRUST_NAME}</span>
+                          <div className="flex min-w-0 items-center gap-2">
+                            <input
+                              type="text"
+                              defaultValue={border.name}
+                              onBlur={(event) => void handleUpdateBorderName(border, event.target.value)}
+                              disabled={savingBorderId === border.id}
+                              className="min-w-0 flex-1 bg-transparent text-cream font-bold text-sm outline-none focus:border-b focus:border-orange-300"
+                              aria-label={`Nome da borda ${border.name}`}
+                            />
                             {!border.active && <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-full">inativa</span>}
                           </div>
                         </div>
@@ -3224,6 +3276,8 @@ export default function AdminProducts() {
                           title="Adicional da borda"
                         />
                         <div className="flex items-center gap-1 flex-shrink-0">
+                          <button onClick={() => handleMoveBorder(border, -1)} disabled={savingBorderId === border.id} title="Mover para cima" className="p-1.5 rounded-lg text-stone hover:text-cream transition-colors disabled:opacity-40"><ChevronUp size={13} /></button>
+                          <button onClick={() => handleMoveBorder(border, 1)} disabled={savingBorderId === border.id} title="Mover para baixo" className="p-1.5 rounded-lg text-stone hover:text-cream transition-colors disabled:opacity-40"><ChevronDown size={13} /></button>
                           <button onClick={() => handleToggleBorderActive(border)} disabled={savingBorderId === border.id} title={border.active ? "Desativar" : "Ativar"} className={`p-1.5 rounded-lg transition-colors ${border.active ? "text-green-400 hover:text-red-400" : "text-red-400 hover:text-green-400"}`}>
                             {savingBorderId === border.id ? <Loader2 size={13} className="animate-spin" /> : <Settings2 size={13} />}
                           </button>
@@ -3238,21 +3292,32 @@ export default function AdminProducts() {
               </div>
 
               <div className="border-t border-surface-03 pt-5">
-                <h4 className="text-parchment text-sm font-semibold mb-3">Adicionar Borda com Catupiry</h4>
+                <h4 className="text-parchment text-sm font-semibold mb-3">Adicionar borda</h4>
                 <div className="space-y-3">
+                  <div>
+                    <label className="block text-parchment text-xs font-medium mb-1">Nome da borda</label>
+                    <input
+                      type="text"
+                      value={borderForm.name}
+                      onChange={(e) => setBorderForm((current) => ({ ...current, name: e.target.value }))}
+                      className={cls}
+                      placeholder="Ex.: Cheddar"
+                      maxLength={100}
+                    />
+                  </div>
                   <div>
                     <label className="block text-parchment text-xs font-medium mb-1">Adicional da borda (R$)</label>
                     <input
                       type="number"
                       value={borderForm.price_addition}
-                      onChange={(e) => setBorderForm({ price_addition: e.target.value })}
+                      onChange={(e) => setBorderForm((current) => ({ ...current, price_addition: e.target.value }))}
                       className={cls}
                       placeholder="0.00"
                       step="0.01"
                       min="0"
                     />
                   </div>
-                  <button onClick={handleAddCatupiryBorder} className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-500/90 text-white font-bold py-2.5 rounded-xl transition-colors text-sm">
+                  <button onClick={handleAddBorder} disabled={!borderForm.name.trim()} className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-500/90 text-white font-bold py-2.5 rounded-xl transition-colors text-sm disabled:opacity-50">
                     <Plus size={15} /> Adicionar Borda
                   </button>
                 </div>
@@ -3348,7 +3413,7 @@ export default function AdminProducts() {
         </div>
       )}
 
-      {/* ── Brinde Form Modal ────────────────────────────────────────────────── */}
+      {/* â”€â”€ Brinde Form Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showBrindeForm && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"

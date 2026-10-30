@@ -246,6 +246,39 @@ class InventoryService:
             self._publish_purchase_confirmed(purchase)
         return self._serialize_purchase(purchase)
 
+    def create_replenishment_request(self) -> dict:
+        """Create/reuse a non-confirmed purchase request for low stock."""
+        from datetime import datetime, timezone
+        balances = self._stock_balance_map()
+        items = (self._db.query(InventoryItem)
+                 .filter(InventoryItem.tenant_id == self._tenant_id, InventoryItem.active.is_(True))
+                 .order_by(InventoryItem.name).all())
+        low = [item for item in items if balances.get(item.id, ZERO) < decimal_value(item.min_stock)]
+        if not low:
+            raise InventoryInvalidReference("Nenhum produto ou insumo esta abaixo do estoque minimo.")
+        existing = (self._db.query(InventoryPurchase)
+                    .filter(InventoryPurchase.tenant_id == self._tenant_id,
+                            InventoryPurchase.source == "min_stock",
+                            InventoryPurchase.status == "requested")
+                    .order_by(InventoryPurchase.created_at.desc()).first())
+        if existing:
+            return self._serialize_purchase(existing)
+        purchase = InventoryPurchase(
+            id=f"inv-pur-{uuid.uuid4().hex[:12]}", tenant_id=self._tenant_id,
+            status="requested", source="min_stock", requested_at=datetime.now(timezone.utc),
+            requested_by_admin_id=self._actor_id if not self._actor_id.startswith("system:") else None,
+            notes="Solicitacao gerada automaticamente por estoque abaixo do minimo.",
+        )
+        self._db.add(purchase)
+        self._replace_purchase_items(purchase, [
+            {"item_id": item.id,
+             "quantity": (decimal_value(item.min_stock) - balances.get(item.id, ZERO)).quantize(QUANTITY_SCALE),
+             "unit_cost": ZERO}
+            for item in low
+        ])
+        self._db.commit(); self._db.refresh(purchase)
+        return self._serialize_purchase(purchase)
+
     def update_purchase(self, purchase_id: str, payload: InventoryPurchaseIn) -> dict:
         purchase = self._get_purchase(purchase_id)
         previous_status = purchase.status
@@ -956,6 +989,9 @@ class InventoryService:
             "invoice_number": purchase.invoice_number,
             "expected_date": purchase.expected_date,
             "notes": purchase.notes,
+            "source": purchase.source,
+            "requested_at": purchase.requested_at,
+            "requested_by_admin_id": purchase.requested_by_admin_id,
             "total_amount": purchase.total_amount,
             "items": [
                 {

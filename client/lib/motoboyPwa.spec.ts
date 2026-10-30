@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-import { configureMotoboyWorker, isMotoboyPath } from "./motoboyPwa";
+import { configureBiMobileWorker, configureMotoboyWorker, isBiMobilePath, isMotoboyPath } from "./motoboyPwa";
 
 const origin = "https://pizza.example";
 function registration(scope = "/", script = "/sw.js", subscribed = false) {
@@ -54,5 +54,33 @@ describe("Motoboy installation ownership", () => {
     expect(nodes.find((node) => node.rel === "manifest")?.href).toBe("/api/site-config/manifest.webmanifest");
     window.updateMotoboyPwaHead!("/checkout");
     expect(nodes).toHaveLength(0);
+  });
+});
+
+describe("BI Mobile installation ownership", () => {
+  it("recognizes only the BI Mobile scope", () => {
+    expect(isBiMobilePath("/painel/bi-mobile")).toBe(true);
+    expect(isBiMobilePath("/painel/bi-mobile/")).toBe(true);
+    expect(isBiMobilePath("/painel/bi")).toBe(false);
+  });
+
+  it("registers the existing worker with a narrow BI scope", async () => {
+    const container = { register: vi.fn().mockResolvedValue({}) };
+    await configureBiMobileWorker("/painel/bi-mobile", container as unknown as ServiceWorkerContainer);
+    expect(container.register).toHaveBeenCalledWith("/sw.js", { scope: "/painel/bi-mobile/", updateViaCache: "none" });
+  });
+
+  it("associates the BI manifest with the BI route only", () => {
+    const nodes: Record<string, string>[] = [];
+    const document = {
+      querySelectorAll: () => nodes.map((node) => ({ remove: () => nodes.splice(nodes.indexOf(node), 1) })),
+      createElement: () => { const attributes: Record<string, string> = {}; return { setAttribute: (key: string, value: string) => { attributes[key] = value; }, attributes }; },
+      head: { appendChild: (node: { attributes: Record<string, string> }) => nodes.push(node.attributes) },
+    };
+    const window = { location: { pathname: "/painel/bi-mobile", search: "", hash: "", replace: vi.fn() }, updateMotoboyPwaHead: undefined as undefined | ((path: string) => void) };
+    vm.runInNewContext(readFileSync("public/motoboy-pwa-head.js", "utf8"), { window, document });
+    window.updateMotoboyPwaHead!("/painel/bi-mobile");
+    expect(nodes.find((node) => node.rel === "manifest")?.href).toBe("/api/site-config/manifest.webmanifest?app=bi-mobile");
+    expect(nodes.find((node) => node.name === "apple-mobile-web-app-title")?.content).toBe("BI Mobile");
   });
 });

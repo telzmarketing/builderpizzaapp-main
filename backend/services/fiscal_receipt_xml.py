@@ -31,6 +31,7 @@ class ReceiptXmlIdentity:
     issuer_document: str | None
     issued_at: datetime | None
     extracted: dict
+    lines: tuple[dict, ...] = ()
 
 
 def _local(tag: str) -> str:
@@ -83,12 +84,38 @@ def parse_receipt_xml(raw_xml: bytes | str) -> ReceiptXmlIdentity:
     document_model = "NFCe" if model == "65" else "NFe"
     if access_key is not None and (not access_key.isdigit() or len(access_key) != 44):
         raise ReceiptXmlError("chNFe/Id deve conter a chave de acesso de 44 digitos.")
+    lines = []
+    for det in (node for node in inf.iter() if _local(node.tag) == "det"):
+        try:
+            line_number = int(det.attrib.get("nItem") or len(lines) + 1)
+        except (TypeError, ValueError) as exc:
+            raise ReceiptXmlError("Numero do item fiscal invalido.") from exc
+        if line_number <= 0:
+            raise ReceiptXmlError("Numero do item fiscal invalido.")
+        prod = next((node for node in det.iter() if _local(node.tag) == "prod"), None)
+        if prod is None:
+            raise ReceiptXmlError("Item fiscal sem bloco prod.")
+        values = {_local(node.tag): (node.text or "").strip() for node in prod.iter() if node is not prod and (node.text or "").strip()}
+        if any(not values.get(key) for key in ("xProd", "qCom", "vUnCom", "vProd")):
+            raise ReceiptXmlError("Item fiscal sem descricao, quantidade ou valor.")
+        lines.append({
+            "line_number": line_number,
+            "supplier_code": values.get("cProd"),
+            "gtin": values.get("cEAN") or values.get("cEANTrib"),
+            "description": values["xProd"],
+            "quantity": values["qCom"],
+            "commercial_unit": values.get("uCom"),
+            "unit_price": values["vUnCom"],
+            "total_price": values["vProd"],
+        })
     extracted = {
         "model": model,
         "series": _value(ide, "serie"),
         "number": _value(ide, "nNF"),
         "issuer_document": _value(emit, "CNPJ") if emit is not None else None,
         "issued_at": _value(ide, "dhEmi") or _value(ide, "dEmi"),
+        "total_products": len(lines),
+        "total_document": _value(inf, "vNF"),
     }
     return ReceiptXmlIdentity(
         content_sha256=hashlib.sha256(raw).hexdigest(),
@@ -99,4 +126,5 @@ def parse_receipt_xml(raw_xml: bytes | str) -> ReceiptXmlIdentity:
         issuer_document=extracted["issuer_document"],
         issued_at=_parse_date(extracted["issued_at"]),
         extracted=extracted,
+        lines=tuple(lines),
     )

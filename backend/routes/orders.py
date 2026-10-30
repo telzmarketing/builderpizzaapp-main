@@ -627,7 +627,11 @@ def delete_order(
     _require_order_delete_access(admin, db, request)
     try:
         tenant_context = resolve_panel_tenant_context(request, db, admin)
-        OrderService(db, tenant_context).delete(order_id)
+        OrderService(db, tenant_context).delete(
+            order_id,
+            archived_by=admin.id,
+            reason="Removido operacionalmente pelo administrador",
+        )
     except DomainError as exc:
         return err(exc)
 

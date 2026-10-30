@@ -9,6 +9,7 @@ import {
 import AdminSidebar from "@/components/AdminSidebar";
 import { adminApi, type ApiDashboard, type ApiOrder } from "@/lib/api";
 import { ordersApi } from "@/lib/api";
+import { dashboardRevenueData } from "@/lib/adminDashboardIndicators";
 
 const DashboardChart = lazy(() => import("@/components/admin/DashboardChart"));
 
@@ -35,30 +36,20 @@ const statusColor = (s: string) => {
 const formatMoney = (value: number) =>
   value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-function buildLast7DaysRevenue(rows: { day: string; revenue: number }[]) {
-  const revenueByDay = new Map(rows.map((row) => [row.day, row.revenue]));
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(today);
-    date.setDate(today.getDate() - (6 - index));
-    const key = date.toISOString().slice(0, 10);
-    return {
-      name: date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
-      receita: revenueByDay.get(key) ?? 0,
-    };
-  });
-}
-
 export default function AdminDashboard() {
   const [stats, setStats] = useState<ApiDashboard | null>(null);
   const [recentOrders, setRecentOrders] = useState<ApiOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const normalizedChartData = buildLast7DaysRevenue(stats?.daily_revenue ?? []);
+  const [ordersError, setOrdersError] = useState("");
+  const normalizedChartData = dashboardRevenueData(stats?.daily_revenue ?? []);
 
   useEffect(() => {
+    setLoading(true);
+    setStats(null);
+    setRecentOrders([]);
+    setError("");
+    setOrdersError("");
     Promise.allSettled([
       adminApi.dashboard(),
       ordersApi.list({ limit: 10 }),
@@ -66,27 +57,13 @@ export default function AdminDashboard() {
       if (dashRes.status === "fulfilled") setStats(dashRes.value);
       else setError("Não foi possível carregar o dashboard.");
       if (ordersRes.status === "fulfilled") setRecentOrders(ordersRes.value);
+      else setOrdersError("Não foi possível carregar os pedidos recentes.");
     }).finally(() => setLoading(false));
   }, []);
 
-  // Revenue chart data — use daily_revenue from API or generate mock from totals
-  const _legacyChartData = stats?.daily_revenue?.length
-    ? stats.daily_revenue.map((d) => ({ name: d.day, receita: d.revenue }))
-    : [
-        { name: "Seg", receita: 0 },
-        { name: "Ter", receita: 0 },
-        { name: "Qua", receita: 0 },
-        { name: "Qui", receita: 0 },
-        { name: "Sex", receita: 0 },
-        { name: "Sáb", receita: 0 },
-        { name: "Dom", receita: 0 },
-      ];
-
-  const estimatedRevenue = stats?.estimated_revenue ?? stats?.total_revenue ?? 0;
-  const effectiveRevenue = stats?.effective_revenue ?? stats?.total_revenue ?? 0;
+  const estimatedRevenue = stats?.estimated_revenue ?? 0;
+  const effectiveRevenue = stats?.effective_revenue ?? 0;
   const pendingRevenue = Math.max(estimatedRevenue - effectiveRevenue, 0);
-  const effectivePct = estimatedRevenue > 0 ? Math.round((effectiveRevenue / estimatedRevenue) * 100) : 0;
-  const pendingPct = estimatedRevenue > 0 ? Math.max(0, 100 - effectivePct) : 0;
   const pieData = [
     { name: "Efetivada", value: effectiveRevenue },
     { name: "A efetivar", value: pendingRevenue },
@@ -121,6 +98,11 @@ export default function AdminDashboard() {
           {loading ? (
             <div className="flex items-center justify-center h-64">
               <Loader2 size={36} className="animate-spin text-gold" />
+            </div>
+          ) : error || !stats ? (
+            <div className="flex min-h-64 flex-col items-center justify-center rounded-xl border border-surface-03 bg-surface-02 px-6 text-center">
+              <p className="text-lg font-bold text-cream">Indicadores indisponíveis</p>
+              <p className="mt-2 text-sm text-stone">Tente atualizar o dashboard para carregar os dados reais.</p>
             </div>
           ) : (
             <>
@@ -181,10 +163,6 @@ export default function AdminDashboard() {
                     <p className="text-cream text-4xl font-black">{(stats?.total_customers ?? 0).toLocaleString("pt-BR")}</p>
                     <p className="text-stone text-xs mt-1">clientes cadastrados</p>
                   </div>
-                  <div className="mt-5 space-y-2">
-                    <ProgressRow label="Recorrentes" pct={68} color="bg-gold" />
-                    <ProgressRow label="Novos (30d)" pct={32} color="bg-purple-400" />
-                  </div>
                   <Link to="/painel/clientes" className="mt-4 flex items-center gap-1 text-gold text-xs font-semibold hover:underline">
                     Ver clientes <ArrowUpRight size={12} />
                   </Link>
@@ -196,27 +174,19 @@ export default function AdminDashboard() {
                     <p className="text-stone text-sm font-medium">Distribuição de Receita</p>
                     <TrendingUp size={16} className="text-stone" />
                   </div>
-                  <div className="flex items-center gap-4">
-                    <Suspense fallback={<ChartFallback className="h-[110px] w-[110px]" />}>
-                      <DashboardChart variant="pie" data={pieData} colors={PIE_COLORS} />
-                    </Suspense>
-                    <div className="flex flex-col gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-gold flex-shrink-0" />
-                        <div>
-                          <p className="text-cream text-sm font-bold">{effectivePct}%</p>
-                          <p className="text-stone text-xs">Efetivada</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-surface-03 flex-shrink-0" />
-                        <div>
-                          <p className="text-cream text-sm font-bold">{pendingPct}%</p>
-                          <p className="text-stone text-xs">A efetivar</p>
-                        </div>
+                  {estimatedRevenue > 0 || effectiveRevenue > 0 ? (
+                    <div className="flex items-center gap-4">
+                      <Suspense fallback={<ChartFallback className="h-[110px] w-[110px]" />}>
+                        <DashboardChart variant="pie" data={pieData} colors={PIE_COLORS} />
+                      </Suspense>
+                      <div className="flex flex-col gap-3 text-xs">
+                        <span className="text-stone">Efetivada: <strong className="text-cream">{formatMoney(effectiveRevenue)}</strong></span>
+                        <span className="text-stone">A efetivar: <strong className="text-cream">{formatMoney(pendingRevenue)}</strong></span>
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    <p className="text-sm text-stone">Nenhum dado de receita disponível.</p>
+                  )}
                   <div className="mt-4 pt-4 border-t border-surface-03">
                     <p className="text-stone text-xs">Receita efetivada</p>
                     <p className="text-gold text-xl font-black mt-0.5">
@@ -234,7 +204,9 @@ export default function AdminDashboard() {
                       Ver todos <ArrowUpRight size={11} />
                     </Link>
                   </div>
-                  {recentOrders.length === 0 ? (
+                  {ordersError ? (
+                    <p className="flex h-32 items-center justify-center text-center text-sm text-red-300">{ordersError}</p>
+                  ) : recentOrders.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-32 text-stone text-sm">
                       <ShoppingBag size={28} className="mb-2 opacity-30" />
                       Sem pedidos
@@ -272,9 +244,13 @@ export default function AdminDashboard() {
                   </div>
                   <BarChart3 size={18} className="text-stone" />
                 </div>
-                <Suspense fallback={<ChartFallback className="h-[200px] w-full" />}>
-                  <DashboardChart variant="revenue" data={normalizedChartData} />
-                </Suspense>
+                {normalizedChartData.length > 0 ? (
+                  <Suspense fallback={<ChartFallback className="h-[200px] w-full" />}>
+                    <DashboardChart variant="revenue" data={normalizedChartData} />
+                  </Suspense>
+                ) : (
+                  <p className="flex h-[200px] items-center justify-center text-sm text-stone">Nenhum dado diário de receita disponível.</p>
+                )}
               </div>
 
               {/* ── Quick links ─────────────────────────────────────────── */}
@@ -315,20 +291,6 @@ function OverviewCard({
       {trend && (
         <p className={`text-xs mt-1.5 ${trendUp ? "text-green-400" : "text-stone"}`}>{trend}</p>
       )}
-    </div>
-  );
-}
-
-function ProgressRow({ label, pct, color }: { label: string; pct: number; color: string }) {
-  return (
-    <div>
-      <div className="flex justify-between text-xs mb-1">
-        <span className="text-stone">{label}</span>
-        <span className="text-parchment font-medium">{pct}%</span>
-      </div>
-      <div className="h-1.5 bg-surface-03 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
-      </div>
     </div>
   );
 }

@@ -13,6 +13,7 @@ class PricingRule(str, enum.Enum):
 
 class ProductType(str, enum.Enum):
     pizza = "pizza"
+    esfiha = "esfiha"
     drink = "drink"
     other = "other"
 
@@ -26,12 +27,12 @@ class Product(Base):
     name = Column(String(200), nullable=False)
     description = Column(Text, nullable=False)
     price = Column(Float, nullable=False)
-    icon = Column(Text, default="🍕")
+    icon = Column(Text, default="\U0001f355")
     category = Column(String(100), nullable=True)
     subcategory = Column(String(100), nullable=True)
     category_id = Column(String, ForeignKey("product_categories.id", ondelete="SET NULL"), nullable=True)
     subcategory_id = Column(String, ForeignKey("product_categories.id", ondelete="SET NULL"), nullable=True)
-    product_type = Column(String(20), nullable=True)  # "pizza" | "drink" | "other"
+    product_type = Column(String(20), nullable=True)  # "pizza" | "esfiha" | "drink" | "other"
     visible_delivery = Column(Boolean, nullable=False, default=True)
     visible_dine_in = Column(Boolean, nullable=False, default=True)
     show_crust_options = Column(Boolean, nullable=False, default=True, server_default="true")
@@ -92,9 +93,13 @@ class ProductSize(Base):
 
 
 class ProductCrustType(Base):
-    """Available crust types for a pizza product."""
+    """Available named dough/border options for a catalog product."""
     __tablename__ = "product_crust_types"
-    __table_args__ = (Index("uq_product_crust_types_tenant_id_id", "tenant_id", "id", unique=True),)
+    __table_args__ = (
+        Index("uq_product_crust_types_tenant_id_id", "tenant_id", "id", unique=True),
+        CheckConstraint("price_addition >= 0", name="ck_product_crust_types_price_addition"),
+        CheckConstraint("sort_order >= 0", name="ck_product_crust_types_sort_order"),
+    )
 
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_product_crust_types_tenant_id_tenants"), nullable=True)

@@ -13,6 +13,15 @@ from backend.models.product import Product, ProductCategory, ProductSize, Produc
 from backend.models.product_promotion import ProductPromotion
 
 
+DEFAULT_PRODUCT_ICONS = {
+    "pizza": "\U0001f355",
+    "esfiha": "\U0001f95f",
+    "drink": "\U0001f964",
+    "other": "\U0001f37d\ufe0f",
+    "brinde": "\U0001f381",
+}
+
+
 class ProductCatalogService:
     def __init__(self, db: Session, tenant_context: TenantContext | None):
         self.db = db
@@ -21,9 +30,11 @@ class ProductCatalogService:
     def _query(self, model):
         return catalog_query(self.db, model, self.context)
 
-    def product_values(self, values: dict, *, current: Product | None = None) -> dict:
+    def product_values(self, values: dict, *, current: Product | None = None, creating: bool = False) -> dict:
         """Validate edited references, preserving untouched legacy classifications."""
         result = dict(values)
+        if creating and result.get("icon") is None:
+            result["icon"] = DEFAULT_PRODUCT_ICONS.get(result.get("product_type"), DEFAULT_PRODUCT_ICONS["other"])
         if not ({"category", "subcategory"} & result.keys()):
             return result
         category_name = result.get("category", getattr(current, "category", None))
@@ -61,7 +72,7 @@ class ProductCatalogService:
         return result
 
     def create(self, body) -> Product:
-        product = Product(id=f"prod-{uuid.uuid4().hex[:8]}", **self.product_values(body.model_dump()))
+        product = Product(id=f"prod-{uuid.uuid4().hex[:8]}", **self.product_values(body.model_dump(), creating=True))
         assign_catalog_tenant(product, self.context)
         self.db.add(product)
         self.db.commit()

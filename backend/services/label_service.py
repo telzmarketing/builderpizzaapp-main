@@ -26,6 +26,7 @@ from backend.schemas.label import (
 )
 from backend.services.operational_payment import cash_change_amount
 from backend.services.site_config_service import SiteConfigService
+from backend.services.qr_code_service import create_qr_payload
 
 
 class LabelService:
@@ -207,12 +208,24 @@ class LabelService:
             self.db.add(version)
             self.db.flush()
             for raw in raw_volumes:
+                volume_id = self._uuid()
+                content = dict(raw["content"])
+                content["qr_payload"] = create_qr_payload(
+                    tenant_id=self.tenant_id, order_id=order.id, kind="item",
+                    version_id=version.id, volume_id=volume_id,
+                    order_item_id=raw["order_item_id"],
+                )
                 self.db.add(LabelVolume(
-                    id=self._uuid(), tenant_id=self.tenant_id, label_version_id=version.id,
+                    id=volume_id, tenant_id=self.tenant_id, label_version_id=version.id,
                     order_item_id=raw["order_item_id"], sequence=raw["sequence"],
                     total_volumes=len(raw_volumes), unit_index=raw["unit_index"],
-                    volume_index=raw["volume_index"], content_json=raw["content"],
+                    volume_index=raw["volume_index"], content_json=content,
                 ))
+            snapshot["receipt_qr_payload"] = create_qr_payload(
+                tenant_id=self.tenant_id, order_id=order.id, kind="receipt",
+                version_id=version.id,
+            )
+            version.snapshot_json = snapshot
             self._commit("LabelVersionConcurrencyConflict")
             self.db.refresh(version)
         volumes = self.db.query(LabelVolume).filter(
@@ -222,6 +235,11 @@ class LabelService:
             LabelPrintJob.tenant_id == self.tenant_id, LabelPrintJob.order_id == order.id,
             LabelPrintJob.job_type.in_(("print", "reprint")),
         ).count()
+        receipt = self._receipt(order, products, identity)
+        receipt["qr_payload"] = create_qr_payload(
+            tenant_id=self.tenant_id, order_id=order.id, kind="receipt",
+            version_id=version.id,
+        )
         return {
             "order": {"id": order.id, "order_code": order.order_code, "status": self._status(order.status),
                       "fulfillment_type": order.fulfillment_type, "customer_name": order.delivery_name, "notes": order.notes},
@@ -232,10 +250,16 @@ class LabelService:
             "template": self._template(template) if template else None,
             "volumes": [{"id": row.id, "sequence": row.sequence, "total_volumes": row.total_volumes,
                          "order_item_id": row.order_item_id, "unit_index": row.unit_index,
-                         "volume_index": row.volume_index, **row.content_json} for row in volumes],
+                         "volume_index": row.volume_index,
+                         "qr_payload": (row.content_json or {}).get("qr_payload") or create_qr_payload(
+                             tenant_id=self.tenant_id, order_id=order.id, kind="item",
+                             version_id=version.id, volume_id=row.id,
+                             order_item_id=row.order_item_id,
+                         ),
+                         **(row.content_json or {})} for row in volumes],
             "volume_count": len(volumes), "is_first_print": previous_count == 0,
             "previous_print_count": previous_count,
-            "receipt": self._receipt(order, products, identity),
+            "receipt": receipt,
         }
 
     def _receipt(self, order, products, identity):
@@ -388,6 +412,12 @@ class LabelService:
             "prepared_at": execution.prepared_at.isoformat() if execution.prepared_at else None,
             "responsible_id": execution.actor_id, "restaurant": identity,
         }
+        snapshot["qr_payload"] = create_qr_payload(
+            tenant_id=self.tenant_id,
+            order_id=execution.order_id or execution.id,
+            kind="supply",
+            version_id=execution.id,
+        )
         return {"execution": snapshot, "printer": self._printer(printer), "template": self._template(template)}
 
     def request_execution_print(self, execution_id: str, body: LabelPrintIn | LabelReprintIn, *, actor_id: str, reprint: bool):

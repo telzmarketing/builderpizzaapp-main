@@ -59,7 +59,10 @@ class KdsService:
         self.tenant_id = tenant_context.tenant_id
 
     def _order_query(self):
-        return self.db.query(Order).filter(Order.tenant_id == self.tenant_id)
+        return self.db.query(Order).filter(
+            Order.tenant_id == self.tenant_id,
+            Order.archived_at.is_(None),
+        )
 
     def _load_order(self, order_id: str, *, lock: bool = False) -> Order:
         query = self._order_query().filter(Order.id == order_id)

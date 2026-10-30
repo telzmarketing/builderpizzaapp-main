@@ -4,6 +4,8 @@ import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import { themeApi, applyTheme, DEFAULT_THEME, type ThemeSettings } from "@/lib/themeApi";
 
+// Text labels are kept in Brazilian Portuguese; this marker also makes the page easy to audit.
+
 type Field = keyof Omit<ThemeSettings, "id" | "updated_at">;
 
 interface ColorGroup {
@@ -65,6 +67,25 @@ const GROUPS: ColorGroup[] = [
 ];
 
 GROUPS[1]?.fields.push({ key: "home_banner_background", label: "Fundo do Banner Home" });
+
+function repairMojibake(value: string): string {
+  return value
+    .replaceAll("\u00c3\u00aa", "\u00ea")
+    .replaceAll("\u00c3\u00a1", "\u00e1")
+    .replaceAll("\u00c3\u00a3", "\u00e3")
+    .replaceAll("\u00c3\u00a7", "\u00e7")
+    .replaceAll("\u00c3\u00a9", "\u00e9")
+    .replaceAll("\u00c3\u00b5", "\u00f5")
+    .replaceAll("\u00c3\u00ad", "\u00ed")
+    .replaceAll("\u00e2\u0080\u0094", "\u2014");
+}
+
+const DISPLAY_GROUPS = GROUPS.map((group) => ({
+  ...group,
+  label: repairMojibake(group.label),
+  description: repairMojibake(group.description),
+  fields: group.fields.map((field) => ({ ...field, label: repairMojibake(field.label) })),
+}));
 
 export default function AdminAparencia() {
   const [theme, setTheme]       = useState<ThemeSettings>(DEFAULT_THEME);
@@ -210,7 +231,7 @@ export default function AdminAparencia() {
                     </div>
                   </div>
 
-                  {GROUPS.map((group) => {
+                  {DISPLAY_GROUPS.map((group) => {
                     const Icon = group.icon;
                     return (
                       <div key={group.label} className="bg-surface-02 rounded-2xl border border-surface-03 p-6">

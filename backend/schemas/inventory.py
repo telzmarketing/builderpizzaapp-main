@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 InventoryItemType = Literal["ingredient", "finished_good", "packaging", "supply"]
 InventoryUnitType = Literal["unit", "mass", "volume", "package"]
-InventoryPurchaseStatus = Literal["draft", "confirmed"]
+InventoryPurchaseStatus = Literal["draft", "requested", "confirmed"]
 InventoryMovementType = Literal["in", "out"]
 
 
@@ -135,6 +135,9 @@ class InventoryPurchaseOut(BaseModel):
     invoice_number: str | None = None
     expected_date: date | None = None
     notes: str | None = None
+    source: str | None = None
+    requested_at: datetime | None = None
+    requested_by_admin_id: str | None = None
     total_amount: float
     items: list[InventoryPurchaseItemOut] = []
     created_at: datetime | None = None

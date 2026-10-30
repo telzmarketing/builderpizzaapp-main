@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import relationship
 
 from backend.database import Base
 from backend.core.wave6_tenant_orm import wave6_tenant_column
@@ -166,3 +167,32 @@ class CustomerAIAnalysisJob(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+
+class CustomerCommercialMemory(Base):
+    """Durable, structured commercial observations for one tenant/customer."""
+
+    __tablename__ = "customer_commercial_memory"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "customer_id", "memory_key", name="uq_customer_commercial_memory_key"),
+    )
+
+    id = Column(String, primary_key=True)
+    tenant_id = wave6_tenant_column("customer_commercial_memory")
+    customer_id = Column(String, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
+    memory_key = Column(String(160), nullable=False)
+    memory_type = Column(String(40), nullable=False, default="preference")
+    value = Column(Text, nullable=False)
+    source = Column(String(40), nullable=False, default="crm")
+    confidence = Column(String(20), nullable=False, default="medium")
+    active = Column(Boolean, nullable=False, default=True, index=True)
+    last_observed_at = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(String(200), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    customer = relationship("Customer")

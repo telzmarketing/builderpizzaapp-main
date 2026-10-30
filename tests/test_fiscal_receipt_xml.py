@@ -8,6 +8,8 @@ VALID_NFE = b'''<?xml version="1.0" encoding="UTF-8"?>
   <NFe><infNFe Id="NFe-12345678901234567890123456789012345678901234">
     <ide><mod>55</mod><serie>7</serie><nNF>42</nNF><dhEmi>2026-10-22T10:00:00-03:00</dhEmi></ide>
     <emit><CNPJ>12345678000199</CNPJ></emit>
+    <det nItem="1"><prod><cProd>INS-1</cProd><cEAN>7890000000000</cEAN><xProd>Queijo</xProd><qCom>2.0000</qCom><uCom>KG</uCom><vUnCom>12.50</vUnCom><vProd>25.00</vProd></prod></det>
+    <total><ICMSTot><vNF>25.00</vNF></ICMSTot></total>
   </infNFe></NFe>
 </nfeProc>'''
 
@@ -20,6 +22,8 @@ def test_extracts_identity_and_hashes_original_bytes():
     assert result.number == "42"
     assert result.issuer_document == "12345678000199"
     assert len(result.content_sha256) == 64
+    assert result.lines[0]["description"] == "Queijo"
+    assert result.extracted["total_document"] == "25.00"
 
 
 @pytest.mark.parametrize(

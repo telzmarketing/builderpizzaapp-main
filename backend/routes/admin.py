@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import exists, func
 
 from backend.core.local_time import local_period_bounds, local_today, to_store_datetime
 from backend.database import get_db
@@ -49,12 +49,42 @@ WAITING_PAYMENT_STATUSES = [
 NON_EFFECTIVE_ORDER_STATUSES = [OrderStatus.cancelled, OrderStatus.refunded]
 
 
+def _revenue_query(db: Session, *, require_eligible_payment: bool = False, tenant_id: str | None = None):
+    """Build the dashboard revenue query with the canonical order boundary.
+
+    Estimated revenue keeps its existing meaning (non-cancelled orders), while
+    effective revenue additionally requires an approved or paid payment.
+    Keeping the order exclusion in this shared query prevents cancelled and
+    refunded orders from leaking into either dashboard aggregate.
+    """
+    query = db.query(func.sum(Order.total)).filter(
+        ~Order.status.in_(NON_EFFECTIVE_ORDER_STATUSES)
+    )
+    if tenant_id:
+        query = query.filter(Order.tenant_id == tenant_id)
+    if require_eligible_payment:
+        query = query.filter(
+            exists().where(
+                Payment.order_id == Order.id,
+                Payment.status.in_(PAID_PAYMENT_STATUSES),
+                Payment.tenant_id == Order.tenant_id,
+            )
+        )
+    return query
+
+
 @router.get("/dashboard")
-def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin)):
+def dashboard_stats(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    tenant_id = _panel_tenant_id(request, db, admin)
     # Only count confirmed orders (paid or beyond)
     total_orders = (
         db.query(func.count(Order.id))
         .filter(Order.status.in_(CONFIRMED_STATUSES))
+        .filter(Order.tenant_id == tenant_id)
         .scalar()
         or 0
     )
@@ -62,26 +92,21 @@ def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin))
     waiting_payment_orders = (
         db.query(func.count(Order.id))
         .filter(Order.status.in_(WAITING_PAYMENT_STATUSES))
+        .filter(Order.tenant_id == tenant_id)
         .scalar()
         or 0
     )
-    estimated_revenue = db.query(func.sum(Order.total)).scalar() or 0.0
-    effective_revenue = (
-        db.query(func.sum(Order.total))
-        .join(Payment, Payment.order_id == Order.id)
-        .filter(Payment.status.in_(PAID_PAYMENT_STATUSES))
-        .filter(~Order.status.in_(NON_EFFECTIVE_ORDER_STATUSES))
-        .scalar()
-        or 0.0
-    )
+    estimated_revenue = _revenue_query(db, tenant_id=tenant_id).scalar() or 0.0
+    effective_revenue = _revenue_query(db, require_eligible_payment=True, tenant_id=tenant_id).scalar() or 0.0
     pending_orders = (
         db.query(func.count(Order.id))
         .filter(Order.status.in_([OrderStatus.paid, OrderStatus.preparing]))
+        .filter(Order.tenant_id == tenant_id)
         .scalar()
         or 0
     )
-    total_products = db.query(func.count(Product.id)).filter(Product.active == True).scalar() or 0  # noqa: E712
-    total_customers = db.query(func.count(Customer.id)).scalar() or 0
+    total_products = db.query(func.count(Product.id)).filter(Product.active == True, Product.tenant_id == tenant_id).scalar() or 0  # noqa: E712
+    total_customers = db.query(func.count(Customer.id)).filter(Customer.tenant_id == tenant_id).scalar() or 0
 
     # Revenue by day (last 7 days)
     from datetime import timedelta
@@ -96,6 +121,7 @@ def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin))
         )
         .join(Payment, Payment.order_id == Order.id)
         .filter(Payment.status.in_(PAID_PAYMENT_STATUSES))
+        .filter(Order.tenant_id == tenant_id, Payment.tenant_id == tenant_id)
         .filter(Order.created_at >= start_dt, Order.created_at <= end_dt)
         .filter(~Order.status.in_(NON_EFFECTIVE_ORDER_STATUSES))
         .group_by(Order.id, Order.created_at, Order.total)
@@ -108,6 +134,8 @@ def dashboard_stats(db: Session = Depends(get_db), _=Depends(get_current_admin))
             Order.total.label("total"),
         )
         .filter(Order.created_at >= start_dt, Order.created_at <= end_dt)
+        .filter(Order.tenant_id == tenant_id)
+        .filter(~Order.status.in_(NON_EFFECTIVE_ORDER_STATUSES))
         .all()
     )
 

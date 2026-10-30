@@ -196,4 +196,27 @@ describe("buildPrintHtml", () => {
     expect(html).toContain("*{color:#000!important;text-shadow:none!important}");
     expect(html).not.toContain("color:#444");
   });
+
+  it("inclui o QR de pagamento oficial na nota quando o contrato fornece imagem", () => {
+    const payment = {
+      qr_code: "data:image/png;base64,QUJD",
+      pix_qr_code: null,
+      qr_code_text: "000201PIX",
+      pix_payload: null,
+    } as never;
+    const html = buildPrintHtml(deliveryOrder(), "completo", DEFAULT_PRINTER_SETTINGS, payment);
+
+    expect(html).toContain('class="receipt-qr"');
+    expect(html).toContain('alt="QR Code para pagamento"');
+    expect(html).toContain("000201PIX");
+    expect(html).not.toContain("javascript:");
+  });
+
+  it("não renderiza QR quando o valor recebido não é uma imagem segura", () => {
+    const payment = { qr_code: "javascript:alert(1)", pix_qr_code: null } as never;
+    const html = buildPrintHtml(deliveryOrder(), "entrega", DEFAULT_PRINTER_SETTINGS, payment);
+
+    expect(html).not.toContain('<section class="receipt-qr"');
+    expect(html).not.toContain("javascript:");
+  });
 });

@@ -59,6 +59,7 @@ from backend.schemas.delivery import (
     DeliveryStatusUpdate,
     DeliveryCompleteIn,
     DeliveryConfirmIn,
+    DriverItemScanIn,
     DeliveryRateIn,
     DriverDeliveryActionIn,
     DriverDeliveryProblemIn,
@@ -487,6 +488,24 @@ def driver_confirm_payment(
         person_id = _decode_driver_token(authorization)
         delivery = _driver_service(db, person_id).confirm_driver_payment(person_id, delivery_id)
         return ok(_driver_delivery_payload(delivery), "Recebimento do pagamento confirmado.")
+    except ValueError as exc:
+        return err_msg(str(exc), code="Unauthorized", status_code=401)
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/driver/deliveries/{delivery_id}/scan-item")
+def driver_scan_item(
+    delivery_id: str,
+    body: DriverItemScanIn,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Confirm one order volume by its signed label QR."""
+    try:
+        person_id = _decode_driver_token(authorization)
+        result = _driver_service(db, person_id).confirm_item_qr(person_id, delivery_id, body.payload)
+        return ok(result, "Item confirmado na retirada.")
     except ValueError as exc:
         return err_msg(str(exc), code="Unauthorized", status_code=401)
     except DomainError as exc:

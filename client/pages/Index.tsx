@@ -121,13 +121,13 @@ export default function Home() {
 
   const categoryProducts =
     activeCategory
-      ? catalogProducts.filter((p) => p.active && productMatchesHomeCategory(p, activeCategory))
+      ? catalogProducts.filter((p) => p.active && productMatchesHomeCategory(p, activeCategory, catalogCategories))
       : [];
 
   const categoryCounts = useMemo(() => (
     effectiveCategories.map<{ category: HomeCatalogCategory; count: number }>((category) => ({
       category,
-      count: catalogProducts.filter((p) => p.active && productMatchesHomeCategory(p, category)).length,
+      count: catalogProducts.filter((p) => p.active && productMatchesHomeCategory(p, category, catalogCategories)).length,
     }))
   ), [catalogProducts, effectiveCategories]);
 
@@ -176,16 +176,24 @@ export default function Home() {
     return (carouselPosition + offset + len) % len;
   };
 
-  const getIcon = (icon: string | undefined, index: number) =>
-    icon || PIZZA_FALLBACKS[index % PIZZA_FALLBACKS.length];
+  const getIcon = (icon: string | undefined, index: number, product?: typeof products[number]) => {
+    if (product?.product_type === "esfiha" && (!icon || icon === "🍕")) return "🫓";
+    if (icon) return icon;
+    const productText = [product?.name, product?.category, product?.subcategory, product?.product_type]
+      .filter(Boolean).join(" ").toLowerCase();
+    if (productText.includes("esfiha")) return "🫓";
+    if (product?.product_type === "drink") return "🥤";
+    return PIZZA_FALLBACKS[index % PIZZA_FALLBACKS.length];
+  };
 
   const renderIcon = (
     icon: string | undefined,
     index: number,
     size: "sm" | "md" | "lg" = "md",
-    options: { loading?: "eager" | "lazy"; fetchPriority?: "high" | "low" | "auto" } = {}
+    options: { loading?: "eager" | "lazy"; fetchPriority?: "high" | "low" | "auto" } = {},
+    product?: typeof products[number],
   ) => {
-    const resolved = getIcon(icon, index);
+    const resolved = getIcon(icon, index, product);
     const isImage = isAssetUrl(resolved);
     const textCls = size === "lg" ? "text-5xl pizza-spin" : "text-4xl pizza-spin";
     const dimension = size === "lg" ? 176 : size === "sm" ? 64 : 96;
@@ -253,7 +261,7 @@ export default function Home() {
                     className="w-full bg-surface-02 rounded-xl p-4 flex items-center gap-4 hover:bg-surface-03 transition-colors text-left"
                   >
                     <div className="w-12 h-12 rounded-xl bg-surface-03 flex items-center justify-center overflow-hidden flex-shrink-0">
-                      {renderIcon(product.icon, 0, "sm", { loading: "lazy", fetchPriority: "low" })}
+                      {renderIcon(product.icon, 0, "sm", { loading: "lazy", fetchPriority: "low" }, product)}
                     </div>
                     <div className="flex-1">
                       <p className="text-cream font-semibold">{product.name}</p>
@@ -466,7 +474,8 @@ export default function Home() {
                       product.icon,
                       index,
                       "lg",
-                      index === 0 ? { loading: "eager", fetchPriority: "high" } : { loading: "lazy", fetchPriority: "auto" }
+                      index === 0 ? { loading: "eager", fetchPriority: "high" } : { loading: "lazy", fetchPriority: "auto" },
+                      product,
                     )}
                   </div>
                   <BestSellerSeal show={(product as any).show_best_seller_badge} />
@@ -498,7 +507,7 @@ export default function Home() {
               {/* Previous (partially visible) */}
               <div className="w-full mt-16 opacity-35 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
-                  {renderIcon(prevPizza?.icon, getPizzaIndex(-1), "sm", { loading: "lazy", fetchPriority: "low" })}
+                  {renderIcon(prevPizza?.icon, getPizzaIndex(-1), "sm", { loading: "lazy", fetchPriority: "low" }, prevPizza)}
                 </div>
               </div>
 
@@ -513,7 +522,7 @@ export default function Home() {
                   <div className="relative w-[min(156px,42vw)] h-[min(156px,42vw)] mx-auto mb-3">
                     <CategorySeal product={currentPizza} className="left-2 top-2" compact />
                     <div className="h-full w-full rounded-full bg-surface-03 flex items-center justify-center overflow-hidden">
-                      {renderIcon(currentPizza?.icon, carouselPosition, "lg", { loading: "eager", fetchPriority: "high" })}
+                      {renderIcon(currentPizza?.icon, carouselPosition, "lg", { loading: "eager", fetchPriority: "high" }, currentPizza)}
                     </div>
                     <BestSellerSeal show={(currentPizza as any)?.show_best_seller_badge} />
                   </div>
@@ -534,7 +543,7 @@ export default function Home() {
               {/* Next (partially visible) */}
               <div className="w-full mt-16 opacity-35 pointer-events-none">
                 <div className="w-full aspect-square rounded-xl bg-surface-02 flex items-center justify-center overflow-hidden">
-                  {renderIcon(nextPizza?.icon, getPizzaIndex(1), "sm", { loading: "lazy", fetchPriority: "low" })}
+                  {renderIcon(nextPizza?.icon, getPizzaIndex(1), "sm", { loading: "lazy", fetchPriority: "low" }, nextPizza)}
                 </div>
               </div>
             </div>

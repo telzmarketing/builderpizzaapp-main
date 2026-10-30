@@ -5,6 +5,9 @@ import {
   PROMO_LABEL,
   getHomeCatalogCategories,
   productMatchesHomeCategory,
+  getHomeCatalogParentName,
+  getHomeCatalogSubcategories,
+  productMatchesHomeSubcategory,
 } from "./homeCatalog";
 
 describe("home catalog navigation", () => {
@@ -26,10 +29,10 @@ describe("home catalog navigation", () => {
       { active: true, category: "Bebidas" },
     ];
     const categories = getHomeCatalogCategories(products, []);
-    expect(categories).toEqual([ALL_PRODUCTS_CATEGORY, PROMO_LABEL, "Bebidas", "Clássicas"]);
+    expect(categories).toEqual([ALL_PRODUCTS_CATEGORY, PROMO_LABEL, "Bebidas", "Pizzas"]);
     expect(products.filter((product) => productMatchesHomeCategory(product, ALL_PRODUCTS_CATEGORY)))
       .toHaveLength(3);
-    expect(products.filter((product) => productMatchesHomeCategory(product, "classicas")))
+    expect(products.filter((product) => productMatchesHomeCategory(product, "pizzas")))
       .toEqual([products[1]]);
     expect(products.filter((product) => productMatchesHomeCategory(product, PROMO_LABEL)))
       .toEqual([products[1]]);
@@ -67,5 +70,17 @@ describe("home catalog navigation", () => {
     expect(getHomeCatalogCategories(products, [])).toEqual(["Doces", "Pizzas"]);
     expect(productMatchesHomeCategory(products[0], "Doces")).toBe(true);
     expect(productMatchesHomeCategory(products[1], "Pizzas")).toBe(true);
+  });
+
+  it("resolves parent categories and exposes subcategories separately", () => {
+    const categories = [
+      { id: "pizza", parent_id: null, name: "Pizzas", active: true, sort_order: 0 },
+      { id: "classic", parent_id: "pizza", name: "Clássicas", active: true, sort_order: 0 },
+      { id: "special", parent_id: "pizza", name: "Especiais", active: true, sort_order: 1 },
+    ] as ApiProductCategory[];
+    const products = [{ active: true, category: "Pizzas", category_id: "pizza", subcategory: "Clássicas", subcategory_id: "classic" }];
+    expect(getHomeCatalogParentName(products[0], categories)).toBe("Pizzas");
+    expect(getHomeCatalogSubcategories(products, categories, "Pizzas")).toEqual(["Clássicas", "Especiais"]);
+    expect(productMatchesHomeSubcategory(products[0], "Clássicas")).toBe(true);
   });
 });

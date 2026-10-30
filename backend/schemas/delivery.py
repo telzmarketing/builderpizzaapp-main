@@ -118,6 +118,10 @@ class DeliveryConfirmIn(BaseModel):
     code: str = Field(..., min_length=4, max_length=4)
 
 
+class DriverItemScanIn(BaseModel):
+    payload: str = Field(..., min_length=32, max_length=2048)
+
+
 class DeliveryOut(BaseModel):
     id: str
     order_id: str

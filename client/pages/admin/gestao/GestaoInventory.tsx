@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChefHat, Database, FileText, Layers3, Loader2, Package, Plus, RefreshCw, Settings, ShoppingCart, Trash2, Truck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChefHat, Database, Layers3, Loader2, Package, Plus, RefreshCw, Settings, ShoppingCart, Trash2, Truck } from "lucide-react";
 import { AdminPageTabs, type AdminPageTab } from "@/components/admin/AdminPageChrome";
 import AdminGestao from "./AdminGestao";
 import InventoryFoundationPanel from "@/components/admin/InventoryFoundationPanel";
@@ -18,7 +18,7 @@ import {
   type InventoryUnit,
 } from "@/lib/api";
 
-type Section = "settings" | "items" | "base" | "suppliers" | "purchases" | "replenishment" | "entries" | "foundation" | "documents" | "preparation";
+type Section = "settings" | "items" | "base" | "suppliers" | "purchases" | "replenishment" | "entries" | "foundation" | "preparation";
 
 const sections: AdminPageTab<Section>[] = [
   { id: "items", label: "Insumos", icon: Package },
@@ -26,9 +26,8 @@ const sections: AdminPageTab<Section>[] = [
   { id: "suppliers", label: "Fornecedores", icon: Truck },
   { id: "purchases", label: "Compras", icon: ShoppingCart },
   { id: "replenishment", label: "Reposicao", icon: AlertTriangle },
-  { id: "entries", label: "Entradas", icon: Database },
+  { id: "entries", label: "Entrada", icon: Database },
   { id: "foundation", label: "Saldos e conversoes", icon: Layers3 },
-  { id: "documents", label: "NF-e recebidas", icon: FileText },
   { id: "preparation", label: "Preparo", icon: ChefHat },
   { id: "settings", label: "Configuracoes", icon: Settings },
 ];
@@ -62,7 +61,7 @@ export default function GestaoInventory() {
       showSettings={section === "settings"}
       moduleTabs={<AdminPageTabs<Section> tabs={sections} active={section} onChange={setSection} />}
     >
-      {section === "foundation" ? <InventoryFoundationPanel /> : section === "documents" ? <InventoryReceiptDocumentsPanel /> : section === "preparation" ? <PreparationOperationsPanel /> : section !== "settings" && <InventoryBase section={section} />}
+      {section === "foundation" ? <InventoryFoundationPanel /> : section === "preparation" ? <PreparationOperationsPanel /> : section !== "settings" && <InventoryBase section={section} />}
     </AdminGestao>
   );
 }
@@ -128,7 +127,7 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings" | "fo
           {section === "base" && <BaseSection data={data} saving={saving} run={run} />}
           {section === "suppliers" && <SuppliersSection data={data} saving={saving} run={run} />}
           {section === "purchases" && <PurchasesSection data={data} saving={saving} run={run} />}
-          {section === "replenishment" && <ReplenishmentSection data={data} />}
+          {section === "replenishment" && <ReplenishmentSection data={data} saving={saving} onCreatePurchase={() => run(() => inventoryApi.createReplenishmentRequest(), "Solicitação de compras gerada. Nenhum saldo foi alterado.")} />}
           {section === "entries" && <EntriesSection data={data} saving={saving} run={run} />}
         </>
       )}
@@ -139,7 +138,7 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings" | "fo
   );
 }
 
-function ReplenishmentSection({ data }: { data: InventoryOverview }) {
+function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: InventoryOverview; saving: boolean; onCreatePurchase: () => Promise<void> }) {
   const needs = useMemo(
     () => data.items
       .filter((item) => item.active && item.current_stock !== undefined && item.current_stock < item.min_stock)
@@ -148,13 +147,16 @@ function ReplenishmentSection({ data }: { data: InventoryOverview }) {
     [data.items],
   );
 
+  const latestCostFor = (itemId: string) => data.purchases
+    .flatMap((purchase) => purchase.items)
+    .filter((line) => line.item_id === itemId)
+    .sort((a, b) => (b.total_cost ?? b.quantity * b.unit_cost) - (a.total_cost ?? a.quantity * a.unit_cost))[0]?.unit_cost ?? 0;
+
   const estimated = needs.reduce((total, item) => {
-    const latestCost = data.purchases
-      .flatMap((purchase) => purchase.items)
-      .filter((line) => line.item_id === item.id)
-      .sort((a, b) => (b.total_cost ?? b.quantity * b.unit_cost) - (a.total_cost ?? a.quantity * a.unit_cost))[0]?.unit_cost ?? 0;
-    return total + item.shortage * latestCost;
+    return total + item.shortage * latestCostFor(item.id);
   }, 0);
+
+  const requestPurchase = () => onCreatePurchase();
 
   return (
     <div className="space-y-4">
@@ -167,6 +169,15 @@ function ReplenishmentSection({ data }: { data: InventoryOverview }) {
           <p className="text-xs font-bold uppercase tracking-wide text-stone">Estimativa com ultimo custo</p>
           <p className="mt-1 text-2xl font-black text-cream">{currency(estimated)}</p>
         </div>
+      </div>
+      <div className="flex flex-col gap-3 rounded-lg border border-gold/25 bg-gold/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="font-black text-cream">Solicitação de compras</p>
+          <p className="mt-1 text-xs text-stone">Cria um rascunho com todos os itens abaixo do mínimo. O estoque não é alterado.</p>
+        </div>
+        <button type="button" disabled={saving || !needs.length} onClick={() => void requestPurchase()} className={buttonClass}>
+          {saving ? <Loader2 size={15} className="animate-spin" /> : <ShoppingCart size={15} />} Gerar solicitação
+        </button>
       </div>
       <div className="overflow-hidden rounded-lg border border-surface-03">
         <TableHeader columns={["Insumo", "Estoque atual", "Minimo", "Necessidade", "Unidade"]} />
@@ -181,7 +192,7 @@ function ReplenishmentSection({ data }: { data: InventoryOverview }) {
         ))}
         {!needs.length && <EmptyRow text="Nenhum item abaixo do estoque minimo." />}
       </div>
-      <p className="text-xs text-stone">A necessidade e calculada a partir do estoque atual e do minimo cadastrado. A compra precisa ser criada e confirmada na aba Compras.</p>
+      <p className="text-xs text-stone">A necessidade é calculada a partir do estoque atual e do mínimo cadastrado. O custo unitário usa o último custo disponível; quando ausente, fica em zero para revisão na aba Compras.</p>
     </div>
   );
 }
@@ -579,6 +590,9 @@ function EntriesSection({
           </div>
         ))}
         {!data.manual_entries.length && <EmptyRow text="Nenhuma entrada manual registrada." />}
+      </div>
+      <div className="xl:col-span-2 border-t border-surface-03 pt-5">
+        <InventoryReceiptDocumentsPanel />
       </div>
     </div>
   );

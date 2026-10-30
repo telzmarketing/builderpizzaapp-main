@@ -8,7 +8,8 @@ import {
   RefreshCw,
   Sparkles,
 } from "lucide-react";
-import TelzLogo from "@/components/TelzLogo";
+import KdsBrandLogo from "@/components/kds/KdsBrandLogo";
+import BiMobilePwaInstall from "@/components/bi/BiMobilePwaInstall";
 import {
   Dialog,
   DialogContent,
@@ -471,15 +472,22 @@ export default function BiMobile() {
     <main className="min-h-screen bg-surface-01 px-2.5 py-3 text-cream">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 pb-8">
         <header className="rounded-xl border border-surface-03 bg-surface-02 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <TelzLogo className="h-11 shrink-0 text-[32px] text-gold" />
-            <div className="min-w-0 text-right">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <KdsBrandLogo
+              fallback={<span className="max-w-[9rem] truncate text-lg font-black tracking-tight text-gold">BI Mobile</span>}
+              className="h-11 max-w-[9rem] shrink-0 object-contain sm:max-w-[13rem]"
+            />
+            <div className="min-w-0 flex-1 text-right">
               <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gold">
                 Business Intelligence
               </p>
               <h1 className="mt-1 text-xl font-black">BI Mobile</h1>
               <p className="text-xs text-stone">Operação em tempo real</p>
             </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-surface-03 pt-3">
+            <p className="text-[11px] text-stone">Resumo operacional responsivo</p>
+            <BiMobilePwaInstall />
           </div>
         </header>
         <section className="rounded-xl border border-surface-03 bg-surface-02 p-3">

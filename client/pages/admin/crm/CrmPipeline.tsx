@@ -274,12 +274,12 @@ export default function CrmPipeline() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-surface-00 overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col bg-surface-00 md:flex-row">
       <AdminSidebar />
-      <main className="flex-1 overflow-hidden flex flex-col">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
 
         {/* Header */}
-        <div className="p-6 pb-3 flex-shrink-0 flex items-center justify-between gap-4">
+        <div className="sticky top-0 z-20 flex flex-shrink-0 items-center justify-between gap-4 bg-surface-00 p-6 pb-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-gold mb-1">CRM</p>
             <h1 className="text-2xl font-bold text-cream">Pipeline</h1>
@@ -335,8 +335,8 @@ export default function CrmPipeline() {
 
         {/* Kanban board */}
         {!loading && !error && activePipeline && (
-          <div className="flex-1 overflow-x-auto p-6">
-            <div className="flex gap-4" style={{ minWidth: `${stages.length * 280 + 60}px` }}>
+          <div className="min-h-0 flex-1 overflow-auto p-6">
+            <div className="flex min-h-full w-max gap-4" style={{ minWidth: `${stages.length * 280 + 60}px` }}>
               {stages.map((stage, si) => {
                 const stageCards = cards.filter(c => c.stage_id === stage.id);
                 const borderCls = COLOR_BORDER[stage.color] ?? "border-t-gold";
@@ -354,7 +354,7 @@ export default function CrmPipeline() {
                         <Plus size={16} />
                       </button>
                     </div>
-                    <div className="flex-1 bg-surface-02/50 border-x border-b border-surface-03 rounded-b-2xl p-2 space-y-2 overflow-y-auto min-h-[200px]">
+                    <div className="min-h-[200px] max-h-[calc(100dvh-18rem)] flex-1 overflow-y-auto overscroll-contain rounded-b-2xl border-x border-b border-surface-03 bg-surface-02/50 p-2 space-y-2">
                       {stageCards.map(card => (
                         <div key={card.id} draggable onDragStart={() => handleDragStart(card.id)}
                           onClick={() => openCard(card)}

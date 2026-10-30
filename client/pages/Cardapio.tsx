@@ -3,19 +3,19 @@ import { useNavigate } from "react-router-dom";
 import { ChevronLeft, Search, Plus, Check } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { categoriesApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl, type ApiProductCategory } from "@/lib/api";
-import { sortCategoryNamesByCatalogOrder } from "@/lib/catalogOrdering";
 import { trackEvent } from "@/lib/tracking";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import CategorySeal from "@/components/CategorySeal";
 import BestSellerSeal from "@/components/BestSellerSeal";
-import { ALL_PRODUCTS_CATEGORY, getHomeCatalogCategories, productMatchesHomeCategory, type HomeCatalogCategory } from "@/lib/homeCatalog";
+import { ALL_PRODUCTS_CATEGORY, getHomeCatalogCategories, getHomeCatalogSubcategories, productMatchesHomeCategory, productMatchesHomeSubcategory, type HomeCatalogCategory } from "@/lib/homeCatalog";
 
 export default function Cardapio() {
   const navigate = useNavigate();
   const { products, productsLoaded, productsError, retryProducts, addToCart } = useApp();
   const PROMO_LABEL = "Promoções";
   const [activeCategory, setActiveCategory] = useState<HomeCatalogCategory>("");
+  const [activeSubcategory, setActiveSubcategory] = useState("");
   const [search, setSearch] = useState("");
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
@@ -26,17 +26,6 @@ export default function Cardapio() {
       .catch(() => setCatalogCategories([]));
   }, []);
 
-  // Categories derived from backend products (source of truth)
-  const productCats = useMemo(() => {
-    const categoryNames = [...new Set(
-      products.filter(p => p.active && (p.subcategory || p.category)).map(p => (p.subcategory || p.category) as string)
-    )];
-    return sortCategoryNamesByCatalogOrder(categoryNames, catalogCategories);
-  }, [products, catalogCategories]);
-  const hasPromos = useMemo(
-    () => products.some(p => p.active && p.promotion_applied),
-    [products]
-  );
   const effectiveCategories = useMemo(
     () => getHomeCatalogCategories(products, catalogCategories),
     [products, catalogCategories]
@@ -55,13 +44,23 @@ export default function Cardapio() {
     }
   }, [activeCategory, effectiveCategories]);
 
+  useEffect(() => {
+    setActiveSubcategory("");
+  }, [activeCategory]);
+
+  const subcategories = useMemo(
+    () => typeof activeCategory === "string" && activeCategory !== PROMO_LABEL
+      ? getHomeCatalogSubcategories(products, catalogCategories, activeCategory)
+      : [],
+    [activeCategory, catalogCategories, products]
+  );
+
   const filtered = products.filter((p) => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
       (p.description ?? "").toLowerCase().includes(search.toLowerCase());
-    const matchCat =
-      activeCategory !== "" &&
-      productMatchesHomeCategory(p, activeCategory);
-    return matchSearch && matchCat && p.active;
+    const matchCat = activeCategory !== "" && productMatchesHomeCategory(p, activeCategory, catalogCategories);
+    const matchSubcategory = !activeSubcategory || productMatchesHomeSubcategory(p, activeSubcategory);
+    return matchSearch && matchCat && matchSubcategory && p.active;
   });
   const isCatalogLoading = !productsLoaded && products.length === 0;
 
@@ -134,12 +133,12 @@ export default function Cardapio() {
       </div>
 
       {/* Category Pills */}
-      <div className="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-hide max-w-2xl mx-auto">
+      <div className="flex gap-1.5 px-4 py-2 overflow-x-auto scrollbar-hide max-w-2xl mx-auto">
         {effectiveCategories.map((cat) => (
           <button
             key={cat === ALL_PRODUCTS_CATEGORY ? "all" : cat}
             onClick={() => setActiveCategory(cat)}
-            className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+            className={`px-2.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${
               activeCategory === cat
                 ? "bg-gold text-cream shadow-lg shadow-gold/30"
                 : "bg-surface-02 text-parchment hover:bg-surface-03 border border-surface-03"
@@ -149,6 +148,32 @@ export default function Cardapio() {
           </button>
         ))}
       </div>
+
+      {subcategories.length > 0 && (
+        <div className="flex gap-1.5 px-4 pb-3 overflow-x-auto scrollbar-hide max-w-2xl mx-auto" aria-label={`Subcategorias de ${String(activeCategory)}`}>
+          <button
+            type="button"
+            onClick={() => setActiveSubcategory("")}
+            className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+              !activeSubcategory ? "border-gold/60 bg-gold/15 text-gold" : "border-surface-03 bg-surface-02 text-stone"
+            }`}
+          >
+            Todas
+          </button>
+          {subcategories.map((subcategory) => (
+            <button
+              type="button"
+              key={subcategory}
+              onClick={() => setActiveSubcategory(subcategory)}
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                activeSubcategory === subcategory ? "border-gold/60 bg-gold/15 text-gold" : "border-surface-03 bg-surface-02 text-stone"
+              }`}
+            >
+              {subcategory}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Products Grid */}
       <div className="px-4 pb-32 max-w-2xl mx-auto w-full">
@@ -197,7 +222,7 @@ export default function Cardapio() {
                         />
                       ) : (
                         <span className="relative z-[1] text-5xl scale-[1.10] inline-block">
-                          {product.icon || "🍕"}
+                          {(product.product_type === "esfiha" && (!product.icon || product.icon === "🍕")) ? "🫓" : product.icon || (product.name.toLowerCase().includes("esfiha") || product.category?.toLowerCase().includes("esfiha") || product.subcategory?.toLowerCase().includes("esfiha") ? "🫓" : product.product_type === "drink" ? "🥤" : "🍕")}
                         </span>
                       )}
                     </div>

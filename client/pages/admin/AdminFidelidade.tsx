@@ -12,7 +12,7 @@ import {
   ApiCustomerLoyalty, ApiLoyaltySettings,
 } from "@/lib/api";
 
-// ── Color palette (keep class names literal for Tailwind JIT) ────────────────
+// â”€â”€ Color palette (keep class names literal for Tailwind JIT) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const colorPalette: Record<string, { label: string; preview: string; text: string }> = {
   orange: { label: "Laranja", preview: "bg-orange-400",  text: "text-orange-400" },
   gray:   { label: "Prata",   preview: "bg-slate-300",   text: "text-parchment" },
@@ -48,7 +48,7 @@ export default function AdminFidelidade() {
   // Level form
   const [showLevelForm, setShowLevelForm] = useState(false);
   const [editingLevelId, setEditingLevelId] = useState<string | null>(null);
-  const [levelForm, setLevelForm] = useState({ name: "", min_points: 0, max_points: "", icon: "🥉", color: "orange" });
+  const [levelForm, setLevelForm] = useState({ name: "", min_points: 0, max_points: "", icon: "ðŸ¥‰", color: "orange" });
 
   // Benefit form
   const [showBenefitForm, setShowBenefitForm] = useState(false);
@@ -65,7 +65,7 @@ export default function AdminFidelidade() {
 
   // Reward form
   const [showRewardForm, setShowRewardForm] = useState(false);
-  const [rewardForm, setRewardForm] = useState({ label: "", points_required: 100, icon: "🎁", active: true });
+  const [rewardForm, setRewardForm] = useState({ label: "", points_required: 100, icon: "ðŸŽ", active: true });
 
   useEffect(() => { loadAll(); }, []);
   useEffect(() => {
@@ -117,7 +117,7 @@ export default function AdminFidelidade() {
     setTimeout(() => setSuccess(""), 3000);
   }
 
-  // ── Level CRUD ────────────────────────────────────────────────────────────────
+  // â”€â”€ Level CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async function saveLevel(e: React.FormEvent) {
     e.preventDefault();
@@ -139,7 +139,7 @@ export default function AdminFidelidade() {
       }
       setShowLevelForm(false);
       setEditingLevelId(null);
-      setLevelForm({ name: "", min_points: 0, max_points: "", icon: "🥉", color: "orange" });
+      setLevelForm({ name: "", min_points: 0, max_points: "", icon: "ðŸ¥‰", color: "orange" });
       flash("Nível salvo!");
     } catch (e: unknown) { setError(e instanceof Error ? e.message : "Erro ao salvar."); }
     finally { setSaving(false); }
@@ -158,7 +158,7 @@ export default function AdminFidelidade() {
     setShowLevelForm(true);
   }
 
-  // ── Benefit CRUD ──────────────────────────────────────────────────────────────
+  // â”€â”€ Benefit CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async function saveBenefit(e: React.FormEvent) {
     e.preventDefault();
@@ -196,7 +196,7 @@ export default function AdminFidelidade() {
     setShowBenefitForm(true);
   }
 
-  // ── Reward CRUD ───────────────────────────────────────────────────────────────
+  // â”€â”€ Reward CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async function saveReward(e: React.FormEvent) {
     e.preventDefault();
@@ -205,13 +205,13 @@ export default function AdminFidelidade() {
       const created = await loyaltyApi.createReward(rewardForm);
       setRewards([...rewards, created]);
       setShowRewardForm(false);
-      setRewardForm({ label: "", points_required: 100, icon: "🎁", active: true });
+      setRewardForm({ label: "", points_required: 100, icon: "ðŸŽ", active: true });
       flash("Recompensa criada!");
     } catch (e: unknown) { setError(e instanceof Error ? e.message : "Erro."); }
     finally { setSaving(false); }
   }
 
-  // ── Point adjustment ──────────────────────────────────────────────────────────
+  // â”€â”€ Point adjustment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async function adjustPoints(e: React.FormEvent) {
     e.preventDefault();
@@ -233,7 +233,7 @@ export default function AdminFidelidade() {
     loadCustomers();
   }
 
-  const levelName = (id: string | null) => levels.find(l => l.id === id)?.name ?? "—";
+  const levelName = (id: string | null) => levels.find(l => l.id === id)?.name ?? "â€”";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-01 to-surface-00">
@@ -246,7 +246,7 @@ export default function AdminFidelidade() {
             <div className="flex items-center gap-3">
               <Trophy size={22} className="text-gold" />
               <div>
-                <h2 className="text-xl font-bold text-cream">Fidelidade — Retention Engine Pro</h2>
+                <h2 className="text-xl font-bold text-cream">Fidelidade â€” Retention Engine Pro</h2>
                 <p className="text-stone text-xs">Níveis, benefícios, ciclos mensais e clientes</p>
               </div>
             </div>
@@ -380,13 +380,13 @@ export default function AdminFidelidade() {
                   </div>
                 )}
 
-                {/* ── Levels Tab ─────────────────────────────────────────── */}
+                {/* â”€â”€ Levels Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                 {tab === "levels" && (
                   <div className="max-w-4xl space-y-4">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                       <h3 className="text-cream font-semibold">Níveis de Fidelidade</h3>
                       <button
-                        onClick={() => { setShowLevelForm(true); setEditingLevelId(null); setLevelForm({ name: "", min_points: 0, max_points: "", icon: "🥉", color: "orange" }); }}
+                        onClick={() => { setShowLevelForm(true); setEditingLevelId(null); setLevelForm({ name: "", min_points: 0, max_points: "", icon: "ðŸ¥‰", color: "orange" }); }}
                         className="flex items-center gap-2 px-4 py-2 bg-gold text-cream rounded-lg text-sm font-medium hover:bg-gold/90"
                       >
                         <Plus size={15} /> Novo Nível
@@ -448,7 +448,7 @@ export default function AdminFidelidade() {
                               <span className="text-2xl">{level.icon}</span>
                               <div className="flex-1">
                                 <p className={`font-bold ${cp.text}`}>{level.name}</p>
-                                <p className="text-stone text-xs">{level.min_points} — {level.max_points ?? "∞"} pts</p>
+                                <p className="text-stone text-xs">{level.min_points} â€” {level.max_points ?? "âˆž"} pts</p>
                               </div>
                               <div className="flex gap-1">
                                 <button onClick={() => editLevel(level)} className="p-2 text-stone hover:text-gold rounded-lg hover:bg-surface-03">
@@ -516,7 +516,7 @@ export default function AdminFidelidade() {
                   </div>
                 )}
 
-                {/* ── Benefits Tab ───────────────────────────────────────── */}
+                {/* â”€â”€ Benefits Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                 {tab === "benefits" && (
                   <div className="max-w-5xl space-y-4">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
@@ -627,7 +627,7 @@ export default function AdminFidelidade() {
                   </div>
                 )}
 
-                {/* ── Customers Tab ──────────────────────────────────────── */}
+                {/* â”€â”€ Customers Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                 {tab === "customers" && (
                   <div className="max-w-5xl space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
@@ -651,7 +651,7 @@ export default function AdminFidelidade() {
                               onClick={() => setExpandedCustomer(isExpanded ? null : c.customer_id)}
                               className="w-full flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-5 py-4 hover:bg-surface-03/30 transition-colors text-left"
                             >
-                              <span className="text-xl">{c.level?.icon ?? "—"}</span>
+                              <span className="text-xl">{c.level?.icon ?? "â€”"}</span>
                               <div className="flex-1 min-w-0">
                                 <p className="text-cream text-sm font-medium">{c.customer_id}</p>
                                 <p className="text-stone text-xs">{levelName(c.level?.id ?? null)}</p>
@@ -668,7 +668,7 @@ export default function AdminFidelidade() {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                                   <Stat label="Rollover" value={`${c.rollover_points} pts`} />
                                   <Stat label="Ciclo início" value={c.cycle_start_date ? new Date(c.cycle_start_date).toLocaleDateString("pt-BR") : "—"} />
-                                  <Stat label="Ciclo fim" value={c.cycle_end_date ? new Date(c.cycle_end_date).toLocaleDateString("pt-BR") : "—"} />
+                                  <Stat label="Ciclo fim" value={c.cycle_end_date ? new Date(c.cycle_end_date).toLocaleDateString("pt-BR") : "â€”"} />
                                   <Stat label="Última atividade" value={c.last_activity_at ? new Date(c.last_activity_at).toLocaleDateString("pt-BR") : "—"} />
                                 </div>
                                 <div className="flex flex-col sm:flex-row gap-2">
@@ -714,7 +714,7 @@ export default function AdminFidelidade() {
                   </div>
                 )}
 
-                {/* ── Points Tab ─────────────────────────────────────────── */}
+                {/* â”€â”€ Points Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                 {tab === "points" && (
                   <div className="max-w-xl space-y-4">
                     <h3 className="text-cream font-semibold">Ajuste Manual de Pontos</h3>

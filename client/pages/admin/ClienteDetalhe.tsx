@@ -21,6 +21,7 @@ import {
   ApiCustomerEvent,
   ApiCustomerSummary,
   ApiCustomerTag,
+  ApiCustomerCommercialMemory,
 } from "@/lib/api";
 
 type Tab = "overview" | "orders" | "timeline" | "behavior";
@@ -238,6 +239,8 @@ export default function ClienteDetalhe() {
   const [summary, setSummary] = useState<ApiCustomerSummary | null>(null);
   const [aiProfile, setAiProfile] = useState<ApiCustomerAIProfile | null>(null);
   const [aiSuggestions, setAiSuggestions] = useState<ApiCustomerAISuggestion[]>([]);
+  const [commercialMemory, setCommercialMemory] = useState<ApiCustomerCommercialMemory[]>([]);
+  const [memoryDraft, setMemoryDraft] = useState({ memory_key: "", value: "", memory_type: "preference" as ApiCustomerCommercialMemory["memory_type"] });
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [allTags, setAllTags] = useState<ApiCustomerTag[]>([]);
@@ -262,11 +265,12 @@ export default function ClienteDetalhe() {
       customersApi.getSummary(id),
       customersApi.getAIProfile(id),
       customersApi.getAISuggestions(id),
+      customersApi.listCommercialMemory(id),
       crmApi.listTags(),
       crmApi.listCustomerTags(id),
       crmApi.listGroups(),
       crmApi.listCustomerGroups(id),
-    ]).then(([c, o, e, s, profile, suggestions, tags, assignedTags, groups, assignedGroups]) => {
+    ]).then(([c, o, e, s, profile, suggestions, memory, tags, assignedTags, groups, assignedGroups]) => {
       if (c.status === "fulfilled") setCustomer(c.value as ApiCustomer);
       else setError("Não foi possível carregar o cliente.");
       if (o.status === "fulfilled") setOrders(o.value as ApiCustomerOrder[]);
@@ -274,6 +278,7 @@ export default function ClienteDetalhe() {
       if (s.status === "fulfilled") setSummary(s.value as ApiCustomerSummary);
       if (profile.status === "fulfilled") setAiProfile(profile.value as ApiCustomerAIProfile | null);
       if (suggestions.status === "fulfilled") setAiSuggestions(suggestions.value as ApiCustomerAISuggestion[]);
+      if (memory.status === "fulfilled") setCommercialMemory(memory.value as ApiCustomerCommercialMemory[]);
       if (profile.status === "rejected" || suggestions.status === "rejected") setAiError("Não foi possível carregar a inteligência do cliente.");
       if (tags.status === "fulfilled") setAllTags(tags.value as ApiCustomerTag[]);
       if (assignedTags.status === "fulfilled") setCustomerTags(assignedTags.value as ApiCustomerTag[]);
@@ -284,6 +289,40 @@ export default function ClienteDetalhe() {
       }
     }).finally(() => setLoading(false));
   }, [id]);
+
+  async function saveCommercialMemory() {
+    if (!id || !memoryDraft.memory_key.trim() || !memoryDraft.value.trim()) return;
+    setCrmBusy(true);
+    setCrmError(null);
+    try {
+      const saved = await customersApi.saveCommercialMemory(id, {
+        memory_key: memoryDraft.memory_key,
+        memory_type: memoryDraft.memory_type,
+        value: memoryDraft.value,
+        source: "crm",
+        confidence: "medium",
+      });
+      setCommercialMemory((current) => [saved, ...current.filter((item) => item.memory_key !== saved.memory_key)]);
+      setMemoryDraft({ memory_key: "", value: "", memory_type: "preference" });
+    } catch (err) {
+      setCrmError(err instanceof Error ? err.message : "Não foi possível salvar a memória comercial.");
+    } finally {
+      setCrmBusy(false);
+    }
+  }
+
+  async function deactivateCommercialMemory(memoryId: string) {
+    if (!id) return;
+    setCrmBusy(true);
+    try {
+      await customersApi.deactivateCommercialMemory(id, memoryId);
+      setCommercialMemory((current) => current.filter((item) => item.id !== memoryId));
+    } catch (err) {
+      setCrmError(err instanceof Error ? err.message : "Não foi possível desativar a memória comercial.");
+    } finally {
+      setCrmBusy(false);
+    }
+  }
 
   async function refreshAISuggestions() {
     if (!id) return;
@@ -678,12 +717,33 @@ export default function ClienteDetalhe() {
               <div className="flex items-center gap-2">
                 <Brain size={18} className="text-gold" />
                 <div>
-                  <h3 className="text-parchment font-medium">Perfil Inteligente do Cliente</h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-parchment font-medium">Memória Comercial do Cliente</h3>
+                    <span className="rounded-full border border-gold/25 bg-gold/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gold">
+                      Somente CRM
+                    </span>
+                  </div>
                   <p className="text-stone/50 text-xs">
                     {aiProfile?.generated_at
                       ? `Última análise: ${new Date(aiProfile.generated_at).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`
                       : "Cliente ainda não analisado"}
                   </p>
+                  <p className="text-stone/50 text-xs mt-1">
+                    Preferências, histórico, risco e próxima ação para uso operacional do CRM. Não é exposta à IA de atendimento.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {commercialMemory.map((memory) => (
+                      <span key={memory.id} className="inline-flex items-center gap-2 rounded-full border border-surface-03 bg-surface-01 px-2.5 py-1 text-xs text-parchment">
+                        <span className="text-gold">{memory.memory_key}</span>: {memory.value}
+                        <button type="button" onClick={() => void deactivateCommercialMemory(memory.id)} disabled={crmBusy} className="text-stone/50 hover:text-red-300" aria-label={`Desativar memória ${memory.memory_key}`}><XCircle size={12} /></button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                    <input value={memoryDraft.memory_key} onChange={(event) => setMemoryDraft((current) => ({ ...current, memory_key: event.target.value }))} placeholder="Chave (ex.: sabor_preferido)" className="rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-xs text-parchment outline-none focus:border-gold/60" />
+                    <input value={memoryDraft.value} onChange={(event) => setMemoryDraft((current) => ({ ...current, value: event.target.value }))} placeholder="Valor observado" className="rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-xs text-parchment outline-none focus:border-gold/60" />
+                    <button type="button" onClick={() => void saveCommercialMemory()} disabled={crmBusy || !memoryDraft.memory_key.trim() || !memoryDraft.value.trim()} className="rounded-lg border border-gold/40 px-3 py-2 text-xs font-semibold text-gold hover:bg-gold/10 disabled:opacity-50">Salvar memória</button>
+                  </div>
                 </div>
               </div>
               <button

@@ -14,9 +14,6 @@ import { firePixelEvent, trackEvent, getTrackingData } from "@/lib/tracking";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const isCatupiryCrust = (name?: string | null) =>
-  (name || "").trim().toLowerCase().includes("catupiry");
-
 const DIVISION_OPTIONS: { value: FlavorDivision; label: string; emoji: string }[] = [
   { value: 1, label: "Inteira", emoji: "🍕" },
   { value: 2, label: "Meio a Meio", emoji: "½" },
@@ -491,8 +488,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
         if (cancelled) return;
         const activeCrusts = crusts.filter((c) => c.active);
         setProductCrusts(activeCrusts);
-        const firstRegular = activeCrusts.find((c) => !isCatupiryCrust(c.name));
-        setSelectedCrust(firstRegular ?? activeCrusts[0] ?? null);
+        setSelectedCrust(activeCrusts[0] ?? null);
         setSelectedBorder(null);
       }).catch(() => { if (!cancelled) setOptionsError("Nao foi possivel carregar as massas e bordas."); }) : Promise.resolve();
     Promise.all([sizesRequest, crustRequest]).finally(() => { if (!cancelled) setOptionsLoading(false); });
@@ -508,9 +504,10 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
   const showBorderOptions = categoryCapabilities?.enable_border ?? (isPizza && product?.show_crust_options !== false);
   const showPromotions = categoryCapabilities?.enable_promotions !== false;
 
-  // Separar crusts regulares de bordas (catupiry)
-  const regularCrusts = productCrusts.filter((c) => !isCatupiryCrust(c.name));
-  const borderCrusts = productCrusts.filter((c) => isCatupiryCrust(c.name));
+  // A API oficial usa o mesmo recurso para massas e bordas. A UI mantém as
+  // opções independentes e evita oferecer a mesma opção simultaneamente.
+  const regularCrusts = productCrusts;
+  const borderCrusts = productCrusts.filter((c) => c.id !== selectedCrust?.id);
   const borderAvailable = showBorderOptions && borderCrusts.length > 0 && !isNapolitanaCrust(selectedCrust?.name);
 
   const selectedOptionSelections = useMemo<CartItemOptionSelection[]>(() => optionGroups.flatMap((group) => {
@@ -574,7 +571,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
 
   useEffect(() => {
     if (!isNapolitanaCrustBlocked(selectedCrust?.name, effectiveDivision)) return;
-    setSelectedCrust(regularCrusts.find((crust) => !isNapolitanaCrust(crust.name)) ?? null);
+    setSelectedCrust(regularCrusts.find((crust) => !isNapolitanaCrust(crust.name)) ?? regularCrusts[0] ?? null);
     setSelectedBorder(null);
   }, [effectiveDivision, productCrusts, selectedCrust?.id]);
 
@@ -688,7 +685,7 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
     if (d > PUBLIC_MAX_FLAVORS) return;
     if (isPizzaBrotoSelected && d > 1) return;
     if (isNapolitanaCrustBlocked(selectedCrust?.name, d)) {
-      setSelectedCrust(regularCrusts.find((crust) => !isNapolitanaCrust(crust.name)) ?? null);
+      setSelectedCrust(regularCrusts.find((crust) => !isNapolitanaCrust(crust.name)) ?? regularCrusts[0] ?? null);
       setSelectedBorder(null);
     }
     setDivision(d);
@@ -930,7 +927,10 @@ export default function Product({ productId, catalog, embedded = false, onBack, 
                   <button
                     key={crust.id}
                     onClick={() => {
-                      if (!blockedByFlavorDivision) setSelectedCrust(crust);
+                      if (!blockedByFlavorDivision) {
+                        setSelectedCrust(crust);
+                        setSelectedBorder(null);
+                      }
                     }}
                     disabled={blockedByFlavorDivision}
                     className={`flex-1 min-w-[80px] py-3 px-2 rounded-xl text-sm font-bold transition-all ${

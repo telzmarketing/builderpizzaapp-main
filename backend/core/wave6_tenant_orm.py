@@ -14,7 +14,7 @@ from sqlalchemy.sql.schema import Table
 
 
 WAVE6_TABLES = frozenset({
-    "customer_ai_profiles", "customer_ai_suggestions", "customer_ai_analysis_jobs",
+    "customer_ai_profiles", "customer_ai_suggestions", "customer_ai_analysis_jobs", "customer_commercial_memory",
     "crm_pipelines", "crm_stages", "crm_cards", "crm_tasks", "customer_groups",
     "customer_timeline", "crm_card_notes", "crm_card_history", "marketing_campaigns",
     "visitor_profiles", "visitor_sessions", "visitor_events", "tracking_links",
@@ -50,6 +50,7 @@ _TENANT_FILTER_RE = re.compile(r"\btenant_id\b", re.IGNORECASE)
 
 SCOPED_UNIQUES = {
     "customer_ai_profiles": ("uq_mt_customer_ai_profile_customer", ("tenant_id", "customer_id"), None),
+    "customer_commercial_memory": ("uq_mt_customer_commercial_memory_key", ("tenant_id", "customer_id", "memory_key"), None),
     "customer_ai_suggestions": ("uq_mt_customer_ai_suggestion_status", ("tenant_id", "customer_id", "suggestion_type", "slug", "status"), None),
     "visitor_profiles": ("uq_mt_visitor_profile_fingerprint", ("tenant_id", "fingerprint"), "fingerprint IS NOT NULL"),
     "integration_connections": ("uq_mt_integration_connection_type", ("tenant_id", "integration_type"), None),

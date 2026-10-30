@@ -26,6 +26,7 @@ class Order(Base):
     __tablename__ = "orders"
     __table_args__ = (
         Index("ix_orders_tenant_created_at", "tenant_id", "created_at"),
+        Index("ix_orders_tenant_archived_at", "tenant_id", "archived_at"),
         Index("uq_orders_tenant_id_id", "tenant_id", "id", unique=True),
         Index("uq_orders_tenant_order_code", "tenant_id", "order_code", unique=True,
               postgresql_where=text("order_code IS NOT NULL")),
@@ -95,6 +96,11 @@ class Order(Base):
     cancelled_by             = Column(String(50), nullable=True)   # "customer" | "admin" | "system"
     cancellation_reason      = Column(Text, nullable=True)
     cancelled_at             = Column(DateTime(timezone=True), nullable=True)
+
+    # Operational removal is an archive, never a physical deletion.
+    archived_at              = Column(DateTime(timezone=True), nullable=True)
+    archived_by              = Column(String(100), nullable=True)
+    archive_reason           = Column(Text, nullable=True)
 
     paid_at                  = Column(DateTime(timezone=True), nullable=True)
     preparation_started_at   = Column(DateTime(timezone=True), nullable=True)

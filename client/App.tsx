@@ -8,6 +8,7 @@ import { startStorefrontPresence } from "./lib/storefrontPresence";
 import { customerEventsApi, runtimeSurfaceApi } from "./lib/api";
 import { getPublicExperience, isSalaoExperience } from "./lib/experience";
 import { isPlatformRuntimeSurface, isStoreRuntimeSurface } from "./lib/runtimeHostSurface";
+import { installVisibleTextEncodingRepair } from "./lib/visibleTextEncoding";
 import { PlatformSurfaceProvider, usePlatformSurface } from "./context/PlatformSurfaceContext";
 import MotoboyPwaBoundary from "./components/MotoboyPwaBoundary";
 import {
@@ -522,6 +523,8 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
   const deferredWidgetsReady = useDeferredClientMount(3200);
   const orderBoardSurface = window.location.pathname === "/tv" || window.location.pathname.startsWith("/tv/");
 
+  useEffect(() => installVisibleTextEncodingRepair(), []);
+
   return (
     <AppProvider>
       <AppErrorBoundary>
@@ -530,7 +533,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
         {!orderBoardSurface && <ThemeInjector />}
           <Toaster />
           <BrowserRouter>
-            {!platformSurface && <MotoboyPwaBoundary />}
+            <MotoboyPwaBoundary />
             {!platformSurface && !orderBoardSurface && <MotoboyNativeEntry />}
             {!platformSurface && !orderBoardSurface && <RouteDataLoader />}
             {!platformSurface && !orderBoardSurface && <StoreWidget />}

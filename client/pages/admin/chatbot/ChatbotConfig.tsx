@@ -7,6 +7,11 @@ import {
   chatbotAdminApi, chatbotPublicApi,
   type ChatbotSettings, type ChatbotAIStatus,
 } from "@/lib/chatbotApi";
+import {
+  CUSTOMER_AI_ALLOWED_AREAS,
+  CUSTOMER_AI_SCOPE_GUARDRAIL,
+  ensureCustomerAiScope,
+} from "@/lib/customerAiScope";
 
 // ─── AI model lists ───────────────────────────────────────────────────────────
 
@@ -347,13 +352,14 @@ export default function ChatbotConfig() {
   const savePrompt = async () => {
     setSavingPrompt(true); setMsgPrompt("");
     try {
+      const scopedLimitations = ensureCustomerAiScope(settings.limitacoes_proibicoes);
       const s = await chatbotAdminApi.updateSettings({
         prompt_base:              settings.prompt_base,
         regras_fixas:             settings.regras_fixas,
         tom_de_voz:               settings.tom_de_voz,
         objetivo:                 settings.objetivo,
         instrucoes_transferencia: settings.instrucoes_transferencia,
-        limitacoes_proibicoes:    settings.limitacoes_proibicoes,
+        limitacoes_proibicoes:    scopedLimitations,
       });
       setSettings(s); setMsgPrompt("Prompt salvo!");
     } catch (e: unknown) { setMsgPrompt(e instanceof Error ? e.message : "Erro."); }
@@ -621,6 +627,29 @@ export default function ChatbotConfig() {
         title="Prompt & Comportamento"
         subtitle="Instruções, tom de voz, regras e limites do bot"
       >
+        <div
+          aria-label="Escopo permitido da IA do cliente"
+          className="rounded-lg border border-gold/25 bg-gold/5 p-4 space-y-3"
+        >
+          <div>
+            <p className="text-parchment text-sm font-semibold">Escopo permitido da IA do cliente</p>
+            <p className="text-stone/70 text-xs mt-1">
+              Esta configuração é exclusiva do atendimento ao cliente e não dá acesso ao CRM nem ao Gestor IA.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {CUSTOMER_AI_ALLOWED_AREAS.map((area) => (
+              <span key={area} className="rounded-full border border-gold/30 bg-surface-01 px-2.5 py-1 text-xs text-gold">
+                {area}
+              </span>
+            ))}
+          </div>
+          <p className="text-stone/60 text-xs leading-relaxed">
+            Fora desses temas, a IA deve encaminhar o cliente para um atendente. CRM, Memória Comercial, estoque,
+            financeiro, fiscal, configurações internas e dados de outros clientes permanecem fora do escopo.
+          </p>
+        </div>
+
         <Txt
           label="Prompt base"
           hint="Instruções principais. Explique quem o bot é e o que deve fazer."
@@ -663,6 +692,10 @@ export default function ChatbotConfig() {
           onChange={(e) => upd("limitacoes_proibicoes", e.target.value)}
           placeholder={"- Não discuta concorrentes\n- Não faça promessas de prazo\n- Não forneça dados pessoais"}
         />
+
+        <p className="text-stone/50 text-xs -mt-2" aria-label="Regra fixa de escopo">
+          Regra fixa aplicada ao salvar: {CUSTOMER_AI_SCOPE_GUARDRAIL}
+        </p>
 
         <Txt
           label="Quando transferir ao atendente"

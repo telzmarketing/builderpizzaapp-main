@@ -8,8 +8,8 @@ from backend.core.wave6_tenant_orm import (
 
 
 def test_wave6_inventory_and_scoped_uniques_are_complete():
-    assert len(WAVE6_TABLES) == 90
-    assert len(SCOPED_UNIQUES) == 25
+    assert len(WAVE6_TABLES) == 91
+    assert len(SCOPED_UNIQUES) == 26
     assert set(SCOPED_UNIQUES).issubset(WAVE6_TABLES)
 
 

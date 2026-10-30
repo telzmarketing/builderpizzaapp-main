@@ -32,8 +32,8 @@ def update_document(document_id: str, body: dict, db: Session = Depends(get_db),
     return invoke(InventoryReceiptService(db, actor.tenant_id, actor.user_id).update, document_id, body)
 
 @router.post("/{document_id}/approve")
-def approve_document(document_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(edit), idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
-    return invoke(InventoryReceiptService(db, actor.tenant_id, actor.user_id).approve, document_id)
+def approve_document(document_id: str, body: dict | None = None, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(edit), idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+    return invoke(InventoryReceiptService(db, actor.tenant_id, actor.user_id).approve, document_id, (body or {}).get("expected_version"), idempotency_key)
 
 @router.post("/{document_id}/payables/reconcile")
 def reconcile(document_id: str, body: dict, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(edit), idempotency_key: str = Header(..., alias="Idempotency-Key")):

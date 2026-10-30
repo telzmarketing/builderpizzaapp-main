@@ -1,7 +1,12 @@
 export const MOTOBOY_SCOPE = "/motoboy/";
+export const BI_MOBILE_SCOPE = "/painel/bi-mobile/";
 
 export function isMotoboyPath(pathname: string) {
   return pathname === "/motoboy" || pathname.startsWith(MOTOBOY_SCOPE);
+}
+
+export function isBiMobilePath(pathname: string) {
+  return pathname === "/painel/bi-mobile" || pathname.startsWith(BI_MOBILE_SCOPE);
 }
 
 export function isLegacyMotoboyWorker(registration: ServiceWorkerRegistration, origin: string) {
@@ -35,6 +40,11 @@ export async function configureMotoboyWorker(pathname: string, container: Servic
     await registration.update();
     await retireLegacyWorker(registration);
   }));
+}
+
+export async function configureBiMobileWorker(pathname: string, container: ServiceWorkerContainer) {
+  if (!isBiMobilePath(pathname)) return;
+  await container.register("/sw.js", { scope: BI_MOBILE_SCOPE, updateViaCache: "none" });
 }
 
 export function syncMotoboyPwaHead(pathname: string) {

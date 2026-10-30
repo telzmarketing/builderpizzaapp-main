@@ -1482,6 +1482,7 @@ export interface KdsLabelVolume {
   notes?: string | null;
   add_ons: string[];
   flavors: Array<{ name: string } | string>;
+  qr_payload?: string | null;
 }
 
 export interface KdsLabelPreview {
@@ -1494,6 +1495,7 @@ export interface KdsLabelPreview {
   volume_count: number;
   is_first_print: boolean;
   previous_print_count: number;
+  receipt?: { qr_payload?: string | null };
 }
 
 export interface KdsLabelPrintJob {
@@ -2044,7 +2046,7 @@ export interface InventoryPurchase {
   tenant_id?: string;
   supplier_id?: string | null;
   supplier_name?: string | null;
-  status: "draft" | "confirmed";
+  status: "draft" | "requested" | "confirmed";
   invoice_number?: string | null;
   expected_date?: string | null;
   notes?: string | null;
@@ -2106,7 +2108,7 @@ export interface InventoryReceiptDocumentUpdate {
   lines?: Array<{
     id: string;
     inventory_item_id?: string | null;
-    association_status?: "pending" | "confirmed" | "unmatched";
+    association_status?: "pending" | "matched" | "confirmed" | "unmatched";
   }>;
 }
 
@@ -5864,6 +5866,8 @@ export const inventoryApi = {
   removeItem: (id: string) => del<void>(`/gestao/inventory/items/${id}`),
   createPurchase: (data: Omit<InventoryPurchase, "id" | "tenant_id" | "supplier_name" | "total_amount" | "created_at" | "updated_at">) =>
     post<InventoryPurchase>("/gestao/inventory/purchases", data),
+  createReplenishmentRequest: () =>
+    post<InventoryPurchase>("/gestao/inventory/purchase-requests/replenishment", {}),
   updatePurchase: (id: string, data: Omit<InventoryPurchase, "id" | "tenant_id" | "supplier_name" | "total_amount" | "created_at" | "updated_at">) =>
     put<InventoryPurchase>(`/gestao/inventory/purchases/${id}`, data),
   removePurchase: (id: string) => del<void>(`/gestao/inventory/purchases/${id}`),
@@ -6427,6 +6431,22 @@ export interface ApiCustomerAISuggestion {
   resolved_at: string | null;
 }
 
+export interface ApiCustomerCommercialMemory {
+  id: string;
+  tenant_id: string;
+  customer_id: string;
+  memory_key: string;
+  memory_type: "preference" | "avoidance" | "purchase_pattern" | "service_note" | string;
+  value: string;
+  source: string;
+  confidence: "low" | "medium" | "high" | string;
+  active: boolean;
+  last_observed_at: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 export interface ApiCRMAnalysisJob {
   id: string;
   status: string;
@@ -6768,6 +6788,11 @@ export const customersApi = {
   analyzeProfile: (id: string) =>
     post<{ profile: ApiCustomerAIProfile; suggestions: ApiCustomerAISuggestion[] }>(`/customers/${id}/analyze`, {}),
   getAIProfile: (id: string) => get<ApiCustomerAIProfile | null>(`/customers/${id}/profile`),
+  listCommercialMemory: (id: string) => get<ApiCustomerCommercialMemory[]>(`/crm/customers/${id}/commercial-memory`),
+  saveCommercialMemory: (id: string, data: Pick<ApiCustomerCommercialMemory, "memory_key" | "memory_type" | "value" | "source" | "confidence"> & { active?: boolean }) =>
+    post<ApiCustomerCommercialMemory>(`/crm/customers/${id}/commercial-memory`, data),
+  deactivateCommercialMemory: (customerId: string, memoryId: string) =>
+    request<void>("DELETE", `/crm/customers/${customerId}/commercial-memory/${memoryId}`),
   getAISuggestions: (id: string, status = "pending") =>
     get<ApiCustomerAISuggestion[]>(`/customers/${id}/suggestions?status=${encodeURIComponent(status)}`),
   acceptSuggestion: (suggestionId: string) =>
@@ -8432,6 +8457,8 @@ export const deliveryApi = {
     driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/complete`, { notes, payment_received }),
   driverReportProblem: (deliveryId: string, reason: string, description?: string) =>
     driverRequest<DeliveryRecord>("POST", `/delivery/driver/deliveries/${deliveryId}/problem`, { reason, description }),
+  driverScanItem: (deliveryId: string, payload: string) =>
+    driverRequest<{ confirmed: boolean; idempotent: boolean; confirmation_id: string; delivery_id: string; order_item_id: string; label_volume_id: string; confirmed_count?: number; total_count?: number; all_items_confirmed?: boolean }>("POST", `/delivery/driver/deliveries/${encodeURIComponent(deliveryId)}/scan-item`, { payload }),
 
   // Confirm delivery (public — no auth needed)
   confirmCode: (deliveryId: string, code: string) =>
@@ -8794,6 +8821,7 @@ export interface PreparationLabelPreview {
     expires_on?: string | null;
     prepared_at?: string | null;
     responsible_id?: string | null;
+    qr_payload?: string | null;
     restaurant?: { name?: string | null; logo_url?: string | null };
   };
   printer: KdsLabelPrinter;

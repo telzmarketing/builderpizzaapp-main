@@ -11,6 +11,7 @@ from __future__ import annotations
 import random
 import uuid
 import json
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import text, case, func
@@ -30,12 +31,14 @@ from backend.core.tenant_context import TenantContext, TenantContextMismatch, Te
 from backend.core.wave7_tenant_orm import wave7_orm_enabled
 from backend.models.delivery import (
     Delivery, DeliveryEvent, DeliveryEarning, DeliveryPerson, DeliveryStatus,
-    DeliveryPersonStatus, LogisticsSettings, GeocodeCache,
+    DeliveryPersonStatus, LogisticsSettings, GeocodeCache, DeliveryItemConfirmation,
 )
+from backend.models.label import LabelVolume, LabelVersion
 from backend.models.order import Order, OrderStatus
 from backend.models.kds_production import ProductionUnit
 from backend.models.payment import Payment, PaymentStatus
 from backend.schemas.delivery import ActiveDeliveryOut
+from backend.services.qr_code_service import qr_token_hash, verify_qr_payload
 
 _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -135,7 +138,10 @@ class DeliveryService:
         return p
 
     def _get_order(self, order_id: str) -> Order:
-        o = self._scope(self._db.query(Order), Order).filter(Order.id == order_id).first()
+        o = self._scope(self._db.query(Order), Order).filter(
+            Order.id == order_id,
+            Order.archived_at.is_(None),
+        ).first()
         if not o:
             raise OrderNotFound(order_id)
         return o
@@ -543,6 +549,7 @@ class DeliveryService:
                 Order.id, Order.order_code, Order.tenant_id,
             ))
             .filter(
+                Order.archived_at.is_(None),
                 Delivery.status.in_([
                     DeliveryStatus.assigned,
                     DeliveryStatus.picked_up,
@@ -1169,6 +1176,127 @@ class DeliveryService:
         self._db.refresh(delivery)
         return delivery
 
+    def confirm_item_qr(self, person_id: str, delivery_id: str, payload: str) -> dict:
+        """Confirm one signed label volume for the assigned delivery.
+
+        The signed payload is bound to the tenant, order, label version and
+        physical volume. A durable token hash makes retries idempotent and
+        prevents the same label from being accepted twice for a delivery.
+        """
+        self._get_delivery_person(person_id)
+        delivery = self._get_driver_delivery(person_id, delivery_id)
+        if delivery.status not in {
+            DeliveryStatus.assigned,
+            DeliveryStatus.picked_up,
+            DeliveryStatus.on_the_way,
+        }:
+            raise DomainError(
+                "A retirada individual so pode ser confirmada durante a expedicao.",
+                code="DeliveryNotInPickupFlow",
+            )
+        try:
+            claims = verify_qr_payload(payload)
+        except (ValueError, RuntimeError) as exc:
+            raise DomainError("QR invalido, adulterado ou expirado.", code="InvalidOperationalQr") from exc
+
+        if claims.get("kind") != "item":
+            raise DomainError("Este QR nao identifica um item de retirada.", code="InvalidOperationalQrType")
+        if claims.get("tenant_id") != self._tenant_id or claims.get("order_id") != delivery.order_id:
+            raise DomainError("QR nao pertence a esta entrega.", code="OperationalQrOwnershipDenied")
+        volume_id = claims.get("volume_id")
+        order_item_id = claims.get("order_item_id")
+        version_id = claims.get("version_id")
+        if not volume_id or not order_item_id or not version_id:
+            raise DomainError("QR de item incompleto.", code="InvalidOperationalQr")
+
+        volume = (
+            self._db.query(LabelVolume)
+            .join(LabelVersion, LabelVersion.id == LabelVolume.label_version_id)
+            .filter(
+                LabelVolume.tenant_id == self._tenant_id,
+                LabelVolume.id == volume_id,
+                LabelVolume.order_item_id == order_item_id,
+                LabelVolume.label_version_id == version_id,
+                LabelVersion.tenant_id == self._tenant_id,
+                LabelVersion.order_id == delivery.order_id,
+                LabelVersion.invalidated_at.is_(None),
+            )
+            .first()
+        )
+        if volume is None:
+            raise DomainError("QR nao pertence a uma etiqueta ativa desta entrega.", code="OperationalQrNotActive")
+
+        token_hash = qr_token_hash(payload)
+        existing = self._scope(
+            self._db.query(DeliveryItemConfirmation), DeliveryItemConfirmation
+        ).filter(DeliveryItemConfirmation.token_hash == token_hash).first()
+        if existing is not None:
+            if existing.delivery_id != delivery.id or existing.actor_id != person_id:
+                raise DomainError("QR ja utilizado por outra retirada.", code="OperationalQrReplay")
+            return {
+                "confirmed": True,
+                "idempotent": True,
+                "confirmation_id": existing.id,
+                "delivery_id": delivery.id,
+                "order_item_id": existing.order_item_id,
+                "label_volume_id": existing.label_volume_id,
+                "confirmed_at": existing.confirmed_at,
+            }
+
+        now = datetime.now(timezone.utc)
+        confirmation = DeliveryItemConfirmation(
+            id=str(uuid.uuid4()), tenant_id=self._tenant_id,
+            delivery_id=delivery.id, order_id=delivery.order_id,
+            order_item_id=order_item_id, label_volume_id=volume.id,
+            token_hash=token_hash, actor_id=person_id,
+            confirmed_at=now, created_at=now,
+        )
+        self._db.add(confirmation)
+        self._add_event(
+            delivery.id,
+            "item_qr_confirmed",
+            description="Motoboy confirmou a retirada de um volume por QR.",
+            actor_type="driver",
+            actor_id=person_id,
+            metadata={"order_item_id": order_item_id, "label_volume_id": volume.id},
+        )
+        try:
+            self._db.commit()
+        except IntegrityError as exc:
+            self._db.rollback()
+            existing = self._scope(
+                self._db.query(DeliveryItemConfirmation), DeliveryItemConfirmation
+            ).filter(DeliveryItemConfirmation.token_hash == token_hash).first()
+            if existing and existing.delivery_id == delivery.id and existing.actor_id == person_id:
+                return {
+                    "confirmed": True, "idempotent": True,
+                    "confirmation_id": existing.id, "delivery_id": delivery.id,
+                    "order_item_id": existing.order_item_id,
+                    "label_volume_id": existing.label_volume_id,
+                    "confirmed_at": existing.confirmed_at,
+                }
+            raise DomainError("QR ja utilizado ou conflito de confirmacao.", code="OperationalQrReplay") from exc
+        self._db.refresh(confirmation)
+        total = self._scope(
+            self._db.query(LabelVolume), LabelVolume
+        ).join(LabelVersion, LabelVersion.id == LabelVolume.label_version_id).filter(
+            LabelVersion.tenant_id == self._tenant_id,
+            LabelVersion.order_id == delivery.order_id,
+            LabelVersion.invalidated_at.is_(None),
+        ).count()
+        confirmed = self._scope(
+            self._db.query(DeliveryItemConfirmation), DeliveryItemConfirmation
+        ).filter(DeliveryItemConfirmation.delivery_id == delivery.id).count()
+        return {
+            "confirmed": True, "idempotent": False,
+            "confirmation_id": confirmation.id, "delivery_id": delivery.id,
+            "order_item_id": confirmation.order_item_id,
+            "label_volume_id": confirmation.label_volume_id,
+            "confirmed_at": confirmation.confirmed_at,
+            "confirmed_count": confirmed, "total_count": total,
+            "all_items_confirmed": total > 0 and confirmed >= total,
+        }
+
     # ── Logistics Settings ────────────────────────────────────────────────────
 
     def get_logistics_settings(self) -> LogisticsSettings:
@@ -1420,6 +1548,7 @@ class DeliveryService:
         eligible_orders = (
             self._scope(self._db.query(Order), Order)
             .filter(
+                Order.archived_at.is_(None),
                 Order.status == OrderStatus.ready_for_pickup,
                 Order.fulfillment_type == "delivery",
             )

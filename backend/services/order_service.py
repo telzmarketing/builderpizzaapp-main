@@ -12,7 +12,6 @@ import string
 import unicodedata
 import uuid
 from datetime import datetime, timezone, timedelta
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.exceptions import (
@@ -180,13 +179,15 @@ class OrderService:
                 return code
         return "".join(random.choices(self._ORDER_CODE_CHARS, k=6))
 
-    def _get_order(self, order_id: str) -> Order:
-        order = (
+    def _get_order(self, order_id: str, *, include_archived: bool = False) -> Order:
+        query = (
             self._tenant_query(Order)
             .options(joinedload(Order.items).joinedload(OrderItem.flavors))
             .filter(Order.id == order_id)
-            .first()
         )
+        if not include_archived:
+            query = query.filter(Order.archived_at.is_(None))
+        order = query.first()
         if not order:
             raise OrderNotFound(order_id)
         return order
@@ -1497,64 +1498,83 @@ class OrderService:
     def get(self, order_id: str) -> Order:
         return self._get_order(order_id)
 
-    def delete(self, order_id: str) -> None:
-        order = self._get_order(order_id)
+    def archive(
+        self,
+        order_id: str,
+        *,
+        archived_by: str,
+        reason: str = "Removido operacionalmente pelo administrador",
+    ) -> Order:
+        """Remove a pedido das filas sem apagar seus registros de negócio."""
+        order = self._get_order(order_id, include_archived=True)
+        if order.archived_at is not None:
+            return order
 
-        from backend.models.agente_whatsapp import AgenteWhatsAppEvent
-        from backend.models.customer_event import CustomerEvent
-        from backend.models.delivery import Delivery, DeliveryEarning, DeliveryEvent
-        from backend.models.inventory import InventoryStockMovement
-        from backend.models.loyalty import LoyaltyBenefitUsage, LoyaltyTransaction
-        from backend.models.store_notification import StoreNotificationCaptured, StoreNotificationImpression
-        from backend.models.upsell import OrderUpsell, UpsellEvent
+        from backend.models.delivery import Delivery, DeliveryStatus
 
-        has_inventory_movements = (
-            self._db.query(InventoryStockMovement.id)
-            .filter(
-                InventoryStockMovement.source_type.in_(["order_sale", "foundation_order_sale", "order_sale_reversal", "order_sale_loss"]),
-                InventoryStockMovement.tenant_id == order.tenant_id,
-                InventoryStockMovement.source_id == order_id,
+        delivery = self._db.query(Delivery).filter(
+            Delivery.tenant_id == order.tenant_id,
+            Delivery.order_id == order.id,
+        ).first()
+        if delivery and delivery.status in {
+            DeliveryStatus.pending_assignment,
+            DeliveryStatus.assigned,
+            DeliveryStatus.picked_up,
+            DeliveryStatus.on_the_way,
+        }:
+            from backend.services.delivery_service import DeliveryService
+
+            target = "cancelled" if delivery.status in {
+                DeliveryStatus.pending_assignment,
+                DeliveryStatus.assigned,
+            } else "failed"
+            DeliveryService(
+                self._db,
+                tenant_id=order.tenant_id,
+                tenant_context=self._tenant_context,
+            ).update_status(delivery.id, target)
+
+        current = order.status.value if hasattr(order.status, "value") else str(order.status)
+        if current not in {"cancelled", "refunded", "delivered"}:
+            self.cancel(
+                order.id,
+                reason=f"{reason}; arquivado operacionalmente",
+                changed_by=f"admin:{archived_by}",
+                cancelled_by="admin",
             )
-            .first()
-        )
-        if has_inventory_movements:
-            raise DomainError(
-                "Pedido possui movimentacao de estoque e nao pode ser excluido fisicamente. Cancele ou estorne pelo fluxo operacional.",
-                code="OrderHasInventoryMovements",
-            )
+            order = self._get_order(order_id, include_archived=True)
 
-        delivery = self._db.query(Delivery).filter(Delivery.order_id == order_id).first()
-        if delivery:
-            self._db.query(DeliveryEarning).filter(DeliveryEarning.delivery_id == delivery.id).delete(synchronize_session=False)
-            self._db.query(DeliveryEvent).filter(DeliveryEvent.delivery_id == delivery.id).delete(synchronize_session=False)
-            self._db.delete(delivery)
+        now = datetime.now(timezone.utc)
+        order.archived_at = now
+        order.archived_by = archived_by
+        order.archive_reason = reason or None
+        order.updated_at = now
 
-        self._db.query(Payment).filter(Payment.order_id == order_id).delete(synchronize_session=False)
-        self._db.query(OrderUpsell).filter(OrderUpsell.order_id == order_id).delete(synchronize_session=False)
-        self._db.query(StoreNotificationCaptured).filter(StoreNotificationCaptured.order_id == order_id).delete(synchronize_session=False)
+        from backend.models.rbac import AdminAuditLog
+        self._db.add(AdminAuditLog(
+            id=str(uuid.uuid4()),
+            tenant_id=order.tenant_id,
+            user_id=archived_by,
+            action="archive",
+            module_key="pedidos",
+            entity_type="order",
+            entity_id=order.id,
+            old_value=f"status={current}; archived_at=NULL",
+            new_value=f"status={order.status.value}; archived_at={now.isoformat()}; reason={reason}",
+        ))
+        self._db.commit()
+        self._db.refresh(order)
+        return order
 
-        for model in (
-            AgenteWhatsAppEvent,
-            CustomerEvent,
-            LoyaltyBenefitUsage,
-            LoyaltyTransaction,
-            StoreNotificationImpression,
-            UpsellEvent,
-        ):
-            self._db.query(model).filter(model.order_id == order_id).update(
-                {"order_id": None},
-                synchronize_session=False,
-            )
-
-        self._db.delete(order)
-        try:
-            self._db.commit()
-        except IntegrityError as exc:
-            self._db.rollback()
-            raise DomainError(
-                "Pedido possui registros operacionais vinculados e nao pode ser excluido fisicamente. Cancele o pedido pelo fluxo operacional.",
-                code="OrderHasOperationalRecords",
-            ) from exc
+    def delete(
+        self,
+        order_id: str,
+        *,
+        archived_by: str = "system",
+        reason: str = "Removido operacionalmente",
+    ) -> None:
+        """Compatibility wrapper: DELETE performs a safe operational archive."""
+        self.archive(order_id, archived_by=archived_by, reason=reason)
 
     def list(
         self,
@@ -1567,6 +1587,7 @@ class OrderService:
         limit: int = 50,
     ) -> list[Order]:
         q = self._tenant_query(Order).options(joinedload(Order.items).joinedload(OrderItem.flavors))
+        q = q.filter(Order.archived_at.is_(None))
         if status:
             q = q.filter(Order.status == OrderStatus(status))
         if customer_id:

@@ -24,6 +24,8 @@ from backend.services.agente_whatsapp_campaign_context_service import AgenteWhat
 from backend.services.agente_whatsapp_outbox_service import AgenteWhatsAppOutboxService
 from backend.services.agente_whatsapp_service import AgenteWhatsAppService
 from backend.services.agente_whatsapp_tools import AgenteWhatsAppToolService
+from backend.services.agente_whatsapp_tools import PUBLIC_ALLOWED_TOOLS
+from backend.services.customer_commercial_memory_service import CustomerCommercialMemoryService
 
 
 def _normalize_text(value: str | None) -> str:
@@ -112,7 +114,7 @@ class AgenteWhatsAppAIService:
                 objective="Vender, atender, recuperar vendas e acompanhar pedidos pelo WhatsApp.",
                 transfer_instructions="Transferir para humano quando houver reclamacao grave, pagamento divergente ou pedido fora das regras.",
                 forbidden_topics="Nao prometer prazo, desconto, brinde ou disponibilidade sem ferramenta real.",
-                allowed_tools_json=_json_dump({"mode": "all_registered_tools"}),
+                allowed_tools_json=_json_dump({"mode": "public_customer_scope_v1", "tools": sorted(PUBLIC_ALLOWED_TOOLS)}),
             )
             self._db.add(settings)
             self._db.flush()
@@ -133,7 +135,7 @@ class AgenteWhatsAppAIService:
             "objective": row.objective or "",
             "transfer_instructions": row.transfer_instructions or "",
             "forbidden_topics": row.forbidden_topics or "",
-            "allowed_tools": _json_load(row.allowed_tools_json),
+            "allowed_tools": {"mode": "public_customer_scope_v1", "tools": sorted(PUBLIC_ALLOWED_TOOLS)},
             "openai_key_preview": _mask_key(row.openai_api_key) or _mask_key(get_ai_api_key("OPENAI_API_KEY")),
             "anthropic_key_preview": _mask_key(row.anthropic_api_key) or _mask_key(get_ai_api_key("ANTHROPIC_API_KEY")),
             "updated_at": row.updated_at,
@@ -146,7 +148,12 @@ class AgenteWhatsAppAIService:
             if value is not None and hasattr(settings, key):
                 setattr(settings, key, value)
         if allowed_tools is not None:
-            settings.allowed_tools_json = _json_dump(allowed_tools if isinstance(allowed_tools, dict) else {})
+            requested = allowed_tools.get("tools") if isinstance(allowed_tools, dict) else None
+            requested = requested if isinstance(requested, list) else sorted(PUBLIC_ALLOWED_TOOLS)
+            settings.allowed_tools_json = _json_dump({
+                "mode": "public_customer_scope_v1",
+                "tools": sorted(set(str(item) for item in requested) & PUBLIC_ALLOWED_TOOLS),
+            })
         settings.updated_at = datetime.now(timezone.utc)
         self._db.flush()
         return self.serialize_settings(settings)
@@ -430,6 +437,7 @@ class AgenteWhatsAppAIService:
 
         self._sync_context(
             session,
+            customer_id=customer_id,
             intent=intent,
             message=clean_message,
             response=response,
@@ -732,6 +740,8 @@ class AgenteWhatsAppAIService:
             return "recompra"
         if any(word in text for word in ["promocao", "promocoes", "oferta", "combo"]):
             return "promocoes"
+        if any(word in text for word in ["duvida", "dúvida", "como funciona", "horario", "horário", "faq"]):
+            return "faq"
         if any(word in text for word in ["cardapio", "menu", "pizza", "bebida", "quero", "pedir"]):
             return "venda_cardapio"
         return "atendimento"
@@ -769,6 +779,8 @@ class AgenteWhatsAppAIService:
             plan.append({"tool_name": "buscar_ultimo_pedido", "arguments": {"customer_id": customer_id}})
         elif intent == "promocoes":
             plan.append({"tool_name": "buscar_promocoes", "arguments": {"limit": 6}})
+        elif intent == "faq":
+            plan.append({"tool_name": "buscar_faq", "arguments": {"query": message, "limit": 5}})
         elif intent == "venda_cardapio":
             search = self._extract_product_search(message)
             plan.append({"tool_name": "buscar_produtos", "arguments": {"search": search, "limit": 8, "active_only": True}})
@@ -832,6 +844,13 @@ class AgenteWhatsAppAIService:
                 return (f"{greeting}para esse endereco a entrega nao esta disponivel agora: {freight_data.get('message') or 'regiao indisponivel'}.", True)
             return ("Me diga cidade e bairro para eu calcular o frete com a regra real da loja.", False)
 
+        if intent == "faq":
+            faq_data = self._tool_data(results.get("buscar_faq")) or {}
+            items = faq_data.get("items") or []
+            if items:
+                return (f"{greeting}{items[0].get('answer')}", False)
+            return ("Ainda nao encontrei essa resposta nas perguntas frequentes. Vou encaminhar para um atendente confirmar.", True)
+
         if intent == "fidelidade":
             loyalty = self._tool_data(results.get("buscar_fidelidade"))
             if loyalty and loyalty.get("found"):
@@ -871,7 +890,7 @@ class AgenteWhatsAppAIService:
                 return (f"{greeting}estas promocoes estao ativas agora:\n{promo_text}\n\nQuer que eu veja os produtos para montar o pedido?", False)
             return ("Nao encontrei item ativo para essa busca. Me diga o sabor ou tipo de produto que voce quer.", False)
 
-        return ("Posso te ajudar com cardapio, promocoes, frete, cupom, pedido ou fidelidade. O que voce quer fazer agora?", False)
+        return ("Posso te ajudar com cardapio, promocoes, perguntas frequentes, frete ou pedido. O que voce quer fazer agora?", False)
 
     def _campaign_context_response(self, greeting: str, campaign_context: dict[str, Any] | None) -> tuple[str, bool] | None:
         if not campaign_context:
@@ -984,6 +1003,7 @@ class AgenteWhatsAppAIService:
         self,
         session: AgenteWhatsAppSession,
         *,
+        customer_id: str | None = None,
         intent: str,
         message: str,
         response: str,
@@ -1005,6 +1025,12 @@ class AgenteWhatsAppAIService:
         short_context["last_ai_response"] = response
         if campaign_context:
             short_context["campaign_context"] = campaign_context
+        # Commercial memory is a CRM-only operational record. It may be
+        # observed from explicit customer signals, but is never injected into
+        # the customer-facing AI prompt/session context.
+        CustomerCommercialMemoryService(self._db, self._tenant_context).observe_agent_message(
+            customer_id or session.customer_id, message
+        )
         context.short_context_json = _json_dump(short_context)
         context.updated_at = datetime.now(timezone.utc)
         session.current_intent = intent

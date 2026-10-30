@@ -2,6 +2,41 @@
   min-height: 100dvh;
 }
 
+/* A preferência é escopada ao painel. A loja pública nunca recebe esta classe. */
+.admin-shell.admin-theme-light {
+  color-scheme: light;
+  --bg-main: #f8fafc;
+  --bg-alt: #f1f5f9;
+  --bg-card: #ffffff;
+  --text-primary: #0f172a;
+  --text-secondary: #1e293b;
+  --text-muted: #64748b;
+  --border-color: #cbd5e1;
+  --navbar-bg: #ffffff;
+  --footer-bg: #f8fafc;
+  --sidebar-bg: #ffffff;
+  --modal-bg: #ffffff;
+  --tag-bg: #e2e8f0;
+  --home-banner-bg: #e2e8f0;
+  --background: 210 40% 98%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --secondary: 214 32% 91%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 214 32% 91%;
+  --muted-foreground: 215 16% 47%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --sidebar-background: 0 0% 100%;
+  --sidebar-foreground: 222 47% 11%;
+  --sidebar-accent: 214 32% 91%;
+  --sidebar-accent-foreground: 222 47% 11%;
+  --sidebar-border: 214 32% 91%;
+}
+
 .admin-shell .app-layout {
   height: 100dvh;
   min-height: 100dvh;

@@ -171,7 +171,12 @@ class BusinessIntelligenceService:
 
         total_orders = all_orders.count()
         paid_orders = paid_orders_q.count()
-        estimated_revenue = self._round(all_orders.with_entities(func.coalesce(func.sum(Order.total), 0)).scalar())
+        estimated_revenue = self._round(
+            all_orders
+            .filter(~Order.status.in_(self.CANCELLED_STATUSES))
+            .with_entities(func.coalesce(func.sum(Order.total), 0))
+            .scalar()
+        )
         effective_revenue = self._round(paid_orders_q.with_entities(func.coalesce(func.sum(Order.total), 0)).scalar())
         avg_ticket = self._round(effective_revenue / paid_orders if paid_orders else 0)
         cancelled = all_orders.filter(Order.status.in_(self.CANCELLED_STATUSES)).count()
@@ -207,7 +212,7 @@ class BusinessIntelligenceService:
 
         return {
             "kpis": [
-                self._kpi("estimated_revenue", "Receita estimada", estimated_revenue, "currency", "Todos os pedidos criados no periodo"),
+                self._kpi("estimated_revenue", "Receita estimada", estimated_revenue, "currency", "Pedidos nao cancelados criados no periodo"),
                 self._kpi("effective_revenue", "Receita efetivada", effective_revenue, "currency", "Pedidos com pagamento confirmado"),
                 self._kpi("orders", "Pedidos totais", total_orders, "number", f"{paid_orders} pedidos com pagamento confirmado"),
                 self._kpi("average_ticket", "Ticket medio", avg_ticket, "currency", "Receita efetivada / pedidos pagos"),

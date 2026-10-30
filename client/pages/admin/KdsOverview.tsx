@@ -106,7 +106,7 @@ export default function KdsOverview() {
   return (
     <main className="min-h-screen w-full overflow-y-auto bg-surface-00 px-3 py-4 text-cream sm:px-5 sm:py-5 lg:px-8 lg:py-6">
       <section className="mx-auto w-full max-w-[1800px] space-y-5" aria-live="polite">
-      <div className="flex flex-col gap-3 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft sm:flex-row sm:items-center sm:justify-between">
+      <div className="sticky top-0 z-20 flex flex-col gap-3 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <KdsBrandLogo fallback={<span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gold/10 text-gold">
             <Gauge aria-hidden="true" />
@@ -171,7 +171,7 @@ export default function KdsOverview() {
                 {orders.length === 0 ? (
                   <p className="rounded-xl border border-dashed border-surface-03 p-4 text-center text-sm text-stone">{empty}</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="max-h-[calc(100dvh-18rem)] space-y-2 overflow-y-auto overscroll-contain pr-1">
                     {orders.map((order) => (
                       <article key={order.id} className="rounded-xl border border-surface-03 bg-surface-01 p-3">
                         <div className="flex items-start justify-between gap-2">

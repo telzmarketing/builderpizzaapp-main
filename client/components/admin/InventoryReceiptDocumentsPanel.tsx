@@ -23,7 +23,7 @@ function currency(value?: string | null) {
 }
 
 function statusLabel(status: string) {
-  return ({ pending_review: "Pendente de conferência", ready: "Pronto para aprovação", approved: "Aprovado", rejected: "Rejeitado", cancelled: "Cancelado" } as Record<string, string>)[status] ?? status;
+  return ({ pending_review: "Pendente de conferência", ready: "Pronto para aprovação", approved: "Aprovado", validated: "Aprovado", rejected: "Rejeitado", cancelled: "Cancelado" } as Record<string, string>)[status] ?? status;
 }
 
 export default function InventoryReceiptDocumentsPanel() {
@@ -73,7 +73,7 @@ export default function InventoryReceiptDocumentsPanel() {
 
   const upload = () => {
     if (!file) return;
-    return run("upload", () => inventoryReceiptApi.uploadXml(file, null, commandKey("document", file.name)), "XML importado para conferência.").then(() => setFile(null));
+    return run("upload", () => inventoryReceiptApi.uploadXml(file, null, commandKey("document", file.name)), "Documento enviado para conferência. Revise as linhas antes de aprovar.").then(() => setFile(null));
   };
 
   const updateLine = (lineId: string, inventoryItemId: string) => {
@@ -81,7 +81,7 @@ export default function InventoryReceiptDocumentsPanel() {
     return run(`line-${lineId}`, async () => {
       const updated = await inventoryReceiptApi.update(selected.id, {
         expected_version: selected.version,
-        lines: [{ id: lineId, inventory_item_id: inventoryItemId || null, association_status: inventoryItemId ? "confirmed" : "pending" }],
+        lines: [{ id: lineId, inventory_item_id: inventoryItemId || null, association_status: inventoryItemId ? "matched" : "pending" }],
       });
       setDocuments((current) => current.map((document) => document.id === updated.id ? updated : document));
     }, "Associação salva. A versão do documento foi atualizada.");
@@ -110,16 +110,16 @@ export default function InventoryReceiptDocumentsPanel() {
       <div className={panelClass}>
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <h2 className="text-lg font-black text-cream">NF-e de fornecedor</h2>
-            <p className="mt-1 text-sm text-stone">Importe o XML, confira as associações e gere a obrigação financeira quando as parcelas estiverem confirmadas.</p>
+            <h2 className="text-lg font-black text-cream">NF-e / cupom fiscal de entrada</h2>
+            <p className="mt-1 text-sm text-stone">Importe XML, PDF ou imagem, revise as linhas e associe os insumos antes de aprovar a entrada.</p>
           </div>
           <button type="button" className={ghostClass} disabled={loading} onClick={() => void load()}><RefreshCw size={15} /> Atualizar</button>
         </div>
         <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
-          <input className={inputClass} type="file" accept=".xml,application/xml,text/xml" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-          <button type="button" className={buttonClass} disabled={!file || !!saving} onClick={() => void upload()}><FileUp size={15} /> Importar XML</button>
+          <input className={inputClass} type="file" accept=".xml,application/xml,text/xml,.pdf,application/pdf,.jpg,.jpeg,image/jpeg,.png,image/png,.webp,image/webp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+          <button type="button" className={buttonClass} disabled={!file || !!saving} onClick={() => void upload()}>{saving === "upload" ? <Loader2 size={15} className="animate-spin" /> : <FileUp size={15} />} Importar documento</button>
         </div>
-        <p className="mt-3 text-xs text-stone">O arquivo permanece privado e a importação não lança estoque, cria dívida ou efetua pagamento automaticamente.</p>
+        <p className="mt-3 text-xs text-stone">{file ? `Selecionado: ${file.name}` : "Selecione XML, PDF, JPG, PNG ou WEBP."} O arquivo permanece privado; PDF e imagem entram em revisão manual e não lançam estoque automaticamente.</p>
       </div>
 
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>}
@@ -135,7 +135,7 @@ export default function InventoryReceiptDocumentsPanel() {
                 <span className="mt-1 block text-xs text-gold">{statusLabel(document.status)} · {currency(document.total_document)}</span>
               </button>
             ))}
-            {!documents.length && <p className="px-4 py-8 text-center text-sm text-stone">Nenhum XML recebido.</p>}
+            {!documents.length && <p className="px-4 py-8 text-center text-sm text-stone">Nenhum documento de entrada recebido.</p>}
           </div>
 
           {selected ? <div className={`${panelClass} space-y-5`}>
@@ -146,10 +146,10 @@ export default function InventoryReceiptDocumentsPanel() {
             {!!selected.pending_fields.length && <div className="flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100"><ShieldAlert size={17} /> Pendências: {selected.pending_fields.join(", ")}</div>}
             <div className="overflow-x-auto rounded-lg border border-surface-03"><div className="min-w-[720px]">
               <div className="grid grid-cols-[.5fr_1.5fr_1fr_1.5fr] gap-3 bg-surface-01 px-4 py-3 text-xs font-black uppercase text-stone"><span>Linha</span><span>Descrição</span><span>Quantidade</span><span>Insumo oficial</span></div>
-              {selected.lines.map((line) => <div key={line.id} className="grid grid-cols-[.5fr_1.5fr_1fr_1.5fr] items-center gap-3 border-t border-surface-03 px-4 py-3 text-sm"><span className="text-stone">{line.line_number}</span><span className="text-cream">{line.description}</span><span className="text-stone">{line.commercial_quantity || "-"} {line.commercial_unit || ""}</span><select className={inputClass} value={line.inventory_item_id || ""} disabled={!!saving || selected.status === "approved"} onChange={(event) => void updateLine(line.id, event.target.value)}><option value="">Selecionar insumo</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>)}
+              {selected.lines.map((line) => <div key={line.id} className="grid grid-cols-[.5fr_1.5fr_1fr_1.5fr] items-center gap-3 border-t border-surface-03 px-4 py-3 text-sm"><span className="text-stone">{line.line_number}</span><span className="text-cream">{line.description}</span><span className="text-stone">{line.commercial_quantity || "-"} {line.commercial_unit || ""}</span><select className={inputClass} value={line.inventory_item_id || ""} disabled={!!saving || selected.status === "approved" || selected.status === "validated"} onChange={(event) => void updateLine(line.id, event.target.value)}><option value="">Selecionar insumo</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>)}
             </div></div>
-            <div className="flex flex-wrap gap-3"><button type="button" className={buttonClass} disabled={!!saving || selected.status === "approved" || !!selected.pending_fields.length} onClick={() => void approve()}><CheckCircle2 size={15} /> Aprovar documento</button><span className="self-center text-xs text-stone">A aprovação não confirma recebimento físico.</span></div>
-            <div className="border-t border-surface-03 pt-5"><h4 className="font-black text-cream">Vincular obrigação financeira</h4><p className="mt-1 text-sm text-stone">Informe parcelas conferidas em JSON. O vínculo é idempotente e não registra pagamento.</p><textarea className={`${inputClass} mt-3 min-h-28 font-mono text-xs`} value={installmentsText} onChange={(event) => setInstallmentsText(event.target.value)} placeholder='[{"number":1,"due_date":"2026-11-01","amount":"400.00"}]' /><button type="button" className={`${buttonClass} mt-3`} disabled={!!saving || selected.status !== "approved"} onClick={() => void reconcile()}><FileCheck2 size={15} /> Vincular parcelas</button></div>
+            <div className="flex flex-wrap gap-3"><button type="button" className={buttonClass} disabled={!!saving || selected.status === "approved" || selected.status === "validated" || !!selected.pending_fields.length} onClick={() => void approve()}><CheckCircle2 size={15} /> Aprovar documento</button><span className="self-center text-xs text-stone">A aprovação não confirma recebimento físico.</span></div>
+            <div className="border-t border-surface-03 pt-5"><h4 className="font-black text-cream">Vincular obrigação financeira</h4><p className="mt-1 text-sm text-stone">Informe parcelas conferidas em JSON. O vínculo é idempotente e não registra pagamento.</p><textarea className={`${inputClass} mt-3 min-h-28 font-mono text-xs`} value={installmentsText} onChange={(event) => setInstallmentsText(event.target.value)} placeholder='[{"number":1,"due_date":"2026-11-01","amount":"400.00"}]' /><button type="button" className={`${buttonClass} mt-3`} disabled={!!saving || (selected.status !== "approved" && selected.status !== "validated")} onClick={() => void reconcile()}><FileCheck2 size={15} /> Vincular parcelas</button></div>
           </div> : <div className={`${panelClass} flex min-h-48 items-center justify-center text-stone`}>Selecione um documento para conferir.</div>}
         </div>
       )}

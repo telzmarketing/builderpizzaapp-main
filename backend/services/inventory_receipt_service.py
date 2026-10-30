@@ -10,7 +10,7 @@ from backend.models.inventory_receipts import InventoryReceiptDocument, Inventor
 from backend.models.finance import FinanceObligation, FinanceObligationInstallment, FinanceTransaction
 from backend.services.fiscal_receipt_xml import parse_receipt_xml, ReceiptXmlError
 from backend.services.finance_service import FinanceService
-from backend.models.inventory import InventoryItem
+from backend.models.inventory import InventoryItem, InventoryPurchase
 from backend.models.preparation import InventoryOperationRecipe, PreparationOrder
 
 class ReceiptDocumentError(DomainError):
@@ -28,9 +28,10 @@ class InventoryReceiptService:
                 "total_products": row.extracted_json.get("total_products") if isinstance(row.extracted_json, dict) else None,
                 "total_document": row.extracted_json.get("total_document") if isinstance(row.extracted_json, dict) else None,
                 "status": "pending_review" if row.status in {"uploaded", "processing", "review_required"} else ("approved" if row.status == "validated" else row.status),
-                "version": 1, "pending_fields": row.validation_errors_json or [], "source_filename": row.source_filename,
+                "version": row.version, "pending_fields": row.validation_errors_json or [], "source_filename": row.source_filename,
                 "extraction_method": row.extraction_method or "xml", "extraction_error": row.extraction_error or ((row.validation_errors_json or [None])[0] if row.validation_errors_json else None),
                 "financial_status": "linked" if self.db.query(FinanceObligation).filter(FinanceObligation.tenant_id == self.tenant_id, FinanceObligation.receipt_document_id == row.id).first() else "not_requested",
+                "fiscal": {"document_model": row.document_model, "access_key": row.access_key, "status": row.status, "source_format": row.source_mime_type, "extraction_method": row.extraction_method},
                 "financial_transaction_ids": [], "lines": [{"id": l.id, "line_number": l.line_number, "supplier_code": l.supplier_code, "gtin": l.gtin,
                 "description": l.description, "commercial_quantity": str(l.quantity), "commercial_unit": l.commercial_unit,
                 "taxable_quantity": None, "taxable_unit": None, "unit_price": str(l.unit_price) if l.unit_price is not None else None,
@@ -54,6 +55,8 @@ class InventoryReceiptService:
             raise ReceiptDocumentError("Arquivo ausente ou acima do limite de 15 MiB.")
         mime = (mime_type or "").split(";", 1)[0].strip().lower()
         name = (filename or "documento").strip()[:255]
+        if purchase_id and not self.db.query(InventoryPurchase.id).filter(InventoryPurchase.tenant_id == self.tenant_id, InventoryPurchase.id == purchase_id).first():
+            raise ReceiptDocumentError("Compra de entrada nao encontrada para este tenant.")
         is_xml = mime in {"", "application/xml", "text/xml"} or raw.lstrip().startswith(b"<")
         extraction_method = "xml"
         extraction_error = None
@@ -80,7 +83,18 @@ class InventoryReceiptService:
             raw_xml=raw.decode("utf-8", errors="replace") if is_xml else None,
             raw_content=None if is_xml else raw, source_filename=name, source_mime_type=mime or "application/xml",
             extraction_method=extraction_method, extraction_error=extraction_error, extracted_json=identity.extracted)
-        self.db.add(row); self.db.commit(); self.db.refresh(row); return self._out(row)
+        self.db.add(row)
+        if is_xml:
+            for line in identity.lines:
+                self.db.add(InventoryReceiptDocumentLine(
+                    id=f"recline-{uuid.uuid4().hex[:14]}", tenant_id=self.tenant_id, document_id=row.id,
+                    line_number=int(line["line_number"]), supplier_code=line.get("supplier_code"),
+                    gtin=line.get("gtin"), description=line["description"],
+                    quantity=Decimal(line["quantity"]), commercial_unit=line.get("commercial_unit"),
+                    unit_price=Decimal(line["unit_price"]), total_price=Decimal(line["total_price"]),
+                    association_status="pending", extracted_json=line,
+                ))
+        self.db.commit(); self.db.refresh(row); return self._out(row)
 
     def update(self, document_id, body):
         row = self.db.query(InventoryReceiptDocument).options(joinedload(InventoryReceiptDocument.lines)).filter(InventoryReceiptDocument.tenant_id == self.tenant_id, InventoryReceiptDocument.id == document_id).first()
@@ -89,17 +103,32 @@ class InventoryReceiptService:
             line = next((x for x in row.lines if x.id == item.get("id")), None)
             if line:
                 if item.get("inventory_item_id") is not None:
-                    line.inventory_item_id, line.association_status = item["inventory_item_id"], item.get("association_status", "matched")
+                    inventory_item_id = item["inventory_item_id"]
+                    if not self.db.query(InventoryItem.id).filter(InventoryItem.tenant_id == self.tenant_id, InventoryItem.id == inventory_item_id).first():
+                        raise ReceiptDocumentError("Insumo nao encontrado para este tenant.")
+                    association_status = item.get("association_status", "matched")
+                    if association_status == "confirmed": association_status = "matched"
+                    if association_status not in {"matched", "ignored"}:
+                        raise ReceiptDocumentError("Status de associacao invalido.")
+                    line.inventory_item_id, line.association_status = inventory_item_id, association_status
                 if "portionable" in item:
                     line.portionable = bool(item["portionable"])
-        if body.get("purchase_id") is not None: row.purchase_id = body["purchase_id"]
+        if body.get("purchase_id") is not None:
+            if not self.db.query(InventoryPurchase.id).filter(InventoryPurchase.tenant_id == self.tenant_id, InventoryPurchase.id == body["purchase_id"]).first():
+                raise ReceiptDocumentError("Compra de entrada nao encontrada para este tenant.")
+            row.purchase_id = body["purchase_id"]
+        row.version += 1
         self.db.commit(); return self._out(row)
 
-    def approve(self, document_id):
+    def approve(self, document_id, expected_version: int | None = None, idempotency_key: str | None = None):
         row = self.db.query(InventoryReceiptDocument).options(joinedload(InventoryReceiptDocument.lines)).filter(InventoryReceiptDocument.tenant_id == self.tenant_id, InventoryReceiptDocument.id == document_id).first()
         if not row: raise ReceiptDocumentError("Documento de entrada nao encontrado.")
+        if row.status == "validated": return self.get(document_id)
+        if expected_version is not None and row.version != expected_version:
+            raise ReceiptDocumentError("A versao do documento mudou. Atualize a conferencia antes de aprovar.")
         if self.db.query(InventoryReceiptDocumentLine).filter(InventoryReceiptDocumentLine.document_id == row.id, InventoryReceiptDocumentLine.association_status == "pending").first(): raise ReceiptDocumentError("Associe todas as linhas antes da aprovacao.")
         row.status = "validated"
+        row.version += 1
         self._enqueue_portioning_tasks(row)
         self.db.commit(); return self.get(document_id)
 

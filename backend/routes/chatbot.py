@@ -97,11 +97,18 @@ def get_history(session_id: str, db: Session = Depends(get_db), context: TenantC
         .order_by(ChatbotMessage.timestamp)
         .all()
     )
+    # O contexto usado contém prompt, dados de tenant e contexto operacional
+    # interno. O widget público precisa apenas das mensagens, nunca desse
+    # snapshot de depuração.
     out = [ChatbotMessageOut.model_validate(m) for m in msgs]
+    public_messages = [
+        {**message.model_dump(), "contexto_usado": None}
+        for message in out
+    ]
     return ok({
         "session_id": session_id,
         "status": conv.status.value,
-        "messages": [m.model_dump() for m in out],
+        "messages": public_messages,
     })
 
 

@@ -13,7 +13,7 @@ vi.mock("@/components/bi/useBiMobileAnalytics", () => ({
   useBiMobileAnalytics: () => query,
 }));
 vi.mock("@/context/AppContext", () => ({
-  useApp: () => ({ siteContent: { brand: { logo: "" } } }),
+  useApp: () => ({ siteContent: { brand: { name: "Pizzaria Teste", logo: "/uploads/pizzaria-logo.png" } } }),
 }));
 
 describe("BI mobile initial navigation and failure states", () => {
@@ -37,6 +37,8 @@ describe("BI mobile initial navigation and failure states", () => {
     expect(html.indexOf('id="bi-mobile-date"')).toBeLessThan(
       html.indexOf('role="tablist"'),
     );
+    expect(html).toContain('alt="Logo de Pizzaria Teste"');
+    expect(html).toContain("Resumo operacional responsivo");
   });
 
   it("does not display zero metrics while the API is loading", () => {

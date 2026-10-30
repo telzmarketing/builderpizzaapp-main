@@ -353,6 +353,7 @@ class OrderBoardService:
             )
             .filter(
                 Order.tenant_id == device.tenant_id,
+                Order.archived_at.is_(None),
                 Order.fulfillment_type == "delivery",
                 Order.status.in_(ACTIVE_STATUSES),
                 Delivery.tenant_id == device.tenant_id,

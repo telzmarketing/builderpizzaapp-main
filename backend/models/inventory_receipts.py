@@ -74,6 +74,7 @@ class InventoryReceiptDocument(Base):
     extraction_error = Column(String(500), nullable=True)
     extracted_json = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict, server_default="{}")
     validation_errors_json = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list, server_default="[]")
+    version = Column(Integer, nullable=False, default=1, server_default="1")
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 

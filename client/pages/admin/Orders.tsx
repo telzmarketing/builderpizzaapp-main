@@ -581,7 +581,7 @@ export default function AdminOrders() {
           )}
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-visible">
-            <div className="relative z-20 flex w-full flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-surface-03 bg-surface-01/95 px-4 py-3 md:px-6">
+            <div className="sticky top-0 z-20 flex w-full flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-surface-03 bg-surface-01/95 px-4 py-3 backdrop-blur md:px-6">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
               <div className="flex h-10 min-w-[14rem] shrink-0 items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-02 px-4">
                 <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-stone">
@@ -611,7 +611,7 @@ export default function AdminOrders() {
                 <AdminTopActions force />
               </div>
             </div>
-            <div className="relative z-20 flex w-full flex-shrink-0 flex-wrap items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-4 py-4 md:px-6">
+            <div className="relative z-10 flex w-full flex-shrink-0 flex-wrap items-center gap-2 border-b border-surface-03 bg-surface-01/95 px-4 py-4 md:px-6">
               <div className="flex h-11 shrink-0 items-center overflow-hidden rounded-xl border border-surface-03 bg-surface-02">
                 <button
                   onClick={() => setSelectedDate((value) => shiftDateInput(value, -1))}

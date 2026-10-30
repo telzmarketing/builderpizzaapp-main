@@ -40,7 +40,7 @@ class ProductCategoryCreate(CatalogInput):
     parent_id: Optional[str] = None
     name: str = Field(min_length=1, max_length=100)
     active: bool = True
-    sort_order: int = 0
+    sort_order: int = Field(default=0, ge=0)
     enable_sizes: bool = False
     enable_product_options: bool = False
     enable_recipe: bool = False
@@ -53,7 +53,7 @@ class ProductCategoryUpdate(CatalogInput):
     parent_id: Optional[str] = None
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     active: Optional[bool] = None
-    sort_order: Optional[int] = None
+    sort_order: Optional[int] = Field(default=None, ge=0)
     enable_sizes: Optional[bool] = None
     enable_product_options: Optional[bool] = None
     enable_recipe: Optional[bool] = None
@@ -116,14 +116,14 @@ class ProductCrustTypeCreate(CatalogInput):
     name: str = Field(min_length=1, max_length=100)
     price_addition: float = Field(default=0.0, ge=0)
     active: bool = True
-    sort_order: int = 0
+    sort_order: int = Field(default=0, ge=0)
 
 
 class ProductCrustTypeUpdate(CatalogInput):
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     price_addition: Optional[float] = Field(default=None, ge=0)
     active: Optional[bool] = None
-    sort_order: Optional[int] = None
+    sort_order: Optional[int] = Field(default=None, ge=0)
 
 
 class ProductCrustTypeOut(BaseModel):
@@ -248,7 +248,7 @@ class ProductBase(BaseModel):
     subcategory: Optional[str] = None
     category_id: Optional[str] = None
     subcategory_id: Optional[str] = None
-    product_type: Optional[str] = None  # "pizza" | "drink" | "other" | "brinde"
+    product_type: Optional[str] = None  # "pizza" | "esfiha" | "drink" | "other" | "brinde"
     rating: float = Field(default=4.5, ge=1.0, le=5.0)
     active: bool = True
     best_seller_badge_mode: str = "off"  # "off" | "manual" | "auto"
@@ -262,7 +262,8 @@ class ProductBase(BaseModel):
 class ProductCreate(ProductBase, CatalogInput):
     nullable_fields: ClassVar[frozenset[str]] = CatalogInput.nullable_fields - {"description"}
     name: str = Field(min_length=1, max_length=200)
-    product_type: Optional[Literal["pizza", "drink", "other", "brinde"]] = None
+    icon: Optional[str] = None
+    product_type: Optional[Literal["pizza", "esfiha", "drink", "other", "brinde"]] = None
     best_seller_badge_mode: Literal["off", "manual", "auto"] = "off"
 
     @field_validator("category", "subcategory")
@@ -281,7 +282,7 @@ class ProductUpdate(CatalogInput):
     subcategory: Optional[str] = None
     category_id: Optional[str] = None
     subcategory_id: Optional[str] = None
-    product_type: Optional[Literal["pizza", "drink", "other", "brinde"]] = None
+    product_type: Optional[Literal["pizza", "esfiha", "drink", "other", "brinde"]] = None
     rating: Optional[float] = Field(default=None, ge=1.0, le=5.0)
     active: Optional[bool] = None
     best_seller_badge_mode: Optional[Literal["off", "manual", "auto"]] = None

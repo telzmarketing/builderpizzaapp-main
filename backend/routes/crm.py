@@ -22,6 +22,8 @@ from backend.services.customer_ai_service import (
     get_customer_ai_analysis_status,
     run_customer_ai_analysis_job,
 )
+from backend.schemas.customer_commercial_memory import CustomerCommercialMemoryIn, CustomerCommercialMemoryOut
+from backend.services.customer_commercial_memory_service import CustomerCommercialMemoryError, CustomerCommercialMemoryService
 from backend.core.tenant_execution import job_metadata
 
 router = APIRouter(prefix="/crm", tags=["crm"])
@@ -239,6 +241,10 @@ class SegmentUpdate(BaseModel):
     status: str | None = None
 
 
+def _commercial_memory_service(db: Session, context: TenantContext | None, admin) -> CustomerCommercialMemoryService:
+    return CustomerCommercialMemoryService(db, context, actor_id=getattr(admin, "id", None))
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _now():
@@ -439,13 +445,13 @@ def create_card(
 def _create_card(pipeline_id: str, body: CardCreate, db: Session, tenant_id: str):
     import json
     if not _q(db, CrmPipeline, tenant_id).filter(CrmPipeline.id == pipeline_id).first():
-        raise HTTPException(404, "Pipeline nÃ£o encontrado.")
+        raise HTTPException(404, "Pipeline n\u00e3o encontrado.")
     if not _q(db, CrmStage, tenant_id).filter(CrmStage.id == body.stage_id, CrmStage.pipeline_id == pipeline_id).first():
-        raise HTTPException(404, "Etapa nÃ£o encontrada.")
+        raise HTTPException(404, "Etapa n\u00e3o encontrada.")
     if body.customer_id:
         exists = db.execute(text(_customer_exists_sql()), {"id": body.customer_id, "tenant_id": tenant_id}).first()
         if not exists:
-            raise HTTPException(404, "Cliente nÃ£o encontrado.")
+            raise HTTPException(404, "Cliente n\u00e3o encontrado.")
     card = CrmCard(
         id=str(uuid.uuid4()), tenant_id=tenant_id, pipeline_id=pipeline_id, stage_id=body.stage_id,
         customer_id=body.customer_id, title=body.title, description=body.description,
@@ -471,7 +477,7 @@ def move_card(
     if not card:
         raise HTTPException(404, "Card não encontrado.")
     if not _q(db, CrmStage, tenant_id).filter(CrmStage.id == body.stage_id, CrmStage.pipeline_id == card.pipeline_id).first():
-        raise HTTPException(404, "Etapa nÃ£o encontrada.")
+        raise HTTPException(404, "Etapa n\u00e3o encontrada.")
     card.stage_id = body.stage_id
     if body.sort_order is not None:
         card.sort_order = body.sort_order
@@ -560,11 +566,11 @@ def create_task(
     resolved_card_id = body.card_id or body.pipeline_card_id or None
     tenant_id = _tenant(context)
     if resolved_card_id and not _q(db, CrmCard, tenant_id).filter(CrmCard.id == resolved_card_id).first():
-        raise HTTPException(404, "Card nÃ£o encontrado.")
+        raise HTTPException(404, "Card n\u00e3o encontrado.")
     if body.customer_id:
         exists = db.execute(text(_customer_exists_sql()), {"id": body.customer_id, "tenant_id": tenant_id}).first()
         if not exists:
-            raise HTTPException(404, "Cliente nÃ£o encontrado.")
+            raise HTTPException(404, "Cliente n\u00e3o encontrado.")
     task = CrmTask(
         id=str(uuid.uuid4()), tenant_id=tenant_id, card_id=resolved_card_id, customer_id=body.customer_id,
         title=body.title, description=body.description, task_type=body.task_type,
@@ -1606,7 +1612,7 @@ def list_card_notes(card_id: str, db: Session = Depends(get_db),
                     _=Depends(get_current_admin)):
     tenant_id = _tenant(context)
     if not _q(db, CrmCard, tenant_id).filter(CrmCard.id == card_id).first():
-        raise HTTPException(404, "Card nÃ£o encontrado.")
+        raise HTTPException(404, "Card n\u00e3o encontrado.")
     notes = (
         _q(db, CrmCardNote, tenant_id)
         .filter(CrmCardNote.card_id == card_id)
@@ -1648,7 +1654,7 @@ def list_card_history(card_id: str, db: Session = Depends(get_db),
                       _=Depends(get_current_admin)):
     tenant_id = _tenant(context)
     if not _q(db, CrmCard, tenant_id).filter(CrmCard.id == card_id).first():
-        raise HTTPException(404, "Card nÃ£o encontrado.")
+        raise HTTPException(404, "Card n\u00e3o encontrado.")
     rows = (
         _q(db, CrmCardHistory, tenant_id)
         .filter(CrmCardHistory.card_id == card_id)
@@ -1660,3 +1666,33 @@ def list_card_history(card_id: str, db: Session = Depends(get_db),
         "id": r.id, "event_type": r.event_type, "description": r.description,
         "created_at": r.created_at.isoformat(),
     } for r in rows])
+
+
+@router.get("/customers/{customer_id}/commercial-memory", response_model=list[CustomerCommercialMemoryOut])
+def list_commercial_memory(customer_id: str, db: Session = Depends(get_db), context: TenantContext | None = Depends(panel_wave6_context), admin=Depends(get_current_admin)):
+    try:
+        return _commercial_memory_service(db, context, admin).list(customer_id)
+    except CustomerCommercialMemoryError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.post("/customers/{customer_id}/commercial-memory", response_model=CustomerCommercialMemoryOut, status_code=201)
+def upsert_commercial_memory(customer_id: str, body: CustomerCommercialMemoryIn, db: Session = Depends(get_db), context: TenantContext | None = Depends(panel_wave6_context), admin=Depends(get_current_admin)):
+    try:
+        result = _commercial_memory_service(db, context, admin).upsert(customer_id, body)
+        db.commit()
+        return result
+    except CustomerCommercialMemoryError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.delete("/customers/{customer_id}/commercial-memory/{memory_id}", status_code=204)
+def deactivate_commercial_memory(customer_id: str, memory_id: str, db: Session = Depends(get_db), context: TenantContext | None = Depends(panel_wave6_context), admin=Depends(get_current_admin)):
+    try:
+        _commercial_memory_service(db, context, admin).deactivate(customer_id, memory_id)
+        db.commit()
+        return None
+    except CustomerCommercialMemoryError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc

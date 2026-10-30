@@ -4,6 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 import { filterAdminNavigation, findAdminNavigationGroup } from "@/lib/adminAccess";
 import { preloadAdminRoute } from "@/lib/adminRoutePreload";
 import type { ApiEffectivePermissions } from "@/lib/api";
+import { useAdminNavigationFocus } from "@/components/layout/AdminLayoutContext";
 
 const SIDEBAR_COLLAPSED_KEY = "admin:context-sidebar-collapsed";
 
@@ -49,7 +50,16 @@ export default function ContextSidebar() {
   const permissions = readPermissions();
   const navigationGroups = useMemo(() => filterAdminNavigation(permissions), [JSON.stringify(permissions)]);
   const activeGroup = findAdminNavigationGroup(pathname, navigationGroups);
+  const { focusedGroupLabel, clearFocus } = useAdminNavigationFocus();
+  const focusedGroup = focusedGroupLabel
+    ? navigationGroups.find((group) => group.label === focusedGroupLabel) ?? null
+    : null;
+  const visibleGroup = focusedGroup ?? activeGroup;
   const [collapsed, setCollapsed] = useState(getInitialCollapsedState);
+
+  useEffect(() => {
+    if (focusedGroup) setCollapsed(false);
+  }, [focusedGroup?.label]);
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
@@ -57,21 +67,21 @@ export default function ContextSidebar() {
 
   useEffect(() => {
     const nav = navRef.current;
-    if (!nav || !activeGroup) return;
-    const saved = sessionStorage.getItem(`admin:context-sidebar-scroll:${activeGroup.label}`);
+    if (!nav || !visibleGroup) return;
+    const saved = sessionStorage.getItem(`admin:context-sidebar-scroll:${visibleGroup.label}`);
     nav.scrollTop = saved ? parseInt(saved, 10) : 0;
-  }, [activeGroup?.label]);
+  }, [visibleGroup?.label]);
 
   useEffect(() => {
     const nav = navRef.current;
-    if (!nav || !activeGroup) return;
+    if (!nav || !visibleGroup) return;
     const saveScroll = () =>
-      sessionStorage.setItem(`admin:context-sidebar-scroll:${activeGroup.label}`, String(nav.scrollTop));
+      sessionStorage.setItem(`admin:context-sidebar-scroll:${visibleGroup.label}`, String(nav.scrollTop));
     nav.addEventListener("scroll", saveScroll, { passive: true });
     return () => nav.removeEventListener("scroll", saveScroll);
-  }, [activeGroup?.label]);
+  }, [visibleGroup?.label]);
 
-  if (!activeGroup) return null;
+  if (!visibleGroup) return null;
 
   return (
     <aside
@@ -82,7 +92,7 @@ export default function ContextSidebar() {
       <div className={`flex h-[58px] flex-shrink-0 items-center border-b border-surface-03 ${collapsed ? "justify-center px-2" : "justify-between px-4"}`}>
         {!collapsed && (
           <div className="min-w-0">
-            <p className="truncate text-sm font-black text-cream">{toText(activeGroup.label)}</p>
+            <p className="truncate text-sm font-black text-cream">{toText(visibleGroup.label)}</p>
           </div>
         )}
         <button
@@ -96,15 +106,16 @@ export default function ContextSidebar() {
         </button>
       </div>
 
-      <nav ref={navRef} className={`flex-1 overflow-y-auto py-3 ${collapsed ? "px-2" : "px-3"}`} aria-label={`Navegacao contextual de ${activeGroup.label}`}>
+      <nav ref={navRef} className={`min-h-0 flex-1 overflow-y-auto overscroll-contain py-3 ${collapsed ? "px-2" : "px-3"}`} aria-label={`Navegacao contextual de ${visibleGroup.label}`}>
         <div className="space-y-1">
-          {activeGroup.children.map((item) => {
+          {visibleGroup.children.map((item) => {
             const Icon = item.icon;
             const active = itemMatchesPath(item, pathname);
             return (
               <Link
                 key={item.path}
                 to={item.path}
+                onClick={clearFocus}
                 onMouseEnter={() => preloadAdminRoute(item.path)}
                 onFocus={() => preloadAdminRoute(item.path)}
                 onPointerDown={() => preloadAdminRoute(item.path)}

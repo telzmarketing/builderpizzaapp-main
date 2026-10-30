@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, LogOut, Menu, Search, User, X } from "lucide-react";
+import { ArrowLeft, LogOut, Menu, Moon, Search, Sun, User, X } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import TelzLogo from "@/components/TelzLogo";
 import AdminTopActions from "@/components/admin/AdminTopActions";
@@ -10,6 +10,8 @@ import { preloadAdminRoute } from "@/lib/adminRoutePreload";
 import { isAssetUrl, platformSupportApi, resolveAssetUrl, type ApiEffectivePermissions } from "@/lib/api";
 import { readPlatformSupportSession, restorePlatformMasterSession } from "@/lib/platformSupportSession";
 import type { AdminNavigationGroup, AdminNavigationItem } from "@/config/adminNavigation";
+import { useAdminNavigationFocus, useAdminTheme } from "@/components/layout/AdminLayoutContext";
+import { toggleAdminTheme } from "@/lib/adminTheme";
 
 const LAST_MODULE_PATH_PREFIX = "admin:last-module-path:";
 
@@ -73,9 +75,9 @@ export default function TopNavigation({
 }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const { theme, setTheme } = useAdminTheme();
   const { siteContent } = useApp();
   const searchRef = useRef<HTMLDivElement>(null);
-  const kdsMenuRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   const permissions = readJson<ApiEffectivePermissions>("admin_permissions");
   const supportSession = readPlatformSupportSession();
@@ -85,8 +87,8 @@ export default function TopNavigation({
   const [mobileModuleLabel, setMobileModuleLabel] = useState(activeGroup?.label ?? navigationGroups[0]?.label ?? "");
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [kdsOpen, setKdsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const { focusGroup, clearFocus } = useAdminNavigationFocus();
 
   const adminName = toText(adminUser?.name, "Administrador");
   const adminEmail = toText(adminUser?.email);
@@ -100,18 +102,16 @@ export default function TopNavigation({
   }, [activeGroup?.label, pathname]);
 
   useEffect(() => {
-    if (!searchOpen && !kdsOpen && !profileOpen) return;
+    if (!searchOpen && !profileOpen) return;
     const closeDropdowns = (event: MouseEvent) => {
       const target = event.target as Node;
       if (searchOpen && searchRef.current && !searchRef.current.contains(target)) setSearchOpen(false);
-      if (kdsOpen && kdsMenuRef.current && !kdsMenuRef.current.contains(target)) setKdsOpen(false);
       if (profileOpen && profileRef.current && !profileRef.current.contains(target)) setProfileOpen(false);
     };
     document.addEventListener("mousedown", closeDropdowns);
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setSearchOpen(false);
-      setKdsOpen(false);
       setProfileOpen(false);
     };
     document.addEventListener("keydown", closeOnEscape);
@@ -119,7 +119,7 @@ export default function TopNavigation({
       document.removeEventListener("mousedown", closeDropdowns);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [kdsOpen, profileOpen, searchOpen]);
+  }, [profileOpen, searchOpen]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -159,6 +159,7 @@ export default function TopNavigation({
   };
 
   const handleModuleClick = (group: AdminNavigationGroup) => {
+    clearFocus();
     navigate(moduleTarget(group));
   };
 
@@ -194,7 +195,7 @@ export default function TopNavigation({
           type="button"
           onClick={() => onMobileMenuChange(true)}
           className="flex h-10 w-10 items-center justify-center rounded-xl border border-surface-03 text-stone transition-colors hover:bg-surface-03 hover:text-cream 2xl:hidden"
-          aria-label="Abrir navegacao"
+          aria-label="Abrir navegação"
         >
           <Menu size={20} />
         </button>
@@ -216,21 +217,26 @@ export default function TopNavigation({
           </span>
         </Link>
 
-        <nav className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto pl-2 2xl:flex" aria-label="Modulos principais">
+        <nav className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto pl-2 2xl:flex" aria-label="Módulos principais">
           {navigationGroups.map((group) => {
             const Icon = group.children[0]?.icon;
             const active = activeGroup?.label === group.label;
             const target = moduleTarget(group);
             if (group.label === "KDS") {
               return (
-                <div key={group.label} ref={kdsMenuRef} className="relative shrink-0">
+                <div key={group.label} className="relative shrink-0">
                   <button
                     type="button"
-                    aria-haspopup="menu"
-                    aria-expanded={kdsOpen}
-                    onClick={() => setKdsOpen((open) => !open)}
+                    aria-label="Abrir barra lateral dos KDS"
+                    onClick={() => {
+                      focusGroup("KDS");
+                      setMobileModuleLabel("KDS");
+                      if (window.matchMedia("(max-width: 1535px)").matches) {
+                        onMobileMenuChange(true);
+                      }
+                    }}
                     className={`flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-bold uppercase outline-none transition-colors ${
-                      active || kdsOpen
+                      active
                         ? "bg-surface-03 text-cream"
                         : "text-stone hover:bg-surface-03 hover:text-cream"
                     }`}
@@ -238,26 +244,6 @@ export default function TopNavigation({
                     {Icon && <Icon size={15} />}
                     <span>{group.label}</span>
                   </button>
-                  {kdsOpen && (
-                    <div role="menu" aria-label="Páginas KDS" className="absolute left-0 top-12 z-50 min-w-64 overflow-hidden rounded-2xl border border-surface-03 bg-surface-02 p-1 shadow-2xl">
-                      {group.children.map((item) => {
-                        const ItemIcon = item.icon;
-                        return (
-                          <Link
-                            key={item.path}
-                            to={item.path}
-                            role="menuitem"
-                            onMouseEnter={() => preloadAdminRoute(item.path)}
-                            onClick={() => setKdsOpen(false)}
-                            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-stone transition-colors hover:bg-surface-03 hover:text-cream"
-                          >
-                            <ItemIcon size={16} className="shrink-0 text-gold" />
-                            <span>{item.label}</span>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
                 </div>
               );
             }
@@ -284,6 +270,18 @@ export default function TopNavigation({
         <div className="ml-auto">
           {!supportSession && <AdminTenantSwitcher />}
         </div>
+
+        <button
+          type="button"
+          onClick={() => setTheme(toggleAdminTheme(theme))}
+          className="flex h-10 shrink-0 items-center gap-2 rounded-xl border border-surface-03 px-3 text-xs font-bold text-stone transition-colors hover:bg-surface-03 hover:text-cream"
+          aria-label={theme === "dark" ? "Ativar tema claro do painel" : "Ativar tema escuro do painel"}
+          aria-pressed={theme === "light"}
+          title={theme === "dark" ? "Ativar tema claro do painel" : "Ativar tema escuro do painel"}
+        >
+          {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+          <span className="hidden xl:inline">{theme === "dark" ? "Claro" : "Escuro"}</span>
+        </button>
 
         <div ref={searchRef} className="relative hidden 2xl:block">
           <form
@@ -452,7 +450,11 @@ export default function TopNavigation({
                   <button
                     key={group.label}
                     type="button"
-                    onClick={() => setMobileModuleLabel(group.label)}
+                    onClick={() => {
+                      setMobileModuleLabel(group.label);
+                      if (group.label === "KDS") focusGroup("KDS");
+                      else clearFocus();
+                    }}
                     className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-left text-xs font-bold transition-colors ${
                       active
                         ? "border-gold/40 bg-gold/15 text-gold"
@@ -476,7 +478,10 @@ export default function TopNavigation({
                       <Link
                         key={item.path}
                         to={item.path}
-                        onClick={() => onMobileMenuChange(false)}
+                        onClick={() => {
+                          clearFocus();
+                          onMobileMenuChange(false);
+                        }}
                         className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold transition-colors ${
                           active ? "bg-gold text-black" : "bg-surface-02 text-stone hover:bg-surface-03 hover:text-cream"
                         }`}

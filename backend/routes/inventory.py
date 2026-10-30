@@ -196,6 +196,14 @@ def create_purchase(body: InventoryPurchaseIn, db: Session = Depends(get_db), _a
         return err(exc)
 
 
+@router.post("/purchase-requests/replenishment", response_model=InventoryPurchaseOut, status_code=201)
+def create_replenishment_request(db: Session = Depends(get_db), _actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "create")), tenant_context: TenantContext | None = Depends(panel_operation_context)):
+    try:
+        return service(db, tenant_context, _actor).create_replenishment_request()
+    except DomainError as exc:
+        return err(exc)
+
+
 @router.put("/purchases/{purchase_id}", response_model=InventoryPurchaseOut)
 def update_purchase(purchase_id: str, body: InventoryPurchaseIn, db: Session = Depends(get_db), _actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "edit")), tenant_context: TenantContext | None = Depends(panel_operation_context)):
     try:

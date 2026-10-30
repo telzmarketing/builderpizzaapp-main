@@ -228,7 +228,7 @@ export default function KdsTouchWorkspace(props: Props) {
           </button>
         </div>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-300">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 bg-[#040e18] py-2 text-sm text-slate-300">
         <p className="flex items-center gap-2">
           <Users size={18} className="text-amber-400" />
           {presence

@@ -33,9 +33,9 @@ def get_global_favicon(
 
 
 @router.get("/site-config/manifest.webmanifest", include_in_schema=False)
-def get_global_manifest(request: Request, db: Session = Depends(get_db)):
+def get_global_manifest(request: Request, app: str | None = Query(default=None), db: Session = Depends(get_db)):
     return JSONResponse(
-        SiteConfigService(db).manifest(request),
+        SiteConfigService(db).manifest(request, app=app),
         media_type="application/manifest+json", headers=_NO_CACHE,
     )
 

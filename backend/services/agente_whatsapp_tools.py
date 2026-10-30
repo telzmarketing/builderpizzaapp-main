@@ -23,6 +23,7 @@ from backend.models.order import Order
 from backend.models.product import Product, ProductCrustType, ProductDrinkVariant, ProductSize
 from backend.models.product_promotion import ProductPromotion
 from backend.models.promotion import Promotion
+from backend.models.chatbot import ChatbotFAQ
 from backend.schemas.order import CartItemIn, CheckoutIn, FlavorIn
 from backend.schemas.payment import PaymentCreate
 from backend.schemas.coupon import CouponApplyIn
@@ -35,6 +36,16 @@ from backend.services.payment_service import PaymentService
 from backend.services.product_pricing_service import ProductPricingService
 from backend.services.shipping_service import ShippingService
 from backend.services.agente_whatsapp_campaign_context_service import AgenteWhatsAppCampaignContextService
+
+
+PUBLIC_ALLOWED_TOOLS = frozenset({
+    # Context bootstrap required to serve an order/customer request.
+    "buscar_cliente_por_telefone",
+    # Catalog, promotions, FAQ, freight and order scope only.
+    "buscar_produtos", "buscar_produto_por_nome", "buscar_promocoes", "validar_cupom",
+    "buscar_faq", "calcular_frete", "consultar_status_pedido", "buscar_enderecos",
+    "buscar_ultimo_pedido", "validar_item_pedido", "simular_checkout", "criar_pedido",
+})
 
 
 def _json_dump(value: Any) -> str:
@@ -60,6 +71,7 @@ class AgenteWhatsAppToolService:
             "buscar_produtos": self._buscar_produtos,
             "buscar_produto_por_nome": self._buscar_produto_por_nome,
             "buscar_promocoes": self._buscar_promocoes,
+            "buscar_faq": self._buscar_faq,
             "calcular_frete": self._calcular_frete,
             "validar_cupom": self._validar_cupom,
             "consultar_status_pedido": self._consultar_status_pedido,
@@ -75,7 +87,7 @@ class AgenteWhatsAppToolService:
         }
 
     def list_tools(self) -> list[dict[str, Any]]:
-        return [
+        tools = [
             {
                 "name": "buscar_cliente_por_telefone",
                 "description": "Localiza o cliente/lead usando o telefone do WhatsApp.",
@@ -105,6 +117,14 @@ class AgenteWhatsAppToolService:
                 "description": "Busca um produto especifico por nome e retorna detalhes comerciais.",
                 "category": "cardapio",
                 "input_schema": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}},
+                "mutates_data": False,
+                "enabled": True,
+            },
+            {
+                "name": "buscar_faq",
+                "description": "Busca respostas nas perguntas frequentes oficiais da loja.",
+                "category": "faq",
+                "input_schema": {"type": "object", "required": ["query"], "properties": {"query": {"type": "string", "minLength": 2}, "limit": {"type": "integer", "minimum": 1, "maximum": 10}}},
                 "mutates_data": False,
                 "enabled": True,
             },
@@ -275,6 +295,7 @@ class AgenteWhatsAppToolService:
                 "enabled": True,
             },
         ]
+        return [tool for tool in tools if tool["name"] in PUBLIC_ALLOWED_TOOLS]
 
     def execute_tool(
         self,
@@ -292,6 +313,8 @@ class AgenteWhatsAppToolService:
         error: str | None = None
 
         try:
+            if tool_name not in PUBLIC_ALLOWED_TOOLS:
+                raise ValueError("Ferramenta fora do escopo da IA de atendimento publico.")
             context = self._resolve_context(session_id=session_id, customer_id=customer_id)
             self._tenant_context = context.get("tenant_context")
             handler = self._handlers.get(tool_name)
@@ -470,6 +493,18 @@ class AgenteWhatsAppToolService:
                 for promo in product_promotions
             ],
         }
+
+    def _buscar_faq(self, args: dict[str, Any], _context: dict[str, Any]) -> dict[str, Any]:
+        query = " ".join(str(args.get("query") or "").split())
+        if len(query) < 2:
+            raise ValueError("Informe a duvida para buscar nas FAQs.")
+        limit = max(1, min(int(args.get("limit") or 5), 10))
+        like = f"%{query}%"
+        rows = (self._query(ChatbotFAQ)
+                .filter(ChatbotFAQ.ativo.is_(True), or_(ChatbotFAQ.pergunta.ilike(like), ChatbotFAQ.resposta.ilike(like)))
+                .order_by(ChatbotFAQ.prioridade.desc(), ChatbotFAQ.updated_at.desc())
+                .limit(limit).all())
+        return {"items": [{"id": row.id, "question": row.pergunta, "answer": row.resposta, "category": row.categoria} for row in rows], "count": len(rows)}
 
     def _calcular_frete(self, args: dict[str, Any], _context: dict[str, Any]) -> dict[str, Any]:
         payload = ShippingCalculateIn.model_validate(args)

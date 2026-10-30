@@ -14,6 +14,7 @@ import {
   Package,
   RefreshCw,
   Route,
+  ScanLine,
   Send,
   Star,
   X,
@@ -349,6 +350,13 @@ export default function Motoboy() {
   const [problem,       setProblem]       = useState<DeliveryRecord | null>(null);
   const [problemReason, setProblemReason] = useState(PAYMENT_DELIVERY_PROBLEM_REASONS[0].value);
   const [problemText,   setProblemText]   = useState("");
+  const [itemQrPayload, setItemQrPayload] = useState("");
+  const [itemQrStatus, setItemQrStatus] = useState("");
+  const [itemQrBusy, setItemQrBusy] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState("");
+  const scannerVideoRef = useRef<HTMLVideoElement | null>(null);
+  const scannerStreamRef = useRef<MediaStream | null>(null);
   const gpsWatchRef    = useRef<number | null>(null);
   const gpsIntervalRef = useRef<number | null>(null);
 
@@ -451,6 +459,71 @@ export default function Motoboy() {
       setActionLoading(null);
     }
   }
+
+  async function confirmItemQr() {
+    if (!detail || !itemQrPayload.trim() || itemQrBusy) return;
+    setItemQrBusy(true);
+    setItemQrStatus("");
+    try {
+      const result = await deliveryApi.driverScanItem(detail.id, itemQrPayload.trim());
+      setItemQrPayload("");
+      setItemQrStatus(result.idempotent
+        ? "Este volume já havia sido confirmado."
+        : `Volume confirmado${result.total_count ? ` (${result.confirmed_count}/${result.total_count})` : ""}.`);
+    } catch (err) {
+      setItemQrStatus(err instanceof Error ? err.message : "Não foi possível confirmar este QR Code.");
+    } finally {
+      setItemQrBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!scannerOpen || !detail) return;
+    let cancelled = false;
+    let animationFrame = 0;
+    const start = async () => {
+      try {
+        const BarcodeDetectorCtor = (window as Window & { BarcodeDetector?: any }).BarcodeDetector;
+        if (!BarcodeDetectorCtor || !navigator.mediaDevices?.getUserMedia) {
+          setScannerError("Este navegador não oferece leitura de QR pela câmera. Use um leitor ou cole o conteúdo do QR.");
+          return;
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+        if (cancelled) { stream.getTracks().forEach((track) => track.stop()); return; }
+        scannerStreamRef.current = stream;
+        const video = scannerVideoRef.current;
+        if (!video) return;
+        video.srcObject = stream;
+        await video.play();
+        const detector = new BarcodeDetectorCtor({ formats: ["qr_code"] });
+        const scan = async () => {
+          if (cancelled) return;
+          try {
+            const codes = await detector.detect(video);
+            const value = codes?.find((code: { rawValue?: string }) => code.rawValue)?.rawValue;
+            if (value) {
+              setItemQrPayload(value);
+              setScannerOpen(false);
+              setScannerError("");
+              return;
+            }
+          } catch { /* câmera continua tentando até encontrar um QR válido */ }
+          animationFrame = requestAnimationFrame(() => { void scan(); });
+        };
+        void scan();
+      } catch (err) {
+        setScannerError(err instanceof Error ? err.message : "Não foi possível abrir a câmera.");
+      }
+    };
+    void start();
+    return () => {
+      cancelled = true;
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      scannerStreamRef.current?.getTracks().forEach((track) => track.stop());
+      scannerStreamRef.current = null;
+      if (scannerVideoRef.current) scannerVideoRef.current.srcObject = null;
+    };
+  }, [detail, scannerOpen]);
 
   const allDeliveries       = dashboard?.queue ?? [];
   const activeDeliveries    = useMemo(() => allDeliveries.filter((d) => ACTIVE_STATUSES.has(d.status)),  [allDeliveries]);
@@ -857,7 +930,7 @@ export default function Motoboy() {
                 ["Pagamento",   driverPaymentLines(detail).join(" · ")],
                 ["Valor",       money(detail.order?.total)],
                 ["Taxa entrega",money(detail.order?.shipping_fee)],
-                ["Status",      detail.order?.status || "—"],
+                ["Status",      detail.order?.status || "â€”"],
                 ...(detail.problem_report ? [["Problema", detail.problem_report]] : []),
                 ...(detail.admin_resolution_note ? [["Retorno admin", detail.admin_resolution_note]] : []),
                 ["Observações", detail.order?.notes || detail.notes || "—"],
@@ -868,6 +941,42 @@ export default function Motoboy() {
                 </div>
               ))}
             </div>
+
+            <section className="mt-5 rounded-xl border border-amber-500/25 bg-amber-500/5 p-4" aria-labelledby="item-check-title">
+              <div className="flex items-start gap-3">
+                <ScanLine size={20} className="mt-0.5 shrink-0 text-amber-300" />
+                <div>
+                  <p id="item-check-title" className="font-black text-cream">Conferência individual dos itens</p>
+                  <p className="mt-1 text-xs leading-relaxed text-stone">
+                    Leia o QR Code de cada etiqueta com a câmera ou com um leitor do celular. O servidor valida o pedido, o volume e o motoboy antes de confirmar.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" onClick={() => { setScannerError(""); setScannerOpen((open) => !open); }} className="min-h-10 rounded-lg border border-amber-400/50 px-3 text-xs font-black text-amber-200">
+                  {scannerOpen ? "Fechar câmera" : "Ler com câmera"}
+                </button>
+              </div>
+              {scannerOpen && <video ref={scannerVideoRef} muted playsInline className="mt-3 aspect-video w-full rounded-lg border border-amber-400/40 bg-black object-cover" aria-label="Câmera para leitura do QR Code" />}
+              {scannerError && <p role="alert" className="mt-2 text-xs text-amber-200">{scannerError}</p>}
+              <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={(event) => { event.preventDefault(); void confirmItemQr(); }}>
+                <input
+                  value={itemQrPayload}
+                  onChange={(event) => setItemQrPayload(event.target.value)}
+                  placeholder="Aponte o leitor ou cole o QR Code"
+                  aria-label="QR Code do item"
+                  autoComplete="off"
+                  className="min-h-11 min-w-0 flex-1 rounded-lg border border-surface-03 bg-surface-01 px-3 text-xs text-cream outline-none focus:border-amber-400"
+                />
+                <button type="submit" disabled={!itemQrPayload.trim() || itemQrBusy} className="min-h-11 rounded-lg bg-amber-500 px-4 font-black text-black disabled:opacity-50">
+                  {itemQrBusy ? "Confirmando..." : "Confirmar item"}
+                </button>
+              </form>
+              {itemQrStatus && <p role="status" className="mt-2 rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-xs text-stone">{itemQrStatus}</p>}
+              <div className="mt-2 text-xs text-stone">
+                A confirmação é idempotente: repetir a leitura do mesmo item não gera uma nova retirada.
+              </div>
+            </section>
 
             {deliveryAddress(detail) && (
               <a
