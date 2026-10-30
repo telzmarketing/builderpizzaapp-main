@@ -49,7 +49,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Defina explicitamente:
 
 ```env
-ALEMBIC_TARGET=20261028_gestor_automations
+ALEMBIC_TARGET=20261030_crust_option_kind
 INSTALL_SSL=false
 ```
 
