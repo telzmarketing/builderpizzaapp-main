@@ -5,7 +5,7 @@ All CRUD DTOs plus the enhanced ShippingCalculateOut
 (now includes estimated_time, available flag, message).
 """
 from __future__ import annotations
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -71,8 +71,8 @@ class FreightTypeConfigUpdate(BaseModel):
 
 class ShippingNeighborhoodCreate(BaseModel):
     name: str = Field(..., min_length=1)
-    city: str = ""
-    shipping_value: float = 0.0
+    city: str = Field(..., min_length=1)
+    shipping_value: float = Field(default=0.0, ge=0)
     is_free: bool = False
     min_order_value: float = 0.0
     estimated_time_min: int = 45
@@ -80,11 +80,19 @@ class ShippingNeighborhoodCreate(BaseModel):
     active: bool = True
     priority: int = 0
 
+    @field_validator("name", "city")
+    @classmethod
+    def validate_area_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("nome e cidade do bairro são obrigatórios")
+        return value
+
 
 class ShippingNeighborhoodUpdate(BaseModel):
     name: Optional[str] = None
     city: Optional[str] = None
-    shipping_value: Optional[float] = None
+    shipping_value: Optional[float] = Field(default=None, ge=0)
     is_free: Optional[bool] = None
     min_order_value: Optional[float] = None
     estimated_time_min: Optional[int] = None
@@ -92,9 +100,28 @@ class ShippingNeighborhoodUpdate(BaseModel):
     active: Optional[bool] = None
     priority: Optional[int] = None
 
+    @field_validator("name", "city")
+    @classmethod
+    def validate_area_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("nome e cidade do bairro não podem ser vazios")
+        return value
 
-class ShippingNeighborhoodOut(ShippingNeighborhoodCreate):
+
+class ShippingNeighborhoodOut(BaseModel):
     id: str
+    name: str
+    city: str
+    shipping_value: float
+    is_free: bool
+    min_order_value: float
+    estimated_time_min: int
+    notes: str
+    active: bool
+    priority: int
     created_at: datetime
     updated_at: datetime
 

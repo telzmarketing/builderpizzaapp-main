@@ -93,6 +93,14 @@ def _normalize_area_name(value: str | None) -> str:
     return " ".join(text.casefold().split())
 
 
+def _matches_neighborhood(row: ShippingNeighborhood, neighborhood: str, city: str) -> bool:
+    """Match a shipping rule only when both normalized area components agree."""
+    return bool(neighborhood and city) and (
+        _normalize_area_name(row.name) == neighborhood
+        and _normalize_area_name(row.city) == city
+    )
+
+
 class ShippingService:
     def __init__(self, db: Session, tenant_context: TenantContext | None = None):
         self._db = db
@@ -474,7 +482,7 @@ class ShippingService:
                 if nbhd_ids and nbhd_lower:
                     nbhds = self._query(ShippingNeighborhood).filter(ShippingNeighborhood.id.in_(nbhd_ids)).all()
                     for n in nbhds:
-                        if _normalize_area_name(n.name) == nbhd_lower:
+                        if _matches_neighborhood(n, nbhd_lower, city_lower):
                             matched = True
                             break
             elif promo.promo_type == "free_campaign":
@@ -528,7 +536,7 @@ class ShippingService:
                     available=True,
                 )
 
-            elif tc.freight_type == "by_neighborhood" and nbhd_lower:
+            elif tc.freight_type == "by_neighborhood":
                 nbhds = (
                     self._query(ShippingNeighborhood)
                     .filter(ShippingNeighborhood.active == True)
@@ -536,7 +544,7 @@ class ShippingService:
                     .all()
                 )
                 for n in nbhds:
-                    if _normalize_area_name(n.name) == nbhd_lower:
+                    if _matches_neighborhood(n, nbhd_lower, city_lower):
                         if n.min_order_value > 0 and payload.order_subtotal < n.min_order_value:
                             continue
                         price = 0.0 if n.is_free else n.shipping_value
@@ -550,6 +558,16 @@ class ShippingService:
                             message=n.notes or "",
                         )
                         break
+                if result is None:
+                    result = ShippingCalculateOut(
+                        shipping_price=0.0,
+                        shipping_type="unavailable",
+                        rule_name="Bairro e cidade não atendidos",
+                        free=False,
+                        estimated_time=0,
+                        available=False,
+                        message=cfg.unavailable_message,
+                    )
 
             elif tc.freight_type == "by_cep_range" and cep_clean:
                 ranges = (
