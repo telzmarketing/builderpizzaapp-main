@@ -156,7 +156,7 @@ export interface KdsWorkspaceProps {
   setTargetOperator: (id: string) => void;
   load: (manual?: boolean) => Promise<void>;
   updatePresence: (state: KdsPresenceState) => Promise<void>;
-  command: (task: KdsProductionTask, action: TaskAction) => Promise<void>;
+  command: (task: KdsProductionTask, action: TaskAction) => Promise<boolean>;
   redistribute: () => Promise<void>;
 }
 
@@ -283,6 +283,7 @@ export default function KdsMultiOperatorBoard({
           updated.state === "aguardando_analise" ? "destructive" : "default",
       });
       void load();
+      return true;
     } catch (caught) {
       const message = errorMessage(caught);
       setError(message);
@@ -292,6 +293,7 @@ export default function KdsMultiOperatorBoard({
         variant: "destructive",
       });
       void load(true);
+      return false;
     } finally {
       setBusy(null);
     }
@@ -555,7 +557,7 @@ export default function KdsMultiOperatorBoard({
                   {task.state === "checking_stock" && (
                     <StockCountdown
                       task={task}
-                      onConfirm={() => command(task, "confirm-stock")}
+                      onConfirm={() => command(task, "confirm-stock").then(() => undefined)}
                     />
                   )}
                   {(task.state === "aguardando_analise" ||

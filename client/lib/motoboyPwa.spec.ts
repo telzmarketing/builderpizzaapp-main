@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { configureBiMobileWorker, configureMotoboyWorker, configurePwaWorker, getPwaApp, getPwaEntryApp, isBiMobilePath, isMotoboyPath, isPwaEntryPath, KDS_PWA_KEYS } from "./motoboyPwa";
+import { canShowPwaInstallButton } from "@/components/PwaInstallButton";
 
 const origin = "https://pizza.example";
 function registration(scope = "/", script = "/sw.js", subscribed = false) {
@@ -102,6 +103,12 @@ describe("KDS PWA entries", () => {
     expect(isPwaEntryPath("/app/kds/expedicao/queue")).toBe(true);
     expect(getPwaEntryApp("/painel/expedicao")).toBeNull();
     expect(isPwaEntryPath("/tv/motoboys")).toBe(false);
+  });
+
+  it("shows the install control on canonical and standalone KDS routes", () => {
+    expect(canShowPwaInstallButton("/painel/cozinha", KDS_PWA_KEYS)).toBe(true);
+    expect(canShowPwaInstallButton("/app/kds/pizzaiolo/", KDS_PWA_KEYS)).toBe(true);
+    expect(canShowPwaInstallButton("/painel/orders", KDS_PWA_KEYS)).toBe(false);
   });
 
   it("registers a narrow scope for a dedicated KDS entry", async () => {

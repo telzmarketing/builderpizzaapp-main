@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BookOpen,
   Check,
@@ -155,7 +155,26 @@ export default function KdsTouchWorkspace(props: Props) {
   const { queue, orders, busy, selected, targetOperator } = props;
   const [orderId, setOrderId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
+  const [startedOrderIds, setStartedOrderIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const tasks = queue?.tasks ?? [];
+  const queuedOrders = orders.filter(
+    (candidate) =>
+      (candidate.status === "paid" || candidate.status === "pago") &&
+      !startedOrderIds.has(candidate.id),
+  );
+  useEffect(() => {
+    setStartedOrderIds((current) => {
+      const next = new Set(
+        [...current].filter((id) => {
+          const order = orders.find((candidate) => candidate.id === id);
+          return order && (order.status === "paid" || order.status === "pago");
+        }),
+      );
+      return next.size === current.size ? current : next;
+    });
+  }, [orders]);
   // Do not expose task records whose order has already left the active queue.
   const visibleTasks = tasks.filter((task) =>
     orders.some((candidate) => candidate.id === task.order_id),
@@ -215,6 +234,16 @@ export default function KdsTouchWorkspace(props: Props) {
             ? 0
             : -1;
   const ingredients = item?.recipe?.ingredients ?? [];
+  const runTaskCommand = async (currentTask: KdsProductionTask, currentAction: TaskAction) => {
+    const succeeded = await props.command(currentTask, currentAction);
+    if (succeeded && currentAction === "start") {
+      setStartedOrderIds((current) => {
+        const next = new Set(current);
+        next.add(currentTask.order_id);
+        return next;
+      });
+    }
+  };
 
   return (
     <div className="kds-touch-workspace min-w-0 space-y-3 p-3 sm:p-4">
@@ -296,7 +325,7 @@ export default function KdsTouchWorkspace(props: Props) {
               </p>
             </div>
             <span className="rounded-full bg-[#1c3347] px-3 py-1 font-bold">
-              {orders.length}
+              {queuedOrders.length}
             </span>
           </header>
           <div className="kds-order-queue min-h-0 max-h-72 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 md:max-h-[calc(100dvh-260px)] md:min-h-40">
@@ -309,13 +338,13 @@ export default function KdsTouchWorkspace(props: Props) {
                 Carregando pedidos...
               </p>
             ) : (
-              orders.length === 0 && (
+              queuedOrders.length === 0 && (
                 <p className="p-6 text-center text-slate-400">
                   Nenhum pedido na cozinha.
                 </p>
               )
             )}
-            {orders.map((candidate) => (
+            {queuedOrders.map((candidate) => (
               <button
                 key={candidate.id}
                 type="button"
@@ -482,7 +511,7 @@ export default function KdsTouchWorkspace(props: Props) {
                   <button
                     type="button"
                     disabled={Boolean(busy)}
-                    onClick={() => void props.command(task, action.action)}
+                    onClick={() => void runTaskCommand(task, action.action)}
                     className={`flex min-h-14 w-full items-center justify-center gap-3 rounded-xl px-5 text-lg font-black text-slate-950 disabled:opacity-40 ${action.action === "return-to-service" ? "bg-red-400" : "bg-amber-400 hover:bg-amber-300"}`}
                   >
                     {busy === task.id ? (
@@ -632,7 +661,7 @@ export default function KdsTouchWorkspace(props: Props) {
                     {task.state === "checking_stock" && (
                       <StockCountdown
                         task={task}
-                        onConfirm={() => props.command(task, "confirm-stock")}
+                        onConfirm={() => props.command(task, "confirm-stock").then(() => undefined)}
                       />
                     )}
                     {["aguardando_analise", "atendimento", "blocked"].includes(

@@ -6,7 +6,7 @@ import KdsTouchWorkspace from "./KdsTouchWorkspace";
 const order: KdsKitchenOrder = {
   id: "order-d5-legacy-id",
   order_code: "K5M4",
-  status: "preparing",
+  status: "paid",
   fulfillment_type: "delivery",
   total: 78.8,
   estimated_time: 20,
@@ -25,6 +25,7 @@ const order: KdsKitchenOrder = {
 };
 
 const noop = async () => {};
+const command = async () => true;
 function renderOrder(value: KdsKitchenOrder) {
   return renderToStaticMarkup(
     <KdsTouchWorkspace
@@ -39,7 +40,7 @@ function renderOrder(value: KdsKitchenOrder) {
       setTargetOperator={() => {}}
       load={noop}
       updatePresence={noop}
-      command={noop}
+      command={command}
       redistribute={noop}
       orders={[value]}
       ordersLoading={false}
@@ -60,5 +61,11 @@ describe("KDS order identity", () => {
   it("uses the same legacy fallback across the three panels", () => {
     const markup = renderOrder({ ...order, order_code: null });
     expect(markup.match(/#ORDER-D5/g)).toHaveLength(3);
+  });
+
+  it("removes a started order from the waiting queue while keeping it in preparation", () => {
+    const markup = renderOrder({ ...order, status: "preparing" });
+    expect(markup).toContain("Pedido em preparo");
+    expect(markup).toContain("Nenhum pedido na cozinha.");
   });
 });

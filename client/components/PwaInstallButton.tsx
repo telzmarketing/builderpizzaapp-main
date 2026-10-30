@@ -12,11 +12,18 @@ function isStandaloneMode() {
   return window.matchMedia("(display-mode: standalone)").matches || navigatorWithStandalone.standalone === true;
 }
 
-export default function PwaInstallButton({ only, pathname = typeof window === "undefined" ? "" : window.location.pathname }: { only?: readonly PwaAppKey[]; pathname?: string } = {}) {
+export function canShowPwaInstallButton(pathname: string, only?: readonly PwaAppKey[]) {
   const app = getPwaApp(pathname);
   const entryApp = getPwaEntryApp(pathname);
   const legacyInstallable = app?.key === "motoboy" || app?.key === "bi-mobile";
-  const allowed = !!app && (entryApp?.key === app.key || legacyInstallable) && (!only || only.includes(app.key));
+  const canonicalInstallable = !!app?.canonicalPaths.includes(pathname);
+  return !!app && (entryApp?.key === app.key || canonicalInstallable || legacyInstallable) && (!only || only.includes(app.key));
+}
+
+export default function PwaInstallButton({ only, pathname }: { only?: readonly PwaAppKey[]; pathname?: string } = {}) {
+  const currentPathname = pathname ?? (typeof window === "undefined" ? "" : window.location.pathname);
+  const app = getPwaApp(currentPathname);
+  const allowed = canShowPwaInstallButton(currentPathname, only);
   const [prompt, setPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
@@ -36,7 +43,7 @@ export default function PwaInstallButton({ only, pathname = typeof window === "u
       window.removeEventListener("beforeinstallprompt", onBeforeInstall);
       window.removeEventListener("appinstalled", onInstalled);
     };
-  }, [allowed, pathname]);
+  }, [allowed, currentPathname]);
 
   if (!allowed || installed || !app) return null;
   return (

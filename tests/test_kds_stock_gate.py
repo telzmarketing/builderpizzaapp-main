@@ -135,6 +135,11 @@ def test_start_persists_five_second_deadline_without_debit_and_replays(gate):
     assert task["state"] == "checking_stock" and task["started_at"] is None
     assert task["stock_check_after"] - task["stock_requested_at"] == timedelta(seconds=5)
     assert balance(gate) == Decimal("1")
+    # Acceptance removes the unit from the waiting queue immediately.  The
+    # current attempt remains persisted in the preparation state so the stock
+    # confirmation can continue safely.
+    assert {row["task_id"] for row in gate.service.queue("cook")} == {"task2"}
+    assert {row["task_id"] for row in gate.service.all_queued()} == {"task2"}
     replay = gate.service.command("task1", "cook", command(1), "start")
     assert replay["version"] == task["version"]
     with pytest.raises(DomainError, match="cinco segundos"):

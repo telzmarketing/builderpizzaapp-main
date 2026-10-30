@@ -4,7 +4,8 @@
 
 .pwa-install-anchor {
   position: fixed;
-  top: max(0.75rem, env(safe-area-inset-top));
+  /* Keep the compact control below the sticky KDS header controls. */
+  top: max(4.75rem, calc(env(safe-area-inset-top) + 4rem));
   right: max(0.75rem, env(safe-area-inset-right));
   z-index: 80;
   display: flex;
@@ -13,6 +14,37 @@
   align-items: flex-end;
   gap: 0.45rem;
   pointer-events: none;
+}
+
+.kds-preparation {
+  min-height: 100dvh;
+  width: 100%;
+  background:
+    radial-gradient(circle at 12% 0%, rgb(30 64 175 / 0.16), transparent 34rem),
+    linear-gradient(180deg, #07111c 0%, #040b13 100%);
+}
+
+.kds-preparation-header {
+  background: rgb(7 18 30 / 0.94);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.22);
+}
+
+.kds-preparation-content {
+  max-width: none;
+  padding-inline: clamp(0.75rem, 2.5vw, 2.5rem);
+}
+
+.kds-preparation .preparation-panel {
+  width: 100%;
+  max-width: none;
+  border-color: rgb(72 103 133 / 0.5);
+  background: rgb(10 25 39 / 0.92);
+}
+
+.kds-preparation .preparation-order-card {
+  border-color: rgb(72 103 133 / 0.45);
+  background: linear-gradient(135deg, rgb(15 35 53 / 0.96), rgb(8 20 32 / 0.96));
+  box-shadow: 0 12px 28px rgb(0 0 0 / 0.18);
 }
 
 .pwa-install-button {

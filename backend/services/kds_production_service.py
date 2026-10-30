@@ -222,14 +222,23 @@ class KdsProductionService:
         return list(latest.values())
 
     def queue(self, actor_id):
+        # The queue is the waiting projection only.  Once the operator accepts
+        # a unit, ``start_stock_check`` moves it to ``checking_stock`` and the
+        # unit must leave this projection immediately.  In-progress states are
+        # still available through the preparation/order projections and retain
+        # their current attempt for the stock gate and subsequent steps.
         rows = [row for row in self._current_queue_attempts()
-                if row.state not in ("ready", "cancelled")
+                if row.state == "queued"
                 and (row.operator_id == actor_id or row.operator_id is None)]
         rows.sort(key=lambda row: row.created_at)
         drink_item_ids = self._drink_item_ids([r.unit.order_item_id for r in rows])
         return [self._payload(r) for r in rows if r.unit.order_item_id not in drink_item_ids]
     def all_queued(self):
-        queued_states = {"queued", "checking_stock", "aguardando_analise", "atendimento", "assembling", "assembled", "baking", "checking"}
+        # ``checking_stock`` is already accepted/in preparation; it is not a
+        # waiting-queue item anymore.  Keep blocked and later production
+        # states available to the operational projection without re-queuing
+        # the accepted unit.
+        queued_states = {"queued", "aguardando_analise", "atendimento", "assembling", "assembled", "baking", "checking"}
         rows = [row for row in self._current_queue_attempts() if row.state in queued_states]
         rows.sort(key=lambda row: row.created_at)
         drink_item_ids = self._drink_item_ids([r.unit.order_item_id for r in rows])
