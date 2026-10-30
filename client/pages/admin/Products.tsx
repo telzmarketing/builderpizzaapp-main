@@ -257,6 +257,9 @@ export default function AdminProducts() {
   const activeSubcategories = subcategories.filter((cat) => cat.active);
   const productCountsReady = !catalogLoading && !catalogError;
   const categoryCountsReady = productCountsReady && !catalogCategoriesLoading && !catalogCategoriesError;
+  const productsMatchingStatus = products.filter((product) =>
+    productStatus === "all" || (productStatus === "active" ? product.active : !product.active)
+  );
   const catalogCategoryNames = parentCategories.map((cat) => cat.name);
   const catalogSubcategoryNames = subcategories.map((cat) => cat.name);
   const getSubcategoriesForCategory = (parentId: string) =>
@@ -279,7 +282,7 @@ export default function AdminProducts() {
         key: category.name,
         label: category.name,
         type: "Categoria",
-        count: products.filter((product) => (product.category || "").trim() === category.name).length,
+        count: productsMatchingStatus.filter((product) => (product.category || "").trim() === category.name).length,
       })),
     ...activeSubcategories.map((subcategory) => {
       const parent = parentCategories.find((category) => category.id === subcategory.parent_id);
@@ -287,14 +290,14 @@ export default function AdminProducts() {
         key: subcategory.name,
         label: parent ? `${parent.name} / ${subcategory.name}` : subcategory.name,
         type: "Subcategoria",
-        count: products.filter((product) => ((product as any).subcategory || "").trim() === subcategory.name).length,
+        count: productsMatchingStatus.filter((product) => ((product as any).subcategory || "").trim() === subcategory.name).length,
       };
     }),
     ...legacyFlavorCategoryNames.map((name) => ({
       key: name,
       label: name,
       type: "Categoria antiga",
-      count: products.filter((product) => (product.category || "").trim() === name || ((product as any).subcategory || "").trim() === name).length,
+      count: productsMatchingStatus.filter((product) => (product.category || "").trim() === name || ((product as any).subcategory || "").trim() === name).length,
     })),
   ];
   const selectedFlavorCategoryFilters = multiFlavorsConfig.flavorCategoryFilters ?? [];
@@ -1417,22 +1420,22 @@ export default function AdminProducts() {
     return productCategory === category.name || (!productCategory && childNames.includes(productSubcategory));
   };
   const productCategoryTabs: ProductCategoryTab[] = [
-    { id: PRODUCT_CATEGORY_ALL, label: "Todos", count: products.length, kind: "all" },
+    { id: PRODUCT_CATEGORY_ALL, label: "Todos", count: productsMatchingStatus.length, kind: "all" },
     ...parentCategories.map((category) => ({
       id: category.id,
       label: category.name,
-      count: products.filter((product) => categoryOwnsProduct(category, product)).length,
+      count: productsMatchingStatus.filter((product) => categoryOwnsProduct(category, product)).length,
       kind: "category" as const,
       category,
     })),
     ...legacyProductCategories.map((categoryName) => ({
       id: `${PRODUCT_CATEGORY_LEGACY_PREFIX}${categoryName}`,
       label: categoryName,
-      count: products.filter((product) => getProductCategoryValue(product) === categoryName).length,
+      count: productsMatchingStatus.filter((product) => getProductCategoryValue(product) === categoryName).length,
       kind: "legacy" as const,
     })),
   ];
-  const uncategorizedProductsCount = products.filter(
+  const uncategorizedProductsCount = productsMatchingStatus.filter(
     (product) => !getProductCategoryValue(product) && !getProductSubcategoryValue(product)
   ).length;
   if (uncategorizedProductsCount > 0) {
@@ -1452,7 +1455,7 @@ export default function AdminProducts() {
     ? getSubcategoriesForCategory(selectedCategory.id).map((subcategory) => ({
       id: subcategory.name,
       label: subcategory.name,
-      count: products.filter((product) =>
+      count: productsMatchingStatus.filter((product) =>
         categoryOwnsProduct(selectedCategory, product) && getProductSubcategoryValue(product) === subcategory.name
       ).length,
     }))
@@ -1812,8 +1815,8 @@ export default function AdminProducts() {
                           <button onClick={() => openBorderModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-orange-500/10 hover:border-orange-500/40 text-parchment hover:text-orange-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                             <Tag size={15} />
                             Gerenciar Bordas
-                            {productHasActiveCrust(product) && (
-                              <span className="ml-auto text-xs bg-orange-500/20 text-orange-300 px-1.5 py-0.5 rounded-full">1</span>
+                            {productCrustCount(product, "border") > 0 && (
+                              <span className="ml-auto text-xs bg-orange-500/20 text-orange-300 px-1.5 py-0.5 rounded-full">{productCrustCount(product, "border")}</span>
                             )}
                           </button>
                         )}

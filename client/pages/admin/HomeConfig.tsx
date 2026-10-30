@@ -22,16 +22,32 @@ export default function AdminHomeConfig() {
   const [catalogCategories, setCatalogCategories] = useState<ApiProductCategory[]>([]);
 
   const PROMO_LABEL = "Promoções";
-  const hasPromos = products.some(p => p.active && p.promotion_applied);
+  const activeProducts = products.filter(p => p.active);
+  const hasPromos = activeProducts.some(p => p.promotion_applied);
+  const catalogCategoryNames = new Set(catalogCategories.map((category) => category.name.trim().toLowerCase()));
+  const selectableCatalogCategories = catalogCategories
+    .filter((category) => category.active)
+    .filter((category) => activeProducts.some((product) => (
+      product.category_id === category.id ||
+      product.subcategory_id === category.id ||
+      product.category?.trim().toLowerCase() === category.name.trim().toLowerCase() ||
+      product.subcategory?.trim().toLowerCase() === category.name.trim().toLowerCase()
+    )))
+    .sort((a, b) => {
+      if (a.parent_id !== b.parent_id) return a.parent_id ? 1 : -1;
+      if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+      return a.name.localeCompare(b.name);
+    });
+  const legacyCategoryNames = [...new Set(
+    activeProducts.flatMap((product) => [product.category, product.subcategory])
+      .map((name) => (name || "").trim())
+      .filter((name) => name && !catalogCategoryNames.has(name.toLowerCase()))
+  )].sort();
   const allCategories = [
     ...(hasPromos ? [PROMO_LABEL] : []),
-    ...sortCategoryNamesByCatalogOrder(
-      [...new Set(products.filter(p => p.active && (p.subcategory || p.category)).map(p => (p.subcategory || p.category) as string))],
-      catalogCategories,
-    ),
+    ...selectableCatalogCategories.map((category) => category.name.trim()),
+    ...sortCategoryNamesByCatalogOrder(legacyCategoryNames, catalogCategories),
   ];
-
-  const activeProducts = products.filter(p => p.active);
 
   useEffect(() => {
     homeCatalogApi.get()
@@ -243,20 +259,27 @@ export default function AdminHomeConfig() {
                     ) : (
                       <>
                         <div className="flex flex-wrap gap-2 mb-3">
-                          {allCategories.map(cat => (
-                            <button
-                              key={cat}
-                              onClick={() => toggleCategory(cat)}
-                              className={`px-4 py-2 rounded-full text-sm font-medium transition-all border-2 flex items-center gap-1.5 ${
-                                selectedCategories.includes(cat)
-                                  ? "bg-gold border-gold text-cream shadow-sm"
-                                  : "bg-surface-03 border-surface-03 text-parchment hover:border-gold/40"
-                              }`}
-                            >
-                              {selectedCategories.includes(cat) && <Check size={12} />}
-                              {cat}
-                            </button>
-                          ))}
+                          {allCategories.map(cat => {
+                            const category = catalogCategories.find((item) => item.name.trim() === cat);
+                            const isSubcategory = !!category?.parent_id;
+                            const parent = isSubcategory
+                              ? catalogCategories.find((item) => item.id === category?.parent_id)
+                              : undefined;
+                            return (
+                              <button
+                                key={cat}
+                                onClick={() => toggleCategory(cat)}
+                                className={`px-4 py-2 rounded-full text-sm font-medium transition-all border-2 flex items-center gap-1.5 ${isSubcategory ? "ml-5" : ""} ${
+                                  selectedCategories.includes(cat)
+                                    ? "bg-gold border-gold text-cream shadow-sm"
+                                    : "bg-surface-03 border-surface-03 text-parchment hover:border-gold/40"
+                                }`}
+                              >
+                                {selectedCategories.includes(cat) && <Check size={12} />}
+                                {isSubcategory ? `${parent?.name || "Categoria"} / ${cat}` : cat}
+                              </button>
+                            );
+                          })}
                         </div>
                         <p className="text-stone text-xs">
                           {selectedCategories.length === 0
