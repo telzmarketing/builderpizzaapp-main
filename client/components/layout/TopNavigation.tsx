@@ -227,13 +227,12 @@ export default function TopNavigation({
                 <div key={group.label} className="relative shrink-0">
                   <button
                     type="button"
-                    aria-label="Abrir barra lateral dos KDS"
+                    aria-label="Abrir KDS Principal"
+                    onMouseEnter={() => preloadAdminRoute(target)}
+                    onFocus={() => preloadAdminRoute(target)}
                     onClick={() => {
-                      focusGroup("KDS");
-                      setMobileModuleLabel("KDS");
-                      if (window.matchMedia("(max-width: 1535px)").matches) {
-                        onMobileMenuChange(true);
-                      }
+                      clearFocus();
+                      navigate("/painel/kds");
                     }}
                     className={`flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-bold uppercase outline-none transition-colors ${
                       active

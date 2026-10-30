@@ -67,6 +67,7 @@ describe("admin navigation route matching", () => {
       ?.children.map((item) => item.label))
       .toEqual([
         "KDS Principal",
+        "KDS PDV",
         "Analítico KDS",
         "KDS Pizzaiolo",
         "KDS Cozinha Preparo",

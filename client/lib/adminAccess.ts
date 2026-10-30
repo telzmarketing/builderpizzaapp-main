@@ -23,7 +23,11 @@ export function canAccessAdminItem(
   if (permissions.is_master) return true;
   if (item.masterOnly) return false;
   if (!item.permissions?.length) return true;
-  return item.permissions.some((moduleKey) => moduleAllowed(permissions, moduleKey));
+  return item.permissions.some((moduleKey) => {
+    const modulePerms = permissions.modules[moduleKey];
+    if (item.permissionAction === "create") return modulePerms?.create === true;
+    return moduleAllowed(permissions, moduleKey);
+  });
 }
 
 export function filterAdminNavigation(

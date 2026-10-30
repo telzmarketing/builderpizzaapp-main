@@ -440,6 +440,7 @@ const AdminEmpresas = lazy(() => import("./pages/admin/Empresas"));
 const AdminProducts = lazy(() => import("./pages/admin/Products"));
 const AdminOrders = lazy(() => import("./pages/admin/Orders"));
 const KdsOverview = lazy(() => import("./pages/admin/KdsOverview"));
+const KdsPdv = lazy(() => import("./pages/admin/KdsPdv"));
 const KdsAnalytics = lazy(() => import("./pages/admin/KdsAnalytics"));
 const AdminCozinha = lazy(() => import("./pages/admin/Cozinha"));
 const AdminExpedicao = lazy(() => import("./pages/admin/Expedicao"));
@@ -640,6 +641,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/kds/sala-motoboy" element={<FullPageRedirect to="/tv/motoboys" />} />
                 {/* The KDS overview is an operational wallboard and owns its full viewport. */}
                 <Route path="/painel/kds" element={<KdsOverview />} />
+                <Route path="/painel/kds/pdv" element={<KdsPdv />} />
                 <Route element={<AdminLayout />}>
                 <Route path="/painel/kds/analitico" element={<KdsAnalytics />} />
                 <Route path="/painel" element={<AdminDashboard />} />

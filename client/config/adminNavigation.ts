@@ -26,6 +26,7 @@ import {
   Shield,
   ShoppingBag,
   ShoppingCart,
+  Store,
   Sparkles,
   Tag,
   TrendingUp,
@@ -44,6 +45,7 @@ export type AdminNavigationItem = {
   icon: ElementType;
   aliases?: string[];
   permissions?: string[];
+  permissionAction?: "view" | "create";
   exact?: boolean;
   masterOnly?: boolean;
 };
@@ -87,6 +89,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
     label: "KDS",
     children: [
       { path: "/painel/kds", icon: Gauge, label: "KDS Principal", exact: true, permissions: ["pedidos"] },
+      { path: "/painel/kds/pdv", icon: Store, label: "KDS PDV", exact: true, permissions: ["pedidos"], permissionAction: "create" },
       { path: "/painel/kds/analitico", icon: BarChart3, label: "Analítico KDS", exact: true, permissions: ["pedidos"] },
       { path: "/painel/cozinha", icon: ChefHat, label: "KDS Pizzaiolo", permissions: ["cozinha"] },
       { path: "/painel/preparo", icon: ChefHat, label: "KDS Cozinha Preparo", permissions: ["inventory"] },
