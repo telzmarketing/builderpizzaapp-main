@@ -61,3 +61,17 @@
 }
 .kds-dispatch .dispatch-drinks { border-color: #7dd3fc !important; background: #13364b !important; color: #f0f9ff !important; }
 .kds-dispatch .dispatch-drinks p, .kds-dispatch .dispatch-drinks h3 { color: #f0f9ff !important; }
+
+/* Tablet em retrato: três estações visíveis, cada uma com scroll próprio. */
+@media (min-width: 768px) and (orientation: portrait) {
+  .kds-dispatch { min-width: 0; min-height: 100dvh; }
+  .kds-dispatch .dispatch-board {
+    grid-template-columns: minmax(18rem, .85fr) minmax(25rem, 1.4fr) minmax(18rem, .9fr);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .kds-dispatch .dispatch-lane,
+  .kds-dispatch .dispatch-lane-content { min-width: 0; min-height: 0; }
+  .kds-dispatch .dispatch-queue-card { min-height: 4.5rem; }
+}

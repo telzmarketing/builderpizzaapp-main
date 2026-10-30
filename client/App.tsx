@@ -11,6 +11,8 @@ import { isPlatformRuntimeSurface, isStoreRuntimeSurface } from "./lib/runtimeHo
 import { installVisibleTextEncodingRepair } from "./lib/visibleTextEncoding";
 import { PlatformSurfaceProvider, usePlatformSurface } from "./context/PlatformSurfaceContext";
 import MotoboyPwaBoundary from "./components/MotoboyPwaBoundary";
+import PwaInstallButton from "./components/PwaInstallButton";
+import { KDS_PWA_KEYS } from "./lib/motoboyPwa";
 import {
   isPlatformSupportPanelPathAllowed,
   readPlatformSupportSession,
@@ -523,7 +525,7 @@ function FullPageRedirect({ to }: { to: string }) {
 
 function AppSurface({ platformSurface }: { platformSurface: boolean }) {
   const deferredWidgetsReady = useDeferredClientMount(3200);
-  const orderBoardSurface = window.location.pathname === "/tv" || window.location.pathname.startsWith("/tv/");
+  const orderBoardSurface = window.location.pathname === "/tv" || window.location.pathname.startsWith("/tv/") || window.location.pathname === "/app/kds/motoboys" || window.location.pathname.startsWith("/app/kds/motoboys/");
 
   useEffect(() => installVisibleTextEncodingRepair(), []);
 
@@ -536,6 +538,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
           <Toaster />
           <BrowserRouter>
             <MotoboyPwaBoundary />
+            <PwaInstallButton only={KDS_PWA_KEYS} />
             {!platformSurface && !orderBoardSurface && <MotoboyNativeEntry />}
             {!platformSurface && !orderBoardSurface && <RouteDataLoader />}
             {!platformSurface && !orderBoardSurface && <StoreWidget />}
@@ -632,6 +635,13 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
 
               {/* ── Admin routes (protected by JWT guard) ── */}
               <Route element={<AdminGuard />}>
+                <Route path="/app/kds/principal" element={<KdsOverview />} />
+                <Route path="/app/kds/pizzaiolo" element={<AdminCozinha />} />
+                <Route path="/app/kds/preparo" element={<Preparation />} />
+                <Route path="/app/kds/expedicao" element={<AdminExpedicao />} />
+                <Route path="/app/kds/motoboys" element={<OrderBoardTv />} />
+                <Route path="/app/kds/pdv" element={<KdsPdv />} />
+                <Route path="/app/kds/analitico" element={<KdsAnalytics />} />
                 <Route path="/painel/preparo" element={<Preparation />} />
                 <Route path="/operacoes/novo-pedido" element={<ManualOrder />} />
                 <Route path="/painel/orders/novo" element={<FullPageRedirect to="/operacoes/novo-pedido" />} />

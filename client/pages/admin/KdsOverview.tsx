@@ -104,7 +104,7 @@ export default function KdsOverview() {
   }
 
   return (
-    <main className="min-h-screen w-full overflow-y-auto bg-surface-00 px-3 py-4 text-cream sm:px-5 sm:py-5 lg:px-8 lg:py-6">
+    <main className="kds-overview min-h-screen w-full min-w-0 overflow-y-auto bg-surface-00 px-3 py-4 text-cream sm:px-5 sm:py-5 lg:px-8 lg:py-6">
       <section className="mx-auto w-full max-w-[1800px] space-y-5" aria-live="polite">
       <div className="sticky top-0 z-20 flex flex-col gap-3 rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -159,7 +159,7 @@ export default function KdsOverview() {
           <p className="text-stone">Nenhum pedido ativo nas etapas do KDS.</p>
         </div>
       ) : (
-        <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="kds-overview-stages grid min-w-0 items-start gap-4 md:grid-cols-2 xl:grid-cols-5">
           {STAGES.map(({ key, title, empty, icon: Icon, accent }) => {
             const orders = groupedOrders[key];
             return (

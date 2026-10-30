@@ -213,7 +213,7 @@ export default function KdsTouchWorkspace(props: Props) {
   const ingredients = item?.recipe?.ingredients ?? [];
 
   return (
-    <div className="space-y-3 p-3 sm:p-4">
+    <div className="kds-touch-workspace min-w-0 space-y-3 p-3 sm:p-4">
       {props.error && (
         <div
           role="alert"
@@ -278,9 +278,9 @@ export default function KdsTouchWorkspace(props: Props) {
           </button>
         </div>
       </div>
-      <div className="grid min-w-0 items-start gap-3 md:grid-cols-[minmax(220px,0.7fr)_minmax(0,1.7fr)] lg:grid-cols-[minmax(240px,0.6fr)_minmax(0,1.7fr)] 2xl:grid-cols-[minmax(240px,0.85fr)_minmax(0,2fr)_minmax(260px,0.9fr)]">
+      <div className="kds-touch-grid grid min-h-0 min-w-0 items-start gap-3 md:grid-cols-[minmax(220px,0.7fr)_minmax(0,1.7fr)] lg:grid-cols-[minmax(240px,0.6fr)_minmax(0,1.7fr)] 2xl:grid-cols-[minmax(240px,0.85fr)_minmax(0,2fr)_minmax(260px,0.9fr)]">
         <section
-          className={`${panel} md:sticky md:top-3`}
+          className={`${panel} flex min-h-0 flex-col md:sticky md:top-3`}
           aria-label="Fila de pedidos"
         >
           <header className="flex items-center gap-3 border-b border-[#263f53] p-4">
@@ -295,7 +295,7 @@ export default function KdsTouchWorkspace(props: Props) {
               {orders.length}
             </span>
           </header>
-          <div className="max-h-72 space-y-3 overflow-y-auto overscroll-contain p-3 md:max-h-[calc(100dvh-260px)] md:min-h-40">
+          <div className="kds-order-queue min-h-0 max-h-72 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 md:max-h-[calc(100dvh-260px)] md:min-h-40">
             {props.ordersLoading ? (
               <p
                 role="status"
@@ -378,7 +378,7 @@ export default function KdsTouchWorkspace(props: Props) {
           </div>
         </section>
         <section
-          className={`${panel} border-amber-400 shadow-[0_0_24px_rgba(251,191,36,0.04)]`}
+          className={`${panel} flex min-h-0 flex-col border-amber-400 shadow-[0_0_24px_rgba(251,191,36,0.04)]`}
           aria-label="Pedido em preparo"
         >
           <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#263f53] bg-[#101a22] p-4">
@@ -412,7 +412,7 @@ export default function KdsTouchWorkspace(props: Props) {
               </div>
             )}
           </header>
-          <div className="space-y-4 p-4">
+          <div className="kds-preparation-panel min-h-0 space-y-4 overflow-y-auto p-4">
             {props.loading && !queue ? (
               <p className="flex min-h-64 items-center justify-center gap-2 text-slate-400">
                 <Loader2 className="animate-spin" />
@@ -691,7 +691,7 @@ export default function KdsTouchWorkspace(props: Props) {
             )}
           </div>
         </section>
-        <aside className="grid min-w-0 gap-3 md:col-span-2 md:grid-cols-2 2xl:col-span-1 2xl:grid-cols-1">
+        <aside className="kds-touch-aside grid min-w-0 gap-3 md:col-span-2 md:grid-cols-2 2xl:col-span-1 2xl:grid-cols-1">
           <section className={panel}>
             <header className="flex items-center gap-3 border-b border-[#263f53] p-4">
               <ClipboardList size={30} className="shrink-0 text-slate-300" />

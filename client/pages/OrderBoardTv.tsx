@@ -358,7 +358,7 @@ export default function OrderBoardTv() {
   const tenantTime = safeTime(now, tenant.timezone);
 
   return (
-    <main className="flex h-screen min-h-[32rem] flex-col overflow-hidden bg-[radial-gradient(circle_at_50%_-20%,#17343b_0%,#071318_43%,#020608_100%)] p-3 text-white lg:p-4">
+    <main className="kds-motoboys flex h-screen min-h-[32rem] min-w-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_50%_-20%,#17343b_0%,#071318_43%,#020608_100%)] p-3 text-white lg:p-4">
       <header className="relative mb-3 grid min-h-[6.7rem] grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-white/25 px-4 pb-3 lg:min-h-[7.5rem] lg:px-8">
         <div className="flex min-w-0 items-center gap-4">
           {tenant.logo_url && <img src={tenant.logo_url} alt={`Logo de ${tenant.name}`} className="h-16 w-16 shrink-0 object-contain lg:h-20 lg:w-20" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
@@ -381,7 +381,7 @@ export default function OrderBoardTv() {
         </div>
       </header>
 
-      <section className="grid min-h-0 flex-1 grid-cols-2 gap-3 lg:gap-5" aria-label="Pedidos de entrega">
+      <section className="kds-motoboys-board grid min-h-0 min-w-0 flex-1 grid-cols-2 gap-3 lg:gap-5" aria-label="Pedidos de entrega">
         {ORDER_BOARD_COLUMNS.map((column) => (
           <BoardColumn key={column.id} id={column.id} orders={groups[column.id]} page={page} pageSize={pageSize} />
         ))}

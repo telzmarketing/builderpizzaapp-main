@@ -20,6 +20,18 @@ describe("admin navigation route matching", () => {
     expect(findAdminNavigationItem("/painel/marketing/ads")?.label).toBe("Trafego Pago");
   });
 
+  it.each([
+    ["/app/kds/principal", "/painel/kds", ["pedidos"]],
+    ["/app/kds/pizzaiolo", "/painel/cozinha", ["cozinha"]],
+    ["/app/kds/preparo", "/painel/preparo", ["inventory"]],
+    ["/app/kds/expedicao", "/painel/expedicao", ["expedicao"]],
+    ["/app/kds/motoboys", "/painel/kds/sala-motoboy", ["pedidos"]],
+    ["/app/kds/pdv", "/painel/kds/pdv", ["pedidos"]],
+    ["/app/kds/analitico", "/painel/kds/analitico", ["pedidos"]],
+  ])("maps %s to the canonical KDS item and permission", (pwaPath, canonicalPath, permissions) => {
+    expect(findAdminNavigationItem(pwaPath)).toMatchObject({ path: canonicalPath, permissions });
+  });
+
   it("places Gestor IA under the existing Gestao module without changing its access contract", () => {
     expect(findAdminNavigationGroup("/painel/gestor")?.label).toBe("Gestão");
     expect(findAdminNavigationItem("/painel/gestor")).toMatchObject({

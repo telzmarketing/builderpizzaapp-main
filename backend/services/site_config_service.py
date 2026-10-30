@@ -28,6 +28,86 @@ class SiteIdentity:
     legacy: bool = False
 
 
+class InvalidManifestApp(DomainError):
+    """Raised when a manifest is requested for an unknown PWA module."""
+
+
+PWA_MANIFESTS = {
+    "motoboy": {
+        "id": "/motoboy",
+        "start_url": "/motoboy/",
+        "scope": "/motoboy/",
+        "name": "Motoboy",
+        "short_name": "Motoboy",
+        "description": "Aplicativo operacional para entregas e motoboys",
+    },
+    "bi-mobile": {
+        "id": "/painel/bi-mobile",
+        "start_url": "/painel/bi-mobile/",
+        "scope": "/painel/bi-mobile/",
+        "name": "BI Mobile",
+        "short_name": "BI Mobile",
+        "description": "Indicadores operacionais do BI Mobile",
+    },
+    "kds-principal": {
+        "id": "/app/kds/principal",
+        "start_url": "/app/kds/principal/",
+        "scope": "/app/kds/principal/",
+        "name": "KDS Principal",
+        "short_name": "KDS Principal",
+        "description": "Painel principal de acompanhamento dos pedidos",
+    },
+    "kds-pizzaiolo": {
+        "id": "/app/kds/pizzaiolo",
+        "start_url": "/app/kds/pizzaiolo/",
+        "scope": "/app/kds/pizzaiolo/",
+        "name": "KDS Pizzaiolo",
+        "short_name": "KDS Pizzaiolo",
+        "description": "Painel operacional do pizzaiolo e montagem dos pedidos",
+    },
+    "kds-preparo": {
+        "id": "/app/kds/preparo",
+        "start_url": "/app/kds/preparo/",
+        "scope": "/app/kds/preparo/",
+        "name": "KDS Cozinha Preparo",
+        "short_name": "KDS Preparo",
+        "description": "Painel de preparo, produção e apontamento da cozinha",
+    },
+    "kds-expedicao": {
+        "id": "/app/kds/expedicao",
+        "start_url": "/app/kds/expedicao/",
+        "scope": "/app/kds/expedicao/",
+        "name": "KDS Expedição",
+        "short_name": "KDS Expedição",
+        "description": "Painel de conferência, retirada e despacho dos pedidos",
+    },
+    "kds-motoboys": {
+        "id": "/app/kds/motoboys",
+        "start_url": "/app/kds/motoboys/",
+        "scope": "/app/kds/motoboys/",
+        "name": "KDS Motoboys",
+        "short_name": "KDS Motoboys",
+        "description": "Painel de chamadas e acompanhamento dos motoboys",
+    },
+    "kds-pdv": {
+        "id": "/app/kds/pdv",
+        "start_url": "/app/kds/pdv/",
+        "scope": "/app/kds/pdv/",
+        "name": "KDS PDV",
+        "short_name": "KDS PDV",
+        "description": "Painel de pedidos e operação do ponto de venda",
+    },
+    "kds-analitico": {
+        "id": "/app/kds/analitico",
+        "start_url": "/app/kds/analitico/",
+        "scope": "/app/kds/analitico/",
+        "name": "KDS Analítico",
+        "short_name": "KDS Analítico",
+        "description": "Indicadores históricos e análise de todos os KDS",
+    },
+}
+
+
 class SiteConfigService:
     def __init__(self, db):
         self.db = db
@@ -195,20 +275,34 @@ class SiteConfigService:
         return target
 
     def manifest(self, request, app: str | None = None):
+        if app is not None and app not in PWA_MANIFESTS:
+            allowed = ", ".join(PWA_MANIFESTS)
+            raise InvalidManifestApp(
+                f"Aplicativo PWA invalido: '{app}'. Opcoes permitidas: {allowed}.",
+                code="InvalidManifestApp",
+            )
         content, updated_at, identity = self.read(request)
         brand = content.get("brand")
         brand = brand if isinstance(brand, dict) else {}
         name = str(brand.get("pageTitle") or brand.get("name") or "Sua Loja").strip()
         short_name = str(brand.get("name") or "Sua Loja").strip()
         version = self.version(updated_at)
-        is_bi_mobile = app == "bi-mobile"
+        if app is not None:
+            app_manifest = PWA_MANIFESTS[app]
+            return {
+                **app_manifest,
+                "display": "standalone", "display_override": ["fullscreen", "standalone"],
+                "orientation": "portrait", "theme_color": "#000000", "background_color": "#000000",
+                "icons": [{"src": f"/api/site-config/favicon?size={size}&v={version}",
+                           "sizes": f"{size}x{size}", "purpose": "any maskable"} for size in (192, 512)],
+            }
         return {
-            "id": "/painel/bi-mobile" if is_bi_mobile else ("/painel" if identity.platform else "/motoboy"),
-            "name": "BI Mobile" if is_bi_mobile else name,
-            "short_name": "BI Mobile" if is_bi_mobile else (short_name[:24] or "Sua Loja"),
-            "description": "Indicadores operacionais do BI Mobile" if is_bi_mobile else ("Gestor Telz" if identity.platform else "Loja online"),
-            "start_url": "/painel/bi-mobile/" if is_bi_mobile else ("/painel" if identity.platform else "/motoboy/"),
-            "scope": "/painel/bi-mobile/" if is_bi_mobile else ("/painel" if identity.platform else "/motoboy/"),
+            "id": "/painel" if identity.platform else "/motoboy",
+            "name": name,
+            "short_name": short_name[:24] or "Sua Loja",
+            "description": "Gestor Telz" if identity.platform else "Loja online",
+            "start_url": "/painel" if identity.platform else "/motoboy/",
+            "scope": "/painel" if identity.platform else "/motoboy/",
             "display": "standalone", "display_override": ["fullscreen", "standalone"],
             "orientation": "portrait", "theme_color": "#000000", "background_color": "#000000",
             "icons": [{"src": f"/api/site-config/favicon?size={size}&v={version}",
