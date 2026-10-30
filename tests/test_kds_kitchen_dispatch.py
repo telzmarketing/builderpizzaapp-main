@@ -124,6 +124,27 @@ def test_kds_payload_does_not_expose_customer_phone():
     assert '"delivery_phone"' not in source
 
 
+def test_mixed_pizza_and_drink_is_station_aware_and_keeps_dispatch_volume():
+    kds = (ROOT / "backend/services/kds_service.py").read_text(encoding="utf-8")
+    production = (ROOT / "backend/services/kds_production_service.py").read_text(encoding="utf-8")
+
+    # Kitchen projection/tasks exclude drink lines, while dispatch uses the
+    # complete order projection and keeps the physical drink unit.
+    assert 'visible_items = [item for item in serialized_items if not kitchen_view or not item["is_drink"]]' in kds
+    assert 'visible_units = [unit for unit in production_units.get(order.id, []) if not kitchen_view or unit.order_item_id not in drink_item_ids]' in kds
+    assert '"drinks": drinks' in kds
+    assert 'state="ready" if is_drink else "queued"' in production
+    assert 'if r.unit.order_item_id not in drink_item_ids' in production
+    assert 'expected = sum(max(0, int(item.quantity or 0)) for item in order.items if item.id not in drink_item_ids)' in kds
+
+
+def test_operations_and_production_tasks_expose_public_order_code():
+    orders = (ROOT / "backend/routes/orders.py").read_text(encoding="utf-8")
+    production = (ROOT / "backend/services/kds_production_service.py").read_text(encoding="utf-8")
+    assert '"order_code": order.order_code' in orders
+    assert '"order_code":order_code' in production
+
+
 def test_ready_pickup_moves_from_kitchen_to_dispatch_and_uses_dispatch_audit():
     source = (ROOT / "backend/services/kds_service.py").read_text(encoding="utf-8")
     kitchen = source[source.index("    def kitchen_orders("):source.index("    def start_preparation(")]

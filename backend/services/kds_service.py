@@ -19,7 +19,7 @@ from backend.models.delivery import (
     LogisticsSettings,
 )
 from backend.models.kds_production import ProductionUnit, ProductionAttempt
-from backend.models.order import Order, OrderStatus
+from backend.models.order import Order, OrderItem, OrderStatus
 from backend.models.cmv import OrderCmvSnapshot, OrderItemCmvSnapshot
 from backend.models.product import Product
 from backend.services.order_service import OrderService
@@ -112,6 +112,37 @@ class KdsService:
             if unit.dispatch_completed_at is not None:
                 row["dispatch_completed_units"] += 1
         return by_order, progress
+
+    def _drink_item_ids(self, orders: list[Order]) -> set[str]:
+        item_ids = [item.id for order in orders for item in order.items]
+        if not item_ids:
+            return set()
+        rows = self.db.query(OrderItem.id).outerjoin(
+            Product, Product.id == OrderItem.product_id,
+        ).filter(
+            OrderItem.tenant_id == self.tenant_id,
+            OrderItem.id.in_(item_ids),
+            Product.tenant_id == self.tenant_id,
+            or_(Product.product_type == "drink", OrderItem.selected_drink_variant.isnot(None)),
+        ).all()
+        return {row[0] for row in rows}
+
+    def _mark_drink_units_ready(self, order: Order) -> None:
+        """Drinks remain dispatch volumes but have no kitchen production step."""
+        drink_item_ids = self._drink_item_ids([order])
+        if not drink_item_ids:
+            return
+        units = self.db.query(ProductionUnit).filter(
+            ProductionUnit.tenant_id == self.tenant_id,
+            ProductionUnit.order_id == order.id,
+            ProductionUnit.order_item_id.in_(drink_item_ids),
+        ).all()
+        for unit in units:
+            unit.state = "ready"
+            for attempt in unit.attempts:
+                if attempt.state not in {"ready", "cancelled"}:
+                    attempt.state = "ready"
+                    attempt.completed_at = attempt.completed_at or datetime.now(timezone.utc)
 
     def _audit_unit(self, order_id: str, unit_id: str, actor_id: str, old: str, new: str, module_key: str) -> None:
         from backend.models.rbac import AdminAuditLog
@@ -358,10 +389,14 @@ class KdsService:
         return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=False)[0]
 
     def _assert_all_units_ready(self, order: Order) -> list[ProductionUnit]:
+        self._mark_drink_units_ready(order)
         units, progress = self._production_unit_snapshot([order])
-        expected = sum(max(0, int(item.quantity or 0)) for item in order.items)
-        actual = progress.get(order.id, {}).get("ready_units", 0)
-        if expected <= 0 or progress.get(order.id, {}).get("total_units", 0) != expected or actual != expected:
+        drink_item_ids = self._drink_item_ids([order])
+        expected = sum(max(0, int(item.quantity or 0)) for item in order.items if item.id not in drink_item_ids)
+        kitchen_units = [unit for unit in units.get(order.id, []) if unit.order_item_id not in drink_item_ids]
+        latest = self._latest_attempts(kitchen_units)
+        actual = sum(1 for unit in kitchen_units if unit.state == "ready" and latest.get(unit.id) is not None and latest[unit.id].state == "ready")
+        if len(kitchen_units) != expected or actual != expected:
             raise DomainError(
                 "Todas as unidades físicas precisam estar prontas no KDS antes de avançar o pedido.",
                 code="KdsUnitsPending",
@@ -700,6 +735,7 @@ class KdsService:
     ) -> list[dict]:
         production_units, production_progress = self._production_unit_snapshot(orders)
         latest_attempts = self._latest_attempts([unit for rows in production_units.values() for unit in rows])
+        drink_item_ids = self._drink_item_ids(orders)
         product_ids = {item.product_id for order in orders for item in order.items}
         products = {
             row.id: row for row in self.db.query(Product).filter(
@@ -753,6 +789,21 @@ class KdsService:
                 for item in serialized_items
                 if item["is_drink"]
             ]
+            kitchen_view = not include_dispatch_details
+            visible_items = [item for item in serialized_items if not kitchen_view or not item["is_drink"]]
+            visible_units = [unit for unit in production_units.get(order.id, []) if not kitchen_view or unit.order_item_id not in drink_item_ids]
+            visible_progress = production_progress.get(order.id, {
+                "total_units": 0, "ready_units": 0, "pending_units": 0,
+                "dispatch_completed_units": 0,
+            })
+            if kitchen_view:
+                visible_ready = sum(1 for unit in visible_units if unit.state == "ready" and latest_attempts.get(unit.id) is not None and latest_attempts[unit.id].state == "ready")
+                visible_progress = {
+                    "total_units": len(visible_units),
+                    "ready_units": visible_ready,
+                    "pending_units": len(visible_units) - visible_ready,
+                    "dispatch_completed_units": sum(1 for unit in visible_units if unit.dispatch_completed_at is not None),
+                }
             payload = {
                 "id": order.id, "order_code": order.order_code,
                 "status": self._status(order),
@@ -765,9 +816,9 @@ class KdsService:
                 # This bounded association is shared by all operational KDS
                 # surfaces.  Address and payment details remain dispatch-only.
                 "delivery": delivery_summary,
-                "items": serialized_items,
-                "drinks": drinks,
-                "has_drinks": bool(drinks),
+                "items": visible_items,
+                "drinks": drinks if include_dispatch_details else [],
+                "has_drinks": bool(drinks) if include_dispatch_details else False,
                 "production_units": [{
                     "id": unit.id,
                     "order_item_id": unit.order_item_id,
@@ -776,11 +827,8 @@ class KdsService:
                     "state": unit.state,
                     "version": unit.version,
                     "dispatch_completed_at": unit.dispatch_completed_at,
-                } for unit in production_units.get(order.id, [])],
-                "production_progress": production_progress.get(order.id, {
-                    "total_units": 0, "ready_units": 0, "pending_units": 0,
-                    "dispatch_completed_units": 0,
-                }),
+                } for unit in visible_units],
+                "production_progress": visible_progress,
             }
             if include_dispatch_details:
                 payload.update({

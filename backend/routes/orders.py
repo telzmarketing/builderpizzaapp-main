@@ -164,6 +164,7 @@ def _serialize_order(order: Order, product_lookup: dict[str, Product]) -> dict:
         pass
     return {
         "id": order.id,
+        "order_code": order.order_code,
         "customer_id": order.customer_id,
         "delivery_name": order.delivery_name,
         "delivery_phone": order.delivery_phone,

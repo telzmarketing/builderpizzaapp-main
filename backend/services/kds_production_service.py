@@ -1,11 +1,12 @@
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import uuid
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from backend.core.exceptions import DomainError, OrderNotFound
 from backend.core.tenant_context import TenantContext
-from backend.models.order import Order
+from backend.models.order import Order, OrderItem
 from backend.models.kds_production import ProductionUnit, ProductionAttempt, KdsOperatorState, KdsAssignment, ProductionAttemptConsumption
 from backend.models.cmv import OrderItemCmvSnapshot
 from backend.models.inventory_foundation import InventoryOperation
@@ -44,12 +45,25 @@ class KdsProductionService:
         return row
     def _check(self, attempt, expected):
         if attempt.version != expected: raise KdsStockConflict("A tarefa foi alterada por outro operador.", code="VersionConflict")
+    def _drink_item_ids(self, item_ids):
+        if not item_ids:
+            return set()
+        rows = self.db.query(OrderItem.id).outerjoin(
+            Product, Product.id == OrderItem.product_id,
+        ).filter(
+            OrderItem.tenant_id == self.tenant_id,
+            OrderItem.id.in_(item_ids),
+            Product.tenant_id == self.tenant_id,
+            or_(Product.product_type == "drink", OrderItem.selected_drink_variant.isnot(None)),
+        ).all()
+        return {row[0] for row in rows}
     def _payload(self, a):
         u=a.unit
         consumption = self.db.query(ProductionAttemptConsumption).filter_by(tenant_id=self.tenant_id, attempt_id=a.id).all()
         operation_ids = [row.operation_id for row in consumption if row.operation_id]
         snapshot = self.db.query(OrderItemCmvSnapshot).filter_by(tenant_id=self.tenant_id, order_item_id=u.order_item_id).first()
-        return {"id":a.id,"task_id":a.id,"production_unit_id":u.id,"order_id":u.order_id,"order_item_id":u.order_item_id,"unit_index":u.unit_index,"attempt_id":a.id,"attempt_number":a.attempt_number,"state":a.state,"version":a.version,"operator_id":a.operator_id,"requires_oven":u.requires_oven,"assigned_at":a.assigned_at,"started_at":a.started_at,"assembly_finished_at":a.assembly_finished_at,"completed_at":a.completed_at,"consumption_mode":a.stock_consumption_mode or ("attempts" if consumption else "pending"),"consumption_operation_id":operation_ids[0] if operation_ids else None,"composition_revision_id":snapshot.snapshot_id if snapshot else None,"server_time":self._now(),"stock_requested_at":a.stock_requested_at,"stock_check_after":a.stock_check_after,"blocked_reason":a.blocked_reason,"product_name":snapshot.product_name if snapshot else None,"created_at":a.created_at,"priority":0}
+        order_code = self.db.query(Order.order_code).filter(Order.tenant_id == self.tenant_id, Order.id == u.order_id).scalar()
+        return {"id":a.id,"task_id":a.id,"production_unit_id":u.id,"order_id":u.order_id,"order_code":order_code,"order_item_id":u.order_item_id,"unit_index":u.unit_index,"attempt_id":a.id,"attempt_number":a.attempt_number,"state":a.state,"version":a.version,"operator_id":a.operator_id,"requires_oven":u.requires_oven,"assigned_at":a.assigned_at,"started_at":a.started_at,"assembly_finished_at":a.assembly_finished_at,"completed_at":a.completed_at,"consumption_mode":a.stock_consumption_mode or ("attempts" if consumption else "pending"),"consumption_operation_id":operation_ids[0] if operation_ids else None,"composition_revision_id":snapshot.snapshot_id if snapshot else None,"server_time":self._now(),"stock_requested_at":a.stock_requested_at,"stock_check_after":a.stock_check_after,"blocked_reason":a.blocked_reason,"product_name":snapshot.product_name if snapshot else None,"created_at":a.created_at,"priority":0}
 
     @staticmethod
     def _aware(value):
@@ -153,33 +167,46 @@ class KdsProductionService:
         return self._payload(a)
 
     def stock_alerts(self):
-        return [self._payload(a) for a in self.db.query(ProductionAttempt).filter(
+        rows = self.db.query(ProductionAttempt).options(joinedload(ProductionAttempt.unit)).filter(
             ProductionAttempt.tenant_id == self.tenant_id,
             ProductionAttempt.state.in_(("aguardando_analise", "atendimento")),
-        ).order_by(ProductionAttempt.stock_requested_at, ProductionAttempt.id).all()]
+        ).order_by(ProductionAttempt.stock_requested_at, ProductionAttempt.id).all()
+        drink_item_ids = self._drink_item_ids([row.unit.order_item_id for row in rows])
+        return [self._payload(row) for row in rows if row.unit.order_item_id not in drink_item_ids]
     def initialize_order(self, order_id: str, actor_id: str, *, commit=True):
         order=self.db.query(Order).filter(Order.tenant_id==self.tenant_id,Order.id==order_id).with_for_update().first()
         if not order: raise OrderNotFound(order_id)
         for item in order.items:
             qty=max(0,int(item.quantity or 0))
             for idx in range(1,qty+1):
-                unit=self.db.query(ProductionUnit).filter_by(tenant_id=self.tenant_id,order_item_id=item.id,unit_index=idx).first()
-                if unit: continue
                 product = self.db.query(Product).filter_by(tenant_id=self.tenant_id, id=item.product_id).first()
-                # Unknown legacy product types retain the conservative oven gate.
-                requires_oven = not (product and product.product_type == "drink")
-                unit=ProductionUnit(id=str(uuid.uuid4()),tenant_id=self.tenant_id,order_id=order.id,order_item_id=item.id,unit_index=idx,state="queued",requires_oven=requires_oven)
+                is_drink = bool((product and product.product_type == "drink") or item.selected_drink_variant)
+                unit=self.db.query(ProductionUnit).filter_by(tenant_id=self.tenant_id,order_item_id=item.id,unit_index=idx).first()
+                if unit:
+                    if is_drink:
+                        unit.state = "ready"
+                        for attempt in unit.attempts:
+                            if attempt.state not in {"ready", "cancelled"}:
+                                attempt.state = "ready"
+                                attempt.completed_at = attempt.completed_at or self._now()
+                    continue
+                # Drinks remain physical dispatch volumes, but are already ready
+                # because they do not pass through the pizzaiolo station.
+                requires_oven = not is_drink
+                unit=ProductionUnit(id=str(uuid.uuid4()),tenant_id=self.tenant_id,order_id=order.id,order_item_id=item.id,unit_index=idx,state="ready" if is_drink else "queued",requires_oven=requires_oven)
                 self.db.add(unit); self.db.flush()
-                self.db.add(ProductionAttempt(id=str(uuid.uuid4()),tenant_id=self.tenant_id,production_unit_id=unit.id,attempt_number=1,state="queued"))
+                self.db.add(ProductionAttempt(id=str(uuid.uuid4()),tenant_id=self.tenant_id,production_unit_id=unit.id,attempt_number=1,state="ready" if is_drink else "queued",completed_at=self._now() if is_drink else None))
         if commit: self.db.commit()
         else: self.db.flush()
         return self.queue(actor_id)
     def queue(self, actor_id):
         rows=self.db.query(ProductionAttempt).join(ProductionUnit).options(joinedload(ProductionAttempt.unit)).filter(ProductionAttempt.tenant_id==self.tenant_id,ProductionAttempt.state.notin_(("ready","cancelled"))).filter((ProductionAttempt.operator_id==actor_id) | (ProductionAttempt.operator_id.is_(None))).order_by(ProductionAttempt.created_at).all()
-        return [self._payload(r) for r in rows]
+        drink_item_ids = self._drink_item_ids([r.unit.order_item_id for r in rows])
+        return [self._payload(r) for r in rows if r.unit.order_item_id not in drink_item_ids]
     def all_queued(self):
         rows=self.db.query(ProductionAttempt).join(ProductionUnit).options(joinedload(ProductionAttempt.unit)).filter(ProductionAttempt.tenant_id==self.tenant_id,ProductionAttempt.state.in_(("queued","checking_stock","aguardando_analise","atendimento","assembling","assembled","baking","checking"))).order_by(ProductionAttempt.created_at).all()
-        return [self._payload(r) for r in rows]
+        drink_item_ids = self._drink_item_ids([r.unit.order_item_id for r in rows])
+        return [self._payload(r) for r in rows if r.unit.order_item_id not in drink_item_ids]
     def presence(self, actor_id, body):
         row=self.db.query(KdsOperatorState).filter_by(tenant_id=self.tenant_id,user_id=actor_id,station_id=body.station_id).with_for_update().first()
         if row is None:
