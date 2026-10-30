@@ -67,7 +67,7 @@ export default function KdsAnalytics() {
 
   useEffect(() => { void load(); }, [load]);
 
-  return <main className="space-y-5 pb-10" aria-labelledby="kds-analytics-title">
+  return <main className="kds-analytics space-y-5 pb-10" aria-labelledby="kds-analytics-title">
     <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
       <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-gold">Módulo KDS</p><h1 id="kds-analytics-title" className="mt-1 text-2xl font-black text-cream sm:text-3xl">Analítico de todos os KDS</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-stone">Consolidação histórica da cozinha, preparo, expedição e motoboys. O painel operacional continua no KDS Principal.</p></div>
       <div className="flex flex-wrap items-center gap-2"><label className="sr-only" htmlFor="kds-period">Período</label><select id="kds-period" value={period} onChange={(event) => setPeriod(event.target.value)} className="min-h-10 rounded-lg border border-surface-03 bg-surface-02 px-3 text-sm text-cream">{periods.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><button type="button" onClick={() => void load(true)} disabled={loading || refreshing} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-surface-03 px-3 text-sm font-bold text-stone hover:border-gold/50 hover:text-cream"><RefreshCw size={15} className={refreshing ? "animate-spin" : ""} />Atualizar</button></div>

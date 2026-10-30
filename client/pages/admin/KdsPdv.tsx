@@ -4,9 +4,9 @@ import ManualOrderComposer from "@/components/admin/ManualOrderComposer";
 
 export default function KdsPdv() {
   return (
-    <main className="min-h-screen bg-surface-00 text-cream">
+    <main className="kds-pdv min-h-screen w-full bg-surface-00 text-cream">
       <header className="sticky top-0 z-30 border-b border-surface-03 bg-surface-00/95 px-4 py-3 backdrop-blur-xl md:px-6">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4">
+        <div className="kds-pdv-inner flex w-full items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <Link to="/painel/kds" aria-label="Voltar ao KDS Principal" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-surface-03 text-stone transition-colors hover:bg-surface-03 hover:text-cream">
               <ArrowLeft size={19} />
@@ -23,7 +23,7 @@ export default function KdsPdv() {
           </div>
         </div>
       </header>
-      <div className="mx-auto grid max-w-[1440px] gap-5 px-3 py-4 md:px-6 md:py-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="kds-pdv-inner grid w-full gap-5 px-3 py-4 md:px-6 md:py-6 lg:grid-cols-[minmax(0,1fr)_280px]">
         <section className="min-w-0 overflow-hidden rounded-2xl border border-surface-03 bg-surface-01 shadow-2xl"><ManualOrderComposer mode="pos" /></section>
         <aside className="hidden space-y-4 lg:block">
           <div className="rounded-2xl border border-gold/20 bg-gold/10 p-5">

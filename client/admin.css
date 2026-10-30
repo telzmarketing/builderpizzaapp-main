@@ -2,6 +2,56 @@
   min-height: 100dvh;
 }
 
+.pwa-install-anchor {
+  position: fixed;
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: max(0.75rem, env(safe-area-inset-right));
+  z-index: 80;
+  display: flex;
+  max-width: min(19rem, calc(100vw - 1.5rem));
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.45rem;
+  pointer-events: none;
+}
+
+.pwa-install-button {
+  pointer-events: auto;
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid rgb(251 191 36 / 0.45);
+  border-radius: 0.65rem;
+  background: rgb(7 21 32 / 0.96);
+  padding: 0.35rem 0.65rem;
+  color: #fbbf24;
+  font-size: 0.72rem;
+  font-weight: 800;
+  box-shadow: 0 8px 22px rgb(0 0 0 / 0.28);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.pwa-install-button:hover,
+.pwa-install-button:focus-visible {
+  border-color: #fbbf24;
+  background: #102536;
+}
+
+.pwa-install-hint {
+  pointer-events: auto;
+  max-width: 19rem;
+  border: 1px solid rgb(251 191 36 / 0.3);
+  border-radius: 0.65rem;
+  background: #071521;
+  padding: 0.65rem 0.75rem;
+  color: #f8e7b0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  box-shadow: 0 10px 26px rgb(0 0 0 / 0.35);
+}
+
 /* Limites de scroll dos KDS em tablet retrato. */
 @media (min-width: 768px) and (orientation: portrait) {
   .admin-layout-content:has(.kds-touch-page),
@@ -26,6 +76,59 @@
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
   }
+}
+
+/* Tablet portrait is an operational single-column mode. Keep every KDS
+ * readable and scrollable vertically instead of squeezing lanes side by side. */
+@media (min-width: 600px) and (max-width: 1200px) and (orientation: portrait) {
+  .admin-layout-content:has(.kds-touch-page),
+  .admin-layout-content:has(.kds-overview),
+  .admin-layout-content:has(.kds-preparation),
+  .admin-layout-content:has(.kds-pdv),
+  .admin-layout-content:has(.kds-analytics) {
+    min-width: 0;
+    width: 100%;
+    overflow: visible;
+  }
+
+  .kds-touch-page,
+  .kds-overview,
+  .kds-preparation,
+  .kds-pdv,
+  .kds-analytics,
+  .kds-motoboys,
+  .kds-dispatch {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .kds-touch-page .kds-touch-grid,
+  .kds-touch-page .kds-touch-grid > .kds-touch-aside,
+  .kds-overview .kds-overview-stages,
+  .kds-motoboys .kds-motoboys-board,
+  .kds-dispatch .dispatch-board,
+  .kds-pdv .kds-pdv-inner,
+  .kds-analytics .grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .kds-touch-page .kds-touch-grid > *,
+  .kds-touch-page .kds-touch-grid > .kds-touch-aside > *,
+  .kds-dispatch .dispatch-lane {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .kds-pdv .kds-pdv-inner { max-width: none; }
+  .kds-pdv .kds-pdv-inner > aside { display: none; }
+  .kds-pdv .kds-pdv-inner > section { width: 100%; }
+
+  .kds-preparation-content { max-width: none; }
+  .preparation-panel { padding: 1rem; }
+  .preparation-order-card { padding: 1rem; }
+  .preparation-order-card > div:first-child { align-items: stretch; }
+  .preparation-order-card button { min-height: 2.75rem; }
 }
 
 /* A preferência é escopada ao painel. A loja pública nunca recebe esta classe. */

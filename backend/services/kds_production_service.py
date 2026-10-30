@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from backend.core.exceptions import DomainError, OrderNotFound
 from backend.core.tenant_context import TenantContext
-from backend.models.order import Order, OrderItem
+from backend.models.order import Order, OrderItem, OrderStatus
 from backend.models.kds_production import ProductionUnit, ProductionAttempt, KdsOperatorState, KdsAssignment, ProductionAttemptConsumption
 from backend.models.cmv import OrderItemCmvSnapshot
 from backend.models.inventory_foundation import InventoryOperation
@@ -199,12 +199,39 @@ class KdsProductionService:
         if commit: self.db.commit()
         else: self.db.flush()
         return self.queue(actor_id)
+    def _current_queue_attempts(self):
+        """Resolve current kitchen work while preserving attempt history."""
+        rows = self.db.query(ProductionAttempt).join(
+            ProductionUnit, ProductionUnit.id == ProductionAttempt.production_unit_id,
+        ).join(
+            Order, Order.id == ProductionUnit.order_id,
+        ).options(joinedload(ProductionAttempt.unit)).filter(
+            ProductionAttempt.tenant_id == self.tenant_id,
+            ProductionUnit.tenant_id == self.tenant_id,
+            Order.tenant_id == self.tenant_id,
+            Order.archived_at.is_(None),
+            Order.status.in_((OrderStatus.paid, OrderStatus.pago, OrderStatus.preparing)),
+        ).order_by(
+            ProductionAttempt.production_unit_id,
+            ProductionAttempt.attempt_number,
+            ProductionAttempt.created_at,
+        ).all()
+        latest = {}
+        for attempt in rows:
+            latest[attempt.production_unit_id] = attempt
+        return list(latest.values())
+
     def queue(self, actor_id):
-        rows=self.db.query(ProductionAttempt).join(ProductionUnit).options(joinedload(ProductionAttempt.unit)).filter(ProductionAttempt.tenant_id==self.tenant_id,ProductionAttempt.state.notin_(("ready","cancelled"))).filter((ProductionAttempt.operator_id==actor_id) | (ProductionAttempt.operator_id.is_(None))).order_by(ProductionAttempt.created_at).all()
+        rows = [row for row in self._current_queue_attempts()
+                if row.state not in ("ready", "cancelled")
+                and (row.operator_id == actor_id or row.operator_id is None)]
+        rows.sort(key=lambda row: row.created_at)
         drink_item_ids = self._drink_item_ids([r.unit.order_item_id for r in rows])
         return [self._payload(r) for r in rows if r.unit.order_item_id not in drink_item_ids]
     def all_queued(self):
-        rows=self.db.query(ProductionAttempt).join(ProductionUnit).options(joinedload(ProductionAttempt.unit)).filter(ProductionAttempt.tenant_id==self.tenant_id,ProductionAttempt.state.in_(("queued","checking_stock","aguardando_analise","atendimento","assembling","assembled","baking","checking"))).order_by(ProductionAttempt.created_at).all()
+        queued_states = {"queued", "checking_stock", "aguardando_analise", "atendimento", "assembling", "assembled", "baking", "checking"}
+        rows = [row for row in self._current_queue_attempts() if row.state in queued_states]
+        rows.sort(key=lambda row: row.created_at)
         drink_item_ids = self._drink_item_ids([r.unit.order_item_id for r in rows])
         return [self._payload(r) for r in rows if r.unit.order_item_id not in drink_item_ids]
     def presence(self, actor_id, body):

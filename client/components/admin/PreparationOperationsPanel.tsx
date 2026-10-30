@@ -5,7 +5,7 @@ import { preparationApi, type PreparationOrder, type PreparationRecipe } from "@
 import { PreparationLabelPrintDialog } from "@/components/kds/LabelPrintDialog";
 import PcpWeeklyPanel from "@/components/admin/PcpWeeklyPanel";
 
-const box = "rounded-lg border border-surface-03 bg-surface-02 p-4";
+const box = "preparation-card rounded-xl border border-surface-03 bg-surface-02 p-4 shadow-lg shadow-black/10";
 const input = "w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream outline-none focus:border-gold";
 const button = "inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-3 py-2 text-sm font-black text-black transition hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-50";
 const ghost = "inline-flex items-center justify-center gap-2 rounded-lg border border-surface-03 px-3 py-2 text-sm font-bold text-stone hover:bg-surface-03 hover:text-cream disabled:opacity-50";
@@ -42,7 +42,7 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
   const canComplete = canReport && order.remaining_quantity != null && Number(order.remaining_quantity) === 0;
 
   return (
-    <article className={box}>
+    <article className={`${box} preparation-order-card`}>
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <div className="flex items-center gap-2"><ChefHat size={17} className="text-gold" /><h3 className="font-black text-cream">{order.name}</h3></div>
@@ -107,7 +107,7 @@ export default function PreparationOperationsPanel({ showKdsLink = true }: { sho
     try { await preparationApi.create({ recipe_id: recipeId, target_quantity: target, scheduled_for: plannedFor ? new Date(plannedFor).toISOString() : null, expected_version: 0 }, key("create", recipeId)); setRecipeId(""); setTarget(""); setPlannedFor(""); setMessage("Ordem de preparo criada."); await load(); } catch (err) { setError(err instanceof Error ? err.message : "Nao foi possivel criar a ordem."); } finally { setSaving(false); }
   }
 
-  return <section className="space-y-5 rounded-lg border border-surface-03 bg-surface-02 p-5">
+  return <section className="preparation-panel space-y-5 rounded-xl border border-surface-03 bg-surface-02 p-4 shadow-2xl shadow-black/15 sm:p-5">
     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div><h2 className="text-lg font-black text-cream">Preparo e planejamento</h2><p className="mt-1 text-sm text-stone">Ordens, fichas e apontamentos de producao com controle de versao.</p></div>
       {showKdsLink && <Link to="/painel/preparo" className={ghost}>Abrir KDS Cozinha Preparo</Link>}

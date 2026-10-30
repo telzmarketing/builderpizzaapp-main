@@ -19,6 +19,7 @@ from backend.models.cmv import OrderItemCmvSnapshot, OrderItemCmvIngredientSnaps
 from backend.models.inventory import InventoryItem, InventoryStockMovement
 from backend.models.inventory_foundation import InventoryOperation, InventoryLot, InventoryReservation
 from backend.models.delivery import Delivery, DeliveryPerson
+from backend.models.product import Product
 from backend.services.kds_production_service import KdsProductionService
 from backend.services.inventory_service import InventoryService
 from backend.services.order_service import OrderService
@@ -31,7 +32,7 @@ def gate():
     models = [Tenant, Order, OrderItem, OrderItemFlavor, AdminAuditLog, ProductionUnit, ProductionAttempt,
               ProductionAttemptConsumption, OrderItemCmvSnapshot, OrderItemCmvIngredientSnapshot,
               InventoryItem, InventoryStockMovement, InventoryOperation, InventoryLot, InventoryReservation,
-              Delivery, DeliveryPerson]
+              Delivery, DeliveryPerson, Product]
     Base.metadata.create_all(engine, tables=[m.__table__ for m in models])
     with Session(engine, autoflush=False) as db:
         db.add(Tenant(id="tenant", slug="stock-test", name="Stock gate test"))
@@ -66,6 +67,67 @@ def command(version):
 
 def balance(gate):
     return gate.db.query(func.sum(InventoryStockMovement.quantity_delta)).scalar()
+
+
+def test_kitchen_queue_excludes_archived_cancelled_and_outdated_orders_but_keeps_active_rework(gate):
+    now = datetime(2026, 10, 26, 12, tzinfo=timezone.utc)
+    cases = [
+        ("archived", "preparing", now, now, "old-archived"),
+        ("cancelled", "cancelled", now, None, "old-cancelled"),
+        ("finished", "ready_for_pickup", now, None, "old-finished"),
+        ("active", "preparing", now, None, "active-current"),
+    ]
+    for index, (suffix, status, created_at, archived_at, item_id) in enumerate(cases, start=10):
+        order_id = f"queue-{suffix}"
+        unit_id = f"queue-unit-{suffix}"
+        gate.db.add(Order(
+            id=order_id, tenant_id="tenant", status=status, subtotal=50, total=50,
+            fulfillment_type="delivery", created_at=created_at, archived_at=archived_at,
+        ))
+        gate.db.add(ProductionUnit(
+            id=unit_id, tenant_id="tenant", order_id=order_id, order_item_id=item_id,
+            unit_index=1, state="queued",
+        ))
+        gate.db.add(ProductionAttempt(
+            id=f"queue-attempt-{suffix}", tenant_id="tenant",
+            production_unit_id=unit_id, attempt_number=1, state="queued",
+        ))
+
+    # The cancelled first attempt remains valid history; only the queued
+    # rework attempt may be returned for the active unit.
+    gate.db.add(Order(
+        id="queue-rework", tenant_id="tenant", status="preparing",
+        subtotal=50, total=50, fulfillment_type="delivery",
+    ))
+    gate.db.add(ProductionUnit(
+        id="queue-unit-rework", tenant_id="tenant", order_id="queue-rework",
+        order_item_id="rework-item", unit_index=1, state="queued",
+    ))
+    gate.db.add_all([
+        ProductionAttempt(
+            id="queue-attempt-rework-old", tenant_id="tenant",
+            production_unit_id="queue-unit-rework", attempt_number=1, state="cancelled",
+        ),
+        ProductionAttempt(
+            id="queue-attempt-rework-current", tenant_id="tenant",
+            production_unit_id="queue-unit-rework", attempt_number=2, state="queued",
+        ),
+    ])
+    gate.db.commit()
+
+    queued = gate.service.all_queued()
+    queued_ids = {row["order_id"] for row in queued}
+    assert "queue-active" in queued_ids
+    assert "queue-rework" in queued_ids
+    assert not {"queue-archived", "queue-cancelled", "queue-finished"} & queued_ids
+    assert [row["id"] for row in queued if row["order_id"] == "queue-rework"] == [
+        "queue-attempt-rework-current"
+    ]
+
+    mine = gate.service.queue("cook")
+    mine_ids = {row["order_id"] for row in mine}
+    assert {"queue-active", "queue-rework"} <= mine_ids
+    assert not {"queue-archived", "queue-cancelled", "queue-finished"} & mine_ids
 
 
 def test_start_persists_five_second_deadline_without_debit_and_replays(gate):

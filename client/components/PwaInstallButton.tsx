@@ -19,9 +19,11 @@ export default function PwaInstallButton({ only, pathname = typeof window === "u
   const allowed = !!app && (entryApp?.key === app.key || legacyInstallable) && (!only || only.includes(app.key));
   const [prompt, setPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
 
   useEffect(() => {
     setInstalled(allowed && isStandaloneMode());
+    setShowInstructions(false);
     if (!allowed) { setPrompt(null); return; }
     const onBeforeInstall = (event: Event) => {
       event.preventDefault();
@@ -36,14 +38,27 @@ export default function PwaInstallButton({ only, pathname = typeof window === "u
     };
   }, [allowed, pathname]);
 
-  if (!allowed || installed || !prompt || !app) return null;
+  if (!allowed || installed || !app) return null;
   return (
-    <button type="button" onClick={() => {
-      const current = prompt;
-      setPrompt(null);
-      void current.prompt().then(() => current.userChoice).catch(() => setPrompt(current));
-    }} className="fixed bottom-4 left-1/2 z-50 flex min-h-12 -translate-x-1/2 items-center justify-center gap-2 rounded-xl border border-gold/30 bg-surface-01 px-4 py-3 text-sm font-black text-gold shadow-xl shadow-black/40 transition-colors hover:bg-surface-02" aria-label={`Instalar ${app.label}`}>
-      <Download size={16} /> Instalar {app.label}
-    </button>
+    <div className="pwa-install-anchor" data-pwa-app={app.key}>
+      <button type="button" onClick={() => {
+        const current = prompt;
+        if (!current) { setShowInstructions((value) => !value); return; }
+        setPrompt(null);
+        void current.prompt().then(() => current.userChoice).catch(() => setPrompt(current));
+      }} className="pwa-install-button" aria-expanded={showInstructions} aria-label={`Instalar ${app.label}`} title={`Instalar ${app.label}`}>
+        <Download size={15} aria-hidden="true" /> <span>Instalar</span>
+      </button>
+      {showInstructions && !prompt && (
+        <p className="pwa-install-hint" role="status">
+          No iPhone/iPad: use Compartilhar e escolha &quot;Adicionar a Tela de Inicio&quot;.
+        </p>
+      )}
+      {false && showInstructions && !prompt && (
+        <p className="pwa-install-hint" role="status">
+          No iPhone/iPad: use Compartilhar e escolha “Adicionar à Tela de Início”.
+        </p>
+      )}
+    </div>
   );
 }

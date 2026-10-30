@@ -156,9 +156,13 @@ export default function KdsTouchWorkspace(props: Props) {
   const [orderId, setOrderId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const tasks = queue?.tasks ?? [];
+  // Do not expose task records whose order has already left the active queue.
+  const visibleTasks = tasks.filter((task) =>
+    orders.some((candidate) => candidate.id === task.order_id),
+  );
   const activeTask =
-    tasks.find((task) => task.id === queue?.presence?.active_task_id) ??
-    tasks.find((task) =>
+    visibleTasks.find((task) => task.id === queue?.presence?.active_task_id) ??
+    visibleTasks.find((task) =>
       [
         "assembling",
         "assembled",
@@ -167,8 +171,8 @@ export default function KdsTouchWorkspace(props: Props) {
         "checking_stock",
       ].includes(task.state),
     ) ??
-    tasks[0];
-  const selectedTask = tasks.find((candidate) => candidate.id === taskId);
+    visibleTasks[0];
+  const selectedTask = visibleTasks.find((candidate) => candidate.id === taskId);
   const order =
     selectedTask &&
     !orders.some((candidate) => candidate.id === selectedTask.order_id)
@@ -178,8 +182,8 @@ export default function KdsTouchWorkspace(props: Props) {
         orders.find((candidate) => candidate.id === activeTask?.order_id) ??
         orders.find((candidate) => candidate.status === "preparing") ??
         orders[0]);
-  const orderTasks = tasks.filter((task) => task.order_id === order?.id);
-  const focusTasks = order ? orderTasks : tasks;
+  const orderTasks = visibleTasks.filter((task) => task.order_id === order?.id);
+  const focusTasks = order ? orderTasks : visibleTasks;
   const task =
     focusTasks.find((candidate) => candidate.id === taskId) ??
     focusTasks.find((candidate) => candidate.id === activeTask?.id) ??
@@ -352,7 +356,7 @@ export default function KdsTouchWorkspace(props: Props) {
                 </span>
               </button>
             ))}
-            {tasks
+            {visibleTasks
               .filter(
                 (candidate) =>
                   !orders.some((entry) => entry.id === candidate.order_id),
