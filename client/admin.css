@@ -84,6 +84,39 @@
   box-shadow: 0 10px 26px rgb(0 0 0 / 0.35);
 }
 
+/* KDS surfaces are full-viewport operational apps, including when they are
+ * opened from a nested admin shell or a browser with reduced chrome. */
+.kds-pdv {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+.kds-pdv .kds-pdv-inner {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.kds-pdv .kds-pdv-frame,
+.kds-pdv .kds-pdv-frame-content,
+.kds-pdv .kds-pdv-canvas,
+.kds-pdv .kds-pdv-catalog,
+.kds-pdv .kds-pdv-order {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: none;
+}
+
+@media (min-width: 1201px) {
+  .kds-pdv > .kds-pdv-inner.grid {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, clamp(320px, 28vw, 520px));
+  }
+}
+
 /* Limites de scroll dos KDS em tablet retrato. */
 @media (min-width: 768px) and (orientation: portrait) {
   .admin-layout-content:has(.kds-touch-page),
