@@ -191,6 +191,7 @@ class GestorToolCatalogItem(BaseModel):
     name: str
     description: str
     module: str
+    permission: Literal["view", "create", "edit", "delete"]
     risk_level: Literal["low", "medium", "high"]
     mutates_data: bool = False
     requires_confirmation: bool = False
@@ -200,6 +201,29 @@ class GestorToolCatalogItem(BaseModel):
     unavailable_reason: str | None = None
     input_schema: dict[str, Any]
     output_schema: dict[str, Any]
+
+
+class GestorDashboardOut(BaseModel):
+    """Exclusive operational metrics for the administrative Gestor channel."""
+
+    tenant_id: UUID
+    generated_at: datetime
+    channels_total: int
+    channels_enabled: int
+    messages_total: int
+    messages_received_today: int
+    messages_processing: int
+    messages_failed: int
+    operations_total: int
+    operations_pending_confirmation: int
+    operations_ready_to_execute: int
+    operations_executed_today: int
+    operations_failed: int
+    outbox_pending: int
+    outbox_processing: int
+    outbox_sent_today: int
+    outbox_failed: int
+    outbox_dead: int
 
 
 class GestorToolExecuteOut(BaseModel):
@@ -304,6 +328,7 @@ class GestorWhatsAppChannelUpdate(BaseModel):
     app_secret_ref: str | None = Field(default=None, min_length=1, max_length=200)
     access_token_ref: str | None = Field(default=None, min_length=1, max_length=200)
     integration_connection_id: UUID | None = None
+    whatsapp_gateway_instance_id: str | None = Field(default=None, min_length=1, max_length=120)
 
 
 class GestorWhatsAppChannelOut(BaseModel):
@@ -318,10 +343,25 @@ class GestorWhatsAppChannelOut(BaseModel):
     app_secret_ref: str
     access_token_ref: str | None
     integration_connection_id: UUID | None
+    whatsapp_gateway_instance_id: str | None
     status: str
     last_error: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class GestorWhatsAppGatewayInstanceOut(BaseModel):
+    """Safe tenant-scoped transport choices for the Gestor UI."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    name: str
+    phone_number: str | None
+    provider: str
+    status: str
+    last_seen_at: datetime | None
 
 
 class GestorWhatsAppWebhookOut(BaseModel):

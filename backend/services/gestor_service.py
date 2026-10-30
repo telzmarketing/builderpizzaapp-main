@@ -23,7 +23,7 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, text, update
+from sqlalchemy import func, or_, text, update
 
 from backend.core.exceptions import DomainError
 from backend.models.gestor import (
@@ -36,6 +36,7 @@ from backend.models.membership import TenantMembership
 from backend.models.admin import AdminUser
 from backend.models.upload_asset import TenantUploadAsset
 from backend.models.rbac import RbacModule, RbacPermission, Role, RolePermission, UserPermission
+from backend.models.whatsapp_gateway import WhatsAppGatewayInstance
 from backend.schemas.gestor import (
     GestorBIDashboardArguments, GestorContactCreate, GestorContactUpdate,
     GestorFinanceOverviewArguments, GestorInventoryOverviewArguments,
@@ -53,6 +54,7 @@ from backend.schemas.gestor import (
     GestorCRMCreateTaskArguments, GestorInventoryManualEntryArguments,
     GestorOrderStatusUpdateArguments, GestorToolResult,
     GestorWhatsAppSendMessageArguments,
+    GestorDashboardOut,
     GestorMultimodalIn, GestorMultimodalReviewIn,
     GestorAutomationCreate, GestorAutomationUpdate, GestorAutomationSimulateIn,
 )
@@ -62,6 +64,7 @@ from backend.core.tenant_execution import tenant_upload_path
 from backend.services.tenant_upload_service import TenantUploadService
 from backend.services.fiscal_receipt_xml import parse_receipt_xml, ReceiptXmlError
 from backend.services.automation_registry import TRIGGERS, conditions_match, validate_definition
+from backend.services.whatsapp_gateway_service import WhatsAppGatewayService
 from backend.schemas.automation_core import AutomationDefinitionInput
 
 
@@ -236,9 +239,33 @@ class GestorService:
             GestorWhatsAppChannel.tenant_id == self.tenant_id,
         ).first()
 
+    def list_whatsapp_gateway_instances(self) -> list[WhatsAppGatewayInstance]:
+        """Return only Gateway transports owned by this tenant."""
+        gateway = WhatsAppGatewayService(self.db, tenant_context=self.tenant_context)
+        return [
+            instance for instance in gateway.list_instances()
+            if str(instance.tenant_id or "") == str(self.tenant_id)
+        ]
+
+    def _validate_gateway_instance(self, instance_id: str | None) -> None:
+        if not instance_id:
+            return
+        gateway = WhatsAppGatewayService(self.db, tenant_context=self.tenant_context)
+        instance = gateway.get_instance(str(instance_id))
+        if instance is None or str(instance.tenant_id or "") != str(self.tenant_id):
+            raise GestorWhatsAppNotConfigured(
+                "Instancia do WhatsApp Gateway nao pertence a este tenant.",
+                code="GestorWhatsAppGatewayInstanceMismatch",
+            )
+
     def update_whatsapp_channel(self, body: GestorWhatsAppChannelUpdate) -> GestorWhatsAppChannel:
         channel = self.get_whatsapp_channel()
         values = body.model_dump(exclude_unset=True)
+        if "whatsapp_gateway_instance_id" in values:
+            gateway_instance_id = values["whatsapp_gateway_instance_id"]
+            self._validate_gateway_instance(str(gateway_instance_id) if gateway_instance_id else None)
+            if gateway_instance_id is not None:
+                values["whatsapp_gateway_instance_id"] = str(gateway_instance_id)
         if channel is None:
             required = {"phone_number_id", "business_account_id", "app_secret_ref", "verify_token"}
             missing = sorted(key for key in required if not values.get(key))
@@ -629,6 +656,7 @@ class GestorService:
     def tool_catalog(cls) -> list[GestorToolCatalogItem]:
         return [GestorToolCatalogItem(
             name=spec.name, description=spec.description, module=spec.module,
+            permission=spec.permission,
             risk_level=spec.risk_level, mutates_data=spec.mutates_data,
             requires_confirmation=spec.requires_confirmation,
             input_schema=spec.arguments_model.model_json_schema(),
@@ -636,6 +664,53 @@ class GestorService:
             available=spec.available, unavailable_reason=spec.unavailable_reason,
             output_schema=spec.result_model.model_json_schema(),
         ) for spec in _tool_specs().values()]
+
+    def dashboard(self) -> GestorDashboardOut:
+        """Return only administrative Gestor metrics for this tenant.
+
+        This method deliberately queries the Gestor persistence boundary only.
+        The customer-facing ``AgenteWhatsApp`` session/message tables must never
+        contribute to these metrics.
+        """
+        now = datetime.now(timezone.utc)
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        def count(model, *filters) -> int:
+            query = self.db.query(func.count(model.id)).filter(model.tenant_id == self.tenant_id)
+            if filters:
+                query = query.filter(*filters)
+            return int(query.scalar() or 0)
+
+        return GestorDashboardOut(
+            tenant_id=self.tenant_id,
+            generated_at=now,
+            channels_total=count(GestorWhatsAppChannel),
+            channels_enabled=count(GestorWhatsAppChannel, GestorWhatsAppChannel.enabled.is_(True)),
+            messages_total=count(GestorWhatsAppMessage),
+            messages_received_today=count(GestorWhatsAppMessage, GestorWhatsAppMessage.created_at >= day_start),
+            messages_processing=count(GestorWhatsAppMessage, GestorWhatsAppMessage.status == "PROCESSING"),
+            messages_failed=count(GestorWhatsAppMessage, GestorWhatsAppMessage.status == "FAILED"),
+            operations_total=count(GestorOperation),
+            operations_pending_confirmation=count(
+                GestorOperation, GestorOperation.status.in_(("PENDING_CONFIRMATION", "PLANNED"))
+            ),
+            operations_ready_to_execute=count(GestorOperation, GestorOperation.status == "READY_TO_EXECUTE"),
+            operations_executed_today=count(
+                GestorOperation,
+                GestorOperation.status == "EXECUTED",
+                GestorOperation.executed_at >= day_start,
+            ),
+            operations_failed=count(GestorOperation, GestorOperation.status == "FAILED"),
+            outbox_pending=count(GestorWhatsAppOutbox, GestorWhatsAppOutbox.status == "pending"),
+            outbox_processing=count(GestorWhatsAppOutbox, GestorWhatsAppOutbox.status == "processing"),
+            outbox_sent_today=count(
+                GestorWhatsAppOutbox,
+                GestorWhatsAppOutbox.status == "sent",
+                GestorWhatsAppOutbox.sent_at >= day_start,
+            ),
+            outbox_failed=count(GestorWhatsAppOutbox, GestorWhatsAppOutbox.status == "failed"),
+            outbox_dead=count(GestorWhatsAppOutbox, GestorWhatsAppOutbox.status == "dead"),
+        )
 
     def assert_tool_permission(self, tool_name: str) -> None:
         spec = _tool_specs().get(tool_name.strip())
@@ -833,6 +908,12 @@ class GestorService:
         channel = self.get_whatsapp_channel()
         if channel is None or not channel.enabled:
             raise GestorWhatsAppNotConfigured("Canal Gestor Meta nao esta ativo.", code="GestorWhatsAppChannelDisabled")
+        # A configured Gateway instance is the authoritative transport for the
+        # Gestor channel.  Meta credentials are only required by the fallback
+        # transport, so a Gateway-only setup can enqueue messages safely.
+        if channel.whatsapp_gateway_instance_id:
+            self._gateway_instance_for_channel(channel)
+            return channel
         if not self.resolve_gestor_meta_secret(channel.app_secret_ref):
             raise GestorWhatsAppNotConfigured("App secret Meta nao resolvivel no secret manager.", code="GestorWhatsAppSecretUnavailable")
         if not self.resolve_gestor_meta_access_token(channel.access_token_ref):
@@ -840,6 +921,25 @@ class GestorService:
                 "Token de acesso Meta nao resolvivel no secret manager.", code="GestorWhatsAppAccessTokenUnavailable"
             )
         return channel
+
+    def _gateway_instance_for_channel(self, channel: GestorWhatsAppChannel) -> WhatsAppGatewayInstance:
+        """Resolve the selected Gateway instance with an explicit tenant fence."""
+        instance_id = str(channel.whatsapp_gateway_instance_id or "").strip()
+        if not instance_id:
+            raise GestorWhatsAppNotConfigured(
+                "Instancia do WhatsApp Gateway nao configurada.",
+                code="GestorWhatsAppGatewayInstanceMissing",
+            )
+        instance = self.db.query(WhatsAppGatewayInstance).filter(
+            WhatsAppGatewayInstance.id == instance_id,
+            WhatsAppGatewayInstance.tenant_id == self.tenant_id,
+        ).first()
+        if instance is None:
+            raise GestorWhatsAppNotConfigured(
+                "Instancia do WhatsApp Gateway nao pertence a este tenant.",
+                code="GestorWhatsAppGatewayInstanceMismatch",
+            )
+        return instance
 
     def enqueue_whatsapp_message(self, operation_id: str) -> tuple[GestorWhatsAppOutbox, bool, dict[str, Any]]:
         operation = self.db.query(GestorOperation).filter(
@@ -949,8 +1049,14 @@ class GestorService:
         channel = self.db.query(GestorWhatsAppChannel).filter(
             GestorWhatsAppChannel.id == item.channel_id, GestorWhatsAppChannel.tenant_id == self.tenant_id,
         ).first()
-        token = self.resolve_gestor_meta_access_token(channel.access_token_ref if channel else None)
-        if channel is None or not channel.enabled or not token:
+        if channel is None or not channel.enabled:
+            return self._fail_whatsapp_outbox(item, "Canal Gestor WhatsApp indisponivel para processamento.")
+        try:
+            gateway_instance = self._gateway_instance_for_channel(channel) if channel.whatsapp_gateway_instance_id else None
+        except GestorWhatsAppNotConfigured as exc:
+            return self._fail_whatsapp_outbox(item, str(exc))
+        token = None if gateway_instance else self.resolve_gestor_meta_access_token(channel.access_token_ref)
+        if gateway_instance is None and not token:
             return self._fail_whatsapp_outbox(item, "Credencial externa Meta indisponivel para processamento.")
         now = datetime.now(timezone.utc)
         item.status = "processing"
@@ -959,18 +1065,39 @@ class GestorService:
         item.updated_at = now
         self.db.flush()
         try:
-            response = requests.post(
-                f"https://graph.facebook.com/v19.0/{channel.phone_number_id}/messages",
-                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                json=self._meta_payload(item), timeout=15,
-            )
-            try:
-                data = response.json()
-            except Exception:
-                data = {}
-            messages = data.get("messages") if isinstance(data, dict) else None
-            provider_id = messages[0].get("id") if isinstance(messages, list) and messages and isinstance(messages[0], dict) else None
-            if 200 <= int(getattr(response, "status_code", 0)) < 300 and provider_id:
+            if gateway_instance is not None:
+                if item.message_type != "text":
+                    return self._fail_whatsapp_outbox(
+                        item,
+                        "A instancia WhatsApp Gateway envia texto; templates exigem o transporte Meta aprovado.",
+                    )
+                gateway_result = WhatsAppGatewayService(
+                    self.db, tenant_context=self.tenant_context,
+                ).send_text_message(
+                    phone=item.recipient_phone,
+                    text=item.body or "",
+                    instance_id=gateway_instance.id,
+                )
+                provider_id = gateway_result.provider_message_id or str(
+                    (gateway_result.data or {}).get("provider_message_id") or ""
+                ).strip() or None
+                successful = bool(gateway_result.ok and provider_id)
+                failure_message = gateway_result.message or "Falha no WhatsApp Gateway."
+            else:
+                response = requests.post(
+                    f"https://graph.facebook.com/v19.0/{channel.phone_number_id}/messages",
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                    json=self._meta_payload(item), timeout=15,
+                )
+                try:
+                    data = response.json()
+                except Exception:
+                    data = {}
+                messages = data.get("messages") if isinstance(data, dict) else None
+                provider_id = messages[0].get("id") if isinstance(messages, list) and messages and isinstance(messages[0], dict) else None
+                successful = bool(200 <= int(getattr(response, "status_code", 0)) < 300 and provider_id)
+                failure_message = self._safe_meta_error(response, token)
+            if successful:
                 now = datetime.now(timezone.utc)
                 item.status = "sent"
                 item.provider_message_id = str(provider_id)
@@ -987,8 +1114,10 @@ class GestorService:
                     operation.error = None
                 self.db.flush()
                 return "sent"
-            return self._fail_whatsapp_outbox(item, self._safe_meta_error(response, token))
+            return self._fail_whatsapp_outbox(item, failure_message)
         except Exception:
+            if gateway_instance is not None:
+                return self._fail_whatsapp_outbox(item, "Falha de comunicacao com o WhatsApp Gateway.")
             return self._fail_whatsapp_outbox(item, "Falha de comunicacao com a API Meta.")
 
     def process_whatsapp_outbox(self, limit: int = 20) -> dict[str, int]:

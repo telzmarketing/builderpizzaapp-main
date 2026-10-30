@@ -1,195 +1,107 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Activity,
-  AlertTriangle,
-  ArrowUpRight,
-  BarChart3,
-  Bot,
-  CheckCircle2,
-  Clock3,
-  Database,
-  Loader2,
-  MessageCircle,
-  Package,
-  RefreshCw,
-  Server,
-  ShieldCheck,
-  Truck,
-  Wallet,
-  WifiOff,
-  type LucideIcon,
+  AlertTriangle, Bot, CheckCircle2, ChevronRight, CircleHelp, Clock3, ExternalLink,
+  KeyRound, Loader2, MessageCircle, PauseCircle, PlayCircle, RefreshCw, Save,
+  Settings2, ShieldCheck, SlidersHorizontal, ToggleLeft, ToggleRight, Trash2,
+  UserPlus, Users, Wifi, WifiOff, Wrench,
 } from "lucide-react";
 import {
-  agenteWhatsAppApi,
-  whatsappGatewayApi,
-  type ApiAgenteWhatsAppDashboard,
-  type ApiAgenteWhatsAppObservability,
-  type ApiAgenteWhatsAppOperationalMetrics,
-  type ApiWhatsAppGatewayOverview,
+  gestorApi,
+  type ApiGestorAIProviderStatus,
+  type ApiGestorAISettings,
+  type ApiGestorAutomation,
+  type ApiGestorContact,
+  type ApiGestorDashboard,
+  type ApiGestorOperation,
+  type ApiGestorOutbox,
+  type ApiGestorTool,
+  type ApiGestorWhatsAppChannel,
+  type ApiGestorWhatsAppGatewayInstance,
 } from "@/lib/api";
 
-type DashboardData = {
-  agent: ApiAgenteWhatsAppDashboard | null;
-  operations: ApiAgenteWhatsAppOperationalMetrics | null;
-  observability: ApiAgenteWhatsAppObservability | null;
-  gateway: ApiWhatsAppGatewayOverview | null;
-};
-
-const emptyData: DashboardData = { agent: null, operations: null, observability: null, gateway: null };
-
-function displayNumber(value: number | null | undefined) {
-  return value === null || value === undefined ? "-" : value.toLocaleString("pt-BR");
-}
-
-function displayPercent(value: number | null | undefined) {
-  return value === null || value === undefined ? "-" : `${value.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
-}
-
-function displayDuration(value: number | null | undefined) {
-  if (value === null || value === undefined) return "-";
-  if (value < 60) return `${Math.round(value)}s`;
-  return `${Math.floor(value / 60)}min`;
-}
-
-function statusLabel(status: string | null | undefined) {
-  if (!status) return "Indisponível";
-  if (status === "healthy") return "Saudável";
-  if (status === "degraded") return "Degradado";
-  if (status === "critical") return "Crítico";
-  return status;
-}
-
-function statusClass(status: string | null | undefined) {
-  if (status === "healthy") return "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
-  if (status === "critical") return "text-red-400 bg-red-500/10 border-red-500/20";
-  return "text-amber-300 bg-amber-500/10 border-amber-500/20";
-}
-
-function MetricCard({ label, value, detail, icon: Icon }: { label: string; value: string; detail: string; icon: LucideIcon }) {
-  return (
-    <div className="rounded-xl border border-surface-03 bg-surface-02 p-4 shadow-soft">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-stone">{label}</p>
-        <span className="rounded-lg bg-gold/10 p-2 text-gold"><Icon size={17} aria-hidden="true" /></span>
-      </div>
-      <p className="mt-4 text-2xl font-black text-cream">{value}</p>
-      <p className="mt-1 text-xs text-stone">{detail}</p>
-    </div>
-  );
-}
-
-const quickLinks = [
-  { label: "IA / Agente WhatsApp", description: "Conversas, configurações e operação do agente", path: "/painel/crm/agente-whatsapp", icon: Bot },
-  { label: "WhatsApp Gateway", description: "Instâncias, conexão e saúde do gateway", path: "/painel/whatsapp-gateway", icon: Server },
-  { label: "Chatbot / Automações", description: "Regras e automações já disponíveis", path: "/painel/chatbot", icon: MessageCircle },
-  { label: "BI", description: "Indicadores e análises do negócio", path: "/painel/bi", icon: BarChart3 },
-  { label: "Estoque", description: "Saldo, movimentações e custo", path: "/painel/gestao/estoque", icon: Package },
-  { label: "Financeiro", description: "Contas e visão financeira", path: "/painel/gestao/financeiro", icon: Wallet },
-  { label: "Logística", description: "Entregas e operação de rota", path: "/painel/logistica", icon: Truck },
+type Tab = "overview" | "channel" | "ai" | "tools" | "contacts" | "operations";
+const tabs: Array<{ id: Tab; label: string; icon: typeof Bot }> = [
+  { id: "overview", label: "Visão geral", icon: Bot },
+  { id: "channel", label: "Identidade / Canais", icon: Wifi },
+  { id: "ai", label: "IA Gestor", icon: SlidersHorizontal },
+  { id: "tools", label: "Ferramentas", icon: Wrench },
+  { id: "contacts", label: "Contatos autorizados", icon: Users },
+  { id: "operations", label: "Operações / Outbox", icon: Clock3 },
 ];
+const emptyDashboard: ApiGestorDashboard = { metrics: {}, channel: null, ai: null };
+const emptyAiForm = { enabled: false, provider: "internal" as ApiGestorAISettings["provider"], model: "", temperature: 0.2, max_tokens: 4096, system_instructions: "", operational_rules: "", monthly_token_limit: 0, monthly_cost_limit: 0, writes_enabled: false };
+const emptyContactForm = { admin_user_id: "", phone: "", display_name: "", role: "owner", active: true, requires_reauth: true };
+const inputClass = "min-h-10 w-full rounded-lg border border-surface-03 bg-surface-01 px-3 text-sm text-cream outline-none transition placeholder:text-stone/70 focus:border-gold/70";
+const buttonClass = "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-surface-03 bg-surface-03 px-3 text-xs font-bold text-cream transition hover:border-gold/60 disabled:cursor-not-allowed disabled:opacity-50";
+const primaryButtonClass = "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-gold px-4 text-xs font-black text-ink transition hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-50";
+
+function formatDate(value?: string | null) { if (!value) return "—"; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(date); }
+function display(value: unknown) { if (value === null || value === undefined || value === "") return "—"; return typeof value === "number" ? value.toLocaleString("pt-BR") : String(value); }
+function statusText(value?: string | null) { const labels: Record<string, string> = { healthy: "Saudável", connected: "Conectado", configured: "Configurado", enabled: "Ativo", pending: "Pendente", failed: "Falhou", sent: "Enviado", dead: "Encerrado", disabled: "Desativado", executed: "Executado", active: "Ativo", rejected: "Rejeitado" }; return value ? labels[value] ?? value : "Indisponível"; }
+function statusClass(value?: string | null) { if (["healthy", "connected", "configured", "enabled", "sent", "active", "executed"].includes(value ?? "")) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"; if (["failed", "dead", "critical", "rejected"].includes(value ?? "")) return "border-red-500/30 bg-red-500/10 text-red-300"; return "border-amber-500/30 bg-amber-500/10 text-amber-200"; }
+function Badge({ children, tone }: { children: React.ReactNode; tone?: string | null }) { return <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-bold ${statusClass(tone)}`}>{children}</span>; }
+function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <section className={`rounded-2xl border border-surface-03 bg-surface-02 p-4 shadow-soft sm:p-5 ${className}`}>{children}</section>; }
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) { return <label className="block space-y-1.5"><span className="text-xs font-bold text-cream">{label}</span>{children}{hint && <span className="block text-[11px] leading-4 text-stone">{hint}</span>}</label>; }
+function Metric({ label, value, detail }: { label: string; value: unknown; detail: string }) { return <div className="rounded-xl border border-surface-03 bg-surface-01 p-4"><p className="text-[11px] font-bold uppercase tracking-wide text-stone">{label}</p><p className="mt-3 text-2xl font-black text-cream">{display(value)}</p><p className="mt-1 text-xs text-stone">{detail}</p></div>; }
+function Empty({ children }: { children: React.ReactNode }) { return <div className="rounded-xl border border-dashed border-surface-03 px-4 py-8 text-center text-sm text-stone">{children}</div>; }
+function ErrorBox({ message }: { message: string }) { return <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100"><AlertTriangle size={17} className="mt-0.5 shrink-0 text-red-300" />{message}</div>; }
+function Info({ label, value }: { label: string; value: unknown }) { return <div className="rounded-lg border border-surface-03 bg-surface-01 p-3"><p className="text-[11px] text-stone">{label}</p><p className="mt-1 truncate text-sm font-bold text-cream" title={display(value)}>{display(value)}</p></div>; }
+function SectionHeader({ icon: Icon, title, description }: { icon: typeof Bot; title: string; description: string }) { return <div className="flex items-start gap-3"><span className="rounded-lg bg-gold/10 p-2 text-gold"><Icon size={18} /></span><div><h2 className="font-bold text-cream">{title}</h2><p className="mt-1 text-xs leading-5 text-stone">{description}</p></div></div>; }
+function ToggleRow({ label, checked, onChange, warning = false }: { label: string; checked: boolean; onChange: () => void; warning?: boolean }) { return <button type="button" aria-pressed={checked} onClick={onChange} className={`flex items-center justify-between rounded-lg border px-3 py-3 text-left ${warning ? "border-amber-500/25 bg-amber-500/5" : "border-surface-03 bg-surface-01"}`}><span><span className="block text-sm font-bold text-cream">{label}</span>{warning && <span className="mt-1 block text-[11px] text-amber-200">Exige confirmação e permissões no backend.</span>}</span>{checked ? <ToggleRight className="text-gold" size={30} /> : <ToggleLeft className="text-stone" size={30} />}</button>; }
 
 export default function Gestor() {
-  const [data, setData] = useState<DashboardData>(emptyData);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState("");
+  const [tab, setTab] = useState<Tab>("overview");
+  const [dashboard, setDashboard] = useState<ApiGestorDashboard>(emptyDashboard);
+  const [aiSettings, setAiSettings] = useState<ApiGestorAISettings | null>(null);
+  const [aiStatus, setAiStatus] = useState<ApiGestorAIProviderStatus | null>(null);
+  const [channel, setChannel] = useState<ApiGestorWhatsAppChannel | null>(null);
+  const [tools, setTools] = useState<ApiGestorTool[]>([]); const [contacts, setContacts] = useState<ApiGestorContact[]>([]); const [operations, setOperations] = useState<ApiGestorOperation[]>([]); const [outbox, setOutbox] = useState<ApiGestorOutbox[]>([]); const [automations, setAutomations] = useState<ApiGestorAutomation[]>([]);
+  const [loading, setLoading] = useState(true); const [refreshing, setRefreshing] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [saving, setSaving] = useState(false);
+  const [aiForm, setAiForm] = useState(emptyAiForm); const [channelForm, setChannelForm] = useState({ enabled: false, phone_number_id: "", business_account_id: "", display_phone_number: "", app_secret_ref: "", access_token_ref: "", whatsapp_gateway_instance_id: "" }); const [contactForm, setContactForm] = useState(emptyContactForm); const [editingContact, setEditingContact] = useState<string | null>(null); const [automationForm, setAutomationForm] = useState({ name: "", description: "", trigger_key: "notification.send_whatsapp", message: "", dry_run: true, enabled: false });
 
-  const loadDashboard = useCallback(async (manual = false) => {
-    if (manual) setRefreshing(true);
-    else setLoading(true);
-    setError("");
-    const results = await Promise.allSettled([
-      agenteWhatsAppApi.dashboard(),
-      agenteWhatsAppApi.observability(),
-      agenteWhatsAppApi.operationalMetrics(),
-      whatsappGatewayApi.overview(),
-    ]);
-    const next: DashboardData = {
-      agent: results[0].status === "fulfilled" ? results[0].value : null,
-      observability: results[1].status === "fulfilled" ? results[1].value : null,
-      operations: results[2].status === "fulfilled" ? results[2].value : null,
-      gateway: results[3].status === "fulfilled" ? results[3].value : null,
-    };
-    setData(next);
-    if (results.every((result) => result.status === "rejected")) {
-      setError("Não foi possível carregar os indicadores do Gestor IA.");
-    } else if (results.some((result) => result.status === "rejected")) {
-      setError("Alguns indicadores estão indisponíveis no momento.");
-    }
-    setLoading(false);
-    setRefreshing(false);
+  const load = useCallback(async (manual = false) => {
+    setLoading(!manual); setRefreshing(manual); setError("");
+    const results = await Promise.allSettled([gestorApi.dashboard(), gestorApi.getAISettings(), gestorApi.getAIStatus(), gestorApi.getChannel(), gestorApi.listTools(), gestorApi.listContacts(), gestorApi.listOperations(), gestorApi.listOutbox(), gestorApi.listAutomations()]);
+    const [dashboardResult, aiResult, aiStatusResult, channelResult, toolsResult, contactsResult, operationsResult, outboxResult, automationsResult] = results;
+    if (dashboardResult.status === "fulfilled") setDashboard(dashboardResult.value);
+    if (aiResult.status === "fulfilled") { const item = aiResult.value; setAiSettings(item); setAiForm({ enabled: item.enabled, provider: item.provider, model: item.model, temperature: item.temperature, max_tokens: item.max_tokens, system_instructions: item.system_instructions, operational_rules: item.operational_rules, monthly_token_limit: item.monthly_token_limit, monthly_cost_limit: item.monthly_cost_limit, writes_enabled: item.writes_enabled }); }
+    if (aiStatusResult.status === "fulfilled") setAiStatus(aiStatusResult.value);
+    if (channelResult.status === "fulfilled") { const item = channelResult.value; setChannel(item); if (item) setChannelForm({ enabled: item.enabled, phone_number_id: "", business_account_id: "", display_phone_number: item.display_phone_number ?? "", app_secret_ref: "", access_token_ref: "", whatsapp_gateway_instance_id: item.whatsapp_gateway_instance_id ?? "" }); }
+    if (toolsResult.status === "fulfilled") setTools(toolsResult.value); if (contactsResult.status === "fulfilled") setContacts(contactsResult.value); if (operationsResult.status === "fulfilled") setOperations(operationsResult.value); if (outboxResult.status === "fulfilled") setOutbox(outboxResult.value); if (automationsResult.status === "fulfilled") setAutomations(automationsResult.value);
+    if (results.every((result) => result.status === "rejected")) setError("Não foi possível carregar a administração do Gestor IA."); else if (results.some((result) => result.status === "rejected")) setError("Algumas seções estão indisponíveis; os dados disponíveis continuam separados por módulo.");
+    setLoading(false); setRefreshing(false);
   }, []);
+  useEffect(() => { void load(); }, [load]);
+  const run = useCallback(async (action: () => Promise<unknown>, success: string) => { setSaving(true); setError(""); setNotice(""); try { await action(); setNotice(success); await load(true); } catch (err) { setError(err instanceof Error ? err.message : "Não foi possível concluir a operação."); } finally { setSaving(false); } }, [load]);
+  const activeAutomations = useMemo(() => automations.filter((item) => item.enabled).length, [automations]);
+  const saveAI = () => run(() => gestorApi.updateAISettings(aiForm), "Configurações da IA Gestor salvas.");
+  const saveChannel = () => { const data = { ...Object.fromEntries(Object.entries(channelForm).filter(([key, value]) => value !== "" || key === "whatsapp_gateway_instance_id")), whatsapp_gateway_instance_id: channelForm.whatsapp_gateway_instance_id || null }; return run(() => gestorApi.updateChannel(data), "Canal do Gestor IA salvo."); };
+  async function saveContact(event: React.FormEvent) { event.preventDefault(); if (editingContact) await run(() => gestorApi.updateContact(editingContact, { phone: contactForm.phone, display_name: contactForm.display_name, role: contactForm.role, active: contactForm.active, requires_reauth: contactForm.requires_reauth }), "Contato atualizado."); else await run(() => gestorApi.createContact(contactForm), "Contato autorizado criado."); setContactForm(emptyContactForm); setEditingContact(null); }
+  async function createAutomation(event: React.FormEvent) { event.preventDefault(); await run(() => gestorApi.createAutomation({ name: automationForm.name, description: automationForm.description || undefined, trigger_key: automationForm.trigger_key, actions: [{ key: "notification.send_whatsapp", config: { message: automationForm.message } }], dry_run: automationForm.dry_run, enabled: automationForm.enabled, opt_out_required: true }), "Automação criada."); setAutomationForm({ name: "", description: "", trigger_key: "notification.send_whatsapp", message: "", dry_run: true, enabled: false }); }
 
-  useEffect(() => { void loadDashboard(); }, [loadDashboard]);
-
-  const agentStatus = data.observability?.health_status;
-  const gatewayStatus = data.gateway?.provider?.runtime_status;
-  const hasData = Object.values(data).some(Boolean);
-  const lastUpdate = useMemo(() => data.operations?.generated_at, [data.operations?.generated_at]);
-
-  return (
-    <div className="space-y-6 pb-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold">Gestão assistida</p>
-          <h1 className="mt-1 text-2xl font-black text-cream sm:text-3xl">Gestor IA</h1>
-          <p className="mt-2 max-w-2xl text-sm text-stone">Visão operacional baseada nos serviços existentes do ERP. Esta primeira fatia é somente leitura.</p>
-        </div>
-        <button type="button" onClick={() => void loadDashboard(true)} disabled={loading || refreshing} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-surface-03 bg-surface-02 px-4 text-sm font-bold text-cream transition hover:border-gold/50 disabled:cursor-not-allowed disabled:opacity-60">
-          <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} aria-hidden="true" /> Atualizar
-        </button>
-      </div>
-
-      {error && <div role="alert" className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"><AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-300" />{error}</div>}
-
-      {loading ? (
-        <div className="flex min-h-64 items-center justify-center rounded-xl border border-surface-03 bg-surface-02 text-stone"><Loader2 size={30} className="animate-spin text-gold" /><span className="ml-3 text-sm">Carregando indicadores reais...</span></div>
-      ) : !hasData ? (
-        <div className="rounded-xl border border-surface-03 bg-surface-02 px-6 py-12 text-center"><WifiOff size={30} className="mx-auto text-stone" /><h2 className="mt-3 text-lg font-bold text-cream">Nenhum indicador disponível</h2><p className="mt-2 text-sm text-stone">Verifique a sessão e a disponibilidade dos serviços para tentar novamente.</p></div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Conversas abertas" value={displayNumber(data.agent?.sessions_open)} detail={`${displayNumber(data.agent?.sessions_human)} em atendimento humano`} icon={MessageCircle} />
-            <MetricCard label="Mensagens hoje" value={displayNumber(data.agent?.messages_today)} detail={`${displayNumber(data.agent?.inbound_today)} recebidas · ${displayNumber(data.agent?.outbound_today)} enviadas`} icon={Activity} />
-            <MetricCard label="Taxa de sucesso" value={displayPercent(data.observability?.success_rate)} detail={`${displayNumber(data.observability?.attempted_deliveries)} tentativas de entrega`} icon={CheckCircle2} />
-            <MetricCard label="Atendimentos ativos" value={displayNumber(data.operations?.active_attendances)} detail={`${displayNumber(data.operations?.waiting_response)} aguardando resposta`} icon={Clock3} />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <section className="rounded-xl border border-surface-03 bg-surface-02 p-5 shadow-soft">
-              <div className="flex items-center justify-between gap-3"><div><h2 className="font-bold text-cream">Saúde dos serviços</h2><p className="mt-1 text-xs text-stone">Estado retornado pelas APIs existentes</p></div><ShieldCheck size={20} className="text-gold" /></div>
-              <div className="mt-5 space-y-3">
-                <StatusRow label="Agente WhatsApp" status={statusLabel(agentStatus)} detail={data.observability?.health_message} tone={agentStatus} />
-                <StatusRow label="WhatsApp Gateway" status={gatewayStatus ? String(gatewayStatus) : "Indisponível"} detail={data.gateway ? `${data.gateway.connected_instances} de ${data.gateway.total_instances} instância(s) conectada(s)` : undefined} tone={data.gateway?.failed_instances ? "critical" : data.gateway ? "healthy" : undefined} />
-              </div>
-            </section>
-            <section className="rounded-xl border border-surface-03 bg-surface-02 p-5 shadow-soft">
-              <div className="flex items-center justify-between gap-3"><div><h2 className="font-bold text-cream">Métricas operacionais</h2><p className="mt-1 text-xs text-stone">Sem estimativas quando a API não retorna dados</p></div><Database size={20} className="text-gold" /></div>
-              <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <MiniMetric label="Agentes IA" value={displayNumber(data.operations?.active_ai_agents)} />
-                <MiniMetric label="Não lidas" value={displayNumber(data.operations?.unread_messages)} />
-                <MiniMetric label="Resp. médio" value={displayDuration(data.operations?.avg_response_time_seconds)} />
-                <MiniMetric label="Alertas ativos" value={displayNumber(data.observability?.active_alerts)} />
-              </div>
-              {lastUpdate && <p className="mt-5 text-xs text-stone">Atualizado em {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(lastUpdate))}</p>}
-            </section>
-          </div>
-
-          <section>
-            <div className="mb-3 flex items-center justify-between"><div><h2 className="font-bold text-cream">Acessos rápidos</h2><p className="mt-1 text-xs text-stone">Módulos já existentes no painel administrativo</p></div><ArrowUpRight size={18} className="text-stone" /></div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">{quickLinks.map(({ label, description, path, icon: Icon }) => <Link key={path} to={path} className="group rounded-xl border border-surface-03 bg-surface-02 p-4 transition hover:border-gold/50 hover:bg-surface-03"><div className="flex items-start justify-between gap-3"><span className="rounded-lg bg-gold/10 p-2 text-gold"><Icon size={18} aria-hidden="true" /></span><ArrowUpRight size={16} className="text-stone transition group-hover:text-gold" /></div><h3 className="mt-4 text-sm font-bold text-cream">{label}</h3><p className="mt-1 text-xs leading-5 text-stone">{description}</p></Link>)}</div>
-          </section>
-        </>
-      )}
-    </div>
-  );
+  return <div className="space-y-5 pb-10"><header className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-gold">Administração exclusiva</p><h1 className="mt-1 text-2xl font-black text-cream sm:text-3xl">Gestor IA</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-stone">Configure o atendente administrativo que recebe comandos pelo WhatsApp e opera o ERP com as permissões, confirmações e limites definidos aqui.</p></div><div className="flex flex-wrap gap-2"><Badge tone={aiSettings?.enabled ? "enabled" : "disabled"}>{aiSettings?.enabled ? "IA Gestor ativa" : "IA Gestor desativada"}</Badge><Badge tone={channel?.status}>{channel?.status ? statusText(channel.status) : "Canal não configurado"}</Badge><button className={buttonClass} onClick={() => void load(true)} disabled={loading || refreshing}><RefreshCw size={15} className={refreshing ? "animate-spin" : ""} /> Atualizar</button></div></header><div className="flex items-start gap-3 rounded-xl border border-sky-500/25 bg-sky-500/10 p-4 text-sm text-sky-100"><ShieldCheck size={18} className="mt-0.5 shrink-0 text-sky-300" /><p><strong>Escopo separado:</strong> esta área administra somente o Gestor IA. A IA de clientes possui regras e métricas próprias no <Link className="font-bold underline" to="/painel/crm/agente-whatsapp">módulo de atendimento ao cliente</Link> e não é contabilizada neste dashboard.</p></div>{error && <ErrorBox message={error} />}{notice && <div role="status" className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">{notice}</div>}<nav aria-label="Seções do Gestor IA" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">{tabs.map(({ id, label, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition ${tab === id ? "border-gold bg-gold text-ink" : "border-surface-03 bg-surface-02 text-stone hover:border-gold/50 hover:text-cream"}`}><Icon size={15} />{label}</button>)}</nav>{loading ? <div className="flex min-h-64 items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 text-sm text-stone"><Loader2 size={24} className="mr-3 animate-spin text-gold" />Carregando administração real do Gestor IA...</div> : <>{tab === "overview" && <Overview dashboard={dashboard} activeAutomations={activeAutomations} aiSettings={aiSettings} channel={channel} setTab={setTab} />}{tab === "channel" && <ChannelSection channel={channel} form={channelForm} setForm={setChannelForm} saving={saving} onSave={() => void saveChannel()} />}{tab === "ai" && <AISection settings={aiSettings} status={aiStatus} form={aiForm} setForm={setAiForm} saving={saving} onSave={() => void saveAI()} />}{tab === "tools" && <ToolsSection tools={tools} />}{tab === "contacts" && <ContactsSection contacts={contacts} form={contactForm} setForm={setContactForm} editing={editingContact} setEditing={setEditingContact} saving={saving} onSave={saveContact} />}{tab === "operations" && <OperationsSection operations={operations} outbox={outbox} automations={automations} automationForm={automationForm} setAutomationForm={setAutomationForm} saving={saving} onCreateAutomation={createAutomation} onProcessOutbox={() => void run(() => gestorApi.processOutbox(), "Outbox processada.")} onRetryOutbox={(id) => void run(() => gestorApi.retryOutbox(id), "Mensagem devolvida para retry.")} onProcessAutomations={() => void run(() => gestorApi.processAutomationEvents(), "Eventos de automação processados.")} onToggleAutomation={(item) => void run(() => gestorApi.updateAutomation(item.id, { enabled: !item.enabled }), item.enabled ? "Automação desativada." : "Automação ativada.")} onDeleteAutomation={(id) => void run(() => gestorApi.deleteAutomation(id), "Automação desativada.")} />}</>}</div>;
 }
 
-function StatusRow({ label, status, detail, tone }: { label: string; status: string; detail?: string; tone?: string }) {
-  return <div className="flex flex-col gap-2 rounded-lg border border-surface-03 bg-surface-01 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-cream">{label}</p><p className="mt-1 text-xs text-stone">{detail || "Sem detalhe retornado"}</p></div><span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${statusClass(tone)}`}><span className="h-1.5 w-1.5 rounded-full bg-current" />{status}</span></div>;
+function Overview({ dashboard, activeAutomations, aiSettings, channel, setTab }: { dashboard: ApiGestorDashboard; activeAutomations: number; aiSettings: ApiGestorAISettings | null; channel: ApiGestorWhatsAppChannel | null; setTab: (tab: Tab) => void }) { const pendingOperations = (dashboard.operations_pending_confirmation ?? 0) + (dashboard.operations_ready_to_execute ?? 0); return <div className="space-y-5"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Mensagens do Gestor" value={dashboard.messages_total} detail="Total do canal administrativo" /><Metric label="Recebidas hoje" value={dashboard.messages_received_today} detail="Somente mensagens do Gestor" /><Metric label="Operações pendentes" value={pendingOperations} detail="Confirmação ou execução" /><Metric label="Outbox pendente" value={dashboard.outbox_pending} detail="Mensagens administrativas" /></div><div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><Card><div className="flex items-start justify-between gap-3"><div><h2 className="font-bold text-cream">Identidade do Gestor</h2><p className="mt-1 text-xs text-stone">Canal administrativo separado do atendente de clientes.</p></div><MessageCircle className="text-gold" size={20} /></div><div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><Info label="Número exibido" value={channel?.display_phone_number} /><Info label="Phone number ID" value={channel?.phone_number_id} /><Info label="Business account" value={channel?.business_account_id} /><Info label="Status" value={statusText(channel?.status)} /></div><button type="button" className={`${buttonClass} mt-5`} onClick={() => setTab("channel")}>Administrar canal <ChevronRight size={15} /></button></Card><Card><div className="flex items-start justify-between gap-3"><div><h2 className="font-bold text-cream">IA Gestor</h2><p className="mt-1 text-xs text-stone">Provider, instruções e permissão para writes.</p></div><Bot className="text-gold" size={20} /></div><div className="mt-5 grid grid-cols-2 gap-3"><Info label="Provider" value={aiSettings?.provider} /><Info label="Modelo" value={aiSettings?.model} /><Info label="Execução de writes" value={aiSettings?.writes_enabled ? "Permitida" : "Bloqueada"} /><Info label="Atualizado" value={formatDate(aiSettings?.updated_at)} /></div><button type="button" className={`${buttonClass} mt-5`} onClick={() => setTab("ai")}>Editar comportamento <ChevronRight size={15} /></button></Card></div><div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><Card><div className="flex items-center gap-2"><CircleHelp size={17} className="text-gold" /><h2 className="font-bold text-cream">Métricas exclusivas</h2></div><p className="mt-3 text-sm leading-6 text-stone">As métricas acima vêm de <code className="rounded bg-surface-03 px-1.5 py-0.5 text-cream">/api/gestor/dashboard</code>. Nenhum indicador de conversas, mensagens ou agentes da IA de clientes é usado aqui.</p><p className="mt-3 text-xs text-stone">Atualizado em {formatDate(dashboard.generated_at)} · Automações ativas nesta sessão: {activeAutomations}</p></Card><Card><div className="grid grid-cols-2 gap-3"><Info label="Execuções hoje" value={dashboard.operations_executed_today} /><Info label="Falhas de mensagens" value={dashboard.messages_failed} /><Info label="Outbox enviada hoje" value={dashboard.outbox_sent_today} /><Info label="Operações falhas" value={dashboard.operations_failed} /></div></Card></div></div>; }
+
+function ChannelSection({ channel, form, setForm, saving, onSave }: { channel: ApiGestorWhatsAppChannel | null; form: { enabled: boolean; phone_number_id: string; business_account_id: string; display_phone_number: string; app_secret_ref: string; access_token_ref: string; whatsapp_gateway_instance_id: string }; setForm: React.Dispatch<React.SetStateAction<typeof form>>; saving: boolean; onSave: () => void }) {
+  const [gatewayInstances, setGatewayInstances] = useState<ApiGestorWhatsAppGatewayInstance[]>([]);
+  const [gatewayLoading, setGatewayLoading] = useState(true);
+  const [gatewayError, setGatewayError] = useState("");
+  useEffect(() => {
+    let active = true;
+    void gestorApi.listGatewayInstances().then((items) => { if (active) setGatewayInstances(items); }).catch((err) => { if (active) setGatewayError(err instanceof Error ? err.message : "Não foi possível carregar as instâncias do Gateway."); }).finally(() => { if (active) setGatewayLoading(false); });
+    return () => { active = false; };
+  }, []);
+  const selectedGateway = gatewayInstances.find((instance) => instance.id === form.whatsapp_gateway_instance_id);
+  return <div className="space-y-4"><Card><SectionHeader icon={KeyRound} title="Identidade e transporte do Gestor" description="Phone number ID e Business Account ID são identificadores Meta. A instância abaixo é o transporte WhatsApp Gateway selecionado; os dois conceitos permanecem separados." /><div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2"><Field label="Phone number ID (Meta)" hint={channel?.phone_number_id ? `Configurado: ${channel.phone_number_id}. Deixe vazio para manter.` : "ID fornecido pela Meta."}><input className={inputClass} value={form.phone_number_id} onChange={(e) => setForm((v) => ({ ...v, phone_number_id: e.target.value }))} placeholder="Ex.: 1234567890" /></Field><Field label="Business account ID (Meta)" hint={channel?.business_account_id ? `Configurado: ${channel.business_account_id}. Deixe vazio para manter.` : "ID da conta empresarial Meta."}><input className={inputClass} value={form.business_account_id} onChange={(e) => setForm((v) => ({ ...v, business_account_id: e.target.value }))} placeholder="Ex.: 987654321" /></Field><Field label="Número exibido"><input className={inputClass} value={form.display_phone_number} onChange={(e) => setForm((v) => ({ ...v, display_phone_number: e.target.value }))} placeholder="+55 (00) 00000-0000" /></Field><Field label="Instância WhatsApp Gateway (transporte)" hint="Somente instâncias do tenant atual são listadas. Esta seleção ainda não troca o envio Meta Graph automaticamente."><select className={inputClass} value={form.whatsapp_gateway_instance_id} onChange={(e) => setForm((v) => ({ ...v, whatsapp_gateway_instance_id: e.target.value }))} disabled={gatewayLoading}><option value="">Nenhuma instância selecionada</option>{gatewayInstances.map((instance) => <option key={instance.id} value={instance.id}>{instance.name} · {instance.phone_number || "sem número"} · {statusText(instance.status)}</option>)}</select>{gatewayError && <span className="block text-[11px] text-red-300">{gatewayError}</span>}{selectedGateway && <span className="block text-[11px] text-stone">Selecionada: {selectedGateway.name} · status {statusText(selectedGateway.status)}</span>}</Field><Field label="Referência do app secret" hint={channel?.app_secret_ref ? `Configurada: ${channel.app_secret_ref}. Nunca informe o segredo aqui.` : "Ex.: env:GESTOR_META_APP_SECRET_PRODUCAO"}><input className={inputClass} value={form.app_secret_ref} onChange={(e) => setForm((v) => ({ ...v, app_secret_ref: e.target.value }))} placeholder="env:GESTOR_META_APP_SECRET_NOME" /></Field><Field label="Referência do access token" hint={channel?.access_token_ref ? `Configurada: ${channel.access_token_ref}. Nunca informe o token aqui.` : "Ex.: env:GESTOR_META_ACCESS_TOKEN_PRODUCAO"}><input className={inputClass} value={form.access_token_ref} onChange={(e) => setForm((v) => ({ ...v, access_token_ref: e.target.value }))} placeholder="env:GESTOR_META_ACCESS_TOKEN_NOME" /></Field><div className="flex items-center justify-between rounded-lg border border-surface-03 bg-surface-01 px-3 py-2"><div><p className="text-sm font-bold text-cream">Canal habilitado</p><p className="text-xs text-stone">Ativa a identidade administrativa após a configuração externa.</p></div><button type="button" aria-pressed={form.enabled} onClick={() => setForm((v) => ({ ...v, enabled: !v.enabled }))} className="text-gold">{form.enabled ? <ToggleRight size={32} /> : <ToggleLeft size={32} className="text-stone" />}</button></div></div><div className="mt-5 flex flex-wrap items-center gap-3"><button type="button" className={primaryButtonClass} onClick={onSave} disabled={saving}><Save size={15} />Salvar canal</button>{channel && <Badge tone={channel.status}>{statusText(channel.status)}</Badge>}{channel?.last_error && <span className="text-xs text-red-300">{channel.last_error}</span>}</div></Card><Card><SectionHeader icon={ShieldCheck} title="Barreira de segurança" description="O Gestor usa este canal exclusivamente para contatos autorizados. O atendente de clientes continua no módulo CRM." /></Card></div>;
 }
 
-function MiniMetric({ label, value }: { label: string; value: string }) {
-  return <div><p className="text-xs text-stone">{label}</p><p className="mt-1 text-lg font-black text-cream">{value}</p></div>;
-}
+function AISection({ settings, status, form, setForm, saving, onSave }: { settings: ApiGestorAISettings | null; status: ApiGestorAIProviderStatus | null; form: typeof emptyAiForm; setForm: React.Dispatch<React.SetStateAction<typeof emptyAiForm>>; saving: boolean; onSave: () => void }) { return <div className="space-y-4"><Card><SectionHeader icon={Settings2} title="Comportamento da IA Gestor" description="Estas instruções orientam o atendente administrativo. Elas não alteram a IA de clientes." /><div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2"><Field label="Provider"><select className={inputClass} value={form.provider} onChange={(e) => setForm((v) => ({ ...v, provider: e.target.value as typeof v.provider }))}><option value="internal">Internal</option><option value="openai">OpenAI</option><option value="claude">Claude</option></select></Field><Field label="Modelo"><input className={inputClass} value={form.model} onChange={(e) => setForm((v) => ({ ...v, model: e.target.value }))} placeholder="Modelo configurado" /></Field><Field label="Temperatura"><input className={inputClass} type="number" min="0" max="2" step="0.1" value={form.temperature} onChange={(e) => setForm((v) => ({ ...v, temperature: Number(e.target.value) }))} /></Field><Field label="Máximo de tokens"><input className={inputClass} type="number" min="1" value={form.max_tokens} onChange={(e) => setForm((v) => ({ ...v, max_tokens: Number(e.target.value) }))} /></Field><Field label="Limite mensal de tokens"><input className={inputClass} type="number" min="0" value={form.monthly_token_limit} onChange={(e) => setForm((v) => ({ ...v, monthly_token_limit: Number(e.target.value) }))} /></Field><Field label="Limite mensal de custo"><input className={inputClass} type="number" min="0" step="0.01" value={form.monthly_cost_limit} onChange={(e) => setForm((v) => ({ ...v, monthly_cost_limit: Number(e.target.value) }))} /></Field></div><div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"><Field label="Prompt / instruções operacionais" hint="Defina como o Gestor deve responder, pedir confirmação e apresentar evidências."><textarea className={`${inputClass} min-h-40 resize-y py-3`} value={form.system_instructions} onChange={(e) => setForm((v) => ({ ...v, system_instructions: e.target.value }))} /></Field><Field label="Regras de negócio e limites" hint="Reforce tenant, RBAC, confirmação, reautenticação e o que nunca deve ser feito automaticamente."><textarea className={`${inputClass} min-h-40 resize-y py-3`} value={form.operational_rules} onChange={(e) => setForm((v) => ({ ...v, operational_rules: e.target.value }))} /></Field></div><div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2"><ToggleRow label="IA habilitada" checked={form.enabled} onChange={() => setForm((v) => ({ ...v, enabled: !v.enabled }))} /><ToggleRow label="Permitir operações de escrita" checked={form.writes_enabled} onChange={() => setForm((v) => ({ ...v, writes_enabled: !v.writes_enabled }))} warning /></div><div className="mt-5 flex flex-wrap items-center gap-3"><button type="button" className={primaryButtonClass} onClick={onSave} disabled={saving}><Save size={15} />Salvar comportamento</button>{settings && <span className="text-xs text-stone">Salvo em {formatDate(settings.updated_at)}</span>}</div></Card><Card><SectionHeader icon={KeyRound} title="Status do provider" description="Somente o status e uma prévia segura são exibidos; nenhuma chave é persistida ou mostrada nesta tela." /><div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3"><Info label="Provider atual" value={status?.provider} /><Info label="Configurado" value={status?.configured ? "Sim" : "Não"} /><Info label="Modelo" value={status?.model} /></div></Card></div>; }
+
+function ToolsSection({ tools }: { tools: ApiGestorTool[] }) { return <Card><SectionHeader icon={Wrench} title="Catálogo de ferramentas do Gestor" description="Habilitação efetiva é determinada pelo catálogo e pelo RBAC do módulo. Esta tela não cria permissões paralelas nem habilita ferramentas fora do contrato." /><div className="mt-5 space-y-3">{tools.length === 0 ? <Empty>Nenhuma ferramenta retornada pelo catálogo.</Empty> : tools.map((tool) => <div key={tool.name} className="rounded-xl border border-surface-03 bg-surface-01 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-bold text-cream">{tool.name}</h3><Badge tone={tool.available ? "enabled" : "disabled"}>{tool.available ? "Disponível" : "Indisponível"}</Badge><Badge tone={tool.risk_level}>{`Risco ${tool.risk_level}`}</Badge><span className="rounded bg-surface-03 px-2 py-1 text-[11px] text-stone">Permissão: {tool.permission}</span></div><p className="mt-2 text-xs leading-5 text-stone">{tool.description}</p>{tool.unavailable_reason && <p className="mt-2 text-xs text-amber-200">{tool.unavailable_reason}</p>}</div><div className="flex shrink-0 items-center gap-2 text-xs text-stone">{tool.requires_confirmation && <span className="inline-flex items-center gap-1"><ShieldCheck size={15} className="text-gold" />Confirmação</span>}{tool.reauth_required && <span className="inline-flex items-center gap-1"><KeyRound size={15} className="text-gold" />Reauth</span>}</div></div><div className="mt-3 flex flex-wrap gap-2 text-[11px] text-stone">{tool.module && <span className="rounded bg-surface-03 px-2 py-1">Módulo: {tool.module}</span>}{tool.mutates_data && <span className="rounded bg-amber-500/10 px-2 py-1 text-amber-200">Escrita no ERP</span>}{tool.evidence_required?.map((evidence) => <span key={evidence} className="rounded bg-surface-03 px-2 py-1">Evidência: {evidence}</span>)}</div></div>)}</div></Card>; }
+
+function ContactsSection({ contacts, form, setForm, editing, setEditing, saving, onSave }: { contacts: ApiGestorContact[]; form: typeof emptyContactForm; setForm: React.Dispatch<React.SetStateAction<typeof emptyContactForm>>; editing: string | null; setEditing: (id: string | null) => void; saving: boolean; onSave: (event: React.FormEvent) => Promise<void> }) { return <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]"><Card><SectionHeader icon={UserPlus} title={editing ? "Editar contato" : "Autorizar contato"} description="Somente estes números podem solicitar ações administrativas ao Gestor." /><form className="mt-5 space-y-4" onSubmit={(e) => void onSave(e)}><Field label="Admin user ID" hint="UUID do usuário administrativo autorizado."><input className={inputClass} required disabled={!!editing} value={form.admin_user_id} onChange={(e) => setForm((v) => ({ ...v, admin_user_id: e.target.value }))} /></Field><Field label="Telefone"><input className={inputClass} required value={form.phone} onChange={(e) => setForm((v) => ({ ...v, phone: e.target.value }))} placeholder="+55..." /></Field><Field label="Nome de exibição"><input className={inputClass} required value={form.display_name} onChange={(e) => setForm((v) => ({ ...v, display_name: e.target.value }))} /></Field><Field label="Papel"><input className={inputClass} required value={form.role} onChange={(e) => setForm((v) => ({ ...v, role: e.target.value }))} /></Field><ToggleRow label="Contato ativo" checked={form.active} onChange={() => setForm((v) => ({ ...v, active: !v.active }))} /><ToggleRow label="Exigir reautenticação" checked={form.requires_reauth} onChange={() => setForm((v) => ({ ...v, requires_reauth: !v.requires_reauth }))} /><div className="flex gap-2"><button className={primaryButtonClass} type="submit" disabled={saving}><Save size={15} />{editing ? "Salvar contato" : "Autorizar contato"}</button>{editing && <button className={buttonClass} type="button" onClick={() => { setEditing(null); setForm(emptyContactForm); }}>Cancelar</button>}</div></form></Card><Card><SectionHeader icon={Users} title="Contatos autorizados" description="Ative, desative ou edite os responsáveis pelo canal do Gestor." /><div className="mt-5 space-y-3">{contacts.length === 0 ? <Empty>Nenhum contato autorizado cadastrado.</Empty> : contacts.map((contact) => <div key={contact.id} className="rounded-xl border border-surface-03 bg-surface-01 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><p className="font-bold text-cream">{contact.display_name}</p><Badge tone={contact.active ? "active" : "disabled"}>{contact.active ? "Ativo" : "Inativo"}</Badge></div><p className="mt-1 text-xs text-stone">{contact.phone_normalized} · {contact.role}</p><p className="mt-1 text-[11px] text-stone">Reautenticação: {contact.requires_reauth ? "obrigatória" : "não obrigatória"}</p></div><button type="button" className={buttonClass} onClick={() => { setEditing(contact.id); setForm({ admin_user_id: contact.admin_user_id, phone: contact.phone_normalized, display_name: contact.display_name, role: contact.role, active: contact.active, requires_reauth: contact.requires_reauth }); }}>Editar</button></div></div>)}</div></Card></div>; }
+
+function OperationsSection({ operations, outbox, automations, automationForm, setAutomationForm, saving, onCreateAutomation, onProcessOutbox, onRetryOutbox, onProcessAutomations, onToggleAutomation, onDeleteAutomation }: { operations: ApiGestorOperation[]; outbox: ApiGestorOutbox[]; automations: ApiGestorAutomation[]; automationForm: { name: string; description: string; trigger_key: string; message: string; dry_run: boolean; enabled: boolean }; setAutomationForm: React.Dispatch<React.SetStateAction<typeof automationForm>>; saving: boolean; onCreateAutomation: (event: React.FormEvent) => Promise<void>; onProcessOutbox: () => void; onRetryOutbox: (id: string) => void; onProcessAutomations: () => void; onToggleAutomation: (item: ApiGestorAutomation) => void; onDeleteAutomation: (id: string) => void }) { return <div className="space-y-4"><div className="grid grid-cols-1 gap-4 xl:grid-cols-2"><Card><div className="flex items-start justify-between gap-3"><SectionHeader icon={Clock3} title="Operações administrativas" description="Histórico de intenções e execuções do Gestor." /><Badge tone={operations.length ? "pending" : "disabled"}>{operations.length} registros</Badge></div><div className="mt-5 space-y-3">{operations.length === 0 ? <Empty>Nenhuma operação registrada.</Empty> : operations.slice(0, 12).map((operation) => <div key={operation.id} className="rounded-xl border border-surface-03 bg-surface-01 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold text-cream">{operation.tool_name}</p><p className="mt-1 text-xs text-stone">{operation.channel} · {operation.phone} · {formatDate(operation.created_at)}</p></div><Badge tone={operation.status}>{statusText(operation.status)}</Badge></div>{operation.error && <p className="mt-2 text-xs text-red-300">{operation.error}</p>}</div>)}</div></Card><Card><div className="flex items-start justify-between gap-3"><SectionHeader icon={MessageCircle} title="Outbox do Gestor" description="Mensagens administrativas enfileiradas para a Meta." /><button className={buttonClass} type="button" onClick={onProcessOutbox} disabled={saving}><PlayCircle size={15} />Processar</button></div><div className="mt-5 space-y-3">{outbox.length === 0 ? <Empty>Outbox vazia.</Empty> : outbox.slice(0, 12).map((item) => <div key={item.id} className="rounded-xl border border-surface-03 bg-surface-01 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold text-cream">{item.recipient_phone}</p><p className="mt-1 line-clamp-2 text-xs text-stone">{item.body || item.template_name || item.message_type} · tentativa {item.attempts}/{item.max_attempts}</p></div><Badge tone={item.status}>{statusText(item.status)}</Badge></div>{["failed", "dead"].includes(item.status) && <button className={`${buttonClass} mt-3`} type="button" onClick={() => onRetryOutbox(item.id)} disabled={saving}><RefreshCw size={14} />Retry</button>}</div>)}</div></Card></div><div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]"><Card><SectionHeader icon={Settings2} title="Nova automação proativa" description="Comece em dry-run; o envio continua sujeito às regras e confirmações do Gestor." /><form className="mt-5 space-y-4" onSubmit={(e) => void onCreateAutomation(e)}><Field label="Nome"><input className={inputClass} required value={automationForm.name} onChange={(e) => setAutomationForm((v) => ({ ...v, name: e.target.value }))} /></Field><Field label="Gatilho"><input className={inputClass} value={automationForm.trigger_key} onChange={(e) => setAutomationForm((v) => ({ ...v, trigger_key: e.target.value }))} /><span className="block text-[11px] text-stone">Use um gatilho validado pelo catálogo de automações.</span></Field><Field label="Mensagem"><textarea className={`${inputClass} min-h-24 resize-y py-3`} required value={automationForm.message} onChange={(e) => setAutomationForm((v) => ({ ...v, message: e.target.value }))} placeholder="Mensagem administrativa..." /></Field><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><ToggleRow label="Dry-run" checked={automationForm.dry_run} onChange={() => setAutomationForm((v) => ({ ...v, dry_run: !v.dry_run }))} /><ToggleRow label="Criar ativa" checked={automationForm.enabled} onChange={() => setAutomationForm((v) => ({ ...v, enabled: !v.enabled }))} /></div><button className={primaryButtonClass} type="submit" disabled={saving}><Save size={15} />Criar automação</button></form></Card><Card><div className="flex flex-wrap items-start justify-between gap-3"><SectionHeader icon={PlayCircle} title="Automações proativas" description="Regras do Gestor, com limites, janela e opt-out preservados." /><button className={buttonClass} type="button" onClick={onProcessAutomations} disabled={saving}><PlayCircle size={15} />Processar eventos</button></div><div className="mt-5 space-y-3">{automations.length === 0 ? <Empty>Nenhuma automação criada.</Empty> : automations.map((item) => <div key={item.id} className="rounded-xl border border-surface-03 bg-surface-01 p-4"><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-bold text-cream">{item.name}</p><Badge tone={item.enabled ? "active" : "disabled"}>{item.enabled ? "Ativa" : "Inativa"}</Badge>{item.dry_run && <Badge tone="pending">Dry-run</Badge>}</div><p className="mt-1 text-xs text-stone">{item.trigger_key} · {item.service_window_start}–{item.service_window_end} · até {item.max_runs_per_hour}/h</p></div><div className="flex gap-2"><button className={buttonClass} type="button" onClick={() => onToggleAutomation(item)} disabled={saving}>{item.enabled ? <PauseCircle size={14} /> : <PlayCircle size={14} />}{item.enabled ? "Desativar" : "Ativar"}</button><button className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-500/25 px-3 text-red-300 hover:bg-red-500/10" type="button" onClick={() => onDeleteAutomation(item.id)} disabled={saving} title="Desativar automação"><Trash2 size={14} /></button></div></div></div>)}</div></Card></div></div>; }

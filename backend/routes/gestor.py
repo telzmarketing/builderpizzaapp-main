@@ -18,9 +18,11 @@ from backend.schemas.gestor import (
     GestorOperationConfirmIn, GestorOperationOut, GestorOperationPreviewIn,
     GestorOperationPreviewOut,
     GestorToolCatalogItem, GestorToolExecuteIn, GestorToolExecuteOut,
+    GestorDashboardOut,
     GestorAIPlanIn, GestorAIPlanOut, GestorAIProviderStatusOut, GestorAISettingsOut,
     GestorAISettingsUpdate,
     GestorWhatsAppChannelOut, GestorWhatsAppChannelUpdate, GestorWhatsAppWebhookOut,
+    GestorWhatsAppGatewayInstanceOut,
     GestorWhatsAppMessageOut, GestorInboxProcessOut, GestorWhatsAppEnqueueIn,
     GestorWhatsAppEnqueueOut, GestorWhatsAppOutboxOut, GestorWhatsAppOutboxProcessOut,
     GestorWhatsAppOutboxRetryOut,
@@ -78,6 +80,7 @@ def _channel_out(item) -> GestorWhatsAppChannelOut | None:
         "app_secret_ref": GestorService._mask_identifier(item.app_secret_ref),
         "access_token_ref": GestorService._mask_identifier(item.access_token_ref),
         "integration_connection_id": item.integration_connection_id,
+        "whatsapp_gateway_instance_id": item.whatsapp_gateway_instance_id,
         "status": item.status, "last_error": item.last_error,
         "created_at": item.created_at, "updated_at": item.updated_at,
     })
@@ -121,6 +124,12 @@ def _public_whatsapp_error(exc: DomainError):
 @router.get("/tools", response_model=list[GestorToolCatalogItem])
 def list_tools(actor: AuthorizedTenantActor = Depends(view)):
     return GestorService.tool_catalog()
+
+
+@router.get("/dashboard", response_model=GestorDashboardOut)
+def get_gestor_dashboard(db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(view)):
+    """Administrative Gestor dashboard; customer-agent metrics are excluded."""
+    return _service(db, actor).dashboard()
 
 
 @router.get("/ai/settings", response_model=GestorAISettingsOut)
@@ -219,6 +228,14 @@ def update_whatsapp_channel(body: GestorWhatsAppChannelUpdate, db: Session = Dep
         return _channel_out(_service(db, actor).update_whatsapp_channel(body))
     except DomainError as exc:
         return err(exc)
+
+
+@router.get("/whatsapp/gateway-instances", response_model=list[GestorWhatsAppGatewayInstanceOut])
+def list_gestor_gateway_instances(db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(view)):
+    return [
+        GestorWhatsAppGatewayInstanceOut.model_validate(instance)
+        for instance in _service(db, actor).list_whatsapp_gateway_instances()
+    ]
 
 
 @router.get("/whatsapp/webhook/meta", include_in_schema=False)

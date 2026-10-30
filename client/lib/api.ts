@@ -6879,6 +6879,242 @@ export interface ApiWhatsAppGatewayDeleteResponse {
   runtime: Record<string, unknown>;
 }
 
+export type ApiGestorAIProvider = "internal" | "openai" | "claude";
+
+export interface ApiGestorDashboard {
+  tenant_id?: string;
+  generated_at?: string | null;
+  channels_total?: number;
+  channels_enabled?: number;
+  messages_total?: number;
+  messages_received_today?: number;
+  messages_processing?: number;
+  messages_failed?: number;
+  operations_total?: number;
+  operations_pending_confirmation?: number;
+  operations_ready_to_execute?: number;
+  operations_executed_today?: number;
+  operations_failed?: number;
+  outbox_pending?: number;
+  outbox_processing?: number;
+  outbox_sent_today?: number;
+  outbox_failed?: number;
+  outbox_dead?: number;
+  [key: string]: unknown;
+}
+
+export interface ApiGestorAISettings {
+  id: string;
+  tenant_id: string;
+  enabled: boolean;
+  provider: ApiGestorAIProvider;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  system_instructions: string;
+  operational_rules: string;
+  monthly_token_limit: number;
+  monthly_cost_limit: number;
+  writes_enabled: boolean;
+  updated_at: string;
+}
+
+export interface ApiGestorAIProviderStatus {
+  provider: ApiGestorAIProvider;
+  configured: boolean;
+  enabled: boolean;
+  model: string;
+  openai_configured: boolean;
+  claude_configured: boolean;
+  openai_key_preview?: string | null;
+  claude_key_preview?: string | null;
+}
+
+export interface ApiGestorWhatsAppChannel {
+  id: string;
+  tenant_id: string;
+  enabled: boolean;
+  phone_number_id: string;
+  business_account_id: string;
+  display_phone_number?: string | null;
+  app_secret_ref: string;
+  access_token_ref?: string | null;
+  integration_connection_id?: string | null;
+  whatsapp_gateway_instance_id?: string | null;
+  status: string;
+  last_error?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiGestorWhatsAppGatewayInstance {
+  id: string;
+  tenant_id: string;
+  name: string;
+  phone_number: string | null;
+  provider: string;
+  status: string;
+  last_seen_at: string | null;
+}
+
+export interface ApiGestorTool {
+  name: string;
+  description: string;
+  module: string;
+  permission: "view" | "create" | "edit" | "delete" | string;
+  mutates_data: boolean;
+  risk_level: string;
+  requires_confirmation: boolean;
+  reauth_required: boolean;
+  evidence_required: string[];
+  input_schema: Record<string, unknown>;
+  output_schema: Record<string, unknown>;
+  available: boolean;
+  unavailable_reason?: string | null;
+}
+
+export interface ApiGestorContact {
+  id: string;
+  admin_user_id: string;
+  phone_normalized: string;
+  display_name: string;
+  role: string;
+  active: boolean;
+  requires_reauth: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiGestorOperation {
+  id: string;
+  channel: string;
+  phone: string;
+  tool_name: string;
+  risk_level: string;
+  status: string;
+  arguments: Record<string, unknown>;
+  preview: Record<string, unknown>;
+  idempotency_key: string;
+  confirmation_expires_at?: string | null;
+  executed_at?: string | null;
+  error?: string | null;
+  result?: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiGestorOutbox {
+  id: string;
+  operation_id: string;
+  recipient_phone: string;
+  message_type: "text" | "template";
+  body?: string | null;
+  template_name?: string | null;
+  template_language?: string | null;
+  template_variables: string[];
+  idempotency_key: string;
+  status: string;
+  attempts: number;
+  max_attempts: number;
+  provider_message_id?: string | null;
+  error?: string | null;
+  next_attempt_at?: string | null;
+  locked_at?: string | null;
+  sent_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiGestorAutomation {
+  id: string;
+  name: string;
+  description?: string | null;
+  trigger_key: string;
+  conditions: Array<Record<string, unknown>>;
+  actions: Array<Record<string, unknown>>;
+  enabled: boolean;
+  dry_run: boolean;
+  max_runs_per_hour: number;
+  daily_cost_limit: number;
+  daily_quantity_limit: number;
+  max_actions_per_event: number;
+  service_window_start: string;
+  service_window_end: string;
+  service_weekdays: number[];
+  opt_out_required: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiGestorAutomationProcess {
+  claimed: number;
+  processed: number;
+  previews: number;
+  awaiting_confirmation: number;
+  skipped: number;
+  failed: number;
+  idempotent_replays: number;
+  runs: Array<Record<string, unknown>>;
+  confirmation_tokens: Record<string, string>;
+}
+
+export const gestorApi = {
+  dashboard: () => get<ApiGestorDashboard>("/gestor/dashboard"),
+  getAISettings: () => get<ApiGestorAISettings>("/gestor/ai/settings"),
+  updateAISettings: (data: Partial<Omit<ApiGestorAISettings, "id" | "tenant_id" | "updated_at">>) =>
+    put<ApiGestorAISettings>("/gestor/ai/settings", data),
+  getAIStatus: () => get<ApiGestorAIProviderStatus>("/gestor/ai/status"),
+  getChannel: () => get<ApiGestorWhatsAppChannel | null>("/gestor/whatsapp/channel"),
+  listGatewayInstances: () => get<ApiGestorWhatsAppGatewayInstance[]>("/gestor/whatsapp/gateway-instances"),
+  updateChannel: (data: {
+    enabled?: boolean;
+    phone_number_id?: string;
+    business_account_id?: string;
+    display_phone_number?: string;
+    verify_token?: string;
+    app_secret_ref?: string;
+    access_token_ref?: string;
+    integration_connection_id?: string | null;
+    whatsapp_gateway_instance_id?: string | null;
+  }) => put<ApiGestorWhatsAppChannel>("/gestor/whatsapp/channel", data),
+  listTools: () => get<ApiGestorTool[]>("/gestor/tools"),
+  listContacts: () => get<ApiGestorContact[]>("/gestor/contacts"),
+  createContact: (data: { admin_user_id: string; phone: string; display_name: string; role: string; active?: boolean; requires_reauth?: boolean }) =>
+    post<ApiGestorContact>("/gestor/contacts", data),
+  updateContact: (id: string, data: Partial<Pick<ApiGestorContact, "phone_normalized" | "display_name" | "role" | "active" | "requires_reauth">> & { phone?: string }) =>
+    patch<ApiGestorContact>(`/gestor/contacts/${encodeURIComponent(id)}`, data),
+  listOperations: (limit = 100) => get<ApiGestorOperation[]>(`/gestor/operations?limit=${limit}`),
+  listOutbox: (params?: { status?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    return get<ApiGestorOutbox[]>(`/gestor/whatsapp/outbox${qs.toString() ? `?${qs}` : ""}`);
+  },
+  processOutbox: (limit = 20) => post<{ processed: number; sent: number; failed: number; deferred: number; dead: number }>(`/gestor/whatsapp/outbox/process?limit=${limit}`, {}),
+  retryOutbox: (id: string) => post<{ outbox: ApiGestorOutbox }>(`/gestor/whatsapp/outbox/${encodeURIComponent(id)}/retry`, {}),
+  listAutomations: (limit = 100) => get<ApiGestorAutomation[]>(`/gestor/automations?limit=${limit}`),
+  createAutomation: (data: {
+    name: string;
+    description?: string;
+    trigger_key: string;
+    conditions?: Array<Record<string, unknown>>;
+    actions: Array<Record<string, unknown>>;
+    enabled?: boolean;
+    dry_run?: boolean;
+    max_runs_per_hour?: number;
+    daily_cost_limit?: number;
+    daily_quantity_limit?: number;
+    max_actions_per_event?: number;
+    service_window_start?: string;
+    service_window_end?: string;
+    service_weekdays?: number[];
+    opt_out_required?: boolean;
+  }) => post<ApiGestorAutomation>("/gestor/automations", data),
+  updateAutomation: (id: string, data: Partial<ApiGestorAutomation>) => patch<ApiGestorAutomation>(`/gestor/automations/${encodeURIComponent(id)}`, data),
+  deleteAutomation: (id: string) => del<ApiGestorAutomation>(`/gestor/automations/${encodeURIComponent(id)}`),
+  processAutomationEvents: (limit = 25) => post<ApiGestorAutomationProcess>(`/gestor/automations/events/process?limit=${limit}`, {}),
+};
+
 export const whatsappGatewayApi = {
   overview: () => get<ApiWhatsAppGatewayOverview>("/whatsapp-gateway/overview"),
   providerStatus: () => get<ApiWhatsAppGatewayProviderStatus>("/whatsapp-gateway/provider/status"),

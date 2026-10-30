@@ -97,6 +97,7 @@ class GestorWhatsAppChannel(Base):
         UniqueConstraint("phone_number_id", name="uq_gestor_whatsapp_phone_number_id"),
         UniqueConstraint("tenant_id", name="uq_gestor_whatsapp_tenant_channel"),
         Index("ix_gestor_whatsapp_channels_tenant_status", "tenant_id", "status"),
+        Index("ix_gestor_whatsapp_channels_gateway_instance", "tenant_id", "whatsapp_gateway_instance_id"),
     )
 
     id = Column(String, primary_key=True, default=_uuid)
@@ -110,6 +111,13 @@ class GestorWhatsAppChannel(Base):
     # External secret-manager reference only. The bearer token itself is never
     # persisted in the Gestor schema or returned by an API response.
     access_token_ref = Column(String(200), nullable=True)
+    # Optional transport selection. This is the tenant-owned Gateway instance
+    # and is intentionally distinct from Meta's phone_number_id.
+    whatsapp_gateway_instance_id = Column(
+        String,
+        ForeignKey("whatsapp_gateway_instances.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     # Kept as an optional reference because IntegrationConnection is declared
     # in the legacy marketing route module; the Alembic schema enforces the FK.
     integration_connection_id = Column(String, nullable=True)
