@@ -24,7 +24,7 @@ export default function KdsPdv() {
         </div>
       </header>
       <div className="mx-auto grid max-w-[1440px] gap-5 px-3 py-4 md:px-6 md:py-6 lg:grid-cols-[minmax(0,1fr)_280px]">
-        <section className="min-w-0 overflow-hidden rounded-2xl border border-surface-03 bg-surface-01 shadow-2xl"><ManualOrderComposer /></section>
+        <section className="min-w-0 overflow-hidden rounded-2xl border border-surface-03 bg-surface-01 shadow-2xl"><ManualOrderComposer mode="pos" /></section>
         <aside className="hidden space-y-4 lg:block">
           <div className="rounded-2xl border border-gold/20 bg-gold/10 p-5">
             <ReceiptText className="mb-3 text-gold" size={22} />
