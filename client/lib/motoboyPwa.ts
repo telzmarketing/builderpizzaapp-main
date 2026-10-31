@@ -6,6 +6,7 @@ export type PwaAppDefinition = {
   key: PwaAppKey;
   scope: string;
   entryPath: string;
+  aliasScope?: string;
   canonicalPaths: readonly string[];
   label: string;
 };
@@ -13,13 +14,13 @@ export type PwaAppDefinition = {
 export const PWA_APPS: readonly PwaAppDefinition[] = [
   { key: "motoboy", scope: "/motoboy/", entryPath: "/motoboy/", canonicalPaths: ["/motoboy"], label: "Motoboy" },
   { key: "bi-mobile", scope: "/painel/bi-mobile/", entryPath: "/painel/bi-mobile/", canonicalPaths: ["/painel/bi-mobile"], label: "BI Mobile" },
-  { key: "kds-principal", scope: "/app/kds/principal/", entryPath: "/app/kds/principal/", canonicalPaths: ["/painel/kds"], label: "KDS Principal" },
-  { key: "kds-pizzaiolo", scope: "/app/kds/pizzaiolo/", entryPath: "/app/kds/pizzaiolo/", canonicalPaths: ["/painel/cozinha"], label: "KDS Pizzaiolo" },
-  { key: "kds-preparo", scope: "/app/kds/preparo/", entryPath: "/app/kds/preparo/", canonicalPaths: ["/painel/preparo"], label: "KDS Cozinha Preparo" },
-  { key: "kds-expedicao", scope: "/app/kds/expedicao/", entryPath: "/app/kds/expedicao/", canonicalPaths: ["/painel/expedicao"], label: "KDS Expedição" },
-  { key: "kds-motoboys", scope: "/app/kds/motoboys/", entryPath: "/app/kds/motoboys/", canonicalPaths: ["/tv/motoboys"], label: "KDS Motoboys" },
-  { key: "kds-pdv", scope: "/app/kds/pdv/", entryPath: "/app/kds/pdv/", canonicalPaths: ["/painel/kds/pdv"], label: "KDS PDV" },
-  { key: "kds-analitico", scope: "/app/kds/analitico/", entryPath: "/app/kds/analitico/", canonicalPaths: ["/painel/kds/analitico"], label: "KDS Analítico" },
+  { key: "kds-principal", scope: "/app/kds/principal/", entryPath: "/app/kds/principal/", aliasScope: "/painel/kds/", canonicalPaths: ["/painel/kds"], label: "KDS Principal" },
+  { key: "kds-pizzaiolo", scope: "/app/kds/pizzaiolo/", entryPath: "/app/kds/pizzaiolo/", aliasScope: "/painel/cozinha/", canonicalPaths: ["/painel/cozinha"], label: "KDS Pizzaiolo" },
+  { key: "kds-preparo", scope: "/app/kds/preparo/", entryPath: "/app/kds/preparo/", aliasScope: "/painel/preparo/", canonicalPaths: ["/painel/preparo"], label: "KDS Cozinha Preparo" },
+  { key: "kds-expedicao", scope: "/app/kds/expedicao/", entryPath: "/app/kds/expedicao/", aliasScope: "/painel/expedicao/", canonicalPaths: ["/painel/expedicao"], label: "KDS Expedição" },
+  { key: "kds-motoboys", scope: "/app/kds/motoboys/", entryPath: "/app/kds/motoboys/", aliasScope: "/tv/motoboys/", canonicalPaths: ["/tv/motoboys"], label: "KDS Motoboys" },
+  { key: "kds-pdv", scope: "/app/kds/pdv/", entryPath: "/app/kds/pdv/", aliasScope: "/painel/kds/pdv/", canonicalPaths: ["/painel/kds/pdv"], label: "KDS PDV" },
+  { key: "kds-analitico", scope: "/app/kds/analitico/", entryPath: "/app/kds/analitico/", aliasScope: "/painel/kds/analitico/", canonicalPaths: ["/painel/kds/analitico"], label: "KDS Analítico" },
 ];
 
 export const KDS_PWA_KEYS = PWA_APPS.filter((app) => app.key.startsWith("kds-")).map((app) => app.key) as PwaAppKey[];
@@ -27,25 +28,38 @@ export const MOTOBOY_SCOPE = "/motoboy/";
 export const BI_MOBILE_SCOPE = "/painel/bi-mobile/";
 
 function matchesPath(pathname: string, app: PwaAppDefinition) {
-  return pathname === app.scope.slice(0, -1) || pathname.startsWith(app.scope) || app.canonicalPaths.includes(pathname);
+  return pathname === app.scope.slice(0, -1) || pathname.startsWith(app.scope)
+    || app.canonicalPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
 function matchesDedicatedEntry(pathname: string, app: PwaAppDefinition) {
   const entryRoot = app.entryPath.endsWith("/") ? app.entryPath.slice(0, -1) : app.entryPath;
-  return pathname === entryRoot || pathname === app.entryPath || pathname.startsWith(app.scope);
+  return pathname === entryRoot || pathname === app.entryPath || pathname.startsWith(app.scope)
+    || app.canonicalPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
 export function getPwaApp(pathname: string): PwaAppDefinition | null {
-  return PWA_APPS.find((app) => matchesPath(pathname, app)) ?? null;
+  return [...PWA_APPS].sort((a, b) => Math.max(...b.canonicalPaths.map((path) => path.length)) - Math.max(...a.canonicalPaths.map((path) => path.length)))
+    .find((app) => matchesPath(pathname, app)) ?? null;
 }
 
 /** Returns an app only when the current path is an installable PWA entry/scope. */
 export function getPwaEntryApp(pathname: string): PwaAppDefinition | null {
-  return PWA_APPS.find((app) => matchesDedicatedEntry(pathname, app)) ?? null;
+  return [...PWA_APPS].sort((a, b) => Math.max(...b.canonicalPaths.map((path) => path.length)) - Math.max(...a.canonicalPaths.map((path) => path.length)))
+    .find((app) => matchesDedicatedEntry(pathname, app)) ?? null;
 }
 
 export function isPwaEntryPath(pathname: string) {
   return getPwaEntryApp(pathname) !== null;
+}
+
+export function pwaScopeForPath(pathname: string, app = getPwaApp(pathname)) {
+  if (!app) return null;
+  // KDS manifests use the operational alias as their installation boundary.
+  // Register that boundary even when a saved /app/kds link opened the screen;
+  // the installed app must control its manifest start_url.
+  if (app.aliasScope && app.key.startsWith("kds-")) return app.aliasScope;
+  return app.scope;
 }
 
 export function manifestUrl(appKey: PwaAppKey) {
@@ -77,7 +91,7 @@ export async function configurePwaWorker(pathname: string, container: ServiceWor
     await Promise.all(legacy.map(async (registration) => { await registration.update(); await retireLegacyWorker(registration); }));
     return null;
   }
-  await container.register("/sw.js", { scope: app.scope, updateViaCache: "none" });
+  await container.register("/sw.js", { scope: pwaScopeForPath(pathname, app)!, updateViaCache: "none" });
   await Promise.all(legacy.map(async (registration) => { await registration.update(); await retireLegacyWorker(registration); }));
   return app;
 }
@@ -88,7 +102,7 @@ export async function configureMotoboyWorker(pathname: string, container: Servic
 }
 export async function configureBiMobileWorker(pathname: string, container: ServiceWorkerContainer) {
   if (!isBiMobilePath(pathname)) return null;
-  return container.register("/sw.js", { scope: BI_MOBILE_SCOPE, updateViaCache: "none" });
+  return container.register("/sw.js", { scope: pwaScopeForPath(pathname) ?? BI_MOBILE_SCOPE, updateViaCache: "none" });
 }
 export function syncMotoboyPwaHead(pathname: string) {
   (window as Window & { updateMotoboyPwaHead?: (path: string) => void }).updateMotoboyPwaHead?.(pathname);

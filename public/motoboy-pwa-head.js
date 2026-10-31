@@ -1,5 +1,12 @@
 (function () {
   var apps = [
+    ["/painel/kds/pdv", "kds-pdv", "KDS PDV"],
+    ["/painel/kds/analitico", "kds-analitico", "KDS Analítico"],
+    ["/painel/kds", "kds-principal", "KDS Principal"],
+    ["/painel/cozinha", "kds-pizzaiolo", "KDS Pizzaiolo"],
+    ["/painel/preparo", "kds-preparo", "KDS Cozinha Preparo"],
+    ["/painel/expedicao", "kds-expedicao", "KDS Expedição"],
+    ["/tv/motoboys", "kds-motoboys", "KDS Motoboys"],
     ["/app/kds/principal", "kds-principal", "KDS Principal"],
     ["/app/kds/pizzaiolo", "kds-pizzaiolo", "KDS Pizzaiolo"],
     ["/app/kds/preparo", "kds-preparo", "KDS Cozinha Preparo"],

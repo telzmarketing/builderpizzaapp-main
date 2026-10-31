@@ -62,6 +62,27 @@ def test_all_supported_pwa_manifests_have_unique_installation_boundaries():
     assert all(manifest["icons"][0]["src"].startswith("/api/site-config/favicon?") for manifest in manifests)
 
 
+def test_kds_manifests_start_from_the_operational_routes():
+    service = SiteConfigService(None)
+    service.read = lambda _request: ({"brand": {}}, None, SiteIdentity(tenant_id="tenant-1"))
+
+    expected = {
+        "kds-principal": ("/app/kds/principal", "/painel/kds/"),
+        "kds-pizzaiolo": ("/app/kds/pizzaiolo", "/painel/cozinha/"),
+        "kds-preparo": ("/app/kds/preparo", "/painel/preparo/"),
+        "kds-expedicao": ("/app/kds/expedicao", "/painel/expedicao/"),
+        "kds-motoboys": ("/app/kds/motoboys", "/painel/kds/sala-motoboy/"),
+        "kds-pdv": ("/app/kds/pdv", "/painel/kds/pdv/"),
+        "kds-analitico": ("/app/kds/analitico", "/painel/kds/analitico/"),
+    }
+
+    for app, (manifest_id, start_url) in expected.items():
+        manifest = service.manifest(object(), app=app)
+        assert manifest["id"] == manifest_id
+        assert manifest["start_url"] == start_url
+        assert manifest["scope"] == start_url
+
+
 def test_unknown_manifest_app_is_rejected_without_fallback():
     service = SiteConfigService(None)
 

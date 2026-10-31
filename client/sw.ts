@@ -33,6 +33,13 @@ const PWA_APPS: Record<string, PwaApp> = {
   "/app/kds/motoboys/": { key: "kds-motoboys", scope: "/app/kds/motoboys/", cachePrefix: "telz-kds-motoboys" },
   "/app/kds/pdv/": { key: "kds-pdv", scope: "/app/kds/pdv/", cachePrefix: "telz-kds-pdv" },
   "/app/kds/analitico/": { key: "kds-analitico", scope: "/app/kds/analitico/", cachePrefix: "telz-kds-analitico" },
+  "/painel/kds/": { key: "kds-principal", scope: "/painel/kds/", cachePrefix: "telz-kds-principal-alias" },
+  "/painel/cozinha/": { key: "kds-pizzaiolo", scope: "/painel/cozinha/", cachePrefix: "telz-kds-pizzaiolo-alias" },
+  "/painel/preparo/": { key: "kds-preparo", scope: "/painel/preparo/", cachePrefix: "telz-kds-preparo-alias" },
+  "/painel/expedicao/": { key: "kds-expedicao", scope: "/painel/expedicao/", cachePrefix: "telz-kds-expedicao-alias" },
+  "/tv/motoboys/": { key: "kds-motoboys", scope: "/tv/motoboys/", cachePrefix: "telz-kds-motoboys-alias" },
+  "/painel/kds/pdv/": { key: "kds-pdv", scope: "/painel/kds/pdv/", cachePrefix: "telz-kds-pdv-alias" },
+  "/painel/kds/analitico/": { key: "kds-analitico", scope: "/painel/kds/analitico/", cachePrefix: "telz-kds-analitico-alias" },
 };
 
 const app = PWA_APPS[scopePath];

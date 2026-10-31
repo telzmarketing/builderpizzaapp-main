@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-import { configureBiMobileWorker, configureMotoboyWorker, configurePwaWorker, getPwaApp, getPwaEntryApp, isBiMobilePath, isMotoboyPath, isPwaEntryPath, KDS_PWA_KEYS } from "./motoboyPwa";
+import { configureBiMobileWorker, configureMotoboyWorker, configurePwaWorker, getPwaApp, getPwaEntryApp, isBiMobilePath, isMotoboyPath, isPwaEntryPath, KDS_PWA_KEYS, pwaScopeForPath } from "./motoboyPwa";
 import { canShowPwaInstallButton } from "@/components/PwaInstallButton";
 
 const origin = "https://pizza.example";
@@ -101,8 +101,8 @@ describe("KDS PWA entries", () => {
   it("distinguishes dedicated entries from canonical KDS routes", () => {
     expect(getPwaEntryApp("/app/kds/expedicao")?.key).toBe("kds-expedicao");
     expect(isPwaEntryPath("/app/kds/expedicao/queue")).toBe(true);
-    expect(getPwaEntryApp("/painel/expedicao")).toBeNull();
-    expect(isPwaEntryPath("/tv/motoboys")).toBe(false);
+    expect(getPwaEntryApp("/painel/expedicao")?.key).toBe("kds-expedicao");
+    expect(isPwaEntryPath("/tv/motoboys")).toBe(true);
   });
 
   it("shows the install control on canonical and standalone KDS routes", () => {
@@ -117,13 +117,27 @@ describe("KDS PWA entries", () => {
       register: vi.fn().mockResolvedValue({}),
     };
     await configurePwaWorker("/app/kds/expedicao", container as unknown as ServiceWorkerContainer, origin);
-    expect(container.register).toHaveBeenCalledWith("/sw.js", { scope: "/app/kds/expedicao/", updateViaCache: "none" });
+    expect(container.register).toHaveBeenCalledWith("/sw.js", { scope: "/painel/expedicao/", updateViaCache: "none" });
   });
 
-  it.each(["/painel/kds", "/painel/cozinha", "/painel/preparo", "/painel/expedicao", "/tv/motoboys", "/painel/kds/pdv", "/painel/kds/analitico"])("does not register from canonical KDS route %s", async (path) => {
-    const container = { getRegistrations: vi.fn().mockResolvedValue([]), register: vi.fn() };
+  it.each([
+    ["/painel/kds", "/painel/kds/"],
+    ["/painel/cozinha", "/painel/cozinha/"],
+    ["/painel/preparo", "/painel/preparo/"],
+    ["/painel/expedicao", "/painel/expedicao/"],
+    ["/tv/motoboys", "/tv/motoboys/"],
+    ["/painel/kds/pdv", "/painel/kds/pdv/"],
+    ["/painel/kds/analitico", "/painel/kds/analitico/"],
+  ])("registers an isolated scope from operational KDS route %s", async (path, scope) => {
+    const container = { getRegistrations: vi.fn().mockResolvedValue([]), register: vi.fn().mockResolvedValue({}) };
     await configurePwaWorker(path, container as unknown as ServiceWorkerContainer, origin);
-    expect(container.register).not.toHaveBeenCalled();
+    expect(container.register).toHaveBeenCalledWith("/sw.js", { scope, updateViaCache: "none" });
+  });
+
+  it("keeps nested aliases more specific than the principal KDS alias", () => {
+    expect(getPwaApp("/painel/kds/pdv/orders")?.key).toBe("kds-pdv");
+    expect(pwaScopeForPath("/painel/kds/pdv/orders")).toBe("/painel/kds/pdv/");
+    expect(pwaScopeForPath("/painel/kds/orders")).toBe("/painel/kds/");
   });
 
   it("keeps the existing Motoboy and BI canonical entry behavior", async () => {
