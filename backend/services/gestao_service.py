@@ -20,6 +20,7 @@ MODULE_DEFAULTS: dict[str, dict] = {
             "auto_consume_on_preparing": False,
             "negative_stock_policy": "warn_only",
             "sales_control_enabled": False,
+            "production_stock_control_enabled": False,
             "out_of_stock_behavior": "show_unavailable",
             "alerts_enabled": False,
         },

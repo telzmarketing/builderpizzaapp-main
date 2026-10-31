@@ -1,5 +1,6 @@
 """Behavioral stock-gate regressions; SQLite does not prove PostgreSQL locking."""
 from datetime import datetime, timedelta, timezone
+import json
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -20,6 +21,9 @@ from backend.models.inventory import InventoryItem, InventoryStockMovement
 from backend.models.inventory_foundation import InventoryOperation, InventoryLot, InventoryReservation
 from backend.models.delivery import Delivery, DeliveryPerson
 from backend.models.product import Product
+from backend.models.gestao import GestaoModuleSettings
+from backend.schemas.gestao import GestaoModuleSettingsUpdate
+from backend.services.gestao_service import GestaoService
 from backend.services.kds_production_service import KdsProductionService
 from backend.services.inventory_service import InventoryService
 from backend.services.order_service import OrderService
@@ -32,10 +36,15 @@ def gate():
     models = [Tenant, Order, OrderItem, OrderItemFlavor, AdminAuditLog, ProductionUnit, ProductionAttempt,
               ProductionAttemptConsumption, OrderItemCmvSnapshot, OrderItemCmvIngredientSnapshot,
               InventoryItem, InventoryStockMovement, InventoryOperation, InventoryLot, InventoryReservation,
-              Delivery, DeliveryPerson, Product]
+              Delivery, DeliveryPerson, Product, GestaoModuleSettings]
     Base.metadata.create_all(engine, tables=[m.__table__ for m in models])
     with Session(engine, autoflush=False) as db:
         db.add(Tenant(id="tenant", slug="stock-test", name="Stock gate test"))
+        db.add(GestaoModuleSettings(
+            id="inventory-settings", tenant_id="tenant", module_key="inventory",
+            title="Estoque", enabled=True, status="active",
+            settings_json='{"production_stock_control_enabled":true}',
+        ))
         db.add(InventoryItem(id="cheese", tenant_id="tenant", name="Cheese"))
         db.add(InventoryStockMovement(id="opening", tenant_id="tenant", item_id="cheese",
             location_id="kitchen", quantity_delta=1, source_type="manual_entry"))
@@ -67,6 +76,82 @@ def command(version):
 
 def balance(gate):
     return gate.db.query(func.sum(InventoryStockMovement.quantity_delta)).scalar()
+
+
+@pytest.mark.parametrize("configuration", ["absent", "missing_key", "false", "module_disabled", "status_disabled"])
+def test_disabled_production_control_allows_missing_snapshot_without_stock_consumption(gate, configuration):
+    settings = gate.db.get(GestaoModuleSettings, "inventory-settings")
+    if configuration == "absent":
+        gate.db.delete(settings)
+    elif configuration == "missing_key":
+        settings.settings_json = '{"sales_control_enabled":true}'
+    elif configuration == "false":
+        settings.settings_json = '{"production_stock_control_enabled":false}'
+    elif configuration == "module_disabled":
+        settings.enabled = False
+    else:
+        settings.status = "disabled"
+    gate.db.query(OrderItemCmvIngredientSnapshot).delete()
+    gate.db.query(OrderItemCmvSnapshot).delete()
+    gate.db.query(InventoryStockMovement).delete()
+    gate.db.query(InventoryItem).delete()
+    gate.db.commit()
+    task = gate.service.command("task1", "cook", command(1), "start")
+    gate.clock[0] += timedelta(seconds=5)
+    result = gate.service.command("task1", "cook", command(task["version"]), "confirm-stock")
+    assert result["state"] == "assembling" and result["consumption_mode"] == "disabled"
+    assert result["blocked_reason"] is None
+    gate.service.command("task1", "cook", command(result["version"]), "finish-assembly")
+    assert gate.db.query(InventoryStockMovement).count() == 0
+    assert gate.db.query(InventoryOperation).count() == 0
+    assert gate.db.query(ProductionAttemptConsumption).count() == 0
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_finish_assembly_compatibility_obeys_production_control(gate, enabled):
+    settings = gate.db.get(GestaoModuleSettings, "inventory-settings")
+    settings.settings_json = json.dumps({"production_stock_control_enabled": enabled})
+    attempt = gate.db.get(ProductionAttempt, "task1")
+    attempt.state = attempt.unit.state = "assembling"
+    if not enabled:
+        gate.db.query(OrderItemCmvIngredientSnapshot).delete()
+        gate.db.query(OrderItemCmvSnapshot).delete()
+    gate.db.commit()
+    result = gate.service.command("task1", "cook", command(1), "finish-assembly")
+    assert result["state"] == "assembled"
+    assert result["consumption_mode"] == ("attempts" if enabled else "disabled")
+    assert balance(gate) == (0 if enabled else 1)
+    assert gate.db.query(ProductionAttemptConsumption).count() == int(enabled)
+
+
+def test_enabled_production_control_still_blocks_missing_snapshot(gate):
+    gate.db.query(OrderItemCmvIngredientSnapshot).delete()
+    gate.db.query(OrderItemCmvSnapshot).delete()
+    gate.db.commit()
+    task = gate.service.command("task1", "cook", command(1), "start")
+    gate.clock[0] += timedelta(seconds=5)
+    result = gate.service.command("task1", "cook", command(task["version"]), "confirm-stock")
+    assert result["state"] == "aguardando_analise"
+    assert result["blocked_reason"]
+    assert balance(gate) == 1
+    assert gate.db.query(ProductionAttemptConsumption).count() == 0
+
+
+def test_production_setting_defaults_false_and_can_toggle_per_tenant(gate):
+    service = GestaoService(gate.db, "tenant")
+    foreign = GestaoService(gate.db, "other-tenant")
+    settings = next(row for row in foreign.list_settings() if row["module_key"] == "inventory")
+    assert settings["settings"]["production_stock_control_enabled"] is False
+    settings = service.update_settings("inventory", GestaoModuleSettingsUpdate(
+        settings={"production_stock_control_enabled": False, "sales_control_enabled": True},
+    ))
+    assert settings["settings"]["sales_control_enabled"] is True
+    assert gate.service._production_stock_control_enabled() is False
+    service.update_settings("inventory", GestaoModuleSettingsUpdate(
+        settings={**settings["settings"], "production_stock_control_enabled": True},
+    ))
+    assert gate.service._production_stock_control_enabled() is True
+    assert KdsProductionService(gate.db, TenantContext("other-tenant", TenantSource.JOB))._production_stock_control_enabled() is False
 
 
 def test_kitchen_queue_excludes_archived_cancelled_and_outdated_orders_but_keeps_active_rework(gate):

@@ -22,7 +22,7 @@ const modulePlan: Record<GestaoModuleKey, string[]> = {
   inventory: [
     "Cadastros de insumos, unidades, locais e fornecedores.",
     "Ficha tecnica interna sem exposicao ao cliente final.",
-    "Disponibilidade de venda somente em fase posterior.",
+    "Exigência de insumos na fabricação configurada separadamente nesta tela.",
   ],
   cmv: [
     "Snapshots de custo apenas quando habilitado.",
@@ -115,12 +115,19 @@ export default function AdminGestao({
   }, []);
 
   useEffect(() => {
-    setDraft(activeModule ? { ...activeModule, settings: { ...activeModule.settings } } : null);
-    setMessage("");
+    setDraft(activeModule ? {
+      ...activeModule,
+      settings: {
+        ...activeModule.settings,
+        ...(activeModule.module_key === "inventory" ? {
+          production_stock_control_enabled: activeModule.settings.production_stock_control_enabled === true,
+        } : {}),
+      },
+    } : null);
   }, [activeModule]);
 
   const save = async () => {
-    if (!draft) return;
+    if (!draft || saving) return;
     setSaving(true);
     setMessage("");
     setError("");
@@ -132,7 +139,9 @@ export default function AdminGestao({
         notes: draft.notes,
       });
       setModules((prev) => prev.map((item) => item.module_key === saved.module_key ? saved : item));
-      setMessage("Configuracao salva. Nenhuma automacao operacional foi ativada nesta fase.");
+      setMessage(saved.module_key === "inventory"
+        ? `Configurações do estoque salvas. Exigência de insumos na fabricação: ${saved.settings.production_stock_control_enabled === true ? "ligada" : "desligada"}.`
+        : "Configuração salva.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possivel salvar Gestão.");
     } finally {
@@ -142,6 +151,7 @@ export default function AdminGestao({
 
   const updateBooleanSetting = (key: string, value: boolean) => {
     if (!draft) return;
+    setMessage("");
     setDraft({
       ...draft,
       settings: {
@@ -151,14 +161,19 @@ export default function AdminGestao({
     });
   };
 
-  const settingsRows = draft ? normalizeSettings(draft.settings) : [];
+  const settingsRows = draft ? normalizeSettings(draft.settings).filter(
+    (item) => moduleKey !== "inventory" || item.key !== "production_stock_control_enabled",
+  ) : [];
+  const productionStockControlEnabled = draft?.settings.production_stock_control_enabled === true;
+  const savedProductionStockControlEnabled = activeModule?.settings.production_stock_control_enabled === true;
+  const productionStockControlChanged = productionStockControlEnabled !== savedProductionStockControlEnabled;
 
   return (
     <AdminPageShell>
       <AdminPageHeader
         icon={<ShieldCheck size={20} />}
         title="Gestão"
-        description="Base dos modulos ERP sem impacto operacional nos pedidos atuais"
+        description={moduleKey === "inventory" ? "Cadastros e controles de estoque e fabricação" : "Base dos modulos ERP sem impacto operacional nos pedidos atuais"}
         actions={showSettings ? (
           <button
             type="button"
@@ -167,7 +182,7 @@ export default function AdminGestao({
             className="inline-flex items-center gap-2 rounded-lg bg-gold px-4 py-2 text-sm font-black text-black transition hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            Salvar
+            {saving ? "Salvando..." : "Salvar"}
           </button>
         ) : undefined}
       />
@@ -180,9 +195,9 @@ export default function AdminGestao({
         )}
 
         {!loading && error && (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-5 text-red-200">
+          <div role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 p-5 text-red-200">
             <div className="flex items-center gap-2 font-bold">
-              <AlertCircle size={18} /> Erro ao carregar
+              <AlertCircle size={18} /> {draft ? "Não foi possível salvar" : "Erro ao carregar"}
             </div>
             <p className="mt-2 text-sm">{error}</p>
           </div>
@@ -203,25 +218,62 @@ export default function AdminGestao({
                       </div>
                       <p className="mt-2 text-sm leading-relaxed text-stone">{draft.description}</p>
                       <p className="mt-3 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-200">
-                        Fase 1 cria base, permissoes, rotas e configuracoes. Pedido, checkout, cozinha e pagamentos continuam sem alteracao.
+                        {moduleKey === "inventory"
+                          ? "O módulo de Estoque e a exigência de insumos na fabricação possuem controles separados. Configure a fabricação na seção abaixo e clique em Salvar para aplicar as alterações."
+                          : "Fase 1 cria base, permissoes, rotas e configuracoes. Pedido, checkout, cozinha e pagamentos continuam sem alteracao."}
                       </p>
                     </div>
                     <label className="flex min-w-[14rem] items-center justify-between gap-4 rounded-lg border border-surface-03 bg-surface-01 px-4 py-3">
                       <span>
                         <span className="block text-sm font-bold text-cream">Modulo habilitado</span>
-                        <span className="block text-xs text-stone">Apenas configuracao interna</span>
+                        <span className="block text-xs text-stone">{moduleKey === "inventory" ? "Habilitação geral do Estoque" : "Apenas configuracao interna"}</span>
                       </span>
                       <Switch
+                        aria-label="Módulo habilitado"
+                        disabled={saving}
                         checked={draft.enabled}
-                        onCheckedChange={(checked) => setDraft({
-                          ...draft,
-                          enabled: checked,
-                          status: checked ? draft.status === "disabled" ? "setup" : draft.status : "disabled",
-                        })}
+                        onCheckedChange={(checked) => {
+                          setMessage("");
+                          setDraft({
+                            ...draft,
+                            enabled: checked,
+                            status: checked ? draft.status === "disabled" ? "setup" : draft.status : "disabled",
+                          });
+                        }}
                       />
                     </label>
                   </div>
                 </section>
+
+                {moduleKey === "inventory" && (
+                  <section aria-labelledby="production-stock-control-title" className="rounded-lg border border-gold/30 bg-surface-02 p-5">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="max-w-3xl">
+                        <h3 id="production-stock-control-title" className="text-lg font-black text-cream">Exigir insumos na fabricação</h3>
+                        <p id="production-stock-control-description" className="mt-2 text-sm leading-relaxed text-stone">
+                          Ligado: a fabricação exige ficha técnica completa e saldo suficiente dos insumos; faltas bloqueiam o início do preparo.
+                          Desligado: permite fabricar mesmo sem ficha técnica ou insumos cadastrados, sem conferência obrigatória nem baixa automática de insumos na fabricação.
+                        </p>
+                        <p className="mt-2 text-xs text-stone">Este controle é específico da fabricação. Ele não altera o botão geral do módulo, a disponibilidade de venda ou a configuração analítica de CMV.</p>
+                        <p className="mt-3 text-sm font-semibold text-cream">Estado salvo: {savedProductionStockControlEnabled ? "Ligado" : "Desligado"}</p>
+                        {productionStockControlChanged && (
+                          <p role="status" className="mt-2 text-sm text-amber-300">Alteração pendente: {productionStockControlEnabled ? "ligar" : "desligar"} a exigência de insumos. Clique em Salvar para aplicar.</p>
+                        )}
+                      </div>
+                      <label className="flex shrink-0 items-center gap-3 rounded-lg border border-surface-03 bg-surface-01 px-4 py-3" htmlFor="production-stock-control">
+                        <span className="text-sm font-bold text-cream">{productionStockControlEnabled ? "Ligado" : "Desligado"}</span>
+                        <Switch
+                          id="production-stock-control"
+                          aria-labelledby="production-stock-control-title"
+                          aria-describedby="production-stock-control-description"
+                          checked={productionStockControlEnabled}
+                          disabled={saving}
+                          onCheckedChange={(checked) => updateBooleanSetting("production_stock_control_enabled", checked)}
+                        />
+                      </label>
+                    </div>
+                  </section>
+                )}
 
                 <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
                   <div className="rounded-lg border border-surface-03 bg-surface-02 p-5">
@@ -236,6 +288,7 @@ export default function AdminGestao({
                             </div>
                             {typeof item.value === "boolean" && (
                               <Switch
+                                disabled={saving}
                                 checked={item.value}
                                 onCheckedChange={(checked) => updateBooleanSetting(item.key, checked)}
                               />
@@ -265,14 +318,15 @@ export default function AdminGestao({
                   </label>
                   <textarea
                     id="gestao-notes"
+                    disabled={saving}
                     value={draft.notes}
-                    onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
+                    onChange={(event) => { setMessage(""); setDraft({ ...draft, notes: event.target.value }); }}
                     className="mt-3 min-h-24 w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream outline-none transition focus:border-gold"
                   />
                 </section>
 
                 {message && (
-                  <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-200">
+                  <p role="status" className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-200">
                     {message}
                   </p>
                 )}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
+import json
 import uuid
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
@@ -16,6 +17,7 @@ from backend.models.tenant import Tenant
 from backend.models.inventory import InventoryItem, InventoryStockMovement
 from backend.models.rbac import AdminAuditLog
 from backend.models.product import Product
+from backend.models.gestao import GestaoModuleSettings
 
 
 class KdsStockConflict(DomainError):
@@ -90,6 +92,18 @@ class KdsProductionService:
         if attempt.operator_id and attempt.operator_id != actor_id:
             raise KdsStockConflict("Tarefa reservada para outro operador.", code="KdsTaskOwned")
 
+    def _production_stock_control_enabled(self) -> bool:
+        settings = self.db.query(GestaoModuleSettings).filter_by(
+            tenant_id=self.tenant_id, module_key="inventory",
+        ).populate_existing().first()
+        if not settings or not settings.enabled or settings.status == "disabled":
+            return False
+        try:
+            values = json.loads(settings.settings_json or "{}")
+        except (ValueError, TypeError):
+            return False
+        return isinstance(values, dict) and values.get("production_stock_control_enabled") is True
+
     def start_stock_check(self, task_id, actor_id, body):
         self._lock_station()
         a = self._unit(task_id, True)
@@ -140,7 +154,10 @@ class KdsProductionService:
                     a.blocked_reason = None
                     a.version += 1
                     a.unit.version += 1
-                    self._audit(a, a.operator_id, "checking_stock", "Estoque disponivel; iniciando preparo.")
+                    reason = ("Controle de estoque da producao desativado; iniciando preparo sem baixa."
+                              if a.stock_consumption_mode == "disabled"
+                              else "Estoque disponivel; iniciando preparo.")
+                    self._audit(a, a.operator_id, "checking_stock", reason)
             except DomainError as exc:
                 a.state = a.unit.state = "aguardando_analise"
                 a.blocked_reason = exc.message
@@ -288,6 +305,9 @@ class KdsProductionService:
     def consume_attempt(self, attempt_id: str, actor_id: str):
         """Consume the frozen CMV composition once for this physical unit."""
         attempt = self._unit(attempt_id, True)
+        # Shared gate for stock confirmation and pre-gate finish-assembly tasks.
+        if not self._production_stock_control_enabled():
+            return {"consumed": False, "reason": "disabled", "mode": "disabled", "lines": 0}
         existing = self.db.query(ProductionAttemptConsumption).filter_by(
             tenant_id=self.tenant_id, attempt_id=attempt.id).count()
         if existing:
