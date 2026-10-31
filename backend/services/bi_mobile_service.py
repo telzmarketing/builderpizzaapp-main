@@ -102,15 +102,19 @@ class BIMobileService:
 
     def _totals(self, start_dt: datetime, end_dt: datetime, rows: list[dict], days: int) -> dict:
         paid = self._paid()
-        cancelled = Order.status.in_(self.legacy.CANCELLED_STATUSES)
         q = self.db.query(Order).filter(Order.tenant_id == self.tenant_id,
             Order.created_at >= start_dt, Order.created_at <= end_dt)
         financial = q.with_entities(
-            func.coalesce(func.sum(case((cancelled, Order.total), else_=0)), 0),
             func.coalesce(func.sum(case((paid, Order.subtotal + func.coalesce(Order.shipping_fee, 0)), else_=0)), 0),
             func.coalesce(func.sum(case((paid, Order.discount), else_=0)), 0),
-            func.coalesce(func.sum(case((~cancelled, Order.total), else_=0)), 0),
         ).one()
+        cancelled_orders = self.legacy._cancelled_orders_in_period(start_dt, end_dt)
+        cancelled_value = cancelled_orders.with_entities(
+            func.coalesce(func.sum(Order.total), 0)
+        ).scalar() or 0
+        forecast_revenue = q.filter(~Order.status.in_(self.legacy.CANCELLED_STATUSES)).with_entities(
+            func.coalesce(func.sum(Order.total), 0)
+        ).scalar() or 0
         statuses = {getattr(status, "value", status): int(count) for status, count in q.with_entities(
             Order.status, func.count(Order.id)).group_by(Order.status).all()}
         buckets = {key: sum(statuses.get(status, 0) for status in values)
@@ -120,11 +124,11 @@ class BIMobileService:
         best = max(rows, key=lambda row: row["revenue"], default=None)
         return {"orders": sum(statuses.values()), "valid_orders": orders, "revenue": revenue,
             "pizzas": sum(row["pizzas"] for row in rows), "average_ticket": round(revenue / orders, 2) if orders else 0,
-            "cancelled_orders": buckets["cancelado"], "cancelled_value": round(float(financial[0]), 2),
+            "cancelled_orders": cancelled_orders.count(), "cancelled_value": round(float(cancelled_value), 2),
             "completed_orders": buckets["entregue"],
             "active_orders": sum(statuses.get(s.value, 0) for s in self.legacy.MOBILE_EFFECTIVE_ORDER_STATUSES if s.value != "delivered"),
-            "gross_sales": round(float(financial[1]), 2), "discounts": round(float(financial[2]), 2),
-            "forecast_revenue": round(float(financial[3]), 2),
+            "gross_sales": round(float(financial[0]), 2), "discounts": round(float(financial[1]), 2),
+            "forecast_revenue": round(float(forecast_revenue), 2),
             "daily_revenue": round(revenue / days, 2), "daily_orders": round(orders / days, 2),
             "best_day": best["date"] if best and best["revenue"] > 0 else None, "status_counts": buckets}
 

@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Iterable
 
-from sqlalchemy import distinct, func, or_, text
+from sqlalchemy import and_, distinct, exists, func, or_, text
 from sqlalchemy.orm import Session
 
 from backend.core.local_time import local_period_bounds, local_today, to_store_datetime
@@ -169,18 +169,20 @@ class BusinessIntelligenceService:
     ) -> dict:
         paid_orders_q = self._paid_orders_in_period(start_dt, end_dt)
         all_orders = self._orders_in_period(start_dt, end_dt)
+        effective_orders = all_orders.filter(~Order.status.in_(self.CANCELLED_STATUSES))
 
-        total_orders = all_orders.count()
+        # Cancelled/refunded rows remain available for the cancellation KPI, but
+        # must not inflate the operational order total.
+        total_orders = effective_orders.count()
         paid_orders = paid_orders_q.count()
         estimated_revenue = self._round(
-            all_orders
-            .filter(~Order.status.in_(self.CANCELLED_STATUSES))
+            effective_orders
             .with_entities(func.coalesce(func.sum(Order.total), 0))
             .scalar()
         )
         effective_revenue = self._round(paid_orders_q.with_entities(func.coalesce(func.sum(Order.total), 0)).scalar())
         avg_ticket = self._round(effective_revenue / paid_orders if paid_orders else 0)
-        cancelled = all_orders.filter(Order.status.in_(self.CANCELLED_STATUSES)).count()
+        cancelled = self._cancelled_orders_in_period(start_dt, end_dt).count()
         new_customers = (
             self._db.query(Customer)
             .filter(
@@ -977,6 +979,28 @@ class BusinessIntelligenceService:
                 Payment.status.in_(self.PAID_PAYMENT_STATUSES),
             )
             .filter(~Order.status.in_(self.CANCELLED_STATUSES))
+        )
+
+    def _cancelled_orders_in_period(self, start_dt: datetime, end_dt: datetime):
+        """Return orders whose cancellation/refund event happened in the period."""
+        refunded_in_period = exists().where(
+            Payment.order_id == Order.id,
+            Payment.tenant_id == self._tenant_id,
+            Payment.status == PaymentStatus.refunded,
+            Payment.refunded_at >= start_dt,
+            Payment.refunded_at <= end_dt,
+        )
+        # Keep this query aggregate-friendly; callers only need id and total.
+        return self._db.query(Order.id, Order.total).filter(
+            Order.tenant_id == self._tenant_id,
+            or_(
+                and_(
+                    Order.status == OrderStatus.cancelled,
+                    Order.cancelled_at >= start_dt,
+                    Order.cancelled_at <= end_dt,
+                ),
+                and_(Order.status == OrderStatus.refunded, refunded_in_period),
+            ),
         )
 
     def _online_presence_counts(self) -> dict[str, int]:

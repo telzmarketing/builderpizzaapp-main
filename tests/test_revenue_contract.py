@@ -43,6 +43,14 @@ def test_business_intelligence_estimated_revenue_has_non_cancelled_boundary():
     from pathlib import Path
 
     source = (Path(__file__).parents[1] / "backend/services/business_intelligence_service.py").read_text(encoding="utf-8")
-    marker = "estimated_revenue = self._round("
-    section = source[source.index(marker):source.index("effective_revenue", source.index(marker))]
-    assert "~Order.status.in_(self.CANCELLED_STATUSES)" in section
+    section = source[source.index("effective_orders = all_orders"):source.index("effective_revenue", source.index("effective_orders = all_orders"))]
+    assert "effective_orders = all_orders.filter(~Order.status.in_(self.CANCELLED_STATUSES))" in section
+
+
+def test_business_intelligence_total_orders_uses_the_non_cancelled_boundary():
+    from pathlib import Path
+
+    source = (Path(__file__).parents[1] / "backend/services/business_intelligence_service.py").read_text(encoding="utf-8")
+    section = source[source.index("effective_orders = all_orders"):source.index("new_customers =", source.index("effective_orders = all_orders"))]
+    assert "total_orders = effective_orders.count()" in section
+    assert "effective_orders = all_orders.filter(~Order.status.in_(self.CANCELLED_STATUSES))" in section

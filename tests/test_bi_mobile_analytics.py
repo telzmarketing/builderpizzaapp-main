@@ -19,8 +19,8 @@ def service():
     from backend.main import app  # noqa: F401
     engine = create_engine("sqlite://")
     with engine.begin() as connection:
-        connection.execute(text("CREATE TABLE orders (id TEXT PRIMARY KEY, tenant_id TEXT, created_at TIMESTAMP, status TEXT, total FLOAT, subtotal FLOAT, shipping_fee FLOAT, discount FLOAT, sales_channel TEXT)"))
-        connection.execute(text("CREATE TABLE payments (id TEXT, tenant_id TEXT, order_id TEXT, status TEXT, method TEXT)"))
+        connection.execute(text("CREATE TABLE orders (id TEXT PRIMARY KEY, tenant_id TEXT, created_at TIMESTAMP, status TEXT, total FLOAT, subtotal FLOAT, shipping_fee FLOAT, discount FLOAT, sales_channel TEXT, cancelled_at TIMESTAMP)"))
+        connection.execute(text("CREATE TABLE payments (id TEXT, tenant_id TEXT, order_id TEXT, status TEXT, method TEXT, refunded_at TIMESTAMP)"))
         connection.execute(text("CREATE TABLE products (id TEXT, tenant_id TEXT, product_type TEXT, category TEXT)"))
         connection.execute(text("CREATE TABLE order_items (id TEXT, tenant_id TEXT, order_id TEXT, product_id TEXT, quantity INTEGER)"))
         with Session(bind=connection) as db:
@@ -60,12 +60,16 @@ def test_paid_orders_pizzas_cancelled_duplicate_payments_and_tenant_isolation(se
         ("previous-day", "a", "delivered", 40, "2026-10-27 02:59:00"),
         ("wrong-payment-tenant", "a", "paid", 700, "2026-10-27 04:00:00"),
     ]:
-        db.execute(text("INSERT INTO orders VALUES (:id,:tenant,:at,:status,:total,:total,0,0,'delivery')"),
-            dict(id=order_id, tenant=tenant, at=at, status=status, total=total))
+        db.execute(text("INSERT INTO orders VALUES (:id,:tenant,:at,:status,:total,:total,0,0,'delivery',:cancelled_at)"),
+            dict(id=order_id, tenant=tenant, at=at, status=status, total=total,
+                 cancelled_at=at if status == "cancelled" else None))
     for payment_id, order_id, tenant in [("p1", "paid", "a"), ("p2", "paid", "a"),
         ("pc", "cancelled", "a"), ("pr", "refunded", "a"), ("po", "other", "b"),
         ("pp", "previous-day", "a"), ("wrong", "wrong-payment-tenant", "b")]:
-        db.execute(text("INSERT INTO payments VALUES (:id,:tenant,:order,'paid','pix')"), dict(id=payment_id, tenant=tenant, order=order_id))
+        payment_status = "refunded" if payment_id == "pr" else "paid"
+        refunded_at = "2026-10-27 06:00:00" if payment_id == "pr" else None
+        db.execute(text("INSERT INTO payments VALUES (:id,:tenant,:order,:status,'pix',:refunded_at)"),
+            dict(id=payment_id, tenant=tenant, order=order_id, status=payment_status, refunded_at=refunded_at))
     db.execute(text("INSERT INTO products VALUES ('pizza','a','pizza','Pizzas'),('drink','a','drink','Bebidas'),('foreign','b','pizza','Pizzas')"))
     # A split-flavor pizza is one item; quantities represent physical units.
     db.execute(text("INSERT INTO order_items VALUES ('i1','a','paid','pizza',2),('i2','a','paid','drink',3),('i3','b','paid','pizza',90),('i4','a','paid','foreign',90)"))
@@ -80,6 +84,22 @@ def test_paid_orders_pizzas_cancelled_duplicate_payments_and_tenant_isolation(se
     assert totals["cancelled_value"] == 150
     assert totals["pizzas"] == 2
     assert service._rows(start, end, True)[0]["date"] == "2026-10-27 00"
+
+
+def test_cancellations_use_event_time_not_order_creation_time(service):
+    db = service.db
+    db.execute(text("INSERT INTO orders VALUES ('old-cancel','a','2026-10-01 10:00:00','cancelled',80,80,0,0,'delivery','2026-10-27 10:00:00')"))
+    db.execute(text("INSERT INTO orders VALUES ('new-cancel','a','2026-10-27 11:00:00','cancelled',90,90,0,0,'delivery','2026-10-28 11:00:00')"))
+    db.execute(text("INSERT INTO orders VALUES ('old-refund','a','2026-10-01 12:00:00','refunded',70,70,0,0,'delivery',NULL)"))
+    db.execute(text("INSERT INTO payments VALUES ('refund','a','old-refund','refunded','pix','2026-10-27 12:00:00')"))
+
+    start, end = local_period_bounds(date(2026, 10, 27), date(2026, 10, 27))
+    cancelled = service.legacy._cancelled_orders_in_period(start, end)
+    totals = service._totals(start, end, [], 1)
+
+    assert cancelled.count() == 2
+    assert totals["cancelled_orders"] == 2
+    assert totals["cancelled_value"] == 150
 
 
 def test_empty_period_is_real_zero_without_invented_history(service):
@@ -119,8 +139,8 @@ def test_ai_only_prioritizes_known_actions_and_never_supplies_displayed_facts(mo
 
 def test_legacy_pizza_category_does_not_count_borders_or_addons(service):
     db = service.db
-    db.execute(text("INSERT INTO orders VALUES ('legacy','a','2026-10-20 15:00:00','paid',100,100,0,0,'delivery')"))
-    db.execute(text("INSERT INTO payments VALUES ('legacy','a','legacy','paid','pix')"))
+    db.execute(text("INSERT INTO orders VALUES ('legacy','a','2026-10-20 15:00:00','paid',100,100,0,0,'delivery',NULL)"))
+    db.execute(text("INSERT INTO payments VALUES ('legacy','a','legacy','paid','pix',NULL)"))
     db.execute(text("INSERT INTO products VALUES ('lp','a',NULL,'Pizzas'),('lb','a',NULL,'Bordas de pizza'),('la','a','other','Adicionais pizza')"))
     db.execute(text("INSERT INTO order_items VALUES ('lp','a','legacy','lp',2),('lb','a','legacy','lb',5),('la','a','legacy','la',6)"))
     rows = service._rows(*local_period_bounds(date(2026, 10, 20), date(2026, 10, 20)))
