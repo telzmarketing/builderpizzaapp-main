@@ -184,10 +184,10 @@ export default function AdminCozinha() {
   const now = new Date();
   return (
     <section
-      className={`kds-touch kds-touch-page flex min-h-0 min-w-0 max-w-full flex-1 flex-col ${fullscreen ? "fixed inset-0 z-[100] overflow-y-auto" : "min-h-screen min-h-[100dvh] overflow-y-auto"} bg-[#040e18] pb-[env(safe-area-inset-bottom)] text-slate-100`}
+      className={`kds-touch kds-touch-page flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-x-clip ${fullscreen ? "fixed inset-0 z-[100] overflow-y-auto" : "min-h-screen min-h-[100dvh] overflow-y-auto"} bg-[#040e18] pb-[env(safe-area-inset-bottom)] text-slate-100`}
     >
-      <header className="sticky top-0 z-20 flex flex-col gap-3 rounded-b-2xl border-b border-[#20374a] bg-[#081521] p-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:p-4">
-        <div className="flex items-center gap-4">
+      <header className="sticky top-0 z-20 flex min-w-0 flex-col gap-3 rounded-b-2xl border-b border-[#20374a] bg-[#081521] p-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:p-4">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
           <KdsBrandLogo fallback={
             <ChefHat
               size={54}
@@ -195,11 +195,11 @@ export default function AdminCozinha() {
               className="shrink-0 text-amber-400"
             />
           } />
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-400">
               KDS Touch
             </p>
-            <h1 className="text-3xl font-black">Pizzaiolo</h1>
+            <h1 className="truncate text-2xl font-black sm:text-3xl">Pizzaiolo</h1>
             <p className="mt-1 text-xs text-slate-400">
               {lastRefresh
                 ? `Atualizado às ${lastRefresh.toLocaleTimeString("pt-BR")}`
@@ -207,7 +207,7 @@ export default function AdminCozinha() {
             </p>
           </div>
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:max-w-full sm:justify-end">
           <div className="flex min-h-12 items-center gap-3 rounded-xl border border-[#20374a] bg-[#0b1926] px-3 py-1">
             <Clock3 size={28} className="text-slate-300" />
             <div>
