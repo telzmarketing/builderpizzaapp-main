@@ -1,5 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ClipboardList, LayoutDashboard, Loader2, Plus, RefreshCw, Settings, Tags, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  BarChart3,
+  CheckCircle2,
+  ClipboardList,
+  CircleDollarSign,
+  Filter,
+  LayoutDashboard,
+  Landmark,
+  Loader2,
+  Plus,
+  RefreshCw,
+  ReceiptText,
+  Search,
+  Settings,
+  SlidersHorizontal,
+  Tags,
+  Trash2,
+  TrendingUp,
+  Users,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
 import { AdminPageTabs, type AdminPageTab } from "@/components/admin/AdminPageChrome";
 import AdminGestao from "./AdminGestao";
 import {
@@ -26,12 +50,17 @@ const sections: AdminPageTab<FinanceSection>[] = [
   { id: "settings", label: "Configuracoes", icon: Settings },
 ];
 
-const panelClass = "rounded-lg border border-surface-03 bg-surface-02 p-5";
-const inputClass = "w-full rounded-lg border border-surface-03 bg-surface-01 px-3 py-2 text-sm text-cream outline-none transition focus:border-gold";
-const buttonClass = "inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-3 py-2 text-sm font-black text-black transition hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-60";
+const panelClass = "rounded-2xl border border-surface-03 bg-surface-02 p-5 shadow-[0_12px_36px_rgba(0,0,0,0.12)]";
+const inputClass = "w-full rounded-xl border border-surface-03 bg-surface-01 px-3 py-2.5 text-sm text-cream outline-none transition placeholder:text-stone/70 focus:border-gold focus:ring-2 focus:ring-gold/10";
+const buttonClass = "inline-flex items-center justify-center gap-2 rounded-xl bg-gold px-3.5 py-2.5 text-sm font-black text-black transition hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-60";
+const mutedButtonClass = "inline-flex items-center justify-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-3.5 py-2.5 text-sm font-bold text-stone transition hover:border-gold/40 hover:bg-surface-03 hover:text-cream disabled:cursor-not-allowed disabled:opacity-60";
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function currency(value: number) {
@@ -125,6 +154,9 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
   const [counterpartyDraft, setCounterpartyDraft] = useState<FinanceCounterpartyInput>(emptyCounterparty);
   const [transactionDraft, setTransactionDraft] = useState<FinanceTransactionInput>(emptyTransaction);
   const [settlementDrafts, setSettlementDrafts] = useState<Record<string, FinanceSettlementInput>>({});
+  const [transactionQuery, setTransactionQuery] = useState("");
+  const [transactionStatus, setTransactionStatus] = useState("all");
+  const [transactionEntryType, setTransactionEntryType] = useState("all");
 
   const load = () => {
     setLoading(true);
@@ -142,6 +174,23 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
   const categoriesForEntry = useMemo(() => {
     return (data?.categories ?? []).filter((category) => category.entry_type === transactionDraft.entry_type);
   }, [data?.categories, transactionDraft.entry_type]);
+
+  const filteredTransactions = useMemo(() => {
+    const query = transactionQuery.trim().toLocaleLowerCase();
+    return (data?.transactions ?? []).filter((transaction) => {
+      const searchable = [
+        transaction.description,
+        transaction.counterparty_name,
+        transaction.category_name,
+        transaction.document_number,
+        transaction.cost_center,
+      ].filter(Boolean).join(" ").toLocaleLowerCase();
+      const matchesQuery = !query || searchable.includes(query);
+      const matchesStatus = transactionStatus === "all" || transaction.status === transactionStatus;
+      const matchesEntryType = transactionEntryType === "all" || transaction.entry_type === transactionEntryType;
+      return matchesQuery && matchesStatus && matchesEntryType;
+    });
+  }, [data?.transactions, transactionEntryType, transactionQuery, transactionStatus]);
 
   const createAccount = async () => {
     if (!accountDraft.name.trim()) return;
@@ -265,14 +314,24 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
   };
 
   const settleTransaction = async (transaction: FinanceTransaction) => {
+    if (transaction.status === "paid" || transaction.status === "cancelled") {
+      return;
+    }
+
     const draft = settlementDraft(transaction);
+    const paidAmount = Number(draft.paid_amount);
+    if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+      setError("O valor da baixa deve ser maior que zero.");
+      return;
+    }
+
     setSaving(transaction.id);
     setError("");
     try {
       await financeApi.settleTransaction(transaction.id, {
         ...draft,
         account_id: draft.account_id || null,
-        paid_amount: Number(draft.paid_amount || openAmount(transaction, draft)),
+        paid_amount: paidAmount,
         paid_at: new Date().toISOString(),
         interest_amount: Number(draft.interest_amount || 0),
         fine_amount: Number(draft.fine_amount || 0),
@@ -296,6 +355,10 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
   };
 
   const removeTransaction = async (transaction: FinanceTransaction) => {
+    if (transaction.status === "paid" || transaction.status === "cancelled") {
+      return;
+    }
+
     setSaving(transaction.id);
     setError("");
     try {
@@ -309,32 +372,53 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
   };
 
   return (
-    <section className="space-y-5">
-      <div className={panelClass}>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="text-lg font-black text-cream">Financeiro operacional</h3>
-            <p className="text-sm text-stone">Contas, categorias e lancamentos manuais para base de caixa, competencia e DRE.</p>
+    <section className="space-y-6" aria-labelledby="finance-panel-title">
+      <div className="relative overflow-hidden rounded-2xl border border-gold/20 bg-gradient-to-br from-surface-02 via-surface-02 to-gold/5 p-5 shadow-[0_16px_48px_rgba(0,0,0,0.16)] sm:p-6">
+        <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-gold/10 blur-3xl" />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-gold/30 bg-gold/10 text-gold">
+              <CircleDollarSign size={25} aria-hidden="true" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-gold">Gestao financeira</p>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" aria-hidden="true" /> Operacional
+                </span>
+              </div>
+              <h2 id="finance-panel-title" className="mt-1 text-2xl font-black tracking-tight text-cream sm:text-3xl">Visao financeira do negocio</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-stone">Contas, categorias e lancamentos manuais para acompanhar caixa, competencia e DRE em um unico lugar.</p>
+            </div>
           </div>
-          <button type="button" onClick={load} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-lg border border-surface-03 px-3 py-2 text-sm font-bold text-stone transition hover:bg-surface-03 hover:text-cream disabled:opacity-60">
-            {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-            Atualizar
+          <button type="button" onClick={load} disabled={loading} className={mutedButtonClass} aria-label="Atualizar dados financeiros">
+            {loading ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />}
+            Atualizar dados
           </button>
+        </div>
+        <div className="relative mt-5 grid gap-3 border-t border-surface-03/80 pt-4 text-xs text-stone sm:grid-cols-3">
+          <div className="flex items-center gap-2"><Wallet size={15} className="text-gold" aria-hidden="true" /><span>Controle de caixa e liquidações</span></div>
+          <div className="flex items-center gap-2"><BarChart3 size={15} className="text-gold" aria-hidden="true" /><span>Resultado por competência e DRE</span></div>
+          <div className="flex items-center gap-2"><ReceiptText size={15} className="text-gold" aria-hidden="true" /><span>Registros com rastreabilidade</span></div>
         </div>
       </div>
 
       {loading && (
-        <div className="flex min-h-48 items-center justify-center rounded-lg border border-surface-03 bg-surface-02 text-stone">
-          <Loader2 size={18} className="mr-2 animate-spin" /> Carregando financeiro...
+        <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 text-stone" role="status" aria-live="polite">
+          <Loader2 size={24} className="mb-3 animate-spin text-gold" aria-hidden="true" />
+          <span className="text-sm font-semibold">Carregando financeiro...</span>
         </div>
       )}
 
       {!loading && error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-5 text-red-200">
+        <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-5 text-red-200" role="alert">
           <div className="flex items-center gap-2 font-bold">
-            <AlertTriangle size={18} /> Erro ao carregar
+            <AlertTriangle size={18} aria-hidden="true" /> Nao foi possivel atualizar o financeiro
           </div>
           <p className="mt-2 text-sm">{error}</p>
+          <button type="button" onClick={load} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-red-300/30 px-3 py-2 text-xs font-bold text-red-100 transition hover:bg-red-400/10">
+            <RefreshCw size={14} aria-hidden="true" /> Tentar novamente
+          </button>
         </div>
       )}
 
@@ -342,42 +426,54 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
         <>
           {section === "summary" && (
             <>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <Metric title="Saldo caixa" value={currency(data.summary.balance)} tone={data.summary.balance >= 0 ? "success" : "warn"} />
-                <Metric title="Receitas pagas" value={currency(data.summary.income_paid)} tone="success" />
-                <Metric title="Despesas pagas" value={currency(data.summary.expense_paid)} tone="warn" />
-                <Metric title="Pendencias" value={`${data.summary.pending_count} abertas`} tone={data.summary.overdue_count ? "warn" : "default"} />
+              <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr_1fr]">
+                <div className="relative overflow-hidden rounded-2xl border border-gold/30 bg-gradient-to-br from-gold/15 via-surface-02 to-surface-02 p-5 sm:p-6">
+                  <div className="absolute -right-6 -top-8 h-32 w-32 rounded-full bg-gold/10 blur-2xl" />
+                  <div className="relative flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-gold">Saldo consolidado</p>
+                      <p className={`mt-3 text-3xl font-black tracking-tight sm:text-4xl ${data.summary.balance >= 0 ? "text-emerald-200" : "text-amber-200"}`}>{currency(data.summary.balance)}</p>
+                      <p className="mt-2 text-sm text-stone">Disponivel nas contas financeiras cadastradas</p>
+                    </div>
+                    <div className="rounded-2xl border border-gold/25 bg-gold/10 p-3 text-gold"><Wallet size={24} aria-hidden="true" /></div>
+                  </div>
+                  <div className="relative mt-6 flex flex-wrap gap-x-6 gap-y-2 text-xs text-stone">
+                    <span><strong className="text-emerald-300">{currency(data.summary.income_paid)}</strong> receitas pagas</span>
+                    <span><strong className="text-amber-300">{currency(data.summary.expense_paid)}</strong> despesas pagas</span>
+                  </div>
+                </div>
+                <Metric title="Resultado de caixa" value={currency(data.management.cash_realized_result)} subtitle="Movimentos efetivamente liquidados" icon={TrendingUp} tone={data.management.cash_realized_result >= 0 ? "success" : "warn"} />
+                <Metric title="Pendencias financeiras" value={`${data.summary.pending_count} abertas`} subtitle={data.summary.overdue_count ? `${data.summary.overdue_count} vencidas exigem atencao` : "Nenhuma pendencia vencida"} icon={data.summary.overdue_count ? AlertTriangle : CheckCircle2} tone={data.summary.overdue_count ? "warn" : "success"} />
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <Metric title="Resultado caixa" value={currency(data.management.cash_realized_result)} tone={data.management.cash_realized_result >= 0 ? "success" : "warn"} />
-                <Metric title="Resultado competencia" value={currency(data.management.accrual_result)} tone={data.management.accrual_result >= 0 ? "success" : "warn"} />
-                <Metric title="DRE" value={data.management.dre_label} tone={data.management.dre_status.includes("complete") ? "success" : "warn"} />
-                <Metric title="Receita competencia" value={currency(data.management.accrual_income)} tone="success" />
+              <div className="grid gap-4 md:grid-cols-3">
+                <Metric title="Resultado competencia" value={currency(data.management.accrual_result)} subtitle="Receitas menos despesas por data de competência" icon={BarChart3} tone={data.management.accrual_result >= 0 ? "success" : "warn"} />
+                <Metric title="Receita competencia" value={currency(data.management.accrual_income)} subtitle="Entradas reconhecidas no periodo" icon={ArrowUpCircle} tone="success" />
+                <Metric title="Status da DRE" value={data.management.dre_label} subtitle="Nivel de cobertura dos dados atuais" icon={ReceiptText} tone={data.management.dre_status.includes("complete") ? "success" : "warn"} />
               </div>
 
-              <div className="grid gap-5 xl:grid-cols-4">
-                <DimensionList title="DRE por grupo" rows={data.management.dre_lines.map((item) => ({ label: item.group, entry_type: item.entry_type, amount: item.amount, count: 1 }))} />
-                <DimensionList title="Por canal" rows={data.management.by_channel} />
-                <DimensionList title="Por categoria" rows={data.management.by_category} />
-                <DimensionList title="Por centro de custo" rows={data.management.by_cost_center} />
+              <div className="grid gap-5 xl:grid-cols-[1.15fr_1fr_1fr]">
+                <DimensionList title="DRE por grupo" icon={BarChart3} featured rows={data.management.dre_lines.map((item) => ({ label: item.group, entry_type: item.entry_type, amount: item.amount, count: 1 }))} />
+                <DimensionList title="Por canal" icon={Landmark} rows={data.management.by_channel} />
+                <DimensionList title="Por categoria" icon={Tags} rows={data.management.by_category} />
+                <DimensionList title="Por centro de custo" icon={SlidersHorizontal} rows={data.management.by_cost_center} />
               </div>
             </>
           )}
 
           {section === "registries" && <div className="grid gap-5 xl:grid-cols-4">
-            <div className={panelClass}>
-              <h4 className="mb-4 text-sm font-black uppercase tracking-wide text-parchment">Nova conta</h4>
+            <div className={`${panelClass} flex flex-col`}>
+              <CardHeading icon={Landmark} title="Nova conta" description="Organize bancos, caixas e carteiras." />
               <div className="space-y-3">
-                <input className={inputClass} placeholder="Nome da conta" value={accountDraft.name} onChange={(event) => setAccountDraft({ ...accountDraft, name: event.target.value })} />
-                <select className={inputClass} value={accountDraft.account_type} onChange={(event) => setAccountDraft({ ...accountDraft, account_type: event.target.value as FinanceAccount["account_type"] })}>
+                <input aria-label="Nome da conta" className={inputClass} placeholder="Nome da conta" value={accountDraft.name} onChange={(event) => setAccountDraft({ ...accountDraft, name: event.target.value })} />
+                <select aria-label="Tipo da conta" className={inputClass} value={accountDraft.account_type} onChange={(event) => setAccountDraft({ ...accountDraft, account_type: event.target.value as FinanceAccount["account_type"] })}>
                   <option value="bank">Banco</option>
                   <option value="cash">Caixa</option>
                   <option value="credit_card">Cartao</option>
                   <option value="wallet">Carteira</option>
                   <option value="other">Outra</option>
                 </select>
-                <input className={inputClass} type="number" step="0.01" placeholder="Saldo inicial" value={accountDraft.opening_balance} onChange={(event) => setAccountDraft({ ...accountDraft, opening_balance: Number(event.target.value) })} />
+                <input aria-label="Saldo inicial" className={inputClass} type="number" step="0.01" placeholder="Saldo inicial" value={accountDraft.opening_balance} onChange={(event) => setAccountDraft({ ...accountDraft, opening_balance: Number(event.target.value) })} />
                 <button type="button" onClick={createAccount} disabled={saving === "account"} className={buttonClass}>
                   {saving === "account" ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
                   Criar conta
@@ -385,15 +481,15 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
               </div>
             </div>
 
-            <div className={panelClass}>
-              <h4 className="mb-4 text-sm font-black uppercase tracking-wide text-parchment">Nova categoria</h4>
+            <div className={`${panelClass} flex flex-col`}>
+              <CardHeading icon={Tags} title="Nova categoria" description="Classifique receitas e despesas na DRE." />
               <div className="space-y-3">
-                <input className={inputClass} placeholder="Nome da categoria" value={categoryDraft.name} onChange={(event) => setCategoryDraft({ ...categoryDraft, name: event.target.value })} />
-                <select className={inputClass} value={categoryDraft.entry_type} onChange={(event) => setCategoryDraft({ ...categoryDraft, entry_type: event.target.value as FinanceEntryType })}>
+                <input aria-label="Nome da categoria" className={inputClass} placeholder="Nome da categoria" value={categoryDraft.name} onChange={(event) => setCategoryDraft({ ...categoryDraft, name: event.target.value })} />
+                <select aria-label="Tipo da categoria" className={inputClass} value={categoryDraft.entry_type} onChange={(event) => setCategoryDraft({ ...categoryDraft, entry_type: event.target.value as FinanceEntryType })}>
                   <option value="expense">Despesa</option>
                   <option value="income">Receita</option>
                 </select>
-                <input className={inputClass} placeholder="Grupo DRE" value={categoryDraft.dre_group} onChange={(event) => setCategoryDraft({ ...categoryDraft, dre_group: event.target.value })} />
+                <input aria-label="Grupo DRE" className={inputClass} placeholder="Grupo DRE" value={categoryDraft.dre_group} onChange={(event) => setCategoryDraft({ ...categoryDraft, dre_group: event.target.value })} />
                 <button type="button" onClick={createCategory} disabled={saving === "category"} className={buttonClass}>
                   {saving === "category" ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
                   Criar categoria
@@ -401,19 +497,19 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
               </div>
             </div>
 
-            <div className={panelClass}>
-              <h4 className="mb-4 text-sm font-black uppercase tracking-wide text-parchment">Novo favorecido</h4>
+            <div className={`${panelClass} flex flex-col`}>
+              <CardHeading icon={Users} title="Novo favorecido" description="Mantenha fornecedores e parceiros acessíveis." />
               <div className="space-y-3">
-                <input className={inputClass} placeholder="Nome" value={counterpartyDraft.name} onChange={(event) => setCounterpartyDraft({ ...counterpartyDraft, name: event.target.value })} />
-                <select className={inputClass} value={counterpartyDraft.counterparty_type} onChange={(event) => setCounterpartyDraft({ ...counterpartyDraft, counterparty_type: event.target.value as FinanceCounterparty["counterparty_type"] })}>
+                <input aria-label="Nome do favorecido" className={inputClass} placeholder="Nome" value={counterpartyDraft.name} onChange={(event) => setCounterpartyDraft({ ...counterpartyDraft, name: event.target.value })} />
+                <select aria-label="Tipo do favorecido" className={inputClass} value={counterpartyDraft.counterparty_type} onChange={(event) => setCounterpartyDraft({ ...counterpartyDraft, counterparty_type: event.target.value as FinanceCounterparty["counterparty_type"] })}>
                   <option value="supplier">Fornecedor</option>
                   <option value="customer">Cliente</option>
                   <option value="employee">Colaborador</option>
                   <option value="partner">Parceiro</option>
                   <option value="other">Outro</option>
                 </select>
-                <input className={inputClass} placeholder="Documento" value={counterpartyDraft.document || ""} onChange={(event) => setCounterpartyDraft({ ...counterpartyDraft, document: event.target.value })} />
-                <input className={inputClass} placeholder="Telefone" value={counterpartyDraft.phone || ""} onChange={(event) => setCounterpartyDraft({ ...counterpartyDraft, phone: event.target.value })} />
+                <input aria-label="Documento do favorecido" className={inputClass} placeholder="Documento" value={counterpartyDraft.document || ""} onChange={(event) => setCounterpartyDraft({ ...counterpartyDraft, document: event.target.value })} />
+                <input aria-label="Telefone do favorecido" className={inputClass} placeholder="Telefone" value={counterpartyDraft.phone || ""} onChange={(event) => setCounterpartyDraft({ ...counterpartyDraft, phone: event.target.value })} />
                 <button type="button" onClick={createCounterparty} disabled={saving === "counterparty"} className={buttonClass}>
                   {saving === "counterparty" ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
                   Criar favorecido
@@ -421,36 +517,36 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
               </div>
             </div>
 
-            <div className={panelClass}>
-              <h4 className="mb-4 text-sm font-black uppercase tracking-wide text-parchment">Novo lancamento</h4>
+            <div className={`${panelClass} flex flex-col`}>
+              <CardHeading icon={ReceiptText} title="Novo lancamento" description="Registre uma receita ou despesa manual." />
               <div className="space-y-3">
-                <input className={inputClass} placeholder="Descricao" value={transactionDraft.description} onChange={(event) => setTransactionDraft({ ...transactionDraft, description: event.target.value })} />
+                <input aria-label="Descricao do lancamento" className={inputClass} placeholder="Descricao" value={transactionDraft.description} onChange={(event) => setTransactionDraft({ ...transactionDraft, description: event.target.value })} />
                 <div className="grid grid-cols-2 gap-3">
-                  <select className={inputClass} value={transactionDraft.entry_type} onChange={(event) => setTransactionDraft({ ...transactionDraft, entry_type: event.target.value as FinanceEntryType, category_id: null })}>
+                  <select aria-label="Tipo do lancamento" className={inputClass} value={transactionDraft.entry_type} onChange={(event) => setTransactionDraft({ ...transactionDraft, entry_type: event.target.value as FinanceEntryType, category_id: null })}>
                     <option value="expense">Despesa</option>
                     <option value="income">Receita</option>
                   </select>
-                  <select className={inputClass} value={transactionDraft.status} onChange={(event) => setTransactionDraft({ ...transactionDraft, status: event.target.value as FinanceTransactionInput["status"] })}>
+                  <select aria-label="Status do lancamento" className={inputClass} value={transactionDraft.status} onChange={(event) => setTransactionDraft({ ...transactionDraft, status: event.target.value as FinanceTransactionInput["status"] })}>
                     <option value="pending">Pendente</option>
                     <option value="paid">Pago</option>
                   </select>
                 </div>
-                <input className={inputClass} type="number" step="0.01" placeholder="Valor" value={transactionDraft.amount} onChange={(event) => setTransactionDraft({ ...transactionDraft, amount: Number(event.target.value) })} />
-                <input className={inputClass} placeholder="Numero do documento" value={transactionDraft.document_number || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, document_number: event.target.value })} />
-                <input className={inputClass} placeholder="Centro de custo" value={transactionDraft.cost_center || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, cost_center: event.target.value })} />
+                <input aria-label="Valor do lancamento" className={inputClass} type="number" step="0.01" placeholder="Valor" value={transactionDraft.amount} onChange={(event) => setTransactionDraft({ ...transactionDraft, amount: Number(event.target.value) })} />
+                <input aria-label="Numero do documento" className={inputClass} placeholder="Numero do documento" value={transactionDraft.document_number || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, document_number: event.target.value })} />
+                <input aria-label="Centro de custo" className={inputClass} placeholder="Centro de custo" value={transactionDraft.cost_center || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, cost_center: event.target.value })} />
                 <div className="grid grid-cols-2 gap-3">
-                  <input className={inputClass} type="date" value={transactionDraft.competence_date} onChange={(event) => setTransactionDraft({ ...transactionDraft, competence_date: event.target.value })} />
-                  <input className={inputClass} type="date" value={transactionDraft.due_date || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, due_date: event.target.value || null })} />
+                  <input aria-label="Data de competencia" className={inputClass} type="date" value={transactionDraft.competence_date} onChange={(event) => setTransactionDraft({ ...transactionDraft, competence_date: event.target.value })} />
+                  <input aria-label="Data de vencimento" className={inputClass} type="date" value={transactionDraft.due_date || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, due_date: event.target.value || null })} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <input className={inputClass} type="number" min="1" placeholder="Parcela" value={transactionDraft.installment_number} onChange={(event) => setTransactionDraft({ ...transactionDraft, installment_number: Number(event.target.value || 1) })} />
-                  <input className={inputClass} type="number" min="1" placeholder="Total parcelas" value={transactionDraft.installment_total} onChange={(event) => setTransactionDraft({ ...transactionDraft, installment_total: Number(event.target.value || 1) })} />
+                  <input aria-label="Numero da parcela" className={inputClass} type="number" min="1" placeholder="Parcela" value={transactionDraft.installment_number} onChange={(event) => setTransactionDraft({ ...transactionDraft, installment_number: Number(event.target.value || 1) })} />
+                  <input aria-label="Total de parcelas" className={inputClass} type="number" min="1" placeholder="Total parcelas" value={transactionDraft.installment_total} onChange={(event) => setTransactionDraft({ ...transactionDraft, installment_total: Number(event.target.value || 1) })} />
                 </div>
-                <select className={inputClass} value={transactionDraft.account_id || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, account_id: event.target.value || null })}>
+                <select aria-label="Conta do lancamento" className={inputClass} value={transactionDraft.account_id || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, account_id: event.target.value || null })}>
                   <option value="">Sem conta</option>
                   {data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                 </select>
-                <select className={inputClass} value={transactionDraft.counterparty_id || ""} onChange={(event) => {
+                <select aria-label="Favorecido do lancamento" className={inputClass} value={transactionDraft.counterparty_id || ""} onChange={(event) => {
                   const selected = data.counterparties.find((item) => item.id === event.target.value);
                   setTransactionDraft({
                     ...transactionDraft,
@@ -463,13 +559,13 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
                   <option value="">Sem favorecido</option>
                   {data.counterparties.map((counterparty) => <option key={counterparty.id} value={counterparty.id}>{counterparty.name}</option>)}
                 </select>
-                <select className={inputClass} value={transactionDraft.category_id || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, category_id: event.target.value || null })}>
+                <select aria-label="Categoria do lancamento" className={inputClass} value={transactionDraft.category_id || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, category_id: event.target.value || null })}>
                   <option value="">Sem categoria</option>
                   {categoriesForEntry.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                 </select>
                 <div className="grid grid-cols-2 gap-3">
-                  <input className={inputClass} placeholder="Forma pgto." value={transactionDraft.payment_method || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, payment_method: event.target.value })} />
-                  <input className={inputClass} placeholder="Referencia" value={transactionDraft.payment_reference || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, payment_reference: event.target.value })} />
+                  <input aria-label="Forma de pagamento" className={inputClass} placeholder="Forma pgto." value={transactionDraft.payment_method || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, payment_method: event.target.value })} />
+                  <input aria-label="Referencia do lancamento" className={inputClass} placeholder="Referencia" value={transactionDraft.payment_reference || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, payment_reference: event.target.value })} />
                 </div>
                 <button type="button" onClick={createTransaction} disabled={saving === "transaction"} className={buttonClass}>
                   {saving === "transaction" ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
@@ -479,9 +575,9 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
             </div>
           </div>}
 
-          {section === "transactions" && <div className="grid gap-5 xl:grid-cols-[.9fr_.9fr_1.4fr]">
+          {section === "transactions" && <div className="grid gap-5 xl:grid-cols-[.85fr_.85fr_1.7fr]">
             <div className={panelClass}>
-              <h4 className="mb-4 text-sm font-black uppercase tracking-wide text-parchment">Contas</h4>
+              <CardHeading icon={Landmark} title="Contas" description={`${data.accounts.length} contas disponiveis`} />
               <div className="space-y-2">
                 {data.accounts.map((account) => (
                   <div key={account.id} className="rounded-lg border border-surface-03 bg-surface-01 px-3 py-2">
@@ -499,7 +595,7 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
             </div>
 
             <div className={panelClass}>
-              <h4 className="mb-4 text-sm font-black uppercase tracking-wide text-parchment">Favorecidos</h4>
+              <CardHeading icon={Users} title="Favorecidos" description={`${data.counterparties.length} cadastros ativos`} />
               <div className="space-y-2">
                 {data.counterparties.map((counterparty) => (
                   <div key={counterparty.id} className="rounded-lg border border-surface-03 bg-surface-01 px-3 py-2">
@@ -517,13 +613,45 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
             </div>
 
             <div className={panelClass}>
-              <h4 className="mb-4 text-sm font-black uppercase tracking-wide text-parchment">Lancamentos recentes</h4>
+              <div className="flex flex-col gap-4 border-b border-surface-03 pb-4">
+                <CardHeading icon={ClipboardList} title="Lancamentos" description={`${filteredTransactions.length} de ${data.transactions.length} registros exibidos`} />
+                <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_10rem_10rem]">
+                  <label className="relative block">
+                    <span className="sr-only">Buscar lancamentos</span>
+                    <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone" aria-hidden="true" />
+                    <input className={`${inputClass} pl-9`} value={transactionQuery} onChange={(event) => setTransactionQuery(event.target.value)} placeholder="Buscar por descricao, favorecido ou documento" aria-label="Buscar lancamentos" />
+                  </label>
+                  <label>
+                    <span className="sr-only">Filtrar por status</span>
+                    <select className={inputClass} value={transactionStatus} onChange={(event) => setTransactionStatus(event.target.value)} aria-label="Filtrar lancamentos por status">
+                      <option value="all">Todos os status</option>
+                      <option value="pending">Pendentes</option>
+                      <option value="partial">Parciais</option>
+                      <option value="paid">Pagos</option>
+                      <option value="cancelled">Cancelados</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span className="sr-only">Filtrar por tipo</span>
+                    <select className={inputClass} value={transactionEntryType} onChange={(event) => setTransactionEntryType(event.target.value)} aria-label="Filtrar lancamentos por tipo">
+                      <option value="all">Receitas e despesas</option>
+                      <option value="income">Somente receitas</option>
+                      <option value="expense">Somente despesas</option>
+                    </select>
+                  </label>
+                </div>
+                {(transactionQuery || transactionStatus !== "all" || transactionEntryType !== "all") && (
+                  <button type="button" className="inline-flex w-fit items-center gap-2 text-xs font-bold text-gold transition hover:text-cream" onClick={() => { setTransactionQuery(""); setTransactionStatus("all"); setTransactionEntryType("all"); }}>
+                    <Filter size={13} aria-hidden="true" /> Limpar filtros
+                  </button>
+                )}
+              </div>
               <div className="space-y-2">
-                {data.transactions.map((transaction) => (
-                  <div key={transaction.id} className="grid gap-3 rounded-lg border border-surface-03 bg-surface-01 px-3 py-3 lg:grid-cols-[1fr_auto_auto] lg:items-center">
+                {filteredTransactions.map((transaction) => (
+                  <div key={transaction.id} className="group grid gap-3 rounded-xl border border-surface-03 bg-surface-01 p-4 transition hover:border-gold/30 hover:bg-surface-01/80 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate font-bold text-cream">{transaction.description}</p>
+                        <p className="truncate font-bold text-cream" title={transaction.description}>{transaction.description}</p>
                         <StatusBadge transaction={transaction} />
                       </div>
                       <p className="mt-1 text-xs text-stone">
@@ -533,16 +661,29 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
                         Doc. {transaction.document_number || "-"} - Centro {transaction.cost_center || "-"} - Parcela {transaction.installment_number}/{transaction.installment_total}
                       </p>
                     </div>
-                    <p className={transaction.entry_type === "income" ? "font-black text-emerald-300" : "font-black text-amber-300"}>
+                    <p className={`flex items-center gap-1.5 text-right font-black ${transaction.entry_type === "income" ? "text-emerald-300" : "text-amber-300"}`}>
+                      {transaction.entry_type === "income" ? <ArrowUpCircle size={15} aria-hidden="true" /> : <ArrowDownCircle size={15} aria-hidden="true" />}
                       {transaction.entry_type === "income" ? "+" : "-"}{currency(transaction.amount)}
                     </p>
                     <div className="flex items-center gap-2">
-                      {transaction.status !== "paid" && transaction.status !== "cancelled" && (
-                        <button type="button" onClick={() => settleTransaction(transaction)} disabled={saving === transaction.id} className="rounded-lg border border-emerald-500/30 p-2 text-emerald-300 transition hover:bg-emerald-500/10" title="Baixar lancamento">
-                          <CheckCircle2 size={16} />
-                        </button>
-                      )}
-                      <button type="button" onClick={() => removeTransaction(transaction)} disabled={saving === transaction.id} className="rounded-lg border border-red-500/30 p-2 text-red-300 transition hover:bg-red-500/10" title="Cancelar lancamento">
+                      <button
+                        type="button"
+                        onClick={() => settleTransaction(transaction)}
+                        disabled={saving === transaction.id || transaction.status === "paid" || transaction.status === "cancelled"}
+                        className="rounded-lg border border-emerald-500/30 p-2 text-emerald-300 transition hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                        title={transaction.status === "paid" ? "Lancamento ja pago" : transaction.status === "cancelled" ? "Lancamento cancelado" : "Baixar lancamento"}
+                        aria-label="Baixar lancamento"
+                      >
+                        <CheckCircle2 size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeTransaction(transaction)}
+                        disabled={saving === transaction.id || transaction.status === "paid" || transaction.status === "cancelled"}
+                        className="rounded-lg border border-red-500/30 p-2 text-red-300 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                        title={transaction.status === "paid" ? "Lancamento ja pago" : transaction.status === "cancelled" ? "Lancamento ja cancelado" : "Cancelar lancamento"}
+                        aria-label="Cancelar lancamento"
+                      >
                         <Trash2 size={16} />
                       </button>
                     </div>
@@ -557,7 +698,8 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
                     )}
                   </div>
                 ))}
-                {data.transactions.length === 0 && <EmptyText text="Nenhum lancamento cadastrado." />}
+                {data.transactions.length === 0 && <EmptyText icon={ClipboardList} text="Nenhum lancamento cadastrado." />}
+                {data.transactions.length > 0 && filteredTransactions.length === 0 && <EmptyText icon={Search} text="Nenhum lancamento corresponde aos filtros." />}
               </div>
             </div>
           </div>}
@@ -567,32 +709,61 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
   );
 }
 
-function Metric({ title, value, tone = "default" }: { title: string; value: string; tone?: "default" | "success" | "warn" }) {
+function Metric({
+  title,
+  value,
+  subtitle,
+  icon: Icon,
+  tone = "default",
+}: {
+  title: string;
+  value: string;
+  subtitle?: string;
+  icon: LucideIcon;
+  tone?: "default" | "success" | "warn";
+}) {
   const toneClass = tone === "success" ? "text-emerald-300" : tone === "warn" ? "text-amber-300" : "text-gold";
+  const iconClass = tone === "success" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : tone === "warn" ? "border-amber-500/20 bg-amber-500/10 text-amber-300" : "border-gold/20 bg-gold/10 text-gold";
   return (
-    <div className={panelClass}>
-      <div className="mb-2 text-xs font-black uppercase tracking-wide text-stone">{title}</div>
-      <p className={`text-xl font-black ${toneClass}`}>{value}</p>
+    <div className={`${panelClass} flex min-h-36 flex-col justify-between`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="text-xs font-black uppercase tracking-[0.14em] text-stone">{title}</div>
+        <div className={`rounded-xl border p-2 ${iconClass}`}><Icon size={18} aria-hidden="true" /></div>
+      </div>
+      <div>
+        <p className={`mt-4 text-2xl font-black tracking-tight ${toneClass}`}>{value}</p>
+        {subtitle && <p className="mt-1 text-xs leading-relaxed text-stone">{subtitle}</p>}
+      </div>
     </div>
   );
 }
 
 function DimensionList({
   title,
+  icon: Icon,
+  featured = false,
   rows,
 }: {
   title: string;
+  icon: LucideIcon;
+  featured?: boolean;
   rows: Array<{ label: string; entry_type: FinanceEntryType; amount: number; count: number }>;
 }) {
   return (
-    <div className={panelClass}>
-      <h4 className="mb-4 text-sm font-black uppercase tracking-wide text-parchment">{title}</h4>
+    <div className={`${panelClass} ${featured ? "xl:row-span-2" : ""}`}>
+      <div className="mb-4 flex items-start gap-3">
+        <div className="rounded-xl border border-gold/20 bg-gold/10 p-2 text-gold"><Icon size={17} aria-hidden="true" /></div>
+        <div>
+          <h4 className="text-sm font-black uppercase tracking-wide text-parchment">{title}</h4>
+          <p className="mt-1 text-xs text-stone">Distribuicao dos valores registrados</p>
+        </div>
+      </div>
       <div className="space-y-2">
         {rows.slice(0, 6).map((row) => (
-          <div key={`${row.label}-${row.entry_type}`} className="rounded-lg border border-surface-03 bg-surface-01 px-3 py-2">
+          <div key={`${row.label}-${row.entry_type}`} className="rounded-xl border border-surface-03 bg-surface-01 px-3 py-3 transition hover:border-gold/20">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-cream">{row.label}</p>
+                <p className="truncate text-sm font-bold text-cream" title={row.label}>{row.label}</p>
                 <p className="text-[11px] text-stone">{row.entry_type === "income" ? "Receita" : "Despesa"} - {row.count} lanc.</p>
               </div>
               <p className={row.entry_type === "income" ? "font-black text-emerald-300" : "font-black text-amber-300"}>
@@ -625,22 +796,38 @@ function SettlementFields({
     : Number(draft.paid_amount || 0) + Number(draft.fee_amount || 0);
 
   return (
-    <div className="grid gap-2 border-t border-surface-03 pt-3 lg:col-span-3 xl:grid-cols-6">
-      <select className={inputClass} value={draft.account_id || ""} onChange={(event) => onChange({ account_id: event.target.value || null })}>
+    <div className="grid gap-2 rounded-xl border-t border-surface-03 bg-surface-02/60 pt-3 lg:col-span-3 xl:grid-cols-6">
+      <label className="text-[11px] font-bold text-stone">Conta
+      <select aria-label="Conta da baixa" className={`${inputClass} mt-1`} value={draft.account_id || ""} onChange={(event) => onChange({ account_id: event.target.value || null })}>
         <option value="">Conta</option>
         {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
       </select>
-      <input className={inputClass} type="number" step="0.01" min="0.01" value={draft.paid_amount ?? openAmount} onChange={(event) => onChange({ paid_amount: Number(event.target.value || 0) })} />
-      <input className={inputClass} type="number" step="0.01" min="0" placeholder="Juros" value={draft.interest_amount ?? 0} onChange={(event) => onChange({ interest_amount: Number(event.target.value || 0) })} />
-      <input className={inputClass} type="number" step="0.01" min="0" placeholder="Multa" value={draft.fine_amount ?? 0} onChange={(event) => onChange({ fine_amount: Number(event.target.value || 0) })} />
-      <input className={inputClass} type="number" step="0.01" min="0" placeholder="Desconto" value={draft.discount_amount ?? 0} onChange={(event) => onChange({ discount_amount: Number(event.target.value || 0) })} />
-      <input className={inputClass} type="number" step="0.01" min="0" placeholder="Tarifa" value={draft.fee_amount ?? 0} onChange={(event) => onChange({ fee_amount: Number(event.target.value || 0) })} />
-      <input className={inputClass} placeholder="Metodo" value={draft.payment_method || ""} onChange={(event) => onChange({ payment_method: event.target.value })} />
-      <input className={inputClass} placeholder="Referencia" value={draft.payment_reference || ""} onChange={(event) => onChange({ payment_reference: event.target.value })} />
-      <div className="rounded-lg border border-surface-03 bg-surface-02 px-3 py-2 text-xs text-stone xl:col-span-2">
+      </label>
+      <label className="text-[11px] font-bold text-stone">Valor da baixa
+      <input aria-label="Valor da baixa" className={`${inputClass} mt-1`} type="number" step="0.01" min="0.01" value={draft.paid_amount ?? openAmount} onChange={(event) => onChange({ paid_amount: Number(event.target.value || 0) })} />
+      </label>
+      <label className="text-[11px] font-bold text-stone">Juros
+      <input aria-label="Juros" className={`${inputClass} mt-1`} type="number" step="0.01" min="0" placeholder="0,00" value={draft.interest_amount ?? 0} onChange={(event) => onChange({ interest_amount: Number(event.target.value || 0) })} />
+      </label>
+      <label className="text-[11px] font-bold text-stone">Multa
+      <input aria-label="Multa" className={`${inputClass} mt-1`} type="number" step="0.01" min="0" placeholder="0,00" value={draft.fine_amount ?? 0} onChange={(event) => onChange({ fine_amount: Number(event.target.value || 0) })} />
+      </label>
+      <label className="text-[11px] font-bold text-stone">Desconto
+      <input aria-label="Desconto" className={`${inputClass} mt-1`} type="number" step="0.01" min="0" placeholder="0,00" value={draft.discount_amount ?? 0} onChange={(event) => onChange({ discount_amount: Number(event.target.value || 0) })} />
+      </label>
+      <label className="text-[11px] font-bold text-stone">Tarifa
+      <input aria-label="Tarifa" className={`${inputClass} mt-1`} type="number" step="0.01" min="0" placeholder="0,00" value={draft.fee_amount ?? 0} onChange={(event) => onChange({ fee_amount: Number(event.target.value || 0) })} />
+      </label>
+      <label className="text-[11px] font-bold text-stone">Metodo
+      <input aria-label="Metodo de pagamento" className={`${inputClass} mt-1`} placeholder="Ex.: Pix" value={draft.payment_method || ""} onChange={(event) => onChange({ payment_method: event.target.value })} />
+      </label>
+      <label className="text-[11px] font-bold text-stone">Referencia
+      <input aria-label="Referencia do pagamento" className={`${inputClass} mt-1`} placeholder="Opcional" value={draft.payment_reference || ""} onChange={(event) => onChange({ payment_reference: event.target.value })} />
+      </label>
+      <div className="rounded-xl border border-surface-03 bg-surface-02 px-3 py-2 text-xs text-stone xl:col-span-2">
         Aberto: <span className="font-black text-cream">{currency(openAmount)}</span>
       </div>
-      <div className="rounded-lg border border-surface-03 bg-surface-02 px-3 py-2 text-xs text-stone xl:col-span-2">
+      <div className="rounded-xl border border-gold/20 bg-gold/5 px-3 py-2 text-xs text-stone xl:col-span-2">
         Caixa liquido: <span className="font-black text-gold">{currency(netPreview)}</span>
       </div>
     </div>
@@ -652,13 +839,40 @@ function StatusBadge({ transaction }: { transaction: FinanceTransaction }) {
     ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
     : transaction.status === "partial"
       ? "border-blue-500/30 bg-blue-500/10 text-blue-300"
+      : transaction.status === "cancelled"
+        ? "border-slate-500/30 bg-slate-500/10 text-slate-300"
     : transaction.overdue
       ? "border-red-500/30 bg-red-500/10 text-red-300"
       : "border-amber-500/30 bg-amber-500/10 text-amber-300";
-  const label = transaction.status === "paid" ? "Pago" : transaction.status === "partial" ? "Parcial" : transaction.overdue ? "Vencido" : "Pendente";
+  const label = transaction.status === "paid"
+    ? "Pago"
+    : transaction.status === "partial"
+      ? "Parcial"
+      : transaction.status === "cancelled"
+        ? "Cancelado"
+        : transaction.overdue
+          ? "Vencido"
+          : "Pendente";
   return <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${cls}`}>{label}</span>;
 }
 
-function EmptyText({ text }: { text: string }) {
-  return <div className="rounded-lg border border-surface-03 bg-surface-01 p-5 text-center text-sm text-stone">{text}</div>;
+function CardHeading({ icon: Icon, title, description }: { icon: LucideIcon; title: string; description: string }) {
+  return (
+    <div className="mb-5 flex items-start gap-3">
+      <div className="rounded-xl border border-gold/20 bg-gold/10 p-2 text-gold"><Icon size={17} aria-hidden="true" /></div>
+      <div className="min-w-0">
+        <h4 className="text-sm font-black uppercase tracking-wide text-parchment">{title}</h4>
+        <p className="mt-1 text-xs leading-relaxed text-stone">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+function EmptyText({ text, icon: Icon = ClipboardList }: { text: string; icon?: LucideIcon }) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-surface-03 bg-surface-01/70 p-8 text-center text-sm text-stone">
+      <Icon size={22} className="mb-2 text-stone/70" aria-hidden="true" />
+      <span>{text}</span>
+    </div>
+  );
 }
