@@ -81,6 +81,7 @@ def test_kds_manifests_start_from_the_operational_routes():
         assert manifest["id"] == manifest_id
         assert manifest["start_url"] == start_url
         assert manifest["scope"] == start_url
+        assert manifest["orientation"] == "landscape"
 
 
 def test_unknown_manifest_app_is_rejected_without_fallback():

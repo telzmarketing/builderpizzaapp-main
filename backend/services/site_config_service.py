@@ -289,10 +289,14 @@ class SiteConfigService:
         version = self.version(updated_at)
         if app is not None:
             app_manifest = PWA_MANIFESTS[app]
+            # KDS screens are operational workspaces with persistent horizontal
+            # lanes. The browser may ignore this hint, so the UI still remains
+            # usable in portrait with its own internal scrolling behavior.
+            orientation = "landscape" if app.startswith("kds-") else "portrait"
             return {
                 **app_manifest,
                 "display": "standalone", "display_override": ["fullscreen", "standalone"],
-                "orientation": "portrait", "theme_color": "#000000", "background_color": "#000000",
+                "orientation": orientation, "theme_color": "#000000", "background_color": "#000000",
                 "icons": [{"src": f"/api/site-config/favicon?size={size}&v={version}",
                            "sizes": f"{size}x{size}", "purpose": "any maskable"} for size in (192, 512)],
             }

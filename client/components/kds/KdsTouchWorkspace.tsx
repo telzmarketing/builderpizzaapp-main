@@ -246,7 +246,7 @@ export default function KdsTouchWorkspace(props: Props) {
   };
 
   return (
-    <div className="kds-touch-workspace w-full min-w-0 max-w-full space-y-3 overflow-x-clip p-3 sm:p-4">
+    <div className="kds-touch-workspace w-full min-w-0 max-w-full space-y-3 overflow-x-auto overscroll-x-contain p-3 sm:p-4">
       {props.error && (
         <div
           role="alert"
@@ -311,9 +311,9 @@ export default function KdsTouchWorkspace(props: Props) {
           </button>
         </div>
       </div>
-      <div className="kds-touch-grid grid min-h-0 min-w-0 items-start gap-3 md:grid-cols-[minmax(220px,0.7fr)_minmax(0,1.7fr)] lg:grid-cols-[minmax(240px,0.6fr)_minmax(0,1.7fr)] 2xl:grid-cols-[minmax(240px,0.85fr)_minmax(0,2fr)_minmax(260px,0.9fr)] [@media(orientation:portrait)]:grid-cols-1">
+      <div className="kds-touch-grid grid min-h-0 min-w-[960px] w-full grid-cols-[minmax(220px,24fr)_minmax(440px,52fr)_minmax(220px,24fr)] items-start gap-3">
         <section
-          className={`${panel} flex min-h-0 flex-col md:sticky md:top-3`}
+          className={`${panel} flex min-h-0 flex-col sticky top-3`}
           aria-label="Fila de pedidos"
         >
           <header className="flex items-center gap-3 border-b border-[#263f53] p-4">
@@ -724,7 +724,7 @@ export default function KdsTouchWorkspace(props: Props) {
             )}
           </div>
         </section>
-        <aside className="kds-touch-aside grid min-w-0 gap-3 md:col-span-2 md:grid-cols-2 2xl:col-span-1 2xl:grid-cols-1 [@media(orientation:portrait)]:col-span-1 [@media(orientation:portrait)]:grid-cols-1">
+        <aside className="kds-touch-aside grid min-w-0 gap-3">
           <section className={panel}>
             <header className="flex items-center gap-3 border-b border-[#263f53] p-4">
               <ClipboardList size={30} className="shrink-0 text-slate-300" />

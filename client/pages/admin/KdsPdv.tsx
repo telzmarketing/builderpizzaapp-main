@@ -1,4 +1,4 @@
-import { ArrowLeft, BadgeCheck, CalendarDays, Clock3, MonitorSmartphone, ReceiptText, ShoppingCart, Store, UserRound } from "lucide-react";
+import { ArrowLeft, BadgeCheck, CalendarDays, Clock3, MonitorSmartphone, ShoppingCart, Store, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import ManualOrderComposer from "@/components/admin/ManualOrderComposer";
@@ -46,12 +46,8 @@ export default function KdsPdv() {
           </div>
         </div>
       </header>
-      <div className="kds-pdv-workspace kds-pdv-inner grid min-h-0 min-w-0 w-full gap-5 px-2 py-3 sm:px-3 md:px-6 md:py-5 xl:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="kds-pdv-workspace kds-pdv-inner min-h-0 min-w-0 w-full px-2 py-3 sm:px-3 md:px-6 md:py-5">
         <section className="kds-pdv-frame min-h-0 min-w-0 overflow-hidden rounded-2xl border border-surface-03 bg-surface-01 shadow-2xl"><ManualOrderComposer mode="pos" /></section>
-        <aside className="hidden space-y-4 xl:block">
-          <div className="rounded-2xl border border-gold/20 bg-gold/10 p-5"><ReceiptText className="mb-3 text-gold" size={22} /><h2 className="font-black">Como funciona</h2><ol className="mt-3 space-y-3 text-sm text-stone"><li><strong className="text-cream">1.</strong> Selecione o cliente ou cadastre rapidamente.</li><li><strong className="text-cream">2.</strong> Escolha os produtos e personalize o pedido.</li><li><strong className="text-cream">3.</strong> Confira, imprima e confirme o pagamento.</li></ol></div>
-          <div className="rounded-2xl border border-surface-03 bg-surface-02 p-5 text-sm text-stone"><p className="font-bold text-cream">Fluxo conectado</p><p className="mt-2">Os pedidos enviados aparecem automaticamente no KDS Principal e seguem para a operação da cozinha.</p></div>
-        </aside>
       </div>
     </main>
   );

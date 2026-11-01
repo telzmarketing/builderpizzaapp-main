@@ -1,7 +1,7 @@
 import { orderDisplayCode } from "@/lib/orderIdentity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2, ChevronLeft, ChevronRight, CreditCard, Loader2, Plus, Printer, Search, ShoppingBag, Store, Trash2, Truck, UserRound, X } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, CreditCard, Loader2, Plus, Printer, ReceiptText, Search, ShoppingBag, Store, Trash2, Truck, UserRound, X } from "lucide-react";
 import Product from "@/pages/Product";
 import { ApiRequestError, customersApi, manualOrdersApi, ordersApi, paymentsApi, productsApi, isAssetUrl, resolveOptimizedAssetUrl, type ApiCustomer, type ApiOrder, type ApiProduct, type ManualOrderIn, type ManualOrderQuote, type PartnerOrderOrigin } from "@/lib/api";
 import { readStoredAdminSession } from "@/lib/adminSession";
@@ -179,8 +179,10 @@ export default function ManualOrderComposer({ onCreated, mode = "default" }: { o
   if (selectedProduct && flavorConfig) return <Product productId={selectedProduct} catalog={catalog} flavorConfig={flavorConfig} embedded onBack={() => setSelectedProduct(null)} onAdd={(...args) => { patch({ lines: [...draft.lines, configuredManualLine(args, newManualOrderKey())] }); setSelectedProduct(null); }} />;
 
   if (mode === "pos") return <section className="kds-pdv-frame-content flex min-h-0 min-w-0 flex-col bg-surface-00 text-cream" aria-label="KDS PDV">
-    <div className="kds-pdv-canvas grid min-h-0 lg:grid-cols-[76px_minmax(0,1fr)_minmax(340px,380px)] xl:grid-cols-[88px_minmax(0,1fr)_minmax(380px,430px)]">
-      <aside className="hidden flex-col items-center border-r border-surface-03 bg-surface-01 py-5 lg:flex">
+    <div className="kds-pdv-canvas min-h-0 min-w-0 overflow-x-auto overscroll-x-contain">
+      <div className="grid min-h-0 min-w-[1080px] w-full grid-cols-[minmax(460px,42fr)_minmax(380px,35fr)_minmax(240px,23fr)] items-stretch">
+      <div className="grid min-h-0 min-w-0 grid-cols-[88px_minmax(0,1fr)] bg-surface-00">
+      <aside className="flex min-w-0 flex-col items-center border-r border-surface-03 bg-surface-01 py-5">
         <div className="grid h-11 w-11 place-items-center rounded-2xl bg-gold text-black shadow-lg shadow-gold/20"><Store size={21} /></div>
         <nav className="mt-8 flex flex-1 flex-col items-center gap-3" aria-label="Atalhos do PDV"><button type="button" className="grid h-14 w-14 place-items-center rounded-2xl bg-gold text-black" aria-label="Novo pedido"><ShoppingBag size={20} /></button><button type="button" className="grid h-14 w-14 place-items-center rounded-2xl text-stone transition-colors hover:bg-surface-02 hover:text-cream" aria-label="Buscar clientes"><UserRound size={19} /></button></nav>
         <span className="mb-2 text-[9px] font-black uppercase tracking-[0.2em] text-stone [writing-mode:vertical-rl]">Balcão</span>
@@ -194,7 +196,8 @@ export default function ManualOrderComposer({ onCreated, mode = "default" }: { o
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">{filteredProducts.map((product) => <button type="button" key={product.id} disabled={product.inventory_available === false} onClick={() => setSelectedProduct(product.id)} className="group min-w-0 overflow-hidden rounded-2xl border border-surface-03 bg-surface-01 p-2 text-left transition-all hover:-translate-y-0.5 hover:border-gold/60 hover:bg-surface-02 disabled:opacity-40"><div className="flex aspect-[1.25] items-center justify-center overflow-hidden rounded-xl bg-surface-02">{isAssetUrl(product.icon) ? <img src={resolveOptimizedAssetUrl(product.icon, 256)} alt="" className="h-full w-full object-contain transition-transform group-hover:scale-105" loading="lazy" /> : <span className="text-5xl transition-transform group-hover:scale-105">{product.icon}</span>}</div><div className="px-2 pb-2 pt-3"><strong className="block truncate text-sm font-black">{product.name}</strong><span className="mt-1 block text-xs text-stone">{product.inventory_available === false ? "Indisponível" : "Configurar produto"}</span></div></button>)}</div>
         {!filteredProducts.length && !loading && <p className="py-12 text-center text-stone">Nenhum produto nesta seleção.</p>}{loading && <p role="status" className="mt-6 flex items-center justify-center gap-2 text-stone"><Loader2 className="animate-spin" size={18} /> Carregando catálogo...</p>}
       </div>
-      <aside className="kds-pdv-order flex min-h-0 flex-col border-t border-surface-03 bg-surface-01 lg:border-l lg:border-t-0">
+      </div>
+      <aside className="kds-pdv-order flex min-h-0 flex-col border-l border-surface-03 bg-surface-01">
         <div className="border-b border-surface-03 px-5 py-5"><div className="flex items-center justify-between"><div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-gold">Pedido atual</p><h2 className="mt-1 text-xl font-black">Balcão</h2></div><span className="rounded-full bg-surface-02 px-3 py-1 text-xs font-bold text-stone">{draft.lines.reduce((total, line) => total + line.item.quantity, 0)} itens</span></div></div>
         <div className="kds-pdv-order-scroll min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
           <label className="block text-xs font-bold uppercase tracking-wide text-stone">Cliente<input className={`${input} mt-2`} value={customerQuery} onChange={(event) => setCustomerQuery(event.target.value)} placeholder="Nome ou telefone" /></label>
@@ -208,6 +211,11 @@ export default function ManualOrderComposer({ onCreated, mode = "default" }: { o
         </div>
         <div className="border-t border-surface-03 bg-surface-00 p-5"><div className="mb-4 flex items-center justify-between"><span className="text-sm text-stone">Total do pedido</span><strong className="text-2xl font-black text-gold">{currentQuote ? money(currentQuote.total) : "—"}</strong></div><button type="button" disabled={busy || !currentQuote || !payload} className={`${button} w-full min-h-14 text-base`} onClick={() => void submit()}>{busy ? <Loader2 className="animate-spin" size={19} /> : <CreditCard size={19} />}{draft.submission ? "Tentar novamente" : "Finalizar pedido"}</button><p className="mt-3 text-center text-[11px] text-stone">O pagamento será confirmado após a impressão.</p></div>
       </aside>
+      <aside className="min-h-0 space-y-4 overflow-y-auto border-l border-surface-03 bg-surface-00 p-5">
+        <div className="rounded-2xl border border-gold/20 bg-gold/10 p-5"><ReceiptText className="mb-3 text-gold" size={22} /><h2 className="font-black">Como funciona</h2><ol className="mt-3 space-y-3 text-sm text-stone"><li><strong className="text-cream">1.</strong> Selecione o cliente ou cadastre rapidamente.</li><li><strong className="text-cream">2.</strong> Escolha os produtos e personalize o pedido.</li><li><strong className="text-cream">3.</strong> Confira, imprima e confirme o pagamento.</li></ol></div>
+        <div className="rounded-2xl border border-surface-03 bg-surface-02 p-5 text-sm text-stone"><p className="font-bold text-cream">Fluxo conectado</p><p className="mt-2">Os pedidos enviados aparecem automaticamente no KDS Principal e seguem para a operação da cozinha.</p></div>
+      </aside>
+      </div>
     </div>
   </section>;
 

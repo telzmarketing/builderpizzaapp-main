@@ -64,6 +64,13 @@
 }
 
 @layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    min-height: 100dvh;
+  }
+
   /**
    * Tailwind CSS theme - Dark Mode for Pizza Delivery App
    * tailwind.config.ts expects the following color variables to be expressed as HSL values.

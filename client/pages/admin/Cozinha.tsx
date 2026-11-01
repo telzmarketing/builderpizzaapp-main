@@ -184,7 +184,7 @@ export default function AdminCozinha() {
   const now = new Date();
   return (
     <section
-      className={`kds-touch kds-touch-page flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-x-clip ${fullscreen ? "fixed inset-0 z-[100] overflow-y-auto" : "min-h-screen min-h-[100dvh] overflow-y-auto"} bg-[#040e18] pb-[env(safe-area-inset-bottom)] text-slate-100`}
+      className={`kds-touch kds-touch-page flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-x-visible ${fullscreen ? "fixed inset-0 z-[100] overflow-y-auto" : "min-h-screen min-h-[100dvh] overflow-y-auto"} bg-[#040e18] pb-[env(safe-area-inset-bottom)] text-slate-100`}
     >
       <header className="sticky top-0 z-20 flex min-w-0 flex-col gap-3 rounded-b-2xl border-b border-[#20374a] bg-[#081521] p-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:p-4">
         <div className="flex min-w-0 flex-1 items-center gap-4">
