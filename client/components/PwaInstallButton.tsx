@@ -1,5 +1,4 @@
 import { Download } from "lucide-react";
-import { useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { getPwaApp, getPwaEntryApp, type PwaAppKey } from "@/lib/motoboyPwa";
 
@@ -22,8 +21,7 @@ export function canShowPwaInstallButton(pathname: string, only?: readonly PwaApp
 }
 
 export default function PwaInstallButton({ only, pathname, hideOnKds = false, inline = false }: { only?: readonly PwaAppKey[]; pathname?: string; hideOnKds?: boolean; inline?: boolean } = {}) {
-  const location = useLocation();
-  const currentPathname = pathname ?? location.pathname;
+  const currentPathname = pathname ?? (typeof window === "undefined" ? "" : window.location.pathname);
   const app = getPwaApp(currentPathname);
   const allowed = canShowPwaInstallButton(currentPathname, only);
   const isKds = app?.key.startsWith("kds-") === true;
