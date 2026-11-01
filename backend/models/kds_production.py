@@ -16,6 +16,7 @@ class ProductionUnit(Base):
         ForeignKeyConstraint(["tenant_id", "order_item_id"], ["order_items.tenant_id", "order_items.id"], ondelete="RESTRICT"),
         CheckConstraint("unit_index > 0", name="ck_production_unit_index"),
         CheckConstraint("state IN ('unassigned','queued','checking_stock','aguardando_analise','atendimento','assembling','assembled','baking','checking','ready','blocked','cancelled')", name="ck_production_unit_state"),
+        CheckConstraint("station_id IN ('pizza','esfiha','expedicao')", name="ck_production_unit_station"),
     )
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
@@ -23,6 +24,8 @@ class ProductionUnit(Base):
     order_item_id = Column(String, nullable=False)
     unit_index = Column(Integer, nullable=False)
     state = Column(String(24), nullable=False, default="unassigned", server_default="unassigned")
+    # Operational routing only; the commercial order remains the single source of truth.
+    station_id = Column(String(20), nullable=False, default="pizza", server_default="pizza")
     requires_oven = Column(Boolean, nullable=False, default=False, server_default="false")
     version = Column(Integer, nullable=False, default=1, server_default="1")
     dispatch_completed_at = Column(DateTime(timezone=True), nullable=True)

@@ -1,6 +1,6 @@
 export type PwaAppKey =
   | "motoboy" | "bi-mobile" | "kds-principal" | "kds-pizzaiolo" | "kds-preparo"
-  | "kds-expedicao" | "kds-motoboys" | "kds-pdv" | "kds-analitico";
+  | "kds-esfiha" | "kds-expedicao" | "kds-motoboys" | "kds-pdv" | "kds-analitico";
 
 export type PwaAppDefinition = {
   key: PwaAppKey;
@@ -16,6 +16,7 @@ export const PWA_APPS: readonly PwaAppDefinition[] = [
   { key: "bi-mobile", scope: "/painel/bi-mobile/", entryPath: "/painel/bi-mobile/", canonicalPaths: ["/painel/bi-mobile"], label: "BI Mobile" },
   { key: "kds-principal", scope: "/app/kds/principal/", entryPath: "/app/kds/principal/", aliasScope: "/painel/kds/", canonicalPaths: ["/painel/kds"], label: "KDS Principal" },
   { key: "kds-pizzaiolo", scope: "/app/kds/pizzaiolo/", entryPath: "/app/kds/pizzaiolo/", aliasScope: "/painel/cozinha/", canonicalPaths: ["/painel/cozinha"], label: "KDS Pizzaiolo" },
+  { key: "kds-esfiha", scope: "/app/kds/esfiha/", entryPath: "/app/kds/esfiha/", aliasScope: "/painel/esfiha/", canonicalPaths: ["/painel/esfiha"], label: "KDS Esfiha" },
   { key: "kds-preparo", scope: "/app/kds/preparo/", entryPath: "/app/kds/preparo/", aliasScope: "/painel/preparo/", canonicalPaths: ["/painel/preparo"], label: "KDS Cozinha Preparo" },
   { key: "kds-expedicao", scope: "/app/kds/expedicao/", entryPath: "/app/kds/expedicao/", aliasScope: "/painel/expedicao/", canonicalPaths: ["/painel/expedicao"], label: "KDS Expedição" },
   { key: "kds-motoboys", scope: "/app/kds/motoboys/", entryPath: "/app/kds/motoboys/", aliasScope: "/tv/motoboys/", canonicalPaths: ["/tv/motoboys"], label: "KDS Motoboys" },
@@ -105,5 +106,22 @@ export async function configureBiMobileWorker(pathname: string, container: Servi
   return container.register("/sw.js", { scope: pwaScopeForPath(pathname) ?? BI_MOBILE_SCOPE, updateViaCache: "none" });
 }
 export function syncMotoboyPwaHead(pathname: string) {
-  (window as Window & { updateMotoboyPwaHead?: (path: string) => void }).updateMotoboyPwaHead?.(pathname);
+  const update = (window as Window & { updateMotoboyPwaHead?: (path: string) => void }).updateMotoboyPwaHead;
+  update?.(pathname);
+  const app = getPwaApp(pathname);
+  if (!app || typeof document === "undefined") return;
+  // Keep newly added app keys compatible with the static pre-React head bridge
+  // until that bridge is regenerated. Existing entries remain owned by it.
+  const hasManifest = Boolean(document.querySelector("link[data-telz-pwa][rel='manifest']"));
+  if (hasManifest) return;
+  const add = (tag: string, attributes: Record<string, string>) => {
+    const node = document.createElement(tag);
+    node.setAttribute("data-telz-pwa", "true");
+    Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, value));
+    document.head.appendChild(node);
+  };
+  add("link", { rel: "manifest", href: manifestUrl(app.key) });
+  add("meta", { name: "mobile-web-app-capable", content: "yes" });
+  add("meta", { name: "apple-mobile-web-app-capable", content: "yes" });
+  add("meta", { name: "apple-mobile-web-app-title", content: app.label });
 }

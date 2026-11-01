@@ -1626,11 +1626,12 @@ export type KdsLabelVolumeRuleInput = Pick<KdsLabelVolumeRule, "scope_type" | "s
 export const kdsApi = {
   serveKitchenOrder: (orderId: string) => post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/serve`, {}),
   overview: () => get<KdsOverview>("/kds/overview"),
-  listKitchenOrders: () => get<KdsKitchenOrder[]>("/kds/kitchen/orders"),
-  startKitchenOrder: (orderId: string) =>
-    post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/start`, {}),
-  markKitchenOrderReady: (orderId: string) =>
-    post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/ready`, {}),
+  listKitchenOrders: (station?: string) =>
+    get<KdsKitchenOrder[]>(`/kds/kitchen/orders${station ? `?station=${encodeURIComponent(station)}` : ""}`),
+  startKitchenOrder: (orderId: string, station?: string) =>
+    post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/start${station ? `?station=${encodeURIComponent(station)}` : ""}`, {}),
+  markKitchenOrderReady: (orderId: string, station?: string) =>
+    post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/ready${station ? `?station=${encodeURIComponent(station)}` : ""}`, {}),
   completeKitchenPickup: (orderId: string) =>
     post<KdsKitchenOrder>(`/kds/kitchen/orders/${orderId}/pickup-complete`, {}),
   listDispatchOrders: () => get<KdsDispatchOrder[]>("/kds/dispatch/orders"),
@@ -1646,9 +1647,10 @@ export const kdsApi = {
     }),
   completeDispatchPickup: (orderId: string) =>
     post<KdsDispatchOrder>(`/kds/dispatch/orders/${orderId}/pickup-complete`, {}),
-  myQueue: () => get<KdsMyQueue>("/kds/kitchen/my-queue"),
+  myQueue: (station?: string) =>
+    get<KdsMyQueue>(`/kds/kitchen/my-queue${station ? `?station=${encodeURIComponent(station)}` : ""}`),
   stockAlerts: () => get<KdsProductionTask[]>("/kds/kitchen/stock-alerts"),
-  setPresence: (body: { state: KdsPresenceState; expected_version: number }, key: string) =>
+  setPresence: (body: { state: KdsPresenceState; expected_version: number; station_id?: string | null }, key: string) =>
     request<KdsOperatorPresence>("POST", "/kds/kitchen/presence", body, { "Idempotency-Key": key }),
   heartbeat: (body: { operational_session_id?: string; station_id?: string | null; expected_version?: number }, key: string) =>
     request<KdsHeartbeat>("POST", "/kds/kitchen/heartbeat", body, { "Idempotency-Key": key }),

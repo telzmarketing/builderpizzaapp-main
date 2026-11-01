@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import json
 import uuid
-from sqlalchemy import or_
+from sqlalchemy import or_, inspect
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from backend.core.exceptions import DomainError, OrderNotFound
@@ -39,6 +39,20 @@ def ensure_kds_units_ready(db: Session, tenant_id: str, order_id: str) -> None:
 class KdsProductionService:
     def __init__(self, db: Session, context: TenantContext): self.db, self.tenant_id = db, context.tenant_id
     def _now(self): return datetime.now(timezone.utc)
+    @staticmethod
+    def normalize_station(station_id: str | None) -> str:
+        value = "pizza" if station_id in (None, "cozinha") else station_id
+        if value not in ("pizza", "esfiha"):
+            raise DomainError("Estacao de producao invalida.", code="InvalidKdsStation")
+        return value
+
+    @staticmethod
+    def _product_station(product, item) -> str:
+        if (product and product.product_type == "drink") or item.selected_drink_variant:
+            return "expedicao"
+        # Explicit product_type is the stable classification. Legacy products
+        # without it retain the existing pizzaiolo behavior.
+        return "esfiha" if product and product.product_type == "esfiha" else "pizza"
     def _unit(self, task_id, lock=False):
         q = self.db.query(ProductionAttempt).join(ProductionUnit).filter(ProductionAttempt.tenant_id==self.tenant_id, ProductionAttempt.id==task_id)
         if lock: q=q.populate_existing().with_for_update()
@@ -65,7 +79,7 @@ class KdsProductionService:
         operation_ids = [row.operation_id for row in consumption if row.operation_id]
         snapshot = self.db.query(OrderItemCmvSnapshot).filter_by(tenant_id=self.tenant_id, order_item_id=u.order_item_id).first()
         order_code = self.db.query(Order.order_code).filter(Order.tenant_id == self.tenant_id, Order.id == u.order_id).scalar()
-        return {"id":a.id,"task_id":a.id,"production_unit_id":u.id,"order_id":u.order_id,"order_code":order_code,"order_item_id":u.order_item_id,"unit_index":u.unit_index,"attempt_id":a.id,"attempt_number":a.attempt_number,"state":a.state,"version":a.version,"operator_id":a.operator_id,"requires_oven":u.requires_oven,"assigned_at":a.assigned_at,"started_at":a.started_at,"assembly_finished_at":a.assembly_finished_at,"completed_at":a.completed_at,"consumption_mode":a.stock_consumption_mode or ("attempts" if consumption else "pending"),"consumption_operation_id":operation_ids[0] if operation_ids else None,"composition_revision_id":snapshot.snapshot_id if snapshot else None,"server_time":self._now(),"stock_requested_at":a.stock_requested_at,"stock_check_after":a.stock_check_after,"blocked_reason":a.blocked_reason,"product_name":snapshot.product_name if snapshot else None,"created_at":a.created_at,"priority":0}
+        return {"id":a.id,"task_id":a.id,"production_unit_id":u.id,"order_id":u.order_id,"order_code":order_code,"order_item_id":u.order_item_id,"unit_index":u.unit_index,"attempt_id":a.id,"attempt_number":a.attempt_number,"state":a.state,"version":a.version,"operator_id":a.operator_id,"station_id":u.station_id,"requires_oven":u.requires_oven,"assigned_at":a.assigned_at,"started_at":a.started_at,"assembly_finished_at":a.assembly_finished_at,"completed_at":a.completed_at,"consumption_mode":a.stock_consumption_mode or ("attempts" if consumption else "pending"),"consumption_operation_id":operation_ids[0] if operation_ids else None,"composition_revision_id":snapshot.snapshot_id if snapshot else None,"server_time":self._now(),"stock_requested_at":a.stock_requested_at,"stock_check_after":a.stock_check_after,"blocked_reason":a.blocked_reason,"product_name":snapshot.product_name if snapshot else None,"created_at":a.created_at,"priority":0}
 
     @staticmethod
     def _aware(value):
@@ -92,6 +106,23 @@ class KdsProductionService:
         if attempt.operator_id and attempt.operator_id != actor_id:
             raise KdsStockConflict("Tarefa reservada para outro operador.", code="KdsTaskOwned")
 
+    def _assert_attempt_station(self, attempt, station_id):
+        if attempt.unit.station_id != self.normalize_station(station_id):
+            raise DomainError("Tarefa pertence a outra estacao operacional.", code="KdsStationConflict")
+
+    def _operator_has_other_station(self, actor_id: str, station_id: str) -> bool:
+        # Some isolated legacy unit tests create only the production tables;
+        # absence of the optional presence table must preserve old commands.
+        if not inspect(self.db.bind).has_table("kds_operator_states"):
+            return False
+        allowed = (station_id, "cozinha") if station_id == "pizza" else (station_id,)
+        return self.db.query(KdsOperatorState.id).filter(
+            KdsOperatorState.tenant_id == self.tenant_id,
+            KdsOperatorState.user_id == actor_id,
+            KdsOperatorState.requested_state == "available",
+            KdsOperatorState.station_id.notin_(allowed),
+        ).first() is not None
+
     def _production_stock_control_enabled(self) -> bool:
         settings = self.db.query(GestaoModuleSettings).filter_by(
             tenant_id=self.tenant_id, module_key="inventory",
@@ -107,6 +138,7 @@ class KdsProductionService:
     def start_stock_check(self, task_id, actor_id, body):
         self._lock_station()
         a = self._unit(task_id, True)
+        self._assert_attempt_station(a, getattr(body, "station_id", "pizza"))
         self._owner(a, actor_id)
         self._order_for_attempt(a)
         # Replaying start never creates another timer, movement or attempt.
@@ -128,6 +160,7 @@ class KdsProductionService:
     def confirm_stock(self, task_id, actor_id, body):
         self._lock_station()
         target = self._unit(task_id, True)
+        self._assert_attempt_station(target, getattr(body, "station_id", "pizza"))
         self._owner(target, actor_id)
         if target.state != "checking_stock":
             if target.stock_requested_at is not None:
@@ -170,6 +203,7 @@ class KdsProductionService:
     def return_to_service(self, task_id, actor_id, body):
         self._lock_station()
         a = self._unit(task_id, True)
+        self._assert_attempt_station(a, getattr(body, "station_id", "pizza"))
         self._owner(a, actor_id)
         if a.state == "atendimento":
             return self._payload(a)
@@ -190,17 +224,19 @@ class KdsProductionService:
         ).order_by(ProductionAttempt.stock_requested_at, ProductionAttempt.id).all()
         drink_item_ids = self._drink_item_ids([row.unit.order_item_id for row in rows])
         return [self._payload(row) for row in rows if row.unit.order_item_id not in drink_item_ids]
-    def initialize_order(self, order_id: str, actor_id: str, *, commit=True):
+    def initialize_order(self, order_id: str, actor_id: str, *, station_id="pizza", commit=True):
+        station_id = self.normalize_station(station_id)
         order=self.db.query(Order).filter(Order.tenant_id==self.tenant_id,Order.id==order_id).with_for_update().first()
         if not order: raise OrderNotFound(order_id)
         for item in order.items:
             qty=max(0,int(item.quantity or 0))
             for idx in range(1,qty+1):
                 product = self.db.query(Product).filter_by(tenant_id=self.tenant_id, id=item.product_id).first()
-                is_drink = bool((product and product.product_type == "drink") or item.selected_drink_variant)
+                item_station = self._product_station(product, item)
                 unit=self.db.query(ProductionUnit).filter_by(tenant_id=self.tenant_id,order_item_id=item.id,unit_index=idx).first()
                 if unit:
-                    if is_drink:
+                    if item_station == "expedicao":
+                        unit.station_id = item_station
                         unit.state = "ready"
                         for attempt in unit.attempts:
                             if attempt.state not in {"ready", "cancelled"}:
@@ -209,13 +245,14 @@ class KdsProductionService:
                     continue
                 # Drinks remain physical dispatch volumes, but are already ready
                 # because they do not pass through the pizzaiolo station.
+                is_drink = item_station == "expedicao"
                 requires_oven = not is_drink
-                unit=ProductionUnit(id=str(uuid.uuid4()),tenant_id=self.tenant_id,order_id=order.id,order_item_id=item.id,unit_index=idx,state="ready" if is_drink else "queued",requires_oven=requires_oven)
+                unit=ProductionUnit(id=str(uuid.uuid4()),tenant_id=self.tenant_id,order_id=order.id,order_item_id=item.id,unit_index=idx,station_id=item_station,state="ready" if is_drink else "queued",requires_oven=requires_oven)
                 self.db.add(unit); self.db.flush()
                 self.db.add(ProductionAttempt(id=str(uuid.uuid4()),tenant_id=self.tenant_id,production_unit_id=unit.id,attempt_number=1,state="ready" if is_drink else "queued",completed_at=self._now() if is_drink else None))
         if commit: self.db.commit()
         else: self.db.flush()
-        return self.queue(actor_id)
+        return self.queue(actor_id, station_id)
     def _current_queue_attempts(self):
         """Resolve current kitchen work while preserving attempt history."""
         rows = self.db.query(ProductionAttempt).join(
@@ -238,39 +275,43 @@ class KdsProductionService:
             latest[attempt.production_unit_id] = attempt
         return list(latest.values())
 
-    def queue(self, actor_id):
+    def queue(self, actor_id, station_id="pizza"):
+        station_id = self.normalize_station(station_id)
         # The queue is the waiting projection only.  Once the operator accepts
         # a unit, ``start_stock_check`` moves it to ``checking_stock`` and the
         # unit must leave this projection immediately.  In-progress states are
         # still available through the preparation/order projections and retain
         # their current attempt for the stock gate and subsequent steps.
         rows = [row for row in self._current_queue_attempts()
-                if row.state == "queued"
+                if row.state == "queued" and row.unit.station_id == station_id
                 and (row.operator_id == actor_id or row.operator_id is None)]
         rows.sort(key=lambda row: row.created_at)
         drink_item_ids = self._drink_item_ids([r.unit.order_item_id for r in rows])
         return [self._payload(r) for r in rows if r.unit.order_item_id not in drink_item_ids]
-    def all_queued(self):
+    def all_queued(self, station_id="pizza"):
+        station_id = self.normalize_station(station_id)
         # ``checking_stock`` is already accepted/in preparation; it is not a
         # waiting-queue item anymore.  Keep blocked and later production
         # states available to the operational projection without re-queuing
         # the accepted unit.
         queued_states = {"queued", "aguardando_analise", "atendimento", "assembling", "assembled", "baking", "checking"}
-        rows = [row for row in self._current_queue_attempts() if row.state in queued_states]
+        rows = [row for row in self._current_queue_attempts() if row.state in queued_states and row.unit.station_id == station_id]
         rows.sort(key=lambda row: row.created_at)
         drink_item_ids = self._drink_item_ids([r.unit.order_item_id for r in rows])
         return [self._payload(r) for r in rows if r.unit.order_item_id not in drink_item_ids]
     def presence(self, actor_id, body):
-        row=self.db.query(KdsOperatorState).filter_by(tenant_id=self.tenant_id,user_id=actor_id,station_id=body.station_id).with_for_update().first()
+        station_id = self.normalize_station(getattr(body, "station_id", "pizza"))
+        row=self.db.query(KdsOperatorState).filter_by(tenant_id=self.tenant_id,user_id=actor_id,station_id=station_id).with_for_update().first()
         if row is None:
             if body.expected_version != 0: raise DomainError("Estado inexistente.",code="VersionConflict")
-            row=KdsOperatorState(id=str(uuid.uuid4()),tenant_id=self.tenant_id,user_id=actor_id,station_id=body.station_id,requested_state=body.effective_state)
+            row=KdsOperatorState(id=str(uuid.uuid4()),tenant_id=self.tenant_id,user_id=actor_id,station_id=station_id,requested_state=body.effective_state)
             self.db.add(row)
         else:
             self._check(row,body.expected_version); row.requested_state=body.effective_state; row.version+=1
         self.db.commit(); return {"id":row.id,"state":row.requested_state,"station_id":row.station_id,"version":row.version,"last_heartbeat_at":row.last_heartbeat_at}
     def heartbeat(self, actor_id, body):
-        row=self.db.query(KdsOperatorState).filter_by(tenant_id=self.tenant_id,user_id=actor_id,station_id=body.station_id).with_for_update().first()
+        station_id = self.normalize_station(getattr(body, "station_id", "pizza"))
+        row=self.db.query(KdsOperatorState).filter_by(tenant_id=self.tenant_id,user_id=actor_id,station_id=station_id).with_for_update().first()
         if not row: raise DomainError("Presenca operacional nao encontrada.",code="OperatorStateNotFound")
         self._check(row,body.expected_version); row.operational_session_id=body.operational_session_id; row.last_heartbeat_at=self._now(); self.db.commit()
         return {"server_time":self._now(),"state":row.requested_state,"version":row.version,"operational_session_id":row.operational_session_id}
@@ -280,6 +321,11 @@ class KdsProductionService:
         if command == "return-to-service": return self.return_to_service(task_id, actor_id, body)
         self._lock_station()
         a=self._unit(task_id,True); self._check(a,body.expected_version); now=self._now()
+        station_id = self.normalize_station(getattr(body, "station_id", "pizza"))
+        if a.unit.station_id != station_id:
+            raise DomainError("Tarefa pertence a outra estacao operacional.", code="KdsStationConflict")
+        if self._operator_has_other_station(actor_id, station_id):
+            raise DomainError("Operador conectado a outra estacao.", code="KdsOperatorStationConflict")
         self._owner(a, actor_id)
         self._order_for_attempt(a)
         transitions={"start":("queued","assembling"),"finish-assembly":("assembling","assembled"),"start-oven":("assembled","baking"),"complete-oven":("baking","checking"),"check":("checking","ready")}
@@ -387,11 +433,21 @@ class KdsProductionService:
         a.unit.state="queued"; a.unit.version+=1; self.db.add(new); self.db.commit(); self.db.refresh(new); return self._payload(new)
     def redistribute(self, body, actor_id):
         target_operator_id = body.effective_target_operator_id
-        target=self.db.query(KdsOperatorState).filter_by(tenant_id=self.tenant_id,user_id=target_operator_id,requested_state="available").first()
+        target_station = self.normalize_station(getattr(body, "station_id", "pizza"))
+        if not inspect(self.db.bind).has_table("kds_operator_states"):
+            raise DomainError("Operador destino indisponivel.",code="OperatorUnavailable")
+        target=self.db.query(KdsOperatorState).filter(
+            KdsOperatorState.tenant_id == self.tenant_id,
+            KdsOperatorState.user_id == target_operator_id,
+            KdsOperatorState.requested_state == "available",
+            KdsOperatorState.station_id.in_((target_station, "cozinha") if target_station == "pizza" else (target_station,)),
+        ).first()
         if not target: raise DomainError("Operador destino indisponivel.",code="OperatorUnavailable")
         result=[]
         for task_id in body.task_ids:
             a=self._unit(task_id,True); self._check(a,body.effective_versions.get(task_id,-1))
+            if a.unit.station_id != target_station:
+                raise DomainError("Tarefa pertence a outra estacao operacional.", code="KdsStationConflict")
             if a.state != "queued":
                 raise DomainError("Somente tarefas na fila podem ser redistribuidas.", code="StateConflict")
             old=self.db.query(KdsAssignment).filter_by(tenant_id=self.tenant_id,attempt_id=a.id,active=True).with_for_update().first()

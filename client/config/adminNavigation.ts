@@ -92,6 +92,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
       { path: "/painel/kds/pdv", aliases: ["/app/kds/pdv"], icon: Store, label: "KDS PDV", exact: true, permissions: ["pedidos"], permissionAction: "create" },
       { path: "/painel/kds/analitico", aliases: ["/app/kds/analitico"], icon: BarChart3, label: "Analítico KDS", exact: true, permissions: ["pedidos"] },
       { path: "/painel/cozinha", aliases: ["/app/kds/pizzaiolo"], icon: ChefHat, label: "KDS Pizzaiolo", permissions: ["cozinha"] },
+      { path: "/painel/esfiha", aliases: ["/app/kds/esfiha"], icon: ChefHat, label: "KDS Esfiha", permissions: ["cozinha"] },
       { path: "/painel/preparo", aliases: ["/app/kds/preparo"], icon: ChefHat, label: "KDS Cozinha Preparo", permissions: ["inventory"] },
       { path: "/painel/expedicao", aliases: ["/app/kds/expedicao"], icon: Truck, label: "KDS Expedição", permissions: ["expedicao"] },
       { path: "/painel/kds/sala-motoboy", aliases: ["/app/kds/motoboys"], icon: Monitor, label: "KDS Motoboys", permissions: ["pedidos"] },

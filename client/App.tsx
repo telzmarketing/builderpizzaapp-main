@@ -445,6 +445,7 @@ const KdsOverview = lazy(() => import("./pages/admin/KdsOverview"));
 const KdsPdv = lazy(() => import("./pages/admin/KdsPdv"));
 const KdsAnalytics = lazy(() => import("./pages/admin/KdsAnalytics"));
 const AdminCozinha = lazy(() => import("./pages/admin/Cozinha"));
+const KdsEsfiha = lazy(() => import("./pages/admin/KdsEsfiha"));
 const AdminExpedicao = lazy(() => import("./pages/admin/Expedicao"));
 const AdminFidelidade = lazy(() => import("./pages/admin/AdminFidelidade"));
 const AdminConteudo = lazy(() => import("./pages/admin/Conteudo"));
@@ -637,6 +638,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
               <Route element={<AdminGuard />}>
                 <Route path="/app/kds/principal" element={<KdsOverview />} />
                 <Route path="/app/kds/pizzaiolo" element={<AdminCozinha />} />
+                <Route path="/app/kds/esfiha" element={<KdsEsfiha />} />
                 <Route path="/app/kds/preparo" element={<Preparation />} />
                 <Route path="/app/kds/expedicao" element={<AdminExpedicao />} />
                 <Route path="/app/kds/motoboys" element={<OrderBoardTv />} />
@@ -647,6 +649,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/orders/novo" element={<FullPageRedirect to="/operacoes/novo-pedido" />} />
                 <Route path="/painel/bi-mobile" element={<AdminBIMobile />} />
                 <Route path="/painel/cozinha" element={<AdminCozinha />} />
+                <Route path="/painel/esfiha" element={<KdsEsfiha />} />
                 <Route path="/painel/expedicao" element={<AdminExpedicao />} />
                 <Route path="/painel/kds/sala-motoboy" element={<FullPageRedirect to="/tv/motoboys" />} />
                 {/* The KDS overview is an operational wallboard and owns its full viewport. */}

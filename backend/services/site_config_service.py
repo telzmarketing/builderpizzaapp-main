@@ -65,6 +65,14 @@ PWA_MANIFESTS = {
         "short_name": "KDS Pizzaiolo",
         "description": "Painel operacional do pizzaiolo e montagem dos pedidos",
     },
+    "kds-esfiha": {
+        "id": "/app/kds/esfiha",
+        "start_url": "/painel/esfiha/",
+        "scope": "/painel/esfiha/",
+        "name": "KDS Esfiha",
+        "short_name": "KDS Esfiha",
+        "description": "Painel operacional da estação de esfihas",
+    },
     "kds-preparo": {
         "id": "/app/kds/preparo",
         "start_url": "/painel/preparo/",

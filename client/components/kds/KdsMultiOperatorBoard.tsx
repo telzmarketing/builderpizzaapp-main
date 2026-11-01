@@ -162,8 +162,10 @@ export interface KdsWorkspaceProps {
 
 export default function KdsMultiOperatorBoard({
   renderWorkspace,
+  station,
 }: {
   renderWorkspace?: (props: KdsWorkspaceProps) => ReactNode;
+  station?: string;
 }) {
   const { toast } = useToast();
   const [queue, setQueue] = useState<KdsMyQueue | null>(null);
@@ -178,7 +180,7 @@ export default function KdsMultiOperatorBoard({
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     try {
-      setQueue(await kdsApi.myQueue());
+      setQueue(await kdsApi.myQueue(station));
       setError(null);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -186,7 +188,7 @@ export default function KdsMultiOperatorBoard({
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [station]);
 
   useEffect(() => {
     void load();
@@ -232,7 +234,11 @@ export default function KdsMultiOperatorBoard({
     setBusy("presence");
     try {
       const updated = await kdsApi.setPresence(
-        { state, expected_version: presence.version },
+        {
+          state,
+          expected_version: presence.version,
+          ...(station ? { station_id: station } : {}),
+        },
         keyFor("presence", state),
       );
       setQueue((current) =>
@@ -260,6 +266,7 @@ export default function KdsMultiOperatorBoard({
         action,
         {
           expected_version: task.version,
+          ...(station ? { station_id: station } : {}),
           ...(action === "check" ? { approved: true } : {}),
         },
         keyFor(action, task.id),
@@ -311,6 +318,7 @@ export default function KdsMultiOperatorBoard({
           task_ids: selected,
           to_operator_id: targetOperator,
           from_operator_id: presence?.operator_id ?? null,
+          ...(station ? { station_id: station } : {}),
           reason: "Redistribuição operacional pelo painel KDS",
           expected_versions: Object.fromEntries(
             selectedTasks.map((task) => [task.id, task.version]),

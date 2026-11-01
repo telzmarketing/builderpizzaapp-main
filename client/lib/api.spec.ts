@@ -83,6 +83,15 @@ describe("multi-operator KDS contracts", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("scopes esfiha polling to the station without changing the default contract", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ data: [] }), { headers: { "Content-Type": "application/json" } })));
+    vi.stubGlobal("fetch", fetchMock);
+    await kdsApi.listKitchenOrders("esfiha");
+    await kdsApi.myQueue("esfiha");
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/kds\/kitchen\/orders\?station=esfiha$/);
+    expect(fetchMock.mock.calls[1][0]).toMatch(/\/api\/kds\/kitchen\/my-queue\?station=esfiha$/);
+  });
+
   it("keeps task commands on the official API client with encoded ids", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { id: "task-1", state: "assembling" } }), { headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);

@@ -29,7 +29,19 @@ function errorMessage(error: unknown) {
     : "Não foi possível atualizar a cozinha.";
 }
 
-export default function AdminCozinha() {
+type KdsStationPageProps = {
+  station?: string;
+  title?: string;
+  pwaKey?: "kds-pizzaiolo" | "kds-esfiha";
+  startToastLabel?: string;
+};
+
+export default function AdminCozinha({
+  station,
+  title = "Pizzaiolo",
+  pwaKey = "kds-pizzaiolo",
+  startToastLabel = "pizzaiolo",
+}: KdsStationPageProps = {}) {
   const { toast } = useToast();
   const [orders, setOrders] = useState<KdsKitchenOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +60,7 @@ export default function AdminCozinha() {
     async (manual = false) => {
       if (manual) setRefreshing(true);
       try {
-        const data = await kdsApi.listKitchenOrders();
+        const data = await kdsApi.listKitchenOrders(station);
         const active = activeKitchenOrders(data);
         const waiting = active.filter(
           (order) => order.status === "paid" || order.status === "pago",
@@ -70,7 +82,7 @@ export default function AdminCozinha() {
         setRefreshing(false);
       }
     },
-    [soundOn],
+    [soundOn, station],
   );
 
   useEffect(() => {
@@ -116,14 +128,14 @@ export default function AdminCozinha() {
     actionLock.current = true;
     setUpdating(order.id);
     try {
-      const updated = await kdsApi.startKitchenOrder(order.id);
+      const updated = await kdsApi.startKitchenOrder(order.id, station);
       setOrders((current) =>
         activeKitchenOrders(
           current.map((item) => (item.id === order.id ? updated : item)),
         ),
       );
       toast({
-        title: "Unidades encaminhadas para a fila do pizzaiolo",
+        title: `Unidades encaminhadas para a fila do ${startToastLabel}`,
         description: `Pedido #${orderDisplayCode(order)}`,
       });
       setError(null);
@@ -153,7 +165,7 @@ export default function AdminCozinha() {
     actionLock.current = true;
     setUpdating(order.id);
     try {
-      const updated = await kdsApi.markKitchenOrderReady(order.id);
+      const updated = await kdsApi.markKitchenOrderReady(order.id, station);
       setOrders((current) =>
         activeKitchenOrders(
           current.map((item) => (item.id === order.id ? updated : item)),
@@ -200,7 +212,7 @@ export default function AdminCozinha() {
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-400">
               KDS Touch
             </p>
-            <h1 className="truncate text-2xl font-black sm:text-3xl">Pizzaiolo</h1>
+            <h1 className="truncate text-2xl font-black sm:text-3xl">{title}</h1>
             <p className="mt-1 text-xs text-slate-400">
               {lastRefresh
                 ? `Atualizado às ${lastRefresh.toLocaleTimeString("pt-BR")}`
@@ -265,7 +277,7 @@ export default function AdminCozinha() {
           >
             {fullscreen ? <Minimize2 /> : <Maximize2 />}
           </button>
-          <PwaInstallButton only={["kds-pizzaiolo"]} inline />
+          <PwaInstallButton only={[pwaKey]} inline />
           <KdsSessionActions />
         </div>
       </header>
@@ -288,6 +300,7 @@ export default function AdminCozinha() {
         </div>
       )}
       <KdsMultiOperatorBoard
+        station={station}
         renderWorkspace={(workspace) => (
           <KdsTouchWorkspace
             {...workspace}

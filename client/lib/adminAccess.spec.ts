@@ -23,6 +23,7 @@ describe("admin navigation route matching", () => {
   it.each([
     ["/app/kds/principal", "/painel/kds", ["pedidos"]],
     ["/app/kds/pizzaiolo", "/painel/cozinha", ["cozinha"]],
+    ["/app/kds/esfiha", "/painel/esfiha", ["cozinha"]],
     ["/app/kds/preparo", "/painel/preparo", ["inventory"]],
     ["/app/kds/expedicao", "/painel/expedicao", ["expedicao"]],
     ["/app/kds/motoboys", "/painel/kds/sala-motoboy", ["pedidos"]],
@@ -43,16 +44,16 @@ describe("admin navigation route matching", () => {
   });
 
   it.each([
-    ["cozinha", "/painel/cozinha", "KDS Pizzaiolo"],
+    ["cozinha", "/painel/cozinha", ["KDS Pizzaiolo", "KDS Esfiha"]],
     ["expedicao", "/painel/expedicao", "KDS Expedição"],
-  ])("keeps the %s KDS profile on its only allowed screen", (moduleKey, path, label) => {
+  ])("keeps the %s KDS profile on its allowed screen", (moduleKey, path, labels) => {
     const permissions: ApiEffectivePermissions = {
       is_master: false,
       modules: { [moduleKey]: { view: true, edit: true } },
     };
     expect(firstAllowedAdminPath(permissions)).toBe(path);
     expect(filterAdminNavigation(permissions).flatMap((group) => group.children.map((item) => item.label)))
-      .toEqual([label]);
+      .toEqual(Array.isArray(labels) ? labels : [labels]);
   });
 
   it("keeps the KDS overview and motoboy room under the orders permission", () => {
@@ -82,6 +83,7 @@ describe("admin navigation route matching", () => {
         "KDS PDV",
         "Analítico KDS",
         "KDS Pizzaiolo",
+        "KDS Esfiha",
         "KDS Cozinha Preparo",
         "KDS Expedição",
         "KDS Motoboys",

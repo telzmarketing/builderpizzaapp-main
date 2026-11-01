@@ -49,7 +49,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Defina explicitamente:
 
 ```env
-ALEMBIC_TARGET=20261030_order_origins_partner_identifications
+ALEMBIC_TARGET=20261101_kds_production_stations
 INSTALL_SSL=false
 ```
 

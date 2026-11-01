@@ -37,7 +37,7 @@ def test_existing_manifest_contract_is_unchanged_without_app_selector():
 
 def test_all_supported_pwa_manifests_have_unique_installation_boundaries():
     assert set(PWA_MANIFESTS) == {
-        "motoboy", "bi-mobile", "kds-principal", "kds-pizzaiolo",
+        "motoboy", "bi-mobile", "kds-principal", "kds-pizzaiolo", "kds-esfiha",
         "kds-preparo", "kds-expedicao", "kds-motoboys", "kds-pdv",
         "kds-analitico",
     }
@@ -69,6 +69,7 @@ def test_kds_manifests_start_from_the_operational_routes():
     expected = {
         "kds-principal": ("/app/kds/principal", "/painel/kds/"),
         "kds-pizzaiolo": ("/app/kds/pizzaiolo", "/painel/cozinha/"),
+        "kds-esfiha": ("/app/kds/esfiha", "/painel/esfiha/"),
         "kds-preparo": ("/app/kds/preparo", "/painel/preparo/"),
         "kds-expedicao": ("/app/kds/expedicao", "/painel/expedicao/"),
         "kds-motoboys": ("/app/kds/motoboys", "/painel/kds/sala-motoboy/"),

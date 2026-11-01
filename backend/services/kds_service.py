@@ -154,7 +154,7 @@ class KdsService:
             old_value=old, new_value=f"{new}; order_id={order_id}",
         ))
 
-    def kitchen_orders(self) -> list[dict]:
+    def kitchen_orders(self, station_id: str = "pizza") -> list[dict]:
         orders = self._order_query().options(
             joinedload(Order.items), joinedload(Order.payment),
             joinedload(Order.delivery).joinedload(Delivery.delivery_person),
@@ -172,9 +172,11 @@ class KdsService:
                 row.order_item_id: self._operational_composition(row.composition_json)
                 for row in rows
             }
-        return self._serialize_orders(
+        payloads = self._serialize_orders(
             orders, include_dispatch_details=False, composition_by_item=frozen,
+            station_id=station_id,
         )
+        return [payload for payload in payloads if payload["items"]]
 
     def kitchen_order_composition(self, order_id: str) -> dict:
         """Return the immutable technical composition for a kitchen order.
@@ -383,7 +385,7 @@ class KdsService:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
 
-    def start_preparation(self, order_id: str, *, actor_id: str) -> dict:
+    def start_preparation(self, order_id: str, *, actor_id: str, station_id: str = "pizza") -> dict:
         order = self._load_order(order_id, lock=True)
         current = self._status(order)
         if current not in {OrderStatus.paid.value, OrderStatus.pago.value}:
@@ -397,7 +399,7 @@ class KdsService:
         order = OrderService(
             self.db, self.tenant_context
         ).change_status(order.id, OrderStatus.preparing.value, changed_by=f"kds:{actor_id}")
-        return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=False)[0]
+        return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=False, station_id=station_id)[0]
 
     def _assert_all_units_ready(self, order: Order) -> list[ProductionUnit]:
         self._mark_drink_units_ready(order)
@@ -414,7 +416,7 @@ class KdsService:
             )
         return units.get(order.id, [])
 
-    def mark_ready(self, order_id: str, *, actor_id: str) -> dict:
+    def mark_ready(self, order_id: str, *, actor_id: str, station_id: str = "pizza") -> dict:
         order = self._load_order(order_id, lock=True)
         current = self._status(order)
         units, _ = self._production_unit_snapshot([order])
@@ -425,12 +427,12 @@ class KdsService:
             from backend.services.kds_production_service import ensure_kds_units_ready
             ensure_kds_units_ready(self.db, order.tenant_id, order.id)
         if current == OrderStatus.ready_for_pickup.value:
-            return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=False)[0]
+            return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=False, station_id=station_id)[0]
         self._audit_order_transition(order, current, OrderStatus.ready_for_pickup.value, actor_id)
         order = OrderService(
             self.db, self.tenant_context
         ).change_status(order.id, OrderStatus.ready_for_pickup.value, changed_by=f"kds:{actor_id}")
-        return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=False)[0]
+        return self._serialize_orders([self._load_order(order_id)], include_dispatch_details=False, station_id=station_id)[0]
 
     def complete_pickup(
         self, order_id: str, *, actor_id: str, audit_module: str = "cozinha",
@@ -743,6 +745,7 @@ class KdsService:
     def _serialize_orders(
         self, orders: list[Order], *, include_dispatch_details: bool,
         composition_by_item: dict[str, dict | None] | None = None,
+        station_id: str | None = None,
     ) -> list[dict]:
         identifications = PartnerIdentificationService(
             self.db, self.tenant_context
@@ -804,8 +807,22 @@ class KdsService:
                 if item["is_drink"]
             ]
             kitchen_view = not include_dispatch_details
+            # Keep the legacy kitchen projection as the compatibility base;
+            # station-specific projections narrow it below without changing
+            # dispatch payloads.
             visible_items = [item for item in serialized_items if not kitchen_view or not item["is_drink"]]
             visible_units = [unit for unit in production_units.get(order.id, []) if not kitchen_view or unit.order_item_id not in drink_item_ids]
+            if kitchen_view and station_id == "esfiha":
+                visible_items = [item for item in serialized_items if item["product_type"] == "esfiha"]
+                visible_item_ids = {item["id"] for item in visible_items}
+                visible_units = [unit for unit in production_units.get(order.id, []) if unit.station_id == "esfiha"]
+            elif kitchen_view:
+                visible_items = [item for item in serialized_items if not item["is_drink"] and item["product_type"] != "esfiha"]
+                visible_item_ids = {item["id"] for item in visible_items}
+                visible_units = [unit for unit in production_units.get(order.id, []) if unit.order_item_id in visible_item_ids]
+            else:
+                visible_items = serialized_items
+                visible_units = production_units.get(order.id, [])
             visible_progress = production_progress.get(order.id, {
                 "total_units": 0, "ready_units": 0, "pending_units": 0,
                 "dispatch_completed_units": 0,

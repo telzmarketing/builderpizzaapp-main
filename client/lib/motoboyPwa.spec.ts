@@ -89,11 +89,13 @@ describe("BI Mobile installation ownership", () => {
 describe("KDS PWA entries", () => {
   it("maps every dedicated entry and canonical route to its own app key", () => {
     expect(KDS_PWA_KEYS).toEqual([
-      "kds-principal", "kds-pizzaiolo", "kds-preparo", "kds-expedicao",
+      "kds-principal", "kds-pizzaiolo", "kds-esfiha", "kds-preparo", "kds-expedicao",
       "kds-motoboys", "kds-pdv", "kds-analitico",
     ]);
     expect(getPwaApp("/app/kds/principal/")?.key).toBe("kds-principal");
     expect(getPwaApp("/painel/kds/analitico")?.key).toBe("kds-analitico");
+    expect(getPwaApp("/painel/esfiha")?.key).toBe("kds-esfiha");
+    expect(getPwaApp("/app/kds/esfiha")?.scope).toBe("/app/kds/esfiha/");
     expect(getPwaApp("/tv/motoboys")?.key).toBe("kds-motoboys");
     expect(getPwaApp("/painel/kds/pdv")?.scope).toBe("/app/kds/pdv/");
   });
@@ -123,6 +125,7 @@ describe("KDS PWA entries", () => {
   it.each([
     ["/painel/kds", "/painel/kds/"],
     ["/painel/cozinha", "/painel/cozinha/"],
+    ["/painel/esfiha", "/painel/esfiha/"],
     ["/painel/preparo", "/painel/preparo/"],
     ["/painel/expedicao", "/painel/expedicao/"],
     ["/tv/motoboys", "/tv/motoboys/"],

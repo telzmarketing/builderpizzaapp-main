@@ -28,6 +28,7 @@ const PWA_APPS: Record<string, PwaApp> = {
   "/painel/bi-mobile/": { key: "bi-mobile", scope: "/painel/bi-mobile/", cachePrefix: "telz-bi-mobile" },
   "/app/kds/principal/": { key: "kds-principal", scope: "/app/kds/principal/", cachePrefix: "telz-kds-principal" },
   "/app/kds/pizzaiolo/": { key: "kds-pizzaiolo", scope: "/app/kds/pizzaiolo/", cachePrefix: "telz-kds-pizzaiolo" },
+  "/app/kds/esfiha/": { key: "kds-esfiha", scope: "/app/kds/esfiha/", cachePrefix: "telz-kds-esfiha" },
   "/app/kds/preparo/": { key: "kds-preparo", scope: "/app/kds/preparo/", cachePrefix: "telz-kds-preparo" },
   "/app/kds/expedicao/": { key: "kds-expedicao", scope: "/app/kds/expedicao/", cachePrefix: "telz-kds-expedicao" },
   "/app/kds/motoboys/": { key: "kds-motoboys", scope: "/app/kds/motoboys/", cachePrefix: "telz-kds-motoboys" },
@@ -35,6 +36,7 @@ const PWA_APPS: Record<string, PwaApp> = {
   "/app/kds/analitico/": { key: "kds-analitico", scope: "/app/kds/analitico/", cachePrefix: "telz-kds-analitico" },
   "/painel/kds/": { key: "kds-principal", scope: "/painel/kds/", cachePrefix: "telz-kds-principal-alias" },
   "/painel/cozinha/": { key: "kds-pizzaiolo", scope: "/painel/cozinha/", cachePrefix: "telz-kds-pizzaiolo-alias" },
+  "/painel/esfiha/": { key: "kds-esfiha", scope: "/painel/esfiha/", cachePrefix: "telz-kds-esfiha-alias" },
   "/painel/preparo/": { key: "kds-preparo", scope: "/painel/preparo/", cachePrefix: "telz-kds-preparo-alias" },
   "/painel/expedicao/": { key: "kds-expedicao", scope: "/painel/expedicao/", cachePrefix: "telz-kds-expedicao-alias" },
   "/tv/motoboys/": { key: "kds-motoboys", scope: "/tv/motoboys/", cachePrefix: "telz-kds-motoboys-alias" },
@@ -67,6 +69,11 @@ const APP_PRECACHE_PATTERNS: Record<string, RegExp[]> = {
   "kds-pizzaiolo": [
     /^\/assets\/Cozinha-[^/]+\.js$/,
     /^\/assets\/(?:KdsBrandLogo|KdsSessionActions|kds)-[^/]+\.js$/,
+  ],
+  "kds-esfiha": [
+    /^\/assets\/KdsEsfiha-[^/]+\.js$/,
+    /^\/assets\/Cozinha-[^/]+\.js$/,
+    /^\/assets\/(?:KdsBrandLogo|KdsSessionActions|KdsMultiOperatorBoard|KdsTouchWorkspace|kds)-[^/]+\.js$/,
   ],
   "kds-preparo": [
     /^\/assets\/Preparation-[^/]+\.js$/,
