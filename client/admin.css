@@ -407,3 +407,19 @@
     grid-template-columns: minmax(0, 1fr) !important;
   }
 }
+
+/* The POS owns its vertical space: only the catalog/order panels scroll. */
+.kds-pdv-product {
+  height: 100%;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.kds-pdv-product > div {
+  min-height: 100%;
+}
+
+.kds-pdv-catalog > .mt-5.grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
