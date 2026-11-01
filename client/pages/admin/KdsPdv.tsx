@@ -1,9 +1,9 @@
-import { ArrowLeft, BadgeCheck, CalendarDays, Clock3, MonitorSmartphone, ShoppingCart, Store, UserRound } from "lucide-react";
+import { BadgeCheck, CalendarDays, Clock3, MonitorSmartphone, ShoppingCart, Store, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import ManualOrderComposer from "@/components/admin/ManualOrderComposer";
 import KdsBrandLogo from "@/components/kds/KdsBrandLogo";
 import KdsSessionActions from "@/components/kds/KdsSessionActions";
+import PwaInstallButton from "@/components/PwaInstallButton";
 
 type AdminUser = { name?: string; email?: string; role_name?: string };
 
@@ -29,7 +29,6 @@ export default function KdsPdv() {
       <header className="kds-pdv-header sticky top-0 z-30 border-b border-surface-03 bg-surface-00/95 px-3 py-3 backdrop-blur-xl sm:px-4 md:px-6">
         <div className="kds-pdv-inner flex w-full min-w-0 flex-wrap items-center justify-between gap-3 [@media_(min-width:600px)_and_(max-width:1200px)_and_(orientation:portrait)]:flex-col [@media_(min-width:600px)_and_(max-width:1200px)_and_(orientation:portrait)]:items-stretch">
           <div className="flex min-w-0 items-center gap-3">
-            <Link to="/painel/kds" aria-label="Voltar ao KDS Principal" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-surface-03 text-stone transition-colors hover:bg-surface-03 hover:text-cream"><ArrowLeft size={19} /></Link>
             <KdsBrandLogo className="h-11 w-16 shrink-0 object-contain sm:h-14 sm:w-20" fallback={<Store size={32} className="shrink-0 text-gold" />} />
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-gold"><MonitorSmartphone size={14} /> Atendimento no balcão</div>
@@ -42,6 +41,7 @@ export default function KdsPdv() {
             <div className="hidden items-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-3 py-2 sm:flex"><CalendarDays size={15} className="text-gold" /><span>{now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })}</span><Clock3 size={15} className="text-gold" /><span className="tabular-nums">{now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span></div>
             <span className="hidden items-center gap-1.5 rounded-full border border-surface-03 px-3 py-2 xl:inline-flex"><ShoppingCart size={14} className="text-gold" /> Catálogo integrado</span>
             <span className="hidden items-center gap-1.5 rounded-full border border-surface-03 px-3 py-2 xl:inline-flex"><BadgeCheck size={14} className="text-emerald-300" /> Pedido seguro</span>
+            <PwaInstallButton only={["kds-pdv"]} inline />
             <KdsSessionActions />
           </div>
         </div>

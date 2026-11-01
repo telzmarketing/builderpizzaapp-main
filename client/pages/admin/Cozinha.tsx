@@ -14,6 +14,7 @@ import KdsSessionActions from "@/components/kds/KdsSessionActions";
 import KdsTouchWorkspace from "@/components/kds/KdsTouchWorkspace";
 import KdsMultiOperatorBoard from "@/components/kds/KdsMultiOperatorBoard";
 import KdsBrandLogo from "@/components/kds/KdsBrandLogo";
+import PwaInstallButton from "@/components/PwaInstallButton";
 import { useToast } from "@/hooks/use-toast";
 import { kdsApi, type KdsKitchenOrder } from "@/lib/api";
 import { loadSoundType, playOrderAlert } from "@/lib/orderSound";
@@ -264,6 +265,7 @@ export default function AdminCozinha() {
           >
             {fullscreen ? <Minimize2 /> : <Maximize2 />}
           </button>
+          <PwaInstallButton only={["kds-pizzaiolo"]} inline />
           <KdsSessionActions />
         </div>
       </header>

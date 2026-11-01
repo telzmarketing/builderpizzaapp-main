@@ -538,7 +538,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
           <Toaster />
           <BrowserRouter>
             <MotoboyPwaBoundary />
-            <PwaInstallButton only={KDS_PWA_KEYS} />
+            <PwaInstallButton only={KDS_PWA_KEYS} hideOnKds />
             {!platformSurface && !orderBoardSurface && <MotoboyNativeEntry />}
             {!platformSurface && !orderBoardSurface && <RouteDataLoader />}
             {!platformSurface && !orderBoardSurface && <StoreWidget />}

@@ -496,7 +496,7 @@ export default function KdsTouchWorkspace(props: Props) {
                   )}
                 </div>
                 <div className="min-w-0 space-y-2">
-                  <h3 className="break-words text-xl font-bold leading-snug lg:text-2xl 2xl:text-3xl">
+                  <h3 className="break-words whitespace-normal text-xl font-bold leading-snug lg:text-2xl 2xl:text-3xl">
                     {item
                       ? description(item)
                       : task?.product_name || "Unidade de produção"}

@@ -1,4 +1,5 @@
 import { Download } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { getPwaApp, getPwaEntryApp, type PwaAppKey } from "@/lib/motoboyPwa";
 
@@ -20,10 +21,12 @@ export function canShowPwaInstallButton(pathname: string, only?: readonly PwaApp
   return !!app && (entryApp?.key === app.key || canonicalInstallable || legacyInstallable) && (!only || only.includes(app.key));
 }
 
-export default function PwaInstallButton({ only, pathname }: { only?: readonly PwaAppKey[]; pathname?: string } = {}) {
-  const currentPathname = pathname ?? (typeof window === "undefined" ? "" : window.location.pathname);
+export default function PwaInstallButton({ only, pathname, hideOnKds = false, inline = false }: { only?: readonly PwaAppKey[]; pathname?: string; hideOnKds?: boolean; inline?: boolean } = {}) {
+  const location = useLocation();
+  const currentPathname = pathname ?? location.pathname;
   const app = getPwaApp(currentPathname);
   const allowed = canShowPwaInstallButton(currentPathname, only);
+  const isKds = app?.key.startsWith("kds-") === true;
   const [prompt, setPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
@@ -45,9 +48,9 @@ export default function PwaInstallButton({ only, pathname }: { only?: readonly P
     };
   }, [allowed, currentPathname]);
 
-  if (!allowed || installed || !app) return null;
+  if (!allowed || installed || !app || (hideOnKds && isKds)) return null;
   return (
-    <div className="pwa-install-anchor" data-pwa-app={app.key}>
+    <div className={`pwa-install-anchor${inline ? " pwa-install-anchor-inline" : ""}`} data-pwa-app={app.key}>
       <button type="button" onClick={() => {
         const current = prompt;
         if (!current) { setShowInstructions((value) => !value); return; }

@@ -16,6 +16,13 @@
   pointer-events: none;
 }
 
+.pwa-install-anchor-inline {
+  position: static;
+  max-width: none;
+  align-items: stretch;
+  flex: 0 0 auto;
+}
+
 .kds-preparation {
   min-height: 100dvh;
   width: 100%;
