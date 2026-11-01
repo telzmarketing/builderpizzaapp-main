@@ -8,7 +8,7 @@ from backend.core.response import created, err, ok
 from backend.database import get_db
 from backend.schemas.label import (
     LabelPrinterIn, LabelPrintIn, LabelReprintIn, LabelSettingsIn,
-    LabelTemplateIn, LabelTestIn, LabelVolumeRuleIn,
+    LabelTemplateIn, LabelTestIn, LabelTransportClaimIn, LabelTransportStatusIn, LabelVolumeRuleIn,
 )
 from backend.services.label_service import LabelService
 
@@ -151,4 +151,23 @@ def test_label(body: LabelTestIn, db: Session = Depends(get_db), actor: Authoriz
 @router.post("/label-jobs/{job_id}/dialog-opened")
 def dialog_opened(job_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("expedicao", "edit"))):
     try: return ok(_service(db, actor).mark_dialog_opened(job_id, actor_id=actor.user_id))
+    except DomainError as exc: return err(exc)
+
+
+@router.post("/label-jobs/{job_id}/transport-status")
+def transport_status(job_id: str, body: LabelTransportStatusIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("expedicao", "edit"))):
+    """Record local-agent transport without changing browser compatibility status."""
+    try:
+        service = _service(db, actor)
+        if body.status == "sent":
+            return ok(service.mark_print_job_sent(job_id, agent_job_id=body.agent_job_id, external_job_id=body.external_job_id))
+        if body.status == "confirmed":
+            return ok(service.mark_print_job_confirmed(job_id, agent_job_id=body.agent_job_id))
+        return ok(service.mark_print_job_failed(job_id, agent_job_id=body.agent_job_id, error=body.error or "Falha de impressao", retry=False))
+    except DomainError as exc: return err(exc)
+
+
+@router.post("/label-jobs/{job_id}/claim")
+def claim_transport_job(job_id: str, body: LabelTransportClaimIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("expedicao", "edit"))):
+    try: return ok(_service(db, actor).claim_print_job(job_id, agent_job_id=body.agent_job_id))
     except DomainError as exc: return err(exc)

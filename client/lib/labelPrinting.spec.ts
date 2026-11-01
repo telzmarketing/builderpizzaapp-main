@@ -25,7 +25,7 @@ describe("labelPrinting", () => {
       expect(target.print).not.toHaveBeenCalled();
       listeners.load();
       await vi.advanceTimersByTimeAsync(0);
-      expect(target.print).toHaveBeenCalledOnce();
+      expect(target.print).not.toHaveBeenCalled();
       expect(image.hidden).toBe(false);
     } finally { vi.useRealTimers(); }
   });
@@ -59,7 +59,7 @@ describe("labelPrinting", () => {
     vi.runAllTimers();
     expect(target.document.write).toHaveBeenCalledOnce();
     expect(target.focus).toHaveBeenCalledOnce();
-    expect(target.print).toHaveBeenCalledOnce();
+    expect(target.print).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 });

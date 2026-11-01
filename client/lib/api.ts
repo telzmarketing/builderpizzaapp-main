@@ -1578,6 +1578,8 @@ export interface KdsLabelPrintJob {
   actor_name?: string | null;
   printer_name?: string | null;
   template_name?: string | null;
+  transport_status?: "enqueued" | "sent" | "confirmed" | "error";
+  last_error?: string | null;
 }
 
 export interface KdsLabelPrintResult { job: KdsLabelPrintJob; preview: KdsLabelPreview }
@@ -1702,6 +1704,8 @@ export const kdsLabelsApi = {
     post<{ job: KdsLabelPrintJob; preview: KdsLabelTestPreview }>(`${labelDispatchBase}/labels/test`, data),
   markDialogOpened: (jobId: string) =>
     post<KdsLabelPrintJob>(`${labelDispatchBase}/label-jobs/${jobId}/dialog-opened`, {}),
+  markTransportStatus: (jobId: string, data: { status: "sent" | "confirmed" | "error"; agent_job_id: string; external_job_id?: string; error?: string }) =>
+    post<KdsLabelPrintJob>(`${labelDispatchBase}/label-jobs/${jobId}/transport-status`, data),
 };
 
 // Order board contracts deliberately expose no customer identity, address,

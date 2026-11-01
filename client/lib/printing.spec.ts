@@ -11,18 +11,18 @@ import type { ApiOrder } from "./api";
 
 describe("receipt print readiness", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
-  it("waits for the logo before requesting the browser print dialog", async () => {
+  it("does not open a browser print dialog", async () => {
     vi.useFakeTimers();
     const image = { complete: false, naturalWidth: 100, hidden: false, onload: null as null | (() => void), onerror: null as null | (() => void) };
     const target = { document: { open: vi.fn(), write: vi.fn(), close: vi.fn(), images: [image] }, focus: vi.fn(), print: vi.fn() };
     vi.stubGlobal("window", { open: vi.fn(() => target), setTimeout });
+    vi.stubGlobal("localStorage", { getItem: vi.fn(() => JSON.stringify({ transport: "local_agent", baseUrl: "http://127.0.0.1:18181" })), setItem: vi.fn() });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
     expect(openReceiptPreview("<html>receipt</html>", true)).toBe(true);
     expect(target.print).not.toHaveBeenCalled();
-    image.complete = true;
-    image.onload?.();
     await vi.advanceTimersByTimeAsync(0);
-    expect(target.print).toHaveBeenCalledOnce();
-    expect(image.hidden).toBe(false);
+    expect(target.print).not.toHaveBeenCalled();
+    expect(target.document.write).not.toHaveBeenCalled();
   });
 });
 

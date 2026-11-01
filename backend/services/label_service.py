@@ -479,6 +479,62 @@ class LabelService:
         self.db.refresh(job)
         return self._job(job)
 
+    def claim_print_job(self, job_id: str, *, agent_job_id: str):
+        """Atomically claim an enqueued label job for an authorized print agent.
+
+        This is intentionally service-only for now: the existing browser route
+        remains unchanged until a local agent contract is introduced.
+        """
+        job = self._get(LabelPrintJob, job_id, "LabelPrintJobNotFound")
+        now = datetime.now(timezone.utc)
+        if job.transport_status != "enqueued" or job.agent_job_id or (job.next_attempt_at and job.next_attempt_at > now):
+            raise DomainError("Trabalho de impressao nao esta disponivel para captura.", code="PrintJobNotClaimable")
+        if job.attempt_count >= job.max_attempts:
+            job.transport_status = "error"
+            job.last_error = job.last_error or "Limite de tentativas excedido."
+            self._commit()
+            raise DomainError("Limite de tentativas de impressao excedido.", code="PrintJobAttemptsExceeded")
+        job.attempt_count += 1
+        job.agent_job_id = agent_job_id
+        job.claimed_at = now
+        job.next_attempt_at = None
+        self._commit()
+        self.db.refresh(job)
+        return self._job(job)
+
+    def mark_print_job_sent(self, job_id: str, *, agent_job_id: str, external_job_id: str | None = None):
+        job = self._get(LabelPrintJob, job_id, "LabelPrintJobNotFound")
+        if job.transport_status != "enqueued" or job.agent_job_id != agent_job_id:
+            raise DomainError("Trabalho de impressao nao pertence ao agente ou nao esta em envio.", code="PrintJobStateConflict")
+        job.transport_status = "sent"
+        job.agent_job_id = external_job_id or agent_job_id
+        job.sent_at = datetime.now(timezone.utc)
+        self._commit()
+        self.db.refresh(job)
+        return self._job(job)
+
+    def mark_print_job_confirmed(self, job_id: str, *, agent_job_id: str):
+        job = self._get(LabelPrintJob, job_id, "LabelPrintJobNotFound")
+        if job.transport_status != "sent" or job.agent_job_id != agent_job_id:
+            raise DomainError("Trabalho de impressao nao aguarda confirmacao deste agente.", code="PrintJobStateConflict")
+        job.transport_status = "confirmed"
+        job.confirmed_at = datetime.now(timezone.utc)
+        self._commit()
+        self.db.refresh(job)
+        return self._job(job)
+
+    def mark_print_job_failed(self, job_id: str, *, agent_job_id: str, error: str, retry: bool = True):
+        job = self._get(LabelPrintJob, job_id, "LabelPrintJobNotFound")
+        if job.transport_status != "enqueued" or job.agent_job_id != agent_job_id:
+            raise DomainError("Trabalho de impressao nao pode ser finalizado por este agente.", code="PrintJobStateConflict")
+        job.last_error = error.strip()[:2000] or "Falha de impressao desconhecida."
+        job.failed_at = datetime.now(timezone.utc)
+        job.transport_status = "error"
+        job.next_attempt_at = None
+        self._commit()
+        self.db.refresh(job)
+        return self._job(job)
+
     def _resolve_printer(self, printer_id):
         if printer_id:
             row = self._get(LabelPrinter, printer_id, "LabelPrinterNotFound")
@@ -641,8 +697,8 @@ class LabelService:
 
     @staticmethod
     def _job(row):
-        return {key: getattr(row, key) for key in ("id", "order_id", "label_version_id", "printer_id", "template_id", "actor_id", "job_type", "copies", "reason", "result_status", "created_at")}
+        return {key: getattr(row, key) for key in ("id", "order_id", "label_version_id", "printer_id", "template_id", "actor_id", "job_type", "copies", "reason", "result_status", "transport_status", "attempt_count", "max_attempts", "agent_job_id", "claimed_at", "sent_at", "confirmed_at", "failed_at", "next_attempt_at", "last_error", "created_at", "updated_at")}
 
     @staticmethod
     def _preparation_job(row):
-        return {key: getattr(row, key) for key in ("id", "execution_id", "printer_id", "template_id", "actor_id", "job_type", "copies", "reason", "result_status", "created_at")}
+        return {key: getattr(row, key) for key in ("id", "execution_id", "printer_id", "template_id", "actor_id", "job_type", "copies", "reason", "result_status", "transport_status", "attempt_count", "max_attempts", "agent_job_id", "claimed_at", "sent_at", "confirmed_at", "failed_at", "next_attempt_at", "last_error", "created_at", "updated_at")}

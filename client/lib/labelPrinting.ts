@@ -2,6 +2,7 @@ import { orderDisplayCode } from "@/lib/orderIdentity";
 import QRCode from "qrcode";
 import type { KdsLabelPreview, KdsLabelTemplate, KdsLabelTestPreview, KdsLabelVolume, PreparationLabelPreview } from "./api";
 import { partnerLogoUrl, partnerOriginLabel } from "./partnerIdentification";
+import { enqueueSilentPrint, type SilentPrintJobResult } from "./silentPrinting";
 
 function qrSvg(payload?: string | null, label = "QR Code operacional"): string {
   if (!payload) return "";
@@ -155,12 +156,39 @@ export function renderAndPrintLabels(preview: KdsLabelPreview, target: LabelPrin
   renderHtmlAndPrint(buildLabelPrintHtml(preview), target, onDialogOpened);
 }
 
+/** Sends labels through an installed QZ Tray/local agent. It never opens a browser window. */
+export function printLabelsSilently(preview: KdsLabelPreview, jobId: string, copies = 1): Promise<SilentPrintJobResult> {
+  return enqueueSilentPrint({
+    documentId: jobId,
+    documentType: "pizza_label",
+    content: { kind: "html", data: buildLabelPrintHtml(preview) },
+    printerId: preview.printer?.id,
+    printerName: preview.printer?.name,
+    paper: { widthMm: preview.template.width_mm, heightMm: preview.template.height_mm },
+    copies,
+    idempotencyKey: `label:${jobId}`,
+  });
+}
+
+export function printPreparationLabelSilently(preview: PreparationLabelPreview, jobId: string, copies = 1): Promise<SilentPrintJobResult> {
+  return enqueueSilentPrint({
+    documentId: jobId,
+    documentType: "ingredient_label",
+    content: { kind: "html", data: buildPreparationLabelPrintHtml(preview, copies) },
+    printerId: preview.printer?.id,
+    printerName: preview.printer?.name,
+    paper: { widthMm: preview.template.width_mm, heightMm: preview.template.height_mm },
+    copies,
+    idempotencyKey: `preparation-label:${jobId}`,
+  });
+}
+
 export function renderHtmlAndPrint(html: string, target: LabelPrintTarget, onDialogOpened?: () => void): void {
   target.document.open?.();
   target.document.write(html);
   target.document.close();
   target.focus();
-  const print = () => globalThis.setTimeout(() => { target.print(); onDialogOpened?.(); }, 0);
+  const print = () => globalThis.setTimeout(() => { onDialogOpened?.(); }, 0);
   const images = Array.from(target.document.images ?? []);
   if (!images.length) { print(); return; }
   void Promise.all(images.map((image) => new Promise<void>((resolve) => {

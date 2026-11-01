@@ -4,7 +4,8 @@ import { AlertTriangle, History, Loader2, Printer } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { kdsLabelsApi, preparationLabelsApi, type PreparationLabelPreview, type KdsLabelPreview, type KdsLabelPrinter, type KdsLabelPrintJob, type KdsLabelSettings, type KdsLabelTemplate } from "@/lib/api";
-import { buildPreparationLabelPrintHtml, openLabelPrintWindow, renderHtmlAndPrint, renderAndPrintLabels } from "@/lib/labelPrinting";
+import { buildPreparationLabelPrintHtml, printPreparationLabelSilently, printLabelsSilently } from "@/lib/labelPrinting";
+import { silentPrintFallbackMessage } from "@/lib/silentPrinting";
 
 /** Preparation labels use the execution snapshot; printing never reports production. */
 export function PreparationLabelPrintDialog({ executionId, open, onOpenChange }: { executionId: string | null; open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -25,7 +26,7 @@ export function PreparationLabelPrintDialog({ executionId, open, onOpenChange }:
   async function print(reprint: boolean) {
     if (!executionId || !preview || busy) return;
     if (reprint && !reason.trim()) { setError("Informe o motivo da reimpressão."); return; }
-    const target = openLabelPrintWindow();
+    const target = true; // compatibility guard; direct printing does not open a browser window
     if (!target) { setError("Habilite pop-ups para abrir a impressão."); return; }
     setBusy(true); setError(""); setDone(false);
     if (!pending.current || pending.current.reprint !== reprint || pending.current.reason !== reason.trim() || pending.current.copies !== copies) pending.current = { id: newIdempotencyKey(executionId), reprint, reason: reason.trim(), copies };
@@ -33,9 +34,9 @@ export function PreparationLabelPrintDialog({ executionId, open, onOpenChange }:
     try {
       const body = { printer_id: preview.printer.id, template_id: preview.template.id, copies: submission.copies, idempotency_key: submission.id };
       const result = submission.reprint ? await preparationLabelsApi.reprint(executionId, { ...body, reason: submission.reason }) : await preparationLabelsApi.print(executionId, body);
-      renderHtmlAndPrint(buildPreparationLabelPrintHtml(result.preview, submission.copies), target);
+      await printPreparationLabelSilently(result.preview, result.job.id, submission.copies);
       setPreview(result.preview); setDone(true); pending.current = null;
-    } catch (caught) { target.close?.(); setError(message(caught)); }
+    } catch (caught) { setError(silentPrintFallbackMessage(caught)); }
     finally { setBusy(false); }
   }
   return <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}><DialogContent className="border-surface-03 bg-surface-02 text-cream"><DialogHeader><DialogTitle>Etiquetas do preparo</DialogTitle><DialogDescription>Imprimir e reimprimir não altera o estoque. Selecione o equipamento físico na caixa de impressão do navegador.</DialogDescription></DialogHeader>
@@ -140,7 +141,7 @@ export default function LabelPrintDialog({ orderId, orderCode, open, onOpenChang
       setError("Informe o motivo da reimpressão.");
       return;
     }
-    const target = openLabelPrintWindow();
+    const target = true; // compatibility guard; direct printing does not open a browser window
     if (!target) {
       setError("O navegador bloqueou a janela. Habilite pop-ups para imprimir.");
       return;
@@ -153,13 +154,13 @@ export default function LabelPrintDialog({ orderId, orderCode, open, onOpenChang
         ? await kdsLabelsApi.reprint(orderId, { ...payload, reason: reason.trim() || "Reimpressão operacional" })
         : await kdsLabelsApi.print(orderId, payload);
       const printable = { ...result.preview, template: { ...result.preview.template, show_logo: true } };
-      renderAndPrintLabels({ ...printable, volumes: Array.from({ length: copies }, () => printable.volumes).flat() }, target, () => { void kdsLabelsApi.markDialogOpened(result.job.id); });
+      const printResult = await printLabelsSilently({ ...printable, volumes: Array.from({ length: copies }, () => printable.volumes).flat() }, result.job.id, 1);
+      await kdsLabelsApi.markTransportStatus(result.job.id, { status: printResult.status === "confirmed" ? "confirmed" : "sent", agent_job_id: printResult.jobId });
       setPreview({ ...printable, is_first_print: false, previous_print_count: printable.previous_print_count + 1 });
       setHistory((current) => [result.job, ...current]);
       toast({ title: reprint ? "Reimpressão registrada" : "Impressão registrada", description: "A caixa de impressão foi aberta. Confirme a fila no sistema operacional." });
     } catch (caught) {
-      target.close?.();
-      setError(message(caught));
+      setError(silentPrintFallbackMessage(caught));
     } finally {
       setPrinting(false);
     }

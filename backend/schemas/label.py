@@ -105,3 +105,22 @@ class LabelReprintIn(LabelPrintIn):
 
 class LabelTestIn(LabelPrintIn):
     pass
+
+
+class LabelTransportStatusIn(BaseModel):
+    status: Literal["sent", "confirmed", "error"]
+    agent_job_id: str = Field(min_length=1, max_length=160)
+    external_job_id: str | None = Field(default=None, max_length=160)
+    error: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_error(self):
+        if self.status == "error" and not self.error:
+            raise ValueError("error e obrigatorio quando a impressao falha")
+        if self.status != "error" and self.error:
+            raise ValueError("error so pode ser informado para status error")
+        return self
+
+
+class LabelTransportClaimIn(BaseModel):
+    agent_job_id: str = Field(min_length=1, max_length=160)

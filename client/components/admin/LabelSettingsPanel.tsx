@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Check, Loader2, Plus, Printer, RefreshCw, Ruler, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { kdsLabelsApi, type KdsLabelPrinter, type KdsLabelSettings, type KdsLabelTemplate, type KdsLabelVolumeRule } from "@/lib/api";
-import { buildLabelCalibrationHtml, openLabelPrintWindow, renderHtmlAndPrint } from "@/lib/labelPrinting";
+import { buildLabelCalibrationHtml } from "@/lib/labelPrinting";
+import { enqueueSilentPrint, silentPrintFallbackMessage } from "@/lib/silentPrinting";
 
 const fieldClass = "min-h-11 w-full rounded-lg border border-surface-03 bg-surface-01 px-3 text-sm text-cream focus:border-gold focus:outline-none";
 interface PrinterDraft { name: string; description: string; system_queue_hint: string; dpi: number; printer_type: string; connection_type: string; manufacturer_model: string; network_host: string; network_port: number; protocol: string; max_width_mm: number; sector: string }
@@ -52,14 +53,14 @@ export default function LabelSettingsPanel() {
 
   const testPrint = async () => {
     if (!settings || saving) return;
-    const target = openLabelPrintWindow();
+    const target = true; // compatibility guard; direct printing never opens a browser window
     if (!target) { setError("Habilite pop-ups para imprimir a etiqueta de teste."); return; }
     setSaving("test"); setError(null);
     try {
       const result = await kdsLabelsApi.test({ printer_id: settings.default_printer_id, template_id: settings.default_template_id, copies: 1, idempotency_key: `label-test:${Date.now()}:${Math.random()}` });
-      renderHtmlAndPrint(buildLabelCalibrationHtml(result.preview), target, () => { void kdsLabelsApi.markDialogOpened(result.job.id); });
+      await enqueueSilentPrint({ documentId: result.job.id, documentType: "test", content: { kind: "html", data: buildLabelCalibrationHtml(result.preview) }, printerId: result.preview.printer.id, printerName: result.preview.printer.name, paper: { widthMm: result.preview.template.width_mm, heightMm: result.preview.template.height_mm }, idempotencyKey: `label-test:${result.job.id}` });
       toast({ title: "Etiqueta de teste preparada", description: "Confirme a fila física na caixa do navegador." });
-    } catch (caught) { target.close?.(); setError(errorText(caught)); }
+    } catch (caught) { setError(silentPrintFallbackMessage(caught)); }
     finally { setSaving(null); }
   };
 

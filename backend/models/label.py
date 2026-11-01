@@ -157,6 +157,7 @@ class LabelPrintJob(Base):
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_label_print_jobs_idempotency"),
         CheckConstraint("job_type IN ('print','reprint','test')", name="ck_label_print_jobs_type"),
         CheckConstraint("result_status IN ('requested','dialog_opened')", name="ck_label_print_jobs_result"),
+        CheckConstraint("transport_status IN ('enqueued','sent','confirmed','error')", name="ck_label_print_jobs_transport_status"),
         CheckConstraint("copies >= 1 AND copies <= 20", name="ck_label_print_jobs_copies"),
         Index("ix_label_print_jobs_tenant_order_created", "tenant_id", "order_id", "created_at"),
     )
@@ -172,8 +173,21 @@ class LabelPrintJob(Base):
     copies = Column(Integer, nullable=False, default=1)
     reason = Column(String(500), nullable=True)
     result_status = Column(String(30), nullable=False, default="requested")
+    # Operational state for a local/network print agent. Kept separate from
+    # result_status, which is a published browser-dialog compatibility field.
+    transport_status = Column(String(20), nullable=False, default="enqueued", server_default="enqueued")
+    attempt_count = Column(Integer, nullable=False, default=0, server_default="0")
+    max_attempts = Column(Integer, nullable=False, default=3, server_default="3")
+    agent_job_id = Column(String(160), nullable=True)
+    claimed_at = Column(DateTime(timezone=True), nullable=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    confirmed_at = Column(DateTime(timezone=True), nullable=True)
+    failed_at = Column(DateTime(timezone=True), nullable=True)
+    next_attempt_at = Column(DateTime(timezone=True), nullable=True)
+    last_error = Column(Text, nullable=True)
     snapshot_json = Column(JSON, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
 
 class PreparationLabelPrintJob(Base):
@@ -184,6 +198,7 @@ class PreparationLabelPrintJob(Base):
         ForeignKeyConstraint(["tenant_id", "execution_id"], ["preparation_executions.tenant_id", "preparation_executions.id"], ondelete="CASCADE"),
         CheckConstraint("job_type IN ('print','reprint')", name="ck_preparation_label_jobs_type"),
         CheckConstraint("result_status IN ('requested','dialog_opened')", name="ck_preparation_label_jobs_result"),
+        CheckConstraint("transport_status IN ('enqueued','sent','confirmed','error')", name="ck_preparation_label_jobs_transport_status"),
         Index("ix_preparation_label_jobs_tenant_execution", "tenant_id", "execution_id", "created_at"),
     )
     id = Column(String, primary_key=True)
@@ -197,5 +212,16 @@ class PreparationLabelPrintJob(Base):
     copies = Column(Integer, nullable=False, default=1)
     reason = Column(String(500), nullable=True)
     result_status = Column(String(30), nullable=False, default="requested")
+    transport_status = Column(String(20), nullable=False, default="enqueued", server_default="enqueued")
+    attempt_count = Column(Integer, nullable=False, default=0, server_default="0")
+    max_attempts = Column(Integer, nullable=False, default=3, server_default="3")
+    agent_job_id = Column(String(160), nullable=True)
+    claimed_at = Column(DateTime(timezone=True), nullable=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    confirmed_at = Column(DateTime(timezone=True), nullable=True)
+    failed_at = Column(DateTime(timezone=True), nullable=True)
+    next_attempt_at = Column(DateTime(timezone=True), nullable=True)
+    last_error = Column(Text, nullable=True)
     snapshot_json = Column(JSON, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)

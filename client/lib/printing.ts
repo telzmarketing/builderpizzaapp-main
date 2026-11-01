@@ -6,6 +6,7 @@ import { isOperationalDrink, operationalDrinks } from "./operationalDrinks";
 import { storeBranding } from "./storeBranding";
 import { readPlatformSupportSession } from "./platformSupportSession";
 import { partnerLogoUrl, partnerOriginLabel } from "./partnerIdentification";
+import { enqueueSilentPrint, silentPrintFallbackMessage } from "./silentPrinting";
 
 // ── Printer settings (persisted in localStorage) ──────────────────────────────
 
@@ -13,6 +14,8 @@ export type PaperWidth = "58mm" | "80mm" | "a4";
 export type PrintTemplate = "completo" | "cozinha" | "entrega";
 
 export interface PrinterSettings {
+  printerId?: string;
+  printerName?: string;
   storeLogoUrl?: string;
   paperWidth: PaperWidth;
   storeName: string;
@@ -495,11 +498,18 @@ function writeReceiptWindow(w: Window, html: string, shouldPrint: boolean, print
     // A missing/blocked logo leaves the textual company name legible.
     images.filter((image) => !image.complete || image.naturalWidth === 0).forEach((image) => { image.hidden = true; });
     w.focus();
-    if (shouldPrint) window.setTimeout(() => w.print(), printDelayMs);
+    // Browser printing is intentionally disabled. Direct printing is handled
+    // by the QZ Tray/local-agent bridge before a window is opened.
+    void shouldPrint;
+    void printDelayMs;
   });
 }
 
 export function openReceiptPreview(html: string, shouldPrint = false): boolean {
+  if (shouldPrint) {
+    void enqueueSilentPrint({ documentId: `receipt-preview:${Date.now()}`, documentType: "receipt", content: { kind: "html", data: html }, idempotencyKey: `receipt-preview:${Date.now()}` }).catch((error) => console.error("Silent print failed", silentPrintFallbackMessage(error)));
+    return true;
+  }
   const w = window.open("", "_blank", "width=440,height=700,scrollbars=yes");
   if (!w) return false;
   writeReceiptWindow(w, html, shouldPrint);
@@ -519,15 +529,14 @@ async function currentReceiptSettings(settings: PrinterSettings) {
 export function printOrder(order: ApiOrder, template?: PrintTemplate): boolean {
   const settings = loadPrinterSettings();
   const tpl = template ?? settings.defaultTemplate;
-  const target = window.open("", "_blank", "width=440,height=700,scrollbars=yes");
-  if (!target) { alert("Habilite pop-ups para imprimir."); return false; }
   void Promise.all([
     currentReceiptSettings(settings),
     paymentsApi.getByOrder(order.id).catch(() => null),
   ]).then(async ([branded, payment]) => {
     const qrCodeDataUrl = await receiptQrDataUrl(payment);
-    writeReceiptWindow(target, buildPrintHtml(order, tpl, branded, payment, qrCodeDataUrl), settings.autoPrint);
-  });
+    const html = buildPrintHtml(order, tpl, branded, payment, qrCodeDataUrl);
+    return enqueueSilentPrint({ documentId: order.id, documentType: "receipt", content: { kind: "html", data: html }, printerId: settings.printerId, printerName: settings.printerName, paper: { paperWidth: settings.paperWidth }, idempotencyKey: `receipt:${order.id}:${tpl}` });
+  }).catch((error) => { console.error("Silent print failed", silentPrintFallbackMessage(error)); });
   return true;
 }
 
@@ -536,17 +545,14 @@ export function printConfirmedOrder(order: ApiOrder): boolean {
   if (!settings.autoPrintConfirmedOrders) return true;
 
   const templates: PrintTemplate[] = ["cozinha", "completo"];
-  const targets = templates.map(() => window.open("", "_blank", "width=440,height=700,scrollbars=yes"));
   void Promise.all([
     currentReceiptSettings(settings),
     paymentsApi.getByOrder(order.id).catch(() => null),
   ]).then(async ([branded, payment]) => {
     const qrCodeDataUrl = await receiptQrDataUrl(payment);
-    targets.forEach((target, index) => {
-      if (target) writeReceiptWindow(target, buildPrintHtml(order, templates[index], branded, payment, qrCodeDataUrl), true, index * 600);
-    });
-  });
-  return targets.every(Boolean);
+    return Promise.all(templates.map((tpl) => enqueueSilentPrint({ documentId: `${order.id}:${tpl}`, documentType: "receipt", content: { kind: "html", data: buildPrintHtml(order, tpl, branded, payment, qrCodeDataUrl) }, printerId: settings.printerId, printerName: settings.printerName, paper: { paperWidth: settings.paperWidth }, idempotencyKey: `receipt:${order.id}:${tpl}` })));
+  }).catch((error) => { console.error("Silent print failed", silentPrintFallbackMessage(error)); });
+  return true;
 }
 
 // ── Sample order for preview ──────────────────────────────────────────────────
