@@ -6,6 +6,7 @@ import { useApp } from "@/context/AppContext";
 import { filterAdminNavigation } from "@/lib/adminAccess";
 import { preloadAdminRoute } from "@/lib/adminRoutePreload";
 import { isAssetUrl, resolveAssetUrl, type ApiEffectivePermissions } from "@/lib/api";
+import { rememberPwaContext } from "@/lib/motoboyPwa";
 
 function toText(value: unknown, fallback = ""): string {
   if (value === null || value === undefined || value === "") return fallback;
@@ -47,7 +48,7 @@ function getInitials(name: string): string {
 }
 
 export default function AppSidebar() {
-  const { pathname } = useLocation();
+  const { pathname, search, hash } = useLocation();
   const navigate = useNavigate();
   const { siteContent } = useApp();
   const navRef = useRef<HTMLElement>(null);
@@ -71,6 +72,7 @@ export default function AppSidebar() {
   }, [logo]);
 
   const handleLogout = () => {
+    rememberPwaContext(pathname, search, hash);
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_user");
     localStorage.removeItem("admin_permissions");

@@ -1,11 +1,14 @@
 import { LogOut } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { clearAdminSession } from "@/lib/adminSession";
+import { rememberPwaContext } from "@/lib/motoboyPwa";
 
 export default function KdsSessionActions() {
   const navigate = useNavigate();
+  const { pathname, search, hash } = useLocation();
 
   const leaveStation = () => {
+    rememberPwaContext(pathname, search, hash);
     clearAdminSession();
     navigate("/painel/login", { replace: true });
   };

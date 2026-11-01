@@ -12,6 +12,7 @@ import { readPlatformSupportSession, restorePlatformMasterSession } from "@/lib/
 import type { AdminNavigationGroup, AdminNavigationItem } from "@/config/adminNavigation";
 import { useAdminNavigationFocus, useAdminTheme } from "@/components/layout/AdminLayoutContext";
 import { toggleAdminTheme } from "@/lib/adminTheme";
+import { rememberPwaContext } from "@/lib/motoboyPwa";
 
 const LAST_MODULE_PATH_PREFIX = "admin:last-module-path:";
 
@@ -73,7 +74,7 @@ export default function TopNavigation({
   mobileMenuOpen: boolean;
   onMobileMenuChange: (open: boolean) => void;
 }) {
-  const { pathname } = useLocation();
+  const { pathname, search, hash } = useLocation();
   const navigate = useNavigate();
   const { theme, setTheme } = useAdminTheme();
   const { siteContent } = useApp();
@@ -152,6 +153,7 @@ export default function TopNavigation({
       }
       return;
     }
+    rememberPwaContext(pathname, search, hash);
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_user");
     localStorage.removeItem("admin_permissions");

@@ -16,6 +16,7 @@ import {
 import { kdsApi, type KdsOverview, type KdsOverviewStage } from "@/lib/api";
 import { groupKdsOverviewOrders } from "@/lib/kds";
 import KdsBrandLogo from "@/components/kds/KdsBrandLogo";
+import KdsSessionActions from "@/components/kds/KdsSessionActions";
 
 const POLL_INTERVAL_MS = 15_000;
 
@@ -130,6 +131,7 @@ export default function KdsOverview() {
           <RefreshCw size={17} className={refreshing ? "animate-spin" : ""} aria-hidden="true" />
           {refreshing ? "Atualizando..." : "Atualizar"}
         </button>
+        <KdsSessionActions />
       </div>
 
       {error && (

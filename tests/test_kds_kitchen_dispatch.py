@@ -38,10 +38,19 @@ def empty_db():
 def test_station_accounts_are_fail_closed_outside_their_kds_surface():
     assert station_path_allowed("cozinha", "/api/kds/kitchen/orders")
     assert not station_path_allowed("cozinha", "/api/orders")
+    assert not station_path_allowed("cozinha", "/api/admin/orders/manual")
+    assert not station_path_allowed("cozinha", "/api/payments/approve/order-1")
     assert not station_path_allowed("cozinha", "/api/kds/dispatch/orders")
     assert station_path_allowed("expedicao", "/api/kds/dispatch/drivers")
     assert not station_path_allowed("expedicao", "/api/delivery/active")
     assert station_path_allowed("expedicao", "/api/admin/auth/me/permissions")
+
+
+def test_pdv_payment_confirmation_keeps_server_side_rbac_boundary():
+    source = (ROOT / "backend/routes/payments.py").read_text(encoding="utf-8")
+    approve_route = source[source.index('@router.post("/approve/{order_id}")'):source.index('@router.post("/reconcile/{order_id}")')]
+
+    assert 'require_rbac_permission("pedidos", "edit")' in approve_route
 
 
 def test_dispatch_payload_is_bounded_and_uses_delivery_person_contract():

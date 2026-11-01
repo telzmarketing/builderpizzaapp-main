@@ -8,6 +8,7 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { findAdminNavigationItem, firstAllowedAdminPath, canAccessAdminItem } from "@/lib/adminAccess";
 import { adminAuthApi, ApiRequestError, rbacApi, type ApiEffectivePermissions } from "@/lib/api";
 import { clearAdminSession } from "@/lib/adminSession";
+import { rememberPwaContext } from "@/lib/motoboyPwa";
 import {
   PLATFORM_SUPPORT_PERMISSIONS,
   isPlatformSupportPanelPathAllowed,
@@ -18,7 +19,7 @@ import {
 } from "@/lib/platformSupportSession";
 
 export default function AdminGuard() {
-  const { pathname } = useLocation();
+  const { pathname, search, hash } = useLocation();
   const token = localStorage.getItem("admin_token");
   const supportSession = readPlatformSupportSession();
   const supportSessionId = supportSession?.session_id;
@@ -26,6 +27,10 @@ export default function AdminGuard() {
   const [loading, setLoading] = useState(!!token);
   const [passwordRequired, setPasswordRequired] = useState(false);
   const [accessError, setAccessError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token) rememberPwaContext(pathname, search, hash);
+  }, [hash, pathname, search, token]);
 
   useEffect(() => {
     if (!token) return;
@@ -68,6 +73,7 @@ export default function AdminGuard() {
         // session. Preserve the token so the operator can retry after the
         // service/schema is repaired and expose the real diagnostic state.
         if (error instanceof ApiRequestError && error.status === 401) {
+          rememberPwaContext(pathname, search, hash);
           clearAdminSession();
           setPermissions(null);
           return;

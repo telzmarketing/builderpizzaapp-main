@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.core.exceptions import DomainError
 from backend.core.response import created, err, err_msg, ok
 from backend.core.tenant_entitlements import require_operational_entitlement
+from backend.core.rbac_authorization import require_rbac_permission
 from backend.core.tenant_runtime import resolve_panel_tenant_context, resolve_public_tenant_context
 from backend.database import get_db
 from backend.models.admin import AdminUser
@@ -234,6 +235,7 @@ def approve_payment(
     request: Request,
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
+    _permission=Depends(require_rbac_permission("pedidos", "edit")),
     _entitlement=Depends(require_operational_entitlement("payments.write", write=True)),
 ):
     try:

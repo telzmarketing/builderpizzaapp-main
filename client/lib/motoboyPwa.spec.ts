@@ -1,10 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-import { configureBiMobileWorker, configureMotoboyWorker, configurePwaWorker, getPwaApp, getPwaEntryApp, isBiMobilePath, isMotoboyPath, isPwaEntryPath, KDS_PWA_KEYS, pwaScopeForPath } from "./motoboyPwa";
+import { configureBiMobileWorker, configureMotoboyWorker, configurePwaWorker, consumePwaContextTarget, getPwaApp, getPwaEntryApp, isBiMobilePath, isMotoboyPath, isPwaEntryPath, KDS_PWA_KEYS, PWA_CONTEXT_STORAGE_KEY, pwaScopeForPath, readPwaContext, rememberPwaContext } from "./motoboyPwa";
 import { canShowPwaInstallButton } from "@/components/PwaInstallButton";
 
 const origin = "https://pizza.example";
+function memoryStorage() {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
+  };
+}
 function registration(scope = "/", script = "/sw.js", subscribed = false) {
   return {
     scope: origin + scope, active: { scriptURL: origin + script },
@@ -87,6 +95,28 @@ describe("BI Mobile installation ownership", () => {
 });
 
 describe("KDS PWA entries", () => {
+  it("persists a safe KDS route through login and consumes it once", () => {
+    const storage = memoryStorage();
+
+    expect(rememberPwaContext("/painel/kds/pdv", "?station=front", "#orders", storage)).toBe("/painel/kds/pdv?station=front#orders");
+    expect(readPwaContext(storage)).toEqual({
+      appKey: "kds-pdv",
+      pathname: "/painel/kds/pdv",
+      search: "?station=front",
+      hash: "#orders",
+    });
+    expect(consumePwaContextTarget(storage)).toBe("/painel/kds/pdv?station=front#orders");
+    expect(storage.getItem(PWA_CONTEXT_STORAGE_KEY)).toBeNull();
+    expect(consumePwaContextTarget(storage)).toBeNull();
+  });
+
+  it("does not persist storefront or arbitrary routes as a login redirect", () => {
+    const storage = memoryStorage();
+
+    expect(rememberPwaContext("/painel", "?next=https://example.com", "", storage)).toBeNull();
+    expect(storage.getItem(PWA_CONTEXT_STORAGE_KEY)).toBeNull();
+  });
+
   it("maps every dedicated entry and canonical route to its own app key", () => {
     expect(KDS_PWA_KEYS).toEqual([
       "kds-principal", "kds-pizzaiolo", "kds-esfiha", "kds-preparo", "kds-expedicao",

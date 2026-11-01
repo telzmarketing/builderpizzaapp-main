@@ -1,10 +1,11 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { configurePwaWorker, syncMotoboyPwaHead } from "@/lib/motoboyPwa";
+import { configurePwaWorker, rememberPwaContext, syncMotoboyPwaHead } from "@/lib/motoboyPwa";
 
 export default function MotoboyPwaBoundary() {
-  const { pathname } = useLocation();
+  const { pathname, search, hash } = useLocation();
   useEffect(() => {
+    rememberPwaContext(pathname, search, hash);
     syncMotoboyPwaHead(pathname);
     if ("serviceWorker" in navigator) {
       void configurePwaWorker(pathname, navigator.serviceWorker, window.location.origin).catch((error) => {
@@ -12,6 +13,6 @@ export default function MotoboyPwaBoundary() {
       });
     }
     return () => syncMotoboyPwaHead("");
-  }, [pathname]);
+  }, [hash, pathname, search]);
   return null;
 }

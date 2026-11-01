@@ -1,4 +1,5 @@
 import { clearAdminSession, shouldInvalidateAdminSession } from "./adminSession";
+import { rememberPwaContext } from "./motoboyPwa";
 import { buildPlatformTenantListQuery } from "./platformMaster";
 import type { RuntimeHostSurface } from "./runtimeHostSurface";
 import {
@@ -125,6 +126,7 @@ function recoverUnauthorizedAdminSession(status: number, path: string): string |
     window.location.replace("/painel/plataforma");
     return "Sessao de suporte expirada. Restaurando o acesso Master...";
   }
+  rememberPwaContext(window.location.pathname, window.location.search, window.location.hash);
   clearAdminSession();
   window.location.replace("/painel/login");
   return "Sessao expirada. Redirecionando para o login...";

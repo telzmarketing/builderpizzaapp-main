@@ -27,6 +27,94 @@ export const PWA_APPS: readonly PwaAppDefinition[] = [
 export const KDS_PWA_KEYS = PWA_APPS.filter((app) => app.key.startsWith("kds-")).map((app) => app.key) as PwaAppKey[];
 export const MOTOBOY_SCOPE = "/motoboy/";
 export const BI_MOBILE_SCOPE = "/painel/bi-mobile/";
+export const PWA_CONTEXT_STORAGE_KEY = "telz:pwa-context";
+
+export type PwaContext = {
+  appKey: PwaAppKey;
+  pathname: string;
+  search: string;
+  hash: string;
+};
+
+type StorageReader = Pick<Storage, "getItem">;
+type StorageWriter = Pick<Storage, "setItem">;
+
+function isKdsPwaKey(value: unknown): value is PwaAppKey {
+  return typeof value === "string" && KDS_PWA_KEYS.includes(value as PwaAppKey);
+}
+
+function suffix(value: string | undefined, prefix: "?" | "#") {
+  return value?.startsWith(prefix) ? value : "";
+}
+
+function pwaTarget(context: PwaContext) {
+  return `${context.pathname}${context.search}${context.hash}`;
+}
+
+/**
+ * Saves only an internal KDS route. This survives the login redirect and a
+ * full reload, but cannot be used as an arbitrary external redirect.
+ */
+export function rememberPwaContext(
+  pathname: string,
+  search = "",
+  hash = "",
+  storage: StorageWriter = localStorage,
+): string | null {
+  const app = getPwaApp(pathname);
+  if (!app || !isKdsPwaKey(app.key)) return null;
+
+  const context: PwaContext = {
+    appKey: app.key,
+    pathname,
+    search: suffix(search, "?"),
+    hash: suffix(hash, "#"),
+  };
+  try {
+    storage.setItem(PWA_CONTEXT_STORAGE_KEY, JSON.stringify(context));
+  } catch {
+    // Storage can be unavailable in private browsing or embedded webviews.
+  }
+  return pwaTarget(context);
+}
+
+export function readPwaContext(storage: StorageReader = localStorage): PwaContext | null {
+  try {
+    const raw = storage.getItem(PWA_CONTEXT_STORAGE_KEY);
+    if (!raw) return null;
+    const context = JSON.parse(raw) as Partial<PwaContext>;
+    if (!isKdsPwaKey(context.appKey) || typeof context.pathname !== "string") return null;
+    if (getPwaApp(context.pathname)?.key !== context.appKey) return null;
+    return {
+      appKey: context.appKey,
+      pathname: context.pathname,
+      search: suffix(context.search, "?"),
+      hash: suffix(context.hash, "#"),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function consumePwaContextTarget(
+  storage: StorageReader & Pick<Storage, "removeItem"> = localStorage,
+): string | null {
+  const context = readPwaContext(storage);
+  try {
+    storage.removeItem(PWA_CONTEXT_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures; the login flow can still use its normal target.
+  }
+  return context ? pwaTarget(context) : null;
+}
+
+export function clearPwaContext(storage: Pick<Storage, "removeItem"> = localStorage) {
+  try {
+    storage.removeItem(PWA_CONTEXT_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures.
+  }
+}
 
 function matchesPath(pathname: string, app: PwaAppDefinition) {
   return pathname === app.scope.slice(0, -1) || pathname.startsWith(app.scope)

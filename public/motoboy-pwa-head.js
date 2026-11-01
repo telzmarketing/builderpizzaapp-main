@@ -23,6 +23,20 @@
     }
     return null;
   }
+  function rememberPwaContext(path) {
+    var app = appFor(path);
+    if (!app || app[0].indexOf("kds-") !== 0 || !window.localStorage) return;
+    try {
+      window.localStorage.setItem("telz:pwa-context", JSON.stringify({
+        appKey: app[0],
+        pathname: path,
+        search: window.location.search || "",
+        hash: window.location.hash || "",
+      }));
+    } catch (_) {
+      // Storage may be unavailable in private browsing or embedded webviews.
+    }
+  }
   window.updateMotoboyPwaHead = function (pathname) {
     document.querySelectorAll("[data-telz-pwa]").forEach(function (node) { node.remove(); });
     var app = appFor(pathname);
@@ -44,5 +58,6 @@
     window.location.replace("/motoboy/" + window.location.search + window.location.hash);
     return;
   }
+  rememberPwaContext(window.location.pathname);
   window.updateMotoboyPwaHead(window.location.pathname);
 })();
