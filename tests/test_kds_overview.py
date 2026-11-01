@@ -162,7 +162,8 @@ def test_overview_is_tenant_scoped_counts_stages_and_exposes_bounded_contract():
         assert by_id["route"]["stage"] == "in_route"
         assert set(by_id["ready"]) == {
             "id", "order_code", "stage", "status", "fulfillment_type",
-            "created_at", "status_started_at", "delivery",
+            "created_at", "status_started_at", "delivery", "order_origin",
+            "partner_order_number", "order_identification", "partner_logo_url",
         }
         serialized = repr(payload)
         assert "other-tenant" not in serialized

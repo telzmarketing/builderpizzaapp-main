@@ -49,7 +49,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Defina explicitamente:
 
 ```env
-ALEMBIC_TARGET=20261030_backfill_legacy_border_option_kind
+ALEMBIC_TARGET=20261030_order_origins_partner_identifications
 INSTALL_SSL=false
 ```
 

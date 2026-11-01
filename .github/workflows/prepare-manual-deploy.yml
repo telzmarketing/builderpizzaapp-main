@@ -48,7 +48,7 @@ jobs:
       POPUP_TEST_DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_ci
       PRODUCT_AUDIT_DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_product_ci
       INVENTORY_FOUNDATION_TEST_DATABASE_URL: postgresql://telz_ci:telz_ci@127.0.0.1:5432/telz_inventory_ci
-      JWT_SECRET_KEY: ci-only-not-for-production
+      JWT_SECRET_KEY: ci-only-not-for-production-qr-secret-20261031
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
