@@ -4,6 +4,7 @@ import { ChevronLeft, Search, Plus, Check } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { categoriesApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl, type ApiProductCategory } from "@/lib/api";
 import { trackEvent } from "@/lib/tracking";
+import { getProductCardAction } from "@/lib/productCardAction";
 import BottomNav from "@/components/BottomNav";
 import MoschettieriLogo from "@/components/MoschettieriLogo";
 import CategorySeal from "@/components/CategorySeal";
@@ -70,9 +71,7 @@ export default function Cardapio() {
   const handleQuickAdd = (e: React.MouseEvent, product: typeof products[0]) => {
     e.stopPropagation();
     if (product.inventory_available === false) return;
-    const productType = (product as any).product_type as string | null | undefined;
-    const isPizza = !productType || productType === "pizza";
-    if (isPizza || product.sizes?.some((size) => size.active) || product.drink_variants?.some((variant) => variant.active) || product.crust_types?.some((crust) => crust.active) || product.promotion_applied) {
+    if (getProductCardAction(product) === "configure") {
       navigate(productTarget(product));
       return;
     }

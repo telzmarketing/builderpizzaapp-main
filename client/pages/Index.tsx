@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Menu, Search, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, Tag, Heart, UtensilsCrossed } from "lucide-react";
+import { Menu, Search, ChevronRight, ChevronLeft, X, ShoppingCart, Bell, User, Tag, Heart, UtensilsCrossed, Plus, Check } from "lucide-react";
 
 import { useApp } from "@/context/AppContext";
 import { categoriesApi, homeCatalogApi, isAssetUrl, resolveAssetUrl, resolveOptimizedAssetUrl, type ApiProductCategory } from "@/lib/api";
@@ -10,17 +10,20 @@ import MoschettieriLogo from "@/components/MoschettieriLogo";
 import StoreStatusBanner from "@/components/StoreStatusBanner";
 import CategorySeal from "@/components/CategorySeal";
 import BestSellerSeal from "@/components/BestSellerSeal";
+import { getProductCardAction } from "@/lib/productCardAction";
+import { trackEvent } from "@/lib/tracking";
 
 const PIZZA_FALLBACKS = ["🍕", "🫓", "🧀", "🍅", "🌶️", "🍖", "🍄", "🫒", "🔥", "🥩", "🌿", "🫑"];
 
 export default function Home() {
   const navigate = useNavigate();
-  const { products, productsLoaded, productsError, retryProducts, campaignBanners, siteContent, loyaltySettings } = useApp();
+  const { products, productsLoaded, productsError, retryProducts, campaignBanners, siteContent, loyaltySettings, addToCart } = useApp();
   const { sectionSubtitle, sectionTitle, bannerRotationInterval } = siteContent.home;
   const rotationInterval = (bannerRotationInterval ?? 5) * 1000;
   const [activeCategory, setActiveCategory] = useState<HomeCatalogCategory>("");
   const [carouselPosition, setCarouselPosition] = useState(0);
   const [clickedPizza, setClickedPizza] = useState<string | null>(null);
+  const [justAdded, setJustAdded] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -169,6 +172,20 @@ export default function Home() {
       const product = products.find((item) => item.id === productId);
       navigate(product?.promotion_landing_url || `/product/${productId}`);
     }, 300);
+  };
+
+  const handleQuickAdd = (event: React.MouseEvent, product: typeof products[number]) => {
+    event.stopPropagation();
+    if (product.inventory_available === false) return;
+    if (getProductCardAction(product) === "configure") {
+      navigate(product.promotion_landing_url || `/product/${product.id}`);
+      return;
+    }
+    const unitPrice = product.current_price ?? product.price;
+    addToCart(product, 1, "", [], [{ productId: product.id, name: product.name, price: unitPrice, icon: product.icon || "🍕" }], 1, unitPrice);
+    trackEvent("add_to_cart", unitPrice, { product_id: product.id, source: "home-card" });
+    setJustAdded(product.id);
+    window.setTimeout(() => setJustAdded((current) => current === product.id ? null : current), 1500);
   };
 
   const getPizzaIndex = (offset: number) => {
@@ -460,9 +477,12 @@ export default function Home() {
         {!isCatalogLoading && categoryProducts.length > 0 && (
           <div className="hidden lg:grid lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {categoryProducts.map((product, index) => (
-              <button
+              <div
                 key={product.id}
                 onClick={() => handlePizzaClick(product.id)}
+                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); handlePizzaClick(product.id); } }}
+                role="button"
+                tabIndex={0}
                 className={`w-full bg-surface-02 rounded-2xl p-5 shadow-lg hover:shadow-xl border border-surface-03 hover:border-gold/30 transition-all duration-300 text-left ${
                   clickedPizza === product.id ? "scale-105 shadow-gold/30" : "hover:scale-[1.02]"
                 }`}
@@ -491,7 +511,16 @@ export default function Home() {
                     Indisponivel no momento
                   </p>
                 )}
-              </button>
+                <button
+                  type="button"
+                  aria-label={product.inventory_available === false ? `${product.name} indisponível` : `Adicionar ${product.name}`}
+                  disabled={product.inventory_available === false}
+                  onClick={(event) => handleQuickAdd(event, product)}
+                  className={`mt-3 ml-auto grid h-10 w-10 place-items-center rounded-full transition-all active:scale-90 ${product.inventory_available === false ? "bg-surface-03 text-stone" : justAdded === product.id ? "bg-green-500 text-cream scale-110" : "bg-gold text-cream hover:bg-gold/80"}`}
+                >
+                  {justAdded === product.id ? <Check size={17} /> : <Plus size={18} />}
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -513,8 +542,11 @@ export default function Home() {
 
               {/* Featured center card */}
               <div className="w-full max-w-[236px] mx-auto">
-                <button
+                <div
                   onClick={() => handlePizzaClick(currentPizza.id)}
+                  onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); handlePizzaClick(currentPizza.id); } }}
+                  role="button"
+                  tabIndex={0}
                   className={`w-full bg-surface-02 rounded-2xl p-4 shadow-2xl transition-all duration-300 ${
                     clickedPizza === currentPizza.id ? "scale-105 shadow-gold/30" : "active:scale-95"
                   }`}
@@ -537,7 +569,16 @@ export default function Home() {
                       Indisponivel no momento
                     </p>
                   )}
-                </button>
+                  <button
+                    type="button"
+                    aria-label={currentPizza?.inventory_available === false ? `${currentPizza?.name} indisponível` : `Adicionar ${currentPizza?.name}`}
+                    disabled={currentPizza?.inventory_available === false}
+                    onClick={(event) => handleQuickAdd(event, currentPizza)}
+                    className={`mt-3 ml-auto grid h-9 w-9 place-items-center rounded-full transition-all active:scale-90 ${currentPizza?.inventory_available === false ? "bg-surface-03 text-stone" : justAdded === currentPizza?.id ? "bg-green-500 text-cream scale-110" : "bg-gold text-cream hover:bg-gold/80"}`}
+                  >
+                    {justAdded === currentPizza?.id ? <Check size={16} /> : <Plus size={17} />}
+                  </button>
+                </div>
               </div>
 
               {/* Next (partially visible) */}

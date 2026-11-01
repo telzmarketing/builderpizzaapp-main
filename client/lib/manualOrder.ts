@@ -1,5 +1,5 @@
 import type { ProductConfiguratorProps } from "@/pages/Product";
-import type { ApiEffectivePermissions, CheckoutItemIn } from "./api";
+import type { ApiEffectivePermissions, ApiProduct, CheckoutItemIn } from "./api";
 
 export interface ManualCartLine { id: string; name: string; item: CheckoutItemIn }
 
@@ -20,6 +20,18 @@ export function configuredManualLine(args: Parameters<NonNullable<ProductConfigu
     selected_crust_type_id: crust?.id ?? null, selected_crust_type_name: crust?.name ?? null,
     selected_border_id: border?.id ?? null, selected_border_name: border?.name ?? null,
     selected_drink_variant_id: drink?.id ?? null, selected_drink_variant_name: drink?.name ?? null,
+  } };
+}
+
+export function simpleManualLine(product: ApiProduct, id: string): ManualCartLine {
+  const price = product.current_price ?? product.price;
+  return { id, name: product.name, item: {
+    product_id: product.id, quantity: 1, selected_size: "", selected_size_id: null,
+    flavor_division: 1, flavors: [{ product_id: product.id, name: product.name, price, icon: product.icon || "🍕" }],
+    final_price: price, add_ons: [], notes: null, option_selections: [],
+    selected_crust_type_id: null, selected_crust_type_name: null,
+    selected_border_id: null, selected_border_name: null,
+    selected_drink_variant_id: null, selected_drink_variant_name: null,
   } };
 }
 
