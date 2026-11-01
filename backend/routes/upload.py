@@ -130,9 +130,10 @@ async def upload_image(
     with open(dest_path, "wb") as fh:
         fh.write(data)
 
+    asset_id = None
     if get_settings().TENANT_UPLOAD_NAMESPACE_ENABLED:
         try:
-            TenantUploadService(db).create_asset(
+            asset = TenantUploadService(db).create_asset(
                 context=context,
                 admin=admin,
                 filename=filename,
@@ -141,6 +142,7 @@ async def upload_image(
                 byte_size=len(data),
                 visibility=visibility,
             )
+            asset_id = asset.id
             db.commit()
         except Exception:
             # Avoid serving a file without an ownership row when the rollout is active.
@@ -148,4 +150,4 @@ async def upload_image(
             db.rollback()
             raise
 
-    return ok({"url": url})
+    return ok({"url": url, "asset_id": asset_id})

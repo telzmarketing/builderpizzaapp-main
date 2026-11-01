@@ -338,10 +338,11 @@ _MODULES = [
     ("auditoria",       "Auditoria / Logs",       26),
     ("cozinha",         "Cozinha (KDS)",          27),
     ("expedicao",       "Expedição (KDS)",        28),
-    ("inventory",       "Estoque",                29),
-    ("cmv",             "CMV",                    30),
-    ("finance",         "Financeiro ERP",         31),
-    ("fiscal",          "Fiscal SEFAZ",           32),
+    ("kds_auditoria",   "KDS Auditoria",          29),
+    ("inventory",       "Estoque",                30),
+    ("cmv",             "CMV",                    31),
+    ("finance",         "Financeiro ERP",         32),
+    ("fiscal",          "Fiscal SEFAZ",           33),
 ]
 
 _PERMISSIONS = [
@@ -389,6 +390,7 @@ _ROLE_PERMISSIONS: dict = {
         "auditoria":        ["view"],
         "cozinha":          ["view", "edit"],
         "expedicao":        ["view", "edit"],
+        "kds_auditoria":    ["view", "edit"],
         "inventory":        ["view", "create", "edit", "export", "manage"],
         "cmv":              ["view", "export", "manage"],
         "finance":          ["view", "create", "edit", "approve", "export", "manage"],
@@ -412,6 +414,7 @@ _ROLE_PERMISSIONS: dict = {
         "frete":         ["view"],
         "cozinha":       ["view", "edit"],
         "expedicao":     ["view", "edit"],
+        "kds_auditoria": ["view", "edit"],
         "inventory":     ["view", "create", "edit", "export"],
         "cmv":           ["view", "export"],
         "finance":       ["view", "export"],
@@ -430,6 +433,7 @@ _ROLE_PERMISSIONS: dict = {
     },
     "expedicao": {
         "expedicao": ["view", "edit"],
+        "kds_auditoria": ["view", "edit"],
     },
     "entregador": {
         "entregas": ["view", "edit"],

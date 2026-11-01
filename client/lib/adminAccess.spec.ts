@@ -86,6 +86,7 @@ describe("admin navigation route matching", () => {
         "KDS Esfiha",
         "KDS Cozinha Preparo",
         "KDS Expedição",
+        "KDS Auditoria",
         "KDS Motoboys",
       ]);
   });

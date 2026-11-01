@@ -35,6 +35,7 @@ const routeLoaders: Array<[string, RouteLoader]> = [
   ["/painel/cozinha", () => import("@/pages/admin/Cozinha")],
   ["/painel/esfiha", () => import("@/pages/admin/KdsEsfiha")],
   ["/painel/expedicao", () => import("@/pages/admin/Expedicao")],
+  ["/painel/kds/auditoria", () => import("@/pages/admin/KdsAuditoria")],
   ["/painel/salao", () => import("@/pages/admin/salao/AdminSalao")],
   ["/painel/fidelidade", () => import("@/pages/admin/AdminFidelidade")],
   ["/painel/conteudo", () => import("@/pages/admin/Conteudo")],

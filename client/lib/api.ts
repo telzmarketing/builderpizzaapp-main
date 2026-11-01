@@ -1338,6 +1338,33 @@ export interface KdsDriver {
   average_rating?: number | null;
 }
 
+export type KdsAuditoriaOrigin = "own" | "ifood" | "99food" | "keeta" | string;
+export interface KdsAuditoriaQueueEntry {
+  order_id: string; order_code?: string | null; order_origin?: KdsAuditoriaOrigin | null;
+  status: string; delivery_id: string; delivery_status: string;
+  delivery_person_id?: string | null; ready_for_pickup_at?: string | null;
+}
+export interface KdsAuditoriaOrderItem {
+  id: string; quantity: number; product_id: string; selected_size?: string | null;
+  selected_crust_type?: string | null; notes?: string | null; product_name?: string | null;
+}
+export interface KdsAuditoriaItemConfirmation {
+  order_item_id: string; expected_quantity: number; confirmed_quantity: number; confirmed: boolean;
+}
+export interface KdsAuditoriaVolume {
+  id: string; order_item_id: string; label_volume_id?: string | null; sequence: number; confirmed: boolean;
+}
+export interface KdsAuditoriaOrder {
+  order_id: string; order_code?: string | null; order_origin?: KdsAuditoriaOrigin | null;
+  delivery_id: string; delivery_status: string; audit_id?: string | null;
+  audit_status?: string | null; audit_items: KdsAuditoriaItemConfirmation[];
+  audit_volumes: KdsAuditoriaVolume[]; items: KdsAuditoriaOrderItem[];
+}
+export interface KdsAuditoriaEvidence {
+  evidence_id: string; audit_id: string; asset_id: string; idempotent?: boolean;
+}
+export interface KdsAuditoriaHandoff { audit_id: string; status: string; idempotent?: boolean; order_id?: string; }
+
 export interface KdsDispatchResult {
   order: KdsDispatchOrder;
   delivery?: {
@@ -1662,6 +1689,20 @@ export const kdsApi = {
     request<KdsProductionTask>("POST", `/kds/kitchen/tasks/${encodeURIComponent(taskId)}/${command}`, body, { "Idempotency-Key": key }),
   redistribute: (body: { task_ids: string[]; from_operator_id?: string | null; to_operator_id: string; reason: string; expected_versions: Record<string, number> }, key: string) =>
     request<KdsMyQueue>("POST", "/kds/management/redistributions", body, { "Idempotency-Key": key }),
+};
+
+export const kdsAuditoriaApi = {
+  queue: () => get<KdsAuditoriaQueueEntry[]>("/kds/auditoria/queue"),
+  detail: (orderId: string) => get<KdsAuditoriaOrder>(`/kds/auditoria/orders/${encodeURIComponent(orderId)}`),
+  start: (orderId: string) => post<KdsAuditoriaOrder>(`/kds/auditoria/orders/${encodeURIComponent(orderId)}/start`, {}),
+  confirmItem: (auditId: string, itemId: string, confirmedQuantity: number) =>
+    post<{ audit_id: string; order_item_id: string; confirmed_quantity: number; confirmed: boolean }>(`/kds/auditoria/${encodeURIComponent(auditId)}/items/${encodeURIComponent(itemId)}/confirm`, { confirmed_quantity: confirmedQuantity }),
+  confirmVolume: (auditId: string, volumeId: string) =>
+    post<{ audit_id: string; volume_id: string; confirmed: boolean }>(`/kds/auditoria/${encodeURIComponent(auditId)}/volumes/${encodeURIComponent(volumeId)}/confirm`, {}),
+  addEvidence: (auditId: string, body: { asset_id: string; evidence_type: string; captured_at?: string | null; metadata_json?: string | null }) =>
+    post<KdsAuditoriaEvidence>(`/kds/auditoria/${encodeURIComponent(auditId)}/evidence`, body),
+  handoff: (auditId: string, idempotencyKey: string) =>
+    post<KdsAuditoriaHandoff>(`/kds/auditoria/${encodeURIComponent(auditId)}/handoff`, { idempotency_key: idempotencyKey }),
 };
 
 const labelDispatchBase = "/kds/dispatch";
@@ -7736,9 +7777,10 @@ export const adminApi = {
 // ─── Upload ───────────────────────────────────────────────────────────────────
 
 export const uploadApi = {
-  upload: async (file: File): Promise<string> => {
+  uploadAsset: async (file: File, visibility: "public" | "private" = "public"): Promise<{ url: string; asset_id?: string | null }> => {
     const form = new FormData();
     form.append("file", file);
+    form.append("visibility", visibility);
     const uploadBases = Array.from(
       new Set([
         BASE.endsWith("/api") ? BASE : import.meta.env.PROD ? `${BASE}/api` : BASE,
@@ -7777,8 +7819,9 @@ export const uploadApi = {
     }
     const json = await res.json();
     const data = "data" in json ? json.data : json;
-    return data.url as string;
+    return { url: data.url as string, asset_id: typeof data.asset_id === "string" ? data.asset_id : null };
   },
+  upload: async (file: File): Promise<string> => (await uploadApi.uploadAsset(file, "public")).url,
 };
 
 // ─── Site Config (CMS persistence) ───────────────────────────────────────────

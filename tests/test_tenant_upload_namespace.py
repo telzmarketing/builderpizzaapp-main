@@ -38,3 +38,11 @@ def test_upload_ownership_migration_does_not_render_legacy_column_as_sql_bind():
     # The source-column label must instead be an explicit SQL string literal.
     assert "':{url_column}'" not in source
     assert "|| ':' || '{url_column}'" in source
+
+
+def test_admin_upload_preserves_url_and_returns_tenant_asset_id_or_null():
+    source = (ROOT / "backend" / "routes" / "upload.py").read_text(encoding="utf-8")
+
+    assert "asset_id = None" in source
+    assert "asset_id = asset.id" in source
+    assert 'return ok({"url": url, "asset_id": asset_id})' in source

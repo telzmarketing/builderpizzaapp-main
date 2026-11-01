@@ -95,6 +95,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
       { path: "/painel/esfiha", aliases: ["/app/kds/esfiha"], icon: ChefHat, label: "KDS Esfiha", permissions: ["cozinha"] },
       { path: "/painel/preparo", aliases: ["/app/kds/preparo"], icon: ChefHat, label: "KDS Cozinha Preparo", permissions: ["inventory"] },
       { path: "/painel/expedicao", aliases: ["/app/kds/expedicao"], icon: Truck, label: "KDS Expedição", permissions: ["expedicao"] },
+      { path: "/painel/kds/auditoria", aliases: ["/app/kds/auditoria"], icon: ClipboardList, label: "KDS Auditoria", permissions: ["kds_auditoria"] },
       { path: "/painel/kds/sala-motoboy", aliases: ["/app/kds/motoboys"], icon: Monitor, label: "KDS Motoboys", permissions: ["pedidos"] },
     ],
   },
