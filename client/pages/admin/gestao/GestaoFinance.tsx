@@ -539,7 +539,7 @@ function FinancePanel() {
         </div>
       )}
 
-      {!loading && data && (
+      {!loading && (data || activeModule === "registries") && (
         <>
           {activeModule === "overview" && (
             <>
@@ -663,10 +663,10 @@ function FinancePanel() {
                 </div>
                 <select aria-label="Conta do lancamento" className={inputClass} value={transactionDraft.account_id || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, account_id: event.target.value || null })}>
                   <option value="">Sem conta</option>
-                  {data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                  {(data?.accounts ?? []).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                 </select>
                 <select aria-label="Favorecido do lancamento" className={inputClass} value={transactionDraft.counterparty_id || ""} onChange={(event) => {
-                  const selected = data.counterparties.find((item) => item.id === event.target.value);
+                  const selected = (data?.counterparties ?? []).find((item) => item.id === event.target.value);
                   setTransactionDraft({
                     ...transactionDraft,
                     counterparty_id: event.target.value || null,
@@ -676,7 +676,7 @@ function FinancePanel() {
                   });
                 }}>
                   <option value="">Sem favorecido</option>
-                  {data.counterparties.map((counterparty) => <option key={counterparty.id} value={counterparty.id}>{counterparty.name}</option>)}
+                  {(data?.counterparties ?? []).map((counterparty) => <option key={counterparty.id} value={counterparty.id}>{counterparty.name}</option>)}
                 </select>
                 <select aria-label="Categoria do lancamento" className={inputClass} value={transactionDraft.category_id || ""} onChange={(event) => setTransactionDraft({ ...transactionDraft, category_id: event.target.value || null })}>
                   <option value="">Sem categoria</option>
