@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowDownCircle,
@@ -32,7 +32,6 @@ import {
   Target,
   type LucideIcon,
 } from "lucide-react";
-import { AdminPageTabs, type AdminPageTab } from "@/components/admin/AdminPageChrome";
 import AdminGestao from "./AdminGestao";
 import {
   financeApi,
@@ -49,191 +48,58 @@ import {
   type FinanceTransactionInput,
 } from "@/lib/api";
 
-type FinanceSection = "settings" | "summary" | "registries" | "transactions";
+type FinanceModuleId = "overview" | "payables" | "receivables" | "cash" | "banks" | "cards" | "delivery" | "couriers" | "cmv" | "cashflow" | "dre" | "budget" | "planning" | "bi" | "intelligence" | "suppliers" | "fiscal" | "settings" | "registries" | "transactions";
 
-const sections: AdminPageTab<FinanceSection>[] = [
-  { id: "summary", label: "Resumo e DRE", icon: LayoutDashboard },
-  { id: "registries", label: "Cadastros", icon: Tags },
-  { id: "transactions", label: "Lancamentos", icon: ClipboardList },
-  { id: "settings", label: "Configuracoes", icon: Settings },
-];
+const focusClass = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-surface-01";
 
 const panelClass = "rounded-2xl border border-surface-03 bg-surface-02 p-5 shadow-[0_12px_36px_rgba(0,0,0,0.12)]";
-const inputClass = "w-full rounded-xl border border-surface-03 bg-surface-01 px-3 py-2.5 text-sm text-cream outline-none transition placeholder:text-stone/70 focus:border-gold focus:ring-2 focus:ring-gold/10";
-const buttonClass = "inline-flex items-center justify-center gap-2 rounded-xl bg-gold px-3.5 py-2.5 text-sm font-black text-black transition hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-60";
-const mutedButtonClass = "inline-flex items-center justify-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-3.5 py-2.5 text-sm font-bold text-stone transition hover:border-gold/40 hover:bg-surface-03 hover:text-cream disabled:cursor-not-allowed disabled:opacity-60";
+const inputClass = "min-h-11 min-w-0 w-full rounded-xl border border-surface-03 bg-surface-01 px-3 py-2.5 text-sm text-cream outline-none transition placeholder:text-stone/70 focus-visible:border-gold focus-visible:ring-2 focus-visible:ring-gold";
+const buttonClass = `inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gold px-3.5 py-2.5 text-sm font-black text-black transition hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-60 ${focusClass}`;
+const mutedButtonClass = `inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-3.5 py-2.5 text-sm font-bold text-stone transition hover:border-gold/40 hover:bg-surface-03 hover:text-cream disabled:cursor-not-allowed disabled:opacity-60 ${focusClass}`;
 
-type FinanceModuleStatus = "Base disponível" | "Em evolução" | "Planejado";
-
+type FinanceModuleStatus = "Base disponível" | "Cobertura parcial" | "Não disponível";
+type FinanceModule = { id: FinanceModuleId; title: string; description: string; status: FinanceModuleStatus; icon: LucideIcon };
 const financeModuleStatuses: Record<FinanceModuleStatus, { className: string; description: string }> = {
-  "Base disponível": {
-    className: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300",
-    description: "Operações básicas disponíveis nas abas atuais.",
-  },
-  "Em evolução": {
-    className: "border-amber-500/25 bg-amber-500/10 text-amber-300",
-    description: "Cobertura parcial, com limitações descritas em cada card.",
-  },
-  "Planejado": {
-    className: "border-surface-03 bg-surface-01 text-stone",
-    description: "Sem operação própria disponível nesta tela.",
-  },
+  "Base disponível": { className: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300", description: "Já existe operação disponível nesta área." },
+  "Cobertura parcial": { className: "border-amber-500/25 bg-amber-500/10 text-amber-300", description: "Há dados ou operação parcial; o escopo completo ainda não está disponível." },
+  "Não disponível": { className: "border-surface-03 bg-surface-01 text-stone", description: "A área está mapeada, mas ainda não possui operação financeira neste painel." },
 };
 
-const financeModuleGroups: Array<{
-  id: string;
-  title: string;
-  description: string;
-  modules: Array<{
-    title: string;
-    description: string;
-    status: FinanceModuleStatus;
-    icon: LucideIcon;
-  }>;
-}> = [
-  {
-    id: "operations",
-    title: "Operação financeira",
-    description: "Acompanhe os valores registrados, os compromissos e as movimentações de caixa.",
-    modules: [
-      {
-        title: "Visão Geral",
-        description: "Saldo consolidado, receitas, despesas e pendências disponíveis na aba Resumo e DRE.",
-        status: "Base disponível",
-        icon: LayoutDashboard,
-      },
-      {
-        title: "Contas a Pagar",
-        description: "Despesas com vencimento, parcelas e baixa parcial ou integral nas abas Cadastros e Lançamentos.",
-        status: "Base disponível",
-        icon: ArrowDownCircle,
-      },
-      {
-        title: "Contas a Receber",
-        description: "Receitas com vencimento e registro de recebimento nas abas Cadastros e Lançamentos.",
-        status: "Base disponível",
-        icon: ArrowUpCircle,
-      },
-      {
-        title: "Caixa e Tesouraria",
-        description: "Cadastro de contas, saldos e baixas disponíveis; abertura, fechamento e transferências sem ação própria nesta tela.",
-        status: "Em evolução",
-        icon: Wallet,
-      },
-    ],
-  },
-  {
-    id: "channels",
-    title: "Bancos, canais e entregadores",
-    description: "Identifique a cobertura dos meios de pagamento e dos repasses operacionais.",
-    modules: [
-      {
-        title: "Bancos e Conciliação",
-        description: "Contas bancárias cadastráveis; importação de extratos e conciliação ainda sem operação nesta tela.",
-        status: "Em evolução",
-        icon: Landmark,
-      },
-      {
-        title: "Cartões e Pix",
-        description: "Forma de pagamento, referência e tarifa podem ser informadas na baixa; agenda de repasses e conciliação não estão disponíveis aqui.",
-        status: "Em evolução",
-        icon: CreditCard,
-      },
-      {
-        title: "Aplicativos de Delivery",
-        description: "O resumo agrupa valores por canal; conferência de comissões e repasses por aplicativo ainda sem operação própria.",
-        status: "Em evolução",
-        icon: ShoppingBag,
-      },
-      {
-        title: "Gestão Financeira de Entregadores",
-        description: "Diárias, adiantamentos e fechamento por entregador ainda não são operados neste painel financeiro.",
-        status: "Planejado",
-        icon: Route,
-      },
-    ],
-  },
-  {
-    id: "controlling",
-    title: "Custos e controladoria",
-    description: "Consulte os resultados existentes e a cobertura de custos, fluxo e orçamento.",
-    modules: [
-      {
-        title: "Custos e CMV",
-        description: "Lançamentos e resumo possuem centro de custo; a apuração detalhada de CMV não é operada nesta tela.",
-        status: "Em evolução",
-        icon: Tags,
-      },
-      {
-        title: "Fluxo de Caixa",
-        description: "Resultado de caixa realizado disponível no resumo; projeção cronológica de entradas e saídas ainda não disponível.",
-        status: "Em evolução",
-        icon: LineChart,
-      },
-      {
-        title: "DRE e Resultados",
-        description: "Resultado por competência e grupos de DRE disponíveis; a cobertura dos dados é indicada no resumo atual.",
-        status: "Em evolução",
-        icon: BarChart3,
-      },
-      {
-        title: "Orçamento Empresarial",
-        description: "Definição de orçamento e comparação entre previsto e realizado ainda sem operação própria nesta tela.",
-        status: "Planejado",
-        icon: CircleDollarSign,
-      },
-    ],
-  },
-  {
-    id: "planning",
-    title: "Planejamento e inteligência",
-    description: "Diferencie os indicadores atuais das análises e simulações previstas.",
-    modules: [
-      {
-        title: "Planejamento Financeiro",
-        description: "Metas, cenários e simulações financeiras ainda não estão disponíveis neste painel.",
-        status: "Planejado",
-        icon: Target,
-      },
-      {
-        title: "BI Financeiro",
-        description: "Indicadores e agrupamentos por canal, categoria e centro de custo disponíveis; análises financeiras avançadas ainda sem operação própria.",
-        status: "Em evolução",
-        icon: TrendingUp,
-      },
-      {
-        title: "Inteligência Financeira",
-        description: "Recomendações automáticas, detecção de anomalias e análises por IA ainda sem operação própria neste painel.",
-        status: "Planejado",
-        icon: BrainCircuit,
-      },
-    ],
-  },
-  {
-    id: "governance",
-    title: "Cadastros e governança",
-    description: "Organize os parceiros e consulte a cobertura fiscal e as configurações do módulo.",
-    modules: [
-      {
-        title: "Fornecedores e Contratos",
-        description: "Cadastro de fornecedores e favorecidos disponível; gestão de contratos e renovações ainda não disponível nesta tela.",
-        status: "Em evolução",
-        icon: Users,
-      },
-      {
-        title: "Fiscal e Contábil",
-        description: "O ERP possui módulo Fiscal separado; escrituração contábil e uma operação fiscal integrada ainda não estão expostas neste painel.",
-        status: "Planejado",
-        icon: FileText,
-      },
-      {
-        title: "Configurações Financeiras",
-        description: "A aba Configurações mantém os parâmetros e o estado de ativação do módulo financeiro.",
-        status: "Base disponível",
-        icon: Settings,
-      },
-    ],
-  },
+// Coverage describes the operations exposed here, not a promise of a complete module.
+const financeModuleGroups: Array<{ id: string; title: string; modules: FinanceModule[] }> = [
+  { id: "overview", title: "Visão executiva", modules: [
+    { id: "overview", title: "Visão Geral", description: "Indicadores consolidados, pendências e acesso às áreas financeiras.", status: "Base disponível", icon: LayoutDashboard },
+  ] },
+  { id: "operations", title: "Operação", modules: [
+    { id: "payables", title: "Contas a Pagar", description: "Despesas registradas, vencimentos e baixas parciais ou integrais.", status: "Base disponível", icon: ArrowDownCircle },
+    { id: "receivables", title: "Contas a Receber", description: "Receitas registradas, vencimentos e registro de recebimentos.", status: "Base disponível", icon: ArrowUpCircle },
+    { id: "cash", title: "Caixa e Tesouraria", description: "Contas e saldos cadastrados. Abertura de caixa, fechamento diário e transferências ainda não estão disponíveis.", status: "Cobertura parcial", icon: Wallet },
+  ] },
+  { id: "controlling", title: "Controladoria", modules: [
+    { id: "dre", title: "DRE e Resultados", description: "Resultado por competência e grupos da DRE informados pelo resumo. A apropriação completa de CMV não é comprovada por esta visão.", status: "Cobertura parcial", icon: BarChart3 },
+    { id: "cmv", title: "Custos e CMV", description: "A apuração de custos pertence ao módulo CMV do ERP. A integração completa dos custos à DRE ainda não está disponível aqui.", status: "Cobertura parcial", icon: Tags },
+    { id: "budget", title: "Orçamento Empresarial", description: "Agrupamentos por centro de custo estão disponíveis. Cadastro governado de centros, orçamento e comparação orçado versus realizado ainda não estão disponíveis.", status: "Cobertura parcial", icon: Target },
+    { id: "bi", title: "BI Financeiro", description: "Distribuição dos valores por canal, categoria e centro de custo. Análises avançadas e séries históricas ainda não estão disponíveis.", status: "Cobertura parcial", icon: TrendingUp },
+  ] },
+  { id: "treasury", title: "Tesouraria", modules: [
+    { id: "banks", title: "Bancos e Conciliação", description: "Contas bancárias cadastradas. Importação de extratos, conciliação e tratamento de divergências ainda não estão disponíveis.", status: "Cobertura parcial", icon: Landmark },
+    { id: "cards", title: "Cartões e Pix", description: "Forma de pagamento, referência e tarifa podem ser informadas na baixa. Agenda de repasses e conciliação por adquirente ainda não estão disponíveis.", status: "Cobertura parcial", icon: CreditCard },
+    { id: "delivery", title: "Aplicativos de Delivery", description: "Valores agrupados por canal. Comissões, lotes de repasse e conciliação por aplicativo ainda não estão disponíveis.", status: "Cobertura parcial", icon: ShoppingBag },
+    { id: "couriers", title: "Gestão Financeira de Entregadores", description: "Diárias, adiantamentos e acertos integrados ao caixa ainda não estão disponíveis neste Financeiro. Consulte a operação existente em Logística.", status: "Não disponível", icon: Route },
+    { id: "cashflow", title: "Fluxo de Caixa", description: "Resultado de caixa realizado informado pelo resumo. Fluxo diário, extrato cronológico e projeções de saldo ainda não estão disponíveis.", status: "Cobertura parcial", icon: LineChart },
+    { id: "planning", title: "Planejamento Financeiro", description: "Projeções, metas, cenários e simulações ainda não estão disponíveis. Não há previsão de saldo calculada nesta tela.", status: "Não disponível", icon: CalendarCheck2 },
+    { id: "intelligence", title: "Inteligência Financeira", description: "Recomendações automáticas, detecção de anomalias e análises por IA ainda não estão disponíveis neste painel.", status: "Não disponível", icon: BrainCircuit },
+  ] },
+  { id: "administration", title: "Administração", modules: [
+    { id: "suppliers", title: "Fornecedores e Contratos", description: "Consulta e cadastro de fornecedores e favorecidos. Contratos, vigências e renovações ainda não estão disponíveis.", status: "Cobertura parcial", icon: Users },
+    { id: "fiscal", title: "Fiscal e Contábil", description: "O módulo Fiscal SEFAZ possui operação própria no ERP. Escrituração e fechamento contábil ainda não estão disponíveis neste Financeiro.", status: "Cobertura parcial", icon: FileText },
+    { id: "settings", title: "Configurações Financeiras", description: "Parâmetros e estado de ativação do módulo. Políticas avançadas de aprovação e fechamento ainda não estão disponíveis.", status: "Cobertura parcial", icon: Settings },
+  ] },
+];
+const financeModules = financeModuleGroups.flatMap((group) => group.modules);
+const operationalPages: FinanceModule[] = [
+  { id: "transactions", title: "Lançamentos", description: "Consulta e baixa das receitas e despesas já registradas.", status: "Base disponível", icon: ClipboardList },
+  { id: "registries", title: "Cadastros", description: "Contas, categorias e favorecidos em formulários separados.", status: "Base disponível", icon: Tags },
 ];
 
 function today() {
@@ -312,20 +178,16 @@ const emptyTransaction: FinanceTransactionInput = {
 };
 
 export default function GestaoFinance() {
-  const [section, setSection] = useState<FinanceSection>("summary");
-
   return (
-    <AdminGestao
-      moduleKey="finance"
-      showSettings={section === "settings"}
-      moduleTabs={<AdminPageTabs<FinanceSection> tabs={sections} active={section} onChange={setSection} />}
-    >
-      {section !== "settings" && <FinancePanel section={section} />}
+    <AdminGestao moduleKey="finance" showSettings={false}>
+      <FinancePanel />
     </AdminGestao>
   );
 }
 
-function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"> }) {
+function FinancePanel() {
+  const [activeModule, setActiveModule] = useState<FinanceModuleId>("overview");
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const [data, setData] = useState<FinanceOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState("");
@@ -338,6 +200,25 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
   const [transactionQuery, setTransactionQuery] = useState("");
   const [transactionStatus, setTransactionStatus] = useState("all");
   const [transactionEntryType, setTransactionEntryType] = useState("all");
+  const currentModule = [...financeModules, ...operationalPages].find((item) => item.id === activeModule)!;
+  const CurrentIcon = currentModule.icon;
+  const isTransactionArea = ["payables", "receivables", "transactions", "cash", "banks"].includes(activeModule);
+
+  const selectModule = (id: FinanceModuleId) => {
+    setActiveModule(id);
+    setTransactionQuery("");
+    setTransactionStatus("all");
+    setTransactionEntryType("all");
+  };
+
+  useEffect(() => {
+    headingRef.current?.focus({ preventScroll: true });
+  }, [activeModule]);
+
+  const newTransaction = (entryType?: FinanceEntryType) => {
+    setActiveModule("registries");
+    if (entryType) setTransactionDraft((draft) => ({ ...draft, entry_type: entryType, category_id: null }));
+  };
 
   const load = () => {
     setLoading(true);
@@ -369,9 +250,10 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
       const matchesQuery = !query || searchable.includes(query);
       const matchesStatus = transactionStatus === "all" || transaction.status === transactionStatus;
       const matchesEntryType = transactionEntryType === "all" || transaction.entry_type === transactionEntryType;
-      return matchesQuery && matchesStatus && matchesEntryType;
+      const matchesModule = activeModule === "payables" ? transaction.entry_type === "expense" : activeModule === "receivables" ? transaction.entry_type === "income" : true;
+      return matchesQuery && matchesStatus && matchesEntryType && matchesModule;
     });
-  }, [data?.transactions, transactionEntryType, transactionQuery, transactionStatus]);
+  }, [data?.transactions, transactionEntryType, transactionQuery, transactionStatus, activeModule]);
 
   const createAccount = async () => {
     if (!accountDraft.name.trim()) return;
@@ -584,6 +466,60 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
         </div>
       </div>
 
+      <div className="grid gap-4 xl:grid-cols-[15rem_minmax(0,1fr)]">
+        <aside className="rounded-2xl border border-surface-03 bg-surface-02 p-3" aria-label="Navegação financeira">
+          <p className="px-3 pb-3 pt-1 text-[10px] font-black uppercase tracking-[0.18em] text-stone">Áreas financeiras</p>
+          <nav className="space-y-1">
+            {financeModuleGroups.map((group) => (
+              <div key={group.id} className="space-y-1 pb-3 last:pb-0">
+                <p className="px-3 pt-2 text-[10px] font-black uppercase tracking-[0.14em] text-gold/80">{group.title}</p>
+                {group.modules.map((module) => {
+                  const Icon = module.icon;
+                  const selected = activeModule === module.id;
+                  return (
+                    <button key={module.id} type="button" onClick={() => selectModule(module.id)} className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-xs font-bold transition ${focusClass} ${selected ? "bg-gold text-black" : "text-stone hover:bg-surface-03 hover:text-cream"}`} aria-current={selected ? "page" : undefined}>
+                      <Icon size={15} aria-hidden="true" />
+                      <span className="min-w-0 flex-1 truncate">{module.title}</span>
+                      {module.status === "Não disponível" && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-stone/60" aria-label="Não disponível" />}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+            <div className="border-t border-surface-03 pt-3">
+              <p className="px-3 pt-1 text-[10px] font-black uppercase tracking-[0.14em] text-gold/80">Operação e dados</p>
+              {operationalPages.map((module) => {
+                const Icon = module.icon;
+                const selected = activeModule === module.id;
+                return <button key={module.id} type="button" onClick={() => selectModule(module.id)} className={`mt-1 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-xs font-bold transition ${focusClass} ${selected ? "bg-gold text-black" : "text-stone hover:bg-surface-03 hover:text-cream"}`} aria-current={selected ? "page" : undefined}><Icon size={15} aria-hidden="true" /><span className="truncate">{module.title}</span></button>;
+              })}
+            </div>
+          </nav>
+        </aside>
+
+        <div className="min-w-0 space-y-4">
+          <div className="flex flex-col gap-3 rounded-2xl border border-surface-03 bg-surface-02 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="rounded-xl border border-gold/25 bg-gold/10 p-2.5 text-gold"><CurrentIcon size={19} aria-hidden="true" /></div>
+              <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-stone">Financeiro / {currentModule.title}</p><h3 ref={headingRef} tabIndex={-1} className="mt-1 text-lg font-black text-cream">{currentModule.title}</h3></div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {isTransactionArea && <button type="button" onClick={() => newTransaction(activeModule === "payables" ? "expense" : activeModule === "receivables" ? "income" : undefined)} className={buttonClass}><Plus size={15} aria-hidden="true" /> Novo lançamento</button>}
+              {activeModule === "registries" && <span className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-surface-03 bg-surface-01 px-3.5 py-2.5 text-sm font-bold text-stone"><Tags size={15} aria-hidden="true" /> Cadastros e lançamentos</span>}
+            </div>
+          </div>
+
+          {activeModule !== "overview" && activeModule !== "registries" && !isTransactionArea && (
+            <div className={`${panelClass} min-h-64 flex flex-col items-center justify-center text-center`}>
+              <div className="rounded-2xl border border-surface-03 bg-surface-01 p-4 text-gold"><CurrentIcon size={28} aria-hidden="true" /></div>
+              <h4 className="mt-4 text-xl font-black text-cream">{currentModule.title}</h4>
+              <p className="mt-2 max-w-xl text-sm leading-relaxed text-stone">{currentModule.description}</p>
+              <span className={`mt-4 rounded-full border px-3 py-1.5 text-[10px] font-black uppercase tracking-wide ${financeModuleStatuses[currentModule.status].className}`}>{currentModule.status}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
       {loading && (
         <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 text-stone" role="status" aria-live="polite">
           <Loader2 size={24} className="mb-3 animate-spin text-gold" aria-hidden="true" />
@@ -605,7 +541,7 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
 
       {!loading && data && (
         <>
-          {section === "summary" && (
+          {activeModule === "overview" && (
             <>
               <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr_1fr]">
                 <div className="relative overflow-hidden rounded-2xl border border-gold/30 bg-gradient-to-br from-gold/15 via-surface-02 to-surface-02 p-5 sm:p-6">
@@ -644,7 +580,7 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
             </>
           )}
 
-          {section === "registries" && <div className="grid gap-5 xl:grid-cols-4">
+          {activeModule === "registries" && <div className="grid gap-5 xl:grid-cols-4">
             <div className={`${panelClass} flex flex-col`}>
               <CardHeading icon={Landmark} title="Nova conta" description="Organize bancos, caixas e carteiras." />
               <div className="space-y-3">
@@ -758,7 +694,7 @@ function FinancePanel({ section }: { section: Exclude<FinanceSection, "settings"
             </div>
           </div>}
 
-          {section === "transactions" && <div className="grid gap-5 xl:grid-cols-[.85fr_.85fr_1.7fr]">
+          {isTransactionArea && <div className="grid gap-5 xl:grid-cols-[.85fr_.85fr_1.7fr]">
             <div className={panelClass}>
               <CardHeading icon={Landmark} title="Contas" description={`${data.accounts.length} contas disponiveis`} />
               <div className="space-y-2">
@@ -927,7 +863,7 @@ function FinanceModules() {
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gold/20 bg-gold/10 text-xs font-black text-gold" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
               <div className="min-w-0">
                 <h4 id={`finance-group-${group.id}`} className="text-base font-black text-cream">{group.title}</h4>
-                <p className="mt-1 text-xs leading-relaxed text-stone">{group.description}</p>
+                <p className="mt-1 text-xs leading-relaxed text-stone">Área agrupada por responsabilidade financeira no ERP.</p>
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
