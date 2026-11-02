@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { BarChart3, Clock3, Loader2, RefreshCw, RotateCcw, Truck } from "lucide-react";
 import { biApi, type KdsAnalytics } from "@/lib/api";
+import { onOrderArchived } from "@/lib/orderArchive";
 
 const periods = [
   ["7d", "7 dias"],
@@ -66,6 +67,7 @@ export default function KdsAnalytics() {
   }, [period]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => onOrderArchived(() => void load(true)), [load]);
 
   return <main className="kds-analytics space-y-5 pb-10" aria-labelledby="kds-analytics-title">
     <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">

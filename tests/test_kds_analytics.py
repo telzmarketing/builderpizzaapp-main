@@ -31,11 +31,21 @@ class _Db:
 
 
 def _order(order_id, tenant_id="tenant-a", **timestamps):
+    archived_at = timestamps.pop("archived_at", None)
+    timestamps = {
+        "paid_at": None,
+        "preparation_started_at": None,
+        "ready_for_pickup_at": None,
+        "out_for_delivery_at": None,
+        "delivered_at": None,
+        **timestamps,
+    }
     return SimpleNamespace(
         id=order_id,
         tenant_id=tenant_id,
         created_at=datetime(2026, 10, 20, 12, tzinfo=timezone.utc),
         status="delivered",
+        archived_at=archived_at,
         **timestamps,
     )
 
@@ -57,8 +67,9 @@ def test_kds_analytics_aggregates_persisted_flow_and_production_without_cross_te
         delivered_at=datetime(2026, 10, 20, 13, 15, tzinfo=timezone.utc),
     )
     foreign = _order("order-b", tenant_id="tenant-b")
-    unit = SimpleNamespace(state="ready", tenant_id="tenant-a", created_at=order.created_at)
+    unit = SimpleNamespace(id="unit-a", order_id=order.id, state="ready", tenant_id="tenant-a", created_at=order.created_at)
     attempt = SimpleNamespace(
+        production_unit_id=unit.id,
         attempt_number=2,
         tenant_id="tenant-a",
         created_at=order.created_at,
@@ -82,3 +93,28 @@ def test_kds_analytics_aggregates_persisted_flow_and_production_without_cross_te
     assert validated["production"]["rework_attempts"] == 1
     assert "order-b" not in repr(validated)
     assert foreign.tenant_id == "tenant-b"  # fixture proves the service received only trusted rows
+
+
+def test_kds_analytics_excludes_archived_orders_and_their_production_history():
+    active = _order("active", paid_at=datetime(2026, 10, 20, 12, tzinfo=timezone.utc))
+    archived = _order(
+        "archived",
+        paid_at=datetime(2026, 10, 20, 12, tzinfo=timezone.utc),
+        archived_at=datetime(2026, 10, 20, 12, 5, tzinfo=timezone.utc),
+    )
+    archived_unit = SimpleNamespace(
+        id="unit-archived", order_id=archived.id, state="ready", tenant_id="tenant-a", created_at=archived.created_at,
+    )
+    archived_attempt = SimpleNamespace(
+        production_unit_id=archived_unit.id, attempt_number=1, tenant_id="tenant-a",
+        created_at=archived.created_at, completed_at=None,
+    )
+    data = BusinessIntelligenceService(_Db([active, archived], [archived_unit], [archived_attempt]), "tenant-a").get_kds_analytics(
+        datetime(2026, 10, 1, tzinfo=timezone.utc),
+        datetime(2026, 10, 31, 23, 59, tzinfo=timezone.utc),
+        "30d",
+    )
+
+    assert data["orders"]["total"] == 1
+    assert data["production"]["units"] == 0
+    assert data["production"]["attempts"] == 0

@@ -54,7 +54,15 @@ class KdsProductionService:
         # without it retain the existing pizzaiolo behavior.
         return "esfiha" if product and product.product_type == "esfiha" else "pizza"
     def _unit(self, task_id, lock=False):
-        q = self.db.query(ProductionAttempt).join(ProductionUnit).filter(ProductionAttempt.tenant_id==self.tenant_id, ProductionAttempt.id==task_id)
+        q = self.db.query(ProductionAttempt).join(ProductionUnit).join(
+            Order, Order.id == ProductionUnit.order_id,
+        ).filter(
+            ProductionAttempt.tenant_id == self.tenant_id,
+            ProductionUnit.tenant_id == self.tenant_id,
+            Order.tenant_id == self.tenant_id,
+            Order.archived_at.is_(None),
+            ProductionAttempt.id == task_id,
+        )
         if lock: q=q.populate_existing().with_for_update()
         row=q.first()
         if not row: raise DomainError("Tarefa nao encontrada.", code="KdsTaskNotFound")
@@ -175,6 +183,14 @@ class KdsProductionService:
             ProductionAttempt.tenant_id == self.tenant_id,
             ProductionAttempt.state == "checking_stock",
             ProductionAttempt.stock_check_after <= now,
+        ).join(
+            ProductionUnit, ProductionUnit.id == ProductionAttempt.production_unit_id,
+        ).join(
+            Order, Order.id == ProductionUnit.order_id,
+        ).filter(
+            ProductionUnit.tenant_id == self.tenant_id,
+            Order.tenant_id == self.tenant_id,
+            Order.archived_at.is_(None),
         ).order_by(ProductionAttempt.stock_requested_at, ProductionAttempt.id).populate_existing().with_for_update().all()
         for a in pending:
             try:
@@ -221,6 +237,14 @@ class KdsProductionService:
         rows = self.db.query(ProductionAttempt).options(joinedload(ProductionAttempt.unit)).filter(
             ProductionAttempt.tenant_id == self.tenant_id,
             ProductionAttempt.state.in_(("aguardando_analise", "atendimento")),
+        ).join(
+            ProductionUnit, ProductionUnit.id == ProductionAttempt.production_unit_id,
+        ).join(
+            Order, Order.id == ProductionUnit.order_id,
+        ).filter(
+            ProductionUnit.tenant_id == self.tenant_id,
+            Order.tenant_id == self.tenant_id,
+            Order.archived_at.is_(None),
         ).order_by(ProductionAttempt.stock_requested_at, ProductionAttempt.id).all()
         drink_item_ids = self._drink_item_ids([row.unit.order_item_id for row in rows])
         return [self._payload(row) for row in rows if row.unit.order_item_id not in drink_item_ids]

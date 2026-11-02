@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { kdsApi, type KdsOverview, type KdsOverviewStage } from "@/lib/api";
 import { groupKdsOverviewOrders } from "@/lib/kds";
+import { onOrderArchived } from "@/lib/orderArchive";
 import KdsBrandLogo from "@/components/kds/KdsBrandLogo";
 import KdsSessionActions from "@/components/kds/KdsSessionActions";
 
@@ -69,7 +70,11 @@ export default function KdsOverview() {
   useEffect(() => {
     void loadOverview();
     const poll = window.setInterval(() => void loadOverview(), POLL_INTERVAL_MS);
-    return () => window.clearInterval(poll);
+    const unsubscribe = onOrderArchived(() => void loadOverview(true));
+    return () => {
+      window.clearInterval(poll);
+      unsubscribe();
+    };
   }, [loadOverview]);
 
   useEffect(() => {

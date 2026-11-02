@@ -20,6 +20,7 @@ import { kdsApi, type KdsKitchenOrder } from "@/lib/api";
 import { loadSoundType, playOrderAlert } from "@/lib/orderSound";
 import { activeKitchenOrders } from "@/lib/kds";
 import { orderDisplayCode } from "@/lib/orderIdentity";
+import { onOrderArchived } from "@/lib/orderArchive";
 
 const POLL_INTERVAL_MS = 15_000;
 
@@ -88,7 +89,11 @@ export default function AdminCozinha({
   useEffect(() => {
     void loadOrders();
     const poll = window.setInterval(() => void loadOrders(), POLL_INTERVAL_MS);
-    return () => window.clearInterval(poll);
+    const unsubscribe = onOrderArchived(() => void loadOrders(true));
+    return () => {
+      window.clearInterval(poll);
+      unsubscribe();
+    };
   }, [loadOrders]);
 
   useEffect(() => {

@@ -1,6 +1,7 @@
 import { clearAdminSession, shouldInvalidateAdminSession } from "./adminSession";
 import { rememberPwaContext } from "./motoboyPwa";
 import { buildPlatformTenantListQuery } from "./platformMaster";
+import { notifyOrderArchived } from "./orderArchive";
 import type { RuntimeHostSurface } from "./runtimeHostSurface";
 import {
   platformRequestAccessToken,
@@ -5734,7 +5735,10 @@ export const ordersApi = {
 
   cancel: (id: string) => post<ApiOrder>(`/orders/${id}/cancel`, {}),
 
-  remove: (id: string) => del<void>(`/orders/${id}`),
+  remove: async (id: string) => {
+    await del<void>(`/orders/${id}`);
+    notifyOrderArchived(id);
+  },
 
   customerCancel: (id: string) =>
     request<ApiOrder>("POST", `/orders/${id}/customer-cancel`, {}, orderAccessHeaders(id)),

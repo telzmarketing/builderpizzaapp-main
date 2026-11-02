@@ -329,6 +329,7 @@ class BusinessIntelligenceService:
             .filter(
                 OrderItem.tenant_id == self._tenant_id,
                 Order.tenant_id == self._tenant_id,
+                Order.archived_at.is_(None),
                 Payment.tenant_id == self._tenant_id,
                 or_(Product.id.is_(None), Product.tenant_id == self._tenant_id),
                 Order.created_at >= start_dt,
@@ -595,6 +596,7 @@ class BusinessIntelligenceService:
             .filter(
                 Address.tenant_id == self._tenant_id,
                 Order.tenant_id == self._tenant_id,
+                Order.archived_at.is_(None),
                 Payment.tenant_id == self._tenant_id,
                 Order.created_at >= start_dt,
                 Order.created_at <= end_dt,
@@ -684,7 +686,10 @@ class BusinessIntelligenceService:
         date_to: date | None = None,
     ) -> dict:
         """Aggregate the canonical order and physical-production KDS flow."""
-        orders = self._orders_in_period(start_dt, end_dt).all()
+        orders = [
+            order for order in self._orders_in_period(start_dt, end_dt).all()
+            if getattr(order, "archived_at", None) is None
+        ]
         status_counts: dict[str, int] = {}
         stage_counts = {
             "waiting_kitchen": 0,
@@ -730,20 +735,29 @@ class BusinessIntelligenceService:
                 if value is not None:
                     durations[key].append(value)
 
+        # Production rows are intentionally retained as historical evidence,
+        # but an operationally archived order must disappear from every KDS
+        # indicator just like it disappears from the live queues.
+        active_order_ids = {order.id for order in orders}
         units = self._db.query(ProductionUnit).filter(
             ProductionUnit.tenant_id == self._tenant_id,
+            ProductionUnit.order_id.in_(active_order_ids),
             ProductionUnit.created_at >= start_dt,
             ProductionUnit.created_at <= end_dt,
         ).all()
+        units = [unit for unit in units if getattr(unit, "order_id", None) in active_order_ids]
         unit_states: dict[str, int] = {}
         for unit in units:
             unit_states[unit.state] = unit_states.get(unit.state, 0) + 1
 
+        active_unit_ids = {unit.id for unit in units}
         attempts = self._db.query(ProductionAttempt).filter(
             ProductionAttempt.tenant_id == self._tenant_id,
+            ProductionAttempt.production_unit_id.in_(active_unit_ids),
             ProductionAttempt.created_at >= start_dt,
             ProductionAttempt.created_at <= end_dt,
         ).all()
+        attempts = [attempt for attempt in attempts if getattr(attempt, "production_unit_id", None) in active_unit_ids]
         completed_attempt_durations = [
             value for attempt in attempts
             if (value := minutes_between(attempt.created_at, attempt.completed_at)) is not None
@@ -966,6 +980,7 @@ class BusinessIntelligenceService:
     def _orders_in_period(self, start_dt: datetime, end_dt: datetime):
         return self._db.query(Order).filter(
             Order.tenant_id == self._tenant_id,
+            Order.archived_at.is_(None),
             Order.created_at >= start_dt,
             Order.created_at <= end_dt,
         )
@@ -993,6 +1008,7 @@ class BusinessIntelligenceService:
         # Keep this query aggregate-friendly; callers only need id and total.
         return self._db.query(Order.id, Order.total).filter(
             Order.tenant_id == self._tenant_id,
+            Order.archived_at.is_(None),
             or_(
                 and_(
                     Order.status == OrderStatus.cancelled,
@@ -1213,6 +1229,7 @@ class BusinessIntelligenceService:
             .filter(
                 Delivery.tenant_id == self._tenant_id,
                 Order.tenant_id == self._tenant_id,
+                Order.archived_at.is_(None),
                 Order.created_at >= start_dt,
                 Order.created_at <= end_dt,
             )
