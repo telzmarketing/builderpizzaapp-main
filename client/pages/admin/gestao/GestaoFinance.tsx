@@ -517,9 +517,6 @@ function FinancePanel() {
               <span className={`mt-4 rounded-full border px-3 py-1.5 text-[10px] font-black uppercase tracking-wide ${financeModuleStatuses[currentModule.status].className}`}>{currentModule.status}</span>
             </div>
           )}
-        </div>
-      </div>
-
       {loading && (
         <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-surface-03 bg-surface-02 text-stone" role="status" aria-live="polite">
           <Loader2 size={24} className="mb-3 animate-spin text-gold" aria-hidden="true" />
@@ -824,6 +821,8 @@ function FinancePanel() {
           </div>}
         </>
       )}
+        </div>
+      </div>
     </section>
   );
 }
