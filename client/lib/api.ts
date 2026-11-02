@@ -1358,10 +1358,13 @@ export interface KdsAuditoriaOrder {
   order_id: string; order_code?: string | null; order_origin?: KdsAuditoriaOrigin | null;
   delivery_id: string; delivery_status: string; audit_id?: string | null;
   audit_status?: string | null; audit_items: KdsAuditoriaItemConfirmation[];
-  audit_volumes: KdsAuditoriaVolume[]; items: KdsAuditoriaOrderItem[];
+  audit_volumes: KdsAuditoriaVolume[]; audit_evidence?: KdsAuditoriaEvidence[]; items: KdsAuditoriaOrderItem[];
 }
 export interface KdsAuditoriaEvidence {
   evidence_id: string; audit_id: string; asset_id: string; idempotent?: boolean;
+  evidence_type?: string; captured_at?: string | null; actor_id?: string | null; created_at?: string | null;
+  original_filename?: string | null; content_type?: string | null; byte_size?: number | null; visibility?: string | null;
+  url?: string | null; image_role?: "original" | "processed"; processing_status?: "not_processed" | "processed" | "failed" | string;
 }
 export interface KdsAuditoriaHandoff { audit_id: string; status: string; idempotent?: boolean; order_id?: string; }
 

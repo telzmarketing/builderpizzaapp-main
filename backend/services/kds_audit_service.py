@@ -61,6 +61,13 @@ class KdsAuditService:
             DeliveryAuditItemConfirmation.audit_id == audit.id).all() if audit else []
         volume_rows = self.db.query(DeliveryAuditVolume).filter(DeliveryAuditVolume.tenant_id == self.tenant_id,
             DeliveryAuditVolume.audit_id == audit.id).all() if audit else []
+        evidence_rows = self.db.query(DeliveryAuditEvidence, TenantUploadAsset).join(
+            TenantUploadAsset, TenantUploadAsset.id == DeliveryAuditEvidence.asset_id,
+        ).filter(
+            DeliveryAuditEvidence.tenant_id == self.tenant_id,
+            DeliveryAuditEvidence.audit_id == audit.id,
+            TenantUploadAsset.tenant_id == self.tenant_id,
+        ).order_by(DeliveryAuditEvidence.created_at.asc()).all() if audit else []
         return {"order_id": order.id, "order_code": order.order_code, "order_origin": order.order_origin,
                 "delivery_id": delivery.id, "delivery_status": delivery.status.value,
                 "audit_id": audit.id if audit else None, "audit_status": audit.status if audit else None,
@@ -69,6 +76,14 @@ class KdsAuditService:
                                 for row in item_rows],
                 "audit_volumes": [{"id": row.id, "order_item_id": row.order_item_id, "label_volume_id": row.label_volume_id,
                                    "sequence": row.sequence, "confirmed": row.confirmed} for row in volume_rows],
+                "audit_evidence": [{"evidence_id": evidence.id, "audit_id": evidence.audit_id, "asset_id": asset.id,
+                                     "evidence_type": evidence.evidence_type, "captured_at": evidence.captured_at,
+                                     "actor_id": evidence.actor_id, "created_at": evidence.created_at,
+                                     "original_filename": asset.original_filename, "content_type": asset.content_type,
+                                     "byte_size": asset.byte_size, "visibility": asset.visibility,
+                                     "url": f"/uploads/{asset.storage_key}", "image_role": "original",
+                                     "processing_status": "not_processed"}
+                                    for evidence, asset in evidence_rows],
                 "items": [{"id": item.id, "quantity": item.quantity, "product_id": item.product_id,
                            "selected_size": item.selected_size, "selected_crust_type": item.selected_crust_type,
                            "notes": item.notes} for item in order.items]}
