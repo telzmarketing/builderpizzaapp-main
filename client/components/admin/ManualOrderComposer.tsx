@@ -9,7 +9,6 @@ import {
   Loader2,
   Plus,
   Printer,
-  ReceiptText,
   Search,
   ShoppingBag,
   Store,
@@ -617,7 +616,7 @@ export default function ManualOrderComposer({
         aria-label="KDS PDV"
       >
         <div className="kds-pdv-canvas h-full min-h-0 min-w-0 overflow-x-auto overflow-y-hidden overscroll-x-contain">
-          <div className="grid h-full min-h-0 min-w-[1080px] w-full grid-cols-[minmax(460px,42fr)_minmax(380px,35fr)_minmax(240px,23fr)] items-stretch">
+          <div className="grid h-full min-h-0 min-w-[980px] w-full grid-cols-[minmax(0,1.35fr)_minmax(380px,0.8fr)] items-stretch">
             <div className="grid h-full min-h-0 min-w-0 grid-cols-[88px_minmax(0,1fr)] bg-surface-00">
               <aside className="flex min-w-0 flex-col items-center border-r border-surface-03 bg-surface-01 py-5">
                 <div className="grid h-11 w-11 place-items-center rounded-2xl bg-gold text-black shadow-lg shadow-gold/20">
@@ -1068,33 +1067,6 @@ export default function ManualOrderComposer({
                 </button>
                 <p className="mt-3 text-center text-[11px] text-stone">
                   O pagamento será confirmado após a impressão.
-                </p>
-              </div>
-            </aside>
-            <aside className="min-h-0 space-y-4 overflow-y-auto border-l border-surface-03 bg-surface-00 p-5">
-              <div className="rounded-2xl border border-gold/20 bg-gold/10 p-5">
-                <ReceiptText className="mb-3 text-gold" size={22} />
-                <h2 className="font-black">Como funciona</h2>
-                <ol className="mt-3 space-y-3 text-sm text-stone">
-                  <li>
-                    <strong className="text-cream">1.</strong> Selecione o
-                    cliente ou cadastre rapidamente.
-                  </li>
-                  <li>
-                    <strong className="text-cream">2.</strong> Escolha os
-                    produtos e personalize o pedido.
-                  </li>
-                  <li>
-                    <strong className="text-cream">3.</strong> Confira, imprima
-                    e confirme o pagamento.
-                  </li>
-                </ol>
-              </div>
-              <div className="rounded-2xl border border-surface-03 bg-surface-02 p-5 text-sm text-stone">
-                <p className="font-bold text-cream">Fluxo conectado</p>
-                <p className="mt-2">
-                  Os pedidos enviados aparecem automaticamente no KDS Principal
-                  e seguem para a operação da cozinha.
                 </p>
               </div>
             </aside>
