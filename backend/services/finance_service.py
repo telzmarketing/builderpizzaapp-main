@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
 import uuid
 from datetime import date, datetime, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, DecimalException, ROUND_HALF_UP
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
@@ -17,6 +18,7 @@ from backend.models.finance import (
 )
 from backend.models.gestao import GestaoModuleSettings
 from backend.models.inventory import InventoryPurchase
+from backend.models.inventory_receipts import InventoryReceiptDocument
 from backend.models.fiscal import FiscalDocument
 from backend.models.cmv import OrderCmvSnapshot
 from backend.models.order import Order
@@ -24,6 +26,11 @@ from backend.models.payment import Payment
 from backend.schemas.finance import (
     FinanceAccountIn, FinanceCategoryIn, FinanceCounterpartyIn,
     FinanceObligationFromFiscalIn, FinanceSettlementIn, FinanceTransactionIn,
+)
+from backend.services.finance_contracts import (
+    FinancialContractViolation,
+    PaymentConfirmedFact,
+    validate_purchase_payable_source,
 )
 
 TENANT_ID = "default"
@@ -115,16 +122,20 @@ class FinanceService:
         return [self._serialize_account(row, balances.get(row.id, 0.0)) for row in rows]
 
     def create_account(self, payload: FinanceAccountIn) -> dict:
+        opening_balance = self._money(payload.opening_balance, "saldo inicial", allow_negative=True)
         row = FinanceAccount(id=f"fin-acc-{uuid.uuid4().hex[:12]}", tenant_id=self._tenant_id, **payload.model_dump())
+        row.opening_balance = float(opening_balance)
         self._db.add(row)
         self._db.commit()
         self._db.refresh(row)
         return self._serialize_account(row)
 
     def update_account(self, account_id: str, payload: FinanceAccountIn) -> dict:
+        opening_balance = self._money(payload.opening_balance, "saldo inicial", allow_negative=True)
         row = self._get_account(account_id)
         for key, value in payload.model_dump().items():
             setattr(row, key, value)
+        row.opening_balance = float(opening_balance)
         self._db.commit()
         self._db.refresh(row)
         return self._serialize_account(row)
@@ -399,7 +410,11 @@ class FinanceService:
         return self._serialize_transaction(row)
 
     def update_transaction(self, transaction_id: str, payload: FinanceTransactionIn, admin_id: str | None = None) -> dict:
-        row = self._get_transaction(transaction_id)
+        row = self._get_transaction(transaction_id, for_update=True)
+        if row.paid_amount and float(row.paid_amount) > 0:
+            raise FinanceInvalidReference("Lancamento com liquidacao nao pode ser alterado; use estorno.")
+        if row.settlements:
+            raise FinanceInvalidReference("Lancamento com historico de liquidacao nao pode ser alterado.")
         data = self._transaction_data(payload)
         data["updated_by_admin_id"] = admin_id
         for key, value in data.items():
@@ -409,7 +424,11 @@ class FinanceService:
         return self._serialize_transaction(row)
 
     def delete_transaction(self, transaction_id: str) -> None:
-        row = self._get_transaction(transaction_id)
+        row = self._get_transaction(transaction_id, for_update=True)
+        if row.paid_amount and float(row.paid_amount) > 0:
+            raise FinanceInvalidReference("Lancamento com liquidacao nao pode ser cancelado; use estorno.")
+        if any(settlement.cancelled_at is None for settlement in row.settlements):
+            raise FinanceInvalidReference("Lancamento com historico de liquidacao nao pode ser cancelado.")
         row.status = "cancelled"
         self._db.commit()
 
@@ -426,6 +445,23 @@ class FinanceService:
         if not settings or not settings.get("auto_create_receivables"):
             return {"created": False, "reason": "disabled"}
 
+        payment, order = self._payment_and_order(payment_id=payment_id, order_id=order_id)
+        if not payment or not order:
+            return {"created": False, "reason": "payment_or_order_not_found"}
+        try:
+            fact = PaymentConfirmedFact.build(
+                tenant_id=self._tenant_id,
+                payment_id=payment_id,
+                order_id=order_id,
+                gateway=gateway,
+                persisted_gateway=payment.gateway,
+                payment_amount=payment.amount,
+                event_amount=amount,
+                transaction_id=transaction_id,
+            )
+        except FinancialContractViolation:
+            return {"created": False, "reason": "financial_contract_violation"}
+
         existing = (
             self._db.query(FinanceTransaction)
             .options(joinedload(FinanceTransaction.settlements))
@@ -438,14 +474,8 @@ class FinanceService:
         )
         if existing and any(item.idempotency_key == f"payment-confirmed:{payment_id}" for item in existing.settlements):
             return {"created": False, "reason": "already_synced", "transaction_id": existing.id}
-
-        payment, order = self._payment_and_order(payment_id=payment_id, order_id=order_id)
-        if not payment or not order:
-            return {"created": False, "reason": "payment_or_order_not_found"}
         paid_at = payment.paid_at if payment and payment.paid_at else datetime.now(timezone.utc)
-        receivable_amount = round(float(payment.amount or amount or 0.0), 2)
-        if receivable_amount <= 0:
-            return {"created": False, "reason": "invalid_amount"}
+        receivable_amount = float(fact.amount)
 
         account_id = settings.get("default_receivable_account_id") or None
         if account_id:
@@ -604,11 +634,45 @@ class FinanceService:
             self._db.query(InventoryPurchase)
             .options(joinedload(InventoryPurchase.supplier))
             .filter(InventoryPurchase.tenant_id == self._tenant_id, InventoryPurchase.id == purchase_id)
+            .with_for_update()
             .first()
         )
         if not purchase or purchase.status != "confirmed":
             return {"created": False, "reason": "purchase_not_confirmed"}
-        amount = round(float(purchase.total_amount or 0.0), 2)
+        receipt = (
+            self._db.query(InventoryReceiptDocument)
+            .filter(
+                InventoryReceiptDocument.tenant_id == self._tenant_id,
+                InventoryReceiptDocument.purchase_id == purchase.id,
+                InventoryReceiptDocument.status != "rejected",
+            )
+            .order_by(InventoryReceiptDocument.created_at.desc())
+            .first()
+        )
+        if receipt:
+            linked_obligation = (
+                self._db.query(FinanceObligation)
+                .filter(
+                    FinanceObligation.tenant_id == self._tenant_id,
+                    FinanceObligation.receipt_document_id == receipt.id,
+                )
+                .first()
+            )
+            try:
+                validate_purchase_payable_source(
+                    purchase_id=purchase.id,
+                    receipt_id=receipt.id,
+                    receipt_status=receipt.status,
+                    linked_obligation_id=linked_obligation.id if linked_obligation else None,
+                )
+            except FinancialContractViolation:
+                return {
+                    "created": False,
+                    "reason": "purchase_receipt_requires_reconciliation",
+                    "receipt_document_id": receipt.id,
+                    "obligation_id": linked_obligation.id if linked_obligation else None,
+                }
+        amount = float(self._money(purchase.total_amount, "total da compra"))
         if amount <= 0:
             return {"created": False, "reason": "invalid_amount"}
 
@@ -663,18 +727,30 @@ class FinanceService:
         return {"created": True, "reason": "ok", "transaction_id": row.id}
 
     def settle_transaction(self, transaction_id: str, payload: FinanceSettlementIn, admin_id: str | None = None) -> dict:
-        row = self._get_transaction(transaction_id)
+        row = self._get_transaction(transaction_id, for_update=True)
         if row.status == "cancelled":
             raise FinanceInvalidReference("Lancamento cancelado nao pode ser baixado.")
+        if row.status == "paid":
+            raise FinanceInvalidReference("Lancamento ja liquidado nao pode ser baixado novamente.")
         if payload.account_id:
             self._get_account(payload.account_id)
 
+        raw_amounts = {
+            "juros": payload.interest_amount,
+            "multa": payload.fine_amount,
+            "desconto": payload.discount_amount,
+            "taxa": payload.fee_amount,
+            "baixa": payload.paid_amount,
+        }
+        for label, value in raw_amounts.items():
+            if value is not None and not math.isfinite(float(value)):
+                raise FinanceInvalidReference(f"Valor de {label} invalido.")
         interest_amount = round(float(payload.interest_amount or 0.0), 2)
         fine_amount = round(float(payload.fine_amount or 0.0), 2)
         discount_amount = round(float(payload.discount_amount or 0.0), 2)
         fee_amount = round(float(payload.fee_amount or 0.0), 2)
         adjusted_total = self._adjusted_total(row, extra_interest=interest_amount, extra_fine=fine_amount, extra_discount=discount_amount)
-        if adjusted_total <= 0:
+        if not math.isfinite(adjusted_total) or adjusted_total <= 0:
             raise FinanceInvalidReference("O total ajustado precisa ser maior que zero.")
 
         open_amount = round(max(0.0, adjusted_total - float(row.paid_amount or 0.0)), 2)
@@ -722,7 +798,11 @@ class FinanceService:
         if payload.notes:
             row.notes = payload.notes
 
-        self._db.commit()
+        try:
+            self._db.commit()
+        except Exception:
+            self._db.rollback()
+            raise
         self._db.refresh(row)
         return self._serialize_transaction(row)
 
@@ -746,9 +826,13 @@ class FinanceService:
             raise FinanceInvalidReference("A parcela atual nao pode ser maior que o total de parcelas.")
         if data["status"] == "paid" and not data.get("paid_at"):
             data["paid_at"] = datetime.now(timezone.utc)
-        for key in ("interest_amount", "fine_amount", "discount_amount", "fee_amount", "paid_amount", "net_amount"):
-            data[key] = round(float(data.get(key) or 0.0), 2)
+        for key in ("amount", "interest_amount", "fine_amount", "discount_amount", "fee_amount", "paid_amount", "net_amount"):
+            data[key] = float(self._money(data.get(key), key))
+        if data["amount"] <= 0:
+            raise FinanceInvalidReference("O valor do lancamento precisa ser maior que zero.")
         adjusted_total = self._adjusted_total_from_data(data)
+        if not math.isfinite(adjusted_total) or adjusted_total <= 0:
+            raise FinanceInvalidReference("O total ajustado precisa ser finito e maior que zero.")
         if data["status"] == "paid" and not data.get("paid_amount"):
             data["paid_amount"] = adjusted_total
         if data["status"] == "paid":
@@ -844,10 +928,19 @@ class FinanceService:
         return row
 
     @staticmethod
-    def _money(value) -> Decimal:
+    def _money(value, field: str = "valor", *, allow_negative: bool = False) -> Decimal:
         if value is None:
             return Decimal("0.00")
-        return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        try:
+            amount = Decimal(str(value))
+        except (DecimalException, TypeError, ValueError):
+            raise FinanceInvalidReference(f"{field} invalido.") from None
+        if not amount.is_finite() or (not allow_negative and amount < 0):
+            raise FinanceInvalidReference(f"{field} invalido.")
+        try:
+            return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        except DecimalException:
+            raise FinanceInvalidReference(f"{field} invalido.") from None
 
     @staticmethod
     def _json_snapshot(value) -> dict:
@@ -937,12 +1030,14 @@ class FinanceService:
             raise FinanceNotFound("Favorecido")
         return row
 
-    def _get_transaction(self, transaction_id: str) -> FinanceTransaction:
-        row = (
+    def _get_transaction(self, transaction_id: str, *, for_update: bool = False) -> FinanceTransaction:
+        query = (
             self._db.query(FinanceTransaction)
             .filter(FinanceTransaction.tenant_id == self._tenant_id, FinanceTransaction.id == transaction_id)
-            .first()
         )
+        if for_update:
+            query = query.with_for_update()
+        row = query.first()
         if not row:
             raise FinanceNotFound("Lancamento")
         return row
@@ -985,7 +1080,7 @@ class FinanceService:
         extra_fine: float = 0.0,
         extra_discount: float = 0.0,
     ) -> float:
-        return round(
+        result = round(
             float(row.amount or 0.0)
             + float(row.interest_amount or 0.0)
             + float(extra_interest or 0.0)
@@ -995,20 +1090,29 @@ class FinanceService:
             - float(extra_discount or 0.0),
             2,
         )
+        if not math.isfinite(result):
+            raise FinanceInvalidReference("Total financeiro invalido.")
+        return result
 
     def _adjusted_total_from_data(self, data: dict) -> float:
-        return round(
+        result = round(
             float(data.get("amount") or 0.0)
             + float(data.get("interest_amount") or 0.0)
             + float(data.get("fine_amount") or 0.0)
             - float(data.get("discount_amount") or 0.0),
             2,
         )
+        if not math.isfinite(result):
+            raise FinanceInvalidReference("Total financeiro invalido.")
+        return result
 
     def _net_amount(self, entry_type: str, paid_amount: float, fee_amount: float) -> float:
         fee = float(fee_amount or 0.0)
         paid = float(paid_amount or 0.0)
-        return round(max(0.0, paid - fee) if entry_type == "income" else paid + fee, 2)
+        result = round(max(0.0, paid - fee) if entry_type == "income" else paid + fee, 2)
+        if not math.isfinite(result):
+            raise FinanceInvalidReference("Valor liquido invalido.")
+        return result
 
     def _cash_effect(self, row: FinanceTransaction) -> float:
         value = float(row.net_amount or 0.0)

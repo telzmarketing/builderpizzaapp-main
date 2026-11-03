@@ -184,6 +184,16 @@ class InventoryReceiptService:
         if total <= 0: raise ReceiptDocumentError("Informe parcelas explicitas com valor positivo.")
         existing = self.db.query(FinanceObligation).filter(FinanceObligation.tenant_id == self.tenant_id, FinanceObligation.receipt_document_id == row.id).first()
         if existing: return {"document_id": row.id, "status": "linked", "transaction_ids": [], "obligation_total": str(existing.total_amount), "paid_total": "0"}
+        if row.purchase_id:
+            purchase_transaction = self.db.query(FinanceTransaction).filter(
+                FinanceTransaction.tenant_id == self.tenant_id,
+                FinanceTransaction.inventory_purchase_id == row.purchase_id,
+                FinanceTransaction.origin_type == "inventory_purchase_payable",
+            ).first()
+            if purchase_transaction:
+                raise ReceiptDocumentError(
+                    "A compra ja possui obrigacao financeira; reconcilie a origem antes de vincular o recebimento."
+                )
         ob = FinanceObligation(id=f"fin-obg-{uuid.uuid4().hex[:12]}", tenant_id=self.tenant_id, receipt_document_id=row.id, idempotency_key=key, total_amount=total, product_amount=total, status="pending", created_by_admin_id=self.admin_id)
         self.db.add(ob); self.db.flush(); txids=[]
         fs = FinanceService(self.db, self.tenant_id)

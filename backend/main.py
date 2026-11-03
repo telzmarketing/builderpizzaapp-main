@@ -8,6 +8,7 @@ Or directly:
     python -m backend.main
 """
 import asyncio
+import logging
 import os
 import re
 import uuid
@@ -17,6 +18,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+_logger = logging.getLogger(__name__)
 
 from backend.config import get_settings
 from backend.database import create_all_tables, SessionLocal, engine
@@ -167,6 +170,21 @@ async def lifespan(app: FastAPI):
             trusted_process_context(tenant_id, source=TenantSource.JOB),
         )
 
+    def _log_finance_tenant_context_failure(event_name: str, event, **identifiers):
+        """Record fail-closed tenant errors before preserving the event-bus re-raise."""
+        tenant_id = getattr(event, "tenant_id", None)
+        _logger.warning(
+            "Finance projection blocked by tenant context event=%s tenant_id=%s",
+            event_name,
+            tenant_id,
+            exc_info=True,
+            extra={
+                "finance_event_type": event_name,
+                "finance_tenant_id": tenant_id,
+                **{f"finance_{key}": value for key, value in identifiers.items()},
+            },
+        )
+
     def _finance_payment_confirmed_handler(event: PaymentConfirmed):
         try:
             with SessionLocal() as db:
@@ -178,9 +196,20 @@ async def lifespan(app: FastAPI):
                     transaction_id=event.transaction_id,
                 )
         except TenantContextError:
+            _log_finance_tenant_context_failure(
+                "PaymentConfirmed",
+                event,
+                payment_id=event.payment_id,
+                order_id=event.order_id,
+            )
             raise
         except Exception:
-            pass
+            _logger.exception(
+                "Finance projection failed for PaymentConfirmed payment_id=%s order_id=%s tenant_id=%s",
+                event.payment_id,
+                event.order_id,
+                event.tenant_id,
+            )
 
     bus.subscribe(PaymentConfirmed, _finance_payment_confirmed_handler)
 
@@ -196,9 +225,20 @@ async def lifespan(app: FastAPI):
                     reason=event.reason,
                 )
         except TenantContextError:
+            _log_finance_tenant_context_failure(
+                "PaymentReversed",
+                event,
+                payment_id=event.payment_id,
+                order_id=event.order_id,
+            )
             raise
         except Exception:
-            pass
+            _logger.exception(
+                "Finance projection failed for PaymentReversed payment_id=%s order_id=%s tenant_id=%s",
+                event.payment_id,
+                event.order_id,
+                event.tenant_id,
+            )
 
     bus.subscribe(PaymentReversed, _finance_payment_reversed_handler)
 
@@ -207,9 +247,18 @@ async def lifespan(app: FastAPI):
             with SessionLocal() as db:
                 _finance_event_service(db, event).sync_purchase_confirmed(purchase_id=event.purchase_id)
         except TenantContextError:
+            _log_finance_tenant_context_failure(
+                "InventoryPurchaseConfirmed",
+                event,
+                purchase_id=event.purchase_id,
+            )
             raise
         except Exception:
-            pass
+            _logger.exception(
+                "Finance projection failed for InventoryPurchaseConfirmed purchase_id=%s tenant_id=%s",
+                event.purchase_id,
+                event.tenant_id,
+            )
 
     bus.subscribe(InventoryPurchaseConfirmed, _finance_purchase_confirmed_handler)
 

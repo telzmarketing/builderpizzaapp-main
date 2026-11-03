@@ -24,6 +24,36 @@ def test_finance_event_handlers_use_event_tenant() -> None:
     assert "FinanceService(db).sync_purchase_confirmed" not in source
 
 
+def test_finance_projection_failures_are_logged() -> None:
+    source = MAIN.read_text(encoding="utf-8")
+
+    assert "Finance projection failed for PaymentConfirmed" in source
+    assert "Finance projection failed for PaymentReversed" in source
+    assert "Finance projection failed for InventoryPurchaseConfirmed" in source
+    assert "_logger.exception(" in source
+
+
+def test_finance_tenant_context_failures_are_logged_before_reraise() -> None:
+    source = MAIN.read_text(encoding="utf-8")
+
+    assert "def _log_finance_tenant_context_failure(event_name: str, event, **identifiers):" in source
+    assert '"finance_event_type": event_name' in source
+    assert '"finance_tenant_id": tenant_id' in source
+    for handler_name, identifier in (
+        ("payment_confirmed", "payment_id=event.payment_id"),
+        ("payment_reversed", "payment_id=event.payment_id"),
+        ("purchase_confirmed", "purchase_id=event.purchase_id"),
+    ):
+        handler_start = source.index(f"def _finance_{handler_name}_handler")
+        handler_end = source.find("\n    bus.subscribe", handler_start)
+        handler = source[handler_start:handler_end]
+        context_failure = handler.index("except TenantContextError:")
+        context_block = handler[context_failure:]
+        assert "_log_finance_tenant_context_failure(" in context_block
+        assert identifier in context_block
+        assert context_block.index("_log_finance_tenant_context_failure(") < context_block.index("raise")
+
+
 def test_payment_and_inventory_events_carry_tenant_id() -> None:
     events = EVENTS.read_text(encoding="utf-8")
     payments = PAYMENTS.read_text(encoding="utf-8")
