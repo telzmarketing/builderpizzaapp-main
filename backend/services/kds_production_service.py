@@ -18,6 +18,7 @@ from backend.models.inventory import InventoryItem, InventoryStockMovement
 from backend.models.rbac import AdminAuditLog
 from backend.models.product import Product
 from backend.models.gestao import GestaoModuleSettings
+from backend.core.kds_stations import PIZZA_STATION_IDS, station_scope
 
 
 class KdsStockConflict(DomainError):
@@ -42,7 +43,7 @@ class KdsProductionService:
     @staticmethod
     def normalize_station(station_id: str | None) -> str:
         value = "pizza" if station_id in (None, "cozinha") else station_id
-        if value not in ("pizza", "esfiha"):
+        if value not in ("pizza", *PIZZA_STATION_IDS, "esfiha"):
             raise DomainError("Estacao de producao invalida.", code="InvalidKdsStation")
         return value
 
@@ -115,7 +116,7 @@ class KdsProductionService:
             raise KdsStockConflict("Tarefa reservada para outro operador.", code="KdsTaskOwned")
 
     def _assert_attempt_station(self, attempt, station_id):
-        if attempt.unit.station_id != self.normalize_station(station_id):
+        if attempt.unit.station_id not in station_scope(self.normalize_station(station_id)):
             raise DomainError("Tarefa pertence a outra estacao operacional.", code="KdsStationConflict")
 
     def _operator_has_other_station(self, actor_id: str, station_id: str) -> bool:
@@ -123,7 +124,7 @@ class KdsProductionService:
         # absence of the optional presence table must preserve old commands.
         if not inspect(self.db.bind).has_table("kds_operator_states"):
             return False
-        allowed = (station_id, "cozinha") if station_id == "pizza" else (station_id,)
+        allowed = (*station_scope(station_id), "cozinha") if station_id in PIZZA_STATION_IDS or station_id == "pizza" else (station_id,)
         return self.db.query(KdsOperatorState.id).filter(
             KdsOperatorState.tenant_id == self.tenant_id,
             KdsOperatorState.user_id == actor_id,
@@ -257,6 +258,8 @@ class KdsProductionService:
             for idx in range(1,qty+1):
                 product = self.db.query(Product).filter_by(tenant_id=self.tenant_id, id=item.product_id).first()
                 item_station = self._product_station(product, item)
+                if item_station == "pizza" and station_id in PIZZA_STATION_IDS:
+                    item_station = station_id
                 unit=self.db.query(ProductionUnit).filter_by(tenant_id=self.tenant_id,order_item_id=item.id,unit_index=idx).first()
                 if unit:
                     if item_station == "expedicao":
@@ -307,7 +310,7 @@ class KdsProductionService:
         # still available through the preparation/order projections and retain
         # their current attempt for the stock gate and subsequent steps.
         rows = [row for row in self._current_queue_attempts()
-                if row.state == "queued" and row.unit.station_id == station_id
+                if row.state == "queued" and row.unit.station_id in station_scope(station_id)
                 and (row.operator_id == actor_id or row.operator_id is None)]
         rows.sort(key=lambda row: row.created_at)
         drink_item_ids = self._drink_item_ids([r.unit.order_item_id for r in rows])
@@ -319,7 +322,7 @@ class KdsProductionService:
         # states available to the operational projection without re-queuing
         # the accepted unit.
         queued_states = {"queued", "aguardando_analise", "atendimento", "assembling", "assembled", "baking", "checking"}
-        rows = [row for row in self._current_queue_attempts() if row.state in queued_states and row.unit.station_id == station_id]
+        rows = [row for row in self._current_queue_attempts() if row.state in queued_states and row.unit.station_id in station_scope(station_id)]
         rows.sort(key=lambda row: row.created_at)
         drink_item_ids = self._drink_item_ids([r.unit.order_item_id for r in rows])
         return [self._payload(r) for r in rows if r.unit.order_item_id not in drink_item_ids]
@@ -464,7 +467,7 @@ class KdsProductionService:
             KdsOperatorState.tenant_id == self.tenant_id,
             KdsOperatorState.user_id == target_operator_id,
             KdsOperatorState.requested_state == "available",
-            KdsOperatorState.station_id.in_((target_station, "cozinha") if target_station == "pizza" else (target_station,)),
+            KdsOperatorState.station_id.in_((*station_scope(target_station), "cozinha") if target_station in PIZZA_STATION_IDS or target_station == "pizza" else (target_station,)),
         ).first()
         if not target: raise DomainError("Operador destino indisponivel.",code="OperatorUnavailable")
         result=[]

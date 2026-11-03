@@ -39,6 +39,7 @@ import {
   type ProductionVisionDashboard,
   type ProductionVisionStatus,
 } from "@/lib/productionVision";
+import { productionVisionStationOptions } from "@/lib/kdsStations";
 
 type Section =
   | "dashboard"
@@ -162,10 +163,11 @@ function CameraForm({
   camera?: ProductionVisionCamera;
   onSaved: () => Promise<void>;
 }) {
+  const stationOptions = productionVisionStationOptions(stations);
   const [form, setForm] = useState<ProductionVisionCameraInput>({
     name: camera?.name ?? "",
     identifier: camera?.identifier ?? "",
-    station_id: camera?.station_id ?? stations[0]?.id ?? "",
+    station_id: camera?.station_id ?? stationOptions[0]?.id ?? "",
     manufacturer: camera?.manufacturer ?? "",
     model: camera?.model ?? "",
     ip_address: camera?.ip_address ?? "",
@@ -251,9 +253,9 @@ function CameraForm({
             onChange={(event) => update("station_id", event.target.value)}
           >
             <option value="">Selecione</option>
-            {stations.map((station) => (
+            {stationOptions.map((station) => (
               <option key={station.id} value={station.id}>
-                {station.name}
+                {station.label}
               </option>
             ))}
           </select>
@@ -380,7 +382,7 @@ export default function ProductionVision() {
       setError(
         cause instanceof Error
           ? cause.message
-          : "Não foi possível carregar a Visão de Produção.",
+          : "Não foi possível carregar o Registro de Produção.",
       );
     } finally {
       setLoading(false);
@@ -411,9 +413,9 @@ export default function ProductionVision() {
   return (
     <>
       <AdminPageHeader
-        eyebrow="KDS · Operação"
-        title="Visão de Produção"
-        description="Monitoramento fotográfico das estações, câmeras e sessões de produção."
+        eyebrow="KDS / Registro de Produção"
+        title="Registro de Produção"
+        description="Monitoramento fotográfico das bancadas, câmeras e sessões de produção."
         icon={<Camera size={20} />}
         actions={
           <button
@@ -440,7 +442,7 @@ export default function ProductionVision() {
         {loading ? (
           <div className="flex min-h-64 items-center justify-center text-sm text-stone">
             <Loader2 size={24} className="mr-3 animate-spin text-gold" />
-            Carregando Visão de Produção...
+            Carregando Registro de Produção...
           </div>
         ) : !data ? (
           <Empty message="Não há dados disponíveis. Tente atualizar novamente." />
@@ -672,22 +674,24 @@ function Cameras({
   );
 }
 function Stations({ data }: { data: ProductionVisionDashboard }) {
+  const fixedStations = productionVisionStationOptions(data.stations);
   return (
     <Card>
       <h2 className="text-lg font-black text-cream">Estações e zonas</h2>
       <p className="mt-1 text-sm text-stone">
-        As estações abaixo são derivadas das unidades de produção existentes. O
-        cadastro de zonas físicas aguarda contrato backend.
+        As bancadas de pizza são fixas para direcionar cada câmera e dispositivo.
+        As demais estações continuam vindo do contrato atual; o cadastro de zonas
+        físicas aguarda contrato backend.
       </p>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {data.stations.length ? (
-          data.stations.map((station) => (
+        {fixedStations.length ? (
+          fixedStations.map((station) => (
             <div
               key={station.id}
               className="rounded-xl border border-surface-03 bg-surface-01 p-4"
             >
               <MapPin className="text-gold" size={18} />
-              <h3 className="mt-3 font-bold text-cream">{station.name}</h3>
+              <h3 className="mt-3 font-bold text-cream">{station.label}</h3>
               <p className="mt-1 text-xs text-stone">ID: {station.id}</p>
               <p className="mt-3 text-sm text-stone">
                 {number(station.camera_count)} câmeras ·{" "}

@@ -5,7 +5,7 @@ from datetime import datetime
 class KdsCommandIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_version: int = Field(ge=0)
-    station_id: Literal["pizza", "esfiha"] = "pizza"
+    station_id: Literal["pizza", "pizza-1", "pizza-2", "esfiha"] = "pizza"
     reason: str | None = Field(default=None, min_length=1, max_length=300)
 
 class KdsCheckIn(KdsCommandIn):
@@ -15,7 +15,7 @@ class KdsPresenceIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     requested_state: Literal["available", "paused", "offline"] | None = None
     state: Literal["available", "paused", "offline", "in_production"] | None = None
-    station_id: Literal["cozinha", "pizza", "esfiha"] = "cozinha"
+    station_id: Literal["cozinha", "pizza", "pizza-1", "pizza-2", "esfiha"] = "cozinha"
     expected_version: int = Field(ge=0)
     reason: str | None = Field(default=None, max_length=300)
 
@@ -26,7 +26,7 @@ class KdsPresenceIn(BaseModel):
 class KdsHeartbeatIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     operational_session_id: str = Field(default="kds-session", min_length=1, max_length=120)
-    station_id: Literal["cozinha", "pizza", "esfiha"] = "cozinha"
+    station_id: Literal["cozinha", "pizza", "pizza-1", "pizza-2", "esfiha"] = "cozinha"
     expected_version: int = Field(ge=0)
 
 class KdsRedistributionIn(BaseModel):
@@ -39,7 +39,7 @@ class KdsRedistributionIn(BaseModel):
     from_operator_id: str | None = Field(default=None, min_length=1)
     reason: str = Field(min_length=1, max_length=300)
     expected_version: int = Field(default=0, ge=0)
-    station_id: Literal["pizza", "esfiha"] = "pizza"
+    station_id: Literal["pizza", "pizza-1", "pizza-2", "esfiha"] = "pizza"
 
     @property
     def effective_versions(self):

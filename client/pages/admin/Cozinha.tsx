@@ -21,6 +21,13 @@ import { loadSoundType, playOrderAlert } from "@/lib/orderSound";
 import { activeKitchenOrders } from "@/lib/kds";
 import { orderDisplayCode } from "@/lib/orderIdentity";
 import { onOrderArchived } from "@/lib/orderArchive";
+import {
+  PIZZA_STATIONS,
+  persistPizzaStation,
+  pizzaStationLabel,
+  readPizzaStation,
+  type PizzaWorkstationId,
+} from "@/lib/kdsStations";
 
 const POLL_INTERVAL_MS = 15_000;
 
@@ -44,6 +51,12 @@ export default function AdminCozinha({
   startToastLabel = "pizzaiolo",
 }: KdsStationPageProps = {}) {
   const { toast } = useToast();
+  const isPizzaWorkspace = !station && pwaKey === "kds-pizzaiolo";
+  const [pizzaStation, setPizzaStation] = useState<PizzaWorkstationId>(() =>
+    readPizzaStation(typeof window === "undefined" ? null : window.localStorage),
+  );
+  // Pizza 1/Pizza 2 are device lanes; the published KDS contract remains station=pizza.
+  const apiStation = station ?? "pizza";
   const [orders, setOrders] = useState<KdsKitchenOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -61,7 +74,7 @@ export default function AdminCozinha({
     async (manual = false) => {
       if (manual) setRefreshing(true);
       try {
-        const data = await kdsApi.listKitchenOrders(station);
+        const data = await kdsApi.listKitchenOrders(apiStation);
         const active = activeKitchenOrders(data);
         const waiting = active.filter(
           (order) => order.status === "paid" || order.status === "pago",
@@ -83,7 +96,7 @@ export default function AdminCozinha({
         setRefreshing(false);
       }
     },
-    [soundOn, station],
+    [apiStation, soundOn],
   );
 
   useEffect(() => {
@@ -133,7 +146,7 @@ export default function AdminCozinha({
     actionLock.current = true;
     setUpdating(order.id);
     try {
-      const updated = await kdsApi.startKitchenOrder(order.id, station);
+      const updated = await kdsApi.startKitchenOrder(order.id, apiStation);
       setOrders((current) =>
         activeKitchenOrders(
           current.map((item) => (item.id === order.id ? updated : item)),
@@ -170,7 +183,7 @@ export default function AdminCozinha({
     actionLock.current = true;
     setUpdating(order.id);
     try {
-      const updated = await kdsApi.markKitchenOrderReady(order.id, station);
+      const updated = await kdsApi.markKitchenOrderReady(order.id, apiStation);
       setOrders((current) =>
         activeKitchenOrders(
           current.map((item) => (item.id === order.id ? updated : item)),
@@ -286,6 +299,32 @@ export default function AdminCozinha({
           <KdsSessionActions />
         </div>
       </header>
+      {isPizzaWorkspace && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-[#20374a] bg-[#07111c] px-3 py-3 sm:px-4">
+          <label className="flex items-center gap-2 text-sm font-bold text-slate-200">
+            Bancada do dispositivo
+            <select
+              aria-label="Bancada do dispositivo"
+              value={pizzaStation}
+              onChange={(event) => {
+                const next = event.target.value as PizzaWorkstationId;
+                setPizzaStation(next);
+                persistPizzaStation(next, window.localStorage);
+              }}
+              className="min-h-11 rounded-xl border border-[#30485d] bg-[#0b1926] px-3 text-slate-100 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400"
+            >
+              {PIZZA_STATIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="text-xs text-slate-400">
+            Persistida neste dispositivo: {pizzaStationLabel(pizzaStation)}
+          </span>
+        </div>
+      )}
       {error && (
         <div
           role="alert"
@@ -305,7 +344,7 @@ export default function AdminCozinha({
         </div>
       )}
       <KdsMultiOperatorBoard
-        station={station}
+        station={apiStation}
         renderWorkspace={(workspace) => (
           <KdsTouchWorkspace
             {...workspace}

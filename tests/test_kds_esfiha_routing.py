@@ -26,7 +26,7 @@ def test_esfiha_routing_reuses_units_attempts_and_is_idempotent():
 def test_mixed_and_drink_routing_stays_operationally_separate():
     service = (ROOT / "backend/services/kds_production_service.py").read_text(encoding="utf-8")
     assert 'return "expedicao"' in service
-    assert 'row.unit.station_id == station_id' in service
+    assert 'row.unit.station_id in station_scope(station_id)' in service
     assert 'KdsStationConflict' in service
 
 
@@ -35,7 +35,7 @@ def test_esfiha_endpoint_and_commands_have_canonical_station_contract():
     schema = (ROOT / "backend/schemas/kds_production.py").read_text(encoding="utf-8")
     assert '/kitchen/esfiha/queue' in routes
     assert '/kitchen/esfiha/my-queue' in routes
-    assert 'station_id: Literal["pizza", "esfiha"]' in schema
+    assert 'station_id: Literal["pizza", "pizza-1", "pizza-2", "esfiha"]' in schema
     assert 'Tarefa pertence a outra estacao operacional' in (ROOT / "backend/services/kds_production_service.py").read_text(encoding="utf-8")
 
 

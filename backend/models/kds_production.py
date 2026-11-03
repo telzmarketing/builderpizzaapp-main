@@ -16,7 +16,7 @@ class ProductionUnit(Base):
         ForeignKeyConstraint(["tenant_id", "order_item_id"], ["order_items.tenant_id", "order_items.id"], ondelete="RESTRICT"),
         CheckConstraint("unit_index > 0", name="ck_production_unit_index"),
         CheckConstraint("state IN ('unassigned','queued','checking_stock','aguardando_analise','atendimento','assembling','assembled','baking','checking','ready','blocked','cancelled')", name="ck_production_unit_state"),
-        CheckConstraint("station_id IN ('pizza','esfiha','expedicao')", name="ck_production_unit_station"),
+        CheckConstraint("station_id IN ('pizza','pizza-1','pizza-2','esfiha','expedicao')", name="ck_production_unit_station"),
     )
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)

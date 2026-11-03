@@ -9,6 +9,7 @@ from backend.database import get_db
 from backend.schemas.kds import DispatchAssignIn, DispatchUnitCompleteIn, DispatchReturnToKitchenIn, KdsOverviewEnvelope, KdsOverviewOut
 from backend.services.kds_service import KdsService
 from backend.services.kds_production_service import KdsProductionService
+from backend.core.kds_stations import station_scope
 from backend.schemas.kds_production import KdsCommandIn, KdsCheckIn, KdsPresenceIn, KdsHeartbeatIn, KdsRedistributionIn
 
 
@@ -24,7 +25,7 @@ def kitchen_my_queue(station_id: str = "pizza", db: Session = Depends(get_db), a
     state = service.db.query(__import__('backend.models.kds_production', fromlist=['KdsOperatorState']).KdsOperatorState).filter(
         __import__('backend.models.kds_production', fromlist=['KdsOperatorState']).KdsOperatorState.tenant_id == actor.tenant_id,
         __import__('backend.models.kds_production', fromlist=['KdsOperatorState']).KdsOperatorState.user_id == actor.user_id,
-        __import__('backend.models.kds_production', fromlist=['KdsOperatorState']).KdsOperatorState.station_id.in_((canonical_station, "cozinha") if canonical_station == "pizza" else (canonical_station,)),
+        __import__('backend.models.kds_production', fromlist=['KdsOperatorState']).KdsOperatorState.station_id.in_((*station_scope(canonical_station), "cozinha") if canonical_station in ("pizza", "pizza-1", "pizza-2") else (canonical_station,)),
     ).first()
     tasks = service.queue(actor.user_id, station_id)
     presence = {"operator_id": actor.user_id, "operator_name": getattr(actor, "user_name", None) or actor.user_id, "state": state.requested_state if state else "offline", "station_id": canonical_station, "queue_count": len(tasks), "active_task_id": next((x["task_id"] for x in tasks if x["state"] == "assembling"), None), "updated_at": state.updated_at if state else service._now(), "version": state.version if state else 0}
