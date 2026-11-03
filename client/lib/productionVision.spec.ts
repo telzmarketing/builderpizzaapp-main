@@ -7,6 +7,7 @@ describe("normalizeProductionVisionDashboard", () => {
     expect(result.cameras).toHaveLength(1);
     expect(result.metrics?.monitored_orders).toBe(3);
     expect(result.stations).toEqual([]);
+    expect(result.zones).toEqual([]);
     expect(result.history).toEqual([]);
   });
 
@@ -28,5 +29,12 @@ describe("normalizeProductionVisionDashboard", () => {
   it("accepts list responses both wrapped and unwrapped", () => {
     expect(normalizeProductionVisionList<{ id: string }>({ data: [{ id: "camera-1" }] })).toEqual([{ id: "camera-1" }]);
     expect(normalizeProductionVisionList<{ id: string }>(null)).toEqual([]);
+  });
+
+  it("normalizes production zones without exposing missing fields", () => {
+    const result = normalizeProductionVisionDashboard({
+      data: { zones: [{ id: "zone-1", identifier: "bancada-a", name: "Bancada A", station_id: "pizza-1", status: "active" }] },
+    });
+    expect(result.zones).toEqual([{ id: "zone-1", identifier: "bancada-a", name: "Bancada A", station_id: "pizza-1", status: "active" }]);
   });
 });

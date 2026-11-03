@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class CameraIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     identifier: str = Field(min_length=1, max_length=80)
-    station_id: str = Field(min_length=1, max_length=20)
+    station_id: str = Field(min_length=1, max_length=80)
     manufacturer: str | None = Field(default=None, max_length=120)
     model: str | None = Field(default=None, max_length=120)
     ip_address: str | None = Field(default=None, max_length=120)
@@ -33,7 +33,7 @@ class SessionIn(BaseModel):
     production_unit_id: str = Field(min_length=1, max_length=120)
     production_attempt_id: str | None = Field(default=None, min_length=1, max_length=120)
     stage: str = Field(min_length=1, max_length=40)
-    station_id: str | None = Field(default=None, max_length=20)
+    station_id: str | None = Field(default=None, max_length=80)
     camera_id: str | None = Field(default=None, min_length=1, max_length=120)
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
     expected_photo_count: int | None = Field(default=None, ge=1, le=100)
@@ -71,10 +71,24 @@ class SettingsIn(BaseModel):
 class ZoneIn(BaseModel):
     identifier: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=120)
-    station_id: str = Field(min_length=1, max_length=20)
+    station_id: str = Field(min_length=1, max_length=80)
     camera_id: str | None = Field(default=None, min_length=1, max_length=120)
     exclusive: bool = True
     status: str = Field(default="active", pattern="^(active|inactive)$")
+
+
+class StationIn(BaseModel):
+    identifier: str = Field(min_length=2, max_length=80, pattern=r"^[a-z][a-z0-9-]*$")
+    name: str = Field(min_length=1, max_length=120)
+    status: str = Field(default="active", pattern="^(active|inactive)$")
+
+
+class StationOut(BaseModel):
+    id: str
+    name: str
+    station_type: str
+    status: str
+    protected: bool
 
 
 class OccupyZoneIn(BaseModel):

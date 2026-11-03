@@ -16,12 +16,15 @@ import {
   History,
   Loader2,
   MapPin,
+  Pencil,
+  Plus,
   RefreshCw,
   Save,
   Search,
   Settings,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Video,
   Wifi,
   XCircle,
@@ -37,6 +40,10 @@ import {
   type ProductionVisionCamera,
   type ProductionVisionCameraInput,
   type ProductionVisionDashboard,
+  type ProductionVisionStation,
+  type ProductionVisionStationInput,
+  type ProductionVisionZone,
+  type ProductionVisionZoneInput,
   type ProductionVisionStatus,
 } from "@/lib/productionVision";
 import { productionVisionStationOptions } from "@/lib/kdsStations";
@@ -457,7 +464,7 @@ export default function ProductionVision() {
                 reload={() => load(true)}
               />
             )}
-            {section === "stations" && <Stations data={data} />}
+            {section === "stations" && <Stations data={data} reload={() => load(true)} />}
             {section === "monitoring" && <Monitoring data={data} />}
             {section === "history" && (
               <HistoryList
@@ -673,37 +680,88 @@ function Cameras({
     </div>
   );
 }
-function Stations({ data }: { data: ProductionVisionDashboard }) {
-  const fixedStations = productionVisionStationOptions(data.stations);
+function StationForm({ station, onSaved, onCancel }: { station?: ProductionVisionStation; onSaved: () => Promise<void>; onCancel: () => void }) {
+  const [form, setForm] = useState<ProductionVisionStationInput>({
+    identifier: station?.identifier ?? station?.id ?? "",
+    name: station?.name ?? "",
+    status: station?.status === "inactive" ? "inactive" : "active",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setSaving(true); setError("");
+    try { await productionVisionApi.saveStation(form, station?.id); await onSaved(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível salvar a estação."); }
+    finally { setSaving(false); }
+  }
+  return <form onSubmit={submit} className="space-y-3 rounded-xl border border-gold/30 bg-surface-01 p-4">
+    <div className="flex items-center justify-between gap-3"><h3 className="font-black text-cream">{station ? "Editar estação" : "Nova estação"}</h3><button type="button" className={ghostClass} onClick={onCancel}>Cancelar</button></div>
+    <div className="grid gap-3 md:grid-cols-2">
+      <label className="text-xs font-bold text-stone">Nome<input required className={inputClass} value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></label>
+      <label className="text-xs font-bold text-stone">Identificador<input required pattern="[a-z0-9][a-z0-9._-]*" className={inputClass} value={form.identifier} onChange={(event) => setForm((current) => ({ ...current, identifier: event.target.value }))} disabled={Boolean(station)} /></label>
+      <label className="text-xs font-bold text-stone">Status<select className={inputClass} value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as "active" | "inactive" }))}><option value="active">Ativa</option><option value="inactive">Inativa</option></select></label>
+    </div>
+    {error && <p role="alert" className="text-sm text-red-200">{error}</p>}
+    <button className={buttonClass} disabled={saving}>{saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}{saving ? "Salvando..." : "Salvar estação"}</button>
+  </form>;
+}
+
+function ZoneForm({ data, zone, onSaved, onCancel }: { data: ProductionVisionDashboard; zone?: ProductionVisionZone; onSaved: () => Promise<void>; onCancel: () => void }) {
+  const stations = productionVisionStationOptions(data.stations);
+  const [form, setForm] = useState<ProductionVisionZoneInput>({ identifier: zone?.identifier ?? "", name: zone?.name ?? "", station_id: zone?.station_id ?? stations[0]?.id ?? "", camera_id: zone?.camera_id ?? null, exclusive: true, status: zone?.status === "inactive" ? "inactive" : "active" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setSaving(true); setError("");
+    try { await productionVisionApi.saveZone(form, zone?.id); await onSaved(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível salvar a zona."); }
+    finally { setSaving(false); }
+  }
+  return <form onSubmit={submit} className="space-y-3 rounded-xl border border-gold/30 bg-surface-01 p-4">
+    <div className="flex items-center justify-between gap-3"><h3 className="font-black text-cream">{zone ? "Editar zona" : "Nova zona"}</h3><button type="button" className={ghostClass} onClick={onCancel}>Cancelar</button></div>
+    <div className="grid gap-3 md:grid-cols-2">
+      <label className="text-xs font-bold text-stone">Identificador<input required className={inputClass} value={form.identifier} onChange={(event) => setForm((current) => ({ ...current, identifier: event.target.value }))} /></label>
+      <label className="text-xs font-bold text-stone">Nome<input required className={inputClass} value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></label>
+      <label className="text-xs font-bold text-stone">Estação<select required className={inputClass} value={form.station_id} onChange={(event) => setForm((current) => ({ ...current, station_id: event.target.value }))}>{stations.map((station) => <option key={station.id} value={station.id}>{station.label}</option>)}</select></label>
+      <label className="text-xs font-bold text-stone">Câmera (opcional)<select className={inputClass} value={form.camera_id ?? ""} onChange={(event) => setForm((current) => ({ ...current, camera_id: event.target.value || null }))}><option value="">Nenhuma</option>{data.cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}</select></label>
+      <label className="text-xs font-bold text-stone">Status<select className={inputClass} value={form.status ?? "active"} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}><option value="active">Ativa</option><option value="inactive">Inativa</option></select></label>
+    </div>
+    {error && <p role="alert" className="text-sm text-red-200">{error}</p>}
+    <button className={buttonClass} disabled={saving}>{saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}{saving ? "Salvando..." : "Salvar zona"}</button>
+  </form>;
+}
+
+function Stations({ data, reload }: { data: ProductionVisionDashboard; reload: () => Promise<void> }) {
+  const stationOptions = productionVisionStationOptions(data.stations);
+  const fixedStations = stationOptions.filter((station) => station.id === "pizza-1" || station.id === "pizza-2");
+  const customStations = data.stations.filter((station) => station.fixed === false || station.station_type === "custom");
+  const [editing, setEditing] = useState<string | "new" | null>(null);
+  const [editingStation, setEditingStation] = useState<string | "new" | null>(null);
+  const [actionError, setActionError] = useState("");
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const zones = data.zones.filter((zone) => zone.status !== "inactive");
+  const zoneStationName = (zone: ProductionVisionZone) => stationOptions.find((station) => station.id === zone.station_id)?.label ?? zone.station_id;
+  async function deactivate(zone: ProductionVisionZone) {
+    if (!window.confirm(`Excluir a zona “${zone.name}”? Ela será desativada e preservada no histórico.`)) return;
+    setDeleting(zone.id); setActionError("");
+    try { await productionVisionApi.deleteZone(zone.id); await reload(); }
+    catch (cause) { setActionError(cause instanceof Error ? cause.message : "Não foi possível excluir a zona."); }
+    finally { setDeleting(null); }
+  }
   return (
-    <Card>
-      <h2 className="text-lg font-black text-cream">Estações e zonas</h2>
-      <p className="mt-1 text-sm text-stone">
-        As bancadas de pizza são fixas para direcionar cada câmera e dispositivo.
-        As demais estações continuam vindo do contrato atual; o cadastro de zonas
-        físicas aguarda contrato backend.
-      </p>
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {fixedStations.length ? (
-          fixedStations.map((station) => (
-            <div
-              key={station.id}
-              className="rounded-xl border border-surface-03 bg-surface-01 p-4"
-            >
-              <MapPin className="text-gold" size={18} />
-              <h3 className="mt-3 font-bold text-cream">{station.label}</h3>
-              <p className="mt-1 text-xs text-stone">ID: {station.id}</p>
-              <p className="mt-3 text-sm text-stone">
-                {number(station.camera_count)} câmeras ·{" "}
-                {number(station.active_sessions)} sessões ativas
-              </p>
-            </div>
-          ))
-        ) : (
-          <Empty message="Nenhuma estação encontrada." />
-        )}
-      </div>
-    </Card>
+    <div className="space-y-5">
+      <Card><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><h2 className="text-lg font-black text-cream">Estações fixas</h2><p className="mt-1 text-sm text-stone">Pizza 1 e Pizza 2 permanecem disponíveis para câmeras, zonas e dispositivos.</p></div><span className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">Não removíveis</span></div><div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{fixedStations.map((station) => <div key={station.id} className="rounded-xl border border-surface-03 bg-surface-01 p-4"><MapPin className="text-gold" size={18} /><h3 className="mt-3 font-bold text-cream">{station.label}</h3><p className="mt-1 text-xs text-stone">ID: {station.id}</p><p className="mt-3 text-sm text-stone">{number(station.camera_count)} câmeras · {number(station.active_sessions)} sessões ativas</p></div>)}</div></Card>
+      <Card><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><h2 className="text-lg font-black text-cream">Estações personalizadas</h2><p className="mt-1 text-sm text-stone">Crie bancadas adicionais para organizar câmeras e zonas. Pizza 1 e Pizza 2 continuam protegidas.</p></div><button type="button" className={buttonClass} onClick={() => { setActionError(""); setEditingStation("new"); }}><Plus size={15} /> Nova estação</button></div>
+        {editingStation && <div className="mt-4"><StationForm station={editingStation === "new" ? undefined : customStations.find((station) => station.id === editingStation)} onCancel={() => setEditingStation(null)} onSaved={async () => { setEditingStation(null); await reload(); }} /></div>}
+        <div className="mt-4 space-y-2">{customStations.length ? customStations.map((station) => <div key={station.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-01 p-3"><div><p className="font-bold text-cream">{station.name}</p><p className="mt-1 text-xs text-stone">{station.identifier ?? station.id} · {station.status === "inactive" ? "Inativa" : "Ativa"}</p></div><div className="flex gap-2"><button type="button" className={ghostClass} onClick={() => setEditingStation(station.id)}><Pencil size={15} /> Editar</button><button type="button" className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-2 text-sm font-bold text-red-200 hover:bg-red-500/10 disabled:opacity-50" disabled={deleting === station.id} onClick={() => { if (!window.confirm(`Excluir a estação “${station.name}”?`)) return; setDeleting(station.id); setActionError(""); void productionVisionApi.deleteStation(station.id).then(reload).catch((cause) => setActionError(cause instanceof Error ? cause.message : "Não foi possível excluir a estação.")).finally(() => setDeleting(null)); }}><Trash2 size={15} /> {deleting === station.id ? "Excluindo..." : "Excluir"}</button></div></div>) : <Empty message="Nenhuma estação personalizada cadastrada." />}</div>
+        {actionError && <p role="alert" className="mt-3 text-sm text-red-200">{actionError}</p>}
+      </Card>
+      <Card><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><h2 className="text-lg font-black text-cream">Zonas de produção</h2><p className="mt-1 text-sm text-stone">Crie e vincule zonas físicas a uma estação e, opcionalmente, a uma câmera.</p></div><button type="button" className={buttonClass} onClick={() => { setActionError(""); setEditing("new"); }}><Plus size={15} /> Nova zona</button></div>
+        {actionError && <p role="alert" className="mt-3 text-sm text-red-200">{actionError}</p>}
+        {editing && <div className="mt-4"><ZoneForm data={data} zone={editing === "new" ? undefined : data.zones.find((zone) => zone.id === editing)} onCancel={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} /></div>}
+        <div className="mt-4 space-y-2">{zones.length ? zones.map((zone) => <div key={zone.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-01 p-3"><div><p className="font-bold text-cream">{zone.name}</p><p className="mt-1 text-xs text-stone">{zone.identifier} · {zoneStationName(zone)} · {zone.occupied ? "Ocupada" : "Livre"}</p></div><div className="flex gap-2"><button type="button" className={ghostClass} onClick={() => setEditing(zone.id)}><Pencil size={15} /> Editar</button><button type="button" className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-2 text-sm font-bold text-red-200 hover:bg-red-500/10 disabled:opacity-50" disabled={deleting === zone.id || zone.occupied} onClick={() => void deactivate(zone)}><Trash2 size={15} /> {deleting === zone.id ? "Excluindo..." : "Excluir"}</button></div></div>) : <Empty message="Nenhuma zona cadastrada. Crie a primeira zona de produção." />}</div>
+      </Card>
+    </div>
   );
 }
 function Monitoring({ data }: { data: ProductionVisionDashboard }) {

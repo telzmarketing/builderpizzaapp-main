@@ -14,10 +14,10 @@ from backend.models.kds_production import ProductionAttempt, ProductionUnit
 from backend.models.production_vision import (
     ProductionVisionCamera, ProductionVisionEvidenceHold, ProductionVisionIncident,
     ProductionVisionPhoto, ProductionVisionSession, ProductionVisionSettings,
-    ProductionVisionZone, ProductionVisionZoneOccupancy,
+    ProductionVisionStation, ProductionVisionZone, ProductionVisionZoneOccupancy,
 )
-from backend.schemas.production_vision import CameraIn, EvidenceHoldIn, FinishIn, IncidentIn, OccupyZoneIn, PhotoIn, SessionIn, SettingsIn, ZoneIn
-from backend.core.kds_stations import KDS_STATION_LABELS, LEGACY_STATION_IDS, PIZZA_STATION_IDS, is_supported_station
+from backend.schemas.production_vision import CameraIn, EvidenceHoldIn, FinishIn, IncidentIn, OccupyZoneIn, PhotoIn, SessionIn, SettingsIn, StationIn, ZoneIn
+from backend.core.kds_stations import KDS_STATION_LABELS, PIZZA_STATION_IDS
 
 
 class ProductionVisionService:
@@ -71,11 +71,63 @@ class ProductionVisionService:
 
     def stations(self) -> list[dict]:
         rows = {row[0] for row in self.db.query(ProductionUnit.station_id).filter(ProductionUnit.tenant_id == self.tenant_id).distinct().all()}
-        # Fixed pizza benches are always available for camera/zone assignment;
-        # legacy stations remain listed for existing tenants and records.
-        station_ids = list(PIZZA_STATION_IDS) + [station for station in LEGACY_STATION_IDS if station in rows]
-        station_ids.extend(sorted(rows - set(station_ids)))
-        return [{"id": station_id, "name": KDS_STATION_LABELS.get(station_id, station_id)} for station_id in station_ids]
+        result = [{"id": station_id, "name": KDS_STATION_LABELS[station_id], "identifier": station_id, "station_type": "fixed", "status": "active", "protected": True, "fixed": True} for station_id in PIZZA_STATION_IDS]
+        for station_id in ("esfiha", "expedicao"):
+            if station_id in rows:
+                result.append({"id": station_id, "name": KDS_STATION_LABELS[station_id], "identifier": station_id, "station_type": "legacy", "status": "active", "protected": True, "fixed": True})
+        custom = self.db.query(ProductionVisionStation).filter_by(tenant_id=self.tenant_id).order_by(ProductionVisionStation.name).all()
+        result.extend({"id": x.identifier, "name": x.name, "identifier": x.identifier, "station_type": "custom", "status": x.status, "protected": False, "fixed": False} for x in custom)
+        return result
+
+    def _station(self, station_id: str | None, *, active: bool = True) -> dict:
+        if station_id in KDS_STATION_LABELS:
+            return {"id": station_id, "name": KDS_STATION_LABELS[station_id], "identifier": station_id, "station_type": "fixed", "status": "active", "fixed": True}
+        item = self.db.query(ProductionVisionStation).filter_by(tenant_id=self.tenant_id, identifier=station_id).one_or_none()
+        if item is None:
+            raise DomainError("Estação não encontrada.", code="ProductionVisionStationNotFound")
+        if active and item.status != "active":
+            raise DomainError("Estação inativa.", code="ProductionVisionStationInactive")
+        return {"id": item.identifier, "name": item.name, "identifier": item.identifier, "station_type": "custom", "status": item.status, "protected": False, "fixed": False}
+
+    def save_station(self, body: StationIn, station_id: str | None = None) -> dict:
+        if station_id in KDS_STATION_LABELS or body.identifier in KDS_STATION_LABELS:
+            raise DomainError("Estação fixa não pode ser alterada.", code="ProductionVisionFixedStationProtected")
+        item = self.db.query(ProductionVisionStation).filter_by(tenant_id=self.tenant_id, identifier=station_id).one_or_none() if station_id else None
+        if station_id and item is None:
+            raise DomainError("Estação não encontrada.", code="ProductionVisionStationNotFound")
+        if item is None:
+            item = ProductionVisionStation(id=str(uuid.uuid4()), tenant_id=self.tenant_id)
+            self.db.add(item)
+        if item is not None and body.identifier != item.identifier:
+            related = (
+                self.db.query(ProductionVisionCamera.id).filter_by(tenant_id=self.tenant_id, station_id=item.identifier).first()
+                or self.db.query(ProductionVisionZone.id).filter_by(tenant_id=self.tenant_id, station_id=item.identifier).first()
+                or self.db.query(ProductionVisionSession.id).filter_by(tenant_id=self.tenant_id, station_id=item.identifier).first()
+            )
+            if related:
+                raise DomainError("Estação em uso não pode ter o identificador alterado.", code="ProductionVisionStationInUse")
+        item.name, item.identifier, item.status = body.name, body.identifier, body.status
+        try:
+            self.db.flush()
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise DomainError("Identificador de estação já cadastrado neste tenant.", code="ProductionVisionStationConflict") from exc
+        return self._station(item.identifier, active=False)
+
+    def delete_station(self, station_id: str) -> dict:
+        if station_id in KDS_STATION_LABELS:
+            raise DomainError("Estação fixa não pode ser excluída.", code="ProductionVisionFixedStationProtected")
+        item = self.db.query(ProductionVisionStation).filter_by(tenant_id=self.tenant_id, identifier=station_id).one_or_none()
+        if item is None:
+            raise DomainError("Estação não encontrada.", code="ProductionVisionStationNotFound")
+        related = self.db.query(ProductionVisionCamera.id).filter_by(tenant_id=self.tenant_id, station_id=item.identifier).first()
+        related = related or self.db.query(ProductionVisionZone.id).filter_by(tenant_id=self.tenant_id, station_id=station_id).first()
+        related = related or self.db.query(ProductionVisionSession.id).filter_by(tenant_id=self.tenant_id, station_id=item.identifier).first()
+        if related:
+            raise DomainError("Estação possui dados relacionados e não pode ser excluída; inative-a.", code="ProductionVisionStationInUse")
+        self.db.delete(item)
+        self.db.flush()
+        return {"deleted": True, "id": item.identifier}
 
     def zones(self) -> list[dict]:
         rows = self.db.query(ProductionVisionZone).filter_by(tenant_id=self.tenant_id).order_by(ProductionVisionZone.name).all()
@@ -83,8 +135,7 @@ class ProductionVisionService:
         return [{"id": x.id, "name": x.name, "identifier": x.identifier, "station_id": x.station_id, "camera_id": x.camera_id, "status": x.status, "occupied": x.id in occupied} for x in rows]
 
     def save_camera(self, body: CameraIn, camera_id: str | None = None) -> dict:
-        if not is_supported_station(body.station_id):
-            raise DomainError("Estação operacional inválida.", code="ProductionVisionStationInvalid")
+        self._station(body.station_id)
         item = self.db.query(ProductionVisionCamera).filter_by(tenant_id=self.tenant_id, id=camera_id).one_or_none() if camera_id else None
         if camera_id and item is None: raise DomainError("Câmera não encontrada.", code="ProductionVisionCameraNotFound")
         if item is None: item = ProductionVisionCamera(id=str(uuid.uuid4()), tenant_id=self.tenant_id); self.db.add(item)
@@ -95,9 +146,10 @@ class ProductionVisionService:
         return self._serialize_camera(item)
 
     def save_zone(self, body: ZoneIn, zone_id: str | None = None) -> dict:
-        if not is_supported_station(body.station_id):
-            raise DomainError("Estação operacional inválida.", code="ProductionVisionStationInvalid")
-        self._camera(body.camera_id)
+        self._station(body.station_id)
+        camera = self._camera(body.camera_id)
+        if camera and camera.station_id != body.station_id:
+            raise DomainError("Camera station mismatch.", code="ProductionVisionCameraStationMismatch")
         item = self.db.query(ProductionVisionZone).filter_by(tenant_id=self.tenant_id, id=zone_id).one_or_none() if zone_id else None
         if zone_id and item is None: raise DomainError("Zona não encontrada.", code="ProductionVisionZoneNotFound")
         if item is None: item = ProductionVisionZone(id=str(uuid.uuid4()), tenant_id=self.tenant_id); self.db.add(item)
@@ -105,6 +157,18 @@ class ProductionVisionService:
         try: self.db.flush()
         except IntegrityError as exc: self.db.rollback(); raise DomainError("Identificador de zona já cadastrado neste tenant.", code="ProductionVisionZoneConflict") from exc
         return next(x for x in self.zones() if x["id"] == item.id)
+
+    def delete_zone(self, zone_id: str) -> dict:
+        item = self.db.query(ProductionVisionZone).filter_by(tenant_id=self.tenant_id, id=zone_id).one_or_none()
+        if item is None:
+            raise DomainError("Zona não encontrada.", code="ProductionVisionZoneNotFound")
+        if self.db.query(ProductionVisionZoneOccupancy.id).filter_by(tenant_id=self.tenant_id, zone_id=zone_id).first():
+            raise DomainError("Zona possui ocupações e não pode ser excluída.", code="ProductionVisionZoneInUse")
+        if self.db.query(ProductionVisionSession.id).filter_by(tenant_id=self.tenant_id, zone_id=zone_id).first():
+            raise DomainError("Zona possui sessões e não pode ser excluída.", code="ProductionVisionZoneInUse")
+        self.db.delete(item)
+        self.db.flush()
+        return {"deleted": True, "id": zone_id}
 
     def occupy_zone(self, zone_id: str, body: OccupyZoneIn) -> dict:
         zone = self._zone(zone_id)
@@ -140,8 +204,7 @@ class ProductionVisionService:
             attempt = self.db.query(ProductionAttempt).filter_by(tenant_id=self.tenant_id, id=body.production_attempt_id, production_unit_id=unit.id).one_or_none()
             if attempt is None: raise DomainError("Tentativa de produção não encontrada para a unidade.", code="ProductionVisionAttemptNotFound")
         station_id = body.station_id or unit.station_id
-        if not is_supported_station(station_id):
-            raise DomainError("Estação operacional inválida.", code="ProductionVisionStationInvalid")
+        self._station(station_id)
         camera = self._camera(body.camera_id); zone = self._zone(body.zone_id)
         if zone and zone.station_id != station_id: raise DomainError("Zona não pertence à estação informada.", code="ProductionVisionZoneStationMismatch")
         current = self._settings()

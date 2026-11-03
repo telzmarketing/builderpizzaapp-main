@@ -30,4 +30,4 @@ def test_schema_and_migration_keep_station_contract_tenant_safe():
     assert "ck_production_unit_station" in migration
     assert "tenant_id" in vision
     assert 'Literal["pizza", "pizza-1", "pizza-2", "esfiha"]' in schema
-    assert "ProductionVisionStationInvalid" in vision
+    assert "ProductionVisionStationNotFound" in vision

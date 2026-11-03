@@ -5,7 +5,7 @@ from backend.core.exceptions import DomainError
 from backend.core.rbac_authorization import AuthorizedTenantActor, require_rbac_permission
 from backend.core.response import err, ok
 from backend.database import get_db
-from backend.schemas.production_vision import CameraIn, EvidenceHoldIn, FinishIn, IncidentIn, OccupyZoneIn, PhotoIn, SessionIn, SettingsIn, ZoneIn
+from backend.schemas.production_vision import CameraIn, EvidenceHoldIn, FinishIn, IncidentIn, OccupyZoneIn, PhotoIn, SessionIn, SettingsIn, StationIn, ZoneIn
 from backend.services.production_vision_service import ProductionVisionService
 
 router = APIRouter(prefix="/production-vision", tags=["production-vision"])
@@ -33,6 +33,15 @@ def cameras(db: Session = Depends(get_db), actor: AuthorizedTenantActor = read):
 @router.get("/stations")
 def stations(db: Session = Depends(get_db), actor: AuthorizedTenantActor = read): return ok(svc(db, actor).stations())
 
+@router.post("/stations", status_code=201)
+def create_station(body: StationIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).save_station(body))
+
+@router.put("/stations/{station_id}")
+def update_station(station_id: str, body: StationIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).save_station(body, station_id))
+
+@router.delete("/stations/{station_id}")
+def delete_station(station_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).delete_station(station_id))
+
 @router.get("/zones")
 def zones(db: Session = Depends(get_db), actor: AuthorizedTenantActor = read): return ok(svc(db, actor).zones())
 
@@ -41,6 +50,9 @@ def create_zone(body: ZoneIn, db: Session = Depends(get_db), actor: AuthorizedTe
 
 @router.put("/zones/{zone_id}")
 def update_zone(zone_id: str, body: ZoneIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).save_zone(body, zone_id))
+
+@router.delete("/zones/{zone_id}")
+def delete_zone(zone_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).delete_zone(zone_id))
 
 @router.post("/zones/{zone_id}/occupy", status_code=201)
 def occupy_zone(zone_id: str, body: OccupyZoneIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).occupy_zone(zone_id, body))
