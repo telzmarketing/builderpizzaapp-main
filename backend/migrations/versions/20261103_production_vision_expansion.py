@@ -89,6 +89,9 @@ def _create_tables():
             s.CheckConstraint("status IN ('active','inactive')", name="ck_production_vision_zone_status"),
         )
     _add_index("uq_production_vision_zones_tenant_identifier", "production_vision_zones", ["tenant_id", "identifier"], unique=True)
+    # PostgreSQL requires the referenced composite key to be unique before
+    # zone_occupancies can create its tenant-scoped foreign key.
+    _add_index("uq_production_vision_zones_tenant_id", "production_vision_zones", ["tenant_id", "id"], unique=True)
     _add_index("ix_production_vision_zones_tenant_station", "production_vision_zones", ["tenant_id", "station_id"])
 
     if not _table_exists("production_vision_zone_occupancies"):

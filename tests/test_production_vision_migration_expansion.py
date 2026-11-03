@@ -50,3 +50,14 @@ def test_expansion_preserves_tenant_scoped_postgresql_constraints():
     assert "ondelete=\"RESTRICT\"" in migration
     assert "ondelete=\"SET NULL\"" in migration
     assert "uq_production_vision_zone_active" in migration
+
+
+def test_zone_composite_key_exists_before_occupancy_foreign_key():
+    migration = MIGRATION.read_text(encoding="utf-8")
+
+    unique_zone_key = migration.index(
+        '"uq_production_vision_zones_tenant_id", "production_vision_zones", ["tenant_id", "id"], unique=True'
+    )
+    occupancy_table = migration.index('"production_vision_zone_occupancies"')
+
+    assert unique_zone_key < occupancy_table
