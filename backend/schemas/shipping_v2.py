@@ -128,6 +128,31 @@ class ShippingNeighborhoodOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ShippingNeighborhoodResolveIn(BaseModel):
+    city: str = Field(..., min_length=1)
+    neighborhood: str = Field(..., min_length=1)
+    street: Optional[str] = None
+    zip_code: Optional[str] = None
+
+    @field_validator("city", "neighborhood")
+    @classmethod
+    def validate_area_part(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("cidade e bairro são obrigatórios")
+        return value
+
+
+class ShippingNeighborhoodResolveOut(BaseModel):
+    city: str
+    neighborhood: str
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    distance_km: Optional[float] = None
+    within_configured_radius: Optional[bool] = None
+    message: str
+
+
 # ─── CEP Range ───────────────────────────────────────────────────────────────
 
 class ShippingCepRangeCreate(BaseModel):

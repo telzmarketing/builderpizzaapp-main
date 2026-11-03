@@ -4,7 +4,12 @@ import pytest
 from pydantic import ValidationError
 
 from backend.models.shipping_v2 import FreightTypeConfig, ShippingExtraRule, ShippingNeighborhood, ShippingPromotion
-from backend.schemas.shipping_v2 import ShippingCalculateIn, ShippingNeighborhoodCreate, ShippingNeighborhoodUpdate
+from backend.schemas.shipping_v2 import (
+    ShippingCalculateIn,
+    ShippingNeighborhoodCreate,
+    ShippingNeighborhoodResolveIn,
+    ShippingNeighborhoodUpdate,
+)
 from backend.services.shipping_service import ShippingService, _normalize_area_name
 
 
@@ -87,6 +92,54 @@ def test_neighborhood_update_rejects_blank_area_parts_and_negative_value():
         ShippingNeighborhoodUpdate(city=" ")
     with pytest.raises(ValidationError):
         ShippingNeighborhoodUpdate(name="Centro", shipping_value=-1)
+
+
+def test_effective_delivery_radius_uses_positive_configured_value_without_hardcoded_cap():
+    assert ShippingService._effective_delivery_radius_km(SimpleNamespace(max_delivery_distance=12)) == 12.0
+    assert ShippingService._effective_delivery_radius_km(SimpleNamespace(max_delivery_distance=0)) == 3.0
+    assert ShippingService._effective_delivery_radius_km(SimpleNamespace(max_delivery_distance=None)) == 3.0
+
+
+def test_resolve_neighborhood_returns_coordinates_distance_and_configured_radius(monkeypatch):
+    service = ShippingService.__new__(ShippingService)
+    service._db = SimpleNamespace()
+    service._tenant_context = None
+    service._tenant_enabled = False
+    service.get_config = lambda: SimpleNamespace(store_lat=-23.55, store_lng=-46.63, max_delivery_distance=10)
+
+    class FakeDeliveryService:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def geocode_address(self, query):
+            assert "Centro" in query and "São Paulo" in query
+            return {"lat": -23.56, "lng": -46.64}
+
+    monkeypatch.setattr("backend.services.delivery_service.DeliveryService", FakeDeliveryService)
+    result = service.resolve_neighborhood(
+        ShippingNeighborhoodResolveIn(city="São Paulo", neighborhood="Centro")
+    )
+
+    assert result.lat == -23.56
+    assert result.lng == -46.64
+    assert result.distance_km is not None
+    assert result.within_configured_radius is True
+
+
+def test_resolve_neighborhood_is_explicit_when_store_coordinates_are_missing():
+    service = ShippingService.__new__(ShippingService)
+    service._db = SimpleNamespace()
+    service._tenant_context = None
+    service._tenant_enabled = False
+    service.get_config = lambda: SimpleNamespace(store_lat=None, store_lng=None, max_delivery_distance=10)
+
+    result = service.resolve_neighborhood(
+        ShippingNeighborhoodResolveIn(city="São Paulo", neighborhood="Centro")
+    )
+
+    assert result.lat is None
+    assert result.within_configured_radius is None
+    assert "coordenadas" in result.message
 
 
 def test_area_normalization_ignores_accents_case_and_extra_spaces():

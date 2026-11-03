@@ -29,6 +29,13 @@ interface Neighborhood {
   notes: string; active: boolean; priority: number;
 }
 
+interface NeighborhoodResolution {
+  address: string | null;
+  distanceKm: number | null;
+  withinRadius: boolean | null;
+  message: string | null;
+}
+
 interface CepRange {
   id: string; name: string; cep_start: string; cep_end: string;
   shipping_value: number; min_order_value: number;
@@ -398,6 +405,7 @@ function TabConfig({ config, setConfig, showToast }: {
             value={form.min_order_value} onChange={v => set("min_order_value", parseFloat(v) || 0)} />
           <Input label="Taxa padrão (R$)" type="number" step="0.01"
             value={form.default_base_fee} onChange={v => set("default_base_fee", parseFloat(v) || 0)} />
+          <p className="text-stone text-xs mt-1">Fallback: só é usada quando nenhum tipo ou regra aplicável estiver ativo. Com Por Bairro ativo, vale o valor individual cadastrado no bairro.</p>
           <Input label="Tempo estimado padrão (min)" type="number"
             value={form.default_estimated_time} onChange={v => set("default_estimated_time", parseInt(v) || 45)} />
           <Input label="Distância máxima (km)" type="number" step="0.1"
@@ -529,6 +537,9 @@ function TabNeighborhoods({ neighborhoods, setNeighborhoods, showToast }: {
   const [modal, setModal] = useState<{ mode: "add" | "edit"; data: Partial<Neighborhood> } | null>(null);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [resolving, setResolving] = useState(false);
+  const [resolution, setResolution] = useState<NeighborhoodResolution | null>(null);
+  const [resolutionMessage, setResolutionMessage] = useState("");
 
   const filtered = neighborhoods.filter(n =>
     n.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -536,6 +547,45 @@ function TabNeighborhoods({ neighborhoods, setNeighborhoods, showToast }: {
   );
 
   const set = (k: string, v: unknown) => setModal(m => m ? { ...m, data: { ...m.data, [k]: v } } : null);
+
+  const openModal = (mode: "add" | "edit", data: Partial<Neighborhood>) => {
+    setResolution(null);
+    setResolutionMessage("");
+    setModal({ mode, data });
+  };
+
+  const resolveNeighborhood = async () => {
+    if (!modal) return;
+    const city = String(modal.data.city ?? "").trim();
+    const name = String(modal.data.name ?? "").trim();
+    if (!city || !name) {
+      setResolution(null);
+      setResolutionMessage("Informe a cidade e o bairro para consultar a localização.");
+      return;
+    }
+    setResolving(true);
+    setResolutionMessage("");
+    try {
+      const raw = await api<Record<string, unknown>>("POST", "/shipping/neighborhoods/resolve", { city, neighborhood: name });
+      const source = (raw.result ?? raw.resolution ?? raw) as Record<string, unknown>;
+      const distance = source.distance_km ?? source.distanceKm ?? source.distance;
+      const within = source.within_configured_radius ?? source.within_delivery_radius ?? source.within_radius ?? source.withinRadius ?? source.in_radius;
+      setResolution({
+        address: String(source.resolved_address ?? source.address ?? source.display_name ?? `${name}, ${city}`).trim() || null,
+        distanceKm: typeof distance === "number" ? distance : Number.isFinite(Number(distance)) ? Number(distance) : null,
+        withinRadius: typeof within === "boolean" ? within : null,
+        message: String(source.message ?? "").trim() || null,
+      });
+      if (typeof within !== "boolean") {
+        setResolutionMessage("O mapa não confirmou a cobertura. Você ainda pode salvar o bairro e revisar as coordenadas da pizzaria.");
+      }
+    } catch (e: unknown) {
+      setResolution(null);
+      setResolutionMessage(`Não foi possível consultar o mapa agora. Você ainda pode salvar o bairro. ${(e as Error).message}`);
+    } finally {
+      setResolving(false);
+    }
+  };
 
   const save = async () => {
     if (!modal) return;
@@ -575,7 +625,7 @@ function TabNeighborhoods({ neighborhoods, setNeighborhoods, showToast }: {
       <div className="flex gap-3">
         <input placeholder="Buscar bairro ou cidade..." value={search} onChange={e => setSearch(e.target.value)}
           className="flex-1 bg-surface-02 border border-surface-03 focus:border-gold text-cream placeholder-stone/50 rounded-lg px-3 py-2 text-sm outline-none" />
-        <button onClick={() => setModal({ mode: "add", data: { ...empty } })}
+        <button onClick={() => openModal("add", { ...empty })}
           className="flex items-center gap-2 px-4 py-2 bg-gold hover:bg-gold/90 text-cream font-bold rounded-lg text-sm">
           <Plus size={16} /> Novo Bairro
         </button>
@@ -599,7 +649,7 @@ function TabNeighborhoods({ neighborhoods, setNeighborhoods, showToast }: {
                 <span className="text-stone text-xs">Prioridade: {n.priority}</span>
               </div>
             </div>
-            <button onClick={() => setModal({ mode: "edit", data: { ...n } })} className="text-stone hover:text-gold transition-colors p-1"><Pencil size={16} /></button>
+            <button onClick={() => openModal("edit", { ...n })} className="text-stone hover:text-gold transition-colors p-1"><Pencil size={16} /></button>
             <button onClick={() => remove(n.id)} className="text-stone hover:text-red-400 transition-colors p-1"><Trash2 size={16} /></button>
           </div>
         ))}
@@ -609,8 +659,31 @@ function TabNeighborhoods({ neighborhoods, setNeighborhoods, showToast }: {
         <Modal title={modal.mode === "add" ? "Novo Bairro" : "Editar Bairro"} onClose={() => setModal(null)}>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <Input label="Nome do bairro *" value={modal.data.name ?? ""} onChange={v => set("name", v)} />
-              <Input label="Cidade" value={modal.data.city ?? ""} onChange={v => set("city", v)} />
+              <Input label="Cidade *" value={modal.data.city ?? ""} onChange={v => { set("city", v); setResolution(null); }} placeholder="Ex: São Paulo" />
+              <Input label="Nome do bairro *" value={modal.data.name ?? ""} onChange={v => { set("name", v); setResolution(null); }} placeholder="Ex: Centro" />
+            </div>
+            <div className="rounded-lg border border-surface-03 bg-surface-03/40 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-cream text-sm font-medium">Consultar localização</p>
+                  <p className="text-stone text-xs">Busca o bairro na cidade informada e compara com o raio configurado.</p>
+                </div>
+                <button type="button" onClick={resolveNeighborhood} disabled={resolving}
+                  className="px-3 py-2 border border-gold/50 text-gold-light hover:bg-gold/10 disabled:opacity-60 rounded-lg text-xs font-medium whitespace-nowrap">
+                  {resolving ? "Consultando..." : "Consultar"}
+                </button>
+              </div>
+              {resolution && (
+                <div className="border-t border-surface-03 pt-2 space-y-1 text-xs">
+                  <p className="text-parchment"><span className="text-stone">Endereço resolvido:</span> {resolution.address ?? "Não informado"}</p>
+                  <p className="text-parchment"><span className="text-stone">Distância da pizzaria:</span> {resolution.distanceKm !== null ? `${resolution.distanceKm.toFixed(2)} km` : "Não informada"}</p>
+                  {resolution.message && <p className="text-stone">{resolution.message}</p>}
+                  <p className={resolution.withinRadius === true ? "text-green-400" : resolution.withinRadius === false ? "text-red-400" : "text-amber-300"}>
+                    {resolution.withinRadius === true ? "Está dentro do raio configurado." : resolution.withinRadius === false ? "Está fora do raio configurado." : "Não foi possível confirmar o raio configurado."}
+                  </p>
+                </div>
+              )}
+              {resolutionMessage && <p className="text-amber-300 text-xs">{resolutionMessage}</p>}
             </div>
             <div className="flex items-center gap-3 py-1">
               <Toggle value={modal.data.is_free ?? false} onChange={v => set("is_free", v)} />
@@ -798,7 +871,7 @@ function TabDistanceRules({ distanceRules, setDistanceRules, showToast }: {
     <div className="space-y-4">
       <div className="bg-gold/10 border border-gold/30 rounded-xl px-4 py-3 flex gap-2">
         <AlertCircle size={16} className="text-gold flex-shrink-0 mt-0.5" />
-        <p className="text-parchment text-xs">Configure as coordenadas da loja na aba Configurações para habilitar o cálculo automático por distância.</p>
+        <p className="text-parchment text-xs">Configure as coordenadas da loja na aba Configurações para habilitar o cálculo automático por distância. O valor configurado nas regras é respeitado no cálculo; ele não representa um teto fixo global.</p>
       </div>
       <div className="flex justify-end">
         <button onClick={() => setModal({ mode: "add", data: { ...empty } })}

@@ -37,6 +37,7 @@ from backend.schemas.shipping_v2 import (
     ShippingConfigUpdate,
     FreightTypeConfigUpdate,
     ShippingNeighborhoodCreate, ShippingNeighborhoodUpdate,
+    ShippingNeighborhoodResolveIn,
     ShippingCepRangeCreate, ShippingCepRangeUpdate,
     ShippingDistanceRuleCreate, ShippingDistanceRuleUpdate,
     ShippingOrderValueTierCreate, ShippingOrderValueTierUpdate,
@@ -113,6 +114,19 @@ def update_type_config(freight_type: str, body: FreightTypeConfigUpdate, request
 def list_neighborhoods(request: Request, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
     try:
         return ok(ShippingService(db, _panel_context(request, db, admin)).list_neighborhoods())
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.post("/neighborhoods/resolve", response_model=None)
+def resolve_neighborhood(
+    body: ShippingNeighborhoodResolveIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    try:
+        return ok(ShippingService(db, _panel_context(request, db, admin)).resolve_neighborhood(body))
     except DomainError as exc:
         return err(exc)
 

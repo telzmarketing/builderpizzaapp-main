@@ -54,6 +54,7 @@ from backend.schemas.shipping_v2 import (
     ShippingConfigOut, ShippingConfigUpdate,
     FreightTypeConfigOut, FreightTypeConfigUpdate,
     ShippingNeighborhoodCreate, ShippingNeighborhoodUpdate, ShippingNeighborhoodOut,
+    ShippingNeighborhoodResolveIn, ShippingNeighborhoodResolveOut,
     ShippingCepRangeCreate, ShippingCepRangeUpdate, ShippingCepRangeOut,
     ShippingDistanceRuleCreate, ShippingDistanceRuleUpdate, ShippingDistanceRuleOut,
     ShippingOrderValueTierCreate, ShippingOrderValueTierUpdate, ShippingOrderValueTierOut,
@@ -217,6 +218,66 @@ class ShippingService:
             raise DomainError("Bairro não encontrado.", "NeighborhoodNotFound", 404)
         self._db.delete(row)
         self._db.commit()
+
+    def resolve_neighborhood(
+        self, payload: ShippingNeighborhoodResolveIn
+    ) -> ShippingNeighborhoodResolveOut:
+        """Resolve a city/neighborhood and compare it with the store radius.
+
+        This is intentionally non-persistent: the CRUD record remains the
+        source of truth for freight values, while this endpoint only provides
+        a safe preview for the neighborhood registration flow.
+        """
+        cfg = self.get_config()
+        base = {
+            "city": payload.city,
+            "neighborhood": payload.neighborhood,
+        }
+        if cfg.store_lat is None or cfg.store_lng is None:
+            return ShippingNeighborhoodResolveOut(
+                **base,
+                message="Configure as coordenadas da pizzaria antes de validar a cobertura.",
+            )
+
+        address_parts = [payload.street, payload.neighborhood, payload.city, payload.zip_code, "Brasil"]
+        query = ", ".join(str(part).strip() for part in address_parts if str(part or "").strip())
+        try:
+            from backend.services.delivery_service import DeliveryService
+
+            delivery_tenant_id = self._tenant_context.tenant_id if self._tenant_enabled and self._tenant_context else None
+            point = DeliveryService(
+                self._db,
+                tenant_id=delivery_tenant_id,
+                tenant_context=self._tenant_context,
+            ).geocode_address(query)
+            lat = point.get("lat")
+            lng = point.get("lng")
+            if lat is None or lng is None:
+                return ShippingNeighborhoodResolveOut(
+                    **base,
+                    message="Não foi possível localizar esse bairro e cidade no mapa.",
+                )
+        except Exception:
+            return ShippingNeighborhoodResolveOut(
+                **base,
+                message="Não foi possível consultar o mapa agora. Tente novamente.",
+            )
+
+        distance_km = _haversine(float(cfg.store_lat), float(cfg.store_lng), float(lat), float(lng))
+        radius_km = self._effective_delivery_radius_km(cfg)
+        within = distance_km <= radius_km
+        return ShippingNeighborhoodResolveOut(
+            **base,
+            lat=float(lat),
+            lng=float(lng),
+            distance_km=round(distance_km, 2),
+            within_configured_radius=within,
+            message=(
+                f"Bairro localizado a {distance_km:.2f} km da pizzaria."
+                if within
+                else f"Bairro localizado a {distance_km:.2f} km, fora do raio configurado de {radius_km:.2f} km."
+            ),
+        )
 
     # ─── CEP Ranges ──────────────────────────────────────────────────────────
 
@@ -679,7 +740,7 @@ class ShippingService:
     @staticmethod
     def _effective_delivery_radius_km(cfg: ShippingConfig) -> float:
         configured = cfg.max_delivery_distance if cfg.max_delivery_distance and cfg.max_delivery_distance > 0 else DELIVERY_RADIUS_LIMIT_KM
-        return min(float(configured), DELIVERY_RADIUS_LIMIT_KM)
+        return float(configured)
 
     def _resolve_distance_km(self, payload: ShippingCalculateIn, cfg: ShippingConfig) -> float | None:
         if payload.distance_km is not None:
