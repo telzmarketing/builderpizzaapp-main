@@ -153,7 +153,7 @@ class ProductionVisionService:
 
     def stations(self) -> list[dict]:
         referenced = set()
-        for model in (ProductionUnit, ProductionVisionCamera, ProductionVisionZone, ProductionVisionSession):
+        for model in (ProductionVisionCamera, ProductionVisionZone, ProductionVisionSession):
             referenced.update(row[0] for row in self.db.query(model.station_id).filter(model.tenant_id == self.tenant_id).distinct().all() if row[0])
         managed_rows = self.db.query(ProductionVisionStation).filter_by(tenant_id=self.tenant_id).all()
         suppressed = {item.identifier for item in managed_rows if item.status != "active"}

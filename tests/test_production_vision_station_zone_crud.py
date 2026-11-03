@@ -20,6 +20,8 @@ def test_station_and_zone_crud_contract_is_tenant_scoped_and_allows_managed_stat
     assert "tenant_id" in model and "uq_production_vision_stations_tenant_identifier" in model
     assert "def save_station" in service and "def delete_station" in service
     assert '"protected": False' in service
+    assert "PIZZA_STATION_IDS" not in service
+    assert "ProductionVisionFixedStationProtected" not in service
     assert "def delete_zone" in service and "ProductionVisionZoneInUse" in service
     assert 'router.post("/stations"' in route
     assert 'router.delete("/stations/{station_id}"' in route
