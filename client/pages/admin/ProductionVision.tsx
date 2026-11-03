@@ -465,7 +465,7 @@ export default function ProductionVision() {
                 reload={() => load(true)}
               />
             )}
-            {section === "stations" && <Stations data={data} reload={() => load(true)} />}
+              {section === "stations" && <ManagedStations data={data} reload={() => load(true)} />}
             {section === "monitoring" && <Monitoring data={data} />}
             {section === "history" && (
               <HistoryList
@@ -708,7 +708,7 @@ function StationForm({ station, onSaved, onCancel }: { station?: ProductionVisio
 }
 
 function ZoneForm({ data, zone, onSaved, onCancel }: { data: ProductionVisionDashboard; zone?: ProductionVisionZone; onSaved: () => Promise<void>; onCancel: () => void }) {
-  const stations = productionVisionStationOptions(data.stations);
+  const stations = data.stations.map((station) => ({ id: station.id, label: station.name || station.id }));
   const [form, setForm] = useState<ProductionVisionZoneInput>({ identifier: zone?.identifier ?? "", name: zone?.name ?? "", station_id: zone?.station_id ?? stations[0]?.id ?? "", camera_id: zone?.camera_id ?? null, exclusive: true, status: zone?.status === "inactive" ? "inactive" : "active" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -732,10 +732,45 @@ function ZoneForm({ data, zone, onSaved, onCancel }: { data: ProductionVisionDas
   </form>;
 }
 
+function ManagedStations({ data, reload }: { data: ProductionVisionDashboard; reload: () => Promise<void> }) {
+  const [editingStation, setEditingStation] = useState<string | "new" | null>(null);
+  const [editingZone, setEditingZone] = useState<string | "new" | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const stations = data.stations;
+  const zones = data.zones.filter((zone) => zone.status !== "inactive");
+  const stationName = (stationId: string) => stations.find((station) => station.id === stationId)?.name ?? stationId;
+  const removeStation = async (station: ProductionVisionStation) => {
+    if (!window.confirm(`Excluir a estação “${station.name}”?`)) return;
+    setDeleting(station.id); setError("");
+    try { await productionVisionApi.deleteStation(station.id); await reload(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível excluir a estação."); }
+    finally { setDeleting(null); }
+  };
+  const removeZone = async (zone: ProductionVisionZone) => {
+    if (zone.occupied || !window.confirm(`Excluir a zona “${zone.name}”?`)) return;
+    setDeleting(zone.id); setError("");
+    try { await productionVisionApi.deleteZone(zone.id); await reload(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível excluir a zona."); }
+    finally { setDeleting(null); }
+  };
+  return <div className="space-y-5">
+    <Card><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-black text-cream">Estações de trabalho</h2><p className="mt-1 text-sm text-stone">A lista abaixo é a mesma usada no dashboard. Todas podem ser editadas ou excluídas.</p></div><button type="button" className={buttonClass} onClick={() => setEditingStation("new")}><Plus size={15} /> Nova estação</button></div>
+      {editingStation && <div className="mt-4"><StationForm station={editingStation === "new" ? undefined : stations.find((station) => station.id === editingStation)} onCancel={() => setEditingStation(null)} onSaved={async () => { setEditingStation(null); await reload(); }} /></div>}
+      <div className="mt-4 space-y-2">{stations.length ? stations.map((station) => <div key={station.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-01 p-3"><div><p className="font-bold text-cream">{station.name}</p><p className="mt-1 text-xs text-stone">{station.identifier ?? station.id} · {station.status === "inactive" ? "Inativa" : "Ativa"}</p></div><div className="flex gap-2"><button type="button" className={ghostClass} onClick={() => setEditingStation(station.id)}><Pencil size={15} /> Editar</button><button type="button" className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-2 text-sm font-bold text-red-200 hover:bg-red-500/10 disabled:opacity-50" disabled={deleting === station.id} onClick={() => void removeStation(station)}><Trash2 size={15} /> {deleting === station.id ? "Excluindo..." : "Excluir"}</button></div></div>) : <Empty message="Nenhuma estação cadastrada." />}</div>
+    </Card>
+    <Card><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-black text-cream">Zonas de produção</h2><p className="mt-1 text-sm text-stone">Crie e vincule zonas a qualquer estação cadastrada.</p></div><button type="button" className={buttonClass} onClick={() => setEditingZone("new")}><Plus size={15} /> Nova zona</button></div>
+      {error && <p role="alert" className="mt-3 text-sm text-red-200">{error}</p>}
+      {editingZone && <div className="mt-4"><ZoneForm data={data} zone={editingZone === "new" ? undefined : data.zones.find((zone) => zone.id === editingZone)} onCancel={() => setEditingZone(null)} onSaved={async () => { setEditingZone(null); await reload(); }} /></div>}
+      <div className="mt-4 space-y-2">{zones.length ? zones.map((zone) => <div key={zone.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-surface-03 bg-surface-01 p-3"><div><p className="font-bold text-cream">{zone.name}</p><p className="mt-1 text-xs text-stone">{zone.identifier} · {stationName(zone.station_id)} · {zone.occupied ? "Ocupada" : "Livre"}</p></div><div className="flex gap-2"><button type="button" className={ghostClass} onClick={() => setEditingZone(zone.id)}><Pencil size={15} /> Editar</button><button type="button" className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-2 text-sm font-bold text-red-200 hover:bg-red-500/10 disabled:opacity-50" disabled={deleting === zone.id || zone.occupied} onClick={() => void removeZone(zone)}><Trash2 size={15} /> {deleting === zone.id ? "Excluindo..." : "Excluir"}</button></div></div>) : <Empty message="Nenhuma zona cadastrada." />}</div>
+    </Card>
+  </div>;
+}
+
 function Stations({ data, reload }: { data: ProductionVisionDashboard; reload: () => Promise<void> }) {
   const stationOptions = productionVisionStationOptions(data.stations);
-  const fixedStations = stationOptions.filter((station) => station.id === "pizza-1" || station.id === "pizza-2");
-  const customStations = data.stations.filter((station) => station.fixed === false || station.station_type === "custom");
+  const fixedStations: typeof stationOptions = [];
+  const customStations = data.stations;
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [editingStation, setEditingStation] = useState<string | "new" | null>(null);
   const [actionError, setActionError] = useState("");

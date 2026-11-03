@@ -28,7 +28,7 @@ describe("KDS pizza workstation choices", () => {
   it("keeps API-provided non-pizza stations for camera configuration", () => {
     expect(productionVisionStationOptions([
       { id: "esfiha", name: "Esfiha" },
-      { id: "pizza-1", name: "legacy" },
-    ]).map((station) => station.label)).toEqual(["Pizza 1", "Pizza 2", "Esfiha"]);
+      { id: "pizza-1", name: "Pizza 1" },
+    ]).map((station) => station.label)).toEqual(["Esfiha", "Pizza 1"]);
   });
 });

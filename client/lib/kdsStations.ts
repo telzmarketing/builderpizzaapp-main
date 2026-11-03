@@ -35,9 +35,7 @@ export function pizzaStationLabel(station: string | null | undefined) {
 export function productionVisionStationOptions(
   stations: ReadonlyArray<{ id: string; name: string }>,
 ): KdsStationOption[] {
-  const canonical = stations
-    .filter((station) => !PIZZA_STATIONS.some((option) => option.id === station.id))
-    .map((station) => ({
+  return stations.map((station) => ({
       id: station.id,
       label: station.name || station.id,
       apiStationId: station.id,
@@ -46,5 +44,4 @@ export function productionVisionStationOptions(
       active_sessions: (station as { active_sessions?: number | null }).active_sessions,
       status: (station as { status?: string | null }).status,
     }));
-  return [...PIZZA_STATIONS, ...canonical];
 }
