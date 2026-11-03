@@ -5,7 +5,7 @@ from backend.core.exceptions import DomainError
 from backend.core.rbac_authorization import AuthorizedTenantActor, require_rbac_permission
 from backend.core.response import err, ok
 from backend.database import get_db
-from backend.schemas.production_vision import CameraIn, EvidenceHoldIn, FinishIn, IncidentIn, OccupyZoneIn, PhotoIn, SessionIn, SettingsIn, StationIn, ZoneIn
+from backend.schemas.production_vision import CameraIn, CaptureConfigIn, CaptureEventIn, EvidenceHoldIn, FinishIn, IncidentIn, OccupyZoneIn, PhotoIn, SessionIn, SettingsIn, StationIn, ZoneIn
 from backend.services.production_vision_service import ProductionVisionService
 
 router = APIRouter(prefix="/production-vision", tags=["production-vision"])
@@ -41,6 +41,12 @@ def update_station(station_id: str, body: StationIn, db: Session = Depends(get_d
 
 @router.delete("/stations/{station_id}")
 def delete_station(station_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).delete_station(station_id))
+
+@router.get("/capture-config")
+def capture_config(station_id: str = Query(..., min_length=1, max_length=80), db: Session = Depends(get_db), actor: AuthorizedTenantActor = read): return call(lambda: svc(db, actor).capture_config(station_id))
+
+@router.put("/capture-config")
+def update_capture_config(body: CaptureConfigIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).update_capture_config(body))
 
 @router.get("/zones")
 def zones(db: Session = Depends(get_db), actor: AuthorizedTenantActor = read): return ok(svc(db, actor).zones())
@@ -86,6 +92,12 @@ def create_session(body: SessionIn, db: Session = Depends(get_db), actor: Author
 
 @router.post("/sessions/{session_id}/photos", status_code=201)
 def add_photo(session_id: str, body: PhotoIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).add_photo(session_id, body))
+
+@router.post("/sessions/{session_id}/captures", status_code=201)
+def capture_event(session_id: str, body: CaptureEventIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).capture_event(session_id, body, actor.user_id))
+
+@router.get("/sessions/{session_id}/capture-state")
+def capture_state(session_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = read): return call(lambda: svc(db, actor).capture_state(session_id))
 
 @router.post("/sessions/{session_id}/finish")
 def finish_session(session_id: str, body: FinishIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = write): return call(lambda: svc(db, actor).finish(session_id, body))

@@ -47,6 +47,7 @@ import {
   type ProductionVisionStatus,
 } from "@/lib/productionVision";
 import { productionVisionStationOptions } from "@/lib/kdsStations";
+import ProductionCaptureRulesPanel from "@/components/admin/ProductionCaptureRulesPanel";
 
 type Section =
   | "dashboard"
@@ -489,7 +490,7 @@ export default function ProductionVision() {
               />
             )}
             {section === "settings" && (
-              <SettingsPanel settings={settings} save={saveSettings} />
+              <div className="space-y-5"><ProductionCaptureRulesPanel stations={data.stations} /><SettingsPanel settings={settings} save={saveSettings} /></div>
             )}
             {section === "retention" && (
               <RetentionPanel settings={settings} save={saveSettings} />

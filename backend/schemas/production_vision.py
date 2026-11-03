@@ -91,6 +91,39 @@ class StationOut(BaseModel):
     protected: bool
 
 
+class CaptureConfigIn(BaseModel):
+    station_id: str = Field(min_length=1, max_length=80)
+    milestone_1_name: str = Field(min_length=1, max_length=80)
+    milestone_1_seconds: int = Field(ge=0, le=86400)
+    milestone_2_name: str = Field(min_length=1, max_length=80)
+    milestone_2_seconds: int = Field(ge=0, le=86400)
+    milestone_3_name: str = Field(min_length=1, max_length=80)
+    milestone_3_seconds: int = Field(ge=0, le=86400)
+    enabled: bool = True
+
+
+class CaptureEventIn(BaseModel):
+    milestone: str = Field(pattern=r"^milestone_[123]$")
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    mode: str = Field(default="automatic", pattern="^(automatic|manual)$")
+    photo_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+class CaptureEventOut(BaseModel):
+    id: str
+    session_id: str
+    order_id: str
+    production_unit_id: str
+    station_id: str
+    milestone: str
+    mode: str
+    status: str
+    idempotency_key: str
+    photo_id: str | None = None
+    captured_at: datetime | None = None
+    reason: str | None = None
+
+
 class OccupyZoneIn(BaseModel):
     session_id: str = Field(min_length=1, max_length=120)
     idempotency_key: str = Field(min_length=1, max_length=200)

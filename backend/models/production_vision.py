@@ -26,6 +26,55 @@ class ProductionVisionStation(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
 
+class ProductionVisionCaptureConfig(Base):
+    __tablename__ = "production_vision_capture_configs"
+    __table_args__ = (
+        Index("uq_production_vision_capture_config_tenant_station", "tenant_id", "station_id", unique=True),
+        CheckConstraint("milestone_1_seconds >= 0 AND milestone_2_seconds >= 0 AND milestone_3_seconds >= 0", name="ck_production_vision_capture_seconds"),
+    )
+    id = Column(String(36), primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
+    station_id = Column(String(80), nullable=False)
+    milestone_1_name = Column(String(80), nullable=False, default="inicio", server_default="inicio")
+    milestone_1_seconds = Column(Integer, nullable=False, default=0, server_default="0")
+    milestone_2_name = Column(String(80), nullable=False, default="meio", server_default="meio")
+    milestone_2_seconds = Column(Integer, nullable=False, default=30, server_default="30")
+    milestone_3_name = Column(String(80), nullable=False, default="fim", server_default="fim")
+    milestone_3_seconds = Column(Integer, nullable=False, default=60, server_default="60")
+    enabled = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+
+class ProductionVisionCaptureEvent(Base):
+    __tablename__ = "production_vision_capture_events"
+    __table_args__ = (
+        Index("uq_production_vision_capture_event_tenant_idempotency", "tenant_id", "idempotency_key", unique=True),
+        Index("uq_production_vision_capture_event_tenant_session_milestone", "tenant_id", "session_id", "milestone", unique=True),
+        Index("ix_production_vision_capture_events_tenant_order", "tenant_id", "order_id"),
+        ForeignKeyConstraint(["tenant_id", "session_id"], ["production_vision_sessions.tenant_id", "production_vision_sessions.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["tenant_id", "order_id"], ["orders.tenant_id", "orders.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["tenant_id", "production_unit_id"], ["production_units.tenant_id", "production_units.id"], ondelete="RESTRICT"),
+        CheckConstraint("mode IN ('automatic','manual')", name="ck_production_vision_capture_mode"),
+        CheckConstraint("status IN ('pending','captured','unsupported')", name="ck_production_vision_capture_status"),
+    )
+    id = Column(String(36), primary_key=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
+    session_id = Column(String(36), nullable=False)
+    order_id = Column(String, nullable=False)
+    production_unit_id = Column(String, nullable=False)
+    station_id = Column(String(80), nullable=False)
+    milestone = Column(String(40), nullable=False)
+    mode = Column(String(12), nullable=False)
+    status = Column(String(12), nullable=False)
+    idempotency_key = Column(String(200), nullable=False)
+    photo_id = Column(String(36), ForeignKey("production_vision_photos.id", ondelete="SET NULL"), nullable=True)
+    captured_at = Column(DateTime(timezone=True), nullable=True)
+    reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+
 class ProductionVisionCamera(Base):
     __tablename__ = "production_vision_cameras"
     __table_args__ = (

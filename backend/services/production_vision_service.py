@@ -12,16 +12,17 @@ from backend.config import get_settings
 from backend.core.exceptions import DomainError
 from backend.models.kds_production import ProductionAttempt, ProductionUnit
 from backend.models.production_vision import (
-    ProductionVisionCamera, ProductionVisionEvidenceHold, ProductionVisionIncident,
+    ProductionVisionCamera, ProductionVisionCaptureConfig, ProductionVisionCaptureEvent, ProductionVisionEvidenceHold, ProductionVisionIncident,
     ProductionVisionPhoto, ProductionVisionSession, ProductionVisionSettings,
     ProductionVisionStation, ProductionVisionZone, ProductionVisionZoneOccupancy,
 )
-from backend.schemas.production_vision import CameraIn, EvidenceHoldIn, FinishIn, IncidentIn, OccupyZoneIn, PhotoIn, SessionIn, SettingsIn, StationIn, ZoneIn
+from backend.schemas.production_vision import CameraIn, CaptureConfigIn, CaptureEventIn, EvidenceHoldIn, FinishIn, IncidentIn, OccupyZoneIn, PhotoIn, SessionIn, SettingsIn, StationIn, ZoneIn
 from backend.core.kds_stations import KDS_STATION_LABELS, PIZZA_STATION_IDS
 
 
 class ProductionVisionService:
     DEFAULTS = {"photos_per_session": 5, "max_width_px": 1280, "image_format": "webp", "image_quality": 80, "retention_days": 7}
+    CAPTURE_GATEWAY_CONFIGURED = False
 
     def __init__(self, db: Session, tenant_id: str):
         self.db, self.tenant_id = db, tenant_id
@@ -45,6 +46,87 @@ class ProductionVisionService:
         for key in self.DEFAULTS: setattr(item, key, getattr(body, key))
         self.db.flush()
         return self.settings()
+
+    def _capture_config(self, station_id: str) -> ProductionVisionCaptureConfig:
+        self._station(station_id)
+        item = self.db.query(ProductionVisionCaptureConfig).filter_by(tenant_id=self.tenant_id, station_id=station_id).one_or_none()
+        if item is None:
+            if station_id == "expedicao":
+                defaults = {"milestone_1_name": "Foto início", "milestone_1_seconds": 5, "milestone_2_name": "Foto pizza pronta", "milestone_2_seconds": 40, "milestone_3_name": "Foto caixa fechada", "milestone_3_seconds": 0}
+            else:
+                defaults = {"milestone_1_name": "Foto 1", "milestone_1_seconds": 10, "milestone_2_name": "Foto 2", "milestone_2_seconds": 40, "milestone_3_name": "Foto 3 - Pronto", "milestone_3_seconds": 0}
+            item = ProductionVisionCaptureConfig(id=str(uuid.uuid4()), tenant_id=self.tenant_id, station_id=station_id, **defaults)
+            self.db.add(item)
+            self.db.flush()
+        return item
+
+    @staticmethod
+    def _capture_config_payload(item: ProductionVisionCaptureConfig) -> dict:
+        return {
+            "id": item.id, "tenant_id": item.tenant_id, "station_id": item.station_id,
+            "milestone_1_name": item.milestone_1_name, "milestone_1_seconds": item.milestone_1_seconds,
+            "milestone_2_name": item.milestone_2_name, "milestone_2_seconds": item.milestone_2_seconds,
+            "milestone_3_name": item.milestone_3_name, "milestone_3_seconds": item.milestone_3_seconds,
+            "enabled": item.enabled,
+        }
+
+    def capture_config(self, station_id: str) -> dict:
+        return self._capture_config_payload(self._capture_config(station_id))
+
+    def update_capture_config(self, body: CaptureConfigIn) -> dict:
+        item = self._capture_config(body.station_id)
+        for key in ("milestone_1_name", "milestone_1_seconds", "milestone_2_name", "milestone_2_seconds", "milestone_3_name", "milestone_3_seconds", "enabled"):
+            setattr(item, key, getattr(body, key))
+        self.db.flush()
+        return self._capture_config_payload(item)
+
+    @staticmethod
+    def _capture_event_payload(item: ProductionVisionCaptureEvent) -> dict:
+        return {"id": item.id, "session_id": item.session_id, "order_id": item.order_id, "production_unit_id": item.production_unit_id, "station_id": item.station_id, "milestone": item.milestone, "mode": item.mode, "status": item.status, "idempotency_key": item.idempotency_key, "photo_id": item.photo_id, "captured_at": item.captured_at, "reason": item.reason}
+
+    def capture_event(self, session_id: str, body: CaptureEventIn, operator_id: str | None = None) -> dict:
+        session = self.db.query(ProductionVisionSession).filter_by(tenant_id=self.tenant_id, id=session_id).one_or_none()
+        if session is None:
+            raise DomainError("Sessão não encontrada.", code="ProductionVisionSessionNotFound")
+        existing = self.db.query(ProductionVisionCaptureEvent).filter_by(tenant_id=self.tenant_id, idempotency_key=body.idempotency_key).one_or_none()
+        if existing:
+            return self._capture_event_payload(existing)
+        config = self._capture_config(session.station_id)
+        unit = self.db.query(ProductionUnit).filter_by(tenant_id=self.tenant_id, id=session.production_unit_id).one_or_none()
+        if unit is None:
+            raise DomainError("Unidade de produção não encontrada.", code="ProductionUnitNotFound")
+        photo_id = body.photo_id
+        if photo_id:
+            photo = self.db.query(ProductionVisionPhoto).filter_by(tenant_id=self.tenant_id, id=photo_id, session_id=session.id).one_or_none()
+            if photo is None:
+                raise DomainError("Foto não pertence à sessão.", code="ProductionVisionPhotoNotFound")
+        if not config.enabled:
+            status, reason = "unsupported", "capture_disabled"
+        elif body.mode == "automatic" and not self.CAPTURE_GATEWAY_CONFIGURED:
+            status, reason = "unsupported", "capture_gateway_not_configured"
+        elif body.mode == "manual":
+            status, reason = "captured", "manual_capture"
+        else:
+            status, reason = "pending", "awaiting_capture_gateway"
+        now = datetime.now(timezone.utc) if status == "captured" else None
+        item = ProductionVisionCaptureEvent(id=str(uuid.uuid4()), tenant_id=self.tenant_id, session_id=session.id, order_id=unit.order_id, production_unit_id=unit.id, station_id=session.station_id, milestone=body.milestone, mode=body.mode, status=status, idempotency_key=body.idempotency_key, photo_id=photo_id, captured_at=now, reason=reason)
+        self.db.add(item)
+        self.db.flush()
+        return self._capture_event_payload(item)
+
+    def capture_state(self, session_id: str) -> dict:
+        session = self.db.query(ProductionVisionSession).filter_by(tenant_id=self.tenant_id, id=session_id).one_or_none()
+        if session is None:
+            raise DomainError("Sessão não encontrada.", code="ProductionVisionSessionNotFound")
+        config = self._capture_config(session.station_id)
+        events = {row.milestone: row for row in self.db.query(ProductionVisionCaptureEvent).filter_by(tenant_id=self.tenant_id, session_id=session.id).all()}
+        milestones = []
+        for index in (1, 2, 3):
+            key = f"milestone_{index}"
+            event = events.get(key)
+            default_status = "unsupported" if not config.enabled or not self.CAPTURE_GATEWAY_CONFIGURED else "pending"
+            milestones.append({"milestone": key, "name": getattr(config, f"{key}_name"), "seconds": getattr(config, f"{key}_seconds"), "status": event.status if event else default_status, "event": self._capture_event_payload(event) if event else None})
+        return {"session_id": session.id, "order_id": self.db.query(ProductionUnit.order_id).filter_by(tenant_id=self.tenant_id, id=session.production_unit_id).scalar(), "production_unit_id": session.production_unit_id, "station_id": session.station_id, "gateway_configured": self.CAPTURE_GATEWAY_CONFIGURED, "milestones": milestones}
 
     def _camera(self, camera_id: str | None) -> ProductionVisionCamera | None:
         if not camera_id: return None

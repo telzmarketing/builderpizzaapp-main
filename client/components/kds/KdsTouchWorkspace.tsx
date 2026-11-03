@@ -30,6 +30,7 @@ import {
   type TaskAction,
 } from "./KdsMultiOperatorBoard";
 import KdsRecipeDetails from "./KdsRecipeDetails";
+import ProductionCaptureChecklist from "./ProductionCaptureChecklist";
 import { orderDisplayCode } from "@/lib/orderIdentity";
 
 const panel =
@@ -149,6 +150,7 @@ interface Props extends KdsWorkspaceProps {
   updating: string | null;
   startOrder: (order: KdsKitchenOrder) => Promise<void>;
   finishOrder: (order: KdsKitchenOrder) => Promise<void>;
+  station?: string;
 }
 
 export default function KdsTouchWorkspace(props: Props) {
@@ -211,6 +213,13 @@ export default function KdsTouchWorkspace(props: Props) {
     order?.items.find((candidate) => candidate.id === task?.order_item_id) ??
     order?.items[0];
   const units = order?.production_units ?? [];
+  const captureUnit = task
+    ? units.find(
+        (unit) =>
+          unit.order_item_id === task.order_item_id &&
+          unit.unit_index === task.unit_index,
+      )
+    : undefined;
   const readyCount = units.filter((unit) => unit.state === "ready").length;
   const allReady = units.length > 0 && readyCount === units.length;
   const action = taskAction(task);
@@ -507,6 +516,12 @@ export default function KdsTouchWorkspace(props: Props) {
                     </p>
                   )}
                 </div>
+                {captureUnit && props.station && props.station !== "expedicao" && (
+                  <ProductionCaptureChecklist
+                    productionUnitId={captureUnit.id}
+                    stationId={props.station}
+                  />
+                )}
                 {action && task && (
                   <button
                     type="button"

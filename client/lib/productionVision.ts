@@ -11,6 +11,12 @@ export interface ProductionVisionSession { id: string; production_unit_id?: stri
 export interface ProductionVisionHistoryItem { id: string; order_code?: string | null; product_name?: string | null; stage?: string | null; status?: ProductionVisionStatus | null; captured_at?: string | null; photo_count?: number | null; }
 export interface ProductionVisionMetrics { cameras_online?: number | null; cameras_offline?: number | null; sessions_active?: number | null; sessions_complete?: number | null; sessions_partial?: number | null; photos_captured?: number | null; monitored_orders?: number | null; completed_sessions?: number | null; partial_sessions?: number | null; photos_processed?: number | null; }
 export interface ProductionVisionDashboard { cameras: ProductionVisionCamera[]; stations: ProductionVisionStation[]; zones: ProductionVisionZone[]; sessions: ProductionVisionSession[]; history: ProductionVisionHistoryItem[]; metrics: ProductionVisionMetrics | null; }
+export interface ProductionVisionSettings { photos_per_session?: number; max_width_px?: number; image_format?: string; image_quality?: number; retention_days?: number; [key: string]: unknown; }
+export interface ProductionVisionSessionInput { production_unit_id: string; production_attempt_id?: string | null; stage: string; station_id?: string | null; camera_id?: string | null; zone_id?: string | null; idempotency_key?: string | null; expected_photo_count?: number; }
+export interface ProductionVisionPhotoInput { original_storage_key: string; captured_at?: string | null; width_px?: number | null; height_px?: number | null; checksum_sha256?: string | null; processing_status?: string; metadata?: Record<string, unknown>; }
+export interface ProductionVisionFinishInput { status: string; finished_at?: string | null; }
+export interface ProductionVisionCaptureConfig { id?: string; station_id: string; milestone_1_name: string; milestone_1_seconds: number; milestone_2_name: string; milestone_2_seconds: number; milestone_3_name: string; milestone_3_seconds: number; enabled: boolean; }
+export interface ProductionVisionCaptureEvent { id: string; session_id: string; milestone: string; mode: "automatic" | "manual"; status: "pending" | "captured" | "unsupported"; photo_id?: string | null; reason?: string | null; captured_at?: string | null; }
 
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" ? value as Record<string, unknown> : {}; }
 function arrayOf<T>(value: unknown): T[] { return Array.isArray(value) ? value as T[] : []; }
@@ -30,4 +36,13 @@ export const productionVisionApi = {
   deleteZone: (zoneId: string) => apiRequest<{ deleted: boolean }>("DELETE", `/production-vision/zones/${zoneId}`),
   saveStation: (input: ProductionVisionStationInput, stationId?: string) => apiRequest<ProductionVisionStation>(stationId ? "PUT" : "POST", stationId ? `/production-vision/stations/${stationId}` : "/production-vision/stations", input),
   deleteStation: (stationId: string) => apiRequest<{ deleted: boolean }>("DELETE", `/production-vision/stations/${stationId}`),
+  getSettings: () => apiRequest<ProductionVisionSettings>("GET", "/production-vision/settings"),
+  updateSettings: (input: ProductionVisionSettings) => apiRequest<ProductionVisionSettings>("PUT", "/production-vision/settings", input),
+  getCaptureConfig: (stationId: string) => apiRequest<ProductionVisionCaptureConfig>("GET", `/production-vision/capture-config?station_id=${encodeURIComponent(stationId)}`),
+  updateCaptureConfig: (input: ProductionVisionCaptureConfig) => apiRequest<ProductionVisionCaptureConfig>("PUT", "/production-vision/capture-config", input),
+  createSession: (input: ProductionVisionSessionInput) => apiRequest<ProductionVisionSession>("POST", "/production-vision/sessions", input),
+  addPhoto: (sessionId: string, input: ProductionVisionPhotoInput) => apiRequest<unknown>("POST", `/production-vision/sessions/${encodeURIComponent(sessionId)}/photos`, input),
+  finishSession: (sessionId: string, input: ProductionVisionFinishInput) => apiRequest<unknown>("POST", `/production-vision/sessions/${encodeURIComponent(sessionId)}/finish`, input),
+  captureEvent: (sessionId: string, input: { milestone: string; idempotency_key: string; mode: "automatic" | "manual"; photo_id?: string | null }) => apiRequest<ProductionVisionCaptureEvent>("POST", `/production-vision/sessions/${encodeURIComponent(sessionId)}/captures`, input),
+  captureState: (sessionId: string) => apiRequest<{ gateway_configured: boolean; milestones: Array<{ milestone: string; name: string; seconds: number; status: string }> }>("GET", `/production-vision/sessions/${encodeURIComponent(sessionId)}/capture-state`),
 };

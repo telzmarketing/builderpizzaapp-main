@@ -353,6 +353,7 @@ export default function AdminCozinha({
             updating={updating}
             startOrder={startOrder}
             finishOrder={finishOrder}
+            station={apiStation}
           />
         )}
       />

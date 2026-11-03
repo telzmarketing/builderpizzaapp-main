@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { deliveryApi, kdsApi, type KdsDispatchOrder, type KdsDriver, type KdsOrderItem } from "@/lib/api";
 import { loadSoundType, playOrderAlert } from "@/lib/orderSound";
 import { replaceDispatchOrder } from "@/lib/kds";
+import ProductionCaptureChecklist from "@/components/kds/ProductionCaptureChecklist";
 
 const POLL_INTERVAL_MS = 15_000;
 
@@ -64,6 +65,7 @@ export default function AdminExpedicao() {
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [labelOrder, setLabelOrder] = useState<KdsDispatchOrder | null>(null);
+  const [captureTriggers, setCaptureTriggers] = useState<Record<string, number>>({});
   const [, setTick] = useState(0);
   const knownOrderIds = useRef<Set<string>>(new Set());
   const initialLoad = useRef(true);
@@ -130,6 +132,7 @@ export default function AdminExpedicao() {
     actionLock.current = true;
     loadSequence.current += 1;
     setUpdatingUnitId(unitId);
+    setCaptureTriggers((current) => ({ ...current, [unitId]: (current[unitId] ?? 0) + 1 }));
     try {
       const updated = await kdsApi.completeDispatchUnit(order.id, unitId, expectedVersion);
       setOrders((current) => replaceDispatchOrder(current, updated));
@@ -269,6 +272,7 @@ export default function AdminExpedicao() {
                   const busy = updatingUnitId === unit.id;
                   return <div key={unit.id} className="flex flex-col gap-3 rounded-lg border border-surface-03 p-3 ">
                     <div className="min-w-0"><p className="flex items-start gap-2 font-bold"><Pizza size={19} className="mt-0.5 shrink-0 text-amber-400" />{isDrink ? "Bebida" : (unit.product_type === "pizza" || item?.product_type === "pizza" || Boolean(item?.flavors?.length) ? "Pizza" : "Item")} {unit.unit_index} · {item ? itemDescription(item) : (unit.product_name || "Item")}</p><p className={`mt-1 text-sm font-semibold ${completed ? "text-emerald-300" : unit.state === "blocked" ? "text-red-300" : "text-stone"}`}>{productionUnitStatus(unit)}</p></div>
+                    {!completed && <ProductionCaptureChecklist productionUnitId={unit.id} stationId="expedicao" triggerStep={captureTriggers[unit.id] ? "box_closed" : null} />}
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <button type="button" disabled={Boolean(updatingUnitId) || Boolean(assigning)} onClick={() => setLabelOrder(order)} className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-emerald-500/40 px-3 text-sm font-bold text-emerald-200 disabled:opacity-40"><Printer size={16} /> Etiquetas do pedido</button>
                       <button type="button" disabled={!canClose || Boolean(updatingUnitId) || Boolean(assigning)} onClick={() => void completeUnit(order, unit.id, unit.version)} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-black text-white disabled:opacity-40">{busy ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}{completed ? "Unidade fechada" : canClose ? "Fechar unidade" : "Aguardando preparo"}</button>
