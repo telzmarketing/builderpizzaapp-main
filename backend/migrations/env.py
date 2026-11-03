@@ -70,6 +70,7 @@ from backend.models import (  # noqa: F401
     upload_asset,
     partner_identification,
     kds_audit,
+    production_vision,
 )
 
 config = context.config

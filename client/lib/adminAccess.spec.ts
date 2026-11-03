@@ -44,7 +44,7 @@ describe("admin navigation route matching", () => {
   });
 
   it.each([
-    ["cozinha", "/painel/cozinha", ["KDS Pizzaiolo", "KDS Esfiha"]],
+    ["cozinha", "/painel/cozinha", ["KDS Pizzaiolo", "KDS Esfiha", "Visão de Produção"]],
     ["expedicao", "/painel/expedicao", "KDS Expedição"],
   ])("keeps the %s KDS profile on its allowed screen", (moduleKey, path, labels) => {
     const permissions: ApiEffectivePermissions = {
@@ -87,6 +87,7 @@ describe("admin navigation route matching", () => {
         "KDS Cozinha Preparo",
         "KDS Expedição",
         "KDS Auditoria",
+        "Visão de Produção",
         "KDS Motoboys",
       ]);
   });

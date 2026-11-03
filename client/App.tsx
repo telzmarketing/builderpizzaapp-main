@@ -448,6 +448,7 @@ const AdminCozinha = lazy(() => import("./pages/admin/Cozinha"));
 const KdsEsfiha = lazy(() => import("./pages/admin/KdsEsfiha"));
 const AdminExpedicao = lazy(() => import("./pages/admin/Expedicao"));
 const KdsAuditoria = lazy(() => import("./pages/admin/KdsAuditoria"));
+const ProductionVision = lazy(() => import("./pages/admin/ProductionVision"));
 const AdminFidelidade = lazy(() => import("./pages/admin/AdminFidelidade"));
 const AdminConteudo = lazy(() => import("./pages/admin/Conteudo"));
 const AdminPagamentos = lazy(() => import("./pages/admin/AdminPagamentos"));
@@ -660,6 +661,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/kds/pdv" element={<KdsPdv />} />
                 <Route element={<AdminLayout />}>
                 <Route path="/painel/kds/analitico" element={<KdsAnalytics />} />
+                <Route path="/painel/kds/visao-producao" element={<ProductionVision />} />
                 <Route path="/painel" element={<AdminDashboard />} />
                 <Route path="/painel/gestor" element={<AdminGestor />} />
                 <Route path="/painel/whatsapp-gateway" element={<WhatsAppGateway />} />

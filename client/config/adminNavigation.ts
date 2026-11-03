@@ -1,6 +1,7 @@
 import type { ElementType } from "react";
 import {
   BarChart3,
+  Camera,
   Bell,
   Brain,
   CheckSquare,
@@ -96,6 +97,7 @@ const groups: Array<{ label: string; children: AdminNavigationItem[] }> = [
       { path: "/painel/preparo", aliases: ["/app/kds/preparo"], icon: ChefHat, label: "KDS Cozinha Preparo", permissions: ["inventory"] },
       { path: "/painel/expedicao", aliases: ["/app/kds/expedicao"], icon: Truck, label: "KDS Expedição", permissions: ["expedicao"] },
       { path: "/painel/kds/auditoria", aliases: ["/app/kds/auditoria"], icon: ClipboardList, label: "KDS Auditoria", permissions: ["kds_auditoria"] },
+      { path: "/painel/kds/visao-producao", icon: Camera, label: "Visão de Produção", permissions: ["cozinha"] },
       { path: "/painel/kds/sala-motoboy", aliases: ["/app/kds/motoboys"], icon: Monitor, label: "KDS Motoboys", permissions: ["pedidos"] },
     ],
   },

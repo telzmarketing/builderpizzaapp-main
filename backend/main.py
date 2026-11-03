@@ -80,6 +80,7 @@ from backend.routes import labels as labels_routes
 from backend.routes import order_board as order_board_routes
 from backend.routes import gestor as gestor_routes
 from backend.routes import partner_identification as partner_identification_routes
+from backend.routes import production_vision as production_vision_routes
 
 settings = get_settings()
 
@@ -1451,6 +1452,7 @@ app.include_router(finance_routes.router, prefix="/api")
 app.include_router(fiscal_routes.router, prefix="/api")
 app.include_router(partner_identification_routes.router, prefix="/api")
 app.include_router(partner_identification_routes.compat_router, prefix="/api")
+app.include_router(production_vision_routes.router, prefix="/api")
 app.include_router(platform_tenants_routes.router, prefix="/api")
 app.include_router(platform_tenants_routes.master_router, prefix="/api")
 app.include_router(platform_tenants_routes.host_router, prefix="/api")
