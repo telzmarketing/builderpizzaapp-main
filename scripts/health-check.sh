@@ -473,13 +473,20 @@ PY
 }
 
 echo "[health] services"
-systemctl is-active --quiet telz-api
-systemctl is-active --quiet telz-web
+require_active_service() {
+  local unit="$1"
+  local state
+  state="$(systemctl is-active "$unit" 2>/dev/null || true)"
+  [[ "$state" == "active" ]] || die "servico $unit inativo (estado=$state)"
+}
+
+require_active_service telz-api
+require_active_service telz-web
 
 GATEWAY_INSTALLED=false
 if unit_exists telz-whatsapp-gateway; then
   GATEWAY_INSTALLED=true
-  systemctl is-active --quiet telz-whatsapp-gateway
+  require_active_service telz-whatsapp-gateway
 fi
 
 echo "[health] Nginx"

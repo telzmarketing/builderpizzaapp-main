@@ -61,3 +61,15 @@ def test_zone_composite_key_exists_before_occupancy_foreign_key():
     occupancy_table = migration.index('"production_vision_zone_occupancies"')
 
     assert unique_zone_key < occupancy_table
+
+
+def test_photo_composite_key_exists_before_history_foreign_key():
+    migration = MIGRATION.read_text(encoding="utf-8")
+
+    unique_photo_key = migration.index(
+        '"uq_production_vision_photos_tenant_id", "production_vision_photos", ["tenant_id", "id"], unique=True'
+    )
+    history_table = migration.index('"production_vision_history_events"')
+
+    assert unique_photo_key < history_table
+    assert 'production_vision_photos.tenant_id", "production_vision_photos.id"], ondelete="RESTRICT"' in migration

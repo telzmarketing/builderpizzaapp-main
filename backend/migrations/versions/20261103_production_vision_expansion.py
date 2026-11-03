@@ -110,6 +110,10 @@ def _create_tables():
     _add_index("uq_production_vision_zone_occupancy_idempotency", "production_vision_zone_occupancies", ["tenant_id", "idempotency_key"], unique=True)
     _add_index("uq_production_vision_zone_active", "production_vision_zone_occupancies", ["tenant_id", "zone_id"], unique=True, where="released_at IS NULL")
 
+    # The original 20261102 schema only had the photo primary key.  Composite
+    # tenant-scoped references require this alternate key in PostgreSQL.
+    _add_index("uq_production_vision_photos_tenant_id", "production_vision_photos", ["tenant_id", "id"], unique=True)
+
     if not _table_exists("production_vision_history_events"):
         op.create_table(
             "production_vision_history_events",
@@ -120,8 +124,10 @@ def _create_tables():
             s.Column("event_type", s.String(60), nullable=False),
             s.Column("payload_json", s.JSON, nullable=False, server_default=s.text("'{}'")),
             s.Column("created_at", s.DateTime(timezone=True), nullable=False, server_default=s.func.now()),
-            s.ForeignKeyConstraint(["tenant_id", "session_id"], ["production_vision_sessions.tenant_id", "production_vision_sessions.id"], ondelete="SET NULL"),
-            s.ForeignKeyConstraint(["tenant_id", "photo_id"], ["production_vision_photos.tenant_id", "production_vision_photos.id"], ondelete="SET NULL"),
+            # tenant_id is part of the composite key and is NOT NULL; RESTRICT
+            # preserves tenant isolation without an impossible SET NULL.
+            s.ForeignKeyConstraint(["tenant_id", "session_id"], ["production_vision_sessions.tenant_id", "production_vision_sessions.id"], ondelete="RESTRICT"),
+            s.ForeignKeyConstraint(["tenant_id", "photo_id"], ["production_vision_photos.tenant_id", "production_vision_photos.id"], ondelete="RESTRICT"),
         )
     _add_index("ix_production_vision_history_session_created", "production_vision_history_events", ["tenant_id", "session_id", "created_at"])
     _add_index("ix_production_vision_history_photo_created", "production_vision_history_events", ["tenant_id", "photo_id", "created_at"])

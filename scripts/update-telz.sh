@@ -1122,6 +1122,7 @@ CUTOVER_MODE="rollback_safe"
 FORWARD_CUTOVER_MARKER="/var/lib/telz/forward-cutover-recovery.json"
 RECOVERY_FAILED=false
 RECOVERY_REQUIRED=false
+MIGRATION_ATTEMPTED=false
 API_WAS_ACTIVE="inactive"
 WEB_WAS_ACTIVE="inactive"
 GATEWAY_WAS_ACTIVE="inactive"
@@ -1288,6 +1289,20 @@ stop_services() {
 start_new_services() {
   systemctl start telz-api telz-web
   if [[ "$GATEWAY_ENABLED" == "true" ]]; then
+    systemctl start telz-whatsapp-gateway
+  fi
+}
+
+recover_forward_only_preflight_services() {
+  [[ -e "$FORWARD_CUTOVER_MARKER" && ! -L "$FORWARD_CUTOVER_MARKER" ]] || return 0
+  [[ "$DATABASE_CURRENT" == "$PREVIOUS_ACTIVE_REVISION" ]] || return 0
+  [[ "$PREVIOUS_ACTIVE_COMMIT" != "$EXPECTED_COMMIT" ]] || return 0
+
+  echo "[update] recuperando servicos da release anterior para o preflight forward-only" >&2
+  if ! systemctl is-active --quiet telz-api || ! systemctl is-active --quiet telz-web; then
+    systemctl start telz-api telz-web
+  fi
+  if unit_exists telz-whatsapp-gateway && ! systemctl is-active --quiet telz-whatsapp-gateway; then
     systemctl start telz-whatsapp-gateway
   fi
 }
@@ -1584,6 +1599,7 @@ fi
 materialize_release "$EXPECTED_COMMIT" "$ALEMBIC_TARGET" "$SOURCE_ARCHIVE" false "$DATABASE_CURRENT" "$CUTOVER_MODE" "$PREVIOUS_ACTIVE_REVISION"
 
 echo "[update] preflight completo da release ativa antes de qualquer mutacao"
+recover_forward_only_preflight_services
 TELZ_ALEMBIC_TARGET="$DATABASE_CURRENT" \
   TELZ_REQUIRE_PUBLIC_HTTPS="$REQUIRE_PUBLIC_HTTPS" \
   TELZ_PUBLIC_HEALTH_URL="$PUBLIC_HEALTH_URL" \
@@ -1591,7 +1607,7 @@ TELZ_ALEMBIC_TARGET="$DATABASE_CURRENT" \
   TELZ_HEALTH_API_PORT="$API_PORT" \
   TELZ_HEALTH_WEB_PORT="$WEB_PORT" \
   TELZ_MONITORING_DIR="$MONITORING_DIR" \
-  "$BUNDLE_HEALTH" "$INSTALL_DIR"
+  "$BUNDLE_HEALTH" "$INSTALL_DIR" || die "preflight health falhou antes da mutacao"
 
 snapshot_operational_artifacts
 RECOVERY_REQUIRED=true
@@ -1608,8 +1624,15 @@ TELZ_MAINTENANCE_LOCK_HELD=true \
   "$BUNDLE_BACKUP" "$INSTALL_DIR"
 
 if [[ "$DATABASE_CURRENT" != "$ALEMBIC_TARGET" ]]; then
+  MIGRATION_ATTEMPTED=true
+  if ! alembic_at "$FINAL_APP_DIR" upgrade "$ALEMBIC_TARGET"; then
+    mapfile -t FAILED_MIGRATION_CURRENTS < <(database_current_at "$FINAL_APP_DIR" || true)
+    if [[ "${#FAILED_MIGRATION_CURRENTS[@]}" -eq 1 && "${FAILED_MIGRATION_CURRENTS[0]}" == "$ALEMBIC_TARGET" ]]; then
+      MIGRATION_APPLIED=true
+    fi
+    die "migration $ALEMBIC_TARGET falhou; revision confirmada=${FAILED_MIGRATION_CURRENTS[0]:-desconhecida}"
+  fi
   MIGRATION_APPLIED=true
-  alembic_at "$FINAL_APP_DIR" upgrade "$ALEMBIC_TARGET"
 fi
 mapfile -t DEPLOYED_CURRENTS < <(database_current_at "$FINAL_APP_DIR")
 [[ "${#DEPLOYED_CURRENTS[@]}" -eq 1 && "${DEPLOYED_CURRENTS[0]}" == "$ALEMBIC_TARGET" ]] || \
@@ -1708,6 +1731,10 @@ if TELZ_MAINTENANCE_LOCK_HELD=true /usr/bin/python3 -I /usr/local/sbin/telz-doma
   echo "[update] executor HTTPS automatico configurado e validado"
 else
   echo "[update][atencao] aplicacao validada; executor HTTPS indisponivel. Consulte o estado de disponibilidade no painel e logs telz-domain-ssl." >&2
+fi
+
+if [[ -e "$FORWARD_CUTOVER_MARKER" && ! -L "$FORWARD_CUTOVER_MARKER" ]]; then
+  rm -f -- "$FORWARD_CUTOVER_MARKER"
 fi
 
 MAINTENANCE_WINDOW=false
