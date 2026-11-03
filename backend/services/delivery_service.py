@@ -12,6 +12,7 @@ import random
 import uuid
 import json
 import math
+import unicodedata
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
@@ -1788,3 +1789,94 @@ class DeliveryService:
             self._db.rollback()
 
         return {"lat": lat, "lng": lng, "cached": False}
+
+    def search_neighborhoods(
+        self,
+        city: str,
+        term: str | None = None,
+        limit: int = 8,
+    ) -> list[dict]:
+        """Search OSM neighborhood labels within a city.
+
+        This uses the same tenant-aware DeliveryService geocoding boundary as
+        ``geocode_address``.  Suggestions are deliberately read-only and are
+        not persisted as shipping rules or geography records.
+        """
+        import json as _json
+        import urllib.parse
+        import urllib.request
+
+        city = str(city or "").strip()
+        term = str(term or "").strip()
+        if not city:
+            return []
+        limit = max(1, min(int(limit), 20))
+
+        if self._wave7_enabled:
+            if self._tenant_context is None:
+                raise TenantContextMissing("Contexto confiavel obrigatorio para busca geográfica.")
+            if self._tenant_id and self._tenant_id != self._tenant_context.tenant_id:
+                raise TenantContextMismatch("Tenant da busca geográfica diverge do contexto confiavel.")
+
+        query = ", ".join(part for part in (term, city, "Brasil") if part)
+        params = urllib.parse.urlencode({
+            "q": query,
+            "format": "jsonv2",
+            "addressdetails": 1,
+            "limit": limit,
+            "countrycodes": "br",
+            "dedupe": 1,
+        })
+        url = f"https://nominatim.openstreetmap.org/search?{params}"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "TelzDelivery/1.0"})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = _json.loads(resp.read())
+        except Exception:
+            return []
+
+        def normalize(value: str | None) -> str:
+            text = unicodedata.normalize("NFKD", str(value or ""))
+            return "".join(c for c in text if not unicodedata.combining(c)).casefold().strip()
+
+        city_key = normalize(city)
+        suggestions: list[dict] = []
+        seen: set[tuple[str, float, float]] = set()
+        for item in data if isinstance(data, list) else []:
+            if not isinstance(item, dict):
+                continue
+            address = item.get("address") or {}
+            neighborhood = (
+                address.get("neighbourhood")
+                or address.get("neighborhood")
+                or address.get("suburb")
+                or address.get("quarter")
+                or address.get("district")
+            )
+            resolved_city = (
+                address.get("city")
+                or address.get("town")
+                or address.get("village")
+                or address.get("municipality")
+            )
+            if not neighborhood or not resolved_city or normalize(resolved_city) != city_key:
+                continue
+            try:
+                lat = float(item["lat"])
+                lng = float(item["lon"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            key = (normalize(neighborhood), round(lat, 6), round(lng, 6))
+            if key in seen:
+                continue
+            seen.add(key)
+            suggestions.append({
+                "display_name": str(item.get("display_name") or f"{neighborhood}, {resolved_city}"),
+                "neighborhood": str(neighborhood),
+                "city": str(resolved_city),
+                "lat": lat,
+                "lng": lng,
+            })
+            if len(suggestions) >= limit:
+                break
+        return suggestions

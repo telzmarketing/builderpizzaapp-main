@@ -55,6 +55,7 @@ from backend.schemas.shipping_v2 import (
     FreightTypeConfigOut, FreightTypeConfigUpdate,
     ShippingNeighborhoodCreate, ShippingNeighborhoodUpdate, ShippingNeighborhoodOut,
     ShippingNeighborhoodResolveIn, ShippingNeighborhoodResolveOut,
+    ShippingNeighborhoodSuggestionOut,
     ShippingCepRangeCreate, ShippingCepRangeUpdate, ShippingCepRangeOut,
     ShippingDistanceRuleCreate, ShippingDistanceRuleUpdate, ShippingDistanceRuleOut,
     ShippingOrderValueTierCreate, ShippingOrderValueTierUpdate, ShippingOrderValueTierOut,
@@ -278,6 +279,20 @@ class ShippingService:
                 else f"Bairro localizado a {distance_km:.2f} km, fora do raio configurado de {radius_km:.2f} km."
             ),
         )
+
+    def suggest_neighborhoods(
+        self, city: str, term: str | None = None, limit: int = 8
+    ) -> list[ShippingNeighborhoodSuggestionOut]:
+        """Return geocoded neighborhood options for an administrative city."""
+        from backend.services.delivery_service import DeliveryService
+
+        delivery_tenant_id = self._tenant_context.tenant_id if self._tenant_enabled and self._tenant_context else None
+        rows = DeliveryService(
+            self._db,
+            tenant_id=delivery_tenant_id,
+            tenant_context=self._tenant_context,
+        ).search_neighborhoods(city=city, term=term, limit=limit)
+        return [ShippingNeighborhoodSuggestionOut.model_validate(row) for row in rows]
 
     # ─── CEP Ranges ──────────────────────────────────────────────────────────
 

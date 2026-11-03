@@ -153,6 +153,14 @@ class ShippingNeighborhoodResolveOut(BaseModel):
     message: str
 
 
+class ShippingNeighborhoodSuggestionOut(BaseModel):
+    display_name: str
+    neighborhood: str
+    city: str
+    lat: float
+    lng: float
+
+
 # ─── CEP Range ───────────────────────────────────────────────────────────────
 
 class ShippingCepRangeCreate(BaseModel):

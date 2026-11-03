@@ -17,7 +17,7 @@ Legacy endpoints (kept for backward compat):
   GET/POST/DELETE  /shipping/zones
   GET/POST/DELETE  /shipping/rules
 """
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from backend.core.tenant_context import TenantContext
@@ -114,6 +114,21 @@ def update_type_config(freight_type: str, body: FreightTypeConfigUpdate, request
 def list_neighborhoods(request: Request, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
     try:
         return ok(ShippingService(db, _panel_context(request, db, admin)).list_neighborhoods())
+    except DomainError as exc:
+        return err(exc)
+
+
+@router.get("/neighborhoods/suggestions")
+def suggest_neighborhoods(
+    request: Request,
+    city: str = Query(..., min_length=1),
+    term: str | None = Query(default=None, max_length=120),
+    limit: int = Query(default=8, ge=1, le=20),
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    try:
+        return ok(ShippingService(db, _panel_context(request, db, admin)).suggest_neighborhoods(city, term, limit))
     except DomainError as exc:
         return err(exc)
 

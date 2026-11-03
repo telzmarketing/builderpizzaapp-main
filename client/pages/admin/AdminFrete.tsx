@@ -5,7 +5,7 @@ import { apiRequest } from "@/lib/api";
 import {
   Truck, Settings, MapPin, Hash, Ruler, DollarSign, Sparkles, Zap,
   Plus, Pencil, Trash2, Check, X, ToggleLeft, ToggleRight, AlertCircle,
-  Package, Clock, ChevronDown, ChevronUp,
+  Package, Clock, ChevronDown, ChevronUp, Loader2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -34,6 +34,20 @@ interface NeighborhoodResolution {
   distanceKm: number | null;
   withinRadius: boolean | null;
   message: string | null;
+}
+
+interface NeighborhoodSuggestion {
+  name: string;
+  display_name?: string;
+  city: string;
+  lat: number | null;
+  lng: number | null;
+}
+
+interface GeocodeResult {
+  lat: number | null;
+  lng: number | null;
+  cached: boolean;
 }
 
 interface CepRange {
@@ -357,12 +371,45 @@ function TabConfig({ config, setConfig, showToast }: {
 }) {
   const [form, setForm] = useState<ShippingConfig | null>(config);
   const [saving, setSaving] = useState(false);
+  const [storeAddress, setStoreAddress] = useState("");
+  const [storeCep, setStoreCep] = useState("");
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeError, setGeocodeError] = useState("");
+  const [geocodeResult, setGeocodeResult] = useState<GeocodeResult | null>(null);
 
   useEffect(() => { setForm(config); }, [config]);
 
   if (!form) return <p className="text-stone text-sm">Carregando...</p>;
 
   const set = (k: keyof ShippingConfig, v: unknown) => setForm(prev => ({ ...prev!, [k]: v }));
+
+  const findStoreCoordinates = async () => {
+    const address = storeAddress.trim();
+    const cep = storeCep.trim();
+    if (!address && !cep) {
+      setGeocodeError("Informe o endereço ou o CEP da pizzaria.");
+      setGeocodeResult(null);
+      return;
+    }
+
+    const query = [address, cep, "Brasil"].filter(Boolean).join(", ");
+    setGeocoding(true);
+    setGeocodeError("");
+    setGeocodeResult(null);
+    try {
+      const result = await api<GeocodeResult>("GET", `/delivery/geocode?q=${encodeURIComponent(query)}`);
+      if (!Number.isFinite(result.lat) || !Number.isFinite(result.lng)) {
+        throw new Error("Não foi possível localizar esse endereço. Revise o endereço e o CEP.");
+      }
+      set("store_lat", result.lat);
+      set("store_lng", result.lng);
+      setGeocodeResult(result);
+    } catch (e: unknown) {
+      setGeocodeError((e as Error).message || "Não foi possível buscar as coordenadas.");
+    } finally {
+      setGeocoding(false);
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -417,6 +464,41 @@ function TabConfig({ config, setConfig, showToast }: {
         <h2 className="text-cream font-bold">Mensagens</h2>
         <Textarea label="Mensagem quando região não atendida"
           value={form.unavailable_message} onChange={v => set("unavailable_message", v)} />
+      </div>
+
+      <div className="bg-surface-02 border border-surface-03 rounded-xl p-5 space-y-4">
+        <div>
+          <h2 className="text-cream font-bold">Endereço da pizzaria</h2>
+          <p className="text-stone text-xs mt-1">
+            Informe o endereço e o CEP para localizar automaticamente as coordenadas usadas no cálculo de distância.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px] gap-4">
+          <Input label="Endereço completo" value={storeAddress}
+            onChange={v => { setStoreAddress(v); setGeocodeError(""); }}
+            placeholder="Rua, número, bairro e cidade" />
+          <Input label="CEP" value={storeCep}
+            onChange={v => { setStoreCep(v); setGeocodeError(""); }}
+            placeholder="00000-000" />
+        </div>
+        <button type="button" onClick={findStoreCoordinates} disabled={geocoding}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-surface-03 hover:bg-surface-03/80 disabled:opacity-60 text-cream font-bold rounded-lg text-sm transition-colors">
+          {geocoding ? <Loader2 size={16} className="animate-spin" /> : <MapPin size={16} />}
+          {geocoding ? "Buscando coordenadas..." : "Buscar coordenadas"}
+        </button>
+        {geocodeError && (
+          <div className="flex items-start gap-2 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-red-200 text-sm">
+            <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+            <span>{geocodeError}</span>
+          </div>
+        )}
+        {geocodeResult && (
+          <div className="rounded-lg border border-green-400/30 bg-green-400/10 px-3 py-3 text-sm text-green-100 space-y-1">
+            <p className="font-medium">Coordenadas encontradas. Revise e clique em Salvar.</p>
+            <p>Latitude: {geocodeResult.lat?.toFixed(6)} · Longitude: {geocodeResult.lng?.toFixed(6)}</p>
+            <p className="text-xs text-green-200/80">Fonte: {geocodeResult.cached ? "resultado em cache" : "consulta do mapa"}</p>
+          </div>
+        )}
       </div>
 
       <div className="bg-surface-02 border border-surface-03 rounded-xl p-5 space-y-4">
@@ -540,6 +622,14 @@ function TabNeighborhoods({ neighborhoods, setNeighborhoods, showToast }: {
   const [resolving, setResolving] = useState(false);
   const [resolution, setResolution] = useState<NeighborhoodResolution | null>(null);
   const [resolutionMessage, setResolutionMessage] = useState("");
+  const [citySearching, setCitySearching] = useState(false);
+  const [citySearchError, setCitySearchError] = useState("");
+  const [cityLocation, setCityLocation] = useState<{ city: string; lat: number; lng: number } | null>(null);
+  const [suggestions, setSuggestions] = useState<NeighborhoodSuggestion[]>([]);
+  const [suggestionsSearching, setSuggestionsSearching] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState("");
+  const [selectedSuggestion, setSelectedSuggestion] = useState<NeighborhoodSuggestion | null>(null);
+  const [manualNeighborhood, setManualNeighborhood] = useState(false);
 
   const filtered = neighborhoods.filter(n =>
     n.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -548,16 +638,98 @@ function TabNeighborhoods({ neighborhoods, setNeighborhoods, showToast }: {
 
   const set = (k: string, v: unknown) => setModal(m => m ? { ...m, data: { ...m.data, [k]: v } } : null);
 
+  useEffect(() => {
+    if (!modal) return;
+    const city = String(modal.data.city ?? "").trim();
+    setCitySearchError("");
+    setCityLocation(null);
+    setManualNeighborhood(false);
+    if (city.length < 3) {
+      setSuggestions([]);
+      setCitySearching(false);
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      setCitySearching(true);
+      try {
+        const result = await api<GeocodeResult>("GET", `/delivery/geocode?q=${encodeURIComponent(`${city}, Brasil`)}`);
+        if (Number.isFinite(result.lat) && Number.isFinite(result.lng)) {
+          setCityLocation({ city, lat: Number(result.lat), lng: Number(result.lng) });
+        } else {
+          setCitySearchError("Cidade não localizada. Confira a grafia ou continue com o preenchimento manual.");
+        }
+      } catch (e: unknown) {
+        setCitySearchError(`Não foi possível buscar a cidade. ${(e as Error).message || "Tente novamente."}`);
+      } finally {
+        setCitySearching(false);
+      }
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [modal?.data.city]);
+
+  useEffect(() => {
+    if (!modal) return;
+    const city = String(modal.data.city ?? "").trim();
+    const term = String(modal.data.name ?? "").trim();
+    setSuggestionsError("");
+    if (city.length < 3) {
+      setSuggestions([]);
+      setSuggestionsSearching(false);
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      setSuggestionsSearching(true);
+      try {
+        const query = new URLSearchParams({ city, term, limit: "8" });
+        const result = await api<Array<{
+          display_name: string;
+          neighborhood: string;
+          city: string;
+          lat: number;
+          lng: number;
+        }>>("GET", `/shipping/neighborhoods/suggestions?${query.toString()}`);
+        setSuggestions(result.map(item => ({
+          name: item.neighborhood,
+          display_name: item.display_name,
+          city: item.city,
+          lat: item.lat,
+          lng: item.lng,
+        })));
+      } catch (e: unknown) {
+        setSuggestions([]);
+        setSuggestionsError(`Não foi possível buscar os bairros. ${(e as Error).message || "Tente novamente."}`);
+      } finally {
+        setSuggestionsSearching(false);
+      }
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [modal?.data.city, modal?.data.name]);
+
   const openModal = (mode: "add" | "edit", data: Partial<Neighborhood>) => {
     setResolution(null);
     setResolutionMessage("");
+    setCitySearchError("");
+    setCityLocation(null);
+    setSuggestionsError("");
+    setSelectedSuggestion(null);
+    setManualNeighborhood(false);
     setModal({ mode, data });
   };
 
-  const resolveNeighborhood = async () => {
+  const selectNeighborhood = async (suggestion: NeighborhoodSuggestion) => {
+    set("name", suggestion.name);
+    set("city", suggestion.city);
+    setSelectedSuggestion(suggestion);
+    setManualNeighborhood(false);
+    setResolution(null);
+    setResolutionMessage("");
+    await resolveNeighborhood({ city: suggestion.city, name: suggestion.name });
+  };
+
+  const resolveNeighborhood = async (selection?: { city: string; name: string }) => {
     if (!modal) return;
-    const city = String(modal.data.city ?? "").trim();
-    const name = String(modal.data.name ?? "").trim();
+    const city = (selection?.city ?? String(modal.data.city ?? "")).trim();
+    const name = (selection?.name ?? String(modal.data.name ?? "")).trim();
     if (!city || !name) {
       setResolution(null);
       setResolutionMessage("Informe a cidade e o bairro para consultar a localização.");
@@ -659,8 +831,30 @@ function TabNeighborhoods({ neighborhoods, setNeighborhoods, showToast }: {
         <Modal title={modal.mode === "add" ? "Novo Bairro" : "Editar Bairro"} onClose={() => setModal(null)}>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <Input label="Cidade *" value={modal.data.city ?? ""} onChange={v => { set("city", v); setResolution(null); }} placeholder="Ex: São Paulo" />
-              <Input label="Nome do bairro *" value={modal.data.name ?? ""} onChange={v => { set("name", v); setResolution(null); }} placeholder="Ex: Centro" />
+              <Input label="Cidade *" value={modal.data.city ?? ""} onChange={v => { set("city", v); setResolution(null); setSelectedSuggestion(null); setSuggestionsError(""); }} placeholder="Ex: São Paulo" />
+              <Input label="Nome do bairro *" value={modal.data.name ?? ""} onChange={v => { set("name", v); setResolution(null); setSelectedSuggestion(null); setManualNeighborhood(true); }} placeholder="Ex: Centro" />
+            </div>
+            <div className="mt-2">
+              {citySearching && <p className="text-stone text-xs flex items-center gap-1"><Loader2 size={12} className="animate-spin" />Buscando cidade...</p>}
+              {suggestionsSearching && <p className="text-stone text-xs flex items-center gap-1"><Loader2 size={12} className="animate-spin" />Buscando bairros...</p>}
+              {cityLocation && !citySearching && <p className="text-green-400 text-xs">Cidade localizada. Selecione um bairro abaixo.</p>}
+              {citySearchError && <p className="text-amber-300 text-xs">{citySearchError}</p>}
+              {suggestionsError && <p className="text-amber-300 text-xs">{suggestionsError}</p>}
+              {suggestions.length > 0 && (
+                <div className="mt-1 max-h-36 overflow-y-auto rounded-lg border border-surface-03 bg-surface-02">
+                  {suggestions.map(suggestion => (
+                    <button key={`${suggestion.city}-${suggestion.name}`} type="button" onClick={() => selectNeighborhood(suggestion)} className="block w-full px-3 py-2 text-left text-sm text-parchment hover:bg-gold/10">
+                      {suggestion.name}<span className="ml-2 text-xs text-stone">{suggestion.city}</span>
+                      {suggestion.display_name && <span className="block text-xs text-stone/80">{suggestion.display_name}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {cityLocation && !suggestionsSearching && suggestions.length === 0 && <p className="text-amber-300 text-xs mt-1">Nenhum bairro encontrado. Você ainda pode digitar manualmente e consultar o mapa.</p>}
+              {selectedSuggestion && Number.isFinite(selectedSuggestion.lat) && Number.isFinite(selectedSuggestion.lng) && (
+                <p className="text-green-400 text-xs mt-1">Localização selecionada: {Number(selectedSuggestion.lat).toFixed(6)}, {Number(selectedSuggestion.lng).toFixed(6)}</p>
+              )}
+              {manualNeighborhood && <p className="text-amber-300 text-xs mt-1">Preenchimento manual: confirme a localização antes de salvar.</p>}
             </div>
             <div className="rounded-lg border border-surface-03 bg-surface-03/40 p-3 space-y-2">
               <div className="flex items-center justify-between gap-3">
@@ -668,7 +862,7 @@ function TabNeighborhoods({ neighborhoods, setNeighborhoods, showToast }: {
                   <p className="text-cream text-sm font-medium">Consultar localização</p>
                   <p className="text-stone text-xs">Busca o bairro na cidade informada e compara com o raio configurado.</p>
                 </div>
-                <button type="button" onClick={resolveNeighborhood} disabled={resolving}
+                <button type="button" onClick={() => resolveNeighborhood()} disabled={resolving}
                   className="px-3 py-2 border border-gold/50 text-gold-light hover:bg-gold/10 disabled:opacity-60 rounded-lg text-xs font-medium whitespace-nowrap">
                   {resolving ? "Consultando..." : "Consultar"}
                 </button>
