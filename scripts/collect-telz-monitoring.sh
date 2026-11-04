@@ -56,8 +56,11 @@ if [[ -e "$CURRENT_LINK" || -L "$CURRENT_LINK" ]]; then
     [[ -z "$(find "$candidate" -maxdepth 0 -perm /022 -print -quit)" ]] || die "release ativa gravavel"
   done
   /usr/bin/python3 - "$CODE_DIR/.telz-release.json" "$RELEASE_ID" "$INSTALL_DIR" <<'PY'
+import hashlib
 import json
+import os
 import re
+import stat
 import sys
 from pathlib import Path
 
@@ -81,6 +84,29 @@ legacy = data.get("legacy_compat")
 expected = {"backend/.env": str(Path(sys.argv[3]) / "backend" / ".env")} if sys.argv[2] == "2f1006860b648cf7a4734222da69879256c174e7" else {}
 if legacy != expected:
     raise SystemExit("legacy_compat invalido")
+root = Path(sys.argv[1]).parent.resolve(strict=True)
+digest = hashlib.sha256()
+for candidate in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
+    relative = candidate.relative_to(root).as_posix()
+    if relative == ".telz-release.json":
+        continue
+    metadata = candidate.lstat()
+    if "__pycache__" in Path(relative).parts or (
+        stat.S_ISREG(metadata.st_mode) and relative.endswith(".pyc")
+    ):
+        continue
+    if stat.S_ISDIR(metadata.st_mode):
+        kind, payload = "d", b""
+    elif stat.S_ISREG(metadata.st_mode):
+        kind, payload = "f", candidate.read_bytes()
+    elif stat.S_ISLNK(metadata.st_mode):
+        kind, payload = "l", os.readlink(candidate).encode("utf-8")
+    else:
+        raise SystemExit("tipo inesperado durante digest da release")
+    digest.update(f"{kind}\0{relative}\0{stat.S_IMODE(metadata.st_mode):04o}\0".encode("utf-8"))
+    digest.update(hashlib.sha256(payload).digest())
+if data.get("content_sha256") != digest.hexdigest():
+    raise SystemExit("digest de conteudo da release divergiu")
 PY
 else
   [[ -d "$INSTALL_DIR/.git" && ! -L "$INSTALL_DIR/.git" ]] || die "repositorio legado ausente"

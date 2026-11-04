@@ -37,6 +37,8 @@ def content_digest(root):
         if relative == '.telz-release.json':
             continue
         info = candidate.lstat()
+        if '__pycache__' in Path(relative).parts or (stat.S_ISREG(info.st_mode) and relative.endswith('.pyc')):
+            continue
         kind, payload = ('d', b'') if stat.S_ISDIR(info.st_mode) else ('f', candidate.read_bytes())
         digest.update(f'{kind}\0{relative}\0{stat.S_IMODE(info.st_mode):04o}\0'.encode())
         digest.update(hashlib.sha256(payload).digest())
@@ -121,6 +123,42 @@ def test_tampered_tree_still_rejected_before_dependency_contract(monkeypatch, re
     (release[0] / 'backend/requirements.txt').write_text('injected==9.9\n')
     with pytest.raises(SystemExit, match='digest de dependencia da release divergiu'):
         validate_cache(monkeypatch, release)
+
+
+def test_runtime_bytecode_is_excluded_but_source_and_other_artifacts_are_not(monkeypatch, release):
+    app = release[0]
+    cache = app / 'backend' / '__pycache__'
+    cache.mkdir()
+    (cache / 'runtime.cpython-312.pyc').write_bytes(b'generated-before-seal')
+    (app / 'runtime.pyc').write_bytes(b'generated-before-seal')
+    validate_cache(monkeypatch, release)
+
+    (cache / 'runtime.cpython-312.pyc').write_bytes(b'generated-after-seal')
+    (app / 'runtime.pyc').write_bytes(b'generated-after-seal')
+    validate_cache(monkeypatch, release)
+
+    (app / 'runtime.pyo').write_bytes(b'not-covered-by-contract')
+    with pytest.raises(SystemExit, match='digest de conteudo da release divergiu'):
+        validate_cache(monkeypatch, release)
+    (app / 'runtime.pyo').unlink()
+
+    (app / 'runtime.py').write_bytes(b'published-source')
+    with pytest.raises(SystemExit, match='digest de conteudo da release divergiu'):
+        validate_cache(monkeypatch, release)
+
+
+@pytest.mark.parametrize('script', [
+    'scripts/update-telz.sh',
+    'scripts/deploy-telz-from-origin.sh',
+    'scripts/health-check.sh',
+    'scripts/rollback-telz.sh',
+    'scripts/collect-telz-monitoring.sh',
+])
+def test_all_content_contracts_use_the_same_runtime_bytecode_filter(script):
+    source = (ROOT / script).read_text(encoding='utf-8')
+    assert 'Path(relative).parts' in source
+    assert 'stat.S_ISREG' in source
+    assert 'relative.endswith(".pyc")' in source or "relative.endswith('.pyc')" in source
 
 
 def test_cutover_policy_is_not_relaxed_for_cached_release(monkeypatch, release):

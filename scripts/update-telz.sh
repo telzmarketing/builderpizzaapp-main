@@ -137,7 +137,7 @@ validate_operational_config
 BRANCH="${BRANCH:-main}"
 RUN_TESTS="${RUN_TESTS:-false}"
 EXPECTED_COMMIT="${TELZ_EXPECTED_COMMIT:-}"
-ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261101_silent_label_print_queue}"
+ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261106_production_vision_capture_rules}"
 FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"
 FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"
 EXPLICIT_RECOVERY="${TELZ_EXPLICIT_RECOVERY:-false}"
@@ -789,6 +789,10 @@ def tree_digest(mode_policy=None):
         if relative == ".telz-release.json":
             continue
         metadata = candidate.lstat()
+        if "__pycache__" in Path(relative).parts or (
+            stat.S_ISREG(metadata.st_mode) and relative.endswith(".pyc")
+        ):
+            continue
         if stat.S_ISDIR(metadata.st_mode):
             kind, payload = "d", b""
             mode = mode_policy[0] if mode_policy else stat.S_IMODE(metadata.st_mode)

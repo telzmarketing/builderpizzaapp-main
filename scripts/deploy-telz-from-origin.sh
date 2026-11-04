@@ -52,7 +52,7 @@ BRANCH="main"
 SERVICE_USER="${TELZ_SERVICE_USER:-telz}"
 BUILD_USER="${TELZ_BUILD_USER:-telz-build}"
 BUILD_GROUP="${TELZ_BUILD_GROUP:-telz-build}"
-ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261101_silent_label_print_queue}"
+ALEMBIC_TARGET="${TELZ_ALEMBIC_TARGET:-20261106_production_vision_capture_rules}"
 FORWARD_ONLY_CUTOVER="${TELZ_FORWARD_ONLY_CUTOVER:-false}"
 FORWARD_ONLY_CUTOVER_CONFIRM="${TELZ_FORWARD_ONLY_CUTOVER_CONFIRM:-}"
 EXPLICIT_RECOVERY="${TELZ_EXPLICIT_RECOVERY:-false}"
@@ -288,6 +288,9 @@ def tree_digest(mode_policy=None):
         if info.st_uid != 0 or (not stat.S_ISLNK(info.st_mode) and info.st_mode & 0o022):
             raise SystemExit('conteudo do cache freeze mutavel')
         if relative == '.telz-release.json':
+            continue
+        if '__pycache__' in Path(relative).parts or (
+                stat.S_ISREG(info.st_mode) and relative.endswith('.pyc')):
             continue
         if stat.S_ISDIR(info.st_mode):
             kind, data = 'd', b''

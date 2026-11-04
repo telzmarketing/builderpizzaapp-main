@@ -112,9 +112,11 @@ if [[ -e "$CURRENT_LINK" || -L "$CURRENT_LINK" ]]; then
     die "current deve ser symlink pertencente a root"
   CODE_DIR="$(validate_release_path "$CURRENT_LINK")"
   readarray -t RELEASE_VALUES < <(/usr/bin/python3 - "$CODE_DIR/.telz-release.json" "$(basename "$(dirname "$CODE_DIR")")" "$INSTALL_DIR" <<'PY'
+import hashlib
 import json
 import os
 import re
+import stat
 import sys
 from pathlib import Path
 
@@ -159,6 +161,28 @@ for current, directories, files in os.walk(root, followlinks=False):
                 raise SystemExit("release possui symlink externo nao autorizado")
             if resolved != allowed_target.resolve(strict=True):
                 raise SystemExit("symlink persistente legado divergiu")
+digest = hashlib.sha256()
+for candidate in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
+    relative = candidate.relative_to(root).as_posix()
+    if relative == ".telz-release.json":
+        continue
+    metadata = candidate.lstat()
+    if "__pycache__" in Path(relative).parts or (
+        stat.S_ISREG(metadata.st_mode) and relative.endswith(".pyc")
+    ):
+        continue
+    if stat.S_ISDIR(metadata.st_mode):
+        kind, payload = "d", b""
+    elif stat.S_ISREG(metadata.st_mode):
+        kind, payload = "f", candidate.read_bytes()
+    elif stat.S_ISLNK(metadata.st_mode):
+        kind, payload = "l", os.readlink(candidate).encode("utf-8")
+    else:
+        raise SystemExit("tipo inesperado durante digest da release")
+    digest.update(f"{kind}\0{relative}\0{stat.S_IMODE(metadata.st_mode):04o}\0".encode("utf-8"))
+    digest.update(hashlib.sha256(payload).digest())
+if data.get("content_sha256") != digest.hexdigest():
+    raise SystemExit("digest de conteudo da release divergiu")
 print(commit)
 print(revision)
 PY

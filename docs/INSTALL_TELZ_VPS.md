@@ -49,7 +49,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Defina explicitamente:
 
 ```env
-ALEMBIC_TARGET=20261101_silent_label_print_queue
+ALEMBIC_TARGET=20261106_production_vision_capture_rules
 INSTALL_SSL=false
 ```
 

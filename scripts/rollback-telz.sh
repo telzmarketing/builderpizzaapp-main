@@ -164,6 +164,10 @@ for candidate in sorted(root.rglob("*"), key=lambda item: item.relative_to(root)
     if relative == ".telz-release.json":
         continue
     metadata = candidate.lstat()
+    if "__pycache__" in Path(relative).parts or (
+        stat.S_ISREG(metadata.st_mode) and relative.endswith(".pyc")
+    ):
+        continue
     if stat.S_ISDIR(metadata.st_mode):
         kind, payload = "d", b""
     elif stat.S_ISREG(metadata.st_mode):
