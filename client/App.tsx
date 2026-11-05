@@ -681,6 +681,13 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/salao/pagina" element={<AdminSalaoPage />} />
                 <Route path="/painel/home-config" element={<AdminHomeConfig />} />
                 <Route path="/painel/lgpd" element={<AdminLgpd />} />
+                <Route path="/painel/comprovantes-pedidos" element={<AdminConfiguracoes />} />
+                <Route path="/painel/etiquetas-expedicao" element={<AdminConfiguracoes />} />
+                <Route path="/painel/etiquetas-insumos" element={<AdminConfiguracoes />} />
+                <Route path="/painel/dominio" element={<AdminConfiguracoes />} />
+                <Route path="/painel/painel-tv-config" element={<AdminConfiguracoes />} />
+                <Route path="/painel/som" element={<AdminConfiguracoes />} />
+                <Route path="/painel/identificacao-parceiros" element={<AdminConfiguracoes />} />
                 <Route path="/painel/configuracoes" element={<AdminConfiguracoes />} />
                 <Route path="/painel/cupons" element={<MarketingCupons />} />
                 <Route path="/painel/clientes" element={<AdminClientes />} />

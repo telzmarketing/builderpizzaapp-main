@@ -1,6 +1,7 @@
 import TenantDomainsPanel from "@/components/admin/TenantDomainsPanel";
 import { useEffect, useRef, useState } from "react";
-import { Bell, BellOff, Check, Monitor, Printer, Eye, Settings2, Tags, Volume2, Globe } from "lucide-react";
+import { useLocation } from "react-router-dom";
+import { Bell, BellOff, Check, Monitor, Printer, Eye, Settings2, Tags, Volume2, Globe, Ruler } from "lucide-react";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import LabelSettingsPanel from "@/components/admin/LabelSettingsPanel";
@@ -18,10 +19,11 @@ import {
   SOUND_OPTIONS, type OrderSoundType,
 } from "@/lib/orderSound";
 import { useApp } from "@/context/AppContext";
+import { kdsLabelsApi, type KdsLabelTemplate, type KdsLabelTemplateInput } from "@/lib/api";
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-type Tab = "impressora" | "etiquetas" | "painel-tv" | "som" | "dominio-https" | "identificacao-parceiros";
+type Tab = "comprovantes" | "etiquetas-expedicao" | "etiquetas-insumos" | "painel-tv" | "som" | "dominio-https" | "identificacao-parceiros";
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -113,13 +115,64 @@ function TemplateCard({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+function SuppliesLabelSettingsPanel() {
+  const [template, setTemplate] = useState<KdsLabelTemplate | null>(null);
+  const [name, setName] = useState("Etiqueta de insumos 20 × 40 mm");
+  const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
+  const [margin, setMargin] = useState(2);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void kdsLabelsApi.listTemplates().then((templates) => {
+      const existing = templates.find((item) => item.name.toLocaleLowerCase().includes("insumo")) ?? templates.find((item) => item.width_mm === 20 && item.height_mm === 40);
+      if (existing) { setTemplate(existing); setName(existing.name); setOrientation(existing.orientation); setMargin(existing.margin_top_mm); }
+    }).catch((caught) => setError(caught instanceof Error ? caught.message : "Não foi possível carregar o modelo de insumos.")).finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true); setFeedback(null); setError(null);
+    const payload: KdsLabelTemplateInput = { name: name.trim() || "Etiqueta de insumos 20 × 40 mm", label_type: "gap", width_mm: 20, height_mm: 40, margin_top_mm: margin, margin_right_mm: margin, margin_bottom_mm: margin, margin_left_mm: margin, gap_mm: 2, safe_area_mm: 2, columns: 1, labels_per_sheet: 1, orientation, show_logo: false, show_printed_at: true, dpi: 203, scale_percent: 100, default_copies: 1, font_scale_percent: 100, offset_x_mm: 0, offset_y_mm: 0, rotation: 0, density: 8, speed: 4, printer_ids: template?.printer_ids ?? [], active: true };
+    try { const savedTemplate = template ? await kdsLabelsApi.updateTemplate(template.id, payload) : await kdsLabelsApi.createTemplate(payload); setTemplate(savedTemplate); setName(savedTemplate.name); setFeedback("Modelo de insumos salvo."); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível salvar o modelo de insumos."); }
+    finally { setSaving(false); }
+  };
+
+  return <section className="space-y-6">
+    <div className="rounded-2xl border border-gold/30 bg-gold/10 p-6"><div className="flex items-start gap-3"><Ruler className="mt-0.5 shrink-0 text-gold" size={20} /><div><h3 className="text-lg font-bold text-cream">Etiqueta de insumos</h3><p className="mt-1 text-sm text-parchment">Configuração exclusiva para porcionamento e classificação de estoque com validade. Este modelo não altera a etiqueta de expedição das caixas de pizza.</p><p className="mt-2 text-xs text-stone">Formato operacional fixo: 20 × 40 mm.</p></div></div></div>
+    {loading && <p className="text-sm text-stone">Carregando modelo de insumos...</p>}
+    {error && <div role="alert" className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">{error}</div>}
+    {!loading && <section className="rounded-2xl border border-surface-03 bg-surface-02 p-6"><div className="mb-5"><h3 className="text-lg font-bold text-cream">Modelo 20 × 40 mm</h3><p className="text-sm text-stone">Use este modelo para etiquetas de ingredientes, porções, lote e validade.</p></div><div className="grid gap-4 md:grid-cols-2"><Field label="Nome do modelo"><input className={cls} value={name} onChange={(event) => setName(event.target.value)} /></Field><Field label="Orientação"><select className={cls} value={orientation} onChange={(event) => setOrientation(event.target.value as "portrait" | "landscape")}><option value="portrait">Retrato</option><option value="landscape">Paisagem</option></select></Field><Field label="Largura"><input className={cls} value="20 mm" readOnly /></Field><Field label="Altura"><input className={cls} value="40 mm" readOnly /></Field><Field label="Margem interna (mm)"><input className={cls} type="number" min={0} max={20} value={margin} onChange={(event) => setMargin(Number(event.target.value))} /></Field></div><div className="mt-5 flex items-center gap-3"><button type="button" disabled={saving} onClick={() => void save()} className="rounded-xl bg-gold px-5 py-2.5 font-bold text-cream disabled:opacity-50">{saving ? "Salvando..." : "Salvar modelo de insumos"}</button>{feedback && <span className="flex items-center gap-1 text-sm text-emerald-300"><Check size={15} /> {feedback}</span>}</div></section>}
+  </section>;
+}
+
 export default function AdminConfiguracoes() {
+  const { pathname } = useLocation();
   const { siteContent } = useApp();
-  const [activeTab, setActiveTab] = useState<Tab>("impressora");
+  const routeTab: Tab = pathname === "/painel/etiquetas-expedicao"
+    ? "etiquetas-expedicao"
+    : pathname === "/painel/etiquetas-insumos"
+      ? "etiquetas-insumos"
+      : pathname === "/painel/dominio"
+        ? "dominio-https"
+        : pathname === "/painel/painel-tv-config"
+          ? "painel-tv"
+          : pathname === "/painel/som"
+            ? "som"
+            : pathname === "/painel/identificacao-parceiros"
+              ? "identificacao-parceiros"
+              : "comprovantes";
+  const [activeTab, setActiveTab] = useState<Tab>(routeTab);
   const [settings, setSettings] = useState<PrinterSettings>(loadPrinterSettings);
   const [saved, setSaved] = useState(false);
   const [soundType, setSoundType] = useState<OrderSoundType>(loadSoundType);
   const [soundSaved, setSoundSaved] = useState(false);
+
+  useEffect(() => {
+    setActiveTab(routeTab);
+  }, [routeTab]);
 
   const update = (patch: Partial<PrinterSettings>) =>
     setSettings((prev) => ({ ...prev, ...patch }));
@@ -162,20 +215,21 @@ export default function AdminConfiguracoes() {
           <div className="px-4 sm:px-8 pt-4 flex flex-wrap gap-2">
             <button type="button" onClick={() => setActiveTab("dominio-https")} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "dominio-https" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}><Globe size={14} /> Dominio e HTTPS</button>
             <button
-              onClick={() => setActiveTab("impressora")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "impressora" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
+              onClick={() => setActiveTab("comprovantes")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "comprovantes" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
             >
               <Printer size={14} />
-              Impressora
+              Comprovantes de pedidos
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab("etiquetas")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "etiquetas" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
+              onClick={() => setActiveTab("etiquetas-expedicao")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "etiquetas-expedicao" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}
             >
               <Tags size={14} />
-              Etiquetas da expedição
+              Etiquetas de expedição
             </button>
+            <button type="button" onClick={() => setActiveTab("etiquetas-insumos")} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === "etiquetas-insumos" ? "bg-gold text-cream" : "bg-surface-02 text-stone hover:text-parchment border border-surface-03"}`}><Tags size={14} /> Etiquetas de insumos</button>
             <button
               type="button"
               onClick={() => setActiveTab("painel-tv")}
@@ -204,7 +258,8 @@ export default function AdminConfiguracoes() {
           <div className="p-8 space-y-8 max-w-5xl">
 
             {activeTab === "dominio-https" && <TenantDomainsPanel />}
-            {activeTab === "etiquetas" && <LabelSettingsPanel />}
+            {activeTab === "etiquetas-expedicao" && <><div className="rounded-2xl border border-surface-03 bg-surface-02 p-6"><h3 className="text-lg font-bold text-cream">Etiquetas de expedição</h3><p className="mt-1 text-sm text-stone">Modelos para as caixas de pizza. O formato operacional esperado é 100 × 50 mm.</p></div><LabelSettingsPanel /></>}
+            {activeTab === "etiquetas-insumos" && <SuppliesLabelSettingsPanel />}
             {activeTab === "painel-tv" && <OrderBoardSettingsPanel />}
             {activeTab === "identificacao-parceiros" && <PartnerIdentificationPanel />}
 
@@ -286,7 +341,7 @@ export default function AdminConfiguracoes() {
               </>
             )}
 
-            {activeTab === "impressora" && (
+            {activeTab === "comprovantes" && (
               <>
                 {/* ── Dados da loja ─────────────────────────────── */}
                 <section className="bg-surface-02 rounded-2xl border border-surface-03 p-6">
@@ -339,7 +394,7 @@ export default function AdminConfiguracoes() {
 
                 {/* ── Configuração da impressora ────────────────── */}
                 <section className="bg-surface-02 rounded-2xl border border-surface-03 p-6">
-                  <h3 className="text-cream font-bold text-lg mb-1">Impressora</h3>
+                  <h3 className="text-cream font-bold text-lg mb-1">Comprovantes de pedidos</h3>
                   <p className="text-stone text-sm mb-5">Configure o papel e o comportamento de impressão.</p>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
