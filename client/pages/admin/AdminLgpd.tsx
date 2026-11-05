@@ -225,7 +225,7 @@ export default function AdminLgpd() {
         <div className="max-w-4xl mx-auto px-4 md:px-8 py-6 space-y-6">
 
           {/* Header */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-cream text-2xl font-bold flex items-center gap-2">
                 <Shield size={24} className="text-gold" />
@@ -273,6 +273,15 @@ export default function AdminLgpd() {
               <p className="text-stone text-xs mt-1">
                 Clique em "Criar Política Padrão" para gerar uma política com textos pré-preenchidos conforme a LGPD.
               </p>
+              <button
+                type="button"
+                onClick={handleNew}
+                disabled={saving}
+                className="mt-3 inline-flex items-center gap-2 px-4 py-2.5 bg-gold text-cream rounded-xl font-semibold text-sm hover:bg-gold/90 transition-colors disabled:opacity-60"
+              >
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                {saving ? "Criando..." : "Criar Política Padrão"}
+              </button>
             </div>
           )}
 
