@@ -1781,7 +1781,7 @@ export default function AdminProducts() {
                           </button>
                         </div>
 
-                        {canManageSizes && <button onClick={() => openSizesModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-gold/10 hover:border-gold/40 text-parchment hover:text-gold font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
+                        {canManageSizes && !isPizza && <button onClick={() => openSizesModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-gold/10 hover:border-gold/40 text-parchment hover:text-gold font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                           <Ruler size={15} />
                           Gerenciar Tamanhos
                           {(product as any).sizes && (product as any).sizes.length > 0 && (
@@ -1806,7 +1806,7 @@ export default function AdminProducts() {
                           Ficha tecnica
                         </button>}
 
-                        {canManageCrust && (
+                        {canManageCrust && !isPizza && (
                           <button onClick={() => openCrustModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-amber-500/10 hover:border-amber-500/40 text-parchment hover:text-amber-400 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                             <ChefHat size={15} />
                             Gerenciar Massas
@@ -1818,7 +1818,7 @@ export default function AdminProducts() {
                           </button>
                         )}
 
-                        {canManageBorder && (
+                        {canManageBorder && !isPizza && (
                           <button onClick={() => openBorderModal(product)} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-orange-500/10 hover:border-orange-500/40 text-parchment hover:text-orange-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                             <Tag size={15} />
                             Gerenciar Bordas
@@ -2606,7 +2606,7 @@ export default function AdminProducts() {
                 {!editingId && (
                   <div className="bg-surface-03/60 rounded-lg p-3 text-stone text-xs">
                     {(formData.product_type || "pizza") === "pizza" && (
-                      <span>ðŸ’¡ ApÃ³s criar a pizza, use <strong className="text-parchment">Gerenciar Tamanhos</strong>, <strong className="text-parchment">Gerenciar Massas</strong> e <strong className="text-parchment">Gerenciar Bordas</strong> no card do produto.</span>
+                      <span>ðŸ’¡ ApÃ³s criar a pizza, use <strong className="text-parchment">Configurar catÃ¡logo global</strong> no card do produto para definir tamanhos, massas e bordas.</span>
                     )}
                     {formData.product_type === "drink" && (
                       <span>ðŸ’¡ ApÃ³s criar a bebida, use <strong className="text-parchment">Gerenciar Tamanhos</strong> e <strong className="text-parchment">Gerenciar Variantes</strong> no card do produto.</span>
