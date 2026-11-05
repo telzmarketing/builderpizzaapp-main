@@ -10,6 +10,7 @@ from backend.database import get_db
 from backend.models.admin import AdminUser
 from backend.models.order import Order, OrderItem, OrderStatus
 from backend.models.product import Product, BestSellerConfig, MultiFlavorsConfig, ProductSize, ProductCrustType, ProductDrinkVariant, ProductOptionGroup, ProductOption
+from backend.models.catalog_global import PizzaGlobalSize
 from backend.models.product_promotion import ProductPromotion, ProductPromotionCombination
 from backend.schemas.product import (
     ProductCreate, ProductUpdate, ProductOut,
@@ -814,6 +815,10 @@ def create_size(product_id: str, body: ProductSizeCreate, request: Request, db: 
     if not product:
         raise HTTPException(404, "Produto não encontrado.")
     product_category_service.require_capability(db, product, "enable_sizes", context)
+    if body.global_size_id:
+        global_size = _tenant_query(db, PizzaGlobalSize, context).filter(PizzaGlobalSize.id == body.global_size_id, PizzaGlobalSize.active.is_(True)).first()
+        if global_size is None:
+            raise HTTPException(422, "Tamanho global inexistente, inativo ou pertencente a outro tenant.")
     size = ProductSize(id=f"size-{uuid.uuid4().hex[:8]}", product_id=product_id, **body.model_dump())
     assign_catalog_tenant(size, context)
     db.add(size)
@@ -832,6 +837,10 @@ def update_size(product_id: str, size_id: str, body: ProductSizeUpdate, request:
     if not product:
         raise HTTPException(404, "Produto nao encontrado.")
     product_category_service.require_capability(db, product, "enable_sizes", context)
+    if body.global_size_id:
+        global_size = _tenant_query(db, PizzaGlobalSize, context).filter(PizzaGlobalSize.id == body.global_size_id, PizzaGlobalSize.active.is_(True)).first()
+        if global_size is None:
+            raise HTTPException(422, "Tamanho global inexistente, inativo ou pertencente a outro tenant.")
     for key, value in body.model_dump(exclude_none=True).items():
         setattr(size, key, value)
     db.commit()

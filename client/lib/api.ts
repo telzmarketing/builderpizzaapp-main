@@ -357,6 +357,27 @@ export interface ApiProductCrustType {
   created_at: string;
 }
 
+export interface ApiGlobalCatalogItem {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description: string | null;
+  price_addition: number;
+  sort_order: number;
+  active: boolean;
+  is_default?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiProductCatalogConfiguration {
+  product_id: string;
+  sizes: string[];
+  size_prices: Record<string, number>;
+  dough_types: string[];
+  crusts: string[];
+}
+
 export interface ApiProductDrinkVariant {
   id: string;
   product_id: string;
@@ -5569,6 +5590,37 @@ export const crustApi = {
 
   remove: (productId: string, crustId: string) =>
     del<void>(`/products/${productId}/crusts/${crustId}`),
+};
+
+export const globalCatalogApi = {
+  sizes: {
+    list: () => get<ApiGlobalCatalogItem[]>('/catalog/pizza-sizes'),
+    create: (data: { name: string; description?: string | null; sort_order?: number; active?: boolean; is_default?: boolean }) => post<ApiGlobalCatalogItem>('/catalog/pizza-sizes', data),
+    update: (id: string, data: Partial<{ name: string; description: string | null; sort_order: number; active: boolean; is_default: boolean }>) => put<ApiGlobalCatalogItem>(`/catalog/pizza-sizes/${id}`, data),
+    remove: (id: string) => del<void>(`/catalog/pizza-sizes/${id}`),
+  },
+  doughTypes: {
+    list: () => get<ApiGlobalCatalogItem[]>('/catalog/dough-types'),
+    create: (data: { name: string; description?: string | null; price_addition?: number; sort_order?: number; active?: boolean }) => post<ApiGlobalCatalogItem>('/catalog/dough-types', data),
+    update: (id: string, data: Partial<{ name: string; description: string | null; price_addition: number; sort_order: number; active: boolean }>) => put<ApiGlobalCatalogItem>(`/catalog/dough-types/${id}`, data),
+    remove: (id: string) => del<void>(`/catalog/dough-types/${id}`),
+  },
+  crusts: {
+    list: () => get<ApiGlobalCatalogItem[]>('/catalog/pizza-crusts'),
+    create: (data: { name: string; description?: string | null; price_addition?: number; sort_order?: number; active?: boolean }) => post<ApiGlobalCatalogItem>('/catalog/pizza-crusts', data),
+    update: (id: string, data: Partial<{ name: string; description: string | null; price_addition: number; sort_order: number; active: boolean }>) => put<ApiGlobalCatalogItem>(`/catalog/pizza-crusts/${id}`, data),
+    remove: (id: string) => del<void>(`/catalog/pizza-crusts/${id}`),
+  },
+};
+
+/** Planned product-to-global-catalog association contract.
+ * Kept isolated so the UI can be enabled when the additive backend contract ships.
+ */
+export const productCatalogConfigurationApi = {
+  get: (productId: string) =>
+    get<ApiProductCatalogConfiguration>(`/catalog/products/${productId}/configuration`),
+  update: (productId: string, data: Omit<ApiProductCatalogConfiguration, "product_id">) =>
+    put<ApiProductCatalogConfiguration>(`/catalog/products/${productId}/configuration`, data),
 };
 
 // ─── Drink Variants ───────────────────────────────────────────────────────────

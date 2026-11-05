@@ -80,6 +80,7 @@ class ProductCategoryOut(BaseModel):
 
 
 class ProductSizeCreate(CatalogInput):
+    global_size_id: Optional[str] = None
     label: str = Field(min_length=1, max_length=50)
     description: Optional[str] = None
     price: float = Field(gt=0)
@@ -89,6 +90,7 @@ class ProductSizeCreate(CatalogInput):
 
 
 class ProductSizeUpdate(CatalogInput):
+    global_size_id: Optional[str] = None
     label: Optional[str] = Field(default=None, min_length=1, max_length=50)
     description: Optional[str] = None
     price: Optional[float] = Field(default=None, ge=0)
@@ -101,6 +103,7 @@ class ProductSizeOut(BaseModel):
     model_config = {"from_attributes": True}
     id: str
     product_id: str
+    global_size_id: Optional[str] = None
     label: str
     description: Optional[str]
     price: float
@@ -113,17 +116,23 @@ class ProductSizeOut(BaseModel):
 # ── Crust Types ───────────────────────────────────────────────────────────────
 
 class ProductCrustTypeCreate(CatalogInput):
+    global_dough_type_id: Optional[str] = None
+    global_crust_id: Optional[str] = None
     option_kind: Literal["dough", "border"] = "dough"
     name: str = Field(min_length=1, max_length=100)
     price_addition: float = Field(default=0.0, ge=0)
+    price_addition_override: Optional[float] = Field(default=None, ge=0)
     active: bool = True
     sort_order: int = Field(default=0, ge=0)
 
 
 class ProductCrustTypeUpdate(CatalogInput):
+    global_dough_type_id: Optional[str] = None
+    global_crust_id: Optional[str] = None
     option_kind: Optional[Literal["dough", "border"]] = None
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     price_addition: Optional[float] = Field(default=None, ge=0)
+    price_addition_override: Optional[float] = Field(default=None, ge=0)
     active: Optional[bool] = None
     sort_order: Optional[int] = Field(default=None, ge=0)
 
@@ -133,8 +142,11 @@ class ProductCrustTypeOut(BaseModel):
     option_kind: Literal["dough", "border"] = "dough"
     id: str
     product_id: str
+    global_dough_type_id: Optional[str] = None
+    global_crust_id: Optional[str] = None
     name: str
     price_addition: float
+    price_addition_override: Optional[float] = None
     active: bool
     sort_order: int
     created_at: datetime

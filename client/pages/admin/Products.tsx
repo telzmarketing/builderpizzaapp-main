@@ -6,6 +6,8 @@ import AdminSidebar from "@/components/AdminSidebar";
 import AdminTopActions from "@/components/admin/AdminTopActions";
 import ImageUpload from "@/components/admin/ImageUpload";
 import ProductRecipeEditor from "@/components/admin/ProductRecipeEditor";
+import GlobalCatalogSettings from "@/components/admin/GlobalCatalogSettings";
+import ProductGlobalCatalogConfiguration from "@/components/admin/ProductGlobalCatalogConfiguration";
 import { productsApi, sizesApi, crustApi, drinkVariantApi, categoriesApi, productPromotionsApi, ApiProduct, ApiProductSize, ApiProductCrustType, ApiProductDrinkVariant, ApiProductCategory, ApiProductPromotion, ApiProductPromotionCombination, ProductPromotionDiscountType, ApiBestSellerConfig, ApiProductOptionGroup, ApiProductOption, ApiProductOptionSelectionType, ApiProductCategoryCapabilities, ApiProductCategoryCapabilityKey, getProductCategoryCapabilities, isAssetUrl, resolveAssetUrl } from "@/lib/api";
 import { pizzaSizeDescription, pizzaSizeLabel } from "@/lib/pizzaSizes";
 import { normalizeCrustPriceAddition } from "@/lib/pricing";
@@ -785,6 +787,7 @@ export default function AdminProducts() {
   const [sizeForm, setSizeForm] = useState({ label: "", description: "", price: "", is_default: false });
   const [savingSizeId, setSavingSizeId] = useState<string | null>(null);
   const [reorderingSizeId, setReorderingSizeId] = useState<string | null>(null);
+  const [globalCatalogProduct, setGlobalCatalogProduct] = useState<Pizza | null>(null);
 
   const openSizesModal = useCallback(async (product: Pizza) => {
     setSizesModalProduct(product);
@@ -1786,6 +1789,10 @@ export default function AdminProducts() {
                           )}
                         </button>}
 
+                        {(canManageSizes || canManageCrust || canManageBorder) && <button onClick={() => setGlobalCatalogProduct(product)} className="mb-2 flex w-full items-center justify-center gap-2 rounded-lg border border-surface-03 bg-surface-03 px-3 py-2 text-sm font-medium text-parchment transition-colors hover:border-gold/40 hover:bg-gold/10 hover:text-gold">
+                          <Settings2 size={15} /> Configurar catálogo global
+                        </button>}
+
                         {canManageOptions && <button onClick={() => { void openOptionGroupsModal(product); }} className="w-full flex items-center justify-center gap-2 bg-surface-03 hover:bg-violet-500/10 hover:border-violet-400/40 text-parchment hover:text-violet-300 font-medium py-2 px-3 rounded-lg transition-colors border border-surface-03 text-sm mb-2">
                           <Settings2 size={15} />
                           Opcoes do produto
@@ -2224,7 +2231,8 @@ export default function AdminProducts() {
 
             {/* â”€â”€ TAB: CONFIG â”€â”€ */}
             {activeTab === "config" && (
-              <div className="max-w-xl">
+              <div className="max-w-4xl">
+                <GlobalCatalogSettings />
                 <div className="bg-surface-02 rounded-xl p-6 border border-surface-03 space-y-4">
                   <div className="flex items-center gap-3 pb-3 border-b border-surface-03">
                     <Settings2 size={18} className="text-gold" />
@@ -3109,6 +3117,8 @@ export default function AdminProducts() {
           </div>
         </div>
       )}
+
+      {globalCatalogProduct && <ProductGlobalCatalogConfiguration productId={globalCatalogProduct.id} productName={globalCatalogProduct.name} onClose={() => setGlobalCatalogProduct(null)} />}
 
       {/* â”€â”€ Crust Modal (Pizza) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {crustModalProduct && (

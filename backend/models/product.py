@@ -76,11 +76,15 @@ class ProductCategory(Base):
 
 class ProductSize(Base):
     __tablename__ = "product_sizes"
-    __table_args__ = (Index("uq_product_sizes_tenant_id_id", "tenant_id", "id", unique=True),)
+    __table_args__ = (
+        Index("uq_product_sizes_tenant_id_id", "tenant_id", "id", unique=True),
+        UniqueConstraint("tenant_id", "product_id", "global_size_id", name="uq_product_sizes_product_global_size"),
+    )
 
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_product_sizes_tenant_id_tenants"), nullable=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    global_size_id = Column(String(36), ForeignKey("pizza_global_sizes.id", ondelete="RESTRICT"), nullable=True, index=True)
     label = Column(String(50), nullable=False)
     description = Column(String(200), nullable=True)
     price = Column(Float, nullable=False)
@@ -100,15 +104,22 @@ class ProductCrustType(Base):
         CheckConstraint("price_addition >= 0", name="ck_product_crust_types_price_addition"),
         CheckConstraint("sort_order >= 0", name="ck_product_crust_types_sort_order"),
         CheckConstraint("option_kind IN ('dough', 'border')", name="ck_product_crust_types_option_kind"),
+        UniqueConstraint("tenant_id", "product_id", "global_dough_type_id", name="uq_product_crust_product_global_dough"),
+        UniqueConstraint("tenant_id", "product_id", "global_crust_id", name="uq_product_crust_product_global_crust"),
     )
 
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_product_crust_types_tenant_id_tenants"), nullable=True)
     product_id = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    global_dough_type_id = Column(String(36), ForeignKey("pizza_global_dough_types.id", ondelete="RESTRICT"), nullable=True, index=True)
+    global_crust_id = Column(String(36), ForeignKey("pizza_global_crusts.id", ondelete="RESTRICT"), nullable=True, index=True)
     name = Column(String(100), nullable=False)
     # Legacy rows and clients omitting the discriminator remain dough options.
     option_kind = Column(String(10), nullable=False, default="dough", server_default="dough")
     price_addition = Column(Float, default=0.0)
+    # Nullable override. Legacy price_addition remains the effective persisted price
+    # consumed by existing checkout/order integrations.
+    price_addition_override = Column(Float, nullable=True)
     active = Column(Boolean, default=True)
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

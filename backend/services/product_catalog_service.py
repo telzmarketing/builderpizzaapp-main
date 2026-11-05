@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.core.tenant_context import TenantContext
 from backend.core.catalog_context import catalog_query, assign_catalog_tenant
 from backend.models.product import Product, ProductCategory, ProductSize, ProductCrustType
+from backend.models.catalog_global import PizzaGlobalCrust, PizzaGlobalDoughType
 from backend.models.product_promotion import ProductPromotion
 from backend.services.product_category_service import effective_capabilities
 
@@ -45,6 +46,30 @@ class ProductCatalogService:
         if not capabilities[capability]:
             raise HTTPException(422, "A categoria deste produto nao habilita este tipo de opcao.")
 
+    def _validate_global_links(self, values: dict, option_kind: str) -> dict:
+        result = dict(values)
+        dough_id = result.get("global_dough_type_id")
+        crust_id = result.get("global_crust_id")
+        if dough_id and crust_id:
+            raise HTTPException(422, "Uma opcao nao pode referenciar massa e borda globais ao mesmo tempo.")
+        if option_kind == "dough" and crust_id:
+            raise HTTPException(422, "Opcao de massa deve usar uma massa global.")
+        if option_kind == "border" and dough_id:
+            raise HTTPException(422, "Opcao de borda deve usar uma borda global.")
+        if dough_id:
+            global_option = self._query(PizzaGlobalDoughType).filter(PizzaGlobalDoughType.id == dough_id).first()
+        elif crust_id:
+            global_option = self._query(PizzaGlobalCrust).filter(PizzaGlobalCrust.id == crust_id).first()
+        else:
+            global_option = None
+        if (dough_id or crust_id) and (global_option is None or not global_option.active):
+            raise HTTPException(422, "Configuracao global inexistente, inativa ou pertencente a outro tenant.")
+        if global_option is not None:
+            result.setdefault("name", global_option.name)
+            if result.get("price_addition_override") is None and "price_addition" not in result:
+                result["price_addition"] = global_option.price_addition
+        return result
+
     def list_crusts(self, product_id: str, *, active_only: bool, channel: str, option_kind: str | None = None):
         product = self._crust_product(product_id)
         if active_only:
@@ -62,7 +87,10 @@ class ProductCatalogService:
     def create_crust(self, product_id: str, body):
         product = self._crust_product(product_id)
         self._require_crust_kind(product, body.option_kind)
-        row = ProductCrustType(id=f"crust-{uuid.uuid4().hex[:8]}", product_id=product_id, **body.model_dump())
+        values = self._validate_global_links(body.model_dump(), body.option_kind)
+        if values.get("price_addition_override") is not None:
+            values["price_addition"] = values["price_addition_override"]
+        row = ProductCrustType(id=f"crust-{uuid.uuid4().hex[:8]}", product_id=product_id, **values)
         assign_catalog_tenant(row, self.context)
         self.db.add(row)
         self.db.commit()
@@ -75,7 +103,11 @@ class ProductCatalogService:
         if row is None:
             raise HTTPException(404, "Opcao nao encontrada.")
         values = body.model_dump(exclude_unset=True)
-        self._require_crust_kind(product, values.get("option_kind", row.option_kind))
+        option_kind = values.get("option_kind", row.option_kind)
+        self._require_crust_kind(product, option_kind)
+        values = self._validate_global_links(values, option_kind)
+        if values.get("price_addition_override") is not None:
+            values["price_addition"] = values["price_addition_override"]
         for key, value in values.items():
             setattr(row, key, value)
         self.db.commit()

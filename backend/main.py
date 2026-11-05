@@ -84,6 +84,7 @@ from backend.routes import order_board as order_board_routes
 from backend.routes import gestor as gestor_routes
 from backend.routes import partner_identification as partner_identification_routes
 from backend.routes import production_vision as production_vision_routes
+from backend.routes import catalog_global as catalog_global_routes
 
 settings = get_settings()
 
@@ -1368,6 +1369,7 @@ async def request_context_middleware(request: Request, call_next):
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(products.router)
+app.include_router(catalog_global_routes.router)
 app.include_router(orders.router)
 app.include_router(orders.admin_orders_router)
 app.include_router(payments.router)
@@ -1429,6 +1431,7 @@ app.include_router(partner_identification_routes.compat_router)
 
 # Backward-compatible /api aliases expected by deployment/proxy setups.
 app.include_router(products.router, prefix="/api")
+app.include_router(catalog_global_routes.router, prefix="/api")
 app.include_router(orders.router, prefix="/api")
 app.include_router(orders.admin_orders_router, prefix="/api")
 app.include_router(payments.router, prefix="/api")
