@@ -66,8 +66,8 @@ def _backfill_sizes() -> None:
         """
         UPDATE product_sizes ps
         SET global_size_id = gs.id
-        FROM pizza_global_sizes gs
-        JOIN (
+        FROM pizza_global_sizes gs,
+             (
             SELECT tenant_id,
                    product_id,
                    lower(regexp_replace(trim(label), '\\s+', ' ', 'g')) AS normalized_name
@@ -77,13 +77,14 @@ def _backfill_sizes() -> None:
             GROUP BY tenant_id, product_id,
                      lower(regexp_replace(trim(label), '\\s+', ' ', 'g'))
             HAVING count(*) = 1
-        ) safe ON safe.tenant_id = ps.tenant_id
-              AND safe.product_id = ps.product_id
-              AND safe.normalized_name =
-                  lower(regexp_replace(trim(ps.label), '\\s+', ' ', 'g'))
+        ) safe
         WHERE ps.global_size_id IS NULL
           AND ps.tenant_id IS NOT NULL
           AND trim(ps.label) <> ''
+          AND safe.tenant_id = ps.tenant_id
+          AND safe.product_id = ps.product_id
+          AND safe.normalized_name =
+              lower(regexp_replace(trim(ps.label), '\\s+', ' ', 'g'))
           AND gs.tenant_id = ps.tenant_id
           AND lower(regexp_replace(trim(gs.name), '\\s+', ' ', 'g')) =
               lower(regexp_replace(trim(ps.label), '\\s+', ' ', 'g'))
@@ -148,8 +149,8 @@ def _backfill_options(option_kind: str, global_table: str, global_column: str) -
                     THEN pct.price_addition
                 ELSE pct.price_addition_override
             END
-        FROM {global_table} gc
-        JOIN (
+        FROM {global_table} gc,
+             (
             SELECT tenant_id,
                    product_id,
                    lower(regexp_replace(trim(name), '\\s+', ' ', 'g')) AS normalized_name
@@ -160,14 +161,15 @@ def _backfill_options(option_kind: str, global_table: str, global_column: str) -
             GROUP BY tenant_id, product_id,
                      lower(regexp_replace(trim(name), '\\s+', ' ', 'g'))
             HAVING count(*) = 1
-        ) safe ON safe.tenant_id = pct.tenant_id
-              AND safe.product_id = pct.product_id
-              AND safe.normalized_name =
-                  lower(regexp_replace(trim(pct.name), '\\s+', ' ', 'g'))
+        ) safe
         WHERE {global_column} IS NULL
           AND pct.tenant_id IS NOT NULL
           AND pct.option_kind = '{option_kind}'
           AND trim(pct.name) <> ''
+          AND safe.tenant_id = pct.tenant_id
+          AND safe.product_id = pct.product_id
+          AND safe.normalized_name =
+              lower(regexp_replace(trim(pct.name), '\\s+', ' ', 'g'))
           AND gc.tenant_id = pct.tenant_id
           AND lower(regexp_replace(trim(gc.name), '\\s+', ' ', 'g')) =
               lower(regexp_replace(trim(pct.name), '\\s+', ' ', 'g'))
