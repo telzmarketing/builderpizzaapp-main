@@ -208,7 +208,6 @@ function ItemsSection({
 }) {
   const [form, setForm] = useState({
     name: "",
-    sku: "",
     item_type: "ingredient" as InventoryItem["item_type"],
     category_id: "",
     unit_id: "",
@@ -221,14 +220,13 @@ function ItemsSection({
   const save = () => run(
     () => inventoryApi.createItem({
       ...form,
-      sku: form.sku || null,
       category_id: form.category_id || null,
       unit_id: form.unit_id || null,
       default_location_id: form.default_location_id || null,
       notes: form.notes || null,
     }),
     "Item de estoque cadastrado.",
-  ).then(() => setForm({ ...form, name: "", sku: "", notes: "" }));
+  ).then(() => setForm({ ...form, name: "", notes: "" }));
 
   return (
     <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
@@ -236,7 +234,7 @@ function ItemsSection({
         <h3 className="text-sm font-black uppercase tracking-wide text-parchment">Novo item</h3>
         <div className="mt-4 space-y-3">
           <input className={inputClass} placeholder="Nome do insumo ou produto de estoque" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <input className={inputClass} placeholder="SKU interno" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
+          <p className="rounded-md border border-dashed border-surface-03 px-3 py-2 text-xs text-stone">{form.item_type === "ingredient" ? "O SKU será gerado automaticamente ao cadastrar o insumo." : "O SKU automático é aplicado aos insumos; este tipo de item pode usar SKU integrado, se necessário."}</p>
           <select className={inputClass} value={form.item_type} onChange={(e) => setForm({ ...form, item_type: e.target.value as InventoryItem["item_type"] })}>
             <option value="ingredient">Insumo</option>
             <option value="finished_good">Produto acabado</option>

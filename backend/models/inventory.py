@@ -84,7 +84,10 @@ class InventoryItem(Base):
 
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id", name="fk_inventory_items_tenant"), nullable=True)
-    __table_args__ = (Index("uq_inventory_items_tenant_id_id", "tenant_id", "id", unique=True),)
+    __table_args__ = (
+        Index("uq_inventory_items_tenant_id_id", "tenant_id", "id", unique=True),
+        Index("uq_inventory_items_tenant_sku", "tenant_id", "sku", unique=True),
+    )
     name = Column(String(180), nullable=False)
     sku = Column(String(80), nullable=True, index=True)
     item_type = Column(String(40), nullable=False, default="ingredient")

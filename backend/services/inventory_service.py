@@ -191,6 +191,8 @@ class InventoryService:
 
     def create_item(self, payload: InventoryItemIn) -> dict:
         data = payload.model_dump()
+        if data.get("item_type") == "ingredient" and not str(data.get("sku") or "").strip():
+            data["sku"] = self._next_sku()
         self._validate_item_refs(data)
         row = self._create(InventoryItem, data, "item", commit=False)
         self._db.commit()
@@ -203,6 +205,8 @@ class InventoryService:
         row = self._db.query(InventoryItem).filter(InventoryItem.tenant_id == self._tenant_id, InventoryItem.id == item_id).populate_existing().with_for_update().first()
         if row is None:
             raise InventoryNotFound("Item")
+        if row.item_type == "ingredient" and not str(data.get("sku") or "").strip():
+            data["sku"] = row.sku or self._next_sku()
         if row.unit_id != data.get("unit_id"):
             has_history = self._db.query(InventoryStockMovement.id).filter(InventoryStockMovement.tenant_id == self._tenant_id, InventoryStockMovement.item_id == row.id).first()
             from backend.models.inventory_foundation import InventoryItemPackaging, InventoryLot, InventoryReservation
@@ -695,6 +699,19 @@ class InventoryService:
             self._ensure(InventoryUnit, data["unit_id"], "Unidade")
         if data.get("default_location_id"):
             self._ensure(InventoryLocation, data["default_location_id"], "Local")
+
+    def _next_sku(self) -> str:
+        """Generate an opaque, tenant-scoped SKU without relying on a counter."""
+        for _ in range(5):
+            candidate = f"INS-{uuid.uuid4().hex[:10].upper()}"
+            exists = (
+                self._db.query(InventoryItem.id)
+                .filter(InventoryItem.tenant_id == self._tenant_id, InventoryItem.sku == candidate)
+                .first()
+            )
+            if exists is None:
+                return candidate
+        raise DomainError("Nao foi possivel gerar um SKU unico para o insumo.", code="InventorySkuGenerationFailed")
 
     def _stock_balance_map(self) -> dict[str, float]:
         rows = (
