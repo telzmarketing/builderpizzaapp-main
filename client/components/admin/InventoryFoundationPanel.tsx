@@ -48,14 +48,6 @@ export default function InventoryFoundationPanel() {
   const [openingAt, setOpeningAt] = useState(() => new Date().toISOString());
   const [openingRule, setOpeningRule] = useState("");
   const [containerCode, setContainerCode] = useState("");
-  const [definition, setDefinition] = useState({
-    id: "",
-    name: "",
-    symbol: "",
-    code: "",
-    dimension: "mass",
-    conversion_factor: "1",
-  });
   const [packageForm, setPackageForm] = useState({
     name: "",
     commercial_unit_id: "",
@@ -149,7 +141,6 @@ export default function InventoryFoundationPanel() {
     setPreview("");
   };
   const selectedItem = data?.items.find((row) => row.id === item);
-  const selectedUnit = units.find((row) => row.id === definition.id);
   const selection = () => ({
     item_id: item,
     unit_id: unit,
@@ -325,96 +316,6 @@ export default function InventoryFoundationPanel() {
         <button className={button} disabled={saving || !openingRule.trim()}>Confirmar abertura</button>
       </form>}
       <div className="grid gap-4 xl:grid-cols-2">
-        <form
-          className={box}
-          onSubmit={(e) => {
-            e.preventDefault();
-            void command(
-              definition.id ? `units/${definition.id}` : "units",
-              {
-                ...definition,
-                id: undefined,
-                conversion_factor: decimal(definition.conversion_factor),
-                expected_version: selectedUnit?.version ?? 0,
-              },
-              "Unidade confirmada.",
-              definition.id ? "PUT" : "POST",
-            );
-          }}
-        >
-          <h3 className="font-bold text-cream">Classificar unidade</h3>
-          <p className="text-sm text-stone">
-            Confirme a dimensao e o fator em relacao a kg, L ou unidade.
-            Cadastros antigos permanecem sem conversao ate esta confirmacao.
-          </p>
-          <select
-            aria-label="Unidade a classificar"
-            className={input}
-            value={definition.id}
-            onChange={(e) => {
-              const row = units.find((u) => u.id === e.target.value);
-              setDefinition(
-                row
-                  ? {
-                      id: row.id,
-                      name: row.name,
-                      symbol: row.symbol,
-                      code: row.code || "",
-                      dimension: row.dimension || "mass",
-                      conversion_factor: row.conversion_factor || "1",
-                    }
-                  : {
-                      id: "",
-                      name: "",
-                      symbol: "",
-                      code: "",
-                      dimension: "mass",
-                      conversion_factor: "1",
-                    },
-              );
-            }}
-          >
-            <option value="">Nova unidade</option>
-            {unitOptions}
-          </select>
-          {(["name", "symbol", "code", "conversion_factor"] as const).map(
-            (field) => (
-              <label key={field} className="block text-sm text-stone">
-                {
-                  {
-                    name: "Nome",
-                    symbol: "Sigla",
-                    code: "Codigo unico",
-                    conversion_factor: "Fator confirmado",
-                  }[field]
-                }
-                <input
-                  required
-                  className={input}
-                  value={definition[field]}
-                  onChange={(e) =>
-                    setDefinition({ ...definition, [field]: e.target.value })
-                  }
-                />
-              </label>
-            ),
-          )}
-          <select
-            aria-label="Dimensao"
-            className={input}
-            value={definition.dimension}
-            onChange={(e) =>
-              setDefinition({ ...definition, dimension: e.target.value })
-            }
-          >
-            <option value="mass">Massa (kg)</option>
-            <option value="volume">Volume (L)</option>
-            <option value="count">Contagem (unidade)</option>
-          </select>
-          <button className={button} disabled={saving}>
-            Confirmar unidade
-          </button>
-        </form>
         <div className={box}>
           <h3 className="font-bold text-cream">
             Selecao para conversao e movimentos

@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, ChefHat, Database, Layers3, Loader2, Packa
 import { AdminPageTabs, type AdminPageTab } from "@/components/admin/AdminPageChrome";
 import AdminGestao from "./AdminGestao";
 import InventoryFoundationPanel from "@/components/admin/InventoryFoundationPanel";
+import InventoryUnitClassificationPanel from "@/components/admin/InventoryUnitClassificationPanel";
 import InventoryReceiptDocumentsPanel from "@/components/admin/InventoryReceiptDocumentsPanel";
 import PreparationOperationsPanel from "@/components/admin/PreparationOperationsPanel";
 import {
@@ -310,6 +311,7 @@ function BaseSection({
         saving={saving}
         run={run}
       />
+      <InventoryUnitClassificationPanel />
     </div>
   );
 }
