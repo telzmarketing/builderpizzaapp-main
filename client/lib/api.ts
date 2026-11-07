@@ -6138,6 +6138,8 @@ export const inventoryApi = {
     get<InventoryPortionConfig[]>(`/gestao/inventory/v1/portion-configs${active === undefined ? "" : `?active=${active}`}`),
   portionBalances: () => get<InventoryPortionBalance[]>("/gestao/inventory/v1/portion-configs/balances"),
   portionReplenishmentAlerts: () => get<InventoryPortionReplenishment[]>("/gestao/inventory/v1/portion-configs/replenishment-alerts"),
+  requestPortionPreparation: (id: string, body: { target_quantity: string; scheduled_for?: string | null; notes?: string | null; expected_version?: number }, key: string) =>
+    request<Record<string, unknown>>("POST", `/gestao/inventory/v1/portion-configs/${encodeURIComponent(id)}/preparation-orders`, body, { "Idempotency-Key": key }),
   createPortionConfig: (data: Omit<InventoryPortionConfig, "id" | "tenant_id" | "source_item_name" | "output_item_id" | "output_item_name" | "output_item_sku" | "unit_symbol" | "version" | "created_at" | "updated_at">, key: string) =>
     request<InventoryPortionConfig>("POST", "/gestao/inventory/v1/portion-configs", data, { "Idempotency-Key": key }),
   updatePortionConfig: (id: string, data: Omit<InventoryPortionConfig, "id" | "tenant_id" | "source_item_name" | "output_item_id" | "output_item_name" | "output_item_sku" | "unit_symbol" | "version" | "created_at" | "updated_at">, key: string) =>

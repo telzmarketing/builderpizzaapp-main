@@ -44,6 +44,13 @@ class InventoryPortionConfigOut(InventoryPortionConfigIn):
     model_config = {"from_attributes": True}
 
 
+class InventoryPortionPrepareIn(BaseModel):
+    target_quantity: Decimal = Field(gt=0, max_digits=20, decimal_places=6)
+    scheduled_for: datetime | None = None
+    notes: str | None = Field(default=None, max_length=1000)
+    expected_version: int = Field(default=0, ge=0)
+
+
 class InventoryPortionBalanceOut(BaseModel):
     config_id: str
     output_item_id: str

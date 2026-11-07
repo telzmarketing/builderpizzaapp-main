@@ -5,7 +5,7 @@ from backend.core.exceptions import DomainError
 from backend.core.rbac_authorization import AuthorizedTenantActor, require_rbac_permission
 from backend.core.response import err
 from backend.database import get_db
-from backend.schemas.inventory_portion import InventoryPortionBalanceOut, InventoryPortionConfigIn, InventoryPortionConfigOut, InventoryPortionReplenishmentOut
+from backend.schemas.inventory_portion import InventoryPortionBalanceOut, InventoryPortionConfigIn, InventoryPortionConfigOut, InventoryPortionPrepareIn, InventoryPortionReplenishmentOut
 from backend.services.inventory_portion_service import InventoryPortionConfigService
 
 router = APIRouter(prefix="/gestao/inventory/v1/portion-configs", tags=["inventory-portioning"])
@@ -40,6 +40,11 @@ def replenishment_alerts(db: Session = Depends(get_db), actor: AuthorizedTenantA
 @router.get("/{config_id}", response_model=InventoryPortionConfigOut)
 def get_config(config_id: str, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "view"))):
     return invoke(lambda: serialize(service(db, actor).get(config_id)))
+
+
+@router.post("/{config_id}/preparation-orders", response_model=dict, status_code=201)
+def create_preparation_order(config_id: str, body: InventoryPortionPrepareIn, db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "manage")), key: str = Header(alias="Idempotency-Key", min_length=1, max_length=200)):
+    return invoke(lambda: service(db, actor).create_preparation_order(config_id, body, key))
 
 
 @router.post("", status_code=201, response_model=InventoryPortionConfigOut)

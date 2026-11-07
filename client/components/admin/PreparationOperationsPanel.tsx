@@ -135,6 +135,8 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className={ghost} disabled={busy} onClick={() => run(loadRecipeAndStock, "Ficha e saldos carregados.")}><ClipboardList size={15} /> Ficha</button>
+          {order.status === "draft" && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.manage(order.id, "approve", { expected_version: order.version }, key("approve", order.id)), "Ordem aprovada e reservada.")}>Aprovar</button>}
+          {order.status === "approved" && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.manage(order.id, "schedule", { expected_version: order.version }, key("schedule", order.id)), "Ordem enviada ao KDS.")}>Enviar ao KDS</button>}
           {canStart && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.start(order.id, order.version, key("start", order.id)), "Preparo iniciado.")}><Play size={15} /> Iniciar</button>}
           {order.status === "paused" && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.command(order.id, "resume", { expected_version: order.version }, key("resume", order.id)), "Preparo retomado.")}><Play size={15} /> Retomar</button>}
           {canReport && <button type="button" className={ghost} disabled={busy} onClick={() => run(() => preparationApi.command(order.id, "pause", { expected_version: order.version }, key("pause", order.id)), "Preparo pausado.")}>Pausar</button>}

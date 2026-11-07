@@ -143,6 +143,30 @@ class InventoryPortionConfigService:
             })
         return alerts
 
+    def create_preparation_order(self, config_id: str, body, key: str):
+        row = self._get(config_id)
+        if not row.active:
+            raise PortionConfigInvalid("A configuracao de porcao esta inativa.")
+        if row.usage == "direct":
+            raise PortionConfigInvalid("Configuracoes de utilizacao direta nao geram ordem de preparo.")
+        recipe = self.db.query(InventoryOperationRecipe).filter(
+            InventoryOperationRecipe.tenant_id == self.tenant_id,
+            InventoryOperationRecipe.output_item_id == row.output_item_id,
+            InventoryOperationRecipe.active.is_(True),
+        ).order_by(InventoryOperationRecipe.version_number.desc(), InventoryOperationRecipe.id.desc()).first()
+        if recipe is None:
+            raise PortionConfigConflict("Cadastre uma ficha operacional ativa para este produto porcionado antes de solicitar o preparo.")
+        from backend.schemas.preparation import PreparationOrderIn
+        from backend.services.preparation_service import PreparationService
+        order_body = PreparationOrderIn(
+            recipe_id=recipe.id,
+            target_quantity=body.target_quantity,
+            scheduled_for=body.scheduled_for,
+            notes=body.notes,
+            expected_version=body.expected_version,
+        )
+        return PreparationService(self.db, self.tenant_id, self.actor_id).create_order(order_body, key)
+
     def get(self, config_id: str) -> InventoryPortionConfig:
         row = self._get(config_id)
         return row
