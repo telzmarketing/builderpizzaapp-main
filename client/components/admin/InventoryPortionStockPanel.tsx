@@ -2,6 +2,23 @@ import { useEffect, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { inventoryApi, type InventoryPortionBalance, type InventoryPortionReplenishment } from "@/lib/api";
 
+function formatExactQuantity(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return "-";
+  const normalized = String(value).trim().replace(",", ".");
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) return "-";
+  const sign = normalized.startsWith("-") ? "-" : "";
+  const unsigned = normalized.replace(/^[+-]/, "");
+  const [integerPart, fractionPart = ""] = unsigned.split(".");
+  const integer = integerPart.replace(/^0+(?=\d)/, "") || "0";
+  const fraction = fractionPart.replace(/0+$/, "");
+  return `${sign}${integer}${fraction ? `,${fraction}` : ""}`;
+}
+
+function numericQuantity(value: number | string | null | undefined) {
+  const numericValue = Number(String(value ?? 0).replace(",", "."));
+  return Number.isFinite(numericValue) ? numericValue : 0;
+}
+
 export default function InventoryPortionStockPanel() {
   const [rows, setRows] = useState<InventoryPortionBalance[]>([]);
   const [alerts, setAlerts] = useState<InventoryPortionReplenishment[]>([]);
@@ -43,15 +60,15 @@ export default function InventoryPortionStockPanel() {
             <span>Produto porcionado</span><span>Origem</span><span>Unidade</span><span>Físico</span><span>Reservado</span><span>Disponível</span><span>Em preparo</span><span>Custo / validade</span>
           </div>
           {rows.map((row) => (
-            <div key={row.config_id} className={`grid min-w-[1100px] grid-cols-[1.4fr_1.2fr_.7fr_1fr_1fr_1fr_1fr_1fr] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm ${row.available_stock <= row.min_stock ? "bg-amber-500/5" : ""}`}>
-              <span className="font-bold text-cream">{row.output_item_name}<small className="block text-stone">mínimo {row.min_stock} · alvo {row.target_stock}</small></span>
+            <div key={row.config_id} className={`grid min-w-[1100px] grid-cols-[1.4fr_1.2fr_.7fr_1fr_1fr_1fr_1fr_1fr] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm ${numericQuantity(row.available_stock) <= numericQuantity(row.min_stock) ? "bg-amber-500/5" : ""}`}>
+              <span className="font-bold text-cream">{row.output_item_name}<small className="block text-stone">mínimo {formatExactQuantity(row.min_stock)} · alvo {formatExactQuantity(row.target_stock)}</small></span>
               <span className="text-stone">{row.source_item_name || "-"}</span>
               <span className="text-stone">{row.unit_symbol || "-"}</span>
-              <span className="text-stone">{row.physical_stock}</span>
-              <span className="text-stone">{row.reserved_stock}</span>
-              <span className={row.available_stock <= row.min_stock ? "font-bold text-amber-200" : "text-emerald-200"}>{row.available_stock}</span>
-              <span className="text-stone">{row.in_preparation}</span>
-              <span className="text-stone">{row.unit_cost.toFixed(2)}{row.next_expiry ? ` · ${new Date(row.next_expiry).toLocaleDateString("pt-BR")}` : ""}</span>
+              <span className="text-stone">{formatExactQuantity(row.physical_stock)}</span>
+              <span className="text-stone">{formatExactQuantity(row.reserved_stock)}</span>
+              <span className={numericQuantity(row.available_stock) <= numericQuantity(row.min_stock) ? "font-bold text-amber-200" : "text-emerald-200"}>{formatExactQuantity(row.available_stock)}</span>
+              <span className="text-stone">{formatExactQuantity(row.in_preparation)}</span>
+              <span className="text-stone">{numericQuantity(row.unit_cost).toFixed(2)}{row.next_expiry ? ` · ${new Date(row.next_expiry).toLocaleDateString("pt-BR")}` : ""}</span>
             </div>
           ))}
           {!rows.length && <p className="px-4 py-10 text-center text-sm text-stone">Nenhum produto porcionado ativo.</p>}
