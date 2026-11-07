@@ -222,7 +222,7 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
                     const [mode, id] = e.target.value.split(":");
                     if (mode === "portion") {
                       const config = portionConfigs.find((item) => item.id === id);
-                      if (config) updateIngredient(index, { supply_mode: "portion", portion_config_id: config.id, inventory_item_id: config.output_item_id, entered_unit_id: config.unit_id, entered_quantity: "" });
+                      if (config) updateIngredient(index, { supply_mode: "portion", portion_config_id: config.id, inventory_item_id: config.output_item_id, entered_unit_id: config.unit_id, entered_quantity: String(Number(form.reference_fraction || "1") / Number(config.reference_fraction || "1")) });
                     } else {
                       const item = ingredients.find((candidate) => candidate.id === id);
                       updateIngredient(index, { supply_mode: "direct", portion_config_id: "", inventory_item_id: id ?? "", entered_unit_id: item?.unit_id ?? "", entered_quantity: "" });

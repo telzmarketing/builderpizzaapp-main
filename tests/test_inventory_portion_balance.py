@@ -43,7 +43,7 @@ def test_portion_balance_uses_ledger_valid_reservations_and_open_preparation_wit
             InventoryItem(id="portion-a", tenant_id="tenant-a", name="Mussarela 150 g", sku="POR-A", unit_id="g", default_location_id="loc", item_type="finished_good"),
             InventoryOperationRecipe(id="recipe-a", tenant_id="tenant-a", name="Mussarela preparada", output_item_id="portion-a", output_unit_id="g", yield_quantity=10, created_by="actor"),
             InventoryOperation(id="op-a", tenant_id="tenant-a", kind="manual_in", business_key="in-a", idempotency_scope="test", idempotency_key="in-a", request_hash="a" * 64, actor_id="actor", status="committed"),
-            InventoryStockMovement(id="movement-a", tenant_id="tenant-a", item_id="portion-a", location_id="loc", quantity_delta=10, operation_id="op-a", operation_sequence=1, source_type="test", source_id="a", movement_type="in", reason="test"),
+            InventoryStockMovement(id="movement-a", tenant_id="tenant-a", item_id="portion-a", location_id="loc", quantity_delta=10, unit_cost=2, operation_id="op-a", operation_sequence=1, source_type="test", source_id="a", movement_type="in", reason="test"),
             InventoryReservation(id="reservation-valid", tenant_id="tenant-a", business_key="reservation-valid", item_id="portion-a", location_id="loc", quantity=2, source_type="order", source_id="order-a", status="active", expires_at=now + timedelta(hours=1), actor_id="actor"),
             InventoryReservation(id="reservation-expired", tenant_id="tenant-a", business_key="reservation-expired", item_id="portion-a", location_id="loc", quantity=4, source_type="order", source_id="order-old", status="active", expires_at=now - timedelta(hours=1), actor_id="actor"),
             PreparationOrder(id="prep-a", tenant_id="tenant-a", recipe_id="recipe-a", target_quantity=5, produced_quantity=1, lost_quantity=1, discarded_quantity=0, status="in_progress", version=1, idempotency_key="prep-a", actor_id="actor"),
@@ -65,7 +65,7 @@ def test_portion_balance_uses_ledger_valid_reservations_and_open_preparation_wit
             "source_item_name": "Mussarela", "unit_symbol": "g", "physical_stock": Decimal("10.000000"),
             "reserved_stock": Decimal("2.000000"), "available_stock": Decimal("8.000000"),
             "in_preparation": Decimal("3.000000"), "min_stock": Decimal("3"),
-            "target_stock": Decimal("10"), "active": True, "unit_cost": Decimal("0"), "next_expiry": None,
+            "target_stock": Decimal("10"), "active": True, "unit_cost": Decimal("2.00000000"), "next_expiry": None,
         }]
 
         alerts = service.replenishment_alerts()
