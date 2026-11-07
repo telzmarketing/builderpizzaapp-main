@@ -2367,6 +2367,33 @@ export interface InventoryOverview {
   balances: InventoryStockBalance[];
 }
 
+export type InventoryPortionUsage = "mandatory" | "optional" | "direct";
+
+export interface InventoryPortionConfig {
+  id: string;
+  tenant_id?: string;
+  source_item_id: string;
+  source_item_name?: string | null;
+  output_item_id: string;
+  output_item_name?: string | null;
+  output_item_sku?: string | null;
+  usage: InventoryPortionUsage;
+  portion_weight: number;
+  unit_id: string;
+  unit_symbol?: string | null;
+  reference_fraction: number;
+  size?: string | null;
+  min_stock: number;
+  target_stock: number;
+  shelf_life_days?: number | null;
+  yield_percent: number;
+  loss_percent: number;
+  active: boolean;
+  version: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface CmvIngredientCost {
   inventory_item_id: string;
   inventory_item_name?: string | null;
@@ -6077,6 +6104,14 @@ export const inventoryApi = {
     put<InventoryRecipeVersion>(`/gestao/inventory/products/${productId}/recipes/${recipeId}`, data),
   removeProductRecipe: (productId: string, recipeId: string) =>
     del<void>(`/gestao/inventory/products/${productId}/recipes/${recipeId}`),
+  portionConfigs: (active?: boolean) =>
+    get<InventoryPortionConfig[]>(`/gestao/inventory/v1/portion-configs${active === undefined ? "" : `?active=${active}`}`),
+  createPortionConfig: (data: Omit<InventoryPortionConfig, "id" | "tenant_id" | "source_item_name" | "output_item_id" | "output_item_name" | "output_item_sku" | "unit_symbol" | "version" | "created_at" | "updated_at">, key: string) =>
+    request<InventoryPortionConfig>("POST", "/gestao/inventory/v1/portion-configs", data, { "Idempotency-Key": key }),
+  updatePortionConfig: (id: string, data: Omit<InventoryPortionConfig, "id" | "tenant_id" | "source_item_name" | "output_item_id" | "output_item_name" | "output_item_sku" | "unit_symbol" | "version" | "created_at" | "updated_at">, key: string) =>
+    request<InventoryPortionConfig>("PUT", `/gestao/inventory/v1/portion-configs/${encodeURIComponent(id)}`, data, { "Idempotency-Key": key }),
+  deactivatePortionConfig: (id: string, key: string) =>
+    request<InventoryPortionConfig>("DELETE", `/gestao/inventory/v1/portion-configs/${encodeURIComponent(id)}`, undefined, { "Idempotency-Key": key }),
 };
 
 export const inventoryReceiptApi = {

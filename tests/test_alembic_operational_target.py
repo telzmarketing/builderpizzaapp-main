@@ -15,6 +15,7 @@ EXPECTED_TARGET_FILES = {
     "docs/UPDATE_TELZ_VPS.md",
 }
 REVISION_PATTERN = re.compile(r"202\d{5}_[a-z0-9_]+")
+EXPECTED_OPERATIONAL_HEAD = "20261107_inventory_portion_configs"
 
 
 def _migration_heads() -> set[str]:
@@ -76,6 +77,10 @@ def test_every_operational_alembic_target_matches_the_single_repository_head():
     targets = _operational_targets()
 
     assert len(heads) == 1, f"esperado um unico head Alembic, encontrados: {sorted(heads)}"
+    assert heads == {EXPECTED_OPERATIONAL_HEAD}, (
+        f"head operacional inesperado: esperado={EXPECTED_OPERATIONAL_HEAD} "
+        f"encontrado={sorted(heads)}"
+    )
     assert set(targets) == EXPECTED_TARGET_FILES
     for relative_path, values in targets.items():
         assert values == heads, (

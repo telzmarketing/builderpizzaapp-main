@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
 from backend.core.exceptions import DomainError
 from backend.models.preparation import InventoryOperationRecipe, InventoryOperationRecipeItem, PreparationOrder, PreparationExecution
-from backend.models.inventory import InventoryItem, InventoryLocation, InventoryStockMovement
-from backend.models.inventory_foundation import InventoryOperation, InventoryLot
+from backend.models.inventory import InventoryItem, InventoryLocation, InventoryStockMovement, InventoryUnit
+from backend.models.inventory_foundation import InventoryOperation, InventoryLot, InventoryReservation
 from backend.services.inventory_foundation_service import InventoryFoundationService, utcnow
 
 class PreparationInvalid(DomainError): http_status = 422
@@ -107,6 +107,67 @@ class PreparationService:
             } for item in recipe.items],
             "warnings": [],
         }
+    def _validate_input_allocations(self, recipe, allocations, processed_quantity, foundation):
+        """Validate the physical inputs against the operational recipe.
+
+        The report payload is intentionally kept as the public ``list[dict]``
+        contract, but it is not trusted as a source of recipe membership or
+        quantity.  An allocation must identify the exact recipe item/unit
+        pair, and a lot (when supplied) must belong to that item and location.
+        The complete report must consume the recipe quantity scaled by the
+        quantity processed in this report.
+        """
+        recipe_quantities = {}
+        for recipe_item in recipe.items:
+            key = (recipe_item.item_id, recipe_item.unit_id)
+            recipe_quantities[key] = recipe_quantities.get(key, Decimal("0")) + Decimal(recipe_item.quantity)
+
+        allocated_quantities = {}
+        for allocation in allocations:
+            if not isinstance(allocation, dict):
+                raise PreparationInvalid("Cada consumo deve ser um objeto de alocacao.")
+            item_id = allocation.get("item_id")
+            unit_id = allocation.get("unit_id")
+            try:
+                quantity = Decimal(str(allocation.get("quantity") or 0))
+            except (ArithmeticError, TypeError, ValueError) as exc:
+                raise PreparationInvalid("Quantidade de consumo invalida.") from exc
+            location_id = allocation.get("location_id")
+            lot_id = allocation.get("lot_id")
+            if not item_id or not unit_id or not quantity.is_finite() or quantity <= 0 or not location_id:
+                raise PreparationInvalid("Cada consumo exige item, unidade, quantidade e local.")
+
+            key = (item_id, unit_id)
+            if key not in recipe_quantities:
+                raise PreparationInvalid("Item e unidade do consumo nao pertencem a receita operacional.")
+
+            item = foundation._get(InventoryItem, item_id, lock=True)
+            unit = foundation._get(InventoryUnit, unit_id, lock=True)
+            if item.id != item_id or unit.id != unit_id:
+                raise PreparationInvalid("Item ou unidade do consumo nao pertence a este tenant.")
+            foundation._get(InventoryLocation, location_id)
+            if lot_id:
+                lot = foundation._get(InventoryLot, lot_id, lock=True)
+                if lot.item_id != item_id:
+                    raise PreparationInvalid("Lote do consumo nao pertence ao item da receita.")
+                if lot.location_id != location_id:
+                    raise PreparationInvalid("Lote do consumo nao pertence ao local informado.")
+
+            allocated_quantities[key] = allocated_quantities.get(key, Decimal("0")) + quantity
+
+        scale = Decimal(processed_quantity) / Decimal(recipe.yield_quantity)
+        for key, recipe_quantity in recipe_quantities.items():
+            expected = recipe_quantity * scale
+            actual = allocated_quantities.get(key, Decimal("0"))
+            if actual != expected:
+                raise PreparationInvalid(
+                    "Quantidade consumida nao respeita a receita operacional "
+                    f"para o item {key[0]} e unidade {key[1]}."
+                )
+        unexpected = set(allocated_quantities) - set(recipe_quantities)
+        if unexpected:
+            raise PreparationInvalid("Existe consumo de item ou unidade fora da receita operacional.")
+
     def command(self,oid,command,b,key):
         if not key: raise PreparationInvalid("Idempotency-Key obrigatoria.")
         o=self._order(oid,True)
@@ -114,8 +175,115 @@ class PreparationService:
         target=self.transitions.get(command,{}).get(o.status)
         if not target: raise PreparationConflict("Transicao de ordem invalida.")
         if command in {"block","cancel"} and not (b.reason or "").strip(): raise PreparationInvalid("Motivo obrigatorio.")
+        if command == "approve":
+            recipe = self._q(InventoryOperationRecipe).filter_by(id=o.recipe_id, active=True).first()
+            if not recipe:
+                raise PreparationNotFound("Receita operacional nao encontrada.")
+            self._reserve_order_inputs(o, recipe)
+        if command == "cancel":
+            self._release_order_reservations(o)
         o.status=target;o.version+=1;o.notes=((o.notes or "")+"\n"+b.reason) if b.reason else o.notes
         self.db.commit();return self._out(o)
+
+    def _reserve_order_inputs(self, order, recipe):
+        """Reserve the recipe inputs atomically when the order is approved."""
+        if self._q(InventoryReservation).filter(
+            InventoryReservation.source_type == "preparation",
+            InventoryReservation.source_id == order.id,
+            InventoryReservation.status == "active",
+        ).first():
+            return
+        quantities = {}
+        scale = Decimal(order.target_quantity) / Decimal(recipe.yield_quantity)
+        for recipe_item in recipe.items:
+            key = (recipe_item.item_id, recipe_item.unit_id)
+            quantities[key] = quantities.get(key, Decimal("0")) + Decimal(recipe_item.quantity) * scale
+        item_ids = sorted({item_id for item_id, _ in quantities})
+        foundation = InventoryFoundationService(self.db, self.tenant_id, self.actor_id)
+        items = {item.id: item for item in foundation._lock_items(item_ids)}
+        for item_id, unit_id in quantities:
+            item = items[item_id]
+            if item.unit_id != unit_id:
+                raise PreparationInvalid("Unidade da receita nao corresponde a unidade-base do insumo.")
+            location_id = item.default_location_id
+            if not location_id:
+                raise PreparationInvalid(f"O insumo {item_id} precisa de local padrao para reservar o preparo.")
+            available = foundation._available(item_id, location_id, None)
+            if available < quantities[(item_id, unit_id)]:
+                raise PreparationConflict(f"Saldo insuficiente para reservar o insumo {item_id}.")
+        operation_key = f"preparation-reservation:{order.id}"
+        operation = InventoryOperation(
+            id=uuid.uuid4().hex, tenant_id=self.tenant_id, kind="reservation",
+            business_key=operation_key, idempotency_scope="preparation-reservation",
+            idempotency_key=operation_key,
+            request_hash=hashlib.sha256(operation_key.encode()).hexdigest(),
+            status="committed", actor_id=self.actor_id, version=1,
+            result_json={"order_id": order.id, "items": {item_id: _d(quantity) for (item_id, _), quantity in quantities.items()},
+                         "reason": "preparation_order_approved"}, committed_at=utcnow(),
+        )
+        self.db.add(operation)
+        for (item_id, unit_id), quantity in quantities.items():
+            item = items[item_id]
+            self.db.add(InventoryReservation(
+                id=uuid.uuid4().hex, tenant_id=self.tenant_id,
+                business_key=f"{operation_key}:{item_id}", item_id=item_id,
+                location_id=item.default_location_id, lot_id=None, operation_id=operation.id,
+                source_type="preparation", source_id=order.id, quantity=quantity,
+                status="active", version=1, actor_id=self.actor_id,
+            ))
+        self.db.flush()
+
+    def _release_order_reservations(self, order):
+        reservations = self._q(InventoryReservation).filter(
+            InventoryReservation.source_type == "preparation",
+            InventoryReservation.source_id == order.id,
+            InventoryReservation.status == "active",
+        ).with_for_update().all()
+        if not reservations:
+            return
+        operation_key = f"preparation-reservation-release:{order.id}:{order.version}"
+        operation = InventoryOperation(
+            id=uuid.uuid4().hex, tenant_id=self.tenant_id, kind="reservation_release",
+            business_key=operation_key, idempotency_scope="preparation-reservation-release",
+            idempotency_key=operation_key,
+            request_hash=hashlib.sha256(operation_key.encode()).hexdigest(),
+            status="committed", actor_id=self.actor_id, version=1,
+            result_json={"order_id": order.id, "released": [row.id for row in reservations]}, committed_at=utcnow(),
+        )
+        self.db.add(operation)
+        for row in reservations:
+            row.status = "released"
+            row.version += 1
+        self.db.flush()
+
+    def _consume_order_reservations(self, order_id, allocations):
+        quantities = {}
+        for allocation in allocations:
+            item_id = allocation.get("item_id")
+            quantities[item_id] = quantities.get(item_id, Decimal("0")) + Decimal(str(allocation.get("quantity") or 0))
+        for item_id, quantity in quantities.items():
+            rows = self._q(InventoryReservation).filter(
+                InventoryReservation.source_type == "preparation",
+                InventoryReservation.source_id == order_id,
+                InventoryReservation.item_id == item_id,
+                InventoryReservation.status == "active",
+            ).order_by(InventoryReservation.id).with_for_update().all()
+            if not rows:
+                # Legacy orders created before reservation integration remain
+                # executable; new approved orders always have these rows.
+                continue
+            remaining = quantity
+            for row in rows:
+                consumed = min(Decimal(row.quantity), remaining)
+                row.quantity = Decimal(row.quantity) - consumed
+                row.version += 1
+                if row.quantity == 0:
+                    row.status = "consumed"
+                remaining -= consumed
+                if remaining <= 0:
+                    break
+            if remaining > 0:
+                raise PreparationConflict(f"Reserva insuficiente para consumir o insumo {item_id}.")
     def report(self,oid,b,key):
         if not key: raise PreparationInvalid("Idempotency-Key obrigatoria.")
         o=self._order(oid,True)
@@ -132,6 +300,8 @@ class PreparationService:
         if not recipe:
             raise PreparationNotFound("Receita operacional nao encontrada.")
         foundation = InventoryFoundationService(self.db, self.tenant_id, self.actor_id)
+        processed_quantity = b.produced_quantity + b.lost_quantity + b.discarded_quantity
+        self._validate_input_allocations(recipe, b.input_allocations, processed_quantity, foundation)
         output_lot = None
         try:
             output_item = foundation._get(InventoryItem, recipe.output_item_id, lock=True)
@@ -205,6 +375,7 @@ class PreparationService:
                 notes=json.dumps({"actor_id": self.actor_id, "portion_grams": str(b.portion_grams) if b.portion_grams else None}),
             )
             self.db.add(output_movement); movement_ids.append(output_movement.id)
+            self._consume_order_reservations(oid, b.input_allocations)
             now = utcnow()
             operation.status, operation.committed_at = "committed", now
             operation.result_json = {

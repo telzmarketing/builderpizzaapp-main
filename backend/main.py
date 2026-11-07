@@ -56,6 +56,7 @@ from backend.routes import salao_page as salao_page_routes
 from backend.routes import gestao as gestao_routes
 from backend.routes import inventory as inventory_routes
 from backend.routes import inventory_foundation as inventory_foundation_routes
+from backend.routes import inventory_portions as inventory_portions_routes
 from backend.routes import inventory_receipts as inventory_receipts_routes
 from backend.routes import inventory_traceability as inventory_traceability_routes
 from backend.routes import preparation as preparation_routes
@@ -1492,6 +1493,7 @@ app.include_router(salao_page_routes.router, prefix="/api")
 app.include_router(gestao_routes.router, prefix="/api")
 app.include_router(inventory_routes.router, prefix="/api")
 app.include_router(inventory_foundation_routes.router, prefix="/api")
+app.include_router(inventory_portions_routes.router, prefix="/api")
 app.include_router(inventory_receipts_routes.router, prefix="/api")
 app.include_router(inventory_traceability_routes.router, prefix="/api")
 app.include_router(preparation_routes.router, prefix="/api")

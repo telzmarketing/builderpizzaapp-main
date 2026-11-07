@@ -72,6 +72,7 @@ from backend.models import (  # noqa: F401
     catalog_global,
     kds_audit,
     production_vision,
+    inventory_portion,
 )
 
 config = context.config

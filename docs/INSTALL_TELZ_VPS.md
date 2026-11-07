@@ -49,7 +49,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Defina explicitamente:
 
 ```env
-ALEMBIC_TARGET=20261106_production_vision_capture_rules
+ALEMBIC_TARGET=20261107_inventory_portion_configs
 INSTALL_SSL=false
 ```
 
