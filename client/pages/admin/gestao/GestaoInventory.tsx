@@ -23,7 +23,7 @@ import {
 } from "@/lib/api";
 
 type Section = "settings" | "items" | "ingredient-stock" | "portioning" | "portion-stock" | "replenishment" | "foundation" | "purchases" | "entries" | "suppliers" | "preparation" | "base";
-type InventoryGroup = "cadastro" | "controle" | "abastecimento" | "operacao";
+type InventoryGroup = "cadastro" | "estoque" | "producao" | "operacao";
 
 const inventoryRouteBase = "/painel/gestao/estoque";
 const sectionSlugs: Record<Section, string> = {
@@ -42,17 +42,17 @@ const sectionSlugs: Record<Section, string> = {
 };
 
 const inventoryGroups: AdminPageTab<InventoryGroup>[] = [
-  { id: "cadastro", label: "Cadastro e Porcionamento", icon: Package },
-  { id: "controle", label: "Controle de Estoque", icon: Database },
-  { id: "abastecimento", label: "Abastecimento", icon: ShoppingCart },
-  { id: "operacao", label: "Produção e Configuração", icon: Settings },
+  { id: "cadastro", label: "Cadastro", icon: Package },
+  { id: "estoque", label: "Estoque", icon: Database },
+  { id: "producao", label: "Produção", icon: ChefHat },
+  { id: "operacao", label: "Operação", icon: Settings },
 ];
 
 const groupSections: Record<InventoryGroup, Section[]> = {
-  cadastro: ["items", "ingredient-stock", "portioning"],
-  controle: ["portion-stock", "replenishment", "foundation"],
-  abastecimento: ["purchases", "entries", "suppliers"],
-  operacao: ["preparation", "base", "settings"],
+  cadastro: ["items", "suppliers", "base"],
+  estoque: ["ingredient-stock", "portion-stock", "foundation"],
+  producao: ["portioning", "preparation"],
+  operacao: ["replenishment", "purchases", "entries", "settings"],
 };
 
 const sectionGroup = (section: Section): InventoryGroup => (
