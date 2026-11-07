@@ -85,6 +85,14 @@ class RecipeSupplyResolver:
             )
             if generated_portion is not None:
                 raise FoundationInvalid("Produto porcionado deve ser selecionado pela configuracao de porcao.")
+            mandatory_portion = self.db.query(InventoryPortionConfig.id).filter(
+                InventoryPortionConfig.tenant_id == self.tenant_id,
+                InventoryPortionConfig.source_item_id == item.id,
+                InventoryPortionConfig.usage == "mandatory",
+                InventoryPortionConfig.active.is_(True),
+            ).first()
+            if mandatory_portion is not None:
+                raise FoundationInvalid("Este insumo exige uma configuracao de porcao ativa na ficha tecnica.")
             data.update(supply_mode="direct", portion_config_id=None, portion_config_version=None)
 
         if data.get("unit_id") and data["unit_id"] != item.unit_id:
