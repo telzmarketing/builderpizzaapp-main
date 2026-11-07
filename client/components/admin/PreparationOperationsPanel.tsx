@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, ChefHat, ClipboardList, Loader2, Play, RefreshCw, Square, TriangleAlert } from "lucide-react";
-import { preparationApi, type PreparationOrder, type PreparationRecipe } from "@/lib/api";
+import { preparationApi, type PreparationInputAllocation, type PreparationOrder, type PreparationRecipe } from "@/lib/api";
 import { PreparationLabelPrintDialog } from "@/components/kds/LabelPrintDialog";
 import PcpWeeklyPanel from "@/components/admin/PcpWeeklyPanel";
 
@@ -31,30 +31,29 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
   const [approved, setApproved] = useState("");
   const [discarded, setDiscarded] = useState("0");
   const [reason, setReason] = useState("");
+  const [inputAllocationsJson, setInputAllocationsJson] = useState("[]");
 
   async function run(action: () => Promise<unknown>, success: string) {
     setBusy(true); setError(""); setMessage("");
     try { const result = await action(); if (result && typeof result === "object" && "execution_id" in result && typeof result.execution_id === "string") onExecution(result.execution_id); setMessage(success); await onRefresh(); } catch (err) { setError(err instanceof Error ? err.message : "Nao foi possivel executar a operacao."); } finally { setBusy(false); }
   }
 
-  const canStart = ["waiting", "scheduled"].includes(order.state);
-  const canReport = ["in_progress", "partially_completed"].includes(order.state);
-  const canComplete = canReport && order.remaining_quantity != null && Number(order.remaining_quantity) === 0;
+  const canStart = ["waiting", "scheduled"].includes(order.status);
+  const canReport = ["in_progress", "partially_completed"].includes(order.status);
+  const canComplete = canReport && Number(order.produced_quantity) + Number(order.lost_quantity) + Number(order.discarded_quantity) === Number(order.target_quantity);
 
   return (
     <article className={`${box} preparation-order-card`}>
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <div className="flex items-center gap-2"><ChefHat size={17} className="text-gold" /><h3 className="font-black text-cream">{order.name}</h3></div>
-          <p className="mt-1 text-xs text-stone">Meta {order.target_quantity || "Não informada"} {order.output_unit_name || ""} · produzido {order.produced_total} · restante {order.remaining_quantity ?? "Não informado"}</p>
-          {order.scheduled_for && <p className="mt-1 text-xs text-stone">Programado: {new Date(order.scheduled_for).toLocaleString("pt-BR")}</p>}
-          {order.pending_fields?.length ? <p role="status" className="mt-2 text-sm font-bold text-amber-200">Pendências: {order.pending_fields.join(", ")}</p> : null}
-          <p className="mt-1 text-xs font-bold text-gold">{stateLabel(order.state)} · versao {order.version}</p>
+          <div className="flex items-center gap-2"><ChefHat size={17} className="text-gold" /><h3 className="font-black text-cream">{order.recipe_id}</h3></div>
+          <p className="mt-1 text-xs text-stone">Meta {order.target_quantity} · produzido {order.produced_quantity} · perdas {order.lost_quantity} · descartado {order.discarded_quantity}</p>
+          <p className="mt-1 text-xs font-bold text-gold">{stateLabel(order.status)} · versão {order.version}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className={ghost} disabled={busy} onClick={() => run(() => preparationApi.recipe(order.id).then(setRecipe), "Ficha carregada.")}><ClipboardList size={15} /> Ficha</button>
           {canStart && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.start(order.id, order.version, key("start", order.id)), "Preparo iniciado.")}><Play size={15} /> Iniciar</button>}
-          {order.state === "paused" && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.command(order.id, "resume", { expected_version: order.version }, key("resume", order.id)), "Preparo retomado.")}><Play size={15} /> Retomar</button>}
+          {order.status === "paused" && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.command(order.id, "resume", { expected_version: order.version }, key("resume", order.id)), "Preparo retomado.")}><Play size={15} /> Retomar</button>}
           {canReport && <button type="button" className={ghost} disabled={busy} onClick={() => run(() => preparationApi.command(order.id, "pause", { expected_version: order.version }, key("pause", order.id)), "Preparo pausado.")}>Pausar</button>}
           {canComplete && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.complete(order.id, order.version, key("complete", order.id)), "Preparo concluido.")}><CheckCircle2 size={15} /> Concluir</button>}
         </div>
@@ -71,8 +70,9 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
         <input className={input} inputMode="decimal" placeholder="Produzido" value={produced} onChange={(e) => setProduced(e.target.value)} />
         <input className={input} inputMode="decimal" placeholder="Aprovado" value={approved} onChange={(e) => setApproved(e.target.value)} />
         <input className={input} inputMode="decimal" placeholder="Descartado" value={discarded} onChange={(e) => setDiscarded(e.target.value)} />
-        <button type="button" className={button} disabled={busy || !produced || !approved || !recipe?.executable} onClick={() => run(() => preparationApi.report(order.id, { expected_version: order.version, produced_quantity: produced, approved_quantity: approved, discarded_quantity: discarded, input_allocations: [], losses: [], reason: reason || null, prepared_at: new Date().toISOString() }, key("report", order.id)), "Apontamento registrado.")}><Square size={15} /> Apontar</button>
+        <button type="button" className={button} disabled={busy || !produced || !approved || !recipe?.executable || !inputAllocationsJson.trim() || inputAllocationsJson.trim() === "[]"} onClick={() => run(() => { let inputAllocations: PreparationInputAllocation[]; try { inputAllocations = JSON.parse(inputAllocationsJson) as PreparationInputAllocation[]; } catch { throw new Error("Informe as alocações em JSON válido."); } if (!Array.isArray(inputAllocations) || inputAllocations.length === 0) throw new Error("Informe ao menos uma alocação de insumo."); return preparationApi.report(order.id, { expected_version: order.version, produced_quantity: produced, approved_quantity: approved, discarded_quantity: discarded, input_allocations: inputAllocations, losses: [], reason: reason || null, prepared_at: new Date().toISOString() }, key("report", order.id)); }, "Apontamento registrado.")}><Square size={15} /> Apontar</button>
         {!recipe?.executable && <p className="text-sm text-amber-200 md:col-span-4">Carregue uma ficha executável antes de confirmar a produção.</p>}
+        <textarea className={`${input} md:col-span-4`} rows={3} placeholder="Alocações JSON: [{&quot;item_id&quot;:&quot;...&quot;,&quot;quantity&quot;:&quot;1&quot;,&quot;location_id&quot;:&quot;...&quot;}]" value={inputAllocationsJson} onChange={(e) => setInputAllocationsJson(e.target.value)} />
         <input className={`${input} md:col-span-4`} placeholder="Motivo de perda ou descarte (obrigatorio quando aplicavel)" value={reason} onChange={(e) => setReason(e.target.value)} />
       </div>}
       {message && <p className="mt-3 text-sm font-semibold text-emerald-300">{message}</p>}
@@ -100,8 +100,8 @@ export default function PreparationOperationsPanel({ showKdsLink = true }: { sho
   };
   useEffect(() => { void load(); }, []);
 
-  const activeOrders = useMemo(() => orders.filter((order) => !["completed", "cancelled"].includes(order.state)), [orders]);
-  const knownRecipes = useMemo(() => [...new Map(orders.filter((order) => order.recipe_id).map((order) => [order.recipe_id!, { id: order.recipe_id!, name: order.name }])).values()], [orders]);
+  const activeOrders = useMemo(() => orders.filter((order) => !["completed", "cancelled"].includes(order.status)), [orders]);
+  const knownRecipes = useMemo(() => [...new Map(orders.filter((order) => order.recipe_id).map((order) => [order.recipe_id!, { id: order.recipe_id!, name: order.recipe_id }])).values()], [orders]);
   async function createOrder() {
     setSaving(true); setMessage(""); setError("");
     try { await preparationApi.create({ recipe_id: recipeId, target_quantity: target, scheduled_for: plannedFor ? new Date(plannedFor).toISOString() : null, expected_version: 0 }, key("create", recipeId)); setRecipeId(""); setTarget(""); setPlannedFor(""); setMessage("Ordem de preparo criada."); await load(); } catch (err) { setError(err instanceof Error ? err.message : "Nao foi possivel criar a ordem."); } finally { setSaving(false); }

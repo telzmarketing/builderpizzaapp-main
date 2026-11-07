@@ -55,6 +55,35 @@ class PreparationService:
         q=self._q(PreparationOrder)
         if status:q=q.filter(PreparationOrder.status==status)
         return {"items":[self._out(x) for x in q.order_by(PreparationOrder.created_at.desc()).limit(200).all()]}
+    def get_order(self, oid):
+        """Return the published order projection, constrained to this tenant."""
+        return self._out(self._order(oid))
+    def _weighted_input_cost(self, item_id, lot_id=None):
+        """Return quantity-weighted cost from positive stock entries only.
+
+        The calculation is deliberately tenant-scoped and ignores any cost
+        supplied by the caller.  A lot filter is applied only when the
+        allocation explicitly identifies a lot.
+        """
+        q = self._q(InventoryStockMovement).filter(
+            InventoryStockMovement.item_id == item_id,
+            InventoryStockMovement.quantity_delta > 0,
+            InventoryStockMovement.unit_cost > 0,
+        )
+        if lot_id:
+            q = q.filter(InventoryStockMovement.lot_id == lot_id)
+        rows = q.with_for_update().all()
+        quantity = sum((Decimal(row.quantity_delta) for row in rows), Decimal("0"))
+        total_cost = sum(
+            (Decimal(row.quantity_delta) * Decimal(row.unit_cost) for row in rows),
+            Decimal("0"),
+        )
+        if quantity <= 0 or total_cost <= 0:
+            raise PreparationInvalid(
+                f"Custo positivo insuficiente para o insumo {item_id}"
+                + (f" no lote {lot_id}." if lot_id else ".")
+            )
+        return quantity, total_cost, total_cost / quantity
     def recipe(self, oid):
         order = self._order(oid)
         recipe = self._q(InventoryOperationRecipe).filter_by(id=order.recipe_id, active=True).first()
@@ -90,11 +119,11 @@ class PreparationService:
     def report(self,oid,b,key):
         if not key: raise PreparationInvalid("Idempotency-Key obrigatoria.")
         o=self._order(oid,True)
+        existing = self._q(PreparationExecution).filter_by(order_id=oid,idempotency_key=key).first()
+        if existing: return self._out(o, existing.id)
         if b.expected_version != o.version: raise PreparationConflict("Versao da ordem divergente.")
         if o.status not in {"in_progress","partially_completed"}: raise PreparationConflict("Ordem nao esta em execucao.")
         if b.produced_quantity+b.lost_quantity+b.discarded_quantity <= 0: raise PreparationInvalid("Apontamento vazio.")
-        existing = self._q(PreparationExecution).filter_by(order_id=oid,idempotency_key=key).first()
-        if existing: return self._out(o, existing.id)
         produced=Decimal(o.produced_quantity or 0)+b.produced_quantity; lost=Decimal(o.lost_quantity or 0)+b.lost_quantity; disc=Decimal(o.discarded_quantity or 0)+b.discarded_quantity
         if produced+lost+disc > Decimal(o.target_quantity): raise PreparationConflict("Apontamento supera quantidade alvo.")
         if not b.input_allocations:
@@ -131,6 +160,8 @@ class PreparationService:
             )
             self.db.add(operation); self.db.flush()
             movement_ids = []
+            allocation_breakdown = []
+            total_input_cost = Decimal("0")
             for index, allocation in enumerate(b.input_allocations, 1):
                 item_id = allocation.get("item_id")
                 quantity = Decimal(str(allocation.get("quantity") or 0))
@@ -142,28 +173,48 @@ class PreparationService:
                 available = foundation._available(item_id, location_id, lot_id)
                 if available < quantity:
                     raise PreparationConflict("Saldo insuficiente para a transformacao.")
+                _, _, unit_cost = self._weighted_input_cost(item_id, lot_id)
+                allocation_cost = quantity * unit_cost
+                total_input_cost += allocation_cost
+                allocation_breakdown.append({
+                    "item_id": item_id,
+                    "location_id": location_id,
+                    "lot_id": lot_id,
+                    "quantity": _d(quantity),
+                    "unit_cost": _d(unit_cost),
+                    "total_cost": _d(allocation_cost),
+                })
                 movement = InventoryStockMovement(
                     id=uuid.uuid4().hex, tenant_id=self.tenant_id, item_id=item_id,
                     location_id=location_id, lot_id=lot_id, operation_id=operation.id,
                     operation_sequence=index, logical_line_id=str(index),
                     source_type="preparation", source_id=oid, movement_type="out",
-                    quantity_delta=-quantity, unit_cost=Decimal(str(allocation.get("unit_cost") or 0)),
+                    quantity_delta=-quantity, unit_cost=unit_cost,
                     reason="preparation_consumption", notes=json.dumps({"actor_id": self.actor_id}),
                 )
                 self.db.add(movement); movement_ids.append(movement.id)
             output_qty = Decimal(b.produced_quantity or 0)
+            output_unit_cost = total_input_cost / output_qty if output_qty > 0 else Decimal("0")
+            output_cost_total = output_qty * output_unit_cost
             output_movement = InventoryStockMovement(
                 id=uuid.uuid4().hex, tenant_id=self.tenant_id, item_id=output_item.id,
                 location_id=output_lot.location_id, lot_id=output_lot.id, operation_id=operation.id,
                 operation_sequence=len(movement_ids) + 1, logical_line_id="output",
                 source_type="preparation", source_id=oid, movement_type="in",
-                quantity_delta=output_qty, unit_cost=Decimal("0"), reason="preparation_output",
+                quantity_delta=output_qty, unit_cost=output_unit_cost, reason="preparation_output",
                 notes=json.dumps({"actor_id": self.actor_id, "portion_grams": str(b.portion_grams) if b.portion_grams else None}),
             )
             self.db.add(output_movement); movement_ids.append(output_movement.id)
             now = utcnow()
             operation.status, operation.committed_at = "committed", now
-            operation.result_json = {"movement_ids": movement_ids, "output_lot_id": output_lot.id}
+            operation.result_json = {
+                "movement_ids": movement_ids,
+                "output_lot_id": output_lot.id,
+                "input_cost_total": _d(total_input_cost),
+                "output_cost_total": _d(output_cost_total),
+                "output_unit_cost": _d(output_unit_cost),
+                "allocations": allocation_breakdown,
+            }
             e=PreparationExecution(id=uuid.uuid4().hex,tenant_id=self.tenant_id,order_id=oid,produced_quantity=b.produced_quantity,lost_quantity=b.lost_quantity,discarded_quantity=b.discarded_quantity,output_lot_id=output_lot.id,output_lot_code=output_lot.lot_code,expires_on=output_lot.expires_on,portion_grams=b.portion_grams,prepared_at=b.prepared_at or now,idempotency_key=key,actor_id=self.actor_id,notes=b.notes,operation_id=operation.id)
             self.db.add(e);o.produced_quantity=produced;o.lost_quantity=lost;o.discarded_quantity=disc;o.status="partially_completed";o.version+=1
             self.db.commit();return self._out(o, e.id)

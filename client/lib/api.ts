@@ -8946,31 +8946,39 @@ export const inventoryFoundationApi = {
 // transicao, o consumo e a transformacao em uma unica operacao autorizada.
 export interface PreparationOrder {
   id: string;
-  recipe_id?: string;
-  status?: string;
+  recipe_id: string;
+  target_quantity: string;
+  produced_quantity: string;
+  lost_quantity: string;
+  discarded_quantity: string;
+  status: string;
+  version: number;
+  execution_id: string | null;
+}
+
+export interface PreparationInputAllocation {
+  item_id: string;
+  quantity: string;
+  location_id: string;
+  lot_id?: string | null;
+}
+
+export interface PreparationReportInput {
+  expected_version: number;
   produced_quantity?: string;
+  approved_quantity?: string;
   lost_quantity?: string;
   discarded_quantity?: string;
-  preparation_id?: string | null;
-  name: string;
-  state: "draft" | "approved" | "scheduled" | "in_progress" | "partially_completed" | "completed" | "paused" | "blocked" | "cancelled" | string;
-  version: number;
-  target_quantity: string;
-  produced_total: string;
-  approved_total: string;
-  discarded_total: string;
-  remaining_quantity: string;
-  output_unit_id: string;
-  output_unit_name?: string | null;
-  source_item_id?: string | null;
-  source_item_name?: string | null;
-  planned_for?: string | null;
-  scheduled_for?: string | null;
-  assigned_operator_id?: string | null;
-  assigned_operator_name?: string | null;
-  pending_fields?: string[];
-  created_at?: string | null;
-  updated_at?: string | null;
+  output_lot_id?: string | null;
+  output_location_id?: string | null;
+  output_lot_code?: string | null;
+  expires_on?: string | null;
+  portion_grams?: string | null;
+  input_allocations: PreparationInputAllocation[];
+  losses?: Array<Record<string, unknown>>;
+  reason?: string | null;
+  prepared_at?: string | null;
+  notes?: string | null;
 }
 
 export interface PreparationRecipe {
@@ -9060,22 +9068,20 @@ export interface ProductionPlanSimulation {
   proposed_orders: PreparationOrder[];
 }
 
-export function normalizePreparationOrder(order: PreparationOrder): PreparationOrder {
-  // Published backend names remain valid; this is a presentation adapter only.
-  return { ...order, state: order.state || order.status || "unknown", name: order.name || "Preparo sem identificação", produced_total: order.produced_total ?? order.produced_quantity ?? "Não informado", discarded_total: order.discarded_total ?? order.discarded_quantity ?? "Não informado" };
-}
-
 export const preparationApi = {
   listOrders: async (query = ""): Promise<PreparationOrder[] | { items: PreparationOrder[] }> => {
     const value = await get<PreparationOrder[] | { items: PreparationOrder[] }>(`/preparation/orders${query ? `?${query.replace(/^\?/, "")}` : ""}`);
-    return Array.isArray(value) ? value.map(normalizePreparationOrder) : { ...value, items: value.items.map(normalizePreparationOrder) };
+    return value;
   },
   getOrder: (id: string) => get<PreparationOrder>(`/preparation/orders/${encodeURIComponent(id)}`),
   recipe: (id: string) => get<PreparationRecipe>(`/preparation/orders/${encodeURIComponent(id)}/recipe`),
   start: (id: string, expectedVersion: number, key: string) =>
     request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/start`, { expected_version: expectedVersion }, { "Idempotency-Key": key }),
-  report: (id: string, body: Record<string, unknown>, key: string) =>
-    request<PreparationReportResult>("POST", `/preparation/orders/${encodeURIComponent(id)}/reports`, body, { "Idempotency-Key": key }),
+  report: (id: string, body: PreparationReportInput, key: string) =>
+    request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/reports`, {
+      ...body,
+      input_allocations: body.input_allocations.map(({ item_id, quantity, location_id, lot_id }) => ({ item_id, quantity, location_id, lot_id })),
+    }, { "Idempotency-Key": key }),
   complete: (id: string, expectedVersion: number, key: string) =>
     request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/complete`, { expected_version: expectedVersion }, { "Idempotency-Key": key }),
   command: (id: string, command: "pause" | "resume" | "block", body: { expected_version: number; reason?: string | null }, key: string) =>

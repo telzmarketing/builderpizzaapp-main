@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildApiBases, companyDomainsApi, inventoryFoundationApi, inventoryReceiptApi, kdsApi, manualOrdersApi, normalizePreparationOrder, platformDomainsApi, platformTenantsApi, preparationApi, productRecipesApi, type ManualOrderIn, type PreparationOrder } from "./api";
+import { buildApiBases, companyDomainsApi, inventoryFoundationApi, inventoryReceiptApi, kdsApi, manualOrdersApi, platformDomainsApi, platformTenantsApi, preparationApi, productRecipesApi, type ManualOrderIn, type PreparationInputAllocation, type PreparationOrder } from "./api";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -186,12 +186,11 @@ describe("supplier receipt contracts", () => {
 });
 
 describe("preparation contracts", () => {
-  it("adapts published preparation status names without inventing a remaining balance", () => {
-    const order = normalizePreparationOrder({ id: "prep", recipe_id: "recipe", status: "scheduled", produced_quantity: "40.000000", discarded_quantity: "0.000000", version: 2 } as PreparationOrder);
-    expect(order.state).toBe("scheduled");
-    expect(order.produced_total).toBe("40.000000");
-    expect(order.remaining_quantity).toBeUndefined();
-    expect(order.name).toBe("Preparo sem identificação");
+  it("keeps the published preparation order contract explicit", () => {
+    const order: PreparationOrder = { id: "prep", recipe_id: "recipe", target_quantity: "40.000000", produced_quantity: "40.000000", lost_quantity: "0.000000", discarded_quantity: "0.000000", status: "scheduled", version: 2, execution_id: null };
+    expect(order.status).toBe("scheduled");
+    expect(order.produced_quantity).toBe("40.000000");
+    expect(order).not.toHaveProperty("remaining_quantity");
   });
   beforeEach(() => {
     vi.stubGlobal("localStorage", memoryStorage());
@@ -208,6 +207,42 @@ describe("preparation contracts", () => {
     expect(url).toMatch(/\/api\/preparation\/orders\/prep%2F1\/reports$/);
     expect(new Headers(init.headers).get("Idempotency-Key")).toBe("report-1");
     expect(JSON.parse(String(init.body)).expected_version).toBe(3);
+  });
+
+  it("keeps the published order fields and uses the individual GET contract", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: { id: "prep-1", recipe_id: "recipe-1", target_quantity: "40", produced_quantity: "0", lost_quantity: "0", discarded_quantity: "0", status: "scheduled", version: 2, execution_id: null } }), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const order = await preparationApi.getOrder("prep-1");
+
+    expect(order.status).toBe("scheduled");
+    expect(order.target_quantity).toBe("40");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/api\/preparation\/orders\/prep-1$/);
+  });
+
+  it("sends input allocations required by the preparation report contract", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: { id: "prep-1", recipe_id: "recipe-1", target_quantity: "40", produced_quantity: "10", lost_quantity: "0", discarded_quantity: "0", status: "partially_completed", version: 3, execution_id: "exec-1" } }), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await preparationApi.report("prep-1", { expected_version: 2, produced_quantity: "10", discarded_quantity: "0", input_allocations: [{ item_id: "item-1", quantity: "12", location_id: "loc-1", lot_id: "lot-1" }] }, "report-allocations");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body)).input_allocations).toEqual([{ item_id: "item-1", quantity: "12", location_id: "loc-1", lot_id: "lot-1" }]);
+  });
+
+  it("does not send or trust unit_cost in preparation input allocations", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: { id: "prep-1" } }), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await preparationApi.report("prep-1", {
+      expected_version: 2,
+      input_allocations: [{ item_id: "item-1", quantity: "12", location_id: "loc-1", lot_id: "lot-1", unit_cost: "999" } as PreparationInputAllocation & { unit_cost: string }],
+    }, "report-no-cost");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body)).input_allocations).toEqual([{ item_id: "item-1", quantity: "12", location_id: "loc-1", lot_id: "lot-1" }]);
+    expect(JSON.stringify(JSON.parse(String(init.body)))).not.toContain("unit_cost");
   });
 
   it("creates preparation orders on the published recipe-based endpoint", async () => {

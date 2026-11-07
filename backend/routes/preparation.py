@@ -20,6 +20,8 @@ def create_recipe(body:RecipeIn,db:Session=Depends(get_db),actor:AuthorizedTenan
 def create_order(body:PreparationOrderIn,db:Session=Depends(get_db),actor:AuthorizedTenantActor=Depends(manage),key:str=Header(alias="Idempotency-Key",min_length=1,max_length=200)):return call(svc(db,actor).create_order,body,key)
 @router.get("/orders")
 def list_orders(status:str|None=Query(None),db:Session=Depends(get_db),actor:AuthorizedTenantActor=Depends(view)):return call(svc(db,actor).list_orders,status)
+@router.get("/orders/{order_id}",response_model=PreparationOrderOut)
+def get_order(order_id:str,db:Session=Depends(get_db),actor:AuthorizedTenantActor=Depends(view)):return call(svc(db,actor).get_order,order_id)
 @router.get("/orders/{order_id}/recipe")
 def recipe(order_id:str,db:Session=Depends(get_db),actor:AuthorizedTenantActor=Depends(view)):return call(svc(db,actor).recipe,order_id)
 @router.post("/orders/{order_id}/reports",response_model=PreparationOrderOut)
