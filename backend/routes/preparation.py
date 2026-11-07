@@ -16,6 +16,8 @@ def svc(db,a):return PreparationService(db,a.tenant_id,a.user_id)
 
 @router.post("/recipes",status_code=201,response_model=RecipeOut)
 def create_recipe(body:RecipeIn,db:Session=Depends(get_db),actor:AuthorizedTenantActor=Depends(manage)):return call(svc(db,actor).create_recipe,body)
+@router.get("/recipes",response_model=list[RecipeOut])
+def list_recipes(active:bool|None=Query(True),db:Session=Depends(get_db),actor:AuthorizedTenantActor=Depends(view)):return call(svc(db,actor).list_recipes,active)
 @router.post("/orders",status_code=201,response_model=PreparationOrderOut)
 def create_order(body:PreparationOrderIn,db:Session=Depends(get_db),actor:AuthorizedTenantActor=Depends(manage),key:str=Header(alias="Idempotency-Key",min_length=1,max_length=200)):return call(svc(db,actor).create_order,body,key)
 @router.get("/orders")

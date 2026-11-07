@@ -2409,6 +2409,21 @@ export interface InventoryPortionBalance {
   active: boolean;
 }
 
+export interface InventoryPortionReplenishment {
+  config_id: string;
+  output_item_id: string;
+  output_item_name: string;
+  source_item_name?: string | null;
+  unit_symbol?: string | null;
+  available_stock: number;
+  in_preparation: number;
+  min_stock: number;
+  target_stock: number;
+  suggested_portions: number;
+  estimated_source_quantity: number;
+  status: "ok" | "alert";
+}
+
 export interface CmvIngredientCost {
   inventory_item_id: string;
   inventory_item_name?: string | null;
@@ -6122,6 +6137,7 @@ export const inventoryApi = {
   portionConfigs: (active?: boolean) =>
     get<InventoryPortionConfig[]>(`/gestao/inventory/v1/portion-configs${active === undefined ? "" : `?active=${active}`}`),
   portionBalances: () => get<InventoryPortionBalance[]>("/gestao/inventory/v1/portion-configs/balances"),
+  portionReplenishmentAlerts: () => get<InventoryPortionReplenishment[]>("/gestao/inventory/v1/portion-configs/replenishment-alerts"),
   createPortionConfig: (data: Omit<InventoryPortionConfig, "id" | "tenant_id" | "source_item_name" | "output_item_id" | "output_item_name" | "output_item_sku" | "unit_symbol" | "version" | "created_at" | "updated_at">, key: string) =>
     request<InventoryPortionConfig>("POST", "/gestao/inventory/v1/portion-configs", data, { "Idempotency-Key": key }),
   updatePortionConfig: (id: string, data: Omit<InventoryPortionConfig, "id" | "tenant_id" | "source_item_name" | "output_item_id" | "output_item_name" | "output_item_sku" | "unit_symbol" | "version" | "created_at" | "updated_at">, key: string) =>
@@ -9007,8 +9023,20 @@ export interface PreparationOrder {
   execution_id: string | null;
 }
 
+export interface PreparationRecipeDefinition {
+  id: string;
+  name: string;
+  output_item_id: string;
+  output_unit_id: string;
+  yield_quantity: string;
+  version_number: number;
+  active: boolean;
+}
+
 export interface PreparationInputAllocation {
   item_id: string;
+  /** The operational recipe unit is required for a structured preparation report. */
+  unit_id?: string;
   quantity: string;
   location_id: string;
   lot_id?: string | null;
@@ -9120,6 +9148,7 @@ export interface ProductionPlanSimulation {
 }
 
 export const preparationApi = {
+  listRecipes: (active = true) => get<PreparationRecipeDefinition[]>(`/preparation/recipes?active=${active}`),
   listOrders: async (query = ""): Promise<PreparationOrder[] | { items: PreparationOrder[] }> => {
     const value = await get<PreparationOrder[] | { items: PreparationOrder[] }>(`/preparation/orders${query ? `?${query.replace(/^\?/, "")}` : ""}`);
     return value;
@@ -9131,7 +9160,7 @@ export const preparationApi = {
   report: (id: string, body: PreparationReportInput, key: string) =>
     request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/reports`, {
       ...body,
-      input_allocations: body.input_allocations.map(({ item_id, quantity, location_id, lot_id }) => ({ item_id, quantity, location_id, lot_id })),
+      input_allocations: body.input_allocations.map(({ item_id, unit_id, quantity, location_id, lot_id }) => ({ item_id, unit_id, quantity, location_id, lot_id })),
     }, { "Idempotency-Key": key }),
   complete: (id: string, expectedVersion: number, key: string) =>
     request<PreparationOrder>("POST", `/preparation/orders/${encodeURIComponent(id)}/complete`, { expected_version: expectedVersion }, { "Idempotency-Key": key }),

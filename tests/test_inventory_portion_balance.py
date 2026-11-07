@@ -53,7 +53,7 @@ def test_portion_balance_uses_ledger_valid_reservations_and_open_preparation_wit
         config = SimpleNamespace(
             id="config-a", output_item_id="portion-a", output_item=SimpleNamespace(name="Mussarela 150 g"),
             source_item=SimpleNamespace(name="Mussarela"), unit=SimpleNamespace(symbol="g"),
-            min_stock=Decimal("3"), target_stock=Decimal("10"), active=True,
+            portion_weight=Decimal("1"), yield_percent=Decimal("100"), min_stock=Decimal("3"), target_stock=Decimal("10"), active=True,
         )
         service = InventoryPortionConfigService(db, "tenant-a", "actor")
         monkeypatch.setattr(service, "list", lambda active=None: [config])
@@ -67,6 +67,10 @@ def test_portion_balance_uses_ledger_valid_reservations_and_open_preparation_wit
             "in_preparation": Decimal("3.000000"), "min_stock": Decimal("3"),
             "target_stock": Decimal("10"), "active": True,
         }]
+
+        alerts = service.replenishment_alerts()
+        assert alerts[0]["status"] == "ok"
+        assert alerts[0]["suggested_portions"] == Decimal("0")
     finally:
         db.close()
         engine.dispose()

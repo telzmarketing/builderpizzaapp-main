@@ -114,6 +114,35 @@ class InventoryPortionConfigService:
             "active": row.active,
         } for row in configs]
 
+    def replenishment_alerts(self) -> list[dict]:
+        balances = {row["config_id"]: row for row in self.balances()}
+        alerts = []
+        for row in self.list(active=True):
+            balance = balances[row.id]
+            available = Decimal(str(balance["available_stock"] or 0))
+            in_preparation = Decimal(str(balance["in_preparation"] or 0))
+            minimum = Decimal(str(row.min_stock or 0))
+            target = Decimal(str(row.target_stock or 0))
+            suggested = max(Decimal("0"), target - available - in_preparation)
+            # The configured portion weight is expressed in the source unit.
+            # Yield is a percentage of usable source material after technical loss.
+            source_quantity = (suggested * Decimal(str(row.portion_weight)) * Decimal("100") / Decimal(str(row.yield_percent))).quantize(Decimal("0.000001"))
+            alerts.append({
+                "config_id": row.id,
+                "output_item_id": row.output_item_id,
+                "output_item_name": row.output_item.name if row.output_item else "",
+                "source_item_name": row.source_item.name if row.source_item else None,
+                "unit_symbol": row.unit.symbol if row.unit else None,
+                "available_stock": available,
+                "in_preparation": in_preparation,
+                "min_stock": minimum,
+                "target_stock": target,
+                "suggested_portions": suggested,
+                "estimated_source_quantity": source_quantity,
+                "status": "alert" if available + in_preparation <= minimum and suggested > 0 else "ok",
+            })
+        return alerts
+
     def get(self, config_id: str) -> InventoryPortionConfig:
         row = self._get(config_id)
         return row

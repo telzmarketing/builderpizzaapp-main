@@ -5,7 +5,7 @@ from backend.core.exceptions import DomainError
 from backend.core.rbac_authorization import AuthorizedTenantActor, require_rbac_permission
 from backend.core.response import err
 from backend.database import get_db
-from backend.schemas.inventory_portion import InventoryPortionBalanceOut, InventoryPortionConfigIn, InventoryPortionConfigOut
+from backend.schemas.inventory_portion import InventoryPortionBalanceOut, InventoryPortionConfigIn, InventoryPortionConfigOut, InventoryPortionReplenishmentOut
 from backend.services.inventory_portion_service import InventoryPortionConfigService
 
 router = APIRouter(prefix="/gestao/inventory/v1/portion-configs", tags=["inventory-portioning"])
@@ -30,6 +30,11 @@ def list_configs(active: bool | None = Query(default=None), db: Session = Depend
 @router.get("/balances", response_model=list[InventoryPortionBalanceOut])
 def list_balances(db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "view"))):
     return service(db, actor).balances()
+
+
+@router.get("/replenishment-alerts", response_model=list[InventoryPortionReplenishmentOut])
+def replenishment_alerts(db: Session = Depends(get_db), actor: AuthorizedTenantActor = Depends(require_rbac_permission("inventory", "view"))):
+    return service(db, actor).replenishment_alerts()
 
 
 @router.get("/{config_id}", response_model=InventoryPortionConfigOut)

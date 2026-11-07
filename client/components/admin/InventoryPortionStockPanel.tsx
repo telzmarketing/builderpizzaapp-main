@@ -1,18 +1,18 @@
 import { useEffect, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
-import { inventoryApi, type InventoryPortionBalance } from "@/lib/api";
+import { inventoryApi, type InventoryPortionBalance, type InventoryPortionReplenishment } from "@/lib/api";
 
 export default function InventoryPortionStockPanel() {
   const [rows, setRows] = useState<InventoryPortionBalance[]>([]);
+  const [alerts, setAlerts] = useState<InventoryPortionReplenishment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const load = () => {
     setLoading(true);
     setError("");
-    inventoryApi
-      .portionBalances()
-      .then(setRows)
+    Promise.all([inventoryApi.portionBalances(), inventoryApi.portionReplenishmentAlerts()])
+      .then(([balances, replenishment]) => { setRows(balances); setAlerts(replenishment.filter((row) => row.status === "alert")); })
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar estoque porcionado."))
       .finally(() => setLoading(false));
   };
@@ -32,6 +32,8 @@ export default function InventoryPortionStockPanel() {
           <RefreshCw size={15} /> Atualizar
         </button>
       </div>
+
+      {alerts.length > 0 && <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4"><h3 className="font-black text-amber-100">Alertas de reposição</h3>{alerts.map((row) => <p key={row.config_id} className="text-sm text-amber-100">{row.output_item_name}: disponível {row.available_stock}, em preparo {row.in_preparation}; sugeridas {row.suggested_portions} porções — matéria-prima estimada {row.estimated_source_quantity} {row.unit_symbol || "unid."}.</p>)}</div>}
 
       {loading ? (
         <div className="flex min-h-40 items-center justify-center text-stone"><Loader2 size={18} className="mr-2 animate-spin" />Carregando saldos...</div>

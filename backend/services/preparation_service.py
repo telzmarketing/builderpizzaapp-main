@@ -30,6 +30,16 @@ class PreparationService:
             latest = self._q(PreparationExecution).filter_by(order_id=o.id).order_by(PreparationExecution.created_at.desc()).first()
             execution_id = latest.id if latest else None
         return {"id":o.id,"recipe_id":o.recipe_id,"target_quantity":_d(o.target_quantity),"produced_quantity":_d(o.produced_quantity),"lost_quantity":_d(o.lost_quantity),"discarded_quantity":_d(o.discarded_quantity),"status":o.status,"version":o.version,"execution_id":execution_id}
+    def _recipe_out(self, recipe):
+        return {
+            "id": recipe.id,
+            "name": recipe.name,
+            "output_item_id": recipe.output_item_id,
+            "output_unit_id": recipe.output_unit_id,
+            "yield_quantity": _d(recipe.yield_quantity),
+            "version_number": recipe.version_number,
+            "active": recipe.active,
+        }
     def create_recipe(self,b):
         if b.expected_version != 0: raise PreparationConflict("Criacao exige expected_version zero.")
         if not self._q(InventoryOperationRecipe).filter_by(name=b.name,version_number=1).first():
@@ -38,8 +48,19 @@ class PreparationService:
             for i in b.items:self.db.add(InventoryOperationRecipeItem(id=uuid.uuid4().hex,tenant_id=self.tenant_id,recipe_id=r.id,item_id=i.item_id,unit_id=i.unit_id,quantity=i.quantity,position=i.position))
             try:self.db.commit()
             except IntegrityError as e:self.db.rollback();raise PreparationConflict("Receita concorrente ou referencia invalida.") from e
-            return {"id":r.id,"name":r.name,"output_item_id":r.output_item_id,"output_unit_id":r.output_unit_id,"yield_quantity":_d(r.yield_quantity),"version_number":r.version_number,"active":r.active}
+            return self._recipe_out(r)
         raise PreparationConflict("Receita operacional ja existe.")
+    def list_recipes(self, active=True):
+        """List operational recipes available to this tenant's preparation plan."""
+        query = self._q(InventoryOperationRecipe)
+        if active is not None:
+            query = query.filter(InventoryOperationRecipe.active.is_(active))
+        recipes = query.order_by(
+            InventoryOperationRecipe.name.asc(),
+            InventoryOperationRecipe.version_number.desc(),
+            InventoryOperationRecipe.id.asc(),
+        ).all()
+        return [self._recipe_out(recipe) for recipe in recipes]
     def create_order(self,b,key):
         if not key: raise PreparationInvalid("Idempotency-Key obrigatoria.")
         recipe=self._q(InventoryOperationRecipe).filter_by(id=b.recipe_id,active=True).first()

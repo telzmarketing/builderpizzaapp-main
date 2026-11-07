@@ -57,3 +57,18 @@ class InventoryPortionBalanceOut(BaseModel):
     min_stock: Decimal
     target_stock: Decimal
     active: bool
+
+
+class InventoryPortionReplenishmentOut(BaseModel):
+    config_id: str
+    output_item_id: str
+    output_item_name: str
+    source_item_name: str | None = None
+    unit_symbol: str | None = None
+    available_stock: Decimal
+    in_preparation: Decimal
+    min_stock: Decimal
+    target_stock: Decimal
+    suggested_portions: Decimal
+    estimated_source_quantity: Decimal
+    status: Literal["ok", "alert"]
