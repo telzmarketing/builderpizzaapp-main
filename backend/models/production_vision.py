@@ -98,6 +98,7 @@ class ProductionVisionZone(Base):
     __tablename__ = "production_vision_zones"
     __table_args__ = (
         Index("uq_production_vision_zones_tenant_identifier", "tenant_id", "identifier", unique=True),
+        Index("uq_production_vision_zones_tenant_id", "tenant_id", "id", unique=True),
         Index("ix_production_vision_zones_tenant_station", "tenant_id", "station_id"),
         CheckConstraint("status IN ('active','inactive')", name="ck_production_vision_zone_status"),
     )
