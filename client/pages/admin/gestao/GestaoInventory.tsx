@@ -7,6 +7,7 @@ import InventoryUnitClassificationPanel from "@/components/admin/InventoryUnitCl
 import InventoryReceiptDocumentsPanel from "@/components/admin/InventoryReceiptDocumentsPanel";
 import PreparationOperationsPanel from "@/components/admin/PreparationOperationsPanel";
 import InventoryPortioningPanel from "@/components/admin/InventoryPortioningPanel";
+import InventoryPortionStockPanel from "@/components/admin/InventoryPortionStockPanel";
 import {
   inventoryApi,
   type InventoryCategory,
@@ -20,11 +21,12 @@ import {
   type InventoryUnit,
 } from "@/lib/api";
 
-type Section = "settings" | "items" | "portioning" | "base" | "suppliers" | "purchases" | "replenishment" | "entries" | "foundation" | "preparation";
+type Section = "settings" | "items" | "portioning" | "portion-stock" | "base" | "suppliers" | "purchases" | "replenishment" | "entries" | "foundation" | "preparation";
 
 const sections: AdminPageTab<Section>[] = [
   { id: "items", label: "Insumos", icon: Package },
   { id: "portioning", label: "Porcionamento", icon: Package },
+  { id: "portion-stock", label: "Estoque porcionado", icon: Database },
   { id: "base", label: "Base", icon: Layers3 },
   { id: "suppliers", label: "Fornecedores", icon: Truck },
   { id: "purchases", label: "Compras", icon: ShoppingCart },
@@ -64,7 +66,7 @@ export default function GestaoInventory() {
       showSettings={section === "settings"}
       moduleTabs={<AdminPageTabs<Section> tabs={sections} active={section} onChange={setSection} />}
     >
-      {section === "foundation" ? <InventoryFoundationPanel /> : section === "preparation" ? <PreparationOperationsPanel /> : section === "portioning" ? <InventoryPortioningPanel /> : section !== "settings" && <InventoryBase section={section} />}
+      {section === "foundation" ? <InventoryFoundationPanel /> : section === "preparation" ? <PreparationOperationsPanel /> : section === "portioning" ? <InventoryPortioningPanel /> : section === "portion-stock" ? <InventoryPortionStockPanel /> : section !== "settings" && <InventoryBase section={section} />}
     </AdminGestao>
   );
 }

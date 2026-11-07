@@ -42,3 +42,18 @@ class InventoryPortionConfigOut(InventoryPortionConfigIn):
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class InventoryPortionBalanceOut(BaseModel):
+    config_id: str
+    output_item_id: str
+    output_item_name: str
+    source_item_name: str | None = None
+    unit_symbol: str | None = None
+    physical_stock: Decimal
+    reserved_stock: Decimal
+    available_stock: Decimal
+    in_preparation: Decimal
+    min_stock: Decimal
+    target_stock: Decimal
+    active: bool

@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.exceptions import DomainError
 from backend.models.inventory import InventoryItem, InventoryUnit
+from backend.models.inventory import InventoryStockMovement
+from backend.models.inventory_foundation import InventoryReservation
+from backend.models.preparation import InventoryOperationRecipe, PreparationOrder
 from backend.models.inventory_portion import InventoryPortionConfig
 from backend.schemas.inventory_portion import InventoryPortionConfigIn
 from backend.services.idempotency_service import IdempotencyService
@@ -54,6 +59,60 @@ class InventoryPortionConfigService:
         if active is not None:
             query = query.filter(InventoryPortionConfig.active.is_(active))
         return query.order_by(InventoryPortionConfig.created_at, InventoryPortionConfig.id).all()
+
+    def balances(self) -> list[dict]:
+        configs = self.list(active=True)
+        if not configs:
+            return []
+        output_ids = [row.output_item_id for row in configs]
+        physical_rows = self.db.query(
+            InventoryStockMovement.item_id,
+            func.coalesce(func.sum(InventoryStockMovement.quantity_delta), 0),
+        ).filter(
+            InventoryStockMovement.tenant_id == self.tenant_id,
+            InventoryStockMovement.item_id.in_(output_ids),
+        ).group_by(InventoryStockMovement.item_id).all()
+        reserved_rows = self.db.query(
+            InventoryReservation.item_id,
+            func.coalesce(func.sum(InventoryReservation.quantity), 0),
+        ).filter(
+            InventoryReservation.tenant_id == self.tenant_id,
+            InventoryReservation.item_id.in_(output_ids),
+            InventoryReservation.status == "active",
+            or_(
+                InventoryReservation.expires_at.is_(None),
+                InventoryReservation.expires_at > datetime.now(timezone.utc),
+            ),
+        ).group_by(InventoryReservation.item_id).all()
+        preparing_rows = self.db.query(
+            InventoryOperationRecipe.output_item_id,
+            func.coalesce(func.sum(PreparationOrder.target_quantity - PreparationOrder.produced_quantity - PreparationOrder.lost_quantity - PreparationOrder.discarded_quantity), 0),
+        ).join(
+            PreparationOrder,
+            PreparationOrder.recipe_id == InventoryOperationRecipe.id,
+        ).filter(
+            InventoryOperationRecipe.tenant_id == self.tenant_id,
+            PreparationOrder.tenant_id == self.tenant_id,
+            InventoryOperationRecipe.output_item_id.in_(output_ids),
+            PreparationOrder.status.in_(("approved", "scheduled", "waiting", "in_progress", "paused", "partially_completed")),
+        ).group_by(InventoryOperationRecipe.output_item_id).all()
+        physical = {item_id: value for item_id, value in physical_rows}
+        reserved = {item_id: value for item_id, value in reserved_rows}
+        preparing = {item_id: value for item_id, value in preparing_rows}
+        return [{
+            "config_id": row.id,
+            "output_item_id": row.output_item_id,
+            "output_item_name": row.output_item.name if row.output_item else "",
+            "source_item_name": row.source_item.name if row.source_item else None,
+            "unit_symbol": row.unit.symbol if row.unit else None,
+            "physical_stock": physical.get(row.output_item_id, 0),
+            "reserved_stock": reserved.get(row.output_item_id, 0),
+            "available_stock": max(0, physical.get(row.output_item_id, 0) - reserved.get(row.output_item_id, 0)),
+            "in_preparation": max(0, preparing.get(row.output_item_id, 0)),
+            "min_stock": row.min_stock,
+            "target_stock": row.target_stock,
+            "active": row.active,
+        } for row in configs]
 
     def get(self, config_id: str) -> InventoryPortionConfig:
         row = self._get(config_id)

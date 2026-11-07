@@ -2394,6 +2394,21 @@ export interface InventoryPortionConfig {
   updated_at?: string | null;
 }
 
+export interface InventoryPortionBalance {
+  config_id: string;
+  output_item_id: string;
+  output_item_name: string;
+  source_item_name?: string | null;
+  unit_symbol?: string | null;
+  physical_stock: number;
+  reserved_stock: number;
+  available_stock: number;
+  in_preparation: number;
+  min_stock: number;
+  target_stock: number;
+  active: boolean;
+}
+
 export interface CmvIngredientCost {
   inventory_item_id: string;
   inventory_item_name?: string | null;
@@ -6106,6 +6121,7 @@ export const inventoryApi = {
     del<void>(`/gestao/inventory/products/${productId}/recipes/${recipeId}`),
   portionConfigs: (active?: boolean) =>
     get<InventoryPortionConfig[]>(`/gestao/inventory/v1/portion-configs${active === undefined ? "" : `?active=${active}`}`),
+  portionBalances: () => get<InventoryPortionBalance[]>("/gestao/inventory/v1/portion-configs/balances"),
   createPortionConfig: (data: Omit<InventoryPortionConfig, "id" | "tenant_id" | "source_item_name" | "output_item_id" | "output_item_name" | "output_item_sku" | "unit_symbol" | "version" | "created_at" | "updated_at">, key: string) =>
     request<InventoryPortionConfig>("POST", "/gestao/inventory/v1/portion-configs", data, { "Idempotency-Key": key }),
   updatePortionConfig: (id: string, data: Omit<InventoryPortionConfig, "id" | "tenant_id" | "source_item_name" | "output_item_id" | "output_item_name" | "output_item_sku" | "unit_symbol" | "version" | "created_at" | "updated_at">, key: string) =>
