@@ -85,6 +85,12 @@ class _Idempotency:
         return None
 
 
+class _UpdateIdempotency(_Idempotency):
+    def claim(self, key, operation, payload):
+        assert operation == "inventory.portion_config.update"
+        return _Claim()
+
+
 def _body(**overrides):
     values = {
         "source_item_id": "raw-1",
@@ -138,3 +144,16 @@ def test_finished_good_cannot_be_used_as_raw_source(monkeypatch):
 
     with pytest.raises(PortionConfigInvalid, match="produto porcionado"):
         InventoryPortionConfigService(db, "tenant-a", "admin-a").create(_body(source_item_id="prepared-1"), "portion-create-2")
+
+
+def test_existing_portion_config_cannot_change_physical_unit(monkeypatch):
+    row = SimpleNamespace(id="portion-1", source_item_id="raw-1", unit_id="unit-g", version=1)
+    service = InventoryPortionConfigService(object(), "tenant-a", "admin-a")
+    monkeypatch.setattr(service, "_get", lambda _config_id: row)
+    monkeypatch.setattr(portion_module, "IdempotencyService", _UpdateIdempotency)
+
+    with pytest.raises(PortionConfigInvalid, match="unidade.*nao pode ser trocada"):
+        service.update("portion-1", _body(unit_id="unit-kg"), "portion-update-1")
+
+    assert row.unit_id == "unit-g"
+    assert row.version == 1
