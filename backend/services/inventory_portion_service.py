@@ -243,6 +243,8 @@ class InventoryPortionConfigService:
             row = self._get(config_id)
             if body.source_item_id != row.source_item_id:
                 raise PortionConfigInvalid("A materia-prima da configuracao nao pode ser trocada; crie uma nova configuracao.")
+            if body.unit_id != row.unit_id:
+                raise PortionConfigInvalid("A unidade de uma configuracao existente nao pode ser trocada; desative-a e crie uma nova configuracao para preservar o historico fisico.")
             self._unit(body.unit_id)
             self._ensure_not_duplicate(body, exclude_id=row.id)
             for field, value in payload.items():

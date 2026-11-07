@@ -7,6 +7,8 @@ an immutable explanation of how that item was selected at publication time.
 
 from decimal import Decimal, ROUND_HALF_UP, localcontext
 
+from sqlalchemy import func, or_
+
 from backend.models.inventory import InventoryItem, InventoryUnit
 from backend.models.inventory_portion import InventoryPortionConfig
 from backend.services.inventory_foundation_service import (
@@ -22,7 +24,7 @@ class RecipeSupplyResolver:
         self.db = db
         self.tenant_id = tenant_id
 
-    def resolve_line(self, values: dict) -> dict:
+    def resolve_line(self, values: dict, *, recipe_size_label: str | None = None) -> dict:
         data = dict(values)
         mode = data.get("supply_mode") or ("portion" if data.get("portion_config_id") else "direct")
         if mode not in {"direct", "portion"}:
@@ -85,12 +87,22 @@ class RecipeSupplyResolver:
             )
             if generated_portion is not None:
                 raise FoundationInvalid("Produto porcionado deve ser selecionado pela configuracao de porcao.")
-            mandatory_portion = self.db.query(InventoryPortionConfig.id).filter(
+            mandatory_query = self.db.query(InventoryPortionConfig.id).filter(
                 InventoryPortionConfig.tenant_id == self.tenant_id,
                 InventoryPortionConfig.source_item_id == item.id,
                 InventoryPortionConfig.usage == "mandatory",
                 InventoryPortionConfig.active.is_(True),
-            ).first()
+            )
+            if recipe_size_label:
+                mandatory_query = mandatory_query.filter(
+                    or_(
+                        InventoryPortionConfig.size.is_(None),
+                        func.lower(func.trim(InventoryPortionConfig.size)) == func.lower(func.trim(recipe_size_label)),
+                    )
+                )
+            else:
+                mandatory_query = mandatory_query.filter(InventoryPortionConfig.size.is_(None))
+            mandatory_portion = mandatory_query.first()
             if mandatory_portion is not None:
                 raise FoundationInvalid("Este insumo exige uma configuracao de porcao ativa na ficha tecnica.")
             data.update(supply_mode="direct", portion_config_id=None, portion_config_version=None)
@@ -133,5 +145,5 @@ class RecipeSupplyResolver:
         return data
 
 
-def resolve_recipe_line(db, tenant_id: str, values: dict) -> dict:
-    return RecipeSupplyResolver(db, tenant_id).resolve_line(values)
+def resolve_recipe_line(db, tenant_id: str, values: dict, *, recipe_size_label: str | None = None) -> dict:
+    return RecipeSupplyResolver(db, tenant_id).resolve_line(values, recipe_size_label=recipe_size_label)

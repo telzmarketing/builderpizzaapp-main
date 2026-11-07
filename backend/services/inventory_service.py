@@ -865,7 +865,10 @@ class InventoryService:
             data["reference_image_url"] = RecipeImageService(self._db, self._tenant_id, self._actor_id).validate_reference(data["reference_image_url"])
         self._ensure_product(product_id)
         if data.get("product_size_id"):
-            self._ensure_product_child(ProductSize, data["product_size_id"], product_id, "Tamanho")
+            selected_size = self._ensure_product_child(ProductSize, data["product_size_id"], product_id, "Tamanho")
+            selected_size_label = selected_size.label
+        else:
+            selected_size_label = None
         if data.get("product_crust_type_id"):
             self._ensure_product_child(ProductCrustType, data["product_crust_type_id"], product_id, "Massa/borda")
         if data.get("product_drink_variant_id"):
@@ -874,7 +877,12 @@ class InventoryService:
             raise InventoryInvalidReference("Informe o nome do complemento interno.")
         for index, item in enumerate(items):
             try:
-                items[index] = resolve_recipe_line(self._db, self._tenant_id, item)
+                items[index] = resolve_recipe_line(
+                    self._db,
+                    self._tenant_id,
+                    item,
+                    recipe_size_label=selected_size_label,
+                )
             except FoundationConflict:
                 raise
             except FoundationInvalid as exc:
