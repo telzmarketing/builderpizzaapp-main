@@ -125,6 +125,14 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
       notes: form.notes.trim() || null, instructions: form.instructions.trim() || null, preparation_steps: form.preparation_steps.map((step) => step.trim()),
       reference_image_url: form.reference_image_url || null,
       items: form.items.map((row, position) => ({ inventory_item_id: row.inventory_item_id,
+        // Preserve the selected supply source in the published contract. The
+        // server resolver is authoritative, but must receive the user's
+        // explicit portion selection and its optimistic version.
+        supply_mode: row.supply_mode,
+        portion_config_id: row.supply_mode === "portion" ? row.portion_config_id : null,
+        portion_config_version: row.supply_mode === "portion"
+          ? (portionConfigs.find((config) => config.id === row.portion_config_id)?.version ?? null)
+          : null,
         // The backend derives base quantity/unit from these explicit entered values.
         unit_id: ingredients.find((item) => item.id === row.inventory_item_id)?.unit_id ?? null,
         entered_quantity: decimal(row.entered_quantity), entered_unit_id: row.entered_unit_id,
