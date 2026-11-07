@@ -23,6 +23,7 @@ import {
 } from "@/lib/api";
 
 type Section = "settings" | "items" | "ingredient-stock" | "portioning" | "portion-stock" | "replenishment" | "foundation" | "purchases" | "entries" | "suppliers" | "preparation" | "base";
+type InventoryGroup = "cadastro" | "controle" | "abastecimento" | "operacao";
 
 const inventoryRouteBase = "/painel/gestao/estoque";
 const sectionSlugs: Record<Section, string> = {
@@ -39,6 +40,24 @@ const sectionSlugs: Record<Section, string> = {
   base: "base",
   settings: "configuracoes",
 };
+
+const inventoryGroups: AdminPageTab<InventoryGroup>[] = [
+  { id: "cadastro", label: "Cadastro e Porcionamento", icon: Package },
+  { id: "controle", label: "Controle de Estoque", icon: Database },
+  { id: "abastecimento", label: "Abastecimento", icon: ShoppingCart },
+  { id: "operacao", label: "Produção e Configuração", icon: Settings },
+];
+
+const groupSections: Record<InventoryGroup, Section[]> = {
+  cadastro: ["items", "ingredient-stock", "portioning"],
+  controle: ["portion-stock", "replenishment", "foundation"],
+  abastecimento: ["purchases", "entries", "suppliers"],
+  operacao: ["preparation", "base", "settings"],
+};
+
+const sectionGroup = (section: Section): InventoryGroup => (
+  (Object.entries(groupSections).find(([, sections]) => sections.includes(section))?.[0] as InventoryGroup | undefined) ?? "cadastro"
+);
 
 function sectionFromPath(pathname: string): Section | null {
   const slug = pathname.replace(`${inventoryRouteBase}/`, "").replace(/\/$/, "");
@@ -86,18 +105,25 @@ export default function GestaoInventory() {
   const location = useLocation();
   const navigate = useNavigate();
   const section = sectionFromPath(location.pathname) ?? "items";
+  const activeGroup = sectionGroup(section);
 
   useEffect(() => {
     if (!sectionFromPath(location.pathname)) navigate(`${inventoryRouteBase}/${sectionSlugs.items}`, { replace: true });
   }, [location.pathname, navigate]);
 
   const changeSection = (next: Section) => navigate(`${inventoryRouteBase}/${sectionSlugs[next]}`);
+  const changeGroup = (next: InventoryGroup) => navigate(`${inventoryRouteBase}/${sectionSlugs[groupSections[next][0]]}`);
 
   return (
     <AdminGestao
       moduleKey="inventory"
       showSettings={section === "settings"}
-      moduleTabs={<AdminPageTabs<Section> tabs={sections} active={section} onChange={changeSection} />}
+      moduleTabs={(
+        <div className="space-y-2">
+          <AdminPageTabs<InventoryGroup> tabs={inventoryGroups} active={activeGroup} onChange={changeGroup} />
+          <AdminPageTabs<Section> tabs={sections.filter((tab) => groupSections[activeGroup].includes(tab.id))} active={section} onChange={changeSection} />
+        </div>
+      )}
     >
       {section === "foundation" ? <InventoryFoundationPanel /> : section === "preparation" ? <PreparationOperationsPanel /> : section === "portioning" ? <InventoryPortioningPanel /> : section === "portion-stock" ? <InventoryPortionStockPanel /> : section !== "settings" && <InventoryBase section={section} />}
     </AdminGestao>
