@@ -64,6 +64,8 @@ class InventoryPortionBalanceOut(BaseModel):
     min_stock: Decimal
     target_stock: Decimal
     active: bool
+    unit_cost: Decimal
+    next_expiry: datetime | None = None
 
 
 class InventoryPortionReplenishmentOut(BaseModel):

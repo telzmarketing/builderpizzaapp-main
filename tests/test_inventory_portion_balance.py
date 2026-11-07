@@ -65,7 +65,7 @@ def test_portion_balance_uses_ledger_valid_reservations_and_open_preparation_wit
             "source_item_name": "Mussarela", "unit_symbol": "g", "physical_stock": Decimal("10.000000"),
             "reserved_stock": Decimal("2.000000"), "available_stock": Decimal("8.000000"),
             "in_preparation": Decimal("3.000000"), "min_stock": Decimal("3"),
-            "target_stock": Decimal("10"), "active": True,
+            "target_stock": Decimal("10"), "active": True, "unit_cost": Decimal("0"), "next_expiry": None,
         }]
 
         alerts = service.replenishment_alerts()

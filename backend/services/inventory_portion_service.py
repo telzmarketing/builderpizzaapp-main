@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 from backend.core.exceptions import DomainError
 from backend.models.inventory import InventoryItem, InventoryUnit
 from backend.models.inventory import InventoryStockMovement
-from backend.models.inventory_foundation import InventoryReservation
+from backend.models.inventory_foundation import InventoryReservation, InventoryLot
 from backend.models.preparation import InventoryOperationRecipe, PreparationOrder
 from backend.models.inventory_portion import InventoryPortionConfig
 from backend.schemas.inventory_portion import InventoryPortionConfigIn
@@ -97,6 +97,23 @@ class InventoryPortionConfigService:
             PreparationOrder.status.in_(("approved", "scheduled", "waiting", "in_progress", "paused", "partially_completed")),
         ).group_by(InventoryOperationRecipe.output_item_id).all()
         physical = {item_id: value for item_id, value in physical_rows}
+        cost_rows = self.db.query(
+            InventoryStockMovement.item_id,
+            func.coalesce(func.sum(InventoryStockMovement.quantity_delta * InventoryStockMovement.unit_cost), 0),
+        ).filter(
+            InventoryStockMovement.tenant_id == self.tenant_id,
+            InventoryStockMovement.item_id.in_(output_ids),
+            InventoryStockMovement.quantity_delta > 0,
+            InventoryStockMovement.unit_cost > 0,
+        ).group_by(InventoryStockMovement.item_id).all()
+        costs = {item_id: value for item_id, value in cost_rows}
+        expiry_rows = self.db.query(InventoryLot.item_id, func.min(InventoryLot.expires_on)).filter(
+            InventoryLot.tenant_id == self.tenant_id,
+            InventoryLot.item_id.in_(output_ids),
+            InventoryLot.status == "available",
+            InventoryLot.expires_on.is_not(None),
+        ).group_by(InventoryLot.item_id).all()
+        expiries = {item_id: value for item_id, value in expiry_rows}
         reserved = {item_id: value for item_id, value in reserved_rows}
         preparing = {item_id: value for item_id, value in preparing_rows}
         return [{
@@ -112,6 +129,8 @@ class InventoryPortionConfigService:
             "min_stock": row.min_stock,
             "target_stock": row.target_stock,
             "active": row.active,
+            "unit_cost": (Decimal(str(costs.get(row.output_item_id, 0))) / Decimal(str(physical.get(row.output_item_id, 0)))).quantize(Decimal("0.00000001")) if Decimal(str(physical.get(row.output_item_id, 0))) > 0 else Decimal("0"),
+            "next_expiry": expiries.get(row.output_item_id),
         } for row in configs]
 
     def replenishment_alerts(self) -> list[dict]:
