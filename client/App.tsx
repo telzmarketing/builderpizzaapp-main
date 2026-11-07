@@ -716,7 +716,7 @@ function AppSurface({ platformSurface }: { platformSurface: boolean }) {
                 <Route path="/painel/crm/grupos" element={<CrmGrupos />} />
                 <Route path="/painel/crm/tarefas" element={<CrmTarefas />} />
                 <Route path="/painel/crm/agente-whatsapp" element={<CrmAgenteWhatsApp />} />
-                <Route path="/painel/gestao/estoque" element={<GestaoInventory />} />
+                <Route path="/painel/gestao/estoque/*" element={<GestaoInventory />} />
                 <Route path="/painel/gestao/cmv" element={<GestaoCmv />} />
                 <Route path="/painel/gestao/financeiro" element={<GestaoFinance />} />
                 <Route path="/painel/gestao/fiscal" element={<GestaoFiscal />} />

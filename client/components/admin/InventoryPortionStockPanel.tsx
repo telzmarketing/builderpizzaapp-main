@@ -50,7 +50,7 @@ export default function InventoryPortionStockPanel() {
         </button>
       </div>
 
-      {alerts.length > 0 && <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4"><h3 className="font-black text-amber-100">Alertas de reposição</h3>{alerts.map((row) => <p key={row.config_id} className="text-sm text-amber-100">{row.output_item_name}: disponível {row.available_stock}, em preparo {row.in_preparation}; sugeridas {row.suggested_portions} porções — matéria-prima estimada {row.estimated_source_quantity} {row.unit_symbol || "unid."}.</p>)}</div>}
+      {alerts.length > 0 && <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4"><h3 className="font-black text-amber-100">Alertas de reposição</h3>{alerts.map((row) => <p key={row.config_id} className="text-sm text-amber-100">{row.output_item_name}: disponível {formatExactQuantity(row.available_stock)}, em preparo {formatExactQuantity(row.in_preparation)}; sugeridas {formatExactQuantity(row.suggested_portions)} porções — matéria-prima estimada {formatExactQuantity(row.estimated_source_quantity)} {row.unit_symbol || "unid."}.</p>)}</div>}
 
       {loading ? (
         <div className="flex min-h-40 items-center justify-center text-stone"><Loader2 size={18} className="mr-2 animate-spin" />Carregando saldos...</div>

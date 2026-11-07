@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, ChefHat, Database, Layers3, Loader2, Package, Plus, RefreshCw, Settings, ShoppingCart, Trash2, Truck } from "lucide-react";
 import { AdminPageTabs, type AdminPageTab } from "@/components/admin/AdminPageChrome";
 import AdminGestao from "./AdminGestao";
@@ -21,20 +22,44 @@ import {
   type InventoryUnit,
 } from "@/lib/api";
 
-type Section = "settings" | "items" | "portioning" | "portion-stock" | "base" | "suppliers" | "purchases" | "replenishment" | "entries" | "foundation" | "preparation";
+type Section = "settings" | "items" | "ingredient-stock" | "portioning" | "portion-stock" | "replenishment" | "foundation" | "purchases" | "entries" | "suppliers" | "preparation" | "base";
+
+const inventoryRouteBase = "/painel/gestao/estoque";
+const sectionSlugs: Record<Section, string> = {
+  items: "insumos",
+  "ingredient-stock": "estoque-insumos",
+  portioning: "porcionamento",
+  "portion-stock": "estoque-porcionamento",
+  replenishment: "reposicao",
+  foundation: "saldos-conversoes",
+  purchases: "compras",
+  entries: "entradas",
+  suppliers: "fornecedores",
+  preparation: "preparo",
+  base: "base",
+  settings: "configuracoes",
+};
+
+function sectionFromPath(pathname: string): Section | null {
+  const slug = pathname.replace(`${inventoryRouteBase}/`, "").replace(/\/$/, "");
+  if (!slug || slug === pathname) return null;
+  const entry = (Object.entries(sectionSlugs) as Array<[Section, string]>).find(([, value]) => value === slug);
+  return entry?.[0] ?? null;
+}
 
 const sections: AdminPageTab<Section>[] = [
   { id: "items", label: "Insumos", icon: Package },
+  { id: "ingredient-stock", label: "Estoque de Insumos", icon: Database },
   { id: "portioning", label: "Porcionamento", icon: Package },
-  { id: "portion-stock", label: "Estoque porcionado", icon: Database },
-  { id: "base", label: "Base", icon: Layers3 },
-  { id: "suppliers", label: "Fornecedores", icon: Truck },
+  { id: "portion-stock", label: "Estoque de Porcionamento", icon: Database },
+  { id: "replenishment", label: "Reposição", icon: AlertTriangle },
+  { id: "foundation", label: "Saldos e Conversões", icon: Layers3 },
   { id: "purchases", label: "Compras", icon: ShoppingCart },
-  { id: "replenishment", label: "Reposicao", icon: AlertTriangle },
-  { id: "entries", label: "Entrada", icon: Database },
-  { id: "foundation", label: "Saldos e conversoes", icon: Layers3 },
+  { id: "entries", label: "Entradas", icon: Database },
+  { id: "suppliers", label: "Fornecedores", icon: Truck },
   { id: "preparation", label: "Preparo", icon: ChefHat },
-  { id: "settings", label: "Configuracoes", icon: Settings },
+  { id: "base", label: "Base", icon: Layers3 },
+  { id: "settings", label: "Configurações", icon: Settings },
 ];
 
 const emptyOverview: InventoryOverview = {
@@ -58,13 +83,21 @@ function currency(value: number) {
 }
 
 export default function GestaoInventory() {
-  const [section, setSection] = useState<Section>("items");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const section = sectionFromPath(location.pathname) ?? "items";
+
+  useEffect(() => {
+    if (!sectionFromPath(location.pathname)) navigate(`${inventoryRouteBase}/${sectionSlugs.items}`, { replace: true });
+  }, [location.pathname, navigate]);
+
+  const changeSection = (next: Section) => navigate(`${inventoryRouteBase}/${sectionSlugs[next]}`);
 
   return (
     <AdminGestao
       moduleKey="inventory"
       showSettings={section === "settings"}
-      moduleTabs={<AdminPageTabs<Section> tabs={sections} active={section} onChange={setSection} />}
+      moduleTabs={<AdminPageTabs<Section> tabs={sections} active={section} onChange={changeSection} />}
     >
       {section === "foundation" ? <InventoryFoundationPanel /> : section === "preparation" ? <PreparationOperationsPanel /> : section === "portioning" ? <InventoryPortioningPanel /> : section === "portion-stock" ? <InventoryPortionStockPanel /> : section !== "settings" && <InventoryBase section={section} />}
     </AdminGestao>
@@ -129,6 +162,7 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings" | "fo
       {!loading && (
         <>
           {section === "items" && <ItemsSection data={data} saving={saving} run={run} />}
+          {section === "ingredient-stock" && <IngredientStockSection data={data} />}
           {section === "base" && <BaseSection data={data} saving={saving} run={run} />}
           {section === "suppliers" && <SuppliersSection data={data} saving={saving} run={run} />}
           {section === "purchases" && <PurchasesSection data={data} saving={saving} run={run} />}
@@ -198,6 +232,39 @@ function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: Invent
         {!needs.length && <EmptyRow text="Nenhum item abaixo do estoque minimo." />}
       </div>
       <p className="text-xs text-stone">A necessidade é calculada a partir do estoque atual e do mínimo cadastrado. O custo unitário usa o último custo disponível; quando ausente, fica em zero para revisão na aba Compras.</p>
+    </div>
+  );
+}
+
+function IngredientStockSection({ data }: { data: InventoryOverview }) {
+  const ingredients = data.items
+    .filter((item) => item.active && item.item_type === "ingredient")
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-surface-03">
+      <div className="flex items-center justify-between bg-surface-01 px-4 py-4">
+        <div>
+          <h2 className="text-lg font-black text-cream">Estoque de Insumos</h2>
+          <p className="mt-1 text-sm text-stone">Saldo atual dos insumos cadastrados. Entradas e saídas são registradas na aba Entradas.</p>
+        </div>
+      </div>
+      <TableHeader columns={["Insumo", "Unidade", "Local", "Saldo atual", "Mínimo", "Situação"]} />
+      {ingredients.map((item) => {
+        const current = item.current_stock ?? 0;
+        const belowMinimum = current < item.min_stock;
+        return (
+          <div key={item.id} className="grid grid-cols-[1.6fr_.8fr_1.2fr_1fr_1fr_1fr] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
+            <span className="font-bold text-cream">{item.name}<small className="block text-stone">{item.sku || "Sem SKU"}</small></span>
+            <span className="text-stone">{item.unit_symbol || item.unit_name || "-"}</span>
+            <span className="text-stone">{item.default_location_name || "-"}</span>
+            <span className={belowMinimum ? "font-bold text-amber-200" : "text-emerald-200"}>{current}</span>
+            <span className="text-stone">{item.min_stock}</span>
+            <span className={belowMinimum ? "font-bold text-amber-200" : "text-emerald-200"}>{belowMinimum ? "Abaixo do mínimo" : "Disponível"}</span>
+          </div>
+        );
+      })}
+      {!ingredients.length && <EmptyRow text="Nenhum insumo ativo cadastrado." />}
     </div>
   );
 }
