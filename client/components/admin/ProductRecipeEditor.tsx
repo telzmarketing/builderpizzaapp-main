@@ -220,7 +220,12 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
                   if (!(item.active || item.id === row.inventory_item_id)) return false;
                   return !portionOutputIds.has(item.id) || (row.supply_mode === "direct" && item.id === row.inventory_item_id);
                 });
-                const selectablePortions = portionConfigs.filter((config) => config.usage !== "direct" || config.id === row.portion_config_id);
+                const selectedSizeLabel = product.sizes?.find((size) => size.id === form.product_size_id)?.label?.trim().toLowerCase() ?? "";
+                const selectablePortions = portionConfigs.filter((config) => {
+                  if (config.usage === "direct" && config.id !== row.portion_config_id) return false;
+                  if (config.id === row.portion_config_id) return true;
+                  return !config.size || config.size.trim().toLowerCase() === selectedSizeLabel;
+                });
                 const selectionValue = row.supply_mode === "portion" && row.portion_config_id
                   ? `portion:${row.portion_config_id}`
                   : row.inventory_item_id ? `direct:${row.inventory_item_id}` : "";

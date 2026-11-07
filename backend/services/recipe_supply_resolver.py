@@ -58,6 +58,10 @@ class RecipeSupplyResolver:
             )
             if item is None or not item.active:
                 raise FoundationInvalid("Produto porcionado da configuracao nao esta disponivel neste tenant.")
+            config_size = (config.size or "").strip().casefold()
+            recipe_size = (recipe_size_label or "").strip().casefold()
+            if config_size and config_size != recipe_size:
+                raise FoundationInvalid("A configuracao de porcao nao corresponde ao tamanho da ficha tecnica.")
             data.update(
                 inventory_item_id=item.id,
                 supply_mode="portion",
