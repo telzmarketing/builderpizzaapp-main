@@ -42,7 +42,7 @@ export function PreparationLabelPrintDialog({ executionId, open, onOpenChange }:
   return <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}><DialogContent className="border-surface-03 bg-surface-02 text-cream"><DialogHeader><DialogTitle>Etiquetas do preparo</DialogTitle><DialogDescription>Imprimir e reimprimir não altera o estoque. Selecione o equipamento físico na caixa de impressão do navegador.</DialogDescription></DialogHeader>
     {error && <p role="alert" className="text-red-300">{error}</p>}
     {!preview && !error && <p>Carregando etiqueta...</p>}
-    {preview && <><p className="font-bold">{preview.execution.product_name || "Preparação"}</p><p>Quantidade: {preview.execution.quantity} · Lote: {preview.execution.lot_code || "Não informado"}</p><p className="text-sm text-stone">{preview.printer.name} · {preview.template.name}</p><label>Cópias<input type="number" min={1} max={10} value={copies} disabled={busy} onChange={(event) => setCopies(Math.max(1, Math.min(10, Number(event.target.value) || 1)))} className="w-full rounded bg-surface-01 p-2"/></label><label>Motivo para reimprimir<textarea maxLength={300} value={reason} disabled={busy} onChange={(event) => setReason(event.target.value)} className="w-full rounded bg-surface-01 p-2"/></label></>}
+    {preview && <><p className="font-bold">{preview.execution.product_name || "Preparação"}</p><p>Quantidade: {preview.execution.quantity} · Lote: {preview.execution.lot_code || "Não informado"}</p><p className="text-sm text-stone">{preview.printer.name} · {preview.template.name}</p><label>Cópias<input type="number" min={1} max={1000} value={copies} disabled={busy} onChange={(event) => setCopies(Math.max(1, Math.min(1000, Number(event.target.value) || 1)))} className="w-full rounded bg-surface-01 p-2"/></label><label>Motivo para reimprimir<textarea maxLength={300} value={reason} disabled={busy} onChange={(event) => setReason(event.target.value)} className="w-full rounded bg-surface-01 p-2"/></label></>}
     {preview && <iframe title="Prévia da etiqueta de preparo" sandbox="" srcDoc={buildPreparationLabelPrintHtml(preview)} className="h-52 w-full rounded border bg-white" />}
     {done && <p role="status" className="text-emerald-300">Impressão registrada. Confirme a fila no sistema operacional.</p>}
     <DialogFooter><button disabled={busy} onClick={() => onOpenChange(false)}>Fechar</button><button disabled={!preview || busy} onClick={() => void print(false)} className="rounded bg-emerald-600 p-2">Imprimir</button><button disabled={!preview || busy || !reason.trim()} onClick={() => void print(true)} className="rounded border p-2">Reimprimir</button></DialogFooter>
@@ -189,7 +189,7 @@ export default function LabelPrintDialog({ orderId, orderCode, open, onOpenChang
             </select>
           </label>
           <label className="space-y-1 text-sm font-bold">Cópias
-            <input aria-label="Número de cópias" type="number" min={1} max={10} value={copies} onChange={(event) => setCopies(Math.min(10, Math.max(1, Number(event.target.value) || 1)))} disabled={printing} className="min-h-11 w-full rounded-lg border border-surface-03 bg-surface-01 px-3 text-cream"/>
+            <input aria-label="Número de cópias" type="number" min={1} max={1000} value={copies} onChange={(event) => setCopies(Math.min(1000, Math.max(1, Number(event.target.value) || 1)))} disabled={printing} className="min-h-11 w-full rounded-lg border border-surface-03 bg-surface-01 px-3 text-cream"/>
           </label>
         </div>
 

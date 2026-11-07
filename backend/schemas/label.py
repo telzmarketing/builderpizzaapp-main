@@ -88,7 +88,7 @@ class LabelVolumeRuleIn(BaseModel):
 class LabelPrintIn(BaseModel):
     printer_id: str | None = None
     template_id: str | None = None
-    copies: int = Field(default=1, ge=1, le=20)
+    copies: int = Field(default=1, ge=1, le=1000)
     idempotency_key: str = Field(min_length=8, max_length=100, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 
 
