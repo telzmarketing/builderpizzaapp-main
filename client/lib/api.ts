@@ -2407,6 +2407,8 @@ export interface InventoryPortionBalance {
   min_stock: number;
   target_stock: number;
   active: boolean;
+  unit_cost: number;
+  next_expiry?: string | null;
 }
 
 export interface InventoryPortionReplenishment {
