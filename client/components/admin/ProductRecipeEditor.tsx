@@ -3,6 +3,8 @@ import { ArrowDown, ArrowUp, Loader2, Plus, Trash2, X } from "lucide-react";
 import {
   inventoryApi, inventoryFoundationApi, productRecipesApi,
   type ApiProduct, type FoundationUnit, type InventoryItem,
+  type InventoryPortionConfig,
+  type OperationalRecipeIngredient,
   type OperationalRecipeInput, type OperationalRecipeVersion,
   type RecipeCompositionPreview,
   type RecipeCompositionCustomization,
@@ -11,7 +13,8 @@ import {
 const input = "w-full rounded-lg border border-surface-03 bg-surface-01 p-2 text-sm text-cream disabled:opacity-50";
 const button = "rounded-lg border border-surface-03 px-3 py-2 text-sm text-parchment disabled:opacity-50";
 const decimal = (value: string) => value.trim().replace(",", ".");
-type Ingredient = { inventory_item_id: string; entered_quantity: string; entered_unit_id: string; waste_percent: string; notes: string; public_name: string; show_public: boolean; allow_removal: boolean };
+type SupplyMode = "direct" | "portion";
+type Ingredient = { inventory_item_id: string; supply_mode: SupplyMode; portion_config_id: string; entered_quantity: string; entered_unit_id: string; waste_percent: string; notes: string; public_name: string; show_public: boolean; allow_removal: boolean };
 type Form = {
   component_role: OperationalRecipeVersion["component_role"]; reference_fraction: string;
   product_size_id: string; product_crust_type_id: string; product_drink_variant_id: string;
@@ -19,8 +22,18 @@ type Form = {
   instructions: string; preparation_steps: string[]; reference_image_url: string;
   items: Ingredient[];
 };
-const emptyIngredient = (): Ingredient => ({ inventory_item_id: "", entered_quantity: "", entered_unit_id: "", waste_percent: "0", notes: "", public_name: "", show_public: false, allow_removal: false });
+const emptyIngredient = (): Ingredient => ({ inventory_item_id: "", supply_mode: "direct", portion_config_id: "", entered_quantity: "", entered_unit_id: "", waste_percent: "0", notes: "", public_name: "", show_public: false, allow_removal: false });
 const emptyForm = (): Form => ({ component_role: "flavor", reference_fraction: "0.5", product_size_id: "", product_crust_type_id: "", product_drink_variant_id: "", complement_key: "", complement_name: "", active: true, notes: "", instructions: "", preparation_steps: [], reference_image_url: "", items: [emptyIngredient()] });
+
+export function resolveRecipeIngredientSource(row: Pick<OperationalRecipeIngredient, "inventory_item_id" | "supply_mode" | "portion_config_id">, configs: InventoryPortionConfig[]) {
+  const configuredPortion = row.portion_config_id
+    ? configs.find((config) => config.id === row.portion_config_id)
+    : configs.find((config) => config.output_item_id === row.inventory_item_id);
+  return {
+    supply_mode: row.supply_mode === "portion" || configuredPortion ? "portion" as const : "direct" as const,
+    portion_config_id: configuredPortion?.id ?? row.portion_config_id ?? "",
+  };
+}
 
 export function RecipePrivateImage({ url }: { url: string }) {
   const [source, setSource] = useState("");
@@ -44,6 +57,7 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
   const [recipes, setRecipes] = useState<OperationalRecipeVersion[]>([]);
   const [latestVersion, setLatestVersion] = useState(0);
   const [ingredients, setIngredients] = useState<InventoryItem[]>([]);
+  const [portionConfigs, setPortionConfigs] = useState<InventoryPortionConfig[]>([]);
   const [units, setUnits] = useState<FoundationUnit[]>([]);
   const [form, setForm] = useState<Form>(emptyForm);
   const [editing, setEditing] = useState<OperationalRecipeVersion | null>(null);
@@ -69,9 +83,13 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
   async function load() {
     setLoading(true); setError("");
     try {
-      const [history, overview, unitList] = await Promise.all([productRecipesApi.list(product.id), inventoryApi.overview(), inventoryFoundationApi.units()]);
+      const [history, overview, unitList, configuredPortions] = await Promise.all([
+        productRecipesApi.list(product.id), inventoryApi.overview(), inventoryFoundationApi.units(),
+        // Portioning is additive. An older API must not prevent editing legacy recipes.
+        inventoryApi.portionConfigs().catch(() => [] as InventoryPortionConfig[]),
+      ]);
       if (!mounted.current) return;
-      setRecipes(history.items); setLatestVersion(history.latest_version); setIngredients(overview.items ?? []); setUnits(unitList.items ?? []);
+      setRecipes(history.items); setLatestVersion(history.latest_version); setIngredients(overview.items ?? []); setUnits(unitList.items ?? []); setPortionConfigs(configuredPortions);
     } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : "Falha ao carregar fichas."); }
     finally { if (mounted.current) setLoading(false); }
   }
@@ -90,9 +108,12 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
       product_size_id: recipe.product_size_id ?? "", product_crust_type_id: recipe.product_crust_type_id ?? "", product_drink_variant_id: recipe.product_drink_variant_id ?? "",
       complement_key: recipe.complement_key ?? "", complement_name: recipe.complement_name ?? "", active: recipe.active,
       notes: recipe.notes ?? "", instructions: recipe.instructions ?? "", preparation_steps: [...(recipe.preparation_steps ?? [])], reference_image_url: recipe.reference_image_url ?? "",
-      items: [...(recipe.items ?? [])].sort((a, b) => a.position - b.position).map((row) => ({ inventory_item_id: row.inventory_item_id,
+      items: [...(recipe.items ?? [])].sort((a, b) => a.position - b.position).map((row) => {
+        const source = resolveRecipeIngredientSource(row, portionConfigs);
+        return { inventory_item_id: row.inventory_item_id, supply_mode: source.supply_mode, portion_config_id: source.portion_config_id,
         entered_quantity: String(row.entered_quantity ?? row.quantity), entered_unit_id: row.entered_unit_id ?? row.unit_id ?? ingredients.find((item) => item.id === row.inventory_item_id)?.unit_id ?? "",
-        waste_percent: String(row.waste_percent ?? "0"), notes: row.notes ?? "", public_name: row.public_name ?? "", show_public: row.show_public ?? false, allow_removal: row.allow_removal ?? false })) });
+        waste_percent: String(row.waste_percent ?? "0"), notes: row.notes ?? "", public_name: row.public_name ?? "", show_public: row.show_public ?? false, allow_removal: row.allow_removal ?? false };
+      }) });
   }
   function payload(): OperationalRecipeInput {
     if (!form.items.length || form.items.some((row) => !row.inventory_item_id || !row.entered_quantity.trim() || !row.entered_unit_id)) throw new Error("Preencha todos os insumos, quantidades e unidades. Nenhuma linha sera descartada ao salvar.");
@@ -185,13 +206,32 @@ export default function ProductRecipeEditor({ product, catalog, onClose }: { pro
               {!ingredients.some((row) => row.active) && <p className="text-amber-300">Cadastre insumos e classifique suas unidades em Gestao → Estoque.</p>}
               {form.items.map((row, index) => {
                 const selected = ingredients.find((item) => item.id === row.inventory_item_id);
+                const selectedPortion = portionConfigs.find((config) => config.id === row.portion_config_id);
+                const portionOutputIds = new Set(portionConfigs.map((config) => config.output_item_id));
+                const directOptions = ingredients.filter((item) => {
+                  if (!(item.active || item.id === row.inventory_item_id)) return false;
+                  return !portionOutputIds.has(item.id) || (row.supply_mode === "direct" && item.id === row.inventory_item_id);
+                });
+                const selectablePortions = portionConfigs.filter((config) => config.usage !== "direct" || config.id === row.portion_config_id);
+                const selectionValue = row.supply_mode === "portion" && row.portion_config_id
+                  ? `portion:${row.portion_config_id}`
+                  : row.inventory_item_id ? `direct:${row.inventory_item_id}` : "";
                 return <div key={index} className="space-y-2 rounded-lg border border-surface-03 bg-surface-01 p-3">
                   <div className="flex items-center justify-between"><span className="text-xs">Ingrediente {index + 1}</span><div className="flex gap-1"><button type="button" className={button} disabled={index === 0} onClick={() => move(index, -1)} aria-label={`Subir ingrediente ${index + 1}`}><ArrowUp size={14} /></button><button type="button" className={button} disabled={index === form.items.length - 1} onClick={() => move(index, 1)} aria-label={`Descer ingrediente ${index + 1}`}><ArrowDown size={14} /></button><button type="button" className={button} onClick={() => patch({ items: form.items.filter((_, position) => position !== index) })} aria-label={`Remover ingrediente ${index + 1}`}><Trash2 size={14} /></button></div></div>
-                  <div className="grid gap-2 sm:grid-cols-2"><label className="text-xs">Insumo<select className={input} value={row.inventory_item_id} onChange={(e) => updateIngredient(index, { inventory_item_id: e.target.value, entered_unit_id: ingredients.find((item) => item.id === e.target.value)?.unit_id ?? "", entered_quantity: "" })}><option value="">Selecione</option>{ingredients.filter((item) => item.active || item.id === row.inventory_item_id).map((item) => <option key={item.id} value={item.id}>{item.name}{!item.active ? " (inativo)" : ""}</option>)}</select></label>
+                  <div className="grid gap-2 sm:grid-cols-2"><label className="text-xs">Origem do ingrediente<select className={input} value={selectionValue} onChange={(e) => {
+                    const [mode, id] = e.target.value.split(":");
+                    if (mode === "portion") {
+                      const config = portionConfigs.find((item) => item.id === id);
+                      if (config) updateIngredient(index, { supply_mode: "portion", portion_config_id: config.id, inventory_item_id: config.output_item_id, entered_unit_id: config.unit_id, entered_quantity: "" });
+                    } else {
+                      const item = ingredients.find((candidate) => candidate.id === id);
+                      updateIngredient(index, { supply_mode: "direct", portion_config_id: "", inventory_item_id: id ?? "", entered_unit_id: item?.unit_id ?? "", entered_quantity: "" });
+                    }
+                  }}><option value="">Selecione</option><optgroup label="Item direto">{directOptions.map((item) => <option key={`direct:${item.id}`} value={`direct:${item.id}`}>{item.name}{!item.active ? " (inativo)" : ""}</option>)}</optgroup><optgroup label="Porção configurada">{selectablePortions.map((config) => <option key={`portion:${config.id}`} value={`portion:${config.id}`}>{config.output_item_name || config.source_item_name || "Porção"} — {config.portion_weight} {config.unit_symbol || ""}{config.size ? ` · ${config.size}` : ""}{!config.active ? " (inativa)" : ""}</option>)}</optgroup>{row.supply_mode === "portion" && row.portion_config_id && !selectedPortion && <option value={selectionValue}>Porção histórica indisponível</option>}</select></label>
                   <label className="text-xs">Quantidade informada<input className={input} value={row.entered_quantity} onChange={(e) => updateIngredient(index, { entered_quantity: e.target.value })} inputMode="decimal" /></label>
                   <label className="text-xs">Unidade informada<select className={input} value={row.entered_unit_id} onChange={(e) => updateIngredient(index, { entered_unit_id: e.target.value })}><option value="">Selecione unidade confirmada</option>{units.filter((unit) => (unit.active && unit.dimension) || unit.id === row.entered_unit_id).map((unit) => <option key={unit.id} value={unit.id}>{unit.name} ({unit.symbol}){!unit.dimension ? " — classificar no estoque" : ""}</option>)}</select></label>
                   <label className="text-xs">Perda tecnica (%)<input className={input} value={row.waste_percent} onChange={(e) => updateIngredient(index, { waste_percent: e.target.value })} inputMode="decimal" /></label></div>
-                  <p className="text-xs text-stone">Unidade base: {selected?.unit_symbol ?? "nao definida"}. A conversao e validada no servidor ao publicar.</p>
+                  <p className="text-xs text-stone">{row.supply_mode === "portion" && selectedPortion ? `Porção de ${selectedPortion.source_item_name || "insumo"} → ${selectedPortion.output_item_name || selected?.name || "produto porcionado"}. ` : `Item direto${selected ? `: ${selected.name}. ` : ". "}`}Unidade base: {selected?.unit_symbol ?? selectedPortion?.unit_symbol ?? "nao definida"}. A conversao e validada no servidor ao publicar.</p>
                   <label className="block text-xs">Observacao do ingrediente<input className={input} value={row.notes} onChange={(e) => updateIngredient(index, { notes: e.target.value })} /></label>
                   <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={row.show_public} onChange={(e) => updateIngredient(index, { show_public: e.target.checked })} />Exibir nome comercial no catalogo</label>
                   <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={row.allow_removal} onChange={(e) => updateIngredient(index, { allow_removal: e.target.checked })} />Permitir retirada / substituicao deste ingrediente</label>

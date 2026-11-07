@@ -9165,6 +9165,10 @@ export interface OperationalRecipeIngredient {
   id?: string;
   inventory_item_id: string;
   inventory_item_name?: string | null;
+  /** Optional source metadata returned by newer recipe contracts. */
+  supply_mode?: "direct" | "portion" | null;
+  portion_config_id?: string | null;
+  portion_config_version?: number | null;
   quantity: string;
   unit_id: string | null;
   unit_symbol?: string | null;

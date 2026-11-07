@@ -49,7 +49,7 @@ sudo stat -c '%U:%G %a %N' /root/telz-install.env
 Defina explicitamente:
 
 ```env
-ALEMBIC_TARGET=20261107_inventory_portion_configs
+ALEMBIC_TARGET=20261108_inventory_recipe_supply_modes
 INSTALL_SSL=false
 ```
 

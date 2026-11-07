@@ -857,8 +857,9 @@ class InventoryService:
             raise InventoryInvalidReference("A categoria deste produto nao habilita ficha tecnica.")
         return product
 
-    def _validate_recipe_refs(self, product_id: str, data: dict, items: list[dict]) -> None:
-        from backend.services.recipe_details import normalize_recipe_line
+    def _validate_recipe_refs(self, product_id: str, data: dict, items: list[dict]) -> list[dict]:
+        from backend.services.inventory_foundation_service import FoundationConflict, FoundationInvalid
+        from backend.services.recipe_supply_resolver import resolve_recipe_line
         if data.get("reference_image_url"):
             from backend.services.recipe_image_service import RecipeImageService
             data["reference_image_url"] = RecipeImageService(self._db, self._tenant_id, self._actor_id).validate_reference(data["reference_image_url"])
@@ -872,10 +873,13 @@ class InventoryService:
         if data.get("complement_key") and not data.get("complement_name"):
             raise InventoryInvalidReference("Informe o nome do complemento interno.")
         for index, item in enumerate(items):
-            inventory_item = self._ensure(InventoryItem, item["inventory_item_id"], "Insumo")
-            if not inventory_item.active:
-                raise InventoryInvalidReference(f"Insumo inativo: {inventory_item.name}.")
-            items[index] = normalize_recipe_line(self._db, self._tenant_id, item)
+            try:
+                items[index] = resolve_recipe_line(self._db, self._tenant_id, item)
+            except FoundationConflict:
+                raise
+            except FoundationInvalid as exc:
+                raise InventoryInvalidReference(str(exc)) from exc
+        return items
 
     def _ensure_product_child(self, model, row_id: str, product_id: str, label: str):
         row = (
@@ -945,6 +949,9 @@ class InventoryService:
                 tenant_id=self._tenant_id,
                 recipe_id=recipe.id,
                 inventory_item_id=item["inventory_item_id"],
+                supply_mode=item.get("supply_mode", "direct"),
+                portion_config_id=item.get("portion_config_id"),
+                portion_config_version=item.get("portion_config_version"),
                 quantity=round(decimal_value(item["quantity"]), 6),
                 waste_percent=decimal_value(item.get("waste_percent")),
                 notes=item.get("notes"),
@@ -1091,6 +1098,9 @@ class InventoryService:
                     "id": item.id,
                     "recipe_id": item.recipe_id,
                     "inventory_item_id": item.inventory_item_id,
+                    "supply_mode": item.supply_mode,
+                    "portion_config_id": item.portion_config_id,
+                    "portion_config_version": item.portion_config_version,
                     "inventory_item_name": item.inventory_item.name if item.inventory_item else None,
                     "unit_symbol": item.inventory_item.unit.symbol if item.inventory_item and item.inventory_item.unit else None,
                     "quantity": item.quantity,

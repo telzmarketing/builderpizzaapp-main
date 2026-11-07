@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 InventoryItemType = Literal["ingredient", "finished_good", "packaging", "supply"]
 InventoryUnitType = Literal["unit", "mass", "volume", "package"]
@@ -198,7 +198,10 @@ class InventoryStockBalanceOut(BaseModel):
 
 
 class InventoryRecipeItemIn(BaseModel):
-    inventory_item_id: str
+    inventory_item_id: str | None = None
+    supply_mode: Literal["direct", "portion"] = "direct"
+    portion_config_id: str | None = None
+    portion_config_version: int | None = Field(default=None, gt=0)
     quantity: Decimal = Field(gt=0, max_digits=20, decimal_places=6)
     waste_percent: Decimal = Field(default=Decimal("0"), ge=0, le=100, max_digits=20, decimal_places=12)
     notes: str | None = None
@@ -209,6 +212,17 @@ class InventoryRecipeItemIn(BaseModel):
     public_name: str | None = Field(default=None, max_length=180)
     show_public: bool = False
     allow_removal: bool = False
+
+    @model_validator(mode="after")
+    def validate_supply_source(self):
+        if self.supply_mode == "direct":
+            if not self.inventory_item_id:
+                raise ValueError("Item de estoque e obrigatorio para abastecimento direto.")
+            if self.portion_config_id or self.portion_config_version:
+                raise ValueError("Abastecimento direto nao aceita configuracao de porcao.")
+        elif not self.portion_config_id:
+            raise ValueError("Configuracao de porcao e obrigatoria para este abastecimento.")
+        return self
 
 
 class InventoryRecipeVersionIn(BaseModel):
@@ -231,6 +245,9 @@ class InventoryRecipeItemOut(BaseModel):
     id: str
     recipe_id: str
     inventory_item_id: str
+    supply_mode: Literal["direct", "portion"] = "direct"
+    portion_config_id: str | None = None
+    portion_config_version: int | None = None
     inventory_item_name: str | None = None
     unit_symbol: str | None = None
     quantity: float

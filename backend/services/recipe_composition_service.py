@@ -11,7 +11,6 @@ from sqlalchemy.orm import joinedload
 from backend.models.inventory import InventoryRecipeVersion, InventoryRecipeItem, InventoryItem
 from backend.models.product import Product
 from backend.services.inventory_foundation_service import InventoryFoundationService, FoundationConflict, FoundationInvalid, output
-from backend.services.recipe_details import normalize_recipe_line
 from backend.services.recipe_resolution import resolve_recipes, resolved_ingredients, required_decimal_ingredients
 
 
@@ -119,7 +118,7 @@ class RecipeCompositionService(InventoryFoundationService):
             "product_size_id", "product_crust_type_id", "product_drink_variant_id", "complement_key", "complement_name", "active", "notes",
             "instructions", "preparation_steps", "reference_image_url", "created_at")}
         data["preparation_steps"] = data["preparation_steps"] or []
-        data["items"] = [{**{name: getattr(line, name) for name in ("id", "inventory_item_id", "quantity", "unit_id", "entered_quantity",
+        data["items"] = [{**{name: getattr(line, name) for name in ("id", "inventory_item_id", "supply_mode", "portion_config_id", "portion_config_version", "quantity", "unit_id", "entered_quantity",
             "entered_unit_id", "conversion_factor_snapshot", "position", "waste_percent", "notes", "public_name", "show_public")},
             "inventory_item_name": line.inventory_item.name, "unit_symbol": line.inventory_item.unit.symbol if line.inventory_item.unit else None}
             for line in row.items]
@@ -150,7 +149,7 @@ class RecipeCompositionService(InventoryFoundationService):
             for line in lines:
                 if not line.get("unit_id"):
                     line["unit_id"] = self._get(InventoryItem, line["inventory_item_id"]).unit_id
-            normalized = [normalize_recipe_line(self.db, self.tenant_id, line) for line in lines]
+            normalized = lines
             if old:
                 old.active = False
             if data["active"]:

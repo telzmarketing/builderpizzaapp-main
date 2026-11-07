@@ -11,7 +11,10 @@ Role = Literal["flavor", "base", "crust", "addon", "packaging"]
 
 class RecipeLineIn(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, validate_default=True)
-    inventory_item_id: Id
+    inventory_item_id: Id | None = None
+    supply_mode: Literal["direct", "portion"] = "direct"
+    portion_config_id: Id | None = None
+    portion_config_version: int | None = Field(default=None, gt=0)
     quantity: PositiveQuantity | None = None
     unit_id: Id | None = None
     entered_quantity: PositiveQuantity | None = None
@@ -25,6 +28,13 @@ class RecipeLineIn(BaseModel):
 
     @model_validator(mode="after")
     def valid_line(self):
+        if self.supply_mode == "direct":
+            if not self.inventory_item_id:
+                raise ValueError("Item de estoque e obrigatorio para abastecimento direto.")
+            if self.portion_config_id or self.portion_config_version:
+                raise ValueError("Abastecimento direto nao aceita configuracao de porcao.")
+        elif not self.portion_config_id:
+            raise ValueError("Configuracao de porcao e obrigatoria para este abastecimento.")
         if self.waste_percent > 100:
             raise ValueError("Perda percentual excede 100.")
         if (self.entered_quantity is None) != (self.entered_unit_id is None):
@@ -113,6 +123,9 @@ class CompositionPreviewIn(BaseModel):
 class RecipeLineOut(BaseModel):
     id: str
     inventory_item_id: str
+    supply_mode: Literal["direct", "portion"]
+    portion_config_id: str | None
+    portion_config_version: int | None
     inventory_item_name: str
     quantity: str
     unit_id: str | None

@@ -241,13 +241,21 @@ class InventoryRecipeItem(Base):
         Index("uq_inventory_recipe_items_tenant_id_id", "tenant_id", "id", unique=True),
         ForeignKeyConstraint(["tenant_id", "unit_id"], ["inventory_units.tenant_id", "inventory_units.id"], name="fk_inventory_recipe_item_unit", ondelete="RESTRICT"),
         ForeignKeyConstraint(["tenant_id", "entered_unit_id"], ["inventory_units.tenant_id", "inventory_units.id"], name="fk_inventory_recipe_item_entered_unit", ondelete="RESTRICT"),
+        ForeignKeyConstraint(["tenant_id", "portion_config_id"], ["inventory_portion_configs.tenant_id", "inventory_portion_configs.id"], name="fk_inventory_recipe_item_portion_config", ondelete="RESTRICT"),
         CheckConstraint("position >= 0", name="ck_inventory_recipe_item_position"),
+        CheckConstraint("supply_mode IN ('direct', 'portion')", name="ck_inventory_recipe_item_supply_mode"),
+        CheckConstraint("(supply_mode = 'direct' AND portion_config_id IS NULL AND portion_config_version IS NULL) OR (supply_mode = 'portion' AND portion_config_id IS NOT NULL AND portion_config_version IS NOT NULL AND portion_config_version > 0)", name="ck_inventory_recipe_item_supply_source"),
         CheckConstraint("unit_id IS NULL OR tenant_id IS NOT NULL", name="ck_inventory_recipe_item_unit_owner"),
         CheckConstraint("NOT show_public OR (public_name IS NOT NULL AND length(trim(public_name)) > 0)", name="ck_inventory_recipe_item_public_name"),
         CheckConstraint("(entered_unit_id IS NULL AND entered_quantity IS NULL AND conversion_factor_snapshot IS NULL) OR (tenant_id IS NOT NULL AND unit_id IS NOT NULL AND entered_unit_id IS NOT NULL AND entered_quantity IS NOT NULL AND conversion_factor_snapshot IS NOT NULL AND entered_quantity > 0 AND conversion_factor_snapshot > 0 AND quantity > 0 AND quantity = round(entered_quantity * conversion_factor_snapshot, 6))", name="ck_inventory_recipe_item_conversion"),
     )
     recipe_id = Column(String, ForeignKey("inventory_recipe_versions.id", ondelete="CASCADE"), nullable=False, index=True)
     inventory_item_id = Column(String, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    # inventory_item_id remains the physical item consumed by every legacy
+    # consumer. These fields only preserve how the server resolved that item.
+    supply_mode = Column(String(12), nullable=False, default="direct", server_default="direct", index=True)
+    portion_config_id = Column(String, nullable=True, index=True)
+    portion_config_version = Column(Integer, nullable=True)
     # quantity is always the normalized base-unit amount for legacy consumers.
     unit_id = Column(String, nullable=True)
     entered_unit_id = Column(String, nullable=True)
