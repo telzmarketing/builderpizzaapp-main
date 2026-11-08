@@ -6,7 +6,7 @@ from backend.core.rbac_authorization import AuthorizedTenantActor, require_rbac_
 from backend.core.response import err
 from backend.database import get_db
 from backend.schemas.inventory_portion import InventoryPortionBalanceOut, InventoryPortionConfigIn, InventoryPortionConfigOut, InventoryPortionPrepareIn, InventoryPortionReplenishmentOut
-from backend.services.inventory_portion_service import InventoryPortionConfigService
+from backend.services.inventory_portion_service import InventoryPortionConfigService, display_portion_name
 
 router = APIRouter(prefix="/gestao/inventory/v1/portion-configs", tags=["inventory-portioning"])
 
@@ -63,10 +63,7 @@ def deactivate_config(config_id: str, db: Session = Depends(get_db), actor: Auth
 
 
 def serialize(row):
-    weight = format(row.portion_weight, "f").rstrip("0").rstrip(".") or "0"
-    symbol = row.unit.symbol if row.unit else ""
-    display_name = row.source_item.name if row.source_item else (row.output_item.name if row.output_item else "Porcao")
-    display_name = f"{display_name} - porcao {weight} {symbol}" + (f" - {row.size}" if row.size else "")
+    display_name = display_portion_name(row)
     return InventoryPortionConfigOut(
         id=row.id,
         tenant_id=row.tenant_id,

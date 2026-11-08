@@ -2406,6 +2406,7 @@ export interface InventoryPortionBalance {
   output_item_name: string;
   source_item_name?: string | null;
   unit_symbol?: string | null;
+  usage: InventoryPortionUsage;
   physical_stock: number;
   reserved_stock: number;
   available_stock: number;
@@ -2423,6 +2424,7 @@ export interface InventoryPortionReplenishment {
   output_item_name: string;
   source_item_name?: string | null;
   unit_symbol?: string | null;
+  usage: InventoryPortionUsage;
   available_stock: number;
   in_preparation: number;
   min_stock: number;

@@ -57,6 +57,7 @@ class InventoryPortionBalanceOut(BaseModel):
     output_item_name: str
     source_item_name: str | None = None
     unit_symbol: str | None = None
+    usage: PortionUsage = "mandatory"
     physical_stock: Decimal
     reserved_stock: Decimal
     available_stock: Decimal
@@ -74,6 +75,7 @@ class InventoryPortionReplenishmentOut(BaseModel):
     output_item_name: str
     source_item_name: str | None = None
     unit_symbol: str | None = None
+    usage: PortionUsage = "mandatory"
     available_stock: Decimal
     in_preparation: Decimal
     min_stock: Decimal

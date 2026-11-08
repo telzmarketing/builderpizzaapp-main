@@ -19,6 +19,14 @@ from backend.schemas.inventory_portion import InventoryPortionConfigIn
 from backend.services.idempotency_service import IdempotencyService
 
 
+def display_portion_name(row: InventoryPortionConfig) -> str:
+    """Build a stable human-readable portion name without Decimal exponent notation."""
+    weight = format(row.portion_weight, "f").rstrip("0").rstrip(".") or "0"
+    symbol = row.unit.symbol if row.unit else ""
+    source_name = row.source_item.name if row.source_item else (row.output_item.name if row.output_item else "Porcao")
+    return f"{source_name} - porcao {weight} {symbol}" + (f" - {row.size}" if row.size else "")
+
+
 class PortionConfigNotFound(DomainError):
     http_status = 404
 
@@ -119,9 +127,10 @@ class InventoryPortionConfigService:
         return [{
             "config_id": row.id,
             "output_item_id": row.output_item_id,
-            "output_item_name": row.output_item.name if row.output_item else "",
+            "output_item_name": display_portion_name(row),
             "source_item_name": row.source_item.name if row.source_item else None,
             "unit_symbol": row.unit.symbol if row.unit else None,
+            "usage": row.usage,
             "physical_stock": physical.get(row.output_item_id, 0),
             "reserved_stock": reserved.get(row.output_item_id, 0),
             "available_stock": max(0, physical.get(row.output_item_id, 0) - reserved.get(row.output_item_id, 0)),
@@ -149,9 +158,10 @@ class InventoryPortionConfigService:
             alerts.append({
                 "config_id": row.id,
                 "output_item_id": row.output_item_id,
-                "output_item_name": row.output_item.name if row.output_item else "",
+                "output_item_name": display_portion_name(row),
                 "source_item_name": row.source_item.name if row.source_item else None,
                 "unit_symbol": row.unit.symbol if row.unit else None,
+                "usage": row.usage,
                 "available_stock": available,
                 "in_preparation": in_preparation,
                 "min_stock": minimum,

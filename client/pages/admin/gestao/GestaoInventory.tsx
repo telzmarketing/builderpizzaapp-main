@@ -49,9 +49,9 @@ const inventoryGroups: AdminPageTab<InventoryGroup>[] = [
 ];
 
 const groupSections: Record<InventoryGroup, Section[]> = {
-  cadastro: ["items", "suppliers", "base"],
+  cadastro: ["items", "portioning", "suppliers", "base"],
   estoque: ["ingredient-stock", "portion-stock", "foundation"],
-  producao: ["portioning", "preparation"],
+  producao: ["preparation"],
   operacao: ["replenishment", "purchases", "entries", "settings"],
 };
 
@@ -99,6 +99,11 @@ const ghostButtonClass = "inline-flex items-center justify-center gap-2 rounded-
 
 function currency(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
+}
+
+function quantity(value: number | string | null | undefined) {
+  const numeric = Number(String(value ?? 0).replace(",", "."));
+  return Number.isFinite(numeric) ? numeric.toLocaleString("pt-BR", { useGrouping: false, maximumFractionDigits: 6 }) : "0";
 }
 
 export default function GestaoInventory() {
@@ -169,9 +174,9 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings" | "fo
     <section className="space-y-5 rounded-lg border border-surface-03 bg-surface-02 p-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="text-lg font-black text-cream">Cadastros base de Estoque</h2>
+          <h2 className="text-lg font-black text-cream">{section === "ingredient-stock" ? "Estoque de Insumos" : "Cadastros base de Estoque"}</h2>
           <p className="mt-1 text-sm text-stone">
-            Insumos, unidades, categorias, locais, fornecedores, compras em rascunho e entradas manuais.
+            {section === "ingredient-stock" ? "Saldo atual dos insumos cadastrados. Entradas e saídas são registradas na aba Entradas." : "Insumos, unidades, categorias, locais, fornecedores, compras em rascunho e entradas manuais."}
           </p>
         </div>
         <button type="button" onClick={load} className={ghostButtonClass}>
@@ -188,7 +193,7 @@ function InventoryBase({ section }: { section: Exclude<Section, "settings" | "fo
       {!loading && (
         <>
           {section === "items" && <ItemsSection data={data} saving={saving} run={run} />}
-          {section === "ingredient-stock" && <IngredientStockSection data={data} />}
+          {section === "ingredient-stock" && <IngredientStockSection data={data} saving={saving} onRequestPurchase={() => run(() => inventoryApi.createReplenishmentRequest(), "Solicitação de compras gerada. Nenhum saldo foi alterado.")} />}
           {section === "base" && <BaseSection data={data} saving={saving} run={run} />}
           {section === "suppliers" && <SuppliersSection data={data} saving={saving} run={run} />}
           {section === "purchases" && <PurchasesSection data={data} saving={saving} run={run} />}
@@ -249,9 +254,9 @@ function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: Invent
         {needs.map((item) => (
           <div key={item.id} className="grid grid-cols-[1.5fr_1fr_1fr_1fr_.8fr] gap-3 border-t border-surface-03 bg-surface-01 px-4 py-3 text-sm">
             <span className="font-bold text-cream">{item.name}<small className="block text-stone">{item.sku || item.category_name || "Sem categoria"}</small></span>
-            <span className="text-red-200">{item.current_stock ?? 0}</span>
-            <span className="text-stone">{item.min_stock}</span>
-            <span className="font-bold text-amber-200">{item.shortage}</span>
+            <span className="text-red-200">{quantity(item.current_stock)}</span>
+            <span className="text-stone">{quantity(item.min_stock)}</span>
+            <span className="font-bold text-amber-200">{quantity(item.shortage)}</span>
             <span className="text-stone">{item.unit_symbol || item.unit_name || "-"}</span>
           </div>
         ))}
@@ -262,18 +267,21 @@ function ReplenishmentSection({ data, saving, onCreatePurchase }: { data: Invent
   );
 }
 
-function IngredientStockSection({ data }: { data: InventoryOverview }) {
+function IngredientStockSection({ data, saving, onRequestPurchase }: { data: InventoryOverview; saving: boolean; onRequestPurchase: () => Promise<void> }) {
   const ingredients = data.items
     .filter((item) => item.active && item.item_type === "ingredient")
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
   return (
     <div className="overflow-hidden rounded-lg border border-surface-03">
-      <div className="flex items-center justify-between bg-surface-01 px-4 py-4">
+      <div className="flex flex-col gap-3 bg-surface-01 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-black text-cream">Estoque de Insumos</h2>
           <p className="mt-1 text-sm text-stone">Saldo atual dos insumos cadastrados. Entradas e saídas são registradas na aba Entradas.</p>
         </div>
+        <button type="button" disabled={saving || !ingredients.some((item) => (item.current_stock ?? 0) < item.min_stock)} onClick={() => void onRequestPurchase()} className={buttonClass}>
+          {saving ? <Loader2 size={15} className="animate-spin" /> : <ShoppingCart size={15} />} Solicitar compra
+        </button>
       </div>
       <TableHeader columns={["Insumo", "Unidade", "Local", "Saldo atual", "Mínimo", "Situação"]} />
       {ingredients.map((item) => {
@@ -284,8 +292,8 @@ function IngredientStockSection({ data }: { data: InventoryOverview }) {
             <span className="font-bold text-cream">{item.name}<small className="block text-stone">{item.sku || "Sem SKU"}</small></span>
             <span className="text-stone">{item.unit_symbol || item.unit_name || "-"}</span>
             <span className="text-stone">{item.default_location_name || "-"}</span>
-            <span className={belowMinimum ? "font-bold text-amber-200" : "text-emerald-200"}>{current}</span>
-            <span className="text-stone">{item.min_stock}</span>
+            <span className={belowMinimum ? "font-bold text-amber-200" : "text-emerald-200"}>{quantity(current)}</span>
+            <span className="text-stone">{quantity(item.min_stock)}</span>
             <span className={belowMinimum ? "font-bold text-amber-200" : "text-emerald-200"}>{belowMinimum ? "Abaixo do mínimo" : "Disponível"}</span>
           </div>
         );
@@ -396,8 +404,8 @@ function ItemsSection({
             <span className="text-stone">{item.item_type.replace(/_/g, " ")}</span>
             <span className="text-stone">{item.unit_symbol || "-"}</span>
             <span className="text-stone">{item.category_name || "-"}</span>
-            <span className={(item.current_stock ?? 0) <= item.min_stock ? "font-bold text-amber-300" : "text-stone"}>{item.current_stock ?? 0}</span>
-            <span className="text-stone">{item.min_stock}</span>
+            <span className={(item.current_stock ?? 0) <= item.min_stock ? "font-bold text-amber-300" : "text-stone"}>{quantity(item.current_stock)}</span>
+            <span className="text-stone">{quantity(item.min_stock)}</span>
             <div className="flex gap-1"><button type="button" className="rounded-lg p-2 text-stone hover:text-cream" disabled={saving} onClick={() => editItem(item)} title="Editar"><Pencil size={15} /></button><DeleteButton disabled={saving} onClick={() => run(() => inventoryApi.removeItem(item.id), "Item removido.")} /></div>
           </div>
         ))}
