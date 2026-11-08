@@ -82,6 +82,7 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
   const [discarded, setDiscarded] = useState("0");
   const [reason, setReason] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetLoading, setSheetLoading] = useState(false);
   const [portionConfirmation, setPortionConfirmation] = useState<"yes" | "no" | null>(null);
   const [actualQuantity, setActualQuantity] = useState("");
 
@@ -96,20 +97,27 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
   const allocationError = validatePreparationAllocationDrafts(allocationDrafts);
 
   async function loadRecipeAndStock() {
-    const [nextRecipe, nextInventory, nextLots] = await Promise.all([
-      preparationApi.recipe(order.id),
-      inventoryApi.overview(),
-      inventoryFoundationApi.lots(),
-    ]);
-    setRecipe(nextRecipe);
-    setInventory(nextInventory);
-    setLots(nextLots.items);
-    setAllocationDrafts(buildPreparationAllocationDrafts(nextRecipe, nextInventory, nextLots.items));
+    setSheetLoading(true);
+    try {
+      const [nextRecipe, nextInventory, nextLots] = await Promise.all([
+        preparationApi.recipe(order.id),
+        inventoryApi.overview(),
+        inventoryFoundationApi.lots(),
+      ]);
+      setRecipe(nextRecipe);
+      setInventory(nextInventory);
+      setLots(nextLots.items);
+      setAllocationDrafts(buildPreparationAllocationDrafts(nextRecipe, nextInventory, nextLots.items));
+    } finally {
+      setSheetLoading(false);
+    }
   }
 
   async function openSheet() {
-    await loadRecipeAndStock();
     setSheetOpen(true);
+    setPortionConfirmation(null);
+    setError("");
+    if (!recipe) await loadRecipeAndStock();
   }
 
   async function finalizePortioning(quantity: string) {
@@ -175,7 +183,7 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className={ghost} disabled={busy} onClick={() => run(openSheet, "Ficha carregada.")}><ClipboardList size={15} /> Ficha</button>
-          {order.status === "draft" && <button type="button" className={button} disabled={busy} onClick={() => void run(async () => { await openSheet(); setPortionConfirmation("yes"); }, "Ficha carregada.")}>Efetuado</button>}
+          {!['completed', 'cancelled'].includes(order.status) && <button type="button" className={button} disabled={busy} onClick={() => void run(async () => { await openSheet(); setPortionConfirmation("yes"); }, "Ficha carregada.")}>Efetuado</button>}
           {order.status === "approved" && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.manage(order.id, "schedule", { expected_version: order.version }, key("schedule", order.id)), "Ordem enviada ao KDS.")}>Enviar ao KDS</button>}
           {canStart && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.start(order.id, order.version, key("start", order.id)), "Preparo iniciado.")}><Play size={15} /> Iniciar</button>}
           {order.status === "paused" && <button type="button" className={button} disabled={busy} onClick={() => run(() => preparationApi.command(order.id, "resume", { expected_version: order.version }, key("resume", order.id)), "Preparo retomado.")}><Play size={15} /> Retomar</button>}
@@ -184,8 +192,11 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
         </div>
       </div>
 
-      {recipe && sheetOpen && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 p-4"><div className="mx-auto mt-8 max-w-2xl rounded-xl border border-surface-03 bg-surface-02 p-5 text-sm shadow-2xl">
+      {sheetOpen && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 p-4"><div className="mx-auto mt-8 max-w-2xl rounded-xl border border-surface-03 bg-surface-02 p-5 text-sm shadow-2xl">
         <div className="flex items-center justify-between"><h3 className="text-lg font-black text-cream">Ficha tecnica de porcionamento</h3><button type="button" className={ghost} onClick={() => setSheetOpen(false)}>Fechar</button></div>
+        {sheetLoading && <div className="mt-4 flex items-center gap-2 rounded-lg border border-surface-03 bg-surface-01 p-4 text-stone"><Loader2 size={17} className="animate-spin" /> Carregando ficha tecnica...</div>}
+        {!sheetLoading && !recipe && error && <p role="alert" className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-200">{error}</p>}
+        {!sheetLoading && recipe && <>
         <p className="mt-2 text-stone">{recipe.output_item_name || order.output_item_name || "Produto porcionado"} · quantidade solicitada: <b className="text-cream">{exact(order.target_quantity)} {recipe.output_unit_symbol || order.output_unit_symbol || "porcoes"}</b></p>
         {recipe.instructions && <p className="mt-3 whitespace-pre-line rounded-lg bg-surface-01 p-3 text-stone">{recipe.instructions}</p>}
         <div className="mt-3 grid gap-2 sm:grid-cols-2">{(recipe.ingredients ?? []).map((item, index) => <div key={`${item.inventory_item_id}-${item.unit_id}-${index}`} className="rounded bg-surface-01 px-3 py-2 text-stone">{item.inventory_item_name || "Insumo"}: <b className="text-cream">{exact(item.quantity)} {item.unit_symbol || ""}</b> por porcao</div>)}</div>
@@ -194,6 +205,7 @@ function OrderCard({ order, onRefresh, onExecution }: { order: PreparationOrder;
         {recipe.instructions && <p className="mt-2 text-stone">{recipe.instructions}</p>}
         {(recipe.warnings ?? []).map((warning) => <p key={`${warning.code}-${warning.message}`} className="mt-2 flex gap-2 text-amber-200"><TriangleAlert size={15} /> {warning.message}</p>)}
         <div className="mt-3 grid gap-2 sm:grid-cols-2">{(recipe.ingredients ?? []).map((item, index) => <div key={`${item.inventory_item_id}-${item.unit_id}-${index}`} className="rounded bg-surface-02 px-2 py-1 text-xs text-stone">{item.inventory_item_name || itemName(item.inventory_item_id) || "Insumo sem identificação"}: <b className="text-cream">{item.quantity} {item.unit_symbol || ""}</b></div>)}</div>
+        </>}
       </div></div>}
 
       {canReport && <div className="mt-4 grid gap-2 md:grid-cols-4">
