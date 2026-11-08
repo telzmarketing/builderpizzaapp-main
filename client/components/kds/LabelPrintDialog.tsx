@@ -20,7 +20,7 @@ export function PreparationLabelPrintDialog({ executionId, open, onOpenChange }:
     if (!open || !executionId) return;
     let cancelled = false;
     setPreview(null); setError(""); setReason(""); setDone(false); setCopies(1); pending.current = null;
-    preparationLabelsApi.preview(executionId).then((value) => { if (!cancelled) setPreview(value); }).catch((caught) => { if (!cancelled) setError(message(caught)); });
+    preparationLabelsApi.preview(executionId).then((value) => { if (!cancelled) { setPreview(value); setCopies(Math.max(1, Math.ceil(Number(value.execution.quantity) || 1))); } }).catch((caught) => { if (!cancelled) setError(message(caught)); });
     return () => { cancelled = true; };
   }, [open, executionId]);
   async function print(reprint: boolean) {

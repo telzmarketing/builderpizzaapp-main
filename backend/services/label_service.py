@@ -413,6 +413,8 @@ class LabelService:
         ).first()
         if execution is None:
             raise DomainError("Execucao de preparo nao encontrada.", code="PreparationExecutionNotFound")
+        if execution.order is None or execution.order.status != "completed":
+            raise DomainError("As etiquetas so podem ser emitidas apos o porcionamento ser efetuado.", code="PreparationExecutionNotFinal")
         settings = self.db.query(LabelSetting).filter(LabelSetting.tenant_id == self.tenant_id).first()
         printer = self._resolve_printer(printer_id or (settings.default_printer_id if settings else None))
         template = self._resolve_template(template_id or (settings.default_template_id if settings else None), printer)

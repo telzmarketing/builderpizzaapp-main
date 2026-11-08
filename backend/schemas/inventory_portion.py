@@ -20,6 +20,8 @@ class InventoryPortionConfigIn(BaseModel):
     shelf_life_days: int | None = Field(default=None, ge=0, le=3650)
     yield_percent: Decimal = Field(default=Decimal("100"), gt=0, le=100, max_digits=8, decimal_places=4)
     loss_percent: Decimal = Field(default=Decimal("0"), ge=0, lt=100, max_digits=8, decimal_places=4)
+    technical_instructions: str | None = Field(default=None, max_length=4000)
+    handling_instructions: str | None = Field(default=None, max_length=4000)
     active: bool = True
 
     @model_validator(mode="after")

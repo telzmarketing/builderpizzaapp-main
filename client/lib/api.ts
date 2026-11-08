@@ -2394,6 +2394,8 @@ export interface InventoryPortionConfig {
   shelf_life_days?: number | null;
   yield_percent: number;
   loss_percent: number;
+  technical_instructions?: string | null;
+  handling_instructions?: string | null;
   active: boolean;
   version: number;
   created_at?: string | null;
@@ -9035,6 +9037,9 @@ export interface PreparationOrder {
   status: string;
   version: number;
   execution_id: string | null;
+  recipe_name?: string | null;
+  output_item_name?: string | null;
+  output_unit_symbol?: string | null;
 }
 
 export interface PreparationRecipeDefinition {
@@ -9082,6 +9087,7 @@ export interface PreparationRecipe {
   output_item_name?: string | null;
   target_quantity: string;
   output_unit_id: string;
+  output_unit_symbol?: string | null;
   instructions?: string | null;
   preparation_steps: string[];
   ingredients: Array<{

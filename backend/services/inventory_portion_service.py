@@ -17,6 +17,7 @@ from backend.models.preparation import InventoryOperationRecipe, InventoryOperat
 from backend.models.inventory_portion import InventoryPortionConfig
 from backend.schemas.inventory_portion import InventoryPortionConfigIn
 from backend.services.idempotency_service import IdempotencyService
+from backend.services.inventory_foundation_service import convert_decimal
 
 
 def display_portion_name(row: InventoryPortionConfig) -> str:
@@ -184,6 +185,20 @@ class InventoryPortionConfigService:
             InventoryOperationRecipe.output_item_id == row.output_item_id,
             InventoryOperationRecipe.active.is_(True),
         ).order_by(InventoryOperationRecipe.version_number.desc(), InventoryOperationRecipe.id.desc()).first()
+        source = row.source_item
+        source_unit = self.db.query(InventoryUnit).filter(InventoryUnit.id == source.unit_id, InventoryUnit.tenant_id == self.tenant_id).first() if source and source.unit_id else None
+        portion_unit = row.unit
+        if not source or not source_unit or not portion_unit:
+            raise PortionConfigInvalid("O insumo e a porcao precisam ter unidades cadastradas.")
+        if source_unit.id == portion_unit.id:
+            recipe_quantity = Decimal(row.portion_weight)
+        else:
+            if not source_unit.dimension or not portion_unit.dimension or source_unit.dimension != portion_unit.dimension or not source_unit.conversion_factor or not portion_unit.conversion_factor:
+                raise PortionConfigInvalid("A unidade da porcao precisa ser conversivel para a unidade-base do insumo.")
+            recipe_quantity = convert_decimal(row.portion_weight, portion_unit.conversion_factor, source_unit.conversion_factor)
+        technical_instructions = row.technical_instructions or f"Produzir a porcao configurada de {source.name}."
+        if row.handling_instructions:
+            technical_instructions = f"{technical_instructions}\n\nManuseio: {row.handling_instructions}"
         if recipe is None:
             recipe = InventoryOperationRecipe(
                 id=uuid.uuid4().hex,
@@ -193,7 +208,7 @@ class InventoryPortionConfigService:
                 output_unit_id=row.unit_id,
                 yield_quantity=Decimal("1"),
                 version_number=1,
-                instructions=f"Produzir a porção configurada de {row.source_item.name if row.source_item else 'materia-prima'}.",
+                instructions=technical_instructions,
                 created_by=self.actor_id,
             )
             self.db.add(recipe)
@@ -203,10 +218,16 @@ class InventoryPortionConfigService:
                 tenant_id=self.tenant_id,
                 recipe_id=recipe.id,
                 item_id=row.source_item_id,
-                unit_id=row.unit_id,
-                quantity=row.portion_weight,
+                unit_id=source_unit.id,
+                quantity=recipe_quantity,
                 position=0,
             ))
+            self.db.flush()
+        elif recipe.name.startswith("Porcionamento - "):
+            recipe.instructions = technical_instructions
+            if len(recipe.items) == 1 and recipe.items[0].item_id == source.id:
+                recipe.items[0].unit_id = source_unit.id
+                recipe.items[0].quantity = recipe_quantity
             self.db.flush()
         from backend.schemas.preparation import PreparationOrderIn
         from backend.services.preparation_service import PreparationService

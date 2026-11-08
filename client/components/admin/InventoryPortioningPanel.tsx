@@ -48,6 +48,8 @@ type Form = {
   shelf_life_days: string;
   yield_percent: string;
   loss_percent: string;
+  technical_instructions: string;
+  handling_instructions: string;
 };
 const initial = (): Form => ({
   source_item_id: "",
@@ -61,6 +63,8 @@ const initial = (): Form => ({
   shelf_life_days: "",
   yield_percent: "100",
   loss_percent: "0",
+  technical_instructions: "",
+  handling_instructions: "",
 });
 
 export default function InventoryPortioningPanel() {
@@ -110,6 +114,8 @@ export default function InventoryPortioningPanel() {
         c.shelf_life_days == null ? "" : String(c.shelf_life_days),
       yield_percent: String(c.yield_percent),
       loss_percent: String(c.loss_percent),
+      technical_instructions: c.technical_instructions || "",
+      handling_instructions: c.handling_instructions || "",
     });
   }
   function cancel() {
@@ -145,6 +151,8 @@ export default function InventoryPortioningPanel() {
           : null,
         yield_percent: Number(form.yield_percent),
         loss_percent: Number(form.loss_percent),
+        technical_instructions: form.technical_instructions.trim() || null,
+        handling_instructions: form.handling_instructions.trim() || null,
         active: true,
       };
       if (editing)
@@ -314,6 +322,14 @@ export default function InventoryPortioningPanel() {
                 />
               </label>
             </div>
+            <label className="block text-xs text-stone">
+              Ficha tecnica de porcionamento
+              <textarea className={`${input} min-h-24`} value={form.technical_instructions} onChange={(e) => update({ technical_instructions: e.target.value })} placeholder="Descreva o preparo, a porcao e a gramatura." />
+            </label>
+            <label className="block text-xs text-stone">
+              Manuseio e armazenamento
+              <textarea className={`${input} min-h-20`} value={form.handling_instructions} onChange={(e) => update({ handling_instructions: e.target.value })} placeholder="Informe cuidados, embalagem, validade e armazenamento." />
+            </label>
             <button
               type="button"
               className={button}

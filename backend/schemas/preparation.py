@@ -35,3 +35,6 @@ class PreparationOrderOut(BaseModel):
     status: str
     version: int
     execution_id: str | None = None
+    recipe_name: str | None = None
+    output_item_name: str | None = None
+    output_unit_symbol: str | None = None

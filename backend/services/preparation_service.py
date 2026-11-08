@@ -29,7 +29,10 @@ class PreparationService:
         if execution_id is None:
             latest = self._q(PreparationExecution).filter_by(order_id=o.id).order_by(PreparationExecution.created_at.desc()).first()
             execution_id = latest.id if latest else None
-        return {"id":o.id,"recipe_id":o.recipe_id,"target_quantity":_d(o.target_quantity),"produced_quantity":_d(o.produced_quantity),"lost_quantity":_d(o.lost_quantity),"discarded_quantity":_d(o.discarded_quantity),"status":o.status,"version":o.version,"execution_id":execution_id}
+        recipe = self._q(InventoryOperationRecipe).filter_by(id=o.recipe_id).first()
+        output_item = self._q(InventoryItem).filter_by(id=recipe.output_item_id).first() if recipe else None
+        output_unit = self._q(InventoryUnit).filter_by(id=recipe.output_unit_id).first() if recipe else None
+        return {"id":o.id,"recipe_id":o.recipe_id,"recipe_name":recipe.name if recipe else None,"output_item_name":output_item.name if output_item else None,"output_unit_symbol":output_unit.symbol if output_unit else None,"target_quantity":_d(o.target_quantity),"produced_quantity":_d(o.produced_quantity),"lost_quantity":_d(o.lost_quantity),"discarded_quantity":_d(o.discarded_quantity),"status":o.status,"version":o.version,"execution_id":execution_id}
     def _recipe_out(self, recipe):
         return {
             "id": recipe.id,
@@ -110,21 +113,29 @@ class PreparationService:
         recipe = self._q(InventoryOperationRecipe).filter_by(id=order.recipe_id, active=True).first()
         if not recipe:
             raise PreparationNotFound("Ficha operacional nao encontrada.")
+        output_item = self._q(InventoryItem).filter_by(id=recipe.output_item_id).first()
+        output_unit = self._q(InventoryUnit).filter_by(id=recipe.output_unit_id).first()
+        item_ids = [item.item_id for item in recipe.items]
+        unit_ids = [item.unit_id for item in recipe.items]
+        items = {item.id: item for item in self._q(InventoryItem).filter(InventoryItem.id.in_(item_ids)).all()}
+        units = {unit.id: unit for unit in self._q(InventoryUnit).filter(InventoryUnit.id.in_(unit_ids)).all()}
         return {
             "preparation_order_id": order.id,
             "recipe_version_id": recipe.id,
             "executable": bool(recipe.items),
             "output_item_id": recipe.output_item_id,
+            "output_item_name": output_item.name if output_item else None,
             "target_quantity": _d(order.target_quantity),
             "output_unit_id": recipe.output_unit_id,
+            "output_unit_symbol": output_unit.symbol if output_unit else None,
             "instructions": recipe.instructions,
             "preparation_steps": [],
             "ingredients": [{
                 "inventory_item_id": item.item_id,
                 "quantity": _d(item.quantity),
                 "unit_id": item.unit_id,
-                "inventory_item_name": None,
-                "unit_symbol": None,
+                "inventory_item_name": items.get(item.item_id).name if items.get(item.item_id) else None,
+                "unit_symbol": units.get(item.unit_id).symbol if units.get(item.unit_id) else None,
             } for item in recipe.items],
             "warnings": [],
         }

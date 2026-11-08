@@ -1,7 +1,7 @@
 """Tenant-scoped configuration for transforming a stock item into a portion."""
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, Numeric, String, and_, text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, Numeric, String, Text, and_, text
 from sqlalchemy.orm import foreign, relationship
 
 from backend.database import Base
@@ -64,6 +64,8 @@ class InventoryPortionConfig(Base):
     shelf_life_days = Column(Integer, nullable=True)
     yield_percent = Column(Numeric(8, 4), nullable=False, default=100, server_default="100")
     loss_percent = Column(Numeric(8, 4), nullable=False, default=0, server_default="0")
+    technical_instructions = Column(Text, nullable=True)
+    handling_instructions = Column(Text, nullable=True)
     active = Column(Boolean, nullable=False, default=True, server_default="true")
     version = Column(Integer, nullable=False, default=1, server_default="1")
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
