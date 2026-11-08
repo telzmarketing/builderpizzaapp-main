@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import ProductRecipeEditor, { RecipeCompositionResult, resolveRecipeIngredientSource } from "./ProductRecipeEditor";
+import ProductRecipeEditor, { RecipeCompositionResult, portionMatchesRecipeSize, resolveRecipeIngredientSource } from "./ProductRecipeEditor";
 import type { ApiProduct, InventoryPortionConfig, RecipeCompositionPreview } from "@/lib/api";
 
 const ingredient = { inventory_item_id: "cheese", name: "Mucarela", quantity: "0.100001", unit_id: "kg", unit_symbol: "kg", component_role: "flavor", position: 0, waste_percent: "0" };
@@ -17,6 +17,13 @@ describe("recipe editor feedback", () => {
     const portion = { id: "portion-1", output_item_id: "portion-output", source_item_id: "raw", usage: "mandatory", portion_weight: 100, unit_id: "g", reference_fraction: 0.5, min_stock: 0, target_stock: 0, yield_percent: 100, loss_percent: 0, active: true, version: 1 } as InventoryPortionConfig;
     expect(resolveRecipeIngredientSource({ inventory_item_id: "raw", supply_mode: null, portion_config_id: null }, [portion])).toEqual({ supply_mode: "direct", portion_config_id: "" });
     expect(resolveRecipeIngredientSource({ inventory_item_id: "portion-output", supply_mode: null, portion_config_id: null }, [portion])).toEqual({ supply_mode: "portion", portion_config_id: "portion-1" });
+  });
+
+  it("keeps sized portions aligned with the recipe size", () => {
+    expect(portionMatchesRecipeSize({ size: "Grande" }, "")).toBe(false);
+    expect(portionMatchesRecipeSize({ size: "Grande" }, "Grande")).toBe(true);
+    expect(portionMatchesRecipeSize({ size: "Grande" }, "Broto")).toBe(false);
+    expect(portionMatchesRecipeSize({ size: null }, "")).toBe(true);
   });
 
   it("renders a protected loading state without showing an empty editor as loaded", () => {
